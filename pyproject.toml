@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "evlet"
+version = "0.1.0"
+description = "A small Python application framework with SQLite and a neutral UI schema"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "uvicorn>=0.34,<1", "build>=1,<2", "setuptools>=75"]
+
+[tool.setuptools.packages.find]
+include = ["evlet*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

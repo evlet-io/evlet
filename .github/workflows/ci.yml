@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - run: python -m pip install --require-hashes -r requirements-dev.lock
+      - run: python -m pip install --no-build-isolation --no-deps -e .
+      - run: python -m pytest
+      - run: python -m build --no-isolation
+      - name: Verify installed wheel
+        run: |
+          python -m venv /tmp/evlet-wheel-check
+          /tmp/evlet-wheel-check/bin/python -m pip install --no-deps dist/evlet-0.1.0-py3-none-any.whl
+          /tmp/evlet-wheel-check/bin/python -I scripts/check_package.py
+      - name: Live Playground smoke
+        env:
+          EVLET_DATABASE: ${{ runner.temp }}/evlet-smoke.sqlite3
+        run: |
+          python -m uvicorn examples.playground.app:create_app --factory --host 127.0.0.1 --port 8000 > /tmp/evlet-uvicorn.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"; cat /tmp/evlet-uvicorn.log' EXIT
+          python - <<'PY'
+          import time
+          from urllib.request import urlopen
+          for attempt in range(50):
+              try:
+                  with urlopen('http://127.0.0.1:8000/health', timeout=1) as response:
+                      if response.status == 200:
+                          break
+              except OSError:
+                  time.sleep(0.1)
+          else:
+              raise SystemExit('Backend did not become ready')
+          PY
+          python scripts/smoke.py
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build

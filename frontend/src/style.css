@@ -1,0 +1,61 @@
+:root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #243b32; background: #f6f7f3; font-synthesis: none; --p-primary-color: #376e55; --p-primary-hover-color: #28513e; --p-primary-active-color: #1e4030; --p-primary-contrast-color: #fff; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; }
+button:focus-visible, a:focus-visible { outline: 3px solid #92bb68; outline-offset: 4px; }
+.workspace { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; }
+.sidebar { background: #18352d; color: #f0f3e8; padding: 36px 22px; display: flex; flex-direction: column; }
+.brand { text-decoration: none; color: inherit; font-size: 31px; font-weight: 650; letter-spacing: -1.5px; display: flex; align-items: center; margin-bottom: 66px; }
+.brand-mark { display: inline-grid; place-items: center; background: #d5e6a2; color: #18352d; width: 33px; height: 33px; border-radius: 10px 10px 10px 2px; font-size: 26px; margin-right: 10px; }
+.brand-dot { color: #d5e6a2; }
+.workspace-label { font-size: 10px; font-weight: 650; letter-spacing: 1.5px; color: #aebfb5; padding: 0 13px 18px; display: flex; justify-content: space-between; }
+nav { display: grid; gap: 8px; }
+nav button { border: 0; background: transparent; color: #c0cfc7; padding: 14px 12px; display: flex; align-items: center; gap: 12px; border-radius: 8px; text-align: left; font-size: 14px; }
+nav button:hover { background: #25463a; }
+nav button.active { background: #d5e6a2; color: #19392d; font-weight: 600; }
+.nav-mark { font-size: 10px; opacity: .65; font-variant-numeric: tabular-nums; }
+.nav-arrow { margin-left: auto; }
+.sidebar-note { margin-top: auto; font-size: 12px; line-height: 1.9; padding: 70px 12px 0; }
+.sidebar-note-detail { color: #a9bdb1; padding-left: 14px; }
+.status-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #d5e6a2; margin-right: 9px; }
+main { min-width: 0; }
+.topbar { min-height: 83px; padding: 0 46px; border-bottom: 1px solid #e1e5dc; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #55675d; }
+.breadcrumb { margin-left: 10px; color: #354c40; }
+.workspace-badge { border: 1px solid #dce1d5; border-radius: 5px; padding: 5px 10px; font-size: 11px; }
+.page-content { max-width: 1500px; margin: auto; padding: 48px 46px 24px; }
+.page-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 36px; }
+.eyebrow { color: #637d65; font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: 1.5px; }
+h1 { font-size: clamp(32px, 4vw, 46px); letter-spacing: -1.8px; font-weight: 500; line-height: 1.2; margin: 12px 0 10px; }
+h2 { font-size: 16px; font-weight: 550; margin: 0; }
+.muted { color: #68776c; font-size: 13px; line-height: 1.6; }
+.chapter-number { font-size: 82px; font-weight: 300; color: #dce3d5; letter-spacing: -5px; }
+.content-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: start; margin-top: 18px; }
+.records-card, .form-card { background: #fff; border: 1px solid #e1e6dc; border-radius: 12px; overflow: hidden; min-width: 0; }
+.card-heading { padding: 18px 22px; display: flex; align-items: center; justify-content: space-between; }
+.p-datatable { font-size: 13px; --p-datatable-header-cell-background: #f8f9f5; --p-datatable-header-cell-color: #6c7d6e; --p-datatable-header-cell-padding: 13px 22px; --p-datatable-body-cell-padding: 16px 22px; --p-datatable-row-striped-background: #fcfcfa; --p-datatable-body-cell-border-color: #eef0e9; }
+.record-id { color: #7b897c; font-size: 12px; }
+.empty-state { padding: 60px 15px; text-align: center; }
+.empty-symbol { display: inline-grid; place-items: center; background: #f1f4e9; width: 42px; height: 42px; border-radius: 50%; font-size: 24px; color: #748b5b; }
+.empty-state h3 { font-size: 15px; font-weight: 500; margin: 18px 0 8px; }
+.empty-state p { font-size: 12px; color: #6f7c71; }
+.pagination { display: flex; align-items: center; justify-content: space-between; padding: 14px 22px; border-top: 1px solid #edf0e7; font-size: 11px; color: #71806f; }
+.pagination > div { display: flex; gap: 5px; }
+.record-form { padding: 25px; }
+.record-form h2 { font-size: 21px; letter-spacing: -.4px; margin: 12px 0 8px; }
+.form-intro { font-size: 12px; margin-bottom: 26px; }
+fieldset { padding: 0; margin: 0; border: 0; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+fieldset label { font-size: 12px; font-weight: 550; margin-top: 12px; display: flex; gap: 4px; }
+fieldset label:first-child { margin-top: 0; }
+.optional { margin-left: auto; font-size: 10px; color: #73806e; font-weight: 400; }
+.p-inputtext, .p-select { width: 100%; font-size: 13px; }
+fieldset > .p-button { margin-top: 18px; font-size: 13px; }
+.field-error { color: #a33930; font-size: 11px; }
+fieldset .muted { font-size: 11px; }
+.loading-note { padding: 0 22px; font-size: 13px; color: #68776c; }
+.page-footer { display: flex; justify-content: space-between; padding-top: 30px; font-size: 10px; color: #7b8876; }
+.page-footer span:last-child { letter-spacing: 1.2px; }
+@media (min-width: 1500px) { .content-grid { grid-template-columns: minmax(0, 1fr) 330px; } }
+@media (max-width: 1100px) { .workspace { grid-template-columns: 190px minmax(0, 1fr); } .content-grid { grid-template-columns: 1fr; } .page-content { padding: 32px 28px; } .topbar { padding: 0 28px; } .form-card { max-width: 500px; width: 100%; } }
+@media (max-width: 640px) { .workspace { grid-template-columns: 1fr; } .sidebar { padding: 18px; } .brand { margin-bottom: 18px; font-size: 26px; } .workspace-label, .sidebar-note { display: none; } nav { display: flex; } nav button { flex: 1; justify-content: center; font-size: 12px; padding: 11px 8px; } .nav-mark, .nav-arrow { display: none; } .topbar { min-height: 58px; padding: 0 20px; } .page-content { padding: 28px 18px; } .chapter-number { font-size: 60px; } .card-heading { padding: 14px 16px; } .pagination { padding: 12px; } }
