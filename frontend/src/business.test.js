@@ -159,3 +159,23 @@ it('pages account management beyond the first hundred users', async () => {
   await button('Previous accounts').trigger('click'); await flushPromises()
   expect(wrapper.find('tbody tr').text()).toContain('user1')
 })
+
+
+it('shows the tenant identity before and after sign-in and session expiry', async () => {
+  vi.stubGlobal('fetch', vi.fn(async path => {
+    if (path === '/api/auth/session') return response({ user: null, setup: false, tenant: { slug: 'alpha', label: 'Alpha company' } })
+    if (path === '/api/auth/login') return response({ user: { id: 1, username: 'owner', role: 'admin' }, csrf: 'token' })
+    if (path === '/api/schema') return response(schema)
+    return response({ items: [], total: 0 })
+  }))
+  wrapper = mountComponent(SessionApp); await flushPromises()
+  expect(wrapper.find('.tenant-name').text()).toBe('Alpha company')
+  expect(wrapper.text()).not.toContain('Create administrator')
+  await wrapper.find('#username').setValue('owner')
+  await wrapper.find('#password').setValue('long test password')
+  await wrapper.find('form').trigger('submit'); await flushPromises()
+  expect(wrapper.find('.account-bar .tenant-name').text()).toBe('Alpha company')
+  window.dispatchEvent(new Event('evlet-session-ended')); await flushPromises()
+  expect(wrapper.find('.tenant-name').text()).toBe('Alpha company')
+  expect(wrapper.findComponent(App).exists()).toBe(false)
+})

@@ -1,10 +1,11 @@
 # Working on Evlet
 
 Read `docs/specification.md` and `docs/architecture.md` before changing the public API.
-The current scope is Milestone 4: local accounts, permissions, actions, child tables,
-private attachments, transactions, and grouped layouts. Milestones 1 through 3 are
-merged. Keep tenant routing, hosting, and Milestone 5 work separate.
-Read `docs/business-capabilities.md` for the public APIs and permission boundaries.
+The current scope is Milestone 5: tenant registry, hostname routing, separate
+SQLite databases, custom-domain verification, private file storage, and reference
+server deployment. Milestones 1 through 4 are merged. Keep jobs, realtime,
+serverless, and Milestone 6 work separate. Read `docs/business-capabilities.md`
+and `docs/tenancy-deployment.md` for public APIs and permission boundaries.
 
 - Use Python 3.12+ and Node 24. Python definitions are authoritative; frontend
   components consume a neutral schema and never appear in Python model definitions.

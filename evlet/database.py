@@ -18,16 +18,21 @@ class ConflictError(ValueError):
 
 
 class Database:
-    def __init__(self, path, registry, *, migrations=None):
+    def __init__(self, path, registry, *, migrations=None, must_exist=False):
         if str(path) == ":memory:":
             raise ValueError("Use a SQLite file (a temporary file in tests)")
-        self.path = Path(path)
+        configured = Path(path)
+        self.path = configured.parent.resolve() / configured.name if must_exist else configured
+        self.must_exist = must_exist
         self.registry = registry
         self.migrations = None if migrations is None else tuple(migrations)
 
     @contextmanager
     def _connection(self):
-        connection = sqlite3.connect(self.path, timeout=5)
+        if self.must_exist and (self.path.is_symlink() or self.path.absolute().resolve() != self.path.absolute()):
+            raise sqlite3.OperationalError('Database paths must not use symbolic links')
+        target = self.path.absolute().as_uri() + '?mode=rw' if self.must_exist else self.path
+        connection = sqlite3.connect(target, timeout=5, uri=self.must_exist)
         connection.row_factory = sqlite3.Row
         try:
             connection.execute("PRAGMA foreign_keys = ON")
