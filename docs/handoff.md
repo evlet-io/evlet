@@ -62,7 +62,7 @@ dependencies are not transferred by Git. `EVLET_DATABASE` selects another file.
   records. Persistence survived browser reload and backend restart.
 - Desktop/mobile rendering and accessible relationship controls were verified.
 - Launcher setup, startup, live requests, occupied-port protection, Control-C
-  cleanup, and repeat startup passed. Native macOS execution still needs checking.
+  cleanup, and repeat startup passed. Mac verification is recorded below.
 - The frontend build has a nonfatal bundle-size advisory; no scaling guarantees
   or production readiness are claimed.
 
@@ -71,18 +71,34 @@ From the root, run `.venv/bin/python -m pytest`, `npm --prefix frontend test`,
 With the servers running, `.venv/bin/python scripts/smoke.py --base-url
 http://127.0.0.1:5173` verifies the live workflow and adds uniquely named examples.
 
+## Local Mac verification: 28 October 2026
+
+The existing Mac checkout now uses the Milestone 1 branch. Untracked work from
+`feat/framework-foundation` was preserved in a Git stash named
+`Preserve local foundation work before Milestone 1 continuation`. Keep that stash
+until the original work is needed; it is separate from this implementation.
+
+- `bash scripts/playground.sh --setup` installed both locked dependency sets and
+  opened the Playground in Chrome. Homebrew Python 3.12.11 and Node 24.15.0 were
+  used by the launcher; frontend tests/build used the installed Node 24.16.0.
+- All 61 backend tests and 12 frontend tests passed. The frontend production
+  build, Python source/wheel builds, and isolated wheel installation check passed.
+- Chrome created a customer, linked invoice, and linked payment with exact
+  `123.45` amounts. The records survived browser reload and a full server restart.
+- The live HTTP smoke check passed through the Vite proxy, including validation,
+  pagination, foreign-key rejection, and decimal serialization.
+- Occupied-port protection, Control-C cleanup, and repeat startup passed on macOS.
+- No implementation fixes or dependency updates were needed. The documented
+  nonfatal frontend bundle-size advisory remains.
+
 ## Pending review
 
-No PR has been created. Git reads and branch pushes succeeded in cloud, but
-`gh pr create` was blocked by the cloud network proxy at `api.github.com/graphql`.
-This restriction may not apply on the Mac; test existing local GitHub access.
-Do not request tokens merely because cloud API access failed.
-
-Prepare the requested PR from `codex/milestone-1-foundation` to `main`, titled
-“Implement Milestone 1: SQLite framework and Vue Playground”. Include the resulting
-behavior, architecture, justified dependencies, test results, Playground startup,
-known limits, and Milestone 2 as the recommendation. Distinguish local checks from
-remote CI results; GitHub Actions has not been verified. Do not merge automatically.
+[PR #1](https://github.com/dxb-aslam/evlet/pull/1),
+“Implement Milestone 1: SQLite framework and Vue Playground”, is open as a draft
+against `main`. It includes the architecture, dependencies, local validation,
+startup command, limits, and Milestone 2 recommendation. Check the PR's current
+GitHub Actions results separately from the local checks above. Do not merge or
+deploy automatically, and do not begin Milestone 2 without a new request.
 
 The cloud environment draft has saved install/start instructions and a requested
 `api.github.com` network addition. Its publication remains separate from local
