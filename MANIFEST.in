@@ -5,4 +5,4 @@ recursive-include tests *.py
 recursive-include scripts *.py *.sh
 include frontend/package.json frontend/package-lock.json frontend/index.html frontend/vite.config.js
 include frontend/.node-version frontend/.npmrc
-recursive-include frontend/src *.js *.vue *.css
+recursive-include frontend/src *.js *.vue *.css *.json

@@ -1,3 +1,6 @@
+let csrf = ''
+export const setCsrf = value => { csrf = value }
+
 export class ApiError extends Error {
   constructor(message, fields = {}) {
     super(message)
@@ -8,7 +11,9 @@ export class ApiError extends Error {
 export async function request(path, options = {}) {
   let response
   try {
-    response = await fetch(path, options)
+    const headers = { ...options.headers }
+    if (options.method && options.method !== 'GET') { headers['X-Evlet-Request'] = '1'; if (csrf) headers['X-CSRF-Token'] = csrf }
+    response = await fetch(path, Object.keys(headers).length ? { ...options, headers } : options)
   } catch {
     throw new ApiError('Unable to reach the server. Check the connection and try again.')
   }
@@ -19,6 +24,7 @@ export async function request(path, options = {}) {
   } catch {
     throw new ApiError('The server returned an unreadable response.')
   }
+  if (response.status === 401 && !path.endsWith('/login')) window.dispatchEvent(new Event('evlet-session-ended'))
   if (!response.ok) throw new ApiError(data.error || 'The request failed.', data.fields)
   return data
 }
@@ -48,3 +54,6 @@ export const updateRecord = (model, id, data) => request(recordPath(model, id), 
 export const deleteRecord = (model, id) => request(recordPath(model, id), { method: 'DELETE' })
 
 export const getRecord = (model, id) => request(recordPath(model, id))
+
+export const authRequest = (path, data, method = "POST") => request(`/api/auth/${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) })
+export const recordRequest = (model, id, path, data) => request(`${recordPath(model, id)}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) })

@@ -50,7 +50,7 @@ jobs:
           else:
               raise SystemExit('Backend did not become ready')
           PY
-          python scripts/smoke.py
+          python scripts/smoke.py --setup
   frontend:
     runs-on: ubuntu-latest
     defaults:

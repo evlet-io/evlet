@@ -1,9 +1,10 @@
 # Evlet
 
 A small Python application framework for business applications. This repository
-implements **Milestone 3**: generated forms, lists, details, and search, backed by
-typed models, SQLite persistence, queries, CRUD, and explicit migrations. The
-Vue 3/PrimeVue Playground includes Customer, Invoice, Payment, and Project.
+implements **Milestone 4**: local accounts, permissions, child tables, custom
+actions, private attachments, and grouped forms, backed by typed models and SQLite.
+The Vue 3/PrimeVue Playground includes Customer, Invoice, Payment, and Project
+with child tasks.
 
 Python model definitions remain authoritative. The core has **zero third-party
 runtime dependencies**. No database server, Redis, Docker, or worker is required.
@@ -19,7 +20,7 @@ brew install git python@3.12 node@24
 Then, in Terminal:
 
 ```bash
-git clone --branch codex/milestone-3-app-generation https://github.com/dxb-aslam/evlet.git
+git clone https://github.com/dxb-aslam/evlet.git
 cd evlet
 bash scripts/playground.sh --setup
 ```
@@ -39,7 +40,7 @@ occupied, the launcher exits without stopping any existing service. Linux can
 use the same launcher with Python and Node already installed. Set
 `EVLET_OPEN_BROWSER=0` for noninteractive validation.
 
-For an existing Milestone 1 or 2 database, stop the launcher and run
+For an existing Milestone 1, 2, or 3 database, stop the launcher and run
 `.venv/bin/python -m examples.playground.migrate` before restarting it. This creates
 a backup and preserves existing records. See the [model engine guide](docs/model-engine.md)
 for the API, migration operations, and current limits.
@@ -57,7 +58,7 @@ python3 -m venv .venv
 npm --prefix frontend ci
 ```
 
-In Codex Cloud, use the existing checkout at `/workspace/evlet` and set writable
+In a managed cloud checkout, use the existing checkout at `/workspace/evlet` and set writable
 package caches if the default home directory is read-only:
 
 ```bash
@@ -90,10 +91,12 @@ The backend listens on port 8000; Vite listens on port 5173 and proxies `/api` a
 browser access where supported. The onboarding UI itself does not provide a web
 preview; local HTTP requests still verify the running application.
 
-Create a customer, then an invoice referencing that customer, then a payment
+Create the first administrator account when prompted. Use Accounts to add Editor
+or Viewer accounts. Then create a customer, an invoice referencing it, and a payment
 referencing that invoice. Refresh or restart the backend to verify persistence.
 The default database is `examples/playground/.data/playground.sqlite3`, ignored
-by Git. `EVLET_DATABASE` can select another SQLite file; no credentials are needed.
+by Git. `EVLET_DATABASE` can select another SQLite file. Each database has its own accounts.
+Projects demonstrate child tasks, Start/Complete actions, and private attachments.
 
 Check the live workflow from the root:
 
@@ -102,7 +105,8 @@ curl --fail http://127.0.0.1:8000/health
 .venv/bin/python scripts/smoke.py --base-url http://127.0.0.1:5173
 ```
 
-The smoke check creates a uniquely named customer, invoice, and payment, checks
+The smoke check prompts for an existing Admin or Editor account. It creates a
+uniquely named customer, invoice, payment, and Project, checks
 updates, queries, validation, protected deletes, then removes its own records. Use a disposable database via `EVLET_DATABASE` for validation runs when you
 do not want sample records in your working database. It also checks validation,
 foreign-key errors, and exact decimal serialization through real HTTP requests.
@@ -130,6 +134,7 @@ with database.transaction() as transaction:
     )
 
 assert database.get(Invoice, invoice.id).to_dict()["total"] == "100.10"
+# Configure LocalAuth before serving protected records over HTTP.
 app = Application(database)
 ```
 
@@ -171,8 +176,10 @@ This is a development preview, not a deployment recipe.
 - Create, read, update, delete, typed queries, and explicit additive/rename/index
   migrations are supported. Destructive migrations and arbitrary field-type
   conversions are not supported. Startup rejects schema drift.
-- No authentication, permissions, tenant isolation, file uploads, jobs, realtime,
-  or deployment adapters. Keep the development servers on loopback.
+- Local accounts and backend model/record/field permissions are implemented.
+  The Playground uses them; a bare `Application(database)` stays unauthenticated
+  for compatibility. Keep development servers on loopback. No tenant isolation,
+  jobs, realtime, SSO, email recovery, or deployment adapters yet.
 - Currency has two decimal places and no currency-code conversion. The Playground
   is a persistence example, not a ledger or payment processor.
 - Email is a bounded text field; browser email validation is convenience only.
@@ -187,4 +194,6 @@ Read [architecture decisions](docs/architecture.md), the [full specification](do
 and [agent instructions](AGENTS.md). The [model engine guide](docs/model-engine.md)
 covers the model engine. See [application generation](docs/application-generation.md)
 for Milestone 3 metadata, defaults, generated screens, and upgrade instructions.
-The next milestone is authentication, roles, permissions, and business capabilities.
+See [business capabilities](docs/business-capabilities.md) for Milestone 4 APIs,
+account setup, permissions, actions, children, attachments, and limits. The next
+milestone covers multi-tenancy and hosting.

@@ -127,8 +127,27 @@ sequence guards protect navigation from older asynchronous responses.
 See [application generation](application-generation.md) for the public contract,
 examples, browser integer bounds, and the explicit Playground upgrade.
 
+## Milestone 4 decisions
+
+The Playground now configures LocalAuth on Application. Local accounts and revocable
+sessions use reserved SQLite tables; passwords use standard-library scrypt. Host,
+Origin, custom request headers, session CSRF tokens, and cookie attributes protect
+browser requests. Explicit Policy rules enforce model, field, and row access.
+Permissions filter records and query counts on the server. Authenticated HTTP
+queries reject relationship traversal until a permission-aware join planner exists.
+The trusted Python query API remains unchanged.
+
+ChildTable declares ownership through a required Link. Parent and child writes use
+one transaction. Registered Action handlers run inside the same transaction API and
+are trusted business code. The Playground demonstrates a Project completion rule.
+Attachments use private SQLite BLOBs so deletion and backups share the record's
+transaction and storage boundary. No public files directory or new dependency is
+needed. Grouped form layouts remain renderer-neutral metadata.
+
+See [business capabilities](business-capabilities.md) for the public APIs, security
+boundaries, upgrade path, and limits.
+
 ## Deferred work
 
-Milestone 4 adds authentication, roles, permissions, child tables, attachments,
-and business actions. Tenant isolation, deployment, jobs, realtime, arbitrary
-schema conversions, and performance claims remain later work.
+Tenant isolation, deployment, jobs, realtime, storage adapters, arbitrary schema
+conversions, and production hardening remain later work.

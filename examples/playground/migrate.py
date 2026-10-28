@@ -33,6 +33,15 @@ class Project(Model):
 migrations.append(Migration('0002_projects', CreateModel(Project)))
 
 
+class ProjectTask(Model):
+    project = Link(Project, required=True, index=True)
+    title = Text(required=True, max_length=160)
+    done = Boolean(required=True, default=False)
+
+
+migrations.append(Migration('0003_project_tasks', CreateModel(ProjectTask)))
+
+
 def legacy_registry():
     """Frozen Milestone 1 definitions used only to validate a legacy baseline."""
     class Customer(Model):

@@ -29,7 +29,7 @@ def request(app, method, path, data=None, *, body=None, content_type=b"applicati
 def test_complete_customer_invoice_payment_api(application):
     assert request(application, "GET", "/health")[:2] == (200, {"status": "ok"})
     status, schema, _ = request(application, "GET", "/api/schema")
-    assert status == 200 and len(schema["models"]) == 4
+    assert status == 200 and len(schema["models"]) == 5
     status, customer, headers = request(application, "POST", "/api/customer", {"name": "Studio"})
     assert status == 201
     assert headers[b"location"] == f'/api/customer/{customer["id"]}'.encode()
@@ -99,7 +99,9 @@ def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
         return sent
     assert asyncio.run(run()) == [{"type": "lifespan.startup.complete"}, {"type": "lifespan.shutdown.complete"}]
     assert path.is_file()
-    assert request(app, "POST", "/api/customer", {"name": "Ready"})[0] == 201
+    from test_business import http
+    assert http(app, "POST", "/api/customer", {"name": "Ready"})[0] == 401
+    app.database.create(Customer, name="Ready")
 
     from evlet import CreateModel, Migration, Model, Registry, Text
     from examples.playground.migrate import migrations
@@ -107,9 +109,9 @@ def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
     class Note(Model):
         message = Text()
 
-    next_migration = Migration('0003_notes', CreateModel(Note))
+    next_migration = Migration('0004_notes', CreateModel(Note))
     target = Database(path, Registry(*registry.models.values(), Note))
-    assert target.migrate([*migrations, next_migration]) == ['0003_notes']
+    assert target.migrate([*migrations, next_migration]) == ['0004_notes']
     assert target.get(Customer, 1).name == 'Ready'
 
 

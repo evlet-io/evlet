@@ -89,7 +89,7 @@ class Registry:
                 raise ValueError("Register Model subclasses")
             name = model.__name__.lower()
             identifier(name)
-            if name == "schema" or name.startswith("evlet_"):
+            if name in ("schema", "auth") or name.startswith("evlet_"):
                 raise ValueError("The model name is reserved for metadata")
             if name in registered:
                 raise ValueError(f"Duplicate model name: {name}")

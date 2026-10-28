@@ -124,19 +124,19 @@ def test_relationship_search_reaches_records_beyond_first_hundred(database, appl
     assert request(application, 'GET', f'/api/invoice/{invoice.id}')[1]['customer'] == first.id
 
 
-@pytest.mark.parametrize('installation', ['legacy', 'milestone2', 'fresh'])
+@pytest.mark.parametrize('installation', ['legacy', 'milestone2', 'milestone3', 'fresh'])
 def test_project_migration_preserves_existing_records(tmp_path, installation):
     path = tmp_path / 'playground.sqlite3'
     if installation != 'fresh':
-        old_registry = legacy_registry() if installation == 'legacy' else Registry(Customer, Invoice, Payment)
-        db = Database(path, old_registry, migrations=None if installation == 'legacy' else migrations[:1])
+        old_registry = legacy_registry() if installation == 'legacy' else Registry(Customer, Invoice, Payment, *([Project] if installation == 'milestone3' else []))
+        db = Database(path, old_registry, migrations=None if installation == 'legacy' else migrations[:2 if installation == 'milestone3' else 1])
         db.initialize()
         customer = db.create(old_registry.models['customer'], name='Keep')
         invoice = db.create(old_registry.models['invoice'], customer=customer.id, reference='KEEP', total='123.45')
         db.create(old_registry.models['payment'], invoice=invoice.id, reference='KEEP', amount='123.45')
     target = Database(path, registry, migrations=migrations)
     applied = target.migrate(migrations)
-    assert applied == (['0002_projects'] if installation == 'milestone2' else ['0001_model_engine', '0002_projects'])
+    assert applied == ([m.name for m in migrations][2 if installation == 'milestone3' else 1 if installation == 'milestone2' else 0:])
     target.initialize()
     assert target.migrate(migrations) == []
     project = target.create(Project, name='Generated screens', budget='1.23')

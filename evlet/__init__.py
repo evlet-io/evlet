@@ -13,3 +13,9 @@ __all__ = [
     "LongText", "Migration", "Model", "NotFoundError", "Registry", "RenameField",
     "SchemaError", "Select", "Text", "URL", "ValidationError",
 ]
+
+from .auth import LocalAuth, User
+from .permissions import Policy, Rule
+from .business import Action, ChildTable
+
+__all__ += ["Action", "ChildTable", "LocalAuth", "Policy", "Rule", "User"]

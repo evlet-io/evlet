@@ -4,6 +4,17 @@
   "models": [
     {
       "name": "customer",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "name",
+            "email",
+            "active",
+            "notes"
+          ]
+        }
+      ],
       "label": "Customer",
       "plural": "Customers",
       "description": "Good work starts with good relationships.",
@@ -79,6 +90,19 @@
     },
     {
       "name": "invoice",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "customer",
+            "reference",
+            "total",
+            "posting_date",
+            "status",
+            "tax_rate"
+          ]
+        }
+      ],
       "label": "Invoice",
       "plural": "Invoices",
       "description": "Keep each piece of work connected to a customer.",
@@ -195,6 +219,17 @@
     },
     {
       "name": "payment",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "invoice",
+            "reference",
+            "amount",
+            "received_at"
+          ]
+        }
+      ],
       "label": "Payment",
       "plural": "Payments",
       "description": "Record payments and the invoices they belong to.",
@@ -273,6 +308,30 @@
     },
     {
       "name": "project",
+      "layout": [
+        {
+          "label": "Project",
+          "fields": [
+            "name",
+            "customer",
+            "status"
+          ]
+        },
+        {
+          "label": "Planning",
+          "fields": [
+            "budget",
+            "progress",
+            "starts_on"
+          ]
+        },
+        {
+          "label": "Notes",
+          "fields": [
+            "notes"
+          ]
+        }
+      ],
       "label": "Project",
       "plural": "Projects",
       "description": "Track a small project and its customer.",
@@ -335,7 +394,7 @@
           "help_text": "",
           "placeholder": "",
           "hidden": false,
-          "read_only": false,
+          "read_only": true,
           "default_kind": "static",
           "default": "planned"
         },
@@ -398,6 +457,77 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "none"
+        }
+      ]
+    },
+    {
+      "name": "projecttask",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "project",
+            "title",
+            "done"
+          ]
+        }
+      ],
+      "label": "Project task",
+      "plural": "Project tasks",
+      "description": "",
+      "title_field": "title",
+      "list_fields": [
+        "id",
+        "title",
+        "done"
+      ],
+      "search_fields": [
+        "title"
+      ],
+      "fields": [
+        {
+          "name": "project",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": true,
+          "minimum": 1,
+          "maximum": null,
+          "target": "project",
+          "label": "Project",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 160,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "done",
+          "type": "boolean",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "label": "Done",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": false
         }
       ]
     }

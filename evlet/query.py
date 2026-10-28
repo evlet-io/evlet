@@ -48,7 +48,7 @@ class Query:
             field.maximum = None
         return field.to_storage(field.clean(value))
 
-    def where(self, filters, search=""):
+    def where(self, filters, search="", *, search_fields=None):
         if filters is None:
             filters = {}
         if not isinstance(filters, dict) or len(filters) > 20:
@@ -101,7 +101,7 @@ class Query:
                 from .metadata import view_for
                 matches = ['CAST("record"."id" AS TEXT) = ?']
                 values.append(search.removeprefix('#'))
-                for name in view_for(self.model)['search_fields']:
+                for name in (view_for(self.model)['search_fields'] if search_fields is None else search_fields):
                     column, _ = self.reference(name)
                     matches.append(f'instr(lower({column}), lower(?)) > 0')
                     values.append(search)
