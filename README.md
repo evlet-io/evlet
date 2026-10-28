@@ -137,6 +137,10 @@ Transactions commit on success and roll back together on failure. Use decimal
 strings for currency. `Integer` is also available; `Text` supports length bounds,
 required values, defaults, and uniqueness. `Link` uses actual SQLite foreign keys.
 An application registers models explicitly, so unrelated classes are not exposed.
+When shipping migrations, declare the complete history with
+`Database(path, registry, migrations=migrations)` so fresh initialization records
+its baseline. Apply later schema changes explicitly with `database.migrate(migrations)`.
+See the [migration guide](docs/model-engine.md#explicit-migrations).
 
 ## Test and build
 

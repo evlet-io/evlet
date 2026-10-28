@@ -96,7 +96,25 @@ def _save_definition(connection, registry):
     connection.execute('INSERT OR REPLACE INTO evlet_schema (id, definition) VALUES (1, ?)', (_definition(registry),))
 
 
+def _migration_plan(migrations):
+    migrations = tuple(migrations)
+    if len({item.name for item in migrations}) != len(migrations):
+        raise SchemaError('Migration names must be unique')
+    return migrations, [item.checksum() for item in migrations]
+
+
+def _history(connection, migrations, checksums):
+    history = connection.execute('SELECT name, checksum FROM evlet_migrations ORDER BY position').fetchall()
+    if len(history) > len(migrations) or any(
+        row['name'] != migrations[i].name or row['checksum'] != checksums[i]
+        for i, row in enumerate(history)
+    ):
+        raise SchemaError('Applied migration history was changed, removed, or reordered')
+    return history
+
+
 def initialize(database):
+    plan = None if database.migrations is None else _migration_plan(database.migrations)
     database.path.parent.mkdir(parents=True, exist_ok=True)
     with database._connection() as connection:
         connection.execute('PRAGMA journal_mode = WAL')
@@ -107,10 +125,22 @@ def initialize(database):
             saved = connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone()
             if saved and saved[0] != _definition(database.registry):
                 raise SchemaError('Model definitions changed; run explicit migrations before startup')
+            baseline = False
+            if plan is not None:
+                migrations, checksums = plan
+                history = _history(connection, migrations, checksums)
+                if history and len(history) != len(migrations):
+                    raise SchemaError('Unapplied migration history; run explicit migrations before startup')
+                baseline = not history
             if not tables:
                 for name, model in database.registry.models.items():
                     _create(connection, name, model)
-            _check(connection, database.registry, rows=not saved)
+            _check(connection, database.registry, rows=not saved or baseline)
+            if baseline:
+                connection.executemany(
+                    'INSERT INTO evlet_migrations (position, name, checksum) VALUES (?, ?, ?)',
+                    [(i + 1, migration.name, checksums[i]) for i, migration in enumerate(migrations)],
+                )
             _save_definition(connection, database.registry)
             connection.commit()
         except BaseException:
@@ -250,10 +280,7 @@ def _normalized(schema):
 
 
 def migrate(database, migrations):
-    migrations = tuple(migrations)
-    if len({item.name for item in migrations}) != len(migrations):
-        raise SchemaError('Migration names must be unique')
-    checksums = [item.checksum() for item in migrations]
+    migrations, checksums = _migration_plan(migrations)
     database.path.parent.mkdir(parents=True, exist_ok=True)
     with database._connection() as connection:
         connection.execute('PRAGMA journal_mode = WAL')
@@ -261,12 +288,7 @@ def migrate(database, migrations):
         try:
             fresh = not _tables(connection)
             _metadata(connection)
-            history = connection.execute('SELECT name, checksum FROM evlet_migrations ORDER BY position').fetchall()
-            if len(history) > len(migrations) or any(
-                row['name'] != migrations[i].name or row['checksum'] != checksums[i]
-                for i, row in enumerate(history)
-            ):
-                raise SchemaError('Applied migration history was changed, removed, or reordered')
+            history = _history(connection, migrations, checksums)
             saved = connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone()
             if not fresh and not saved:
                 raise SchemaError('Initialize the legacy database with its original models before migrating')

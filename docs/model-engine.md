@@ -115,7 +115,7 @@ silently alter existing tables. A model change raises `SchemaError` until its
 explicit migration has been applied.
 
 ```python
-from evlet import AddField, AddIndex, Boolean, Migration, RenameField
+from evlet import AddField, AddIndex, Boolean, Database, Migration, RenameField
 
 migrations = [Migration(
     "0001_contact_details",
@@ -124,8 +124,14 @@ migrations = [Migration(
     AddIndex("customer", "display_name"),
 )]
 
-database.migrate(migrations)
+database = Database("app.sqlite3", registry, migrations=migrations)
+database.initialize()  # Fresh setup or verification; never upgrades existing tables.
 ```
+
+Declare the complete shipped history on `Database` so fresh startup records its
+baseline along with the latest schema. Pass this database to `Application` as in
+the Playground. When the schema changes, run `database.migrate(migrations)`
+explicitly before startup, using the complete history including the new steps.
 
 The current model definitions must describe the target schema, including
 `display_name = Text(...)`, `active = Boolean(required=True)`, and
@@ -140,11 +146,19 @@ record validation, and foreign-key checks pass. Failures roll everything back.
 Applied names and operation checksums prevent silent edits, omissions, or
 reordering. Repeated runs skip applied steps. Concurrent runs serialize.
 
-A fresh database is created from the latest models and records the supplied
-migration history as its baseline. A database already initialized from those
-same models can explicitly adopt that verified baseline. A legacy database
-without metadata must first be initialized using its original model definitions;
-this validates its real columns, constraints, and data before recording a baseline.
+Fresh initialization with declared migrations creates the latest schema and
+records that history atomically. Later upgrades skip those steps and apply only
+new migrations, just as on a database upgraded from an older version. Startup
+checks declared history for changed, removed, reordered, or unapplied entries.
+
+For a database previously initialized without a migration list, initialize it
+with its existing models and their complete history before changing those models.
+This validates its columns, constraints, and data before adopting the baseline;
+it does not replay operations or backfills. `database.migrate(migrations)` can
+also create or adopt the current baseline explicitly. Without a declared list,
+`initialize()` cannot infer migration names or checksums from model definitions.
+A legacy database without schema metadata must first be initialized with its
+original models, then explicitly upgraded.
 
 Supported operations are deliberately bounded: add a model, add a field, rename
 a field, and add an index. Fixed backfills are validated; required added fields

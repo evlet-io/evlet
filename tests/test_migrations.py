@@ -153,3 +153,86 @@ def test_multiple_pending_migrations_roll_back_together(tmp_path):
         assert [row[1] for row in c.execute('PRAGMA table_info(contact)')] == ['id', 'name']
         assert c.execute('SELECT count(*) FROM evlet_migrations').fetchone()[0] == 0
     db.initialize()
+
+
+@pytest.mark.parametrize('installation', ['upgraded', 'fresh', 'adopted', 'migrate'])
+def test_next_migration_preserves_records_on_every_installation_path(tmp_path, installation):
+    Old = old_model()
+    Current = type('Contact', (Model,), {'name': Text(required=True), 'active': Boolean(default=True)})
+    Next = type('Contact', (Model,), {
+        'name': Text(required=True), 'active': Boolean(default=True), 'notes': Text(),
+    })
+    first = Migration('one', AddField('contact', 'active', Boolean(default=True)))
+    second = Migration('two', AddField('contact', 'notes', Text()))
+    path = tmp_path / 'next.sqlite3'
+    if installation == 'upgraded':
+        original = Database(path, Registry(Old))
+        original.initialize()
+        record = original.create(Old, name='Keep this record')
+        Database(path, Registry(Current)).migrate([first])
+    else:
+        if installation == 'adopted':
+            original = Database(path, Registry(Current))
+            original.initialize()
+            record = original.create(Current, name='Keep this record', active=False)
+        current = Database(path, Registry(Current), migrations=[first])
+        if installation == 'migrate':
+            current.migrate([first])
+        else:
+            current.initialize()
+        if installation != 'adopted':
+            record = current.create(Current, name='Keep this record', active=False)
+        current.initialize()
+
+    target = Database(path, Registry(Next), migrations=[first, second])
+    with pytest.raises(SchemaError, match='explicit migrations'):
+        target.initialize()
+    assert target.migrate([first, second]) == ['two']
+    target.initialize()
+    assert target.migrate([first, second]) == []
+    saved = target.get(Next, record.id)
+    assert saved.name == 'Keep this record'
+    assert saved.active is (installation == 'upgraded')
+    assert saved.notes is None
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            'SELECT name, checksum FROM evlet_migrations ORDER BY position'
+        ).fetchall() == [('one', first.checksum()), ('two', second.checksum())]
+
+
+def test_startup_rejects_changed_or_incomplete_declared_history(tmp_path):
+    Current = type('Contact', (Model,), {'name': Text(required=True), 'active': Boolean(default=True)})
+    path = tmp_path / 'declared.sqlite3'
+    first = Migration('one', AddField('contact', 'active', Boolean(default=True)))
+    database = Database(path, Registry(Current), migrations=[first])
+    database.initialize()
+    record = database.create(Current, name='Keep')
+    for plan in (
+        [],
+        [Migration('one', AddField('contact', 'active', Boolean(default=False)))],
+        [Migration('renamed', AddField('contact', 'active', Boolean(default=True)))],
+        [first, first],
+        [first, Migration('two', AddIndex('contact', 'name'))],
+    ):
+        with pytest.raises(SchemaError):
+            Database(path, Registry(Current), migrations=plan).initialize()
+    database.initialize()
+    assert database.get(Current, record.id).name == 'Keep'
+    with sqlite3.connect(path) as connection:
+        assert connection.execute('SELECT name FROM evlet_migrations').fetchall() == [('one',)]
+
+
+def test_baseline_adoption_validates_existing_rows_before_recording_history(tmp_path):
+    Current = type('Contact', (Model,), {'name': Text(required=True), 'active': Boolean(default=True)})
+    path = tmp_path / 'invalid.sqlite3'
+    original = Database(path, Registry(Current))
+    original.initialize()
+    record = original.create(Current, name='Keep')
+    with sqlite3.connect(path) as connection:
+        connection.execute('UPDATE contact SET active = 2 WHERE id = ?', (record.id,))
+    first = Migration('one', AddField('contact', 'active', Boolean(default=True)))
+    with pytest.raises(SchemaError, match='stored data fails validation'):
+        Database(path, Registry(Current), migrations=[first]).initialize()
+    with sqlite3.connect(path) as connection:
+        assert connection.execute('SELECT name FROM evlet_migrations').fetchall() == []
+        assert connection.execute('SELECT active FROM contact').fetchone() == (2,)

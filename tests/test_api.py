@@ -101,6 +101,17 @@ def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
     assert path.is_file()
     assert request(app, "POST", "/api/customer", {"name": "Ready"})[0] == 201
 
+    from evlet import CreateModel, Migration, Model, Registry, Text
+    from examples.playground.migrate import migrations
+
+    class Note(Model):
+        message = Text()
+
+    next_migration = Migration('0002_notes', CreateModel(Note))
+    target = Database(path, Registry(*registry.models.values(), Note))
+    assert target.migrate([*migrations, next_migration]) == ['0002_notes']
+    assert target.get(Customer, 1).name == 'Ready'
+
 
 def test_database_failure_returns_service_unavailable(tmp_path):
     app = Application(Database(tmp_path / "missing" / "db.sqlite3", registry))

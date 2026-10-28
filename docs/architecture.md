@@ -86,8 +86,11 @@ SQL. Link traversal uses correlated subqueries, with at most three hops. Orderin
 uses record IDs as a deterministic tie-breaker. There is no general ORM, expression
 evaluator, or arbitrary SQL input over HTTP.
 
-Schema initialization now verifies structure and records a schema snapshot. Explicit
-migration operations cover additions, field renames, and indexes. A pending batch
+Schema initialization now verifies structure and records a schema snapshot.
+Applications declare their shipped migration history on `Database`; fresh startup
+records it as the baseline in the same transaction. Existing schemas still need
+explicit upgrades, and startup checks the declared history for changes.
+Explicit migration operations cover additions, field renames, and indexes. A pending batch
 and its history commit together only after validation. Checksum/history and schema
 checks reject edited history and unsupported model changes, including changes that
 could reinterpret scaled decimal data. Legacy databases require validation against

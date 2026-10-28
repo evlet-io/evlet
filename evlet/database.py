@@ -18,11 +18,12 @@ class ConflictError(ValueError):
 
 
 class Database:
-    def __init__(self, path, registry):
+    def __init__(self, path, registry, *, migrations=None):
         if str(path) == ":memory:":
             raise ValueError("Use a SQLite file (a temporary file in tests)")
         self.path = Path(path)
         self.registry = registry
+        self.migrations = None if migrations is None else tuple(migrations)
 
     @contextmanager
     def _connection(self):
