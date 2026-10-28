@@ -107,7 +107,13 @@ async function openRecord(id, mode = 'view') {
   finally { if (current === recordGeneration) reading.value = false }
 }
 function cancelEdit() { if (saving.value) return; editing.value = null; errors.value = {} }
-async function follow(model, id) { await select(model); await openRecord(id) }
+async function follow(model, id) {
+  const selection = select(model)
+  const current = recordGeneration
+  await selection
+  if (current !== recordGeneration || active.value !== model) return
+  await openRecord(id)
+}
 async function remove() {
   if (!deleting.value || busy.value) return
   saving.value = true; error.value = ''; success.value = ''

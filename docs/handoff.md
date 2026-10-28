@@ -30,7 +30,7 @@ The explicit `0002_projects` migration creates its table. The Mac database was
 backed up before applying it. All existing 2 customers, 2 invoices, and 2 payments
 were compared before and after the migration and remained identical.
 
-Local validation: 141 backend tests and 30 frontend tests pass. Production frontend
+Local validation: 141 backend tests and 33 frontend tests pass. Production frontend
 and source/wheel builds pass; a clean wheel installation passes its checks.
 Fresh startup and restart over real HTTP record both migration baselines. Live HTTP checks cover the fourth model, UI metadata,
 search/filter counts, partial updates, defaults, validation, and cleanup. Chrome
@@ -43,6 +43,9 @@ The browser integer range is narrower than Python/SQLite's signed 64-bit range;
 unsafe integer values and record IDs cannot be silently rounded into writes.
 The renderer has no authentication, permissions, tenant isolation, attachments,
 or custom business actions. Those belong to later milestones.
+
+The relationship navigation review fix cancels pending record opens when navigation
+changes, including switching away and back. Regression tests also cover unmounting.
 
 The older untracked work remains in the named Git stash described below. Keep it.
 
@@ -124,9 +127,8 @@ until the original work is needed; it is separate from this implementation.
 
 ## Pending review
 
-Prepare the Milestone 3 PR from `codex/milestone-3-app-generation` against `main`.
-The PR should describe generated metadata/screens, server queries and relationship
-choices, the explicit Project migration, data preservation, and validation.
+[PR #3](https://github.com/dxb-aslam/evlet/pull/3) targets `main` from the Milestone 3
+branch. The relationship navigation race is fixed and ready for re-review.
 Obtain independent review and check the final CI results. Do not merge or deploy
 automatically, or begin Milestone 4.
 

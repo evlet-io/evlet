@@ -465,3 +465,49 @@ describe('Generated applications', () => {
     expect(fetch.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false)
   })
 })
+
+
+describe('Relationship navigation cancellation', () => {
+  it.each(['another model', 'away and back', 'unmounted'])(
+    'discards a pending relationship after navigation is %s', async destination => {
+      const customers = [{ id: 1, name: 'Intended customer' }]
+      let delayCustomerPage = false, finishCustomerPage
+      const { fetch } = setup({
+        customers,
+        invoices: [{ id: 2, customer: 1, reference: 'INV-2', total: '1.00' }],
+        payments: [{ id: 1, invoice: 2, reference: 'Unrelated payment', amount: '1.00' }],
+        intercept: path => path.startsWith('/api/customer?') && new URL(path, 'http://localhost').searchParams.get('limit') === '20' && delayCustomerPage
+          ? new Promise(resolve => { finishCustomerPage = resolve }) : null,
+      })
+      await flushPromises()
+      await wrapper.findAll('nav button')[1].trigger('click')
+      await flushPromises()
+      await wrapper.find('[aria-label="View invoice 2"]').trigger('click')
+      await flushPromises()
+      delayCustomerPage = true
+      await wrapper.find('.record-details button').trigger('click')
+      await flushPromises()
+      expect(finishCustomerPage).toBeTypeOf('function')
+      delayCustomerPage = false
+      if (destination === 'unmounted') {
+        wrapper.unmount()
+        wrapper = null
+      } else {
+        await wrapper.findAll('nav button')[2].trigger('click')
+        await flushPromises()
+        if (destination === 'away and back') {
+          await wrapper.findAll('nav button')[0].trigger('click')
+          await flushPromises()
+        }
+      }
+      finishCustomerPage(response({ items: customers, total: 1 }))
+      await flushPromises()
+      expect(fetch.mock.calls.some(([path]) => path === '/api/payment/1')).toBe(false)
+      expect(fetch.mock.calls.some(([path]) => path === '/api/customer/1')).toBe(false)
+      if (wrapper) {
+        expect(wrapper.find('h1').text()).toBe(destination === 'away and back' ? 'Customers' : 'Payments')
+        expect(wrapper.find('[aria-label="Record details"]').exists()).toBe(false)
+      }
+    },
+  )
+})
