@@ -99,13 +99,18 @@ class Application:
             return 200, {"status": "ok"}, []
         if path == "/api/schema":
             self._method(method, ["GET"])
-            return 200, self.registry.schema(), []
+            return 200, self.registry.ui_schema(), []
         parts = path.split("/")
         if len(parts) not in (3, 4) or parts[:2] != ["", "api"]:
             raise HTTPError(404, "Route not found")
         model = self.registry.models.get(parts[2])
         if model is None:
             raise HTTPError(404, "Model not found")
+        if method in ('POST', 'PATCH'):
+            errors = {name: 'This field is read-only' for name in body
+                      if name in model.__fields__ and model.__fields__[name].read_only}
+            if errors:
+                raise ValidationError(errors)
         if len(parts) == 4:
             self._method(method, ["GET", "PATCH", "DELETE"])
             if not parts[3].isascii() or not parts[3].isdigit() or len(parts[3]) > 19:
@@ -127,7 +132,7 @@ class Application:
                 raise ValueError("Query exceeds 8 KiB")
             query = parse_qs(scope.get("query_string", b"").decode("ascii"),
                              keep_blank_values=True, max_num_fields=10)
-            if set(query) - {"limit", "offset", "filters", "order_by"} or any(len(v) != 1 for v in query.values()):
+            if set(query) - {"limit", "offset", "filters", "order_by", "q"} or any(len(v) != 1 for v in query.values()):
                 raise ValueError("Unknown or repeated query parameters")
             limit = int(query.get("limit", ["50"])[0])
             offset = int(query.get("offset", ["0"])[0])
@@ -135,9 +140,9 @@ class Application:
             order_by = query["order_by"][0].split(",") if "order_by" in query else None
         except (ValueError, UnicodeError, RecursionError) as exc:
             raise HTTPError(422, "Use valid limit, offset, filters JSON, and order_by parameters") from exc
-        records = self.database.list(model, limit=limit, offset=offset, filters=filters, order_by=order_by)
+        records, total = self.database.page(model, limit=limit, offset=offset, filters=filters, order_by=order_by, search=query.get("q", [""])[0])
         return 200, {"items": [record.to_dict() for record in records],
-                     "limit": limit, "offset": offset}, []
+                     "limit": limit, "offset": offset, "total": total}, []
 
     async def _lifespan(self, receive, send):
         while True:

@@ -105,8 +105,8 @@ The existing create, list, detail, health, and schema endpoints remain available
   `items`, `limit`, and `offset` shape. Query strings are limited to 8 KiB.
 
 The neutral schema remains version 1 with additional field types and metadata.
-The Playground uses explicit forms and tables. Automatic screen generation is
-Milestone 3 work.
+The Playground now generates forms, lists, and details from the extended UI
+metadata described in [application generation](application-generation.md).
 
 ## Explicit migrations
 
@@ -182,7 +182,7 @@ bash scripts/playground.sh
 `EVLET_DATABASE` selects the file for both commands. The migration command creates
 a timestamped SQLite backup beside an existing database using SQLite's backup API,
 validates the frozen Milestone 1 definitions when necessary, and applies
-`0001_model_engine`. IDs, original values, and links stay intact. Fresh installations
+`0001_model_engine` and `0002_projects`. IDs, original values, and links stay intact. Fresh installations
 can still use `bash scripts/playground.sh --setup` directly.
 
 The Playground demonstrates active flags and notes on customers, dates/statuses

@@ -5,9 +5,9 @@ import os
 from pathlib import Path
 import sqlite3
 
-from evlet import (AddField, Boolean, Currency, Database, Date, DateTime, Decimal,
+from evlet import (AddField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
                    Link, LongText, Migration, Model, Registry, Select, Text)
-from .models import registry
+from .models import Customer, registry
 
 migrations = [Migration('0001_model_engine',
     AddField('customer', 'active', Boolean(required=True, default=True)),
@@ -17,6 +17,20 @@ migrations = [Migration('0001_model_engine',
     AddField('invoice', 'tax_rate', Decimal(scale=4, minimum='0', maximum='100', default='0.0000')),
     AddField('payment', 'received_at', DateTime()),
 )]
+
+
+class Project(Model):
+    """Frozen creation schema for the first Project table."""
+    name = Text(required=True, max_length=120)
+    customer = Link(Customer)
+    status = Select(['planned', 'active', 'done'], required=True, default='planned')
+    budget = Currency(minimum='0', default='0.00')
+    progress = Integer(minimum=0, maximum=100, default=0)
+    starts_on = Date()
+    notes = LongText()
+
+
+migrations.append(Migration('0002_projects', CreateModel(Project)))
 
 
 def legacy_registry():

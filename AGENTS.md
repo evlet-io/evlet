@@ -1,8 +1,8 @@
 # Working on Evlet
 
 Read `docs/specification.md` and `docs/architecture.md` before changing the public API.
-The current scope is Milestone 2: fields, queries, relationships, CRUD, and explicit migrations.
-Keep Milestone 1 review separate; do not implement automatic UI generation yet.
+The current scope is Milestone 3: automatic forms, lists, detail views, search, and the neutral UI schema.
+Milestones 1 and 2 are merged. Keep authentication, permissions, and other Milestone 4 work separate.
 
 - Use Python 3.12+ and Node 24. Python definitions are authoritative; frontend
   components consume a neutral schema and never appear in Python model definitions.

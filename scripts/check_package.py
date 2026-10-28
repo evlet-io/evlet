@@ -32,6 +32,12 @@ def main():
             raise RuntimeError('Installed package failed migration/update')
         if updated.count(UpdatedProduct, filters={'price__gte': '15.00'}) != 1:
             raise RuntimeError('Installed package failed query')
+        schema = updated.registry.ui_schema()
+        if schema['ui_version'] != 1 or schema['models'][0]['title_field'] != 'name':
+            raise RuntimeError('Installed package failed UI metadata')
+        records, total = updated.page(UpdatedProduct, search='installed', limit=1)
+        if total != 1 or records[0].id != item.id:
+            raise RuntimeError('Installed package failed search/count')
         updated.delete(UpdatedProduct, item.id)
     print("Installed wheel: migrations, updates, queries, deletes; import, model definition, SQLite persistence, and currency round trip passed")
 

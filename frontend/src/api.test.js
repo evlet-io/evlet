@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { ApiError, request } from './api.js'
+import { ApiError, deleteRecord, getRecord, request, updateRecord } from './api.js'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -17,4 +17,14 @@ it('reports network failures without exposing transport internals', async () => 
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('fetch failed')))
   await expect(request('/api/schema')).rejects.toBeInstanceOf(ApiError)
   await expect(request('/api/schema')).rejects.toThrow('Unable to reach the server')
+})
+
+
+it('refuses unsafe record IDs before sending a request to a rounded ID', () => {
+  const fetch = vi.fn()
+  vi.stubGlobal('fetch', fetch)
+  for (const operation of [getRecord, updateRecord, deleteRecord]) {
+    expect(() => operation('customer', 9007199254740992, {})).toThrow('record ID')
+  }
+  expect(fetch).not.toHaveBeenCalled()
 })

@@ -64,3 +64,15 @@ fieldset .muted { font-size: 11px; }
 .query-controls input, .query-controls select, .record-form select, .record-form textarea { font: inherit; padding: .65rem; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #263d34; max-width: 100%; }
 .query-controls input { min-width: 0; flex: 1 1 10rem; }
 .record-form textarea { resize: vertical; }
+
+.link-input { display: grid; gap: 6px; min-width: 0; }
+.link-search { display: flex; min-width: 0; gap: 4px; }
+.link-search input { width: 100%; min-width: 0; font: inherit; padding: .6rem; border: 1px solid #cbd5e1; border-radius: 6px; }
+.filter-row { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.filter-row > .p-inputtext, .filter-row > .link-input { width: auto; flex: 1 1 10rem; }
+.record-details { margin: 24px 0; font-size: 13px; }
+.record-details dt { margin-top: 18px; color: #68776c; }
+.record-details dd { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.record-details button { border: 0; background: none; padding: 0; color: #376e55; text-decoration: underline; text-align: left; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 640px) { nav { flex-wrap: wrap; } nav button { flex: 1 1 40%; } .query-controls { padding: 1rem; } }

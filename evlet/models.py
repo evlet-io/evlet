@@ -42,6 +42,9 @@ class ModelType(type):
 
 
 class Model(metaclass=ModelType):
+    class Meta:
+        pass
+
     def __init__(self, /, **values):
         errors = {key: "Unknown field" for key in values if key not in self.__fields__}
         cleaned = {}
@@ -95,6 +98,9 @@ class Registry:
             for field in model.__fields__.values():
                 if isinstance(field, Link) and field.target not in models:
                     raise ValueError(f"Link target for {model.__name__}.{field.name} is not registered")
+        from .metadata import view_for
+        for model in models:
+            view_for(model)
         self.models = MappingProxyType(registered)
 
     def name_for(self, model):
@@ -102,6 +108,10 @@ class Registry:
         if self.models.get(name) is not model:
             raise ValueError("Model does not belong to this registry")
         return name
+
+    def ui_schema(self):
+        from .metadata import ui_schema
+        return ui_schema(self)
 
     def schema(self):
         return {"version": 1, "models": [

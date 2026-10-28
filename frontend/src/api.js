@@ -24,9 +24,10 @@ export async function request(path, options = {}) {
 }
 
 export const getSchema = () => request('/api/schema')
-export const listRecords = (model, limit = 20, offset = 0, filters = {}, orderBy = '-id') => {
+export const listRecords = (model, limit = 20, offset = 0, filters = {}, orderBy = '-id', search = '') => {
   const query = new URLSearchParams({ limit, offset })
   if (Object.keys(filters).length) query.set('filters', JSON.stringify(filters))
+  if (search) query.set('q', search)
   if (orderBy !== '-id') query.set('order_by', orderBy)
   return request(`/api/${model}?${query}`)
 }
@@ -36,7 +37,14 @@ export const createRecord = (model, data) => request(`/api/${model}`, {
   body: JSON.stringify(data),
 })
 
-export const updateRecord = (model, id, data) => request(`/api/${model}/${id}`, {
+function recordPath(model, id) {
+  if (!Number.isSafeInteger(id) || id < 1) throw new ApiError('This record ID is outside the supported browser range. Use the Python API.')
+  return `/api/${model}/${id}`
+}
+
+export const updateRecord = (model, id, data) => request(recordPath(model, id), {
   method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
 })
-export const deleteRecord = (model, id) => request(`/api/${model}/${id}`, { method: 'DELETE' })
+export const deleteRecord = (model, id) => request(recordPath(model, id), { method: 'DELETE' })
+
+export const getRecord = (model, id) => request(recordPath(model, id))
