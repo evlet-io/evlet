@@ -55,7 +55,8 @@ do not apply HTTP permissions.
 - `POST /api/auth/setup` creates the first local administrator when explicitly enabled.
 - `POST /api/auth/login` accepts username/password and issues a new session cookie.
 - `POST /api/auth/logout` revokes the current session.
-- Admin-only `GET/POST /api/auth/users` lists or creates accounts.
+- Admin-only `GET/POST /api/auth/users` lists or creates accounts. Lists return
+  items, total, offset, and limit; use `?offset=100` for the next page of 100.
 - Admin-only `PATCH /api/auth/users/{id}` accepts role, active, or password.
 
 All API routes except session discovery, setup, and login require a session. Health

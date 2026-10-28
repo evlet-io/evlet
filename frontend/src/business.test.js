@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import SessionApp from './SessionApp.vue'
+import Accounts from './Accounts.vue'
 import App from './App.vue'
 import RecordForm from './RecordForm.vue'
 import RecordExtras from './RecordExtras.vue'
@@ -139,4 +140,22 @@ it('cancels an upload when its record changes while the file is being read', asy
   await wrapper.setProps({ record: { id: 2 } }); await flushPromises()
   resolveBytes(new Uint8Array([65]).buffer); await flushPromises()
   expect(fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
+})
+
+
+it('pages account management beyond the first hundred users', async () => {
+  const fetch = vi.fn(async path => {
+    const offset = Number(new URL(path, 'http://localhost').searchParams.get('offset'))
+    const count = offset ? 1 : 100
+    return response({ items: Array.from({ length: count }, (_, i) => ({ id: offset + i + 1, username: `user${offset + i + 1}`, role: 'viewer', active: true })), total: 101 })
+  })
+  vi.stubGlobal('fetch', fetch)
+  wrapper = mountComponent(Accounts, { currentUser: { id: 1, role: 'admin' } }); await flushPromises()
+  expect(wrapper.text()).toContain('101 accounts')
+  await button('Next accounts').trigger('click'); await flushPromises()
+  expect(fetch).toHaveBeenCalledWith('/api/auth/users?offset=100', {})
+  expect(wrapper.find('tbody').text()).toContain('user101')
+  expect(button('Next accounts').attributes('disabled')).toBeDefined()
+  await button('Previous accounts').trigger('click'); await flushPromises()
+  expect(wrapper.find('tbody tr').text()).toContain('user1')
 })

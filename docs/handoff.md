@@ -59,7 +59,7 @@ existing file first. Startup never silently changes application model tables.
 
 Local checks on 28/29 October 2026:
 
-- 163 backend tests and 42 frontend tests pass.
+- 165 backend tests and 43 frontend tests pass.
 - Production frontend, source distribution, and wheel builds pass. The existing
   bundle-size advisory remains; it is not a build failure.
 - Clean wheel installation passes import, SQLite, migration, query, UI schema,

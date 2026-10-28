@@ -309,3 +309,21 @@ def test_schema_fixtures_match_python_metadata():
     from evlet import User
     assert json.loads(Path('frontend/src/test-schema.json').read_text()) == registry.ui_schema()
     assert json.loads(Path('frontend/src/test-business-schema.json').read_text()) == create_app().business.schema(User(1, 'editor', 'editor'))
+
+
+def test_malformed_csrf_token_is_rejected_without_server_error(secured):
+    c = client(secured)
+    assert c('POST', '/api/customer', {'name': 'No'}, headers={b'x-csrf-token': b'\xff'})[0] == 403
+
+
+def test_account_listing_pages_without_exposing_passwords(secured, hashed):
+    with secured.database.transaction() as tx:
+        tx.connection.executemany("INSERT INTO evlet_users(username,password,role) VALUES (?,?,'viewer')", [(f'user{i}', hashed) for i in range(102)])
+    c = client(secured)
+    first = c('GET', '/api/auth/users')[1]
+    second = c('GET', '/api/auth/users?offset=100')[1]
+    assert len(first['items']) == 100 and len(second['items']) == 5 and second['total'] == 105
+    assert first['items'][-1]['id'] < second['items'][0]['id']
+    assert all(set(row) == {'id', 'username', 'role', 'active'} for row in second['items'])
+    for query in ('offset=-1', 'offset=x', 'offset=1&offset=2', 'other=x'):
+        assert c('GET', '/api/auth/users?' + query)[0] == 422

@@ -95,8 +95,8 @@ class LocalAuth:
         if row is None:
             raise AccessError(401, 'Sign in to continue')
         if scope['method'] not in ('GET', 'HEAD'):
-            supplied = dict(scope.get('headers', [])).get(b'x-csrf-token', b'').decode('latin1')
-            if not hmac.compare_digest(supplied, row['csrf']):
+            supplied = dict(scope.get('headers', [])).get(b'x-csrf-token', b'')
+            if not hmac.compare_digest(supplied, row['csrf'].encode('ascii')):
                 raise AccessError(403, 'Invalid request token')
         return User(row['id'], row['username'], row['role']), row['csrf']
 
@@ -178,8 +178,16 @@ class LocalAuth:
         return [self.cookie('')]
 
     def users(self):
+        return self.user_page()['items']
+
+    def user_page(self, offset=0):
+        if type(offset) is not int or not 0 <= offset <= 2**63-1:
+            raise ValidationError({'offset': 'Use a nonnegative offset'})
         with self.database._connection() as connection:
-            return [dict(row) for row in connection.execute('SELECT id,username,role,active FROM evlet_users ORDER BY id LIMIT 100')]
+            connection.execute('BEGIN')
+            items = [dict(row) for row in connection.execute('SELECT id,username,role,active FROM evlet_users ORDER BY id LIMIT 100 OFFSET ?', (offset,))]
+            total = connection.execute('SELECT count(*) FROM evlet_users').fetchone()[0]
+            return {'items': items, 'total': total, 'offset': offset, 'limit': 100}
 
     def update_user(self, user_id, body):
         if not body or set(body) - {'role', 'active', 'password'}:

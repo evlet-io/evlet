@@ -117,7 +117,7 @@ class Business:
         if path == '/api/auth/logout' and method == 'POST':
             return 204, None, self.auth.logout(scope)
         if path.startswith('/api/auth/users'):
-            return self.accounts(path, method, body, user)
+            return self.accounts(scope, body, user)
         if path == '/api/schema' and method == 'GET':
             return 200, self.schema(user), []
         parts = path.split('/')
@@ -175,12 +175,20 @@ class Business:
             result = self.detail(tx, user, record)
         return 200, result, []
 
-    def accounts(self, path, method, body, user):
+    def accounts(self, scope, body, user):
+        path, method = scope['path'], scope['method']
         if user.role != 'admin':
             raise AccessError(403, 'Administrator access required')
         if path == '/api/auth/users':
             if method == 'GET':
-                return 200, {'items': self.auth.users()}, []
+                try:
+                    query = parse_qs(scope.get('query_string', b'').decode('ascii'), keep_blank_values=True, max_num_fields=1)
+                    if set(query) - {'offset'}:
+                        raise ValueError()
+                    offset = int(query.get('offset', ['0'])[0])
+                except (ValueError, UnicodeError):
+                    raise ValidationError({'offset': 'Use a valid offset'})
+                return 200, self.auth.user_page(offset), []
             if method == 'POST':
                 return 201, self.auth.create_user(**body).public(), []
         match = re.fullmatch(r'/api/auth/users/([1-9][0-9]{0,18})', path)
