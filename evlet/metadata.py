@@ -11,10 +11,10 @@ def label_for(name):
 
 def view_for(model):
     meta = getattr(model, 'Meta', None)
-    allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields'}
+    allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout'}
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
-            raise ValueError('Model.Meta supports label, plural, description, title_field, list_fields, and search_fields')
+            raise ValueError('Model.Meta supports label, plural, description, title_field, list_fields, search_fields, and layout')
     visible = {name: field for name, field in model.__fields__.items() if not field.hidden}
     texts = [name for name, field in visible.items() if isinstance(field, Text) and not isinstance(field, LongText)]
     label = getattr(meta, 'label', label_for(model.__name__))
@@ -30,7 +30,19 @@ def view_for(model):
     for value, maximum, names in ((columns, 8, {'id', *visible}), (search, 8, {name for name, field in visible.items() if isinstance(field, Text)})):
         if not isinstance(value, (tuple, list)) or len(value) > maximum or any(not isinstance(name, str) or name not in names for name in value) or len(set(value)) != len(value):
             raise ValueError('View fields must be distinct visible field names, with at most eight entries')
-    return {'label': label, 'plural': plural, 'description': description, 'title_field': title,
+    layout = getattr(meta, 'layout', (('Details', tuple(visible)),))
+    used = []
+    groups = []
+    if not isinstance(layout, (tuple, list)) or len(layout) > 8:
+        raise ValueError('Use at most eight layout groups')
+    for group in layout:
+        if not isinstance(group, (tuple, list)) or len(group) != 2 or not isinstance(group[0], str) or not group[0] or not isinstance(group[1], (tuple, list)) or any(not isinstance(name, str) or name not in visible for name in group[1]):
+            raise ValueError('Layout groups need a label and visible field names')
+        used.extend(group[1])
+        groups.append({'label': group[0], 'fields': list(group[1])})
+    if len(set(used)) != len(used) or set(used) != set(visible):
+        raise ValueError('Layout must include every visible field exactly once')
+    return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search)}
 
 

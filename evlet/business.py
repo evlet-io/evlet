@@ -1,0 +1,343 @@
+"""Explicit actions, owned child collections, and private SQLite attachments."""
+
+import base64
+import binascii
+from dataclasses import dataclass
+import re
+from urllib.parse import parse_qs, quote
+
+from .auth import AccessError, ROLES
+from .database import Session
+from .fields import Link
+from .metadata import view_for
+from .models import ValidationError, identifier
+from .permissions import Policy
+from .query import Query
+
+
+@dataclass(frozen=True)
+class Action:
+    model: type
+    name: str
+    label: str
+    handler: object
+    roles: tuple = ('admin', 'editor')
+
+
+@dataclass(frozen=True)
+class ChildTable:
+    parent: type
+    name: str
+    model: type
+    link: str
+    label: str
+
+
+@dataclass(frozen=True)
+class Download:
+    content: bytes
+
+
+class Business:
+    def __init__(self, database, auth, *, policy=None, actions=(), children=(), attachments=()):
+        self.database, self.registry, self.auth = database, database.registry, auth
+        if auth.database is not database:
+            raise ValueError('Authentication must use the application database')
+        self.policy = policy or Policy(self.registry)
+        if self.policy.registry is not self.registry:
+            raise ValueError('Policy must use the application registry')
+        self.actions, self.children, self.child_models = {}, {}, set()
+        self.attachments = set(attachments)
+        for model in self.attachments:
+            self.registry.name_for(model)
+        for action in actions:
+            self.registry.name_for(action.model)
+            identifier(action.name)
+            if not callable(action.handler) or not action.label or set(action.roles) - set(ROLES) or (action.model, action.name) in self.actions:
+                raise ValueError('Invalid or duplicate action')
+            self.actions[action.model, action.name] = action
+        for child in children:
+            for model in (child.parent, child.model):
+                self.registry.name_for(model)
+            identifier(child.name)
+            field = child.model.__fields__.get(child.link)
+            if not isinstance(field, Link) or field.target is not child.parent or not field.required or child.model in self.child_models or child.parent is child.model or (child.parent, child.name) in self.children:
+                raise ValueError('Child tables require a unique model and required parent Link')
+            self.children[child.parent, child.name] = child
+            self.child_models.add(child.model)
+        if any(child.parent in self.child_models for child in children):
+            raise ValueError('Nested child tables are not supported')
+        if any('children' in model.__fields__ for model in self.registry.models.values()):
+            raise ValueError('children is reserved for owned collections')
+
+    def initialize(self):
+        self.auth.initialize()
+        with self.database.transaction() as tx:
+            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_attachments (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, record_id INTEGER NOT NULL, name TEXT NOT NULL, content BLOB NOT NULL)')
+            tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_attachment_owner ON evlet_attachments(model,record_id)')
+
+    def schema(self, user):
+        result = self.registry.ui_schema()
+        available = {name for name, model in self.registry.models.items() if self.policy.allows(user, model, 'read')}
+        result['models'] = [entry for entry in result['models'] if entry['name'] in available]
+        for entry in result['models']:
+            model = self.registry.models[entry['name']]
+            readable, writable = self.policy.fields(user, model), self.policy.fields(user, model, write=True)
+            entry['fields'] = [{**field, 'read_only': field['name'] not in writable} for field in entry['fields'] if field['name'] in readable]
+            entry['list_fields'] = [name for name in entry['list_fields'] if name == 'id' or name in readable]
+            entry['search_fields'] = [name for name in entry['search_fields'] if name in readable]
+            entry['layout'] = [{**group, 'fields': [name for name in group['fields'] if name in readable]} for group in entry.get('layout', [])]
+            if entry['title_field'] not in readable:
+                entry['title_field'] = 'id'
+            entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
+            entry['child_only'] = model in self.child_models
+            entry['children'] = [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label} for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
+            entry['actions'] = [{'name': action.name, 'label': action.label} for action in self.actions.values() if action.model is model and user.role in action.roles and self.policy.allows(user, model, 'update')]
+            entry['attachments'] = model in self.attachments
+        return result
+
+    def dispatch(self, scope, body):
+        path, method = scope['path'], scope['method']
+        self.auth.guard(scope)
+        if path == '/api/auth/session' and method == 'GET':
+            try:
+                user, csrf = self.auth.session(scope)
+                return 200, {'user': user.public(), 'csrf': csrf}, []
+            except AccessError as exc:
+                if exc.status != 401:
+                    raise
+                return 200, {'user': None, 'setup': self.auth.allow_setup and self.auth.setup_needed()}, []
+        if path == '/api/auth/setup' and method == 'POST':
+            self.auth.setup(scope, body)
+            return 201, {'created': True}, []
+        if path == '/api/auth/login' and method == 'POST':
+            payload, headers = self.auth.login(scope, body)
+            return 200, payload, headers
+        user, csrf = self.auth.session(scope)
+        if path == '/api/auth/logout' and method == 'POST':
+            return 204, None, self.auth.logout(scope)
+        if path.startswith('/api/auth/users'):
+            return self.accounts(scope, body, user)
+        if path == '/api/schema' and method == 'GET':
+            return 200, self.schema(user), []
+        parts = path.split('/')
+        model = self.registry.models.get(parts[2]) if len(parts) >= 3 and parts[:2] == ['', 'api'] else None
+        if model is None or model in self.child_models:
+            raise AccessError(404, 'Route not found')
+        if len(parts) == 3 and method == 'GET':
+            return self.page(scope, user, model)
+        if len(parts) == 3 and method == 'POST':
+            with self.database.transaction() as tx:
+                self.policy.require(user, model, 'create')
+                values, children = self.split_body(body)
+                self.policy.check_values(tx, user, model, values)
+                record = tx.create(model, **values)
+                self.policy.record(tx, user, model, record.id, 'create')
+                self.save_children(tx, user, record, children)
+                result = self.detail(tx, user, record)
+            return 201, result, [(b'location', f'/api/{parts[2]}/{record.id}'.encode())]
+        if len(parts) < 4 or not re.fullmatch(r'[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1:
+            raise AccessError(404, 'Record not found')
+        record_id = int(parts[3])
+        if len(parts) >= 5 and parts[4] == 'attachments':
+            return self.files(user, model, record_id, parts[5:], method, body)
+        if len(parts) == 6 and parts[4] == 'actions' and method == 'POST':
+            action = self.actions.get((model, parts[5]))
+            if action is None or user.role not in action.roles:
+                raise AccessError(403, 'Action is unavailable')
+            if body:
+                raise ValidationError({'_form': 'This action takes no arguments'})
+            with self.database.transaction() as tx:
+                record = self.policy.record(tx, user, model, record_id, 'update')
+                action.handler(tx, user, record)
+                record = self.policy.record(tx, user, model, record_id)
+                result = self.detail(tx, user, record)
+            return 200, result, []
+        if len(parts) != 4 or method not in ('GET', 'PATCH', 'DELETE'):
+            raise AccessError(405, 'Method not allowed')
+        with self.database.transaction() as tx:
+            record = self.policy.record(tx, user, model, record_id, {'GET': 'read', 'PATCH': 'update', 'DELETE': 'delete'}[method])
+            if method == 'DELETE':
+                for child in self.children.values():
+                    if child.parent is model:
+                        for row in tx.list(child.model, filters={child.link: record_id}, limit=100):
+                            self.policy.record(tx, user, child.model, row.id, 'delete')
+                            tx.delete(child.model, row.id)
+                tx.delete(model, record_id)
+                tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (parts[2], record_id))
+                return 204, None, []
+            if method == 'PATCH':
+                values, children = self.split_body(body)
+                self.policy.check_values(tx, user, model, values)
+                record = tx.update(model, record_id, **values)
+                self.policy.record(tx, user, model, record_id, 'update')
+                self.save_children(tx, user, record, children)
+            result = self.detail(tx, user, record)
+        return 200, result, []
+
+    def accounts(self, scope, body, user):
+        path, method = scope['path'], scope['method']
+        if user.role != 'admin':
+            raise AccessError(403, 'Administrator access required')
+        if path == '/api/auth/users':
+            if method == 'GET':
+                try:
+                    query = parse_qs(scope.get('query_string', b'').decode('ascii'), keep_blank_values=True, max_num_fields=1)
+                    if set(query) - {'offset'}:
+                        raise ValueError()
+                    offset = int(query.get('offset', ['0'])[0])
+                except (ValueError, UnicodeError):
+                    raise ValidationError({'offset': 'Use a valid offset'})
+                return 200, self.auth.user_page(offset), []
+            if method == 'POST':
+                return 201, self.auth.create_user(**body).public(), []
+        match = re.fullmatch(r'/api/auth/users/([1-9][0-9]{0,18})', path)
+        if match and method == 'PATCH' and int(match[1]) <= 2**63-1:
+            self.auth.update_user(int(match[1]), body)
+            return 204, None, []
+        raise AccessError(405, 'Method not allowed')
+
+    @staticmethod
+    def split_body(body):
+        values = dict(body)
+        children = values.pop('children', {})
+        if not isinstance(children, dict):
+            raise ValidationError({'children': 'Use an object of child collections'})
+        return values, children
+
+    def save_children(self, tx, user, parent, collections):
+        try:
+            self._save_children(tx, user, parent, collections)
+        except ValidationError as exc:
+            raise ValidationError({'children': str(exc)}) from exc
+
+    def _save_children(self, tx, user, parent, collections):
+        for name, rows in collections.items():
+            child = self.children.get((type(parent), name))
+            if child is None or not isinstance(rows, list) or len(rows) > 100:
+                raise ValidationError({'children': 'Use a known child collection with at most 100 rows'})
+            if tx.count(child.model, filters={child.link: parent.id}) > 100:
+                raise ValidationError({'children': 'This collection exceeds the 100-row editor limit'})
+            existing = {row.id: row for row in tx.list(child.model, filters={child.link: parent.id}, limit=100)}
+            kept = set()
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise ValidationError({'children': 'Each child must be an object'})
+                values = dict(row)
+                row_id = values.pop('id', None)
+                if child.link in values:
+                    raise AccessError(403, 'The parent link is managed by the collection')
+                self.policy.check_values(tx, user, child.model, values)
+                if row_id is not None:
+                    if type(row_id) is not int or row_id not in existing or row_id in kept:
+                        raise ValidationError({'children': 'Child ID must belong to this parent and appear once'})
+                    self.policy.record(tx, user, child.model, row_id, 'update' if values else 'read')
+                    if values:
+                        tx.update(child.model, row_id, **values)
+                        self.policy.record(tx, user, child.model, row_id, 'update')
+                    kept.add(row_id)
+                else:
+                    self.policy.require(user, child.model, 'create')
+                    added = tx.create(child.model, **{**values, child.link: parent.id})
+                    self.policy.record(tx, user, child.model, added.id, 'create')
+            for row_id in existing.keys() - kept:
+                self.policy.record(tx, user, child.model, row_id, 'delete')
+                tx.delete(child.model, row_id)
+
+    def detail(self, tx, user, record):
+        result = self.policy.serialize(tx, user, record)
+        children = {}
+        for child in self.children.values():
+            if child.parent is not type(record) or not self.policy.allows(user, child.model, 'read'):
+                continue
+            if tx.count(child.model, filters={child.link: record.id}) > 100:
+                raise ValidationError({'children': 'This collection exceeds the 100-row editor limit'})
+            rows = tx.list(child.model, filters={child.link: record.id}, limit=100, order_by=('id',))
+            children[child.name] = []
+            for row in rows:
+                try:
+                    self.policy.record(tx, user, child.model, row.id)
+                except AccessError:
+                    continue
+                value = self.policy.serialize(tx, user, row)
+                value.pop(child.link, None)
+                children[child.name].append(value)
+        if children:
+            result['children'] = children
+        return result
+
+    def page(self, scope, user, model):
+        self.policy.require(user, model, 'read')
+        try:
+            raw = scope.get('query_string', b'')
+            if len(raw) > 8192:
+                raise ValueError()
+            query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=10)
+            if set(query) - {'limit', 'offset', 'filters', 'order_by', 'q'} or any(len(values) != 1 for values in query.values()):
+                raise ValueError()
+            import json
+            filters = json.loads(query.get('filters', ['{}'])[0])
+            order = query.get('order_by', ['-id'])[0].split(',')
+            limit, offset = int(query.get('limit', ['50'])[0]), int(query.get('offset', ['0'])[0])
+            if not isinstance(filters, dict) or not 1 <= limit <= 100 or not 0 <= offset <= 2**63-1:
+                raise ValueError()
+        except (ValueError, UnicodeError, RecursionError):
+            raise ValidationError({'query': 'Invalid query parameters'})
+        self.policy.query_fields(user, model, filters, order)
+        compiler = Query(self.registry, model)
+        readable = self.policy.fields(user, model)
+        search_fields = [name for name in view_for(model)['search_fields'] if name in readable]
+        where, values = compiler.where(filters, query.get('q', [''])[0], search_fields=search_fields)
+        scoped, parameters = self.policy.scope_sql(user, model)
+        if scoped:
+            where += (' AND ' if where else ' WHERE ') + scoped.removeprefix(' WHERE ')
+            values.extend(parameters)
+        ordering = compiler.ordering(order)
+        table = identifier(self.registry.name_for(model))
+        with self.database._connection() as connection:
+            connection.execute('BEGIN')
+            tx = Session(connection, self.registry)
+            rows = connection.execute(f'SELECT record.* FROM {table} AS record{where}{ordering} LIMIT ? OFFSET ?', [*values, limit, offset]).fetchall()
+            total = connection.execute(f'SELECT count(*) FROM {table} AS record{where}', values).fetchone()[0]
+            items = [self.policy.serialize(tx, user, model._from_row(row)) for row in rows]
+        return 200, {'items': items, 'total': total, 'limit': limit, 'offset': offset}, []
+
+    def files(self, user, model, record_id, tail, method, body):
+        if model not in self.attachments or len(tail) > 1:
+            raise AccessError(404, 'Attachments unavailable')
+        file_id = None
+        if tail:
+            if not re.fullmatch(r'[1-9][0-9]{0,18}', tail[0]) or int(tail[0]) > 2**63-1:
+                raise AccessError(404, 'Attachment not found')
+            file_id = int(tail[0])
+        name = self.registry.name_for(model)
+        with self.database.transaction() as tx:
+            self.policy.record(tx, user, model, record_id, 'read' if method == 'GET' else 'update')
+            args = (name, record_id)
+            if method == 'GET' and file_id is None:
+                rows = tx.connection.execute('SELECT id,name,length(content) AS size FROM evlet_attachments WHERE model=? AND record_id=? ORDER BY id', args)
+                return 200, {'items': [dict(row) for row in rows]}, []
+            if method == 'POST' and file_id is None:
+                filename = body.get('name')
+                if set(body) != {'name', 'content'} or not isinstance(filename, str) or not 1 <= len(filename) <= 180 or any(ord(c) < 32 or c in '/\\' for c in filename):
+                    raise ValidationError({'attachment': 'Use a filename without paths or control characters'})
+                try:
+                    content = base64.b64decode(body['content'], validate=True)
+                    filename.encode('utf-8')
+                except (ValueError, TypeError, binascii.Error, UnicodeError):
+                    raise ValidationError({'attachment': 'Invalid file encoding'})
+                if not 1 <= len(content) <= 1024 * 1024:
+                    raise ValidationError({'attachment': 'Use a nonempty file up to 1 MiB'})
+                if tx.connection.execute('SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=?', args).fetchone()[0] >= 10:
+                    raise ValidationError({'attachment': 'Use at most 10 attachments per record'})
+                file_id = tx.connection.execute('INSERT INTO evlet_attachments(model,record_id,name,content) VALUES (?,?,?,?)', (*args, filename, content)).lastrowid
+                return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []
+            row = tx.connection.execute('SELECT * FROM evlet_attachments WHERE model=? AND record_id=? AND id=?', (*args, file_id)).fetchone()
+            if row is None:
+                raise AccessError(404, 'Attachment not found')
+            if method == 'GET':
+                return 200, Download(row['content']), [(b'content-type', b'application/octet-stream'), (b'content-disposition', ("attachment; filename*=UTF-8''" + quote(row['name'], safe='')).encode()), (b'content-security-policy', b"default-src 'none'; sandbox")]
+            if method == 'DELETE':
+                tx.connection.execute('DELETE FROM evlet_attachments WHERE id=?', (file_id,))
+                return 204, None, []
+        raise AccessError(405, 'Method not allowed')

@@ -8,6 +8,8 @@ from urllib.parse import parse_qs
 
 from .database import ConflictError, NotFoundError
 from .models import ValidationError
+from .auth import AccessError
+from .business import Business, Download
 
 logger = logging.getLogger(__name__)
 MAX_BODY_BYTES = 64 * 1024
@@ -21,9 +23,12 @@ class HTTPError(Exception):
 
 
 class Application:
-    def __init__(self, database):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=()):
         self.database = database
         self.registry = database.registry
+        if auth is None and (policy is not None or actions or children or attachments):
+            raise ValueError("Business features require authentication")
+        self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -47,8 +52,9 @@ class Application:
                     if event["type"] == "http.disconnect":
                         return
                     data.extend(event.get("body", b""))
-                    if len(data) > MAX_BODY_BYTES:
-                        raise HTTPError(413, "Request body exceeds 64 KiB")
+                    maximum = 1500000 if self.business and scope['path'].endswith('/attachments') else MAX_BODY_BYTES
+                    if len(data) > maximum:
+                        raise HTTPError(413, "Request body exceeds the allowed size")
                     if not event.get("more_body", False):
                         break
                 try:
@@ -58,6 +64,8 @@ class Application:
                 if not isinstance(body, dict):
                     raise HTTPError(422, "Expected a JSON object")
             status, payload, headers = await asyncio.to_thread(self._dispatch, scope, body)
+        except AccessError as exc:
+            status, payload = exc.status, {"error": exc.message}
         except HTTPError as exc:
             status, payload, headers = exc.status, {"error": exc.message}, list(exc.headers)
         except ValidationError as exc:
@@ -72,11 +80,13 @@ class Application:
         except Exception:
             logger.exception("Unhandled request failure")
             status, payload = 500, {"error": "Internal server error"}
-        encoded = b"" if status == 204 else json.dumps(payload, ensure_ascii=True, allow_nan=False).encode("utf-8")
+        download = isinstance(payload, Download)
+        encoded = payload.content if download else b"" if status == 204 else json.dumps(payload, ensure_ascii=True, allow_nan=False).encode("utf-8")
         response_headers = [(b"x-content-type-options", b"nosniff"), (b"cache-control", b"no-store"), *headers]
         if status != 204:
-            response_headers.extend([(b"content-type", b"application/json; charset=utf-8"),
-                                     (b"content-length", str(len(encoded)).encode())])
+            if not download:
+                response_headers.append((b"content-type", b"application/json; charset=utf-8"))
+            response_headers.append((b"content-length", str(len(encoded)).encode()))
         await send({"type": "http.response.start", "status": status, "headers": response_headers})
         await send({"type": "http.response.body", "body": encoded})
 
@@ -97,6 +107,8 @@ class Application:
             self._method(method, ["GET"])
             self.database.check()
             return 200, {"status": "ok"}, []
+        if self.business:
+            return self.business.dispatch(scope, body)
         if path == "/api/schema":
             self._method(method, ["GET"])
             return 200, self.registry.ui_schema(), []
@@ -150,6 +162,8 @@ class Application:
             if event["type"] == "lifespan.startup":
                 try:
                     await asyncio.to_thread(self.database.initialize)
+                    if self.business:
+                        await asyncio.to_thread(self.business.initialize)
                 except Exception:
                     logger.exception("Database initialization failed")
                     await send({"type": "lifespan.startup.failed", "message": "Database initialization failed"})

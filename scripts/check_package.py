@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 
 import evlet
-from evlet import AddField, Boolean, Currency, Database, Migration, Model, Registry, Text
+from evlet import AddField, Application, Boolean, Currency, Database, LocalAuth, Migration, Model, Registry, Text, User
 
 
 def main():
@@ -38,6 +38,12 @@ def main():
         records, total = updated.page(UpdatedProduct, search='installed', limit=1)
         if total != 1 or records[0].id != item.id:
             raise RuntimeError('Installed package failed search/count')
+        auth = LocalAuth(updated, origins=('https://app.example.test',))
+        app = Application(updated, auth=auth, attachments=(UpdatedProduct,))
+        app.business.initialize()
+        protected = app.business.schema(User(1, 'viewer', 'viewer'))
+        if protected['models'][0]['permissions']['update']:
+            raise RuntimeError('Installed package failed permission metadata')
         updated.delete(UpdatedProduct, item.id)
     print("Installed wheel: migrations, updates, queries, deletes; import, model definition, SQLite persistence, and currency round trip passed")
 

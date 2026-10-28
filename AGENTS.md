@@ -1,8 +1,10 @@
 # Working on Evlet
 
 Read `docs/specification.md` and `docs/architecture.md` before changing the public API.
-The current scope is Milestone 3: automatic forms, lists, detail views, search, and the neutral UI schema.
-Milestones 1 and 2 are merged. Keep authentication, permissions, and other Milestone 4 work separate.
+The current scope is Milestone 4: local accounts, permissions, actions, child tables,
+private attachments, transactions, and grouped layouts. Milestones 1 through 3 are
+merged. Keep tenant routing, hosting, and Milestone 5 work separate.
+Read `docs/business-capabilities.md` for the public APIs and permission boundaries.
 
 - Use Python 3.12+ and Node 24. Python definitions are authoritative; frontend
   components consume a neutral schema and never appear in Python model definitions.
@@ -15,8 +17,9 @@ Milestones 1 and 2 are merged. Keep authentication, permissions, and other Miles
   core, SQLite integration, and ASGI interface.
 - Parameterize SQL values and validate SQL identifiers. Validate on the backend.
   Preserve transaction boundaries, exact currency values, and foreign keys.
-- This milestone has no authentication, permissions, or tenant isolation. Bind
-  development servers to loopback. Do not describe it as production ready.
+- Keep the Playground authenticated and development servers on loopback. Backend
+  permission checks cover all HTTP surfaces. Python sessions and action handlers
+  are trusted code. Do not describe the application as production ready.
 - Add meaningful tests for features and regressions. Run `.venv/bin/python -m
   pytest`, then `npm test` and `npm run build` in `frontend/`. Verify package build
   and installation when changing packaging. Never substitute mocks for SQLite.

@@ -6,12 +6,14 @@ import DataTable from 'primevue/datatable'
 import Message from 'primevue/message'
 import RecordForm from './RecordForm.vue'
 import RecordDetail from './RecordDetail.vue'
+import RecordExtras from './RecordExtras.vue'
 import QueryControls from './QueryControls.vue'
 import { createRecord, deleteRecord, getRecord, getSchema, listRecords, updateRecord } from './api.js'
 import { fieldFor, formatValue, recordLabel, validateSchema, visibleFields } from './schema.js'
 
 const sections = ref([]), active = ref(null)
 const section = computed(() => sections.value.find(item => item.name === active.value))
+const navigation = computed(() => sections.value.filter(item => !item.child_only))
 const editing = ref(null), detail = ref(null), deleting = ref(null)
 const query = ref({ search: '', filters: {}, orderBy: '-id' })
 const rows = ref([]), labels = ref({}), offset = ref(0), total = ref(0)
@@ -64,7 +66,7 @@ async function connect() {
   error.value = ''; loading.value = true
   try {
     sections.value = validateSchema(await getSchema())
-    active.value = sections.value[0]?.name || null
+    active.value = navigation.value[0]?.name || null
     connected.value = true
     await loadPage()
   } catch (failure) { connected.value = false; loading.value = false; error.value = failure.message }
@@ -128,6 +130,7 @@ async function remove() {
   finally { saving.value = false }
 }
 async function applyQuery(value) { if (busy.value) return; query.value = value; offset.value = 0; await loadPage() }
+async function updated(record) { detail.value = record; await loadPage() }
 onMounted(connect)
 onBeforeUnmount(() => { generation++; recordGeneration++ })
 </script>
@@ -138,7 +141,7 @@ onBeforeUnmount(() => { generation++; recordGeneration++ })
       <a class="brand" href="/" aria-label="Evlet home"><span class="brand-mark">e</span>evlet<span class="brand-dot">.</span></a>
       <div class="workspace-label">PLAYGROUND <span>01</span></div>
       <nav aria-label="Records">
-        <button v-for="item in sections" :key="item.name" type="button" :class="{ active: active === item.name }" :aria-current="active === item.name ? 'page' : undefined" :disabled="saving" @click="select(item.name)">
+        <button v-for="item in navigation" :key="item.name" type="button" :class="{ active: active === item.name }" :aria-current="active === item.name ? 'page' : undefined" :disabled="saving" @click="select(item.name)">
           <span class="nav-mark">{{ String(sections.indexOf(item) + 1).padStart(2, '0') }}</span>{{ item.plural }}<svg class="nav-arrow" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M4 12 12 4M4 4h8v8" /></svg>
         </button>
       </nav>
@@ -166,8 +169,8 @@ onBeforeUnmount(() => { generation++; recordGeneration++ })
               <Column v-for="name in section.list_fields" :key="name" :field="name" :header="fieldFor(section, name).label"><template #body="{ data }">{{ formatValue(fieldFor(section, name), data[name], labels) }}</template></Column>
               <Column header="Actions"><template #body="{ data }">
                 <Button label="View" text size="small" :aria-label="`View ${active} ${data.id}`" :disabled="busy" @click="openRecord(data.id)" />
-                <Button label="Edit" text size="small" :aria-label="`Edit ${active} ${data.id}`" :disabled="busy" @click="openRecord(data.id, 'edit')" />
-                <Button label="Delete" text severity="danger" size="small" :aria-label="`Delete ${active} ${data.id}`" :disabled="busy" @click="deleting = data" />
+                <Button v-if="section.permissions?.update !== false" label="Edit" text size="small" :aria-label="`Edit ${active} ${data.id}`" :disabled="busy" @click="openRecord(data.id, 'edit')" />
+                <Button v-if="section.permissions?.delete !== false" label="Delete" text severity="danger" size="small" :aria-label="`Delete ${active} ${data.id}`" :disabled="busy" @click="deleting = data" />
               </template></Column>
               <template #empty><div v-if="!loading && !error" class="empty-state"><span class="empty-symbol" aria-hidden="true">+</span><h3>{{ query.search || Object.keys(query.filters).length ? 'No matching records.' : `Your first ${section.label.toLowerCase()} starts here.` }}</h3><p>Add a record using the form, or change your search and filters.</p></div></template>
             </DataTable>
@@ -175,7 +178,8 @@ onBeforeUnmount(() => { generation++; recordGeneration++ })
           </section>
           <aside class="form-card">
             <RecordDetail v-if="detail" :model="section" :record="detail" :labels="labels" :disabled="busy" @edit="openRecord($event.id, 'edit')" @close="detail = null" @follow="follow" />
-            <RecordForm v-else :key="active" :model="section" :models="sections" :errors="errors" :busy="saving" :disabled="loading || reading || !connected" :reset-key="resetKey" :record="editing" @save="save" @cancel="cancelEdit" />
+            <RecordForm v-else-if="editing ? section.permissions?.update !== false : section.permissions?.create !== false" :key="active" :model="section" :models="sections" :errors="errors" :busy="saving" :disabled="loading || reading || !connected" :reset-key="resetKey" :record="editing" @save="save" @cancel="cancelEdit" />
+            <RecordExtras v-if="detail" :key="`${active}:${detail.id}`" :model="section" :models="sections" :record="detail" :disabled="loading || reading" @updated="updated" @busy="saving = $event" />
           </aside>
         </div>
         <footer class="page-footer"><span>Small steps. Everything connected.</span><span>EVLET · 0.1</span></footer>

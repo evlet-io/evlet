@@ -96,9 +96,9 @@ for attempt in range(100):
     try:
         with urlopen('http://127.0.0.1:5173/health', timeout=1) as response:
             healthy = json.load(response) == {'status': 'ok'}
-        with urlopen('http://127.0.0.1:5173/api/schema', timeout=1) as response:
-            schema = json.load(response)
-        if healthy and schema.get('version') == 1:
+        with urlopen('http://127.0.0.1:5173/api/auth/session', timeout=1) as response:
+            session = json.load(response)
+        if healthy and 'user' in session:
             break
     except (OSError, ValueError):
         pass

@@ -324,10 +324,11 @@ describe('Generated applications', () => {
       { ...device.fields[0], name: 'website', label: 'Website', type: 'url', required: false },
       { ...device.fields[0], name: 'confirmed', label: 'Confirmed', type: 'boolean', required: false },
     ]
+    delete device.layout
     schema.models.push(device)
     const { fetch } = setup({ schema, extra: { device: [] } })
     await flushPromises()
-    await wrapper.findAll('nav button')[4].trigger('click')
+    await wrapper.findAll('nav button').find(item => item.text().includes('Equipment')).trigger('click')
     await flushPromises()
     expect(wrapper.find('h1').text()).toBe('Equipment')
     expect(wrapper.find('#internal').exists()).toBe(false)

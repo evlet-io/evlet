@@ -2,7 +2,7 @@ import { createApp } from 'vue'
 import PrimeVue from 'primevue/config'
 import Aura from '@primeuix/themes/aura'
 import { definePreset } from '@primeuix/themes'
-import App from './App.vue'
+import App from './SessionApp.vue'
 import './style.css'
 
 const theme = definePreset(Aura, {

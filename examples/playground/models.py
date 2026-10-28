@@ -42,14 +42,26 @@ class Project(Model):
     class Meta:
         description = "Track a small project and its customer."
         list_fields = ('name', 'customer', 'status', 'budget')
+        layout = (('Project', ('name', 'customer', 'status')), ('Planning', ('budget', 'progress', 'starts_on')), ('Notes', ('notes',)))
 
     name = Text(required=True, max_length=120)
     customer = Link(Customer)
-    status = Select(['planned', 'active', 'done'], required=True, default='planned')
+    status = Select(['planned', 'active', 'done'], required=True, default='planned', read_only=True)
     budget = Currency(minimum='0', default='0.00')
     progress = Integer(minimum=0, maximum=100, default=0, label='Progress (%)')
     starts_on = Date()
     notes = LongText()
 
 
-registry = Registry(Customer, Invoice, Payment, Project)
+class ProjectTask(Model):
+    class Meta:
+        label = 'Project task'
+        plural = 'Project tasks'
+        list_fields = ('title', 'done')
+
+    project = Link(Project, required=True, index=True)
+    title = Text(required=True, max_length=160)
+    done = Boolean(required=True, default=False)
+
+
+registry = Registry(Customer, Invoice, Payment, Project, ProjectTask)
