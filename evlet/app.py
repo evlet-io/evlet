@@ -72,7 +72,7 @@ class Application:
         except Exception:
             logger.exception("Unhandled request failure")
             status, payload = 500, {"error": "Internal server error"}
-        encoded = b"" if status == 204 else json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        encoded = b"" if status == 204 else json.dumps(payload, ensure_ascii=True, allow_nan=False).encode("utf-8")
         response_headers = [(b"x-content-type-options", b"nosniff"), (b"cache-control", b"no-store"), *headers]
         if status != 204:
             response_headers.extend([(b"content-type", b"application/json; charset=utf-8"),

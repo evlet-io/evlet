@@ -143,7 +143,7 @@ class Decimal(Field):
             with localcontext(Context(prec=40)) as context:
                 context.prec = 40
                 amount = DecimalValue(value)
-                if not amount.is_finite() or abs(amount) > DecimalValue(MAX_INTEGER).scaleb(-self.scale):
+                if not amount.is_finite() or amount.copy_abs() > DecimalValue(MAX_INTEGER).scaleb(-self.scale):
                     raise ValueError("Decimal is outside the supported range")
                 rounded = amount.quantize(DecimalValue(1).scaleb(-self.scale))
                 if rounded != amount:
