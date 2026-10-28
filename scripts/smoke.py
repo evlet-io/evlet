@@ -33,8 +33,8 @@ def main():
 
     check(request("/health") == {"status": "ok"}, "Health check failed")
     schema = request("/api/schema")
-    check(schema["version"] == 1, "Unexpected schema version")
-    check({item["name"] for item in schema["models"]} == {"customer", "invoice", "payment"}, "Missing Playground models")
+    check(schema["version"] == 1 and schema["ui_version"] == 1, "Unexpected schema version")
+    check({item["name"] for item in schema["models"]} == {"customer", "invoice", "payment", "project"}, "Missing Playground models")
     suffix = uuid4().hex[:12]
     customer = request("/api/customer", {"name": f"Smoke {suffix}"}, 201)
     invoice = request("/api/invoice", {
@@ -56,12 +56,22 @@ def main():
     check(updated['total'] == '124.56' and updated['tax_rate'] == '5.1234', 'Update lost precision')
     query = urlencode({'filters': json.dumps({'invoice__customer__name': customer['name']}), 'order_by': 'amount'})
     check(request('/api/payment?' + query)['items'][0]['id'] == payment['id'], 'Relationship query failed')
+    project = request('/api/project', {'name': f'Project {suffix}', 'customer': customer['id'], 'budget': '5000.55'}, 201)
+    check(project['status'] == 'planned' and project['progress'] == 0, 'Generated form defaults failed')
+    view = next(model for model in schema['models'] if model['name'] == 'project')
+    check(view['title_field'] == 'name' and 'budget' in view['list_fields'], 'Missing generated view metadata')
+    project = request(f'/api/project/{project["id"]}', {'progress': 30, 'notes': 'Partial update'}, method='PATCH')
+    check(project['budget'] == '5000.55' and project['progress'] == 30, 'Partial project update lost data')
+    request(f'/api/project/{project["id"]}', {'progress': 101}, 422, 'PATCH')
+    page = request('/api/project?' + urlencode({'q': suffix, 'filters': json.dumps({'progress__gte': 30}), 'limit': 1}))
+    check(page['total'] == 1 and page['items'][0]['id'] == project['id'], 'Search, filter, or count failed')
+    request(f'/api/project/{project["id"]}', expected=204, method='DELETE')
     request(f'/api/customer/{customer["id"]}', expected=409, method='DELETE')
     request(f'/api/payment/{payment["id"]}', expected=204, method='DELETE')
     request(f'/api/invoice/{invoice["id"]}', expected=204, method='DELETE')
     request(f'/api/customer/{customer["id"]}', expected=204, method='DELETE')
     request(f'/api/customer/{customer["id"]}', expected=404)
-    print("Live smoke passed: updates, typed fields, relationship queries, protected deletes, cleanup; health, schema, Customer → Invoice → Payment, reads, pagination, validation, foreign keys")
+    print("Live smoke passed: generated metadata, Project CRUD, search/filter/count; updates, typed fields, relationship queries, protected deletes, cleanup; health, schema, Customer → Invoice → Payment, reads, pagination, validation, foreign keys")
 
 
 if __name__ == "__main__":

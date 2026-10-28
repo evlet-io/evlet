@@ -1,9 +1,9 @@
 # Evlet
 
 A small Python application framework for business applications. This repository
-implements **Milestone 2**: typed models, real SQLite persistence, queries,
-updates/deletes, explicit migrations, and a Vue 3/PrimeVue Playground for
-Customer → Invoice → Payment.
+implements **Milestone 3**: generated forms, lists, details, and search, backed by
+typed models, SQLite persistence, queries, CRUD, and explicit migrations. The
+Vue 3/PrimeVue Playground includes Customer, Invoice, Payment, and Project.
 
 Python model definitions remain authoritative. The core has **zero third-party
 runtime dependencies**. No database server, Redis, Docker, or worker is required.
@@ -19,7 +19,7 @@ brew install git python@3.12 node@24
 Then, in Terminal:
 
 ```bash
-git clone --branch codex/milestone-2-model-engine https://github.com/dxb-aslam/evlet.git
+git clone --branch codex/milestone-3-app-generation https://github.com/dxb-aslam/evlet.git
 cd evlet
 bash scripts/playground.sh --setup
 ```
@@ -39,7 +39,7 @@ occupied, the launcher exits without stopping any existing service. Linux can
 use the same launcher with Python and Node already installed. Set
 `EVLET_OPEN_BROWSER=0` for noninteractive validation.
 
-For a database created with Milestone 1, stop the launcher and run
+For an existing Milestone 1 or 2 database, stop the launcher and run
 `.venv/bin/python -m examples.playground.migrate` before restarting it. This creates
 a backup and preserves existing records. See the [model engine guide](docs/model-engine.md)
 for the API, migration operations, and current limits.
@@ -176,14 +176,15 @@ This is a development preview, not a deployment recipe.
 - Currency has two decimal places and no currency-code conversion. The Playground
   is a persistence example, not a ledger or payment processor.
 - Email is a bounded text field; browser email validation is convenience only.
-- Lists are paginated on the server. Relationship selectors show the latest 100
-  candidates; searchable server-side relationship queries are deferred.
-- Frontend forms are explicit; the general metadata-driven renderer is deferred.
+- Lists, counts, search, filters, and relationship choices use bounded server queries.
+  Text search uses SQLite ASCII case folding. Browser integer actions require safe integers.
+- Forms, lists, and details are generated from renderer-neutral Python metadata.
   Full PrimeVue controls and the theme currently produce a JavaScript bundle above
   Vite's 500 kB advisory threshold. The build succeeds; bundle optimization is
   follow-up work. No performance or scalability guarantees are claimed.
 
 Read [architecture decisions](docs/architecture.md), the [full specification](docs/specification.md),
 and [agent instructions](AGENTS.md). The [model engine guide](docs/model-engine.md)
-covers Milestone 2. The next milestone is automatic forms, lists, and views from
-the neutral schema.
+covers the model engine. See [application generation](docs/application-generation.md)
+for Milestone 3 metadata, defaults, generated screens, and upgrade instructions.
+The next milestone is authentication, roles, permissions, and business capabilities.

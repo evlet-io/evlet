@@ -13,13 +13,22 @@ class Field:
     kind = "field"
     sql_type = "TEXT"
 
-    def __init__(self, *, required=False, default=MISSING, unique=False, index=False, validator=None):
+    def __init__(self, *, required=False, default=MISSING, unique=False, index=False, validator=None,
+                 label=None, help_text="", placeholder="", hidden=False, read_only=False):
         self.required = required
         self.default = default
         self.unique = unique
         self.index = index
         self.validator = validator
         self.name = ""
+        if label is not None and (not isinstance(label, str) or not label):
+            raise ValueError("label must be nonempty text")
+        if not isinstance(help_text, str) or not isinstance(placeholder, str):
+            raise ValueError("Field help and placeholder must be text")
+        if type(hidden) is not bool or type(read_only) is not bool:
+            raise ValueError("hidden and read_only must be booleans")
+        self.label, self.help_text, self.placeholder = label, help_text, placeholder
+        self.hidden, self.read_only = hidden, read_only
 
     def __set_name__(self, owner, name):
         if self.name and self.name != name:

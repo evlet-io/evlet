@@ -48,9 +48,9 @@ class Query:
             field.maximum = None
         return field.to_storage(field.clean(value))
 
-    def where(self, filters):
+    def where(self, filters, search=""):
         if filters is None:
-            return '', []
+            filters = {}
         if not isinstance(filters, dict) or len(filters) > 20:
             raise ValidationError({'filters': 'Use an object with at most 20 filters'})
         clauses, values = [], []
@@ -92,6 +92,22 @@ class Query:
                     values.append(self.value(field, value))
             except (ValueError, TypeError, UnicodeError) as exc:
                 raise ValidationError({str(key): str(exc)}) from exc
+        try:
+            if not isinstance(search, str) or len(search) > 200:
+                raise ValueError('Use search text of at most 200 characters')
+            search.encode('utf-8')
+            search = search.strip()
+            if search:
+                from .metadata import view_for
+                matches = ['CAST("record"."id" AS TEXT) = ?']
+                values.append(search.removeprefix('#'))
+                for name in view_for(self.model)['search_fields']:
+                    column, _ = self.reference(name)
+                    matches.append(f'instr(lower({column}), lower(?)) > 0')
+                    values.append(search)
+                clauses.append('(' + ' OR '.join(matches) + ')')
+        except (ValueError, UnicodeError) as exc:
+            raise ValidationError({'q': str(exc)}) from exc
         return (' WHERE ' + ' AND '.join(clauses)) if clauses else '', values
 
     def ordering(self, order_by):

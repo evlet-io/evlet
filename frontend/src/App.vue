@@ -1,158 +1,135 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Message from 'primevue/message'
 import RecordForm from './RecordForm.vue'
-import { createRecord, deleteRecord, getSchema, listRecords, updateRecord } from './api.js'
+import RecordDetail from './RecordDetail.vue'
+import QueryControls from './QueryControls.vue'
+import { createRecord, deleteRecord, getRecord, getSchema, listRecords, updateRecord } from './api.js'
+import { fieldFor, formatValue, recordLabel, validateSchema, visibleFields } from './schema.js'
 
-const sections = [
-  { name: 'customer', title: 'Customers', mark: '01', description: 'Good work starts with good relationships.' },
-  { name: 'invoice', title: 'Invoices', mark: '02', description: 'Keep each piece of work connected to a customer.' },
-  { name: 'payment', title: 'Payments', mark: '03', description: 'Record payments and the invoices they belong to.' },
-]
-const editing = ref(null)
-const deleting = ref(null)
-const search = ref('')
-const appliedSearch = ref('')
-const orderBy = ref('-id')
-const active = ref('customer')
-const section = computed(() => sections.find(item => item.name === active.value))
-const rows = ref([])
-const choices = ref([])
-const offset = ref(0)
-const loading = ref(true)
-const saving = ref(false)
-const error = ref('')
-const success = ref('')
-const errors = ref({})
-const resetKey = ref(0)
-const connected = ref(false)
-let generation = 0
+const sections = ref([]), active = ref(null)
+const section = computed(() => sections.value.find(item => item.name === active.value))
+const editing = ref(null), detail = ref(null), deleting = ref(null)
+const query = ref({ search: '', filters: {}, orderBy: '-id' })
+const rows = ref([]), labels = ref({}), offset = ref(0), total = ref(0)
+const loading = ref(true), saving = ref(false), reading = ref(false), connected = ref(false)
+const error = ref(''), success = ref(''), errors = ref({}), resetKey = ref(0)
+const busy = computed(() => loading.value || saving.value || reading.value)
+let generation = 0, recordGeneration = 0
 
+async function resolveLabels(model, records) {
+  const targets = new Map()
+  for (const field of visibleFields(model).filter(field => field.type === 'link')) {
+    if (!targets.has(field.target)) targets.set(field.target, new Set())
+    for (const record of records) if (record[field.name] != null) targets.get(field.target).add(record[field.name])
+  }
+  const found = {}
+  await Promise.all([...targets].map(async ([name, ids]) => {
+    if (!ids.size) return
+    const target = sections.value.find(item => item.name === name)
+    const values = [...ids]
+    for (let i = 0; i < values.length; i += 100) {
+      const result = await listRecords(name, 100, 0, { id__in: values.slice(i, i + 100) })
+      for (const record of result.items) found[`${name}:${record.id}`] = recordLabel(target, record)
+    }
+  }))
+  return found
+}
 async function loadPage() {
-  const current = ++generation
-  const model = active.value
+  if (!section.value) { loading.value = false; return }
+  const current = ++generation, model = section.value
   loading.value = true
   error.value = ''
   try {
-    const [records, links] = await Promise.all([
-      listRecords(model, 20, offset.value, appliedSearch.value ? { [`${model === 'customer' ? 'name' : 'reference'}__icontains`]: appliedSearch.value } : {}, orderBy.value),
-      model === 'customer' ? Promise.resolve({ items: [] }) : listRecords(model === 'invoice' ? 'customer' : 'invoice', 100),
-    ])
+    const { search, filters, orderBy } = query.value
+    let records = await listRecords(model.name, 20, offset.value, filters, orderBy, search)
+    if (current !== generation) return
+    if (!records.items.length && offset.value && records.total) {
+      offset.value = Math.floor((records.total - 1) / 20) * 20
+      records = await listRecords(model.name, 20, offset.value, filters, orderBy, search)
+    } else if (!records.total) offset.value = 0
+    const found = await resolveLabels(model, records.items)
     if (current !== generation) return
     rows.value = records.items
-    choices.value = links.items
+    total.value = records.total
+    labels.value = { ...labels.value, ...found }
   } catch (failure) {
-    if (current === generation) {
-      rows.value = []
-      choices.value = []
-      error.value = failure.message
-    }
-  } finally {
-    if (current === generation) loading.value = false
-  }
+    if (current === generation) { rows.value = []; total.value = 0; error.value = failure.message }
+  } finally { if (current === generation) loading.value = false }
 }
 async function connect() {
-  error.value = ''
-  loading.value = true
+  error.value = ''; loading.value = true
   try {
-    const schema = await getSchema()
-    if (schema.version !== 1 || !sections.every(section => schema.models.some(model => model.name === section.name))) {
-      throw new Error('This Playground requires the Customer, Invoice, and Payment models in schema version 1.')
-    }
+    sections.value = validateSchema(await getSchema())
+    active.value = sections.value[0]?.name || null
     connected.value = true
     await loadPage()
-  } catch (failure) {
-    connected.value = false
-    loading.value = false
-    error.value = failure.message
-  }
+  } catch (failure) { connected.value = false; loading.value = false; error.value = failure.message }
 }
 async function select(model) {
   if (saving.value || active.value === model) return
+  generation++; recordGeneration++
   active.value = model
-  editing.value = null
-  deleting.value = null
-  search.value = ''
-  appliedSearch.value = ''
-  orderBy.value = '-id'
-  offset.value = 0
-  rows.value = []
-  choices.value = []
-  errors.value = {}
-  success.value = ''
+  editing.value = null; detail.value = null; deleting.value = null; reading.value = false
+  query.value = { search: '', filters: {}, orderBy: '-id' }
+  offset.value = 0; rows.value = []; errors.value = {}; success.value = ''; labels.value = {}
   if (connected.value) await loadPage()
 }
-async function page(direction) {
-  offset.value = Math.max(0, offset.value + direction * 20)
-  await loadPage()
-}
+async function page(direction) { if (busy.value) return; offset.value = Math.max(0, offset.value + direction * 20); await loadPage() }
 async function save(data) {
-  if (saving.value || loading.value || !connected.value) return
-  saving.value = true
-  errors.value = {}
-  success.value = ''
+  if (busy.value || !connected.value) return
+  saving.value = true; errors.value = {}; success.value = ''
   try {
-    if (editing.value) await updateRecord(active.value, editing.value.id, data)
+    const wasEditing = !!editing.value
+    if (wasEditing) await updateRecord(active.value, editing.value.id, data)
     else await createRecord(active.value, data)
-    success.value = `${section.value.title.slice(0, -1)} ${editing.value ? 'updated' : 'created'}.`
-    editing.value = null
-    resetKey.value++
-    offset.value = 0
+    success.value = `${section.value.label} ${wasEditing ? 'updated' : 'created'}.`
+    editing.value = null; resetKey.value++; offset.value = 0
     await loadPage()
-  } catch (failure) {
-    errors.value = { ...failure.fields, _form: failure.message }
-  } finally {
-    saving.value = false
-  }
+  } catch (failure) { errors.value = { ...failure.fields, _form: failure.message } }
+  finally { saving.value = false }
 }
-function edit(record) {
-  if (saving.value || loading.value) return
-  const link = active.value === 'invoice' ? 'customer' : 'invoice'
-  if (active.value !== 'customer' && !choices.value.some(item => item.id === record[link])) {
-    choices.value.push({ id: record[link], name: `#${record[link]}`, reference: `#${record[link]}` })
-  }
-  errors.value = {}
-  success.value = ''
-  deleting.value = null
-  editing.value = { ...record }
+async function openRecord(id, mode = 'view') {
+  if (busy.value) return
+  const current = ++recordGeneration, model = section.value
+  reading.value = true; error.value = ''; success.value = ''; errors.value = {}; deleting.value = null
+  try {
+    const record = await getRecord(model.name, id)
+    const found = await resolveLabels(model, [record])
+    if (current !== recordGeneration) return
+    labels.value = { ...labels.value, ...found }
+    detail.value = mode === 'view' ? record : null
+    editing.value = mode === 'edit' ? record : null
+  } catch (failure) { if (current === recordGeneration) error.value = failure.message }
+  finally { if (current === recordGeneration) reading.value = false }
 }
-function cancelEdit() {
-  if (saving.value) return
-  editing.value = null
-  errors.value = {}
+function cancelEdit() { if (saving.value) return; editing.value = null; errors.value = {} }
+async function follow(model, id) {
+  const selection = select(model)
+  const current = recordGeneration
+  await selection
+  if (current !== recordGeneration || active.value !== model) return
+  await openRecord(id)
 }
 async function remove() {
-  if (!deleting.value || saving.value) return
-  saving.value = true
-  error.value = ''
-  success.value = ''
+  if (!deleting.value || busy.value) return
+  saving.value = true; error.value = ''; success.value = ''
   try {
     await deleteRecord(active.value, deleting.value.id)
-    if (editing.value?.id === deleting.value.id) cancelAfterDelete()
-    deleting.value = null
-    success.value = `${section.value.title.slice(0, -1)} deleted.`
+    if (editing.value?.id === deleting.value.id) { editing.value = null; errors.value = {} }
+    if (detail.value?.id === deleting.value.id) detail.value = null
+    deleting.value = null; success.value = `${section.value.label} deleted.`
     if (rows.value.length === 1 && offset.value) offset.value -= 20
     await loadPage()
-  } catch (failure) {
-    error.value = failure.message
-  } finally {
-    saving.value = false
-  }
+  } catch (failure) { error.value = failure.message }
+  finally { saving.value = false }
 }
-function cancelAfterDelete() {
-  editing.value = null
-  errors.value = {}
-}
-async function applyQuery() {
-  if (saving.value || loading.value) return
-  appliedSearch.value = search.value.trim()
-  offset.value = 0
-  await loadPage()
-}
+async function applyQuery(value) { if (busy.value) return; query.value = value; offset.value = 0; await loadPage() }
 onMounted(connect)
+onBeforeUnmount(() => { generation++; recordGeneration++ })
 </script>
 
 <template>
@@ -162,63 +139,44 @@ onMounted(connect)
       <div class="workspace-label">PLAYGROUND <span>01</span></div>
       <nav aria-label="Records">
         <button v-for="item in sections" :key="item.name" type="button" :class="{ active: active === item.name }" :aria-current="active === item.name ? 'page' : undefined" :disabled="saving" @click="select(item.name)">
-          <span class="nav-mark">{{ item.mark }}</span>{{ item.title }}<svg class="nav-arrow" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M4 12 12 4M4 4h8v8" /></svg>
+          <span class="nav-mark">{{ String(sections.indexOf(item) + 1).padStart(2, '0') }}</span>{{ item.plural }}<svg class="nav-arrow" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M4 12 12 4M4 4h8v8" /></svg>
         </button>
       </nav>
       <div class="sidebar-note"><span class="status-dot"></span>A little less busywork.<br /><span class="sidebar-note-detail">A little more possibility.</span></div>
     </aside>
     <main>
-      <header class="topbar"><span>Workspace <span class="breadcrumb">/ {{ section.title }}</span></span><span class="workspace-badge">Playground</span></header>
+      <header class="topbar"><span>Workspace <span class="breadcrumb">/ {{ section?.plural || 'Records' }}</span></span><span class="workspace-badge">Playground</span></header>
       <div class="page-content">
-        <div class="page-heading"><div><div class="eyebrow">Your everyday essentials</div><h1>{{ section.title }}</h1><p class="muted">{{ section.description }}</p></div><span class="chapter-number" aria-hidden="true">{{ section.mark }}</span></div>
-        <Message v-if="error" severity="error" :closable="false" role="alert">{{ error }} <Button label="Try again" text size="small" @click="connected ? loadPage() : connect()" /></Message>
+        <div class="page-heading"><div><div class="eyebrow">Your everyday essentials</div><h1>{{ section?.plural || 'Records' }}</h1><p class="muted">{{ section?.description }}</p></div><span class="chapter-number" aria-hidden="true">{{ String(sections.indexOf(section) + 1).padStart(2, '0') }}</span></div>
+        <Message v-if="error" severity="error" :closable="false" role="alert">{{ error }} <Button label="Try again" text size="small" :disabled="saving || loading" @click="connected ? loadPage() : connect()" /></Message>
         <Message v-if="success" severity="success" :closable="false" role="status">{{ success }}</Message>
-        <div class="content-grid">
-          <section class="records-card" :aria-label="section.title" :aria-busy="loading">
-            <div class="card-heading"><h2>All {{ section.title.toLowerCase() }}</h2><Button label="Refresh" text size="small" :disabled="loading || saving || !connected" @click="loadPage" /></div>
-            <div class="query-controls">
-              <label for="record-search">Find {{ active === 'customer' ? 'name' : 'reference' }}</label>
-              <input id="record-search" v-model="search" type="search" :disabled="loading || saving" @keyup.enter="applyQuery" />
-              <label for="record-order">Order</label>
-              <select id="record-order" v-model="orderBy" :disabled="loading || saving">
-                <option value="-id">Newest first</option>
-                <option value="id">Oldest first</option>
-                <option :value="active === 'customer' ? 'name' : 'reference'">Alphabetical</option>
-                <option v-if="active !== 'customer'" :value="active === 'invoice' ? 'total' : 'amount'">Amount: low to high</option>
-              </select>
-              <Button label="Apply" size="small" :disabled="loading || saving || !connected" @click="applyQuery" />
-            </div>
+        <p v-if="loading && !connected" role="status">Connecting…</p>
+        <p v-else-if="connected && !section">No models are registered.</p>
+        <div v-if="section && connected" class="content-grid">
+          <section class="records-card" :aria-label="section.plural" :aria-busy="loading">
+            <div class="card-heading"><h2>All {{ section.plural.toLowerCase() }}</h2><Button label="Refresh" text size="small" :disabled="busy" @click="loadPage" /></div>
+            <QueryControls :key="active" :model="section" :models="sections" :disabled="busy" @apply="applyQuery" />
             <Message v-if="deleting" severity="warn" :closable="false">
-              Delete {{ active }} #{{ deleting.id }}? Linked records must be removed first.
-              <Button label="Delete record" severity="danger" size="small" :disabled="saving" @click="remove" />
-              <Button label="Cancel deletion" text size="small" :disabled="saving" @click="deleting = null" />
+              Delete {{ section.label.toLowerCase() }} #{{ deleting.id }}? Linked records must be removed first.
+              <Button label="Delete record" severity="danger" size="small" :disabled="busy" @click="remove" />
+              <Button label="Cancel deletion" text size="small" :disabled="busy" @click="deleting = null" />
             </Message>
-            <p v-if="loading" class="loading-note" role="status">Loading records…</p>
+            <p v-if="loading || reading" class="loading-note" role="status">Loading records…</p>
             <DataTable :value="rows" data-key="id" striped-rows>
-              <Column field="id" header="ID"><template #body="{ data }"><span class="record-id">#{{ data.id }}</span></template></Column>
-              <template v-if="active === 'customer'">
-                <Column field="name" header="Name" />
-                <Column field="email" header="Email"><template #body="{ data }">{{ data.email || '—' }}</template></Column>
-              </template>
-              <template v-else-if="active === 'invoice'">
-                <Column field="reference" header="Reference" />
-                <Column field="customer" header="Customer"><template #body="{ data }">{{ choices.find(item => item.id === data.customer)?.name || `#${data.customer}` }}</template></Column>
-                <Column field="total" header="Total" /><Column field="status" header="Status" /><Column field="posting_date" header="Date" />
-              </template>
-              <template v-else>
-                <Column field="reference" header="Reference" />
-                <Column field="invoice" header="Invoice"><template #body="{ data }">{{ choices.find(item => item.id === data.invoice)?.reference || `#${data.invoice}` }}</template></Column>
-                <Column field="amount" header="Amount" />
-              </template>
+              <Column v-for="name in section.list_fields" :key="name" :field="name" :header="fieldFor(section, name).label"><template #body="{ data }">{{ formatValue(fieldFor(section, name), data[name], labels) }}</template></Column>
               <Column header="Actions"><template #body="{ data }">
-                <Button label="Edit" text size="small" :aria-label="`Edit ${active} ${data.id}`" :disabled="saving || loading" @click="edit(data)" />
-                <Button label="Delete" text severity="danger" size="small" :aria-label="`Delete ${active} ${data.id}`" :disabled="saving || loading" @click="deleting = data" />
+                <Button label="View" text size="small" :aria-label="`View ${active} ${data.id}`" :disabled="busy" @click="openRecord(data.id)" />
+                <Button label="Edit" text size="small" :aria-label="`Edit ${active} ${data.id}`" :disabled="busy" @click="openRecord(data.id, 'edit')" />
+                <Button label="Delete" text severity="danger" size="small" :aria-label="`Delete ${active} ${data.id}`" :disabled="busy" @click="deleting = data" />
               </template></Column>
-              <template #empty><div v-if="!loading && !error" class="empty-state"><span class="empty-symbol" aria-hidden="true">+</span><h3>{{ appliedSearch ? 'No matching records.' : offset ? 'You’re all caught up.' : `Your first ${active} starts here.` }}</h3><p>{{ appliedSearch ? 'Change or clear the search to see other records.' : offset ? 'Return to the previous page to see your records.' : `Add ${active === 'invoice' ? 'an' : 'a'} ${active} using the form to get started.` }}</p></div></template>
+              <template #empty><div v-if="!loading && !error" class="empty-state"><span class="empty-symbol" aria-hidden="true">+</span><h3>{{ query.search || Object.keys(query.filters).length ? 'No matching records.' : `Your first ${section.label.toLowerCase()} starts here.` }}</h3><p>Add a record using the form, or change your search and filters.</p></div></template>
             </DataTable>
-            <footer class="pagination"><span>Page {{ offset / 20 + 1 }} · {{ rows.length }} records</span><div><Button label="Previous" text size="small" :disabled="offset === 0 || loading || saving" @click="page(-1)" /><Button label="Next" text size="small" :disabled="rows.length < 20 || loading || saving" @click="page(1)" /></div></footer>
+            <footer class="pagination"><span>Page {{ offset / 20 + 1 }} · {{ rows.length }} records · {{ total }} total</span><div><Button label="Previous" text size="small" :disabled="offset === 0 || busy" @click="page(-1)" /><Button label="Next" text size="small" :disabled="offset + rows.length >= total || busy" @click="page(1)" /></div></footer>
           </section>
-          <aside class="form-card"><RecordForm :model="active" :choices="choices" :errors="errors" :busy="saving" :disabled="loading || !connected" :reset-key="resetKey" :record="editing" @save="save" @cancel="cancelEdit" /></aside>
+          <aside class="form-card">
+            <RecordDetail v-if="detail" :model="section" :record="detail" :labels="labels" :disabled="busy" @edit="openRecord($event.id, 'edit')" @close="detail = null" @follow="follow" />
+            <RecordForm v-else :key="active" :model="section" :models="sections" :errors="errors" :busy="saving" :disabled="loading || reading || !connected" :reset-key="resetKey" :record="editing" @save="save" @cancel="cancelEdit" />
+          </aside>
         </div>
         <footer class="page-footer"><span>Small steps. Everything connected.</span><span>EVLET · 0.1</span></footer>
       </div>

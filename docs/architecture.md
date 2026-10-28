@@ -104,9 +104,31 @@ preserved; it now includes additional types and index/bound metadata.
 
 See [the model engine guide](model-engine.md) for exact APIs and migration limits.
 
+## Milestone 3 decisions
+
+`Registry.ui_schema()` compiles labels, view definitions, supported field controls,
+and default metadata. It is separate from `Registry.schema()`, so presentation
+changes do not affect database snapshots or migration history. `Model.Meta` and
+field display options remain Python-owned and contain no renderer component names.
+The HTTP schema adds UI version 1 while retaining schema version 1.
+
+The Vue renderer builds navigation, lists, forms, and details from that contract.
+A new Project model exercises the same components as the original three models.
+Forms omit untouched defaults on creation and send only changed values on edits.
+Callable defaults run only when the backend creates a record. Read-only fields
+reject HTTP writes; hidden fields affect presentation, not access permissions.
+
+Search compiles bounded, parameterized OR matches across configured text fields,
+combined with typed AND filters. Page records and filtered counts share a SQLite
+read snapshot. Link choices use server search and pagination, selected records are
+resolved separately, and list labels are fetched in bounded ID batches. Request
+sequence guards protect navigation from older asynchronous responses.
+
+See [application generation](application-generation.md) for the public contract,
+examples, browser integer bounds, and the explicit Playground upgrade.
+
 ## Deferred work
 
-Milestone 3 should build automatic forms, lists, and detail views from neutral
-metadata. Authentication, permissions, tenant isolation, arbitrary/destructive
-schema conversions, deployment, jobs, realtime, and scaling claims remain outside
-this milestone.
+Milestone 4 adds authentication, roles, permissions, child tables, attachments,
+and business actions. Tenant isolation, deployment, jobs, realtime, arbitrary
+schema conversions, and performance claims remain later work.

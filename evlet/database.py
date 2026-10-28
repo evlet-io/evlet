@@ -77,14 +77,23 @@ class Database:
         with self._connection() as connection:
             return Session(connection, self.registry).related(record, field_name)
 
-    def list(self, model, *, limit=50, offset=0, filters=None, order_by=None):
+    def list(self, model, *, limit=50, offset=0, filters=None, order_by=None, search=""):
         with self._connection() as connection:
             return Session(connection, self.registry).list(
-                model, limit=limit, offset=offset, filters=filters, order_by=order_by)
+                model, limit=limit, offset=offset, filters=filters, order_by=order_by, search=search)
 
-    def count(self, model, *, filters=None):
+    def count(self, model, *, filters=None, search=""):
         with self._connection() as connection:
-            return Session(connection, self.registry).count(model, filters=filters)
+            return Session(connection, self.registry).count(model, filters=filters, search=search)
+
+    def page(self, model, **query):
+        """Return records and their filtered count from one read snapshot."""
+        with self._connection() as connection:
+            connection.execute("BEGIN")
+            session = Session(connection, self.registry)
+            records = session.list(model, **query)
+            total = session.count(model, filters=query.get('filters'), search=query.get('search', ''))
+            return records, total
 
     def check(self):
         with self._connection() as connection:
@@ -124,14 +133,14 @@ class Session:
             raise NotFoundError("Record not found")
         return model._from_row(row)
 
-    def list(self, model, *, limit=50, offset=0, filters=None, order_by=None):
+    def list(self, model, *, limit=50, offset=0, filters=None, order_by=None, search=""):
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValidationError({"limit": "Use an integer between 1 and 100"})
         if type(offset) is not int or not 0 <= offset <= 2**63 - 1:
             raise ValidationError({"offset": "Use a non-negative 64-bit integer"})
         table = identifier(self.registry.name_for(model))
         query = Query(self.registry, model)
-        where, values = query.where(filters)
+        where, values = query.where(filters, search)
         order = query.ordering(order_by)
         rows = self.connection.execute(
             f'SELECT "record".* FROM {table} AS "record"{where}{order} LIMIT ? OFFSET ?',
@@ -164,9 +173,9 @@ class Session:
         record_id = getattr(record, field_name)
         return None if record_id is None else self.get(field.target, record_id)
 
-    def count(self, model, *, filters=None):
+    def count(self, model, *, filters=None, search=""):
         table = identifier(self.registry.name_for(model))
-        where, values = Query(self.registry, model).where(filters)
+        where, values = Query(self.registry, model).where(filters, search)
         return self.connection.execute(
             f'SELECT count(*) FROM {table} AS "record"{where}', values,
         ).fetchone()[0]

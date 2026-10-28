@@ -29,7 +29,7 @@ def request(app, method, path, data=None, *, body=None, content_type=b"applicati
 def test_complete_customer_invoice_payment_api(application):
     assert request(application, "GET", "/health")[:2] == (200, {"status": "ok"})
     status, schema, _ = request(application, "GET", "/api/schema")
-    assert status == 200 and len(schema["models"]) == 3
+    assert status == 200 and len(schema["models"]) == 4
     status, customer, headers = request(application, "POST", "/api/customer", {"name": "Studio"})
     assert status == 201
     assert headers[b"location"] == f'/api/customer/{customer["id"]}'.encode()
@@ -107,9 +107,9 @@ def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
     class Note(Model):
         message = Text()
 
-    next_migration = Migration('0002_notes', CreateModel(Note))
+    next_migration = Migration('0003_notes', CreateModel(Note))
     target = Database(path, Registry(*registry.models.values(), Note))
-    assert target.migrate([*migrations, next_migration]) == ['0002_notes']
+    assert target.migrate([*migrations, next_migration]) == ['0003_notes']
     assert target.get(Customer, 1).name == 'Ready'
 
 
