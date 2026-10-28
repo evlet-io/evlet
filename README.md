@@ -7,6 +7,37 @@ ASGI API, and a Vue 3/PrimeVue Playground for Customer → Invoice → Payment.
 Python model definitions remain authoritative. The core has **zero third-party
 runtime dependencies**. No database server, Redis, Docker, or worker is required.
 
+## Open the Playground on macOS
+
+Install Git, Python 3.12+, and Node 24.15+ (24.x). If you use Homebrew:
+
+```bash
+brew install git python@3.12 node@24
+```
+
+Then, in Terminal:
+
+```bash
+git clone --branch codex/milestone-1-foundation https://github.com/dxb-aslam/evlet.git
+cd evlet
+bash scripts/playground.sh --setup
+```
+
+This private repository requires your GitHub account to have access. You can also
+download the feature branch as a ZIP while signed in to GitHub, extract it, open
+Terminal in the extracted folder, and run the same launcher command.
+
+The launcher installs the locked dependencies, starts both servers, checks the
+API, and opens the Playground in your default browser. Keep Terminal open while
+using the app. Press **Control-C** to stop both servers; your SQLite data remains.
+On later runs, use `bash scripts/playground.sh` from the same folder. The launcher
+activates Homebrew's versioned Node and Python paths for its own process only.
+
+Logs are in `examples/playground/.data/logs/`. If ports 8000 or 5173 are already
+occupied, the launcher exits without stopping any existing service. Linux can
+use the same launcher with Python and Node already installed. Set
+`EVLET_OPEN_BROWSER=0` for noninteractive validation.
+
 ## Install for development
 
 Requires Python 3.12+ with `venv`, Node **24.15+ in the 24.x line**, and npm.
