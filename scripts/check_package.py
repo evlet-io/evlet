@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 
 import evlet
-from evlet import Currency, Database, Model, Registry, Text
+from evlet import AddField, Boolean, Currency, Database, Migration, Model, Registry, Text
 
 
 def main():
@@ -22,7 +22,18 @@ def main():
         item = db.create(Product, name="Installed package", price="12.50")
         if db.get(Product, item.id).to_dict()["price"] != "12.50":
             raise RuntimeError("Installed package failed the SQLite round trip")
-    print("Installed wheel: import, model definition, SQLite persistence, and currency round trip passed")
+        UpdatedProduct = type('Product', (Model,), {
+            'name': Text(required=True), 'price': Currency(required=True), 'active': Boolean(default=True),
+        })
+        updated = Database(db.path, Registry(UpdatedProduct))
+        updated.migrate([Migration('active', AddField('product', 'active', Boolean(default=True)))])
+        saved = updated.update(UpdatedProduct, item.id, price='15.25')
+        if saved.to_dict()['price'] != '15.25' or not saved.active:
+            raise RuntimeError('Installed package failed migration/update')
+        if updated.count(UpdatedProduct, filters={'price__gte': '15.00'}) != 1:
+            raise RuntimeError('Installed package failed query')
+        updated.delete(UpdatedProduct, item.id)
+    print("Installed wheel: migrations, updates, queries, deletes; import, model definition, SQLite persistence, and currency round trip passed")
 
 
 if __name__ == "__main__":

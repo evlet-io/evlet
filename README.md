@@ -1,8 +1,9 @@
 # Evlet
 
 A small Python application framework for business applications. This repository
-implements **Milestone 1**: an installable core, real SQLite persistence, a small
-ASGI API, and a Vue 3/PrimeVue Playground for Customer → Invoice → Payment.
+implements **Milestone 2**: typed models, real SQLite persistence, queries,
+updates/deletes, explicit migrations, and a Vue 3/PrimeVue Playground for
+Customer → Invoice → Payment.
 
 Python model definitions remain authoritative. The core has **zero third-party
 runtime dependencies**. No database server, Redis, Docker, or worker is required.
@@ -18,7 +19,7 @@ brew install git python@3.12 node@24
 Then, in Terminal:
 
 ```bash
-git clone --branch codex/milestone-1-foundation https://github.com/dxb-aslam/evlet.git
+git clone --branch codex/milestone-2-model-engine https://github.com/dxb-aslam/evlet.git
 cd evlet
 bash scripts/playground.sh --setup
 ```
@@ -37,6 +38,11 @@ Logs are in `examples/playground/.data/logs/`. If ports 8000 or 5173 are already
 occupied, the launcher exits without stopping any existing service. Linux can
 use the same launcher with Python and Node already installed. Set
 `EVLET_OPEN_BROWSER=0` for noninteractive validation.
+
+For a database created with Milestone 1, stop the launcher and run
+`.venv/bin/python -m examples.playground.migrate` before restarting it. This creates
+a backup and preserves existing records. See the [model engine guide](docs/model-engine.md)
+for the API, migration operations, and current limits.
 
 ## Install for development
 
@@ -96,8 +102,8 @@ curl --fail http://127.0.0.1:8000/health
 .venv/bin/python scripts/smoke.py --base-url http://127.0.0.1:5173
 ```
 
-The smoke check creates one uniquely named customer, invoice, and payment each
-time. Use a disposable database via `EVLET_DATABASE` for validation runs when you
+The smoke check creates a uniquely named customer, invoice, and payment, checks
+updates, queries, validation, protected deletes, then removes its own records. Use a disposable database via `EVLET_DATABASE` for validation runs when you
 do not want sample records in your working database. It also checks validation,
 foreign-key errors, and exact decimal serialization through real HTTP requests.
 
@@ -131,6 +137,10 @@ Transactions commit on success and roll back together on failure. Use decimal
 strings for currency. `Integer` is also available; `Text` supports length bounds,
 required values, defaults, and uniqueness. `Link` uses actual SQLite foreign keys.
 An application registers models explicitly, so unrelated classes are not exposed.
+When shipping migrations, declare the complete history with
+`Database(path, registry, migrations=migrations)` so fresh initialization records
+its baseline. Apply later schema changes explicitly with `database.migrate(migrations)`.
+See the [migration guide](docs/model-engine.md#explicit-migrations).
 
 ## Test and build
 
@@ -158,9 +168,9 @@ This is a development preview, not a deployment recipe.
 
 ## Current boundaries
 
-- Create, list, and detail operations only; no update/delete or migrations yet.
-  Schema changes need a **new development database path**. Initialization never
-  deletes existing data or migrates existing tables.
+- Create, read, update, delete, typed queries, and explicit additive/rename/index
+  migrations are supported. Destructive migrations and arbitrary field-type
+  conversions are not supported. Startup rejects schema drift.
 - No authentication, permissions, tenant isolation, file uploads, jobs, realtime,
   or deployment adapters. Keep the development servers on loopback.
 - Currency has two decimal places and no currency-code conversion. The Playground
@@ -174,5 +184,6 @@ This is a development preview, not a deployment recipe.
   follow-up work. No performance or scalability guarantees are claimed.
 
 Read [architecture decisions](docs/architecture.md), the [full specification](docs/specification.md),
-and [agent instructions](AGENTS.md). The next milestone is the model engine:
-richer fields, query operations, update/delete, and explicit schema migrations.
+and [agent instructions](AGENTS.md). The [model engine guide](docs/model-engine.md)
+covers Milestone 2. The next milestone is automatic forms, lists, and views from
+the neutral schema.

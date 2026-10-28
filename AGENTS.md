@@ -1,7 +1,8 @@
 # Working on Evlet
 
 Read `docs/specification.md` and `docs/architecture.md` before changing the public API.
-The current scope is Milestone 1: an executable, small framework foundation.
+The current scope is Milestone 2: fields, queries, relationships, CRUD, and explicit migrations.
+Keep Milestone 1 review separate; do not implement automatic UI generation yet.
 
 - Use Python 3.12+ and Node 24. Python definitions are authoritative; frontend
   components consume a neutral schema and never appear in Python model definitions.

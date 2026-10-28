@@ -6,6 +6,7 @@ import sqlite3
 
 from .fields import Link
 from .models import ValidationError, identifier
+from .query import Query
 
 
 class NotFoundError(LookupError):
@@ -17,11 +18,12 @@ class ConflictError(ValueError):
 
 
 class Database:
-    def __init__(self, path, registry):
+    def __init__(self, path, registry, *, migrations=None):
         if str(path) == ":memory:":
             raise ValueError("Use a SQLite file (a temporary file in tests)")
         self.path = Path(path)
         self.registry = registry
+        self.migrations = None if migrations is None else tuple(migrations)
 
     @contextmanager
     def _connection(self):
@@ -34,31 +36,18 @@ class Database:
             connection.close()
 
     def initialize(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connection() as connection:
-            connection.execute("PRAGMA journal_mode = WAL")
-            with connection:
-                for name, model in self.registry.models.items():
-                    columns = ['"id" INTEGER PRIMARY KEY AUTOINCREMENT']
-                    for field_name, field in model.__fields__.items():
-                        column = f"{identifier(field_name)} {field.sql_type}"
-                        if field.required:
-                            column += " NOT NULL"
-                        if field.unique:
-                            column += " UNIQUE"
-                        if isinstance(field, Link):
-                            target = self.registry.name_for(field.target)
-                            column += f' REFERENCES {identifier(target)}("id")'
-                        columns.append(column)
-                    connection.execute(
-                        f"CREATE TABLE IF NOT EXISTS {identifier(name)} ({', '.join(columns)})"
-                    )
+        from .migrations import initialize
+        initialize(self)
+
+    def migrate(self, migrations):
+        from .migrations import migrate
+        return migrate(self, migrations)
 
     @contextmanager
     def transaction(self):
         with self._connection() as connection:
             try:
-                connection.execute("BEGIN")
+                connection.execute("BEGIN IMMEDIATE")
                 yield Session(connection, self.registry)
                 connection.commit()
             except sqlite3.IntegrityError as exc:
@@ -76,9 +65,26 @@ class Database:
         with self._connection() as connection:
             return Session(connection, self.registry).get(model, record_id)
 
-    def list(self, model, *, limit=50, offset=0):
+    def update(self, model, record_id, /, **changes):
+        with self.transaction() as session:
+            return session.update(model, record_id, **changes)
+
+    def delete(self, model, record_id):
+        with self.transaction() as session:
+            session.delete(model, record_id)
+
+    def related(self, record, field_name):
         with self._connection() as connection:
-            return Session(connection, self.registry).list(model, limit=limit, offset=offset)
+            return Session(connection, self.registry).related(record, field_name)
+
+    def list(self, model, *, limit=50, offset=0, filters=None, order_by=None):
+        with self._connection() as connection:
+            return Session(connection, self.registry).list(
+                model, limit=limit, offset=offset, filters=filters, order_by=order_by)
+
+    def count(self, model, *, filters=None):
+        with self._connection() as connection:
+            return Session(connection, self.registry).count(model, filters=filters)
 
     def check(self):
         with self._connection() as connection:
@@ -118,13 +124,49 @@ class Session:
             raise NotFoundError("Record not found")
         return model._from_row(row)
 
-    def list(self, model, *, limit=50, offset=0):
+    def list(self, model, *, limit=50, offset=0, filters=None, order_by=None):
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValidationError({"limit": "Use an integer between 1 and 100"})
         if type(offset) is not int or not 0 <= offset <= 2**63 - 1:
             raise ValidationError({"offset": "Use a non-negative 64-bit integer"})
         table = identifier(self.registry.name_for(model))
+        query = Query(self.registry, model)
+        where, values = query.where(filters)
+        order = query.ordering(order_by)
         rows = self.connection.execute(
-            f'SELECT * FROM {table} ORDER BY "id" DESC LIMIT ? OFFSET ?', (limit, offset)
+            f'SELECT "record".* FROM {table} AS "record"{where}{order} LIMIT ? OFFSET ?',
+            [*values, limit, offset],
         ).fetchall()
         return [model._from_row(row) for row in rows]
+
+    def update(self, model, record_id, /, **changes):
+        current = self.get(model, record_id)
+        record = model(**{**current._values, **changes})
+        if changes:
+            table = identifier(self.registry.name_for(model))
+            assignments = ', '.join(f'{identifier(name)} = ?' for name in changes)
+            self.connection.execute(
+                f'UPDATE {table} SET {assignments} WHERE "id" = ?',
+                [model.__fields__[name].to_storage(record._values[name]) for name in changes] + [record_id],
+            )
+        return self.get(model, record_id)
+
+    def delete(self, model, record_id):
+        self.get(model, record_id)
+        table = identifier(self.registry.name_for(model))
+        self.connection.execute(f'DELETE FROM {table} WHERE "id" = ?', (record_id,))
+
+    def related(self, record, field_name):
+        self.registry.name_for(type(record))
+        field = record.__fields__.get(field_name)
+        if not isinstance(field, Link):
+            raise ValidationError({field_name: 'Expected a Link field'})
+        record_id = getattr(record, field_name)
+        return None if record_id is None else self.get(field.target, record_id)
+
+    def count(self, model, *, filters=None):
+        table = identifier(self.registry.name_for(model))
+        where, values = Query(self.registry, model).where(filters)
+        return self.connection.execute(
+            f'SELECT count(*) FROM {table} AS "record"{where}', values,
+        ).fetchone()[0]

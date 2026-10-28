@@ -26,7 +26,7 @@ class ModelType(type):
         for key, value in namespace.items():
             if isinstance(value, Field):
                 identifier(key)
-                if key.lower() == "id" or key == "to_dict" or any(
+                if "__" in key or key.lower() == "id" or key == "to_dict" or any(
                     hasattr(base, key) and key not in getattr(base, "__fields__", {})
                     for base in bases
                 ):
@@ -54,6 +54,10 @@ class Model(metaclass=ModelType):
             raise ValidationError(errors)
         self._values = MappingProxyType(cleaned)
         self._id = None
+        self.validate()
+
+    def validate(self):
+        """Override for cross-field rules; raise ValidationError with field errors."""
 
     @property
     def id(self):
@@ -82,8 +86,8 @@ class Registry:
                 raise ValueError("Register Model subclasses")
             name = model.__name__.lower()
             identifier(name)
-            if name == "schema":
-                raise ValueError("The model name 'schema' is reserved for metadata")
+            if name == "schema" or name.startswith("evlet_"):
+                raise ValueError("The model name is reserved for metadata")
             if name in registered:
                 raise ValueError(f"Duplicate model name: {name}")
             registered[name] = model

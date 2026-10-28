@@ -6,16 +6,43 @@ Continue from the existing implementation; do not restart or scaffold it again.
 ## Repository and scope
 
 - Repository: `dxb-aslam/evlet` (private).
-- Working branch: `codex/milestone-1-foundation`.
-- Last implementation commit before this handoff: `1a48911`.
-- `main` contains only an empty initialization commit. Do not switch to it to run
-  the application. All Milestone 1 implementation and the local launcher were
-  pushed to the feature branch.
+- Working branch: `codex/milestone-2-model-engine`.
+- Milestone 1 was reviewed and merged through PR #1 as `8ec029a`.
+- Its currency overflow and Unicode response fixes are integrated on this branch.
+- PR #2 targets `main` and contains the Milestone 2 changes.
 - Read `AGENTS.md`, `docs/specification.md`, `docs/architecture.md`, and `README.md`.
-- The authorized framework scope is **Milestone 1 only**. Moving development
-  locally does not authorize implementing later milestones, merging, or deploying.
+- The user authorized **Milestone 2** after local Milestone 1 verification.
+  Keep its changes in PR #2 for independent review.
+  Do not merge, deploy, or begin Milestone 3 automatically.
 
-## What exists
+## Milestone 2 continuation
+
+The model engine adds richer fields, custom validation, updates/deletes, typed
+filtering and ordering, relationship traversal, and explicit additive/rename/index
+migrations. The Playground demonstrates edit/delete/query controls and new fields.
+Read [the model engine guide](model-engine.md) before changing these APIs.
+
+The existing local database was backed up and upgraded with
+`.venv/bin/python -m examples.playground.migrate`. Its original 3 customers,
+2 invoices, and 2 payments retained their IDs, links, and stored amounts. The
+migration command is explicit; startup never silently upgrades existing tables.
+
+Local validation: 126 backend tests and 18 frontend tests pass. The production
+frontend build, source/wheel build, isolated wheel installation, and live HTTP
+smoke pass. Chrome verified editing, the active flag and notes, search, reload
+persistence, and confirmed deletion. Migration checks cover rollback, repeated
+and concurrent runs, history changes, and protection against decimal reinterpretation.
+Fresh Playground startup now declares and records the shipped migration history.
+Live checks cover a subsequent migration on both fresh and upgraded databases,
+preserving records, IDs, links, and exact amounts. Baseline adoption validates
+existing rows; startup rejects changed or incomplete declared history. Currency
+and Decimal overflow, invalid Unicode keys, and failed updates return JSON
+validation responses without saving invalid records.
+The documented frontend bundle-size advisory remains.
+
+The older untracked work remains in the named Git stash described below. Keep it.
+
+## Milestone 1 baseline
 
 The Python core has no third-party runtime dependencies. It provides explicit
 model registration, Text/Integer/Currency/Link fields, validation, SQLite WAL and
@@ -47,7 +74,7 @@ loopback. Relationship selectors currently show at most 100 candidates.
    servers launched by the script. The script refuses occupied ports rather than
    stopping another process. Logs are in `examples/playground/.data/logs/`.
 5. Run the checks below. If authorized work remains after local setup, continue it
-   within Milestone 1. Do not automatically begin Milestone 2.
+   within Milestone 2. Do not automatically begin Milestone 3.
 
 SQLite data is ignored by Git and stays in `examples/playground/.data/`; a fresh
 local clone starts with a fresh database. Cloud test data and installed
@@ -93,12 +120,13 @@ until the original work is needed; it is separate from this implementation.
 
 ## Pending review
 
-[PR #1](https://github.com/dxb-aslam/evlet/pull/1),
-“Implement Milestone 1: SQLite framework and Vue Playground”, is open as a draft
-against `main`. It includes the architecture, dependencies, local validation,
-startup command, limits, and Milestone 2 recommendation. Check the PR's current
-GitHub Actions results separately from the local checks above. Do not merge or
-deploy automatically, and do not begin Milestone 2 without a new request.
+[PR #2](https://github.com/dxb-aslam/evlet/pull/2),
+“Implement Milestone 2: model engine and explicit migrations”, targets `main`.
+The fresh-install migration baseline finding and inherited input-validation
+findings have been addressed. Local backend/frontend tests, production and package
+builds, isolated wheel installation, and live checks pass. Check the current
+GitHub Actions results and obtain independent review. Do not merge or deploy
+automatically, or begin Milestone 3.
 
 The cloud environment draft has saved install/start instructions and a requested
 `api.github.com` network addition. Its publication remains separate from local

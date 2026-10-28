@@ -37,7 +37,7 @@ class Application:
         headers = []
         try:
             body = None
-            if scope["method"] == "POST":
+            if scope["method"] in ("POST", "PATCH"):
                 content_type = dict(scope.get("headers", [])).get(b"content-type", b"")
                 if content_type.split(b";", 1)[0].strip().lower() != b"application/json":
                     raise HTTPError(415, "Send application/json")
@@ -72,13 +72,12 @@ class Application:
         except Exception:
             logger.exception("Unhandled request failure")
             status, payload = 500, {"error": "Internal server error"}
-        encoded = json.dumps(payload, ensure_ascii=True, allow_nan=False).encode("utf-8")
-        await send({"type": "http.response.start", "status": status, "headers": [
-            (b"content-type", b"application/json; charset=utf-8"),
-            (b"content-length", str(len(encoded)).encode()),
-            (b"x-content-type-options", b"nosniff"),
-            (b"cache-control", b"no-store"), *headers,
-        ]})
+        encoded = b"" if status == 204 else json.dumps(payload, ensure_ascii=True, allow_nan=False).encode("utf-8")
+        response_headers = [(b"x-content-type-options", b"nosniff"), (b"cache-control", b"no-store"), *headers]
+        if status != 204:
+            response_headers.extend([(b"content-type", b"application/json; charset=utf-8"),
+                                     (b"content-length", str(len(encoded)).encode())])
+        await send({"type": "http.response.start", "status": status, "headers": response_headers})
         await send({"type": "http.response.body", "body": encoded})
 
     @staticmethod
@@ -108,10 +107,15 @@ class Application:
         if model is None:
             raise HTTPError(404, "Model not found")
         if len(parts) == 4:
-            self._method(method, ["GET"])
+            self._method(method, ["GET", "PATCH", "DELETE"])
             if not parts[3].isascii() or not parts[3].isdigit() or len(parts[3]) > 19:
                 raise HTTPError(404, "Record not found")
-            record = self.database.get(model, int(parts[3]))
+            record_id = int(parts[3])
+            if method == "DELETE":
+                self.database.delete(model, record_id)
+                return 204, None, []
+            record = (self.database.update(model, record_id, **body) if method == "PATCH"
+                      else self.database.get(model, record_id))
             return 200, record.to_dict(), []
         self._method(method, ["GET", "POST"])
         if method == "POST":
@@ -119,15 +123,19 @@ class Application:
             location = f"/api/{parts[2]}/{record.id}".encode()
             return 201, record.to_dict(), [(b"location", location)]
         try:
+            if len(scope.get("query_string", b"")) > 8192:
+                raise ValueError("Query exceeds 8 KiB")
             query = parse_qs(scope.get("query_string", b"").decode("ascii"),
                              keep_blank_values=True, max_num_fields=10)
-            if set(query) - {"limit", "offset"} or any(len(v) != 1 for v in query.values()):
+            if set(query) - {"limit", "offset", "filters", "order_by"} or any(len(v) != 1 for v in query.values()):
                 raise ValueError("Unknown or repeated query parameters")
             limit = int(query.get("limit", ["50"])[0])
             offset = int(query.get("offset", ["0"])[0])
-        except (ValueError, UnicodeError) as exc:
-            raise HTTPError(422, "Use integer limit and offset query parameters") from exc
-        records = self.database.list(model, limit=limit, offset=offset)
+            filters = json.loads(query["filters"][0], parse_constant=self._invalid_constant) if "filters" in query else None
+            order_by = query["order_by"][0].split(",") if "order_by" in query else None
+        except (ValueError, UnicodeError, RecursionError) as exc:
+            raise HTTPError(422, "Use valid limit, offset, filters JSON, and order_by parameters") from exc
+        records = self.database.list(model, limit=limit, offset=offset, filters=filters, order_by=order_by)
         return 200, {"items": [record.to_dict() for record in records],
                      "limit": limit, "offset": offset}, []
 
