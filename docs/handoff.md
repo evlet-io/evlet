@@ -59,7 +59,7 @@ existing file first. Startup never silently changes application model tables.
 
 Local checks on 28/29 October 2026:
 
-- 165 backend tests and 43 frontend tests pass.
+- 178 backend tests and 51 frontend tests pass.
 - Production frontend, source distribution, and wheel builds pass. The existing
   bundle-size advisory remains; it is not a build failure.
 - Clean wheel installation passes import, SQLite, migration, query, UI schema,
@@ -80,6 +80,11 @@ The ordinary smoke command prompts for an existing Admin or Editor account.
 Use `scripts/smoke.py --setup` only on an empty disposable database. CI does this
 and generates a temporary password without printing it. Never put real passwords
 in shell history, source files, test output, or PR descriptions.
+
+The Milestone 4 review fixes return field-level HTTP 422 errors for invalid Link
+values and apply child create/update/delete permissions independently. Retained
+child IDs require read access without granting update permission. Regression tests
+cover create-only and delete-only collections, ownership, row scopes, and rollback.
 
 The Milestone 4 PR should receive independent review. Check the current remote CI
 results before approval. No automatic merge or deployment is authorized.

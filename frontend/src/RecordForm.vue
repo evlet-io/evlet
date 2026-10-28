@@ -12,8 +12,10 @@ const collections = reactive({}), childDirty = new Set()
 const groups = computed(() => props.model.layout?.length ? props.model.layout : [{ label: 'Details', fields: fields.value.map(field => field.name) }])
 function childModel(child) { return props.models.find(model => model.name === child.model) }
 function childFields(child) { return visibleFields(childModel(child)).filter(field => field.name !== child.link) }
-function addChild(child) { collections[child.name].push(Object.fromEntries(childFields(child).map(field => [field.name, field.default_kind === 'static' ? field.default : null]))); childDirty.add(child.name) }
-function removeChild(child, index) { collections[child.name].splice(index, 1); childDirty.add(child.name) }
+function canEditChild(child, row) { return childModel(child).permissions?.[row.id ? 'update' : 'create'] !== false }
+function canRemoveChild(child, row) { return !row.id || childModel(child).permissions?.delete !== false }
+function addChild(child) { if (props.busy || props.disabled || childModel(child).permissions?.create === false) return; collections[child.name].push(Object.fromEntries(childFields(child).map(field => [field.name, field.default_kind === 'static' ? field.default : null]))); childDirty.add(child.name) }
+function removeChild(child, index) { if (props.busy || props.disabled || !canRemoveChild(child, collections[child.name][index])) return; collections[child.name].splice(index, 1); childDirty.add(child.name) }
 const fields = computed(() => visibleFields(props.model))
 const messages = computed(() => ({ ...props.errors, ...localErrors.value }))
 watch(() => [props.model, props.resetKey, props.record], () => {
@@ -38,6 +40,7 @@ function save() {
     if (!childDirty.has(child.name)) continue
     children[child.name] = collections[child.name].map(row => {
       const values = row.id ? { id: row.id } : {}
+      if (row.id && !canEditChild(child, row)) return values
       for (const field of childFields(child).filter(field => !field.read_only)) {
         try { if (row[field.name] != null || field.default_kind === 'none') values[field.name] = inputValue(field, row[field.name]) }
         catch (failure) { errors.children = failure.message }
@@ -70,11 +73,11 @@ function save() {
       </template>
       </section>
       <section v-for="child in model.children || []" :key="child.name" class="child-editor"><h3>{{ child.label }}</h3>
-        <fieldset v-for="(row, index) in collections[child.name]" :key="index" class="child-row" :disabled="childModel(child).permissions?.update === false"><legend>{{ child.label }} {{ index + 1 }}</legend>
-          <template v-for="field in childFields(child)" :key="field.name"><label :for="`${child.name}-${index}-${field.name}`">{{ field.label }}</label><FieldInput :field="field" :models="models" :input-id="`${child.name}-${index}-${field.name}`" :model-value="row[field.name]" :disabled="field.read_only" @update:model-value="row[field.name] = $event; childDirty.add(child.name)" /></template>
-          <Button v-if="childModel(child).permissions?.delete !== false" label="Remove row" text @click="removeChild(child, index)" />
+        <fieldset v-for="(row, index) in collections[child.name]" :key="index" class="child-row"><legend>{{ child.label }} {{ index + 1 }}</legend>
+          <template v-for="field in childFields(child)" :key="field.name"><label :for="`${child.name}-${index}-${field.name}`">{{ field.label }}</label><FieldInput :field="field" :models="models" :input-id="`${child.name}-${index}-${field.name}`" :model-value="row[field.name]" :disabled="busy || disabled || field.read_only || !canEditChild(child, row)" @update:model-value="row[field.name] = $event; childDirty.add(child.name)" /></template>
+          <Button v-if="canRemoveChild(child, row)" label="Remove row" text :disabled="busy || disabled" @click="removeChild(child, index)" />
         </fieldset>
-        <Button v-if="childModel(child).permissions?.create !== false" :label="`Add ${child.label.toLowerCase()} row`" text :disabled="collections[child.name]?.length >= 100" @click="addChild(child)" />
+        <Button v-if="childModel(child).permissions?.create !== false" :label="`Add ${child.label.toLowerCase()} row`" text :disabled="busy || disabled || collections[child.name]?.length >= 100" @click="addChild(child)" />
       </section>
       <p v-if="messages.children" role="alert" class="field-error">{{ messages.children }}</p>
       <Message v-if="messages._form" severity="error" :closable="false" role="alert">{{ messages._form }}</Message>

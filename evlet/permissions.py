@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from .auth import AccessError, ROLES
 from .fields import Link
-from .models import identifier
+from .models import ValidationError, identifier
 from .query import Query, OPERATORS
 
 
@@ -74,7 +74,11 @@ class Policy:
         for name, value in values.items():
             field = model.__fields__[name]
             if isinstance(field, Link) and value is not None:
-                self.record(tx, user, field.target, field.clean(value))
+                try:
+                    record_id = field.clean(value)
+                except ValueError as exc:
+                    raise ValidationError({name: str(exc)}) from exc
+                self.record(tx, user, field.target, record_id)
 
     def serialize(self, tx, user, record):
         model = type(record)

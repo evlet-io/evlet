@@ -131,9 +131,13 @@ migration. Child models do not have standalone HTTP CRUD routes or navigation.
 Parent details include `children: {tasks: [...]}`. Parent POST/PATCH accepts that
 same structure. Omit children to preserve them; include a collection to replace its
 rows. Existing rows carry their IDs, new rows omit IDs, and omitted existing IDs
-are deleted. Clients cannot set the parent Link, move rows between parents, or
-repeat a row ID. A collection contains at most 100 rows. Nested child collections
-are not supported.
+are deleted. An existing row containing only its ID is retained with read access and is not
+updated. This lets create-only or delete-only users preserve other rows in the
+collection. Sending changes to an existing row still requires update access.
+Clients cannot set the parent Link, move rows between parents, or repeat a row ID. A collection contains at most 100 rows. Nested child collections
+are not supported. The form checks create permission for new-row inputs, update
+permission for existing-row inputs, and delete permission for removing saved rows.
+An unsaved row can be discarded without delete permission.
 
 Parent and child changes commit in one SQLite transaction. Validation, permission,
 or foreign-key errors roll back all changes. Child model/field/row permissions also

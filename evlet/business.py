@@ -231,10 +231,11 @@ class Business:
                 if row_id is not None:
                     if type(row_id) is not int or row_id not in existing or row_id in kept:
                         raise ValidationError({'children': 'Child ID must belong to this parent and appear once'})
-                    self.policy.record(tx, user, child.model, row_id, 'update')
-                    tx.update(child.model, row_id, **values)
+                    self.policy.record(tx, user, child.model, row_id, 'update' if values else 'read')
+                    if values:
+                        tx.update(child.model, row_id, **values)
+                        self.policy.record(tx, user, child.model, row_id, 'update')
                     kept.add(row_id)
-                    self.policy.record(tx, user, child.model, row_id, 'update')
                 else:
                     self.policy.require(user, child.model, 'create')
                     added = tx.create(child.model, **{**values, child.link: parent.id})
