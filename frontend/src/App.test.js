@@ -22,6 +22,16 @@ function setup({ customers = [], invoices = [], payments = [], intercept } = {})
     if (path === '/api/schema') return response({ version: 1, models: Object.keys(records).map(name => ({ name })) })
     const url = new URL(path, 'http://localhost')
     const model = url.pathname.split('/')[2]
+    const id = Number(url.pathname.split('/')[3])
+    if (options.method === 'PATCH') {
+      const record = records[model].find(item => item.id === id)
+      Object.assign(record, JSON.parse(options.body))
+      return response(record)
+    }
+    if (options.method === 'DELETE') {
+      records[model] = records[model].filter(item => item.id !== id)
+      return response(null, 204)
+    }
     if (options.method === 'POST') {
       const record = { id: records[model].length + 1, ...JSON.parse(options.body) }
       records[model].unshift(record)
@@ -29,7 +39,10 @@ function setup({ customers = [], invoices = [], payments = [], intercept } = {})
     }
     const limit = Number(url.searchParams.get('limit'))
     const offset = Number(url.searchParams.get('offset'))
-    return response({ items: records[model].slice(offset, offset + limit), limit, offset })
+    const filters = JSON.parse(url.searchParams.get('filters') || '{}')
+    let filtered = records[model].filter(item => Object.entries(filters).every(([key, value]) => String(item[key.split('__')[0]]).toLowerCase().includes(value.toLowerCase())))
+    if (url.searchParams.get('order_by') === 'name') filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name))
+    return response({ items: filtered.slice(offset, offset + limit), limit, offset })
   })
   vi.stubGlobal('fetch', fetch)
   wrapper = mount(App, { global: { plugins: [PrimeVue] } })
@@ -161,5 +174,96 @@ describe('Playground with real PrimeVue components', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('schema version 1')
     expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
+  })
+})
+
+
+describe('Model engine controls', () => {
+  it('edits a record, retains its ID, and cancels without saving', async () => {
+    const { records, fetch } = setup({ customers: [{ id: 1, name: 'Before', email: null, active: true }] })
+    await flushPromises()
+    await wrapper.find('[aria-label="Edit customer 1"]').trigger('click')
+    expect(wrapper.find('#name').element.value).toBe('Before')
+    await wrapper.find('#name').setValue('After')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(records.customer).toHaveLength(1)
+    expect(records.customer[0]).toMatchObject({ id: 1, name: 'After', active: true })
+    expect(fetch.mock.calls.find(([, options]) => options.method === 'PATCH')[0]).toBe('/api/customer/1')
+    expect(wrapper.text()).toContain('Customer updated.')
+    await wrapper.find('[aria-label="Edit customer 1"]').trigger('click')
+    await wrapper.find('#name').setValue('Discard')
+    await button('Cancel edit').trigger('click')
+    expect(wrapper.find('#name').element.value).toBe('')
+    expect(records.customer[0].name).toBe('After')
+  })
+
+  it('requires deletion confirmation and handles an empty 204 response', async () => {
+    const { fetch, records } = setup({ customers: [{ id: 1, name: 'Delete me' }] })
+    await flushPromises()
+    await wrapper.find('[aria-label="Delete customer 1"]').trigger('click')
+    expect(fetch.mock.calls.some(([, options]) => options.method === 'DELETE')).toBe(false)
+    await button('Cancel deletion').trigger('click')
+    expect(records.customer).toHaveLength(1)
+    await wrapper.find('[aria-label="Delete customer 1"]').trigger('click')
+    await button('Delete record').trigger('click')
+    await flushPromises()
+    expect(records.customer).toHaveLength(0)
+    expect(wrapper.text()).toContain('Customer deleted.')
+  })
+
+  it('shows linked-record conflicts and keeps the record', async () => {
+    setup({ customers: [{ id: 1, name: 'Linked' }], intercept: (path, options) => options.method === 'DELETE'
+      ? response({ error: 'A unique value or linked record constraint was violated' }, 409) : null })
+    await flushPromises()
+    await wrapper.find('[aria-label="Delete customer 1"]').trigger('click')
+    await button('Delete record').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('linked record constraint')
+    expect(wrapper.find('table').text()).toContain('Linked')
+  })
+
+  it('sends search and ordering to the server and resets pagination', async () => {
+    const { fetch } = setup({ customers: [{ id: 2, name: 'Zulu' }, { id: 1, name: 'Alpha' }] })
+    await flushPromises()
+    await wrapper.find('#record-search').setValue('alpha')
+    await wrapper.find('#record-order').setValue('name')
+    await button('Apply').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('table').text()).toContain('Alpha')
+    expect(wrapper.find('table').text()).not.toContain('Zulu')
+    const url = new URL(fetch.mock.calls.at(-1)[0], 'http://localhost')
+    expect(JSON.parse(url.searchParams.get('filters'))).toEqual({ name__icontains: 'alpha' })
+    expect(url.searchParams.get('order_by')).toBe('name')
+    expect(url.searchParams.get('offset')).toBe('0')
+  })
+
+  it('sends date, choice, and exact decimal values without number conversion', async () => {
+    const { records } = setup({ customers: [{ id: 1, name: 'Acme' }] })
+    await flushPromises()
+    await wrapper.findAll('nav button')[1].trigger('click')
+    await flushPromises()
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', 1)
+    await wrapper.find('#reference').setValue('FIELDS')
+    await wrapper.find('#total').setValue('12.34')
+    await wrapper.find('#posting-date').setValue('2026-10-28')
+    await wrapper.find('#status').setValue('sent')
+    await wrapper.find('#tax-rate').setValue('5.1234')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(records.invoice[0]).toMatchObject({ posting_date: '2026-10-28', status: 'sent', tax_rate: '5.1234' })
+  })
+
+  it('keeps edit values and errors after a rejected partial update', async () => {
+    setup({ customers: [{ id: 1, name: 'Keep' }], intercept: (path, options) => options.method === 'PATCH'
+      ? response({ error: 'Validation failed', fields: { name: 'Required' } }, 422) : null })
+    await flushPromises()
+    await wrapper.find('[aria-label="Edit customer 1"]').trigger('click')
+    await wrapper.find('#name').setValue(' ')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('#name').element.value).toBe(' ')
+    expect(wrapper.find('#name-error').text()).toBe('Required')
+    expect(button('Save changes')).toBeDefined()
   })
 })

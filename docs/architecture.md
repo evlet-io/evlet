@@ -1,8 +1,8 @@
-# Milestone 1 architecture
+# Architecture
 
 Status: implemented foundation, not a production business application framework.
 
-## Decisions
+## Milestone 1 baseline
 
 1. **A dependency-free Python core.** Small field descriptors and a metaclass
    collect model fields; an explicit `Registry` owns each application's models.
@@ -70,9 +70,40 @@ Model names are lowercase class names (e.g. `customer`). IDs are server-generate
 Writes accept JSON objects only. Validation errors return 422, uniqueness/foreign
 key conflicts 409, unsupported methods 405, and unknown routes/records 404.
 
+## Milestone 2 decisions
+
+The model engine now adds Boolean, Date, DateTime, fixed-scale Decimal, Select,
+Email, URL, and LongText fields; custom validators and cross-field validation;
+updates/deletes; and explicit index metadata. No dependency was added.
+
+Database and transaction sessions expose the same small CRUD/query APIs. Partial
+updates validate the merged record and preserve omitted values. Deletion uses
+foreign-key restrictions. Write transactions acquire their SQLite write lock
+before reading so concurrent updates do not overwrite unrelated fields.
+
+Queries compile checked model paths and a bounded operator set into parameterized
+SQL. Link traversal uses correlated subqueries, with at most three hops. Ordering
+uses record IDs as a deterministic tie-breaker. There is no general ORM, expression
+evaluator, or arbitrary SQL input over HTTP.
+
+Schema initialization now verifies structure and records a schema snapshot. Explicit
+migration operations cover additions, field renames, and indexes. A pending batch
+and its history commit together only after validation. Checksum/history and schema
+checks reject edited history and unsupported model changes, including changes that
+could reinterpret scaled decimal data. Legacy databases require validation against
+their original models before adopting a baseline. The Playground supplies those
+frozen definitions and creates a SQLite backup before an upgrade.
+
+The existing forms remain explicit. Their edit/delete/query controls and richer
+field inputs demonstrate the model engine through the public HTTP API. The neutral
+schema stays at version 1 because its existing shape and field semantics are
+preserved; it now includes additional types and index/bound metadata.
+
+See [the model engine guide](model-engine.md) for exact APIs and migration limits.
+
 ## Deferred work
 
-Milestone 2 should add update/delete operations, richer fields, query expressions,
-relationship traversal, and explicit migrations. Authentication, permissions,
-tenant isolation, serverless hosting, background jobs, realtime, deployment,
-benchmarks, and scaling claims remain outside this milestone.
+Milestone 3 should build automatic forms, lists, and detail views from neutral
+metadata. Authentication, permissions, tenant isolation, arbitrary/destructive
+schema conversions, deployment, jobs, realtime, and scaling claims remain outside
+this milestone.

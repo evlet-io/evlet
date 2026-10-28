@@ -1,9 +1,10 @@
-"""Exercise the real running API. Each run adds a small, uniquely named workflow."""
+"""Exercise the real running API. Each run creates, validates, and removes a uniquely named workflow."""
 
 import argparse
 import json
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from urllib.parse import urlencode
 from uuid import uuid4
 
 
@@ -18,15 +19,15 @@ def main():
     args = parser.parse_args()
     base = args.base_url.rstrip("/")
 
-    def request(path, data=None, expected=200):
+    def request(path, data=None, expected=200, method=None):
         body = None if data is None else json.dumps(data).encode()
-        req = Request(base + path, data=body, headers={"Content-Type": "application/json"})
+        req = Request(base + path, data=body, method=method, headers={"Content-Type": "application/json"})
         try:
             response = urlopen(req, timeout=10)
         except HTTPError as exc:
             response = exc
         with response:
-            payload = json.load(response)
+            payload = None if response.status == 204 else json.load(response)
             check(response.status == expected, f"{path}: expected {expected}, got {response.status}: {payload}")
             return payload
 
@@ -49,7 +50,18 @@ def main():
     error = request("/api/customer", {"name": ""}, 422)
     check("name" in error["fields"], "Missing field validation")
     request("/api/invoice", {"customer": 2**63-1, "reference": f"ORPHAN-{suffix}", "total": "1.00"}, 409)
-    print("Live smoke passed: health, schema, Customer → Invoice → Payment, reads, pagination, validation, foreign keys")
+    updated = request(f'/api/invoice/{invoice["id"]}', {
+        'total': '124.56', 'posting_date': '2026-10-28', 'status': 'sent', 'tax_rate': '5.1234',
+    }, method='PATCH')
+    check(updated['total'] == '124.56' and updated['tax_rate'] == '5.1234', 'Update lost precision')
+    query = urlencode({'filters': json.dumps({'invoice__customer__name': customer['name']}), 'order_by': 'amount'})
+    check(request('/api/payment?' + query)['items'][0]['id'] == payment['id'], 'Relationship query failed')
+    request(f'/api/customer/{customer["id"]}', expected=409, method='DELETE')
+    request(f'/api/payment/{payment["id"]}', expected=204, method='DELETE')
+    request(f'/api/invoice/{invoice["id"]}', expected=204, method='DELETE')
+    request(f'/api/customer/{customer["id"]}', expected=204, method='DELETE')
+    request(f'/api/customer/{customer["id"]}', expected=404)
+    print("Live smoke passed: updates, typed fields, relationship queries, protected deletes, cleanup; health, schema, Customer → Invoice → Payment, reads, pagination, validation, foreign keys")
 
 
 if __name__ == "__main__":

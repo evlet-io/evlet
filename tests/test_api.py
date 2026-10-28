@@ -22,7 +22,7 @@ def request(app, method, path, data=None, *, body=None, content_type=b"applicati
             messages.append(event)
         await app({"type": "http", "method": method, "path": route,
                    "query_string": query.encode(), "headers": [(b"content-type", content_type)]}, receive, send)
-        return messages[0]["status"], json.loads(messages[1]["body"]), dict(messages[0]["headers"])
+        return messages[0]["status"], json.loads(messages[1]["body"]) if messages[1]["body"] else None, dict(messages[0]["headers"])
     return asyncio.run(run())
 
 
@@ -50,7 +50,7 @@ def test_complete_customer_invoice_payment_api(application):
     ("GET", "/api/missing", None, 404),
     ("GET", "/api/customer/99", None, 404),
     ("GET", "/api/customer/no", None, 404),
-    ("DELETE", "/api/customer/1", None, 405),
+    ("DELETE", "/api/customer/1", None, 404),
     ("PUT", "/api/customer", None, 405),
     ("POST", "/health", {}, 405),
     ("POST", "/api/customer", {}, 422),

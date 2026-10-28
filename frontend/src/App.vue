@@ -5,13 +5,18 @@ import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Message from 'primevue/message'
 import RecordForm from './RecordForm.vue'
-import { createRecord, getSchema, listRecords } from './api.js'
+import { createRecord, deleteRecord, getSchema, listRecords, updateRecord } from './api.js'
 
 const sections = [
   { name: 'customer', title: 'Customers', mark: '01', description: 'Good work starts with good relationships.' },
   { name: 'invoice', title: 'Invoices', mark: '02', description: 'Keep each piece of work connected to a customer.' },
   { name: 'payment', title: 'Payments', mark: '03', description: 'Record payments and the invoices they belong to.' },
 ]
+const editing = ref(null)
+const deleting = ref(null)
+const search = ref('')
+const appliedSearch = ref('')
+const orderBy = ref('-id')
 const active = ref('customer')
 const section = computed(() => sections.find(item => item.name === active.value))
 const rows = ref([])
@@ -33,7 +38,7 @@ async function loadPage() {
   error.value = ''
   try {
     const [records, links] = await Promise.all([
-      listRecords(model, 20, offset.value),
+      listRecords(model, 20, offset.value, appliedSearch.value ? { [`${model === 'customer' ? 'name' : 'reference'}__icontains`]: appliedSearch.value } : {}, orderBy.value),
       model === 'customer' ? Promise.resolve({ items: [] }) : listRecords(model === 'invoice' ? 'customer' : 'invoice', 100),
     ])
     if (current !== generation) return
@@ -68,6 +73,11 @@ async function connect() {
 async function select(model) {
   if (saving.value || active.value === model) return
   active.value = model
+  editing.value = null
+  deleting.value = null
+  search.value = ''
+  appliedSearch.value = ''
+  orderBy.value = '-id'
   offset.value = 0
   rows.value = []
   choices.value = []
@@ -85,8 +95,10 @@ async function save(data) {
   errors.value = {}
   success.value = ''
   try {
-    await createRecord(active.value, data)
-    success.value = `${section.value.title.slice(0, -1)} created.`
+    if (editing.value) await updateRecord(active.value, editing.value.id, data)
+    else await createRecord(active.value, data)
+    success.value = `${section.value.title.slice(0, -1)} ${editing.value ? 'updated' : 'created'}.`
+    editing.value = null
     resetKey.value++
     offset.value = 0
     await loadPage()
@@ -95,6 +107,50 @@ async function save(data) {
   } finally {
     saving.value = false
   }
+}
+function edit(record) {
+  if (saving.value || loading.value) return
+  const link = active.value === 'invoice' ? 'customer' : 'invoice'
+  if (active.value !== 'customer' && !choices.value.some(item => item.id === record[link])) {
+    choices.value.push({ id: record[link], name: `#${record[link]}`, reference: `#${record[link]}` })
+  }
+  errors.value = {}
+  success.value = ''
+  deleting.value = null
+  editing.value = { ...record }
+}
+function cancelEdit() {
+  if (saving.value) return
+  editing.value = null
+  errors.value = {}
+}
+async function remove() {
+  if (!deleting.value || saving.value) return
+  saving.value = true
+  error.value = ''
+  success.value = ''
+  try {
+    await deleteRecord(active.value, deleting.value.id)
+    if (editing.value?.id === deleting.value.id) cancelAfterDelete()
+    deleting.value = null
+    success.value = `${section.value.title.slice(0, -1)} deleted.`
+    if (rows.value.length === 1 && offset.value) offset.value -= 20
+    await loadPage()
+  } catch (failure) {
+    error.value = failure.message
+  } finally {
+    saving.value = false
+  }
+}
+function cancelAfterDelete() {
+  editing.value = null
+  errors.value = {}
+}
+async function applyQuery() {
+  if (saving.value || loading.value) return
+  appliedSearch.value = search.value.trim()
+  offset.value = 0
+  await loadPage()
 }
 onMounted(connect)
 </script>
@@ -120,6 +176,23 @@ onMounted(connect)
         <div class="content-grid">
           <section class="records-card" :aria-label="section.title" :aria-busy="loading">
             <div class="card-heading"><h2>All {{ section.title.toLowerCase() }}</h2><Button label="Refresh" text size="small" :disabled="loading || saving || !connected" @click="loadPage" /></div>
+            <div class="query-controls">
+              <label for="record-search">Find {{ active === 'customer' ? 'name' : 'reference' }}</label>
+              <input id="record-search" v-model="search" type="search" :disabled="loading || saving" @keyup.enter="applyQuery" />
+              <label for="record-order">Order</label>
+              <select id="record-order" v-model="orderBy" :disabled="loading || saving">
+                <option value="-id">Newest first</option>
+                <option value="id">Oldest first</option>
+                <option :value="active === 'customer' ? 'name' : 'reference'">Alphabetical</option>
+                <option v-if="active !== 'customer'" :value="active === 'invoice' ? 'total' : 'amount'">Amount: low to high</option>
+              </select>
+              <Button label="Apply" size="small" :disabled="loading || saving || !connected" @click="applyQuery" />
+            </div>
+            <Message v-if="deleting" severity="warn" :closable="false">
+              Delete {{ active }} #{{ deleting.id }}? Linked records must be removed first.
+              <Button label="Delete record" severity="danger" size="small" :disabled="saving" @click="remove" />
+              <Button label="Cancel deletion" text size="small" :disabled="saving" @click="deleting = null" />
+            </Message>
             <p v-if="loading" class="loading-note" role="status">Loading records…</p>
             <DataTable :value="rows" data-key="id" striped-rows>
               <Column field="id" header="ID"><template #body="{ data }"><span class="record-id">#{{ data.id }}</span></template></Column>
@@ -130,18 +203,22 @@ onMounted(connect)
               <template v-else-if="active === 'invoice'">
                 <Column field="reference" header="Reference" />
                 <Column field="customer" header="Customer"><template #body="{ data }">{{ choices.find(item => item.id === data.customer)?.name || `#${data.customer}` }}</template></Column>
-                <Column field="total" header="Total" />
+                <Column field="total" header="Total" /><Column field="status" header="Status" /><Column field="posting_date" header="Date" />
               </template>
               <template v-else>
                 <Column field="reference" header="Reference" />
                 <Column field="invoice" header="Invoice"><template #body="{ data }">{{ choices.find(item => item.id === data.invoice)?.reference || `#${data.invoice}` }}</template></Column>
                 <Column field="amount" header="Amount" />
               </template>
-              <template #empty><div v-if="!loading && !error" class="empty-state"><span class="empty-symbol" aria-hidden="true">+</span><h3>{{ offset ? 'You’re all caught up.' : `Your first ${active} starts here.` }}</h3><p>{{ offset ? 'Return to the previous page to see your records.' : `Add a ${active} using the form to get started.` }}</p></div></template>
+              <Column header="Actions"><template #body="{ data }">
+                <Button label="Edit" text size="small" :aria-label="`Edit ${active} ${data.id}`" :disabled="saving || loading" @click="edit(data)" />
+                <Button label="Delete" text severity="danger" size="small" :aria-label="`Delete ${active} ${data.id}`" :disabled="saving || loading" @click="deleting = data" />
+              </template></Column>
+              <template #empty><div v-if="!loading && !error" class="empty-state"><span class="empty-symbol" aria-hidden="true">+</span><h3>{{ appliedSearch ? 'No matching records.' : offset ? 'You’re all caught up.' : `Your first ${active} starts here.` }}</h3><p>{{ appliedSearch ? 'Change or clear the search to see other records.' : offset ? 'Return to the previous page to see your records.' : `Add ${active === 'invoice' ? 'an' : 'a'} ${active} using the form to get started.` }}</p></div></template>
             </DataTable>
             <footer class="pagination"><span>Page {{ offset / 20 + 1 }} · {{ rows.length }} records</span><div><Button label="Previous" text size="small" :disabled="offset === 0 || loading || saving" @click="page(-1)" /><Button label="Next" text size="small" :disabled="rows.length < 20 || loading || saving" @click="page(1)" /></div></footer>
           </section>
-          <aside class="form-card"><RecordForm :model="active" :choices="choices" :errors="errors" :busy="saving" :disabled="loading || !connected" :reset-key="resetKey" @save="save" /></aside>
+          <aside class="form-card"><RecordForm :model="active" :choices="choices" :errors="errors" :busy="saving" :disabled="loading || !connected" :reset-key="resetKey" :record="editing" @save="save" @cancel="cancelEdit" /></aside>
         </div>
         <footer class="page-footer"><span>Small steps. Everything connected.</span><span>EVLET · 0.1</span></footer>
       </div>
