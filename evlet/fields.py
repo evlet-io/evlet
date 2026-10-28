@@ -117,7 +117,7 @@ class Currency(Field):
             raise ValueError("Use a decimal string for currency, e.g. '12.50'")
         try:
             amount = Decimal(value)
-            if not amount.is_finite() or abs(amount) > Decimal(MAX_INTEGER) / 100:
+            if not amount.is_finite() or amount.copy_abs() > Decimal(MAX_INTEGER) / 100:
                 raise ValueError("Currency is outside the supported range")
             rounded = amount.quantize(Decimal("0.01"))
             if rounded != amount:

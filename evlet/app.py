@@ -72,7 +72,7 @@ class Application:
         except Exception:
             logger.exception("Unhandled request failure")
             status, payload = 500, {"error": "Internal server error"}
-        encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        encoded = json.dumps(payload, ensure_ascii=True, allow_nan=False).encode("utf-8")
         await send({"type": "http.response.start", "status": status, "headers": [
             (b"content-type", b"application/json; charset=utf-8"),
             (b"content-length", str(len(encoded)).encode()),
