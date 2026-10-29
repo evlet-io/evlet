@@ -17,7 +17,14 @@ def column(name, field):
 
 def index(db, table, field, unique=False):
     digest = hashlib.sha256(f'{table}:{field}:{unique}'.encode()).hexdigest()[:32]
-    db.execute(f'CREATE {"UNIQUE " if unique else ""}INDEX {identifier("evlet_idx_" + digest)} ON {identifier(table)} ({identifier(field)})')
+    base = 'evlet_idx_' + digest
+    name, suffix = base, 1
+    # A field rename preserves its index name; the old field name may be reused.
+    while db.execute("SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
+                    "WHERE n.nspname='public' AND c.relname=?", (name,)).fetchone():
+        suffix += 1
+        name = f'{base}_{suffix}'
+    db.execute(f'CREATE {"UNIQUE " if unique else ""}INDEX {identifier(name)} ON {identifier(table)} ({identifier(field)})')
 
 
 def links(db, table, model):

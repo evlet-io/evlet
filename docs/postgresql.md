@@ -91,7 +91,9 @@ types, identity/primary keys, foreign keys, and indexes. Existing definitions mu
 match. `database.migrate(history)` applies supported AddField, RenameField,
 AddIndex, and CreateModel operations atomically, then validates data and history.
 Rows are validated through a server cursor so a large table is not loaded into
-client memory. The same type-change/removal restrictions as SQLite apply.
+client memory. Renaming an indexed field preserves its index; reusing the old field
+name allocates an unused index name for the new field, including unique indexes.
+The same type-change/removal restrictions as SQLite apply.
 
 Stop writers and workers before migration, back up and test recovery, then call
 `migrate` from the release's operator command. Rollback reverses DDL, data changes,

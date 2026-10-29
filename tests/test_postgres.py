@@ -227,3 +227,37 @@ def test_pool_checkout_timeout_is_bounded(pg_dsn):
         with ThreadPoolExecutor(max_workers=1) as pool:
             with pytest.raises(sqlite3.OperationalError): pool.submit(db.check).result(timeout=3)
         assert time.monotonic()-started < 3
+
+
+@pytest.mark.parametrize('unique', [False, True])
+def test_reusing_indexed_field_names_preserves_existing_indexes(pg_dsn, unique):
+    def field():
+        return Text(index=not unique, unique=unique)
+
+    Item = type('Item', (Model,), {'code': field()})
+    original = PostgreSQLDatabase(pg_dsn, Registry(Item))
+    original.initialize()
+    original.create(Item, code='existing')
+    plan = []
+    for generation in (1, 2):
+        Item = type('Item', (Model,), {
+            'code': field(), **{f'code_{i}': field() for i in range(1, generation + 1)},
+        })
+        plan.append(Migration(f'replace_code_{generation}',
+                              RenameField('item', 'code', f'code_{generation}'),
+                              AddField('item', 'code', field())))
+        updated = PostgreSQLDatabase(pg_dsn, Registry(Item), migrations=plan)
+        assert updated.migrate(plan) == [f'replace_code_{generation}']
+        updated.initialize()
+        assert updated.get(Item, 1).code_1 == 'existing'
+        assert updated.get(Item, 1).code is None
+        assert updated.migrate(plan) == []
+
+    assert updated.get(Item, 1).code_2 is None
+    updated.create(Item, code='replacement', code_1='old', code_2='middle')
+    if unique:
+        for values in ({'code': 'replacement'}, {'code_1': 'existing'}, {'code_2': 'middle'}):
+            with pytest.raises(ConflictError):
+                updated.create(Item, **values)
+    else:
+        updated.create(Item, code='replacement', code_1='existing', code_2='middle')
