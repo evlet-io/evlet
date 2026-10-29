@@ -25,7 +25,11 @@ def complete_project(tx, user, project):
 
 def create_app():
     path = os.environ.get('EVLET_DATABASE', str(Path(__file__).parent / '.data' / 'playground.sqlite3'))
-    database = Database(path, registry, migrations=migrations)
+    if os.environ.get('EVLET_POSTGRES_DSN'):
+        from evlet import PostgreSQLDatabase
+        database = PostgreSQLDatabase(os.environ['EVLET_POSTGRES_DSN'], registry, migrations=migrations)
+    else:
+        database = Database(path, registry, migrations=migrations)
     auth = LocalAuth(database, origins=('http://127.0.0.1:5173', 'http://localhost:5173',
                                        'http://127.0.0.1:8000', 'http://localhost:8000',
                                        'http://127.0.0.1:4173', 'http://localhost:4173'),

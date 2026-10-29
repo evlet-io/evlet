@@ -1,0 +1,102 @@
+# Deployment and recovery
+
+This is an operating guide, not a production-readiness certification. Use the
+[tenant deployment guide](tenancy-deployment.md) for the existing Caddy/systemd
+rendering and [PostgreSQL guide](postgresql.md) for the optional adapter. Public
+DNS, certificate issuance, Linux service behavior, provider limits, and target
+hardware still need verification on the actual deployment.
+
+## Release preparation
+
+1. Pin the application release, Python dependencies, frontend lockfile, and optional
+   driver/storage dependencies. Run the backend tests, frontend tests/build, and
+   clean wheel installation check. Build frontend assets before maintenance.
+2. Use a dedicated unprivileged service account. Keep configuration and secrets
+   outside the public asset directory. Restrict application files, database files,
+   backups, session files, and private attachment roots to the service/operator.
+3. Configure exact owned origins. Disable browser administrator setup. Provision
+   administrators through a trusted command. Use Secure, HttpOnly, host-only cookies
+   over HTTPS. The supplied tenant deployment uses `__Host-evlet_session`.
+4. Terminate TLS at the configured proxy, serve assets and API from the same origin,
+   preserve Host, and keep the API listener on loopback/private networking. Do not
+   select tenants from forwarding headers. Restrict direct API access. Apply proxy
+   connection/body/time limits appropriate to 1 MiB attachment uploads and SSE.
+5. Take a consistent backup, stop application writers and workers, run explicit
+   migrations, and verify startup before routing traffic to the new release.
+   Never allow old and new schema-dependent writers during the migration window.
+
+Start with the documented single service process and bounded concurrency. Measure
+password-hashing memory under expected sign-in traffic as well as ordinary request
+load. Rate-limit sign-in at the trusted proxy and monitor rejected requests. Evlet
+uses the direct client address for its own sign-in throttle; behind a proxy that
+address may be shared. Do not blindly trust arbitrary forwarded IP headers.
+
+## Database choices
+
+SQLite uses a local durable filesystem, WAL, foreign keys, and short serialized
+writes. Avoid network filesystems and independent replicas of a live file. Include
+its WAL state through a consistent backup rather than copying only the main file.
+There is no automatic failover.
+
+PostgreSQL requires a dedicated UTF-8 database and role per application. Give the
+runtime role only the privileges it needs, with no superuser or CREATEDB permission.
+Use a separate migration operator where practical. Configure certificate-verified
+TLS for remote connections, for example `sslmode=verify-full` and an appropriate
+CA source. Restrict database ingress and configure backup retention, WAL archiving,
+capacity alerts, and recovery objectives with the database operator. The supplied
+adapter still serializes framework writes per database. Adding API workers will
+not remove that limit.
+
+Set explicit service connection limits below PostgreSQL's connection budget.
+Account for application processes, job workers, migrations, monitoring, and admin
+access. Avoid aggressive retries during lock/connection failures. HTTP database
+failures return a generic 503; inspect protected server diagnostics without exposing
+connection strings, record values, or credentials to users.
+
+## Backup and restore
+
+Define and test an acceptable recovery point and recovery time before launch.
+Encrypt backups, limit access, retain multiple generations, and keep a copy outside
+the application host. Retention alone is insufficient without restore tests.
+
+For SQLite, stop writers/workers or use SQLite's online backup API to capture a
+consistent database. For PostgreSQL, use a supported `pg_dump`/`pg_restore` pair
+for logical backups, or the provider's tested physical/PITR service. Do not use a
+client older than the server for logical dumps. Avoid secrets in command arguments;
+use a protected service configuration or password file.
+
+Database attachment bytes are transactional with their metadata. Local/S3 file
+attachments require a coordinated backup of database metadata, namespace markers,
+and all referenced bytes. Stop uploads and orphan collection while making a
+consistent filesystem copy; preserve object versions/retention for remote bytes.
+Restoring database metadata alone can leave missing or mismatched attachments.
+
+Restore first into an isolated database and private storage namespace with workers,
+schedules, outgoing integrations, and public routing disabled. Verify:
+
+- Schema and migration history match the release.
+- Representative records, exact numeric totals, and links are intact.
+- Authentication, permissions, private attachments, and tenant boundaries behave as expected.
+- Pending/running jobs and missed schedules are reviewed before enabling workers.
+- Restored session tokens are revoked when the incident/recovery policy requires it.
+
+Only route traffic after the restored application passes health and authenticated
+smoke checks. Preserve the failed state for investigation. A code rollback is safe
+only when its models accept the current schema; otherwise restore the matching
+backup in isolation and follow the same cutover checks.
+
+## Monitoring and capacity
+
+Monitor request/error latency, 401/403/429/503 rates, CPU, memory, open connections,
+lock waits, queue age, failed jobs, disk/WAL growth, backup age, and restore results.
+Protect logs and avoid request bodies, cookies, authorization headers, passwords,
+and connection strings. `/health` is a database probe, not a full business or
+recovery check. Add external authenticated checks for critical workflows.
+
+Reproduce the [benchmark](performance.md) on deployment hardware before sizing it.
+Use indexes justified by actual queries and inspect plans after realistic data
+loading. Test the sustained concurrent request mix and reports together with
+workers, file storage, proxy/TLS, sign-ins, and failure recovery. The local report
+has no public-network latency, failover, or long-duration load evidence. Its numbers
+are not service-level guarantees or evidence for the specification's larger tenant
+and employee-count targets.

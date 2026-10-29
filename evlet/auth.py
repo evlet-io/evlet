@@ -64,11 +64,22 @@ class LocalAuth:
 
     def initialize(self):
         with self.database.transaction() as tx:
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_users (id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)')
+            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)')
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, csrf TEXT NOT NULL, expires INTEGER NOT NULL)')
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_login_limits (client TEXT PRIMARY KEY, attempts INTEGER NOT NULL, resets INTEGER NOT NULL)')
 
+            tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_session_user ON evlet_sessions(user_id)')
+            tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_session_expiry ON evlet_sessions(expires)')
+            tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_login_reset ON evlet_login_limits(resets)')
+
     def guard(self, scope):
+        protected = {b'host', b'origin', b'cookie', b'x-csrf-token', b'x-evlet-request', b'sec-fetch-site'}
+        seen = set()
+        for key, _ in scope.get('headers', []):
+            key = key.lower()
+            if key in protected and key in seen:
+                raise AccessError(403, 'Repeated security header')
+            seen.add(key)
         headers = dict(scope.get('headers', []))
         if headers.get(b'host') not in self.hosts:
             raise AccessError(403, 'Unrecognized host')
@@ -148,7 +159,7 @@ class LocalAuth:
             row = tx.connection.execute('SELECT attempts FROM evlet_login_limits WHERE client=?', (client,)).fetchone()
             if row and row['attempts'] >= 10:
                 raise AccessError(429, 'Too many sign-in attempts. Try again in 15 minutes.')
-            tx.connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=attempts+1', (client, now + 900))
+            tx.connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1', (client, now + 900))
             account = tx.connection.execute('SELECT * FROM evlet_users WHERE username=?', (body['username'].lower(),)).fetchone()
         stored = account['password'] if account else 'scrypt:' + '00' * 16 + ':' + '00' * 64
         try:

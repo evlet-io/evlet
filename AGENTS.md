@@ -1,12 +1,14 @@
 # Working on Evlet
 
 Read `docs/specification.md` and `docs/architecture.md` before changing the public API.
-The current scope is Milestone 7: compact model discovery, permission-filtered
-metadata, authenticated local MCP tools, starter commands, and developer docs.
-Milestones 1 through 6 are merged. Keep subsequent milestones separate. Read
+The current scope is Milestone 8: optional PostgreSQL persistence, performance
+measurement, concurrency and tenant security tests, and deployment operations.
+Milestones 1 through 7 are merged. Keep changes within this milestone. Read
 `docs/business-capabilities.md`, `docs/tenancy-deployment.md`,
 `docs/jobs-realtime.md`, and `docs/connector.md` for public APIs and permission
-boundaries. Connector writes must use the existing authenticated HTTP routes;
+boundaries. Read `docs/postgresql.md`, `docs/performance.md`, and
+`docs/production-operations.md` for adapter limits and validation. Connector writes must use the existing
+authenticated HTTP routes;
 never bypass account, tenant, row, field, or action checks.
 
 - Use Python 3.12+ and Node 24. Python definitions are authoritative; frontend

@@ -16,6 +16,14 @@ def main():
     if Path(evlet.__file__).resolve().is_relative_to(checkout / "evlet"):
         raise RuntimeError("Package check imported the checkout instead of the installed wheel")
 
+    from evlet import PostgreSQLDatabase
+    try:
+        PostgreSQLDatabase('dbname=unused', Registry())
+    except RuntimeError as exc:
+        assert 'evlet[postgres]' in str(exc)
+    else:
+        raise RuntimeError('Clean wheel check unexpectedly has the optional PostgreSQL driver')
+
     class Product(Model):
         name = Text(required=True)
         price = Currency(required=True)

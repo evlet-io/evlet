@@ -14,6 +14,7 @@ dependencies = []
 evlet = "evlet.cli:main"
 
 [project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.3.6,<4", "psycopg-pool>=3.3.3,<4"]
 s3 = ["boto3>=1.43.119,<2"]
 dev = ["pytest>=8,<10", "uvicorn>=0.34,<1", "build>=1,<2", "setuptools>=75"]
 

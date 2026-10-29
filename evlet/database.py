@@ -40,6 +40,16 @@ class Database:
         finally:
             connection.close()
 
+    def owns(self, session):
+        """Check the physical database before accepting a bound feature write."""
+        if not isinstance(session.connection, sqlite3.Connection):
+            return False
+        path = session.connection.execute('PRAGMA database_list').fetchone()[2]
+        return Path(path).resolve() == self.path.resolve()
+
+    def columns(self, connection, table):
+        return {row['name'] for row in connection.execute(f'PRAGMA table_info({identifier(table)})')}
+
     def initialize(self):
         from .migrations import initialize
         initialize(self)
@@ -99,6 +109,9 @@ class Database:
             records = session.list(model, **query)
             total = session.count(model, filters=query.get('filters'), search=query.get('search', ''))
             return records, total
+
+    def close(self):
+        """SQLite connections already close at the end of each operation."""
 
     def check(self):
         with self._connection() as connection:

@@ -57,8 +57,7 @@ class S3Storage(SQLiteStorage):
         return self.prefix + 'objects/' + key
 
     def add(self, tx, model, record_id, name, content):
-        path = tx.connection.execute('PRAGMA database_list').fetchone()[2]
-        if self.database is None or Path(path).resolve() != self.database.path.resolve():
+        if self.database is None or not self.database.owns(tx):
             raise StorageError('Attachment transaction belongs to another database')
         key = secrets.token_hex(32)
         try:
