@@ -11,6 +11,8 @@ export class ApiError extends Error {
 }
 
 export async function request(path, options = {}) {
+  const { withMeta, ...fetchOptions } = options
+  options = fetchOptions
   let response
   try {
     const headers = { ...options.headers }
@@ -31,7 +33,7 @@ export async function request(path, options = {}) {
     throw failure
   }
   if (!response.ok) throw new ApiError(data.error || 'The request failed.', data.fields, response.status)
-  return data
+  return withMeta ? { data, etag: response.headers?.get?.("etag") || "" } : data
 }
 
 export const getSchema = () => request('/api/schema')

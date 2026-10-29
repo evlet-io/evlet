@@ -1,9 +1,10 @@
 # Working on Evlet
 
 Read `docs/specification.md` and `docs/architecture.md` before changing the public API.
-The current scope is Milestone 8: optional PostgreSQL persistence, performance
-measurement, concurrency and tenant security tests, and deployment operations.
-Milestones 1 through 7 are merged. Keep changes within this milestone. Read
+The current scope is the native SolidJS UI and Python UI contracts. Preserve
+the completed backend milestones and the approved Projects demo. Keep login,
+Docs after sign-in, Demo Pages and generated model screens working. Read
+`docs/ui.md` for the public UI API and migration boundaries. Read
 `docs/business-capabilities.md`, `docs/tenancy-deployment.md`,
 `docs/jobs-realtime.md`, and `docs/connector.md` for public APIs and permission
 boundaries. Read `docs/postgresql.md`, `docs/performance.md`, and
@@ -16,9 +17,9 @@ never bypass account, tenant, row, field, or action checks.
 - Prefer the standard library. Justify every dependency. No mandatory Redis,
   Docker, external database, ORM, or background worker.
 - Keep public APIs explicit, small, and readable. Use snake_case in Python,
-  PascalCase for model and Vue component names. Do not create unused modules.
+  PascalCase for model and Solid component names. Do not create unused modules.
 - `evlet/` contains the framework; `examples/playground/` is a consumer using only
-  public exports; `frontend/` is the Vue/PrimeVue Playground; `tests/` covers the
+  public exports; `frontend/` is the native SolidJS Playground; `frontend/legacy` is a test-only regression harness; `tests/` covers the
   core, SQLite integration, and ASGI interface.
 - Parameterize SQL values and validate SQL identifiers. Validate on the backend.
   Preserve transaction boundaries, exact currency values, and foreign keys.

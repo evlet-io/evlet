@@ -1,5 +1,7 @@
 """Explicit actions, owned child collections, and private attachments."""
 
+import hashlib
+import json
 import base64
 import binascii
 from dataclasses import dataclass
@@ -201,6 +203,7 @@ class Business:
                 raise ValidationError({'_form': 'This action takes no arguments'})
             with self.database.transaction() as tx:
                 record = self.policy.record(tx, user, model, record_id, 'update')
+                self.check_revision(scope, tx, user, record)
                 outcome = action.handler(tx, user, record)
                 self.changed(tx, model, record_id)
                 record = self.policy.record(tx, user, model, record_id)
@@ -212,6 +215,7 @@ class Business:
             raise AccessError(405, 'Method not allowed')
         with self.database.transaction() as tx:
             record = self.policy.record(tx, user, model, record_id, {'GET': 'read', 'PATCH': 'update', 'DELETE': 'delete'}[method])
+            if method != 'GET': self.check_revision(scope, tx, user, record)
             if method == 'DELETE':
                 for child in self.children.values():
                     if child.parent is model:
@@ -230,7 +234,17 @@ class Business:
                 self.save_children(tx, user, record, children)
                 self.changed(tx, model, record_id)
             result = self.detail(tx, user, record)
-        return 200, result, []
+        return 200, result, [(b'etag', self.revision(result))]
+
+    @staticmethod
+    def revision(detail):
+        encoded = json.dumps(detail, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
+        return ('"' + hashlib.sha256(encoded).hexdigest() + '"').encode()
+
+    def check_revision(self, scope, tx, user, record):
+        expected = dict(scope.get('headers', [])).get(b'if-match')
+        if expected is not None and expected != self.revision(self.detail(tx, user, record)):
+            raise AccessError(409, 'This record changed since you opened it. Reload it before saving.')
 
     def accounts(self, scope, body, user):
         path, method = scope['path'], scope['method']

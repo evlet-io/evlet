@@ -16,6 +16,14 @@ def main():
     if Path(evlet.__file__).resolve().is_relative_to(checkout / "evlet"):
         raise RuntimeError("Package check imported the checkout instead of the installed wheel")
 
+    from evlet.ui import PageView, Column, Text as UIText, SchemaCompiler
+    from evlet.ui.serving import static_response
+    compiled = SchemaCompiler().compile(PageView("example", route="/example", layout=Column(children=[UIText("Ready")])))
+    assert compiled.to_dict()["layout"]["slots"]["children"][0]["props"]["text"] == "Ready"
+    response = static_response("/docs")
+    assert response and b'<div id="root">' in response[1].content
+    assert list((Path(evlet.__file__).parent / "ui/static/assets").glob("*.js"))
+
     from evlet import PostgreSQLDatabase
     try:
         PostgreSQLDatabase('dbname=unused', Registry())

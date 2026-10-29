@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import sqlite3
 from urllib.parse import parse_qs
 
@@ -24,7 +25,13 @@ class HTTPError(Exception):
 
 
 class Application:
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet"):
+        from .ui import ViewRegistry
+        self.name = name
+        self.ui = ui or ViewRegistry(views)
+        if ui is not None and views:
+            raise ValueError("Pass either views or a UI registry")
+        self.ui.validate(database.registry.ui_schema())
         self.database = database
         self.registry = database.registry
         if auth is None and (policy is not None or actions or children or attachments or storage is not None or jobs is not None or events is not None):
@@ -150,6 +157,37 @@ class Application:
             self._method(method, ["GET"])
             self.database.check()
             return 200, {"status": "ok"}, []
+        if path in ('/api/ui', '/api/ui/resolve'):
+            self._method(method, ['GET'])
+            user = None
+            if self.business:
+                self.business.auth.guard(scope)
+                user, _ = self.business.auth.session(scope)
+                schema = self.business.schema(user)
+            else:
+                schema = self.registry.ui_schema()
+            if path == '/api/ui':
+                return 200, {'name': self.name, **self.ui.compile(schema, user)}, []
+            try:
+                query = parse_qs(scope.get('query_string', b'').decode('ascii'), strict_parsing=True, max_num_fields=1)
+                if set(query) != {'path'} or len(query['path']) != 1: raise ValueError()
+                return 200, self.ui.resolve(query['path'][0], schema, user), []
+            except (ValueError, UnicodeError):
+                raise HTTPError(422, 'Supply one valid view path')
+            except LookupError:
+                raise HTTPError(404, 'View not found or not permitted')
+        if not path.startswith('/api/') and method == 'GET':
+            if self.business: self.business.auth.guard(scope)
+            from .ui.serving import static_response
+            from .ui.registry import route_pattern
+            builtin = path in ('/', '/login', '/docs', '/settings/accounts') or path.startswith('/docs/') or path.startswith('/assets/')
+            generated = re.fullmatch(r'/app/([a-z][a-z0-9_]*)(?:/(new|[1-9][0-9]{0,15})(/view)?)?', path)
+            known_model = generated and generated[1] in self.registry.models
+            custom = any(view.route and route_pattern(view.route).fullmatch(path) for view in self.ui.views.values())
+            if not (builtin or known_model or custom): raise HTTPError(404, 'Route not found')
+            response = static_response(path)
+            if response is not None: return response
+            raise HTTPError(404, 'UI assets are not built. Run the frontend production build.')
         if self.business:
             return self.business.dispatch(scope, body)
         if path == "/api/schema":

@@ -1,0 +1,3934 @@
+{
+  "ui": {
+    "name": "Evlet Playground",
+    "version": 1,
+    "views": [
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "list",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "customer.list.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "name",
+                      "props": {
+                        "field": "name"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "email",
+                      "props": {
+                        "field": "email"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "active",
+                      "props": {
+                        "field": "active"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "notes",
+                      "props": {
+                        "field": "notes"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "customer",
+        "name": "customer.list",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Customers",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "form",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "customer.form.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "name",
+                      "props": {
+                        "field": "name"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "email",
+                      "props": {
+                        "field": "email"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "active",
+                      "props": {
+                        "field": "active"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "notes",
+                      "props": {
+                        "field": "notes"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "customer",
+        "name": "customer.form",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Customer",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "detail",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "customer.detail.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "name",
+                      "props": {
+                        "field": "name"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "email",
+                      "props": {
+                        "field": "email"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "active",
+                      "props": {
+                        "field": "active"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "notes",
+                      "props": {
+                        "field": "notes"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "customer",
+        "name": "customer.detail",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Customer",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "list",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "invoice.list.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "customer",
+                      "props": {
+                        "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "reference",
+                      "props": {
+                        "field": "reference"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "total",
+                      "props": {
+                        "field": "total"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "posting_date",
+                      "props": {
+                        "field": "posting_date"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "status",
+                      "props": {
+                        "field": "status"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "tax_rate",
+                      "props": {
+                        "field": "tax_rate"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "invoice",
+        "name": "invoice.list",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Invoices",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "form",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "invoice.form.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "customer",
+                      "props": {
+                        "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "reference",
+                      "props": {
+                        "field": "reference"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "total",
+                      "props": {
+                        "field": "total"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "posting_date",
+                      "props": {
+                        "field": "posting_date"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "status",
+                      "props": {
+                        "field": "status"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "tax_rate",
+                      "props": {
+                        "field": "tax_rate"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "invoice",
+        "name": "invoice.form",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Invoice",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "detail",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "invoice.detail.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "customer",
+                      "props": {
+                        "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "reference",
+                      "props": {
+                        "field": "reference"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "total",
+                      "props": {
+                        "field": "total"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "posting_date",
+                      "props": {
+                        "field": "posting_date"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "status",
+                      "props": {
+                        "field": "status"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "tax_rate",
+                      "props": {
+                        "field": "tax_rate"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "invoice",
+        "name": "invoice.detail",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Invoice",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "list",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "payment.list.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "invoice",
+                      "props": {
+                        "field": "invoice"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "reference",
+                      "props": {
+                        "field": "reference"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "amount",
+                      "props": {
+                        "field": "amount"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "received_at",
+                      "props": {
+                        "field": "received_at"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "payment",
+        "name": "payment.list",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Payments",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "form",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "payment.form.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "invoice",
+                      "props": {
+                        "field": "invoice"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "reference",
+                      "props": {
+                        "field": "reference"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "amount",
+                      "props": {
+                        "field": "amount"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "received_at",
+                      "props": {
+                        "field": "received_at"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "payment",
+        "name": "payment.form",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Payment",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "detail",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "payment.detail.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "invoice",
+                      "props": {
+                        "field": "invoice"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "reference",
+                      "props": {
+                        "field": "reference"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "amount",
+                      "props": {
+                        "field": "amount"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "received_at",
+                      "props": {
+                        "field": "received_at"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "payment",
+        "name": "payment.detail",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Payment",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "list",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "project.list.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": "Project"
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "name",
+                      "props": {
+                        "field": "name"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "customer",
+                      "props": {
+                        "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "status",
+                      "props": {
+                        "field": "status"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_2",
+                "props": {
+                  "gap": 16,
+                  "title": "Planning"
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "budget",
+                      "props": {
+                        "field": "budget"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "progress",
+                      "props": {
+                        "field": "progress"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "starts_on",
+                      "props": {
+                        "field": "starts_on"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_3",
+                "props": {
+                  "gap": 16,
+                  "title": "Notes"
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "notes",
+                      "props": {
+                        "field": "notes"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "project",
+        "name": "project.list",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Projects",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "form",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "project.form.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": "Project"
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "name",
+                      "props": {
+                        "field": "name"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "customer",
+                      "props": {
+                        "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "status",
+                      "props": {
+                        "field": "status"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_2",
+                "props": {
+                  "gap": 16,
+                  "title": "Planning"
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "budget",
+                      "props": {
+                        "field": "budget"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "progress",
+                      "props": {
+                        "field": "progress"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "starts_on",
+                      "props": {
+                        "field": "starts_on"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_3",
+                "props": {
+                  "gap": 16,
+                  "title": "Notes"
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "notes",
+                      "props": {
+                        "field": "notes"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "project",
+        "name": "project.form",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Project",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "detail",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "project.detail.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": "Project"
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "name",
+                      "props": {
+                        "field": "name"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "customer",
+                      "props": {
+                        "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "status",
+                      "props": {
+                        "field": "status"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_2",
+                "props": {
+                  "gap": 16,
+                  "title": "Planning"
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "budget",
+                      "props": {
+                        "field": "budget"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "progress",
+                      "props": {
+                        "field": "progress"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "starts_on",
+                      "props": {
+                        "field": "starts_on"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_3",
+                "props": {
+                  "gap": 16,
+                  "title": "Notes"
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "notes",
+                      "props": {
+                        "field": "notes"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "project",
+        "name": "project.detail",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Project",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "page",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "projects_demo.root",
+          "props": {},
+          "slots": {},
+          "type": "ProjectsDemo",
+          "version": 1
+        },
+        "model": null,
+        "name": "projects_demo",
+        "options": {},
+        "route": "/demo/projects",
+        "section": "Demo Pages",
+        "state": {},
+        "subtitle": "A complete Explorer View with sample data.",
+        "title": "Projects",
+        "version": 1
+      },
+      {
+        "computed": {
+          "view.is_company": {
+            "$expr": "eq",
+            "args": [
+              {
+                "$expr": "ref",
+                "args": [
+                  "view.kind"
+                ]
+              },
+              "Company"
+            ]
+          }
+        },
+        "dependencies": {
+          "view.company": [
+            "layouts_demo.root.children.0.children.0.children.3",
+            "layouts_demo.root.children.0.children.1.children.2",
+            "details.children.2"
+          ],
+          "view.is_company": [
+            "layouts_demo.root.children.0.children.0.children.3",
+            "layouts_demo.root.children.0.children.0.children.3",
+            "layouts_demo.root.children.0.children.1.children.2",
+            "details.children.2"
+          ],
+          "view.kind": [
+            "layouts_demo.root.children.0.children.0.children.1",
+            "layouts_demo.root.children.0.children.1.children.0",
+            "details.children.1"
+          ],
+          "view.name": [
+            "layouts_demo.root.children.0.children.0.children.2",
+            "layouts_demo.root.children.0.children.1.children.1",
+            "layouts_demo.root.children.0.children.1.children.1",
+            "layouts_demo.root.children.0.children.1.children.4",
+            "details.children.0",
+            "details.children.0"
+          ],
+          "view.subscribed": [
+            "layouts_demo.root.children.0.children.0.children.4",
+            "layouts_demo.root.children.0.children.1.children.3"
+          ]
+        },
+        "icon": "grid",
+        "kind": "page",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "layouts_demo.root",
+          "props": {
+            "gap": 18
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "layouts_demo.root.children.0",
+                "props": {
+                  "columns": 2,
+                  "gap": 18
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "layouts_demo.root.children.0.children.0",
+                      "props": {
+                        "gap": 16,
+                        "title": "A small form"
+                      },
+                      "slots": {
+                        "children": [
+                          {
+                            "bindings": {},
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.0.children.0",
+                            "props": {
+                              "text": "Change the customer type to see a field appear."
+                            },
+                            "slots": {},
+                            "type": "Text",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {
+                              "value": "view.kind"
+                            },
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.0.children.1",
+                            "props": {
+                              "label": "Customer type",
+                              "options": [
+                                "Person",
+                                "Company"
+                              ]
+                            },
+                            "slots": {},
+                            "type": "Select",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {
+                              "value": "view.name"
+                            },
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.0.children.2",
+                            "props": {
+                              "label": "Name",
+                              "placeholder": "Alex Morgan"
+                            },
+                            "slots": {},
+                            "type": "TextInput",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {
+                              "value": "view.company"
+                            },
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.0.children.3",
+                            "props": {
+                              "label": "Company name",
+                              "placeholder": "Company name",
+                              "required": {
+                                "$expr": "ref",
+                                "args": [
+                                  "view.is_company"
+                                ]
+                              },
+                              "visible": {
+                                "$expr": "ref",
+                                "args": [
+                                  "view.is_company"
+                                ]
+                              }
+                            },
+                            "slots": {},
+                            "type": "TextInput",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {
+                              "value": "view.subscribed"
+                            },
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.0.children.4",
+                            "props": {
+                              "label": "Receive updates"
+                            },
+                            "slots": {},
+                            "type": "Checkbox",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {},
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.0.children.5",
+                            "props": {
+                              "gap": 10
+                            },
+                            "slots": {
+                              "children": [
+                                {
+                                  "bindings": {},
+                                  "events": {
+                                    "on_click": [
+                                      {
+                                        "op": "open",
+                                        "target": "details"
+                                      }
+                                    ]
+                                  },
+                                  "id": "layouts_demo.root.children.0.children.0.children.5.children.0",
+                                  "props": {
+                                    "label": "Preview details",
+                                    "variant": "primary"
+                                  },
+                                  "slots": {},
+                                  "type": "Button",
+                                  "version": 1
+                                },
+                                {
+                                  "bindings": {},
+                                  "events": {
+                                    "on_click": [
+                                      {
+                                        "op": "reset",
+                                        "path": "view.name"
+                                      },
+                                      {
+                                        "op": "reset",
+                                        "path": "view.company"
+                                      },
+                                      {
+                                        "op": "set",
+                                        "path": "view.kind",
+                                        "value": "Person"
+                                      },
+                                      {
+                                        "message": "Form reset.",
+                                        "op": "notify"
+                                      }
+                                    ]
+                                  },
+                                  "id": "layouts_demo.root.children.0.children.0.children.5.children.1",
+                                  "props": {
+                                    "label": "Reset",
+                                    "variant": "secondary"
+                                  },
+                                  "slots": {},
+                                  "type": "Button",
+                                  "version": 1
+                                }
+                              ]
+                            },
+                            "type": "Row",
+                            "version": 1
+                          }
+                        ]
+                      },
+                      "type": "Card",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "layouts_demo.root.children.0.children.1",
+                      "props": {
+                        "gap": 16,
+                        "title": "The same state, another place"
+                      },
+                      "slots": {
+                        "children": [
+                          {
+                            "bindings": {},
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.1.children.0",
+                            "props": {
+                              "text": {
+                                "$expr": "ref",
+                                "args": [
+                                  "view.kind"
+                                ]
+                              },
+                              "tone": "info"
+                            },
+                            "slots": {},
+                            "type": "Badge",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {},
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.1.children.1",
+                            "props": {
+                              "level": 2,
+                              "text": {
+                                "$expr": "choose",
+                                "args": [
+                                  {
+                                    "$expr": "eq",
+                                    "args": [
+                                      {
+                                        "$expr": "ref",
+                                        "args": [
+                                          "view.name"
+                                        ]
+                                      },
+                                      ""
+                                    ]
+                                  },
+                                  "Your name goes here",
+                                  {
+                                    "$expr": "ref",
+                                    "args": [
+                                      "view.name"
+                                    ]
+                                  }
+                                ]
+                              }
+                            },
+                            "slots": {},
+                            "type": "Heading",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {},
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.1.children.2",
+                            "props": {
+                              "text": {
+                                "$expr": "choose",
+                                "args": [
+                                  {
+                                    "$expr": "ref",
+                                    "args": [
+                                      "view.is_company"
+                                    ]
+                                  },
+                                  {
+                                    "$expr": "ref",
+                                    "args": [
+                                      "view.company"
+                                    ]
+                                  },
+                                  "Personal customer"
+                                ]
+                              }
+                            },
+                            "slots": {},
+                            "type": "Text",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {},
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.1.children.3",
+                            "props": {
+                              "text": {
+                                "$expr": "choose",
+                                "args": [
+                                  {
+                                    "$expr": "ref",
+                                    "args": [
+                                      "view.subscribed"
+                                    ]
+                                  },
+                                  "Updates are enabled.",
+                                  "Updates are disabled."
+                                ]
+                              }
+                            },
+                            "slots": {},
+                            "type": "Text",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {},
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.1.children.4",
+                            "props": {
+                              "label": "Profile completion",
+                              "max": 100,
+                              "value": {
+                                "$expr": "choose",
+                                "args": [
+                                  {
+                                    "$expr": "eq",
+                                    "args": [
+                                      {
+                                        "$expr": "ref",
+                                        "args": [
+                                          "view.name"
+                                        ]
+                                      },
+                                      ""
+                                    ]
+                                  },
+                                  25,
+                                  100
+                                ]
+                              }
+                            },
+                            "slots": {},
+                            "type": "Progress",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {},
+                            "events": {},
+                            "id": "layouts_demo.root.children.0.children.1.children.5",
+                            "props": {
+                              "text": "The values update directly from the view state. Nothing here is saved to the database."
+                            },
+                            "slots": {},
+                            "type": "Text",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {},
+                            "events": {
+                              "on_click": [
+                                {
+                                  "op": "navigate",
+                                  "path": "/docs/state"
+                                }
+                              ]
+                            },
+                            "id": "layouts_demo.root.children.0.children.1.children.6",
+                            "props": {
+                              "label": "Read about state & actions",
+                              "variant": "secondary"
+                            },
+                            "slots": {},
+                            "type": "Button",
+                            "version": 1
+                          }
+                        ]
+                      },
+                      "type": "Card",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "Grid",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "layouts_demo.root.children.1",
+                "props": {
+                  "gap": 16,
+                  "title": "A reusable shell"
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "layouts_demo.root.children.1.children.0",
+                      "props": {
+                        "text": "Sidebar, TopBar, ViewHost, StatusBar and OverlayLayer are independent areas. The page owns its content and scrolling."
+                      },
+                      "slots": {},
+                      "type": "Text",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "layouts_demo.root.children.1.children.1",
+                      "props": {
+                        "gap": 16
+                      },
+                      "slots": {
+                        "children": [
+                          {
+                            "bindings": {},
+                            "events": {
+                              "on_click": [
+                                {
+                                  "op": "navigate",
+                                  "path": "/demo/projects"
+                                }
+                              ]
+                            },
+                            "id": "layouts_demo.root.children.1.children.1.children.0",
+                            "props": {
+                              "label": "Open Projects",
+                              "variant": "secondary"
+                            },
+                            "slots": {},
+                            "type": "Button",
+                            "version": 1
+                          },
+                          {
+                            "bindings": {},
+                            "events": {
+                              "on_click": [
+                                {
+                                  "op": "navigate",
+                                  "path": "/docs/components"
+                                }
+                              ]
+                            },
+                            "id": "layouts_demo.root.children.1.children.1.children.1",
+                            "props": {
+                              "label": "Explore components",
+                              "variant": "secondary"
+                            },
+                            "slots": {},
+                            "type": "Button",
+                            "version": 1
+                          }
+                        ]
+                      },
+                      "type": "Row",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "Card",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "details",
+                "props": {
+                  "title": "Preview details"
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "details.children.0",
+                      "props": {
+                        "text": {
+                          "$expr": "choose",
+                          "args": [
+                            {
+                              "$expr": "eq",
+                              "args": [
+                                {
+                                  "$expr": "ref",
+                                  "args": [
+                                    "view.name"
+                                  ]
+                                },
+                                ""
+                              ]
+                            },
+                            "No name entered yet.",
+                            {
+                              "$expr": "ref",
+                              "args": [
+                                "view.name"
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      "slots": {},
+                      "type": "Text",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "details.children.1",
+                      "props": {
+                        "text": {
+                          "$expr": "ref",
+                          "args": [
+                            "view.kind"
+                          ]
+                        }
+                      },
+                      "slots": {},
+                      "type": "Text",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "details.children.2",
+                      "props": {
+                        "text": {
+                          "$expr": "ref",
+                          "args": [
+                            "view.company"
+                          ]
+                        },
+                        "visible": {
+                          "$expr": "ref",
+                          "args": [
+                            "view.is_company"
+                          ]
+                        }
+                      },
+                      "slots": {},
+                      "type": "Text",
+                      "version": 1
+                    }
+                  ],
+                  "footer": [
+                    {
+                      "bindings": {},
+                      "events": {
+                        "on_click": [
+                          {
+                            "op": "close",
+                            "target": "details"
+                          }
+                        ]
+                      },
+                      "id": "details.footer.0",
+                      "props": {
+                        "label": "Close",
+                        "variant": "secondary"
+                      },
+                      "slots": {},
+                      "type": "Button",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "Dialog",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": null,
+        "name": "layouts_demo",
+        "options": {},
+        "route": "/demo/layouts",
+        "section": "Demo Pages",
+        "state": {
+          "company": "",
+          "kind": "Person",
+          "name": "",
+          "subscribed": true
+        },
+        "subtitle": "A working page defined entirely in Python.",
+        "title": "Layouts & state",
+        "version": 1
+      }
+    ],
+    "components": [
+      {
+        "name": "Row",
+        "category": "layout",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "gap": "number",
+          "padding": "number",
+          "columns": "number",
+          "align": "string",
+          "justify": "string",
+          "wrap": "boolean",
+          "title": "string",
+          "description": "string"
+        },
+        "events": [],
+        "slots": [
+          "children",
+          "header",
+          "footer"
+        ],
+        "bindings": [],
+        "defaults": {
+          "gap": 16
+        },
+        "description": "Arrange content with a responsive, named layout.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Row",
+        "version": 1,
+        "example": "Row(children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "Column",
+        "category": "layout",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "gap": "number",
+          "padding": "number",
+          "columns": "number",
+          "align": "string",
+          "justify": "string",
+          "wrap": "boolean",
+          "title": "string",
+          "description": "string"
+        },
+        "events": [],
+        "slots": [
+          "children",
+          "header",
+          "footer"
+        ],
+        "bindings": [],
+        "defaults": {
+          "gap": 16
+        },
+        "description": "Arrange content with a responsive, named layout.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Column",
+        "version": 1,
+        "example": "Column(children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "Grid",
+        "category": "layout",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "gap": "number",
+          "padding": "number",
+          "columns": "number",
+          "align": "string",
+          "justify": "string",
+          "wrap": "boolean",
+          "title": "string",
+          "description": "string"
+        },
+        "events": [],
+        "slots": [
+          "children",
+          "header",
+          "footer"
+        ],
+        "bindings": [],
+        "defaults": {
+          "gap": 16
+        },
+        "description": "Arrange content with a responsive, named layout.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Grid",
+        "version": 1,
+        "example": "Grid(children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "Stack",
+        "category": "layout",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "gap": "number",
+          "padding": "number",
+          "columns": "number",
+          "align": "string",
+          "justify": "string",
+          "wrap": "boolean",
+          "title": "string",
+          "description": "string"
+        },
+        "events": [],
+        "slots": [
+          "children",
+          "header",
+          "footer"
+        ],
+        "bindings": [],
+        "defaults": {
+          "gap": 16
+        },
+        "description": "Arrange content with a responsive, named layout.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Stack",
+        "version": 1,
+        "example": "Stack(children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "Container",
+        "category": "layout",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "gap": "number",
+          "padding": "number",
+          "columns": "number",
+          "align": "string",
+          "justify": "string",
+          "wrap": "boolean",
+          "title": "string",
+          "description": "string"
+        },
+        "events": [],
+        "slots": [
+          "children",
+          "header",
+          "footer"
+        ],
+        "bindings": [],
+        "defaults": {
+          "gap": 16
+        },
+        "description": "Arrange content with a responsive, named layout.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Container",
+        "version": 1,
+        "example": "Container(children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "Section",
+        "category": "layout",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "gap": "number",
+          "padding": "number",
+          "columns": "number",
+          "align": "string",
+          "justify": "string",
+          "wrap": "boolean",
+          "title": "string",
+          "description": "string"
+        },
+        "events": [],
+        "slots": [
+          "children",
+          "header",
+          "footer"
+        ],
+        "bindings": [],
+        "defaults": {
+          "gap": 16
+        },
+        "description": "Arrange content with a responsive, named layout.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Section",
+        "version": 1,
+        "example": "Section(children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "Card",
+        "category": "layout",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "gap": "number",
+          "padding": "number",
+          "columns": "number",
+          "align": "string",
+          "justify": "string",
+          "wrap": "boolean",
+          "title": "string",
+          "description": "string"
+        },
+        "events": [],
+        "slots": [
+          "children",
+          "header",
+          "footer"
+        ],
+        "bindings": [],
+        "defaults": {
+          "gap": 16
+        },
+        "description": "Arrange content with a responsive, named layout.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Card",
+        "version": 1,
+        "example": "Card(children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "Split",
+        "category": "layout",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "gap": "number",
+          "padding": "number",
+          "columns": "number",
+          "align": "string",
+          "justify": "string",
+          "wrap": "boolean",
+          "title": "string",
+          "description": "string"
+        },
+        "events": [],
+        "slots": [
+          "children",
+          "header",
+          "footer"
+        ],
+        "bindings": [],
+        "defaults": {
+          "gap": 16
+        },
+        "description": "Arrange content with a responsive, named layout.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Split",
+        "version": 1,
+        "example": "Split(children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "Panel",
+        "category": "layout",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "gap": "number",
+          "padding": "number",
+          "columns": "number",
+          "align": "string",
+          "justify": "string",
+          "wrap": "boolean",
+          "title": "string",
+          "description": "string"
+        },
+        "events": [],
+        "slots": [
+          "children",
+          "header",
+          "footer"
+        ],
+        "bindings": [],
+        "defaults": {
+          "gap": 16
+        },
+        "description": "Arrange content with a responsive, named layout.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Panel",
+        "version": 1,
+        "example": "Panel(children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "FormLayout",
+        "category": "layout",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "gap": "number",
+          "padding": "number",
+          "columns": "number",
+          "align": "string",
+          "justify": "string",
+          "wrap": "boolean",
+          "title": "string",
+          "description": "string"
+        },
+        "events": [],
+        "slots": [
+          "children",
+          "header",
+          "footer"
+        ],
+        "bindings": [],
+        "defaults": {
+          "gap": 16
+        },
+        "description": "Arrange content with a responsive, named layout.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "FormLayout",
+        "version": 1,
+        "example": "FormLayout(children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "Text",
+        "category": "display",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "text": "any",
+          "variant": "string"
+        },
+        "events": [],
+        "slots": [],
+        "bindings": [],
+        "defaults": {},
+        "description": "Plain text with optional emphasis.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Text",
+        "version": 1,
+        "example": "Text(\"Your application is ready.\")"
+      },
+      {
+        "name": "Heading",
+        "category": "display",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "text": "any",
+          "level": "number"
+        },
+        "events": [],
+        "slots": [],
+        "bindings": [],
+        "defaults": {
+          "level": 2
+        },
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Heading",
+        "version": 1,
+        "example": "Heading(\"Overview\", level=2)"
+      },
+      {
+        "name": "Badge",
+        "category": "display",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "text": "any",
+          "tone": "string"
+        },
+        "events": [],
+        "slots": [],
+        "bindings": [],
+        "defaults": {
+          "tone": "neutral"
+        },
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Badge",
+        "version": 1,
+        "example": "Badge(\"Active\", tone=\"success\")"
+      },
+      {
+        "name": "Icon",
+        "category": "display",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "name": "string"
+        },
+        "events": [],
+        "slots": [],
+        "bindings": [],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Icon",
+        "version": 1,
+        "example": "Icon(name=\"grid\")"
+      },
+      {
+        "name": "Image",
+        "category": "display",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "src": "string",
+          "alt": "string"
+        },
+        "events": [],
+        "slots": [],
+        "bindings": [],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Image",
+        "version": 1,
+        "example": "Image(src=\"/assets/logo.svg\", alt=\"Company logo\")"
+      },
+      {
+        "name": "Avatar",
+        "category": "display",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "initials": "string",
+          "label": "string"
+        },
+        "events": [],
+        "slots": [],
+        "bindings": [],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Avatar",
+        "version": 1,
+        "example": "Avatar(initials=\"AK\", label=\"Aslam\")"
+      },
+      {
+        "name": "Progress",
+        "category": "display",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "value": "number",
+          "label": "string",
+          "max": "number"
+        },
+        "events": [],
+        "slots": [],
+        "bindings": [],
+        "defaults": {
+          "max": 100
+        },
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Progress",
+        "version": 1,
+        "example": "Progress(value=60, label=\"Completion\")"
+      },
+      {
+        "name": "Alert",
+        "category": "display",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "title": "string",
+          "text": "string",
+          "tone": "string"
+        },
+        "events": [],
+        "slots": [
+          "children"
+        ],
+        "bindings": [],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Alert",
+        "version": 1,
+        "example": "Alert()"
+      },
+      {
+        "name": "EmptyState",
+        "category": "display",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "title": "string",
+          "text": "string",
+          "tone": "string"
+        },
+        "events": [],
+        "slots": [
+          "children"
+        ],
+        "bindings": [],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "EmptyState",
+        "version": 1,
+        "example": "EmptyState()"
+      },
+      {
+        "name": "Skeleton",
+        "category": "display",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "title": "string",
+          "text": "string",
+          "tone": "string"
+        },
+        "events": [],
+        "slots": [
+          "children"
+        ],
+        "bindings": [],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Skeleton",
+        "version": 1,
+        "example": "Skeleton()"
+      },
+      {
+        "name": "Divider",
+        "category": "display",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "title": "string",
+          "text": "string",
+          "tone": "string"
+        },
+        "events": [],
+        "slots": [
+          "children"
+        ],
+        "bindings": [],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Divider",
+        "version": 1,
+        "example": "Divider()"
+      },
+      {
+        "name": "TextInput",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "A labelled native control with safe, scoped data binding.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "TextInput",
+        "version": 1,
+        "example": "TextInput(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "TextArea",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "A labelled native control with safe, scoped data binding.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "TextArea",
+        "version": 1,
+        "example": "TextArea(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "NumberInput",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "A labelled native control with safe, scoped data binding.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "NumberInput",
+        "version": 1,
+        "example": "NumberInput(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "CurrencyInput",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "A labelled native control with safe, scoped data binding.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "CurrencyInput",
+        "version": 1,
+        "example": "CurrencyInput(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "Checkbox",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "A labelled native control with safe, scoped data binding.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Checkbox",
+        "version": 1,
+        "example": "Checkbox(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "Switch",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "A labelled native control with safe, scoped data binding.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Switch",
+        "version": 1,
+        "example": "Switch(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "Select",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "A labelled native control with safe, scoped data binding.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Select",
+        "version": 1,
+        "example": "Select(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "MultiSelect",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "A labelled native control with safe, scoped data binding.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "MultiSelect",
+        "version": 1,
+        "example": "MultiSelect(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "DatePicker",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "A labelled native control with safe, scoped data binding.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "DatePicker",
+        "version": 1,
+        "example": "DatePicker(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "DateTimePicker",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "A labelled native control with safe, scoped data binding.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "DateTimePicker",
+        "version": 1,
+        "example": "DateTimePicker(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "SearchBox",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "A labelled native control with safe, scoped data binding.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "SearchBox",
+        "version": 1,
+        "example": "SearchBox(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "Field",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "field": "string",
+          "label": "string",
+          "required": "boolean",
+          "value": "any"
+        },
+        "events": [
+          "on_change",
+          "on_input"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "Render a field from the current model contract.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Field",
+        "version": 1,
+        "example": "Field(\"name\", id=\"name\")"
+      },
+      {
+        "name": "Button",
+        "category": "action",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "variant": "string",
+          "icon": "string"
+        },
+        "events": [
+          "on_click"
+        ],
+        "slots": [],
+        "bindings": [],
+        "defaults": {
+          "variant": "secondary"
+        },
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Button",
+        "version": 1,
+        "example": "Button(\"Open customers\", on_click=Navigate.to_list(Customer))"
+      },
+      {
+        "name": "ButtonGroup",
+        "category": "action",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string"
+        },
+        "events": [],
+        "slots": [
+          "children"
+        ],
+        "bindings": [],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "ButtonGroup",
+        "version": 1,
+        "example": "ButtonGroup(children=[Button(\"Save\"), Button(\"Cancel\")])"
+      },
+      {
+        "name": "DropdownButton",
+        "category": "action",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "items": "array"
+        },
+        "events": [
+          "on_select"
+        ],
+        "slots": [],
+        "bindings": [],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "DropdownButton",
+        "version": 1,
+        "example": "DropdownButton(label=\"Actions\", items=[{\"value\": \"export\", \"label\": \"Export\"}])"
+      },
+      {
+        "name": "Dialog",
+        "category": "action",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "title": "string",
+          "open": "boolean"
+        },
+        "events": [
+          "on_open",
+          "on_close"
+        ],
+        "slots": [
+          "children",
+          "footer"
+        ],
+        "bindings": [
+          "open"
+        ],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Dialog",
+        "version": 1,
+        "example": "Dialog(id=\"details\", title=\"Details\", children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "Drawer",
+        "category": "action",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "title": "string",
+          "open": "boolean"
+        },
+        "events": [
+          "on_open",
+          "on_close"
+        ],
+        "slots": [
+          "children",
+          "footer"
+        ],
+        "bindings": [
+          "open"
+        ],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Drawer",
+        "version": 1,
+        "example": "Drawer(id=\"details\", title=\"Details\", children=[Text(\"Hello\")])"
+      },
+      {
+        "name": "Tabs",
+        "category": "navigation",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "items": "array",
+          "value": "string"
+        },
+        "events": [
+          "on_select"
+        ],
+        "slots": [
+          "children"
+        ],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Tabs",
+        "version": 1,
+        "example": "Tabs(items=[{\"value\": \"details\", \"label\": \"Details\"}], children=[Text(\"Details\")])"
+      },
+      {
+        "name": "Table",
+        "category": "data",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "columns": "array",
+          "items": "array",
+          "source": "object",
+          "empty_text": "string"
+        },
+        "events": [
+          "on_select"
+        ],
+        "slots": [],
+        "bindings": [],
+        "defaults": {},
+        "description": "Read a bounded page through the authenticated model query API.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Table",
+        "version": 1,
+        "example": "RecordList(source={\"model\": \"customer\", \"limit\": 20}, columns=[\"name\", \"email\"])"
+      },
+      {
+        "name": "RecordList",
+        "category": "data",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "columns": "array",
+          "items": "array",
+          "source": "object",
+          "empty_text": "string"
+        },
+        "events": [
+          "on_select"
+        ],
+        "slots": [],
+        "bindings": [],
+        "defaults": {},
+        "description": "Read a bounded page through the authenticated model query API.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "RecordList",
+        "version": 1,
+        "example": "RecordList(source={\"model\": \"customer\", \"limit\": 20}, columns=[\"name\", \"email\"])"
+      },
+      {
+        "name": "Pagination",
+        "category": "data",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "total": "number",
+          "page_size": "number",
+          "offset": "number"
+        },
+        "events": [
+          "on_change"
+        ],
+        "slots": [],
+        "bindings": [
+          "offset"
+        ],
+        "defaults": {
+          "page_size": 25,
+          "offset": 0
+        },
+        "description": "",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "Pagination",
+        "version": 1,
+        "example": "Pagination(total=50, page_size=25)"
+      },
+      {
+        "name": "ProjectsDemo",
+        "category": "custom",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string"
+        },
+        "events": [],
+        "slots": [],
+        "bindings": [],
+        "defaults": {},
+        "description": "The Projects Explorer View with browser-local sample data.",
+        "accessibility": "Keyboard navigation, labelled controls, native dialogs and independent scroll regions.",
+        "renderer": "ProjectsDemo",
+        "version": 1,
+        "example": "CustomComponent(\"ProjectsDemo\")"
+      }
+    ],
+    "extensions": []
+  },
+  "models": [
+    {
+      "name": "customer",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "name",
+            "email",
+            "active",
+            "notes"
+          ]
+        }
+      ],
+      "label": "Customer",
+      "plural": "Customers",
+      "description": "Good work starts with good relationships.",
+      "title_field": "name",
+      "list_fields": [
+        "id",
+        "name",
+        "email",
+        "active"
+      ],
+      "search_fields": [
+        "name",
+        "email"
+      ],
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 120,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 254,
+          "label": "Email",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "label": "Active",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": true
+        },
+        {
+          "name": "notes",
+          "type": "longtext",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 65535,
+          "label": "Notes",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        }
+      ],
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": false,
+      "children": [],
+      "actions": [],
+      "attachments": false
+    },
+    {
+      "name": "invoice",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "customer",
+            "reference",
+            "total",
+            "posting_date",
+            "status",
+            "tax_rate"
+          ]
+        }
+      ],
+      "label": "Invoice",
+      "plural": "Invoices",
+      "description": "Keep each piece of work connected to a customer.",
+      "title_field": "reference",
+      "list_fields": [
+        "id",
+        "reference",
+        "customer",
+        "total",
+        "status",
+        "posting_date"
+      ],
+      "search_fields": [
+        "reference",
+        "status"
+      ],
+      "fields": [
+        {
+          "name": "customer",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "minimum": 1,
+          "maximum": null,
+          "target": "customer",
+          "label": "Customer",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "reference",
+          "type": "text",
+          "required": true,
+          "unique": true,
+          "index": false,
+          "max_length": 40,
+          "label": "Reference",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "total",
+          "type": "currency",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": "0.01",
+          "maximum": null,
+          "label": "Total",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "posting_date",
+          "type": "date",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "label": "Posting date",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "draft",
+            "sent"
+          ],
+          "label": "Status",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "draft"
+        },
+        {
+          "name": "tax_rate",
+          "type": "decimal",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 4,
+          "minimum": "0",
+          "maximum": "100",
+          "label": "Tax rate (%)",
+          "help_text": "Recorded separately; this does not calculate the total.",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "0.0000"
+        }
+      ],
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": false,
+      "children": [],
+      "actions": [],
+      "attachments": false
+    },
+    {
+      "name": "payment",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "invoice",
+            "reference",
+            "amount",
+            "received_at"
+          ]
+        }
+      ],
+      "label": "Payment",
+      "plural": "Payments",
+      "description": "Record payments and the invoices they belong to.",
+      "title_field": "reference",
+      "list_fields": [
+        "id",
+        "invoice",
+        "reference",
+        "amount",
+        "received_at"
+      ],
+      "search_fields": [
+        "reference"
+      ],
+      "fields": [
+        {
+          "name": "invoice",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "minimum": 1,
+          "maximum": null,
+          "target": "invoice",
+          "label": "Invoice",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "reference",
+          "type": "text",
+          "required": true,
+          "unique": true,
+          "index": false,
+          "max_length": 40,
+          "label": "Reference",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": "0.01",
+          "maximum": null,
+          "label": "Amount",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "received_at",
+          "type": "datetime",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "label": "Received at",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        }
+      ],
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": false,
+      "children": [],
+      "actions": [],
+      "attachments": false
+    },
+    {
+      "name": "project",
+      "layout": [
+        {
+          "label": "Project",
+          "fields": [
+            "name",
+            "customer",
+            "status"
+          ]
+        },
+        {
+          "label": "Planning",
+          "fields": [
+            "budget",
+            "progress",
+            "starts_on"
+          ]
+        },
+        {
+          "label": "Notes",
+          "fields": [
+            "notes"
+          ]
+        }
+      ],
+      "label": "Project",
+      "plural": "Projects",
+      "description": "Track a small project and its customer.",
+      "title_field": "name",
+      "list_fields": [
+        "id",
+        "name",
+        "customer",
+        "status",
+        "budget"
+      ],
+      "search_fields": [
+        "name",
+        "status"
+      ],
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 120,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "customer",
+          "type": "link",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "minimum": 1,
+          "maximum": null,
+          "target": "customer",
+          "label": "Customer",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "planned",
+            "active",
+            "done"
+          ],
+          "label": "Status",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "default_kind": "static",
+          "default": "planned"
+        },
+        {
+          "name": "budget",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": "0",
+          "maximum": null,
+          "label": "Budget",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "0.00"
+        },
+        {
+          "name": "progress",
+          "type": "integer",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "minimum": 0,
+          "maximum": 100,
+          "label": "Progress (%)",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": 0
+        },
+        {
+          "name": "starts_on",
+          "type": "date",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "label": "Starts on",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "notes",
+          "type": "longtext",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 65535,
+          "label": "Notes",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        }
+      ],
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": false,
+      "children": [
+        {
+          "name": "tasks",
+          "model": "projecttask",
+          "link": "project",
+          "label": "Tasks"
+        }
+      ],
+      "actions": [
+        {
+          "name": "start",
+          "label": "Start project"
+        },
+        {
+          "name": "complete",
+          "label": "Complete project"
+        },
+        {
+          "name": "refresh_progress",
+          "label": "Recalculate progress"
+        }
+      ],
+      "attachments": true
+    },
+    {
+      "name": "projecttask",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "project",
+            "title",
+            "done"
+          ]
+        }
+      ],
+      "label": "Project task",
+      "plural": "Project tasks",
+      "description": "",
+      "title_field": "title",
+      "list_fields": [
+        "id",
+        "title",
+        "done"
+      ],
+      "search_fields": [
+        "title"
+      ],
+      "fields": [
+        {
+          "name": "project",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": true,
+          "minimum": 1,
+          "maximum": null,
+          "target": "project",
+          "label": "Project",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 160,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "done",
+          "type": "boolean",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "label": "Done",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": false
+        }
+      ],
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": true,
+      "children": [],
+      "actions": [],
+      "attachments": false
+    }
+  ]
+}

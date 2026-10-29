@@ -2,7 +2,10 @@
 
 Status: implemented foundation, not a production business application framework.
 
-## Milestone 1 baseline
+## Milestone 1 baseline (historical)
+
+This section records the original foundation. Later sections and [Evlet UI](ui.md)
+describe the current implementation; the Vue renderer has been replaced.
 
 1. **A dependency-free Python core.** Small field descriptors and a metaclass
    collect model fields; an explicit `Registry` owns each application's models.
@@ -49,16 +52,19 @@ pytest (tests), Uvicorn (ASGI development server), and build (distribution check
 setuptools is the packaging build backend. `requirements-dev.lock` pins the
 resolved Python setup dependencies and their transitive dependencies with hashes.
 
-The frontend uses Vue (reactivity/rendering), MIT-licensed PrimeVue 4.5.5 (business
-UI controls), and PrimeUIX themes 1.2.5 (the styled theme). PrimeVue 4 is deliberately
-pinned; a future major upgrade requires reviewing its license and API changes.
-Development dependencies are Vite and its Vue
-plugin (SFC compilation/build), Vitest (tests), Vue Test Utils (component mounting),
-and jsdom (DOM implementation). `package-lock.json` pins the complete npm tree.
+The active frontend uses SolidJS for rendering and first-party Evlet components.
+Vite, its Solid plugin, TypeScript, Vitest and jsdom support development and tests.
+Vue, PrimeVue and Vue Test Utils remain dev-only dependencies for the preserved
+migration regression harness. They are not imported by the production entry point.
+`package-lock.json` pins the complete tree. No backend runtime dependency was added.
 
 ## API and data flow
 
-`Model` definitions → `Registry` → `Database` → `Application` → JSON API → Vue.
+`Model` definitions → `Registry` → `Database` → `Application` → JSON API → Solid.
+
+`evlet.ui` definitions → `ViewRegistry` → `SchemaCompiler` → version 1 UI schemas
+→ registered Solid renderers. `/api/ui` is separate from the existing model schema.
+See [Evlet UI](ui.md) for state, extension order, route resolution, and packaging.
 
 - `GET /health`: executes a database probe and returns `{"status":"ok"}`.
 - `GET /api/schema`: returns schema version 1 and registered model metadata.
@@ -112,7 +118,7 @@ changes do not affect database snapshots or migration history. `Model.Meta` and
 field display options remain Python-owned and contain no renderer component names.
 The HTTP schema adds UI version 1 while retaining schema version 1.
 
-The Vue renderer builds navigation, lists, forms, and details from that contract.
+The native Solid renderer builds navigation, lists, forms, and details from that contract.
 A new Project model exercises the same components as the original three models.
 Forms omit untouched defaults on creation and send only changed values on edits.
 Callable defaults run only when the backend creates a record. Read-only fields

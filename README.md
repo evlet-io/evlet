@@ -1,9 +1,10 @@
 # Evlet
 
-A small Python application framework for business applications. This repository
-implements **Milestone 8**: optional PostgreSQL persistence, large-data and
-concurrency measurements, tenant security regression tests, and deployment
-operations documentation. SQLite remains the default; PostgreSQL is optional.
+A Python application framework with a native SolidJS interface. Define models and
+pages in Python, then use generated lists, forms and routes in the browser. The
+Playground opens with sign-in, Docs and Demo Pages, including the Projects example.
+SQLite remains the default; PostgreSQL is optional. The completed backend
+milestones remain available through the same APIs.
 
 Python model definitions remain authoritative. The core has **zero third-party
 runtime dependencies**. No database server, Redis, Docker, or worker is required.
@@ -89,11 +90,12 @@ npm --prefix frontend run dev
 
 The backend listens on port 8000; Vite listens on port 5173 and proxies `/api` and
 `/health` to it. Both bind to loopback. Use your development environment's normal
-browser access where supported. The onboarding UI itself does not provide a web
-preview; local HTTP requests still verify the running application.
+browser access where supported. Open http://127.0.0.1:5173 for the native SolidJS UI. Sign-in opens Docs.
+Demo Pages contains the approved Projects example and a Python-authored reactive
+page. Models opens the real database-backed screens.
 
 Create the first administrator account when prompted. Use Accounts to add Editor
-or Viewer accounts. Then create a customer, an invoice referencing it, and a payment
+or Viewer accounts. Docs opens first; choose Models in the sidebar to create a customer, an invoice referencing it, and a payment
 referencing that invoice. Refresh or restart the backend to verify persistence.
 The default database is `examples/playground/.data/playground.sqlite3`, ignored
 by Git. `EVLET_DATABASE` can select another SQLite file. Each database has its own accounts.
@@ -163,14 +165,17 @@ python3 -m venv /tmp/evlet-wheel-check
 ```
 
 The Python suite exercises real SQLite files, validation, rollback, constraints,
-concurrent short writes, and full ASGI requests. The frontend suite uses real
-PrimeVue components and substitutes only HTTP responses and missing DOM layout
-APIs. The live smoke check covers the actual server and Vite proxy. Package checks
+concurrent short writes, and full ASGI requests. The frontend suite exercises the Solid UI and retains the original Vue screens
+as a test-only regression harness. Tests substitute HTTP responses and missing
+DOM layout APIs. The live smoke check covers the actual server and Vite proxy. Package checks
 verify the installed wheel outside the source tree. GitHub Actions runs Python
 tests on 3.12 and 3.13, distribution checks, frontend tests/build, and a live API
 smoke check. Cloud validation does not establish that remote CI has run.
 
-Build output is in `dist/` and `frontend/dist/`. `npm --prefix frontend run preview`
+Build output is in `dist/` and `frontend/dist/`. The frontend build also installs
+assets into `evlet/ui/static/` for the Python wheel. After building, the backend
+serves the same UI directly at http://127.0.0.1:8000; installed applications need
+only Python for ordinary development. `npm --prefix frontend run preview`
 serves the production frontend on port 4173 with the same local backend proxy.
 This is a development preview, not a deployment recipe.
 
@@ -189,9 +194,12 @@ This is a development preview, not a deployment recipe.
 - Lists, counts, search, filters, and relationship choices use bounded server queries.
   Text search uses SQLite ASCII case folding. Browser integer actions require safe integers.
 - Forms, lists, and details are generated from renderer-neutral Python metadata.
-  Full PrimeVue controls and the theme currently produce a JavaScript bundle above
-  Vite's 500 kB advisory threshold. The build succeeds; bundle optimization is
-  follow-up work. No performance or scalability guarantees are claimed.
+  The production bundle uses SolidJS and first-party components. Projects and
+  account management load separately. The previous Vue screens remain only as a
+  development test harness. No performance or scalability guarantees are claimed.
+
+See [Evlet UI](docs/ui.md) for Python pages, layouts, component contracts, state,
+routes, generated records and custom Solid components.
 
 Read [architecture decisions](docs/architecture.md), the [full specification](docs/specification.md),
 and [agent instructions](AGENTS.md). The [model engine guide](docs/model-engine.md)
