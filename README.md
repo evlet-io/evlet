@@ -180,8 +180,9 @@ npm --prefix frontend test
 npm --prefix frontend run build
 .venv/bin/python -m build --no-isolation
 python3 -m venv /tmp/evlet-wheel-check
-/tmp/evlet-wheel-check/bin/python -m pip install --no-deps dist/evlet-0.1.0-py3-none-any.whl
+/tmp/evlet-wheel-check/bin/python -m pip install dist/evlet-0.1.0-py3-none-any.whl
 /tmp/evlet-wheel-check/bin/python -I scripts/check_package.py
+/tmp/evlet-wheel-check/bin/python -I scripts/smoke_cli.py
 ```
 
 The Python suite exercises real SQLite files, validation, rollback, constraints,
