@@ -16,6 +16,7 @@ import time
 
 from .app import Application
 from .storage import LocalFileStorage
+from .object_storage import S3Storage
 
 logger = logging.getLogger(__name__)
 
@@ -220,8 +221,12 @@ class TenantApplication:
                 raise ValueError('Tenant authentication must use its exact origins and disable browser setup')
             if not tenant.development and auth.cookie_name != '__Host-evlet_session':
                 raise ValueError('Production tenants require a host-only secure cookie')
-            if not isinstance(storage, LocalFileStorage) or storage.root != tenant.files_path:
-                raise ValueError('Tenant attachments require their own private file directory')
+            local = isinstance(storage, LocalFileStorage) and storage.root == tenant.files_path
+            remote = isinstance(storage, S3Storage) and storage.tenant == tenant.slug
+            if not (local or remote):
+                raise ValueError('Tenant attachments require their own private storage')
+            if app.business.jobs is not None and app.business.jobs.tenant != tenant.slug:
+                raise ValueError('Tenant jobs require the matching tenant namespace')
             app.initialize()
             app.business.tenant = tenant.public()
             self._apps[tenant.slug] = (tenant, app)
@@ -269,7 +274,7 @@ class TenantApplication:
             await self._error(send, 503, 'Tenant temporarily unavailable')
             return
         normalized = (host + (':' + port if self.catalog.development else '')).encode()
-        scope = {**scope, 'headers': [(key, value) for key, value in scope.get('headers', ()) if key.lower() != b'host'] + [(b'host', normalized)]}
+        scope = {**scope, 'evlet.tenant_active': lambda: self.catalog.resolve(host) == tenant, 'headers': [(key, value) for key, value in scope.get('headers', ()) if key.lower() != b'host'] + [(b'host', normalized)]}
         await app(scope, receive, send)
 
     @staticmethod

@@ -54,8 +54,17 @@ def main():
         catalog = TenantRegistry.create(Path(directory) / 'tenant-state', development=True)
         tenant = catalog.create_tenant('alpha', 'Alpha', 'alpha.localhost')
         assert tenant.origins and catalog.resolve('alpha.localhost') is None
+        from evlet import EventStore, JobQueue, Task, LambdaHTTP, S3Storage
+        events = EventStore(updated); events.initialize()
+        jobs = JobQueue(updated, [Task('price', lambda tx, context, payload: tx.update(UpdatedProduct, item.id, price='20.00'))], events=events)
+        jobs.initialize()
+        with updated.transaction() as tx:
+            jobs.enqueue(tx, 'price', {}, target=(UpdatedProduct, item.id))
+        assert jobs.run_one() and updated.get(UpdatedProduct, item.id).to_dict()['price'] == '20.00'
+        assert events.page(User(1, 'admin', 'admin'), app.business.policy, after='0')['items']
+        assert LambdaHTTP and S3Storage
         updated.delete(UpdatedProduct, item.id)
-    print("Installed wheel: migrations, updates, queries, deletes; import, model definition, SQLite persistence, currency, tenant catalog, and private file round trips passed")
+    print("Installed wheel: migrations, updates, queries, deletes; import, model definition, SQLite persistence, currency, tenant catalog, private files, jobs, and event replay passed")
 
 
 if __name__ == "__main__":

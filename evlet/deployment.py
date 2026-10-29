@@ -43,6 +43,7 @@ User=evlet
 Group=evlet
 WorkingDirectory=/opt/evlet
 Environment=EVLET_TENANT_ROOT=/var/lib/evlet
+EnvironmentFile=-/etc/evlet/server.env
 ExecStart=/opt/evlet/.venv/bin/python -m uvicorn examples.playground.tenants:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=5
@@ -58,4 +59,5 @@ ReadWritePaths=/var/lib/evlet
 [Install]
 WantedBy=multi-user.target
 '''
-    return {'Caddyfile': '\n'.join(sites), 'evlet.service': service}
+    worker = service.replace('Description=Evlet tenant application', 'Description=Evlet tenant job worker').replace(' -m uvicorn examples.playground.tenants:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1', ' -m examples.playground.worker')
+    return {'Caddyfile': '\n'.join(sites), 'evlet.service': service, 'evlet-worker.service': worker}

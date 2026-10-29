@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from evlet import Action, Application, ChildTable, Database, LocalAuth, ValidationError
+from evlet import Action, Application, ChildTable, Database, EventStore, JobQueue, LocalAuth, Task, ValidationError
 from .models import Project, ProjectTask, registry
 from .migrate import migrations
 
@@ -33,8 +33,20 @@ def create_app():
     return build_app(database, auth)
 
 
-def build_app(database, auth, *, storage=None):
-    return Application(database, auth=auth, storage=storage, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
+def refresh_progress(tx, job, payload):
+    project = tx.get(Project, payload['project_id'])
+    tasks = tx.list(ProjectTask, filters={'project': project.id}, limit=100)
+    progress = round(100 * sum(task.done for task in tasks) / len(tasks)) if tasks else 0
+    tx.update(Project, project.id, progress=progress)
+
+
+def build_app(database, auth, *, storage=None, tenant='local'):
+    events = EventStore(database)
+    jobs = JobQueue(database, (Task('project_progress', refresh_progress),), tenant=tenant, events=events)
+    def queue_progress(tx, user, project):
+        return jobs.enqueue(tx, 'project_progress', {'project_id': project.id}, user=user, target=(Project, project.id))
+    return Application(database, auth=auth, storage=storage, jobs=jobs, events=events, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
                        actions=(Action(Project, 'start', 'Start project', start_project),
-                                Action(Project, 'complete', 'Complete project', complete_project)),
+                                Action(Project, 'complete', 'Complete project', complete_project),
+                                Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress)),
                        attachments=(Project,))

@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
+s3 = ["boto3>=1.43.119,<2"]
 dev = ["pytest>=8,<10", "uvicorn>=0.34,<1", "build>=1,<2", "setuptools>=75"]
 
 [tool.setuptools.packages.find]

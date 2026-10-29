@@ -22,7 +22,8 @@ already admitted can finish. The router does not use a mutable global tenant.
 
 The factory receives an immutable `Tenant` with its paths, hosts, and exact origins.
 It must return an authenticated `Application` using `Database(..., must_exist=True)`
-and `LocalFileStorage(tenant.files_path)`. Production requires HTTPS origins,
+and tenant-bound `LocalFileStorage(tenant.files_path)` or `S3Storage`. Configured
+job queues must use that tenant slug. Production requires HTTPS origins,
 Secure `__Host-evlet_session` cookies, and disabled browser setup. Development uses
 explicit ports and `.localhost` names. Accounts are provisioned through trusted
 Python or the management command. Each hostname has its own browser cookie, even
@@ -210,7 +211,7 @@ that have no metadata reference. It cannot collect a file awaiting upload commit
 It is an operator action, not a scheduled background job. Do not run it on backups
 or a file directory paired with the wrong database.
 
-For a consistent backup, stop the application service, prevent management writes,
+For a consistent backup, stop the application and job-worker services, prevent management writes,
 and copy the complete private state directory, including the catalog, SQLite
 files and sidecars, file directories, and `.evlet-store` markers. Keep that backup
 private. Restart the service only after the copy completes. Back up Caddy's TLS
@@ -248,5 +249,6 @@ record isolation, children, actions, files, replay rejection, restart, and disab
 
 Public DNS proof, public ACME issuance/renewal, and systemd service operation still
 need validation on the chosen Linux server and owned domains. Local testing cannot
-establish those facts. Jobs, scheduling, realtime, object storage, and serverless
-adapters remain Milestone 6. Broader production hardening remains Milestone 8.
+establish those facts. See [Milestone 6](jobs-realtime.md) for the worker service,
+job and event boundaries, optional object storage, and Lambda HTTP transport.
+Broader production hardening remains Milestone 8.
