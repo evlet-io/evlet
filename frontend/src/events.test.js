@@ -140,3 +140,18 @@ it('does not start event tracking when schema arrives after sign-out', async () 
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(Source.instances).toHaveLength(0)
 })
+
+it('requests one refresh after cursor recovery and keeps the recovered cursor', async () => {
+  vi.useFakeTimers(); vi.stubGlobal('EventSource', Source)
+  const fetch = vi.fn()
+    .mockRejectedValueOnce(new TypeError('offline'))
+    .mockRejectedValueOnce(new TypeError('offline'))
+    .mockResolvedValue(response({ items: [], cursor: 'recovered', reset: false, more: false }))
+  vi.stubGlobal('fetch', fetch)
+  const changed = vi.fn(); close = subscribeEvents(changed); await close.ready
+  await vi.advanceTimersByTimeAsync(6000)
+  expect(changed).toHaveBeenCalledExactlyOnceWith({ items: [], cursor: 'recovered', reset: true, more: false })
+  await vi.advanceTimersByTimeAsync(3000)
+  expect(fetch).toHaveBeenLastCalledWith('/api/_events?cursor=recovered', expect.anything())
+  expect(changed).toHaveBeenCalledOnce()
+})

@@ -12,7 +12,8 @@ export function subscribeEvents(onChange, { stream = true } = {}) {
     if (stopped) return
     try {
       const page = await request(`/api/_events${cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`}`)
-      accept(page)
+      // Records may have loaded while the initial cursor request was unavailable.
+      accept(cursor === null ? { ...page, reset: true } : page)
       if (!stopped) timer = setTimeout(poll, page.more ? 50 : 3000)
     } catch { if (!stopped) timer = setTimeout(poll, 5000) }
   }

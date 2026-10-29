@@ -179,9 +179,14 @@ or a source of record contents.
 
 The Playground establishes its cursor before its initial list read, reconnects
 SSE automatically, and falls back to polling after stream failures. Polling is
-roughly every three seconds when healthy. Live refresh updates the current list
-and open details while preserving unsaved form values. Navigating away or signing
-out closes subscriptions and pending status checks. WebSockets are deferred;
+roughly every three seconds when healthy. If the initial cursor request fails,
+its first successful recovery refreshes the displayed records before continuing
+from the new cursor. Live refresh updates the current list and open details while
+preserving unsaved form values. Navigating away or signing
+out closes subscriptions and pending status checks. Job-status reads retry network
+failures, HTTP 408/429, and server errors after three seconds. Permanent access or
+missing-record errors stop tracking; a new record or job cancels pending retries.
+WebSockets are deferred;
 these updates only require server-to-browser delivery.
 
 ## Private S3-compatible attachments

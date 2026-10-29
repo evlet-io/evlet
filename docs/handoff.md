@@ -74,9 +74,11 @@ workers. A database-only backup is insufficient for external attachments.
 
 Milestone 6 local verification on 29 October 2026 covers:
 
-- 246 backend tests and 60 frontend tests, including real SQLite queue recovery,
+- 246 backend tests and 73 frontend tests, including real SQLite queue recovery,
   competing claims, retry rollback, schedule coalescing, permission changes,
   disabled tenants, cursor replay, session revocation, and frontend race cases.
+  Recovery regressions also cover a failed initial cursor request, temporary
+  job-status failures, permanent access failures, and retry cancellation.
 - Production frontend build, source distribution, wheel, and a clean wheel install
   without development or optional dependencies. The existing bundle-size advisory
   remains nonfatal.
