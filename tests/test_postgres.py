@@ -261,3 +261,105 @@ def test_reusing_indexed_field_names_preserves_existing_indexes(pg_dsn, unique):
                 updated.create(Item, **values)
     else:
         updated.create(Item, code='replacement', code_1='existing', code_2='middle')
+
+
+@pytest.mark.parametrize('unique', [False, True])
+@pytest.mark.parametrize('field_type', ['text', 'long_text'])
+def test_indexed_text_requires_a_bounded_definition(pg_dsn, unique, field_type):
+    from evlet import LongText
+    field = Text if field_type == 'text' else LongText
+    class Note(Model):
+        value = field(max_length=501, index=not unique, unique=unique)
+    with pytest.raises(SchemaError, match=r'note.value:.*max_length <= 500'):
+        PostgreSQLDatabase(pg_dsn, Registry(Note))
+    # Plain long text remains supported; only indexed declarations are restricted.
+    class Note(Model):
+        value = LongText()
+    db = PostgreSQLDatabase(pg_dsn, Registry(Note)); db.initialize()
+    value = 'long text ' * 500
+    assert db.create(Note, value=value).value == value
+
+
+@pytest.mark.parametrize('unique', [False, True])
+def test_indexed_unicode_text_boundary_and_http_validation(pg_dsn, unique):
+    import random
+    from evlet import Application, LongText
+    from tests.test_api import request
+    class Note(Model):
+        value = LongText(max_length=500, index=not unique, unique=unique)
+    db = PostgreSQLDatabase(pg_dsn, Registry(Note)); db.initialize()
+    rng = random.Random(123)
+    value = ''.join(chr(rng.randrange(0x10000, 0x10FFFF)) for _ in range(500))
+    assert len(value.encode('utf-8')) == 2000
+    app = Application(db)
+    status, record, _ = request(app, 'POST', '/api/note', {'value': value})
+    assert status == 201 and record['value'] == value
+    assert request(app, 'POST', '/api/note', {'value': value})[0] == (409 if unique else 201)
+    for method, path in [('POST', '/api/note'), ('PATCH', f'/api/note/{record["id"]}')]:
+        status, error, _ = request(app, method, path, {'value': value + 'x'})
+        assert status == 422 and 'value' in error['fields']
+    assert db.get(Note, record['id']).value == value
+    assert db.list(Note, filters={'value': value})[0].value == value
+
+
+@pytest.mark.parametrize('suffix', ['_id_seq', '_pkey'])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_model_names_do_not_collide_with_identity_objects(pg_dsn, suffix, reverse):
+    class Item(Model):
+        name = Text()
+    Other = type('Item' + suffix, (Model,), {'name': Text()})
+    models = [Item, Other]
+    db = PostgreSQLDatabase(pg_dsn, Registry(*(models[::-1] if reverse else models)))
+    db.initialize(); db.initialize()
+    assert db.create(Item, name='first').id == 1
+    assert db.create(Other, name='second').id == 1
+
+
+@pytest.mark.parametrize('suffix', ['_id_seq', '_pkey'])
+def test_migration_moves_legacy_identity_names_without_resetting_ids(pg_dsn, suffix):
+    from evlet import CreateModel
+    from evlet.models import identifier
+    class Item(Model):
+        name = Text()
+    original = PostgreSQLDatabase(pg_dsn, Registry(Item)); original.initialize()
+    assert original.create(Item, name='preserved').id == 1
+    with original.transaction() as tx:
+        sequence = tx.connection.execute("SELECT relname FROM pg_class WHERE oid=pg_get_serial_sequence('item','id')::regclass").fetchone()[0]
+        primary = tx.connection.execute("SELECT indexrelid::regclass::text FROM pg_index WHERE indrelid='item'::regclass AND indisprimary").fetchone()[0]
+        tx.connection.execute(f'ALTER SEQUENCE {identifier(sequence)} RENAME TO item_id_seq')
+        tx.connection.execute(f'ALTER INDEX {identifier(primary)} RENAME TO item_pkey')
+    Other = type('Item' + suffix, (Model,), {'name': Text()})
+    target = PostgreSQLDatabase(pg_dsn, Registry(Item, Other))
+    history = [Migration('other', CreateModel(Other))]
+    assert target.migrate(history) == ['other']
+    assert target.migrate(history) == []
+    target.initialize()
+    assert target.get(Item, 1).name == 'preserved'
+    assert target.create(Item, name='next').id == 2
+    assert target.create(Other, name='independent').id == 1
+
+
+def test_playground_migration_cli_uses_postgres_and_preserves_sqlite(pg_dsn, tmp_path, monkeypatch):
+    import subprocess
+    import sys
+    from examples.playground.migrate import legacy_registry
+    from examples.playground.app import create_app
+    from examples.playground.models import Customer
+    old_registry = legacy_registry()
+    old = PostgreSQLDatabase(pg_dsn, old_registry); old.initialize()
+    old.create(old_registry.models['customer'], name='Keep PostgreSQL record')
+    sqlite_path = tmp_path / 'unselected.sqlite3'
+    sqlite_db = Database(sqlite_path, old_registry); sqlite_db.initialize()
+    sqlite_db.create(old_registry.models['customer'], name='Keep SQLite record')
+    before = sqlite_path.read_bytes()
+    monkeypatch.setenv('EVLET_POSTGRES_DSN', pg_dsn)
+    monkeypatch.setenv('EVLET_DATABASE', str(sqlite_path))
+    for expected in ('Applied:', 'Schema is current.'):
+        result = subprocess.run([sys.executable, '-m', 'examples.playground.migrate'],
+                                text=True, capture_output=True)
+        assert result.returncode == 0, result.stderr
+        assert expected in result.stdout
+    app = create_app(); app.initialize()
+    assert app.database.get(Customer, 1).name == 'Keep PostgreSQL record'
+    assert sqlite_path.read_bytes() == before
+    assert not list(tmp_path.glob('*.backup'))

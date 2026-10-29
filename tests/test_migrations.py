@@ -236,3 +236,29 @@ def test_baseline_adoption_validates_existing_rows_before_recording_history(tmp_
     with sqlite3.connect(path) as connection:
         assert connection.execute('SELECT name FROM evlet_migrations').fetchall() == []
         assert connection.execute('SELECT active FROM contact').fetchone() == (2,)
+
+
+@pytest.mark.parametrize('dsn', [None, ''])
+def test_playground_migration_cli_keeps_sqlite_selection_and_backup(tmp_path, monkeypatch, dsn):
+    import subprocess
+    import sys
+    from examples.playground.migrate import legacy_registry
+    from examples.playground.app import create_app
+    from examples.playground.models import Customer
+    path = tmp_path / 'playground.sqlite3'
+    old_registry = legacy_registry()
+    old = Database(path, old_registry); old.initialize()
+    old.create(old_registry.models['customer'], name='Preserved')
+    monkeypatch.setenv('EVLET_DATABASE', str(path))
+    if dsn is None:
+        monkeypatch.delenv('EVLET_POSTGRES_DSN', raising=False)
+    else:
+        monkeypatch.setenv('EVLET_POSTGRES_DSN', dsn)
+    result = subprocess.run([sys.executable, '-m', 'examples.playground.migrate'],
+                            text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert 'Backup:' in result.stdout and 'Applied:' in result.stdout
+    backup, = tmp_path.glob('*.backup')
+    assert Database(backup, old_registry).get(old_registry.models['customer'], 1).name == 'Preserved'
+    app = create_app(); app.initialize()
+    assert app.database.get(Customer, 1).name == 'Preserved'

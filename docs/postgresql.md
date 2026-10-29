@@ -47,10 +47,27 @@ Nullable sort order matches SQLite explicitly. Text matching follows the databas
 collation and case rules; test non-ASCII search against the chosen database locale.
 PostgreSQL does not store NUL characters in text. IDs may have gaps after rollback.
 
+Text fields with `index=True` or `unique=True` must declare `max_length <= 500`,
+for example `Text(max_length=500, unique=True)` or
+`LongText(max_length=500, index=True)`. Wider indexed definitions fail with
+`SchemaError` when constructing the database, before opening a connection. This
+conservative limit covers 2,000 UTF-8 bytes on standard 8 KiB PostgreSQL pages and
+keeps ordinary and unique B-tree indexes usable for every validated value. Values
+above the declared character limit return the usual field validation error (HTTP
+422). Unindexed text keeps its declared length; SQLite's limits are unchanged.
+Do not shorten an existing field definition without checking stored data and the
+supported migration restrictions. See the upstream
+[B-tree limits](https://www.postgresql.org/docs/14/btree-intro.html).
+
 Authenticated single-application HTTP routes also support accounts, permissions,
 actions, child rows, private database attachments, local private files, jobs,
 schedules, events, and discovery. The Playground selects PostgreSQL when
 `EVLET_POSTGRES_DSN` is set, otherwise it keeps its existing SQLite configuration.
+The app and `.venv/bin/python -m examples.playground.migrate` share this selection.
+The migration command upgrades only the selected database and closes its pool on
+exit. SQLite upgrades retain their automatic backup. For PostgreSQL, take and
+verify an operator-managed backup before running the command; it does not create
+one or open the configured SQLite file.
 Use a disposable database for this development example; browser setup is enabled.
 
 The existing hostname tenant catalog and provisioning commands remain SQLite-only.
@@ -93,6 +110,10 @@ AddIndex, and CreateModel operations atomically, then validates data and history
 Rows are validated through a server cursor so a large table is not loaded into
 client memory. Renaming an indexed field preserves its index; reusing the old field
 name allocates an unused index name for the new field, including unique indexes.
+Identity sequences and primary-key indexes use reserved `evlet_` names, so model
+tables can reuse names such as `item_id_seq` or `item_pkey`. Explicit migrations
+also move older generated names into that namespace atomically, retaining
+sequence values, primary-key constraints, and record IDs.
 The same type-change/removal restrictions as SQLite apply.
 
 Stop writers and workers before migration, back up and test recovery, then call

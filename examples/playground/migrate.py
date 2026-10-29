@@ -1,4 +1,4 @@
-"""Explicitly upgrade the Playground database, preserving a backup first."""
+"""Explicitly upgrade the configured Playground database."""
 
 from datetime import datetime, timezone
 import os
@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 
 from evlet import (AddField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
-                   Link, LongText, Migration, Model, Registry, Select, Text)
+                   Link, LongText, Migration, Model, PostgreSQLDatabase, Registry, Select, Text)
 from .models import Customer, registry
 
 migrations = [Migration('0001_model_engine',
@@ -58,6 +58,14 @@ def legacy_registry():
     return Registry(Customer, Invoice, Payment)
 
 
+def configured_database():
+    dsn = os.environ.get('EVLET_POSTGRES_DSN')
+    if dsn:
+        return PostgreSQLDatabase(dsn, registry, migrations=migrations)
+    path = os.environ.get('EVLET_DATABASE', str(Path(__file__).parent / '.data' / 'playground.sqlite3'))
+    return Database(path, registry, migrations=migrations)
+
+
 def upgrade(path):
     path = Path(path)
     if path.exists():
@@ -73,5 +81,17 @@ def upgrade(path):
     print('Applied: ' + ', '.join(applied) if applied else 'Schema is current.')
 
 
+def main():
+    database = configured_database()
+    try:
+        if isinstance(database, PostgreSQLDatabase):
+            applied = database.migrate(migrations)
+            print('Applied: ' + ', '.join(applied) if applied else 'Schema is current.')
+        else:
+            upgrade(database.path)
+    finally:
+        database.close()
+
+
 if __name__ == '__main__':
-    upgrade(os.environ.get('EVLET_DATABASE', str(Path(__file__).parent / '.data' / 'playground.sqlite3')))
+    main()
