@@ -1,12 +1,13 @@
 # Working on Evlet
 
 Read `docs/specification.md` and `docs/architecture.md` before changing the public API.
-The current scope is Milestone 6: durable SQLite jobs, interval scheduling,
-record events, SSE with polling fallback, a Lambda HTTP adapter, and private
-S3-compatible attachments. Milestones 1 through 5 are merged. Keep subsequent
-milestones separate. Read `docs/business-capabilities.md`,
-`docs/tenancy-deployment.md`, and `docs/jobs-realtime.md` for public APIs and
-permission boundaries.
+The current scope is Milestone 7: compact model discovery, permission-filtered
+metadata, authenticated local MCP tools, starter commands, and developer docs.
+Milestones 1 through 6 are merged. Keep subsequent milestones separate. Read
+`docs/business-capabilities.md`, `docs/tenancy-deployment.md`,
+`docs/jobs-realtime.md`, and `docs/connector.md` for public APIs and permission
+boundaries. Connector writes must use the existing authenticated HTTP routes;
+never bypass account, tenant, row, field, or action checks.
 
 - Use Python 3.12+ and Node 24. Python definitions are authoritative; frontend
   components consume a neutral schema and never appear in Python model definitions.

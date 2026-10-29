@@ -2,6 +2,10 @@
 
 from pathlib import Path
 import tempfile
+import io
+import json
+import subprocess
+import sys
 
 import evlet
 from evlet import AddField, Application, Boolean, Currency, Database, LocalAuth, Migration, Model, Registry, Text, User
@@ -63,8 +67,21 @@ def main():
         assert jobs.run_one() and updated.get(UpdatedProduct, item.id).to_dict()['price'] == '20.00'
         assert events.page(User(1, 'admin', 'admin'), app.business.policy, after='0')['items']
         assert LambdaHTTP and S3Storage
+        from evlet import HTTPClient, MCPServer
+        from evlet.discovery import Discovery
+        description = Discovery(app.business, User(1, 'viewer', 'viewer')).describe('product')
+        assert set(description['schemas']) == {'read'}
+        assert description['fields'][0]['name'] == 'name'
+        client = HTTPClient('http://127.0.0.1:8000')
+        protocol = MCPServer(client)
+        output = io.BytesIO()
+        protocol.serve(io.BytesIO(b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n'), output)
+        assert json.loads(output.getvalue())['result'] == {}
+        subprocess.run([sys.executable, '-I', '-m', 'evlet', 'new', str(Path(directory) / 'starter')], check=True, stdout=subprocess.DEVNULL)
+        assert (Path(directory) / 'starter/models.py').is_file()
+
         updated.delete(UpdatedProduct, item.id)
-    print("Installed wheel: migrations, updates, queries, deletes; import, model definition, SQLite persistence, currency, tenant catalog, private files, jobs, and event replay passed")
+    print("Installed wheel: migrations, updates, queries, deletes; import, model definition, SQLite persistence, currency, tenant catalog, private files, jobs, event replay, discovery, connector imports, and starter creation passed")
 
 
 if __name__ == "__main__":

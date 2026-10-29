@@ -17,7 +17,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from evlet import TenantRegistry
+from evlet import TenantRegistry, HTTPClient
 from evlet.deployment import render_deployment
 from examples.playground.manage import provision
 
@@ -126,6 +126,21 @@ def main():
             for slug, other in (('alpha', 'beta'), ('beta', 'alpha')):
                 auth = credentials[slug]
                 assert request(slug, '/api/project', auth=auth)[1]['items'][0]['name'] == slug
+                assert request(slug, '/api/_discovery', auth=auth)[1]['tenant']['slug'] == slug
+                assert request(slug, '/api/_discovery/project', auth=credentials[other])[0] == 401
+                if not production:
+                    session_file = work / (slug + '.session.json')
+                    HTTPClient(f'http://{slug}{suffix}:{target_port}', **auth).save(session_file)
+                    messages = [
+                        {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-11-25', 'capabilities': {}, 'clientInfo': {'name': 'smoke', 'version': '1'}}},
+                        {'jsonrpc': '2.0', 'method': 'notifications/initialized'},
+                        {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'get_record', 'arguments': {'model': 'project', 'id': 1}}},
+                    ]
+                    result = subprocess.run([sys.executable, '-m', 'evlet', 'mcp', '--session', str(session_file)], cwd=ROOT,
+                                            input=''.join(json.dumps(message) + '\n' for message in messages), capture_output=True, text=True, timeout=15, check=True)
+                    replies = [json.loads(line) for line in result.stdout.splitlines()]
+                    assert len(replies) == 2 and replies[1]['result']['structuredContent']['name'] == slug
+
                 assert request(slug, '/api/project/1/attachments/1', auth=auth)[1] == slug.encode()
                 assert request(slug, '/api/project/1/attachments/1', auth=credentials[other])[0] == 401
                 assert request(slug, '/api/auth/session', auth=auth, headers={'X-Forwarded-Host': other + suffix, 'X-Forwarded-For': '203.0.113.12'})[1]['tenant']['slug'] == slug
@@ -178,7 +193,7 @@ def main():
             catalog.set_active('alpha', False)
             assert request('alpha', '/api/auth/session', auth=credentials['alpha'])[0] == 421
             assert request('beta', '/api/project/1', auth=credentials['beta'])[0] == 200
-            print('Two-tenant smoke passed: sign-in, records, children, actions, files, durable jobs, SSE/polling replay, restart, and revocation' + (' through local Caddy HTTPS.' if production else ' through Vite.' if args.frontend else '.'))
+            print('Two-tenant smoke passed: sign-in, records, children, actions, files, discovery, durable jobs, SSE/polling replay, restart, and revocation' + (' with connector reads' if not production else '') + (' through local Caddy HTTPS.' if production else ' through Vite.' if args.frontend else '.'))
         except BaseException:
             log.flush(); log.seek(0); print(log.read(), file=sys.stderr)
             raise

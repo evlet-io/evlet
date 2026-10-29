@@ -1,0 +1,2 @@
+# Optional MCP protocol compatibility tests only.
+mcp==1.30.0

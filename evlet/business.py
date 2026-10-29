@@ -15,6 +15,7 @@ from .permissions import Policy
 from .query import Query
 from .storage import SQLiteStorage
 from .jobs import JobReceipt
+from .discovery import Discovery
 
 
 @dataclass(frozen=True)
@@ -157,6 +158,12 @@ class Business:
             return self.accounts(scope, body, user)
         if path == '/api/schema' and method == 'GET':
             return 200, self.schema(user), []
+        if path == '/api/_discovery' and method == 'GET':
+            return 200, Discovery(self, user).catalog(scope.get('query_string', b'')), []
+        if path.startswith('/api/_discovery/') and method == 'GET':
+            if scope.get('query_string'):
+                raise ValidationError({'query': 'Model descriptions take no query parameters'})
+            return 200, Discovery(self, user).describe(path.removeprefix('/api/_discovery/')), []
         if path == '/api/_events' and method == 'GET':
             return 200, self.event_page(scope), []
         if path.startswith('/api/_jobs/') and method == 'GET' and self.jobs:

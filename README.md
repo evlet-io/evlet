@@ -1,9 +1,9 @@
 # Evlet
 
 A small Python application framework for business applications. This repository
-implements **Milestone 6**: durable background jobs, interval schedules, live record
-updates, and optional Lambda HTTP and S3-compatible storage adapters, on top of
-tenant isolation, accounts, permissions, business actions, and SQLite.
+implements **Milestone 7**: compact model discovery, authenticated local MCP tools,
+and a small application starter, on top of tenant isolation, accounts, permissions,
+business actions, durable jobs, live updates, and SQLite.
 The Vue 3/PrimeVue Playground includes Customer, Invoice, Payment, and Project
 with child tasks.
 
@@ -225,3 +225,17 @@ The Lambda adapter supplies HTTP transport only. It does not make the SQLite
 Playground deployable on an ephemeral filesystem. No cloud resources are created,
 and live cloud operation has not been verified. WebSockets and broader production
 hardening remain deferred.
+
+
+## Milestone 7: discovery and connector interfaces
+
+The [connector guide](docs/connector.md) covers compact discovery, model input
+schemas, a local MCP stdio connector, private session files, and starter generation.
+Run `python -m evlet new ./my-app` to create a small authenticated application.
+The connector starts with read tools; `--allow-writes` explicitly enables permitted
+writes through the existing HTTP API. Every request retains backend permission
+checks. No external provider or additional runtime dependency is required.
+
+Install `requirements-mcp.lock` with `--require-hashes` to include the optional
+official-client interoperability test. CI includes it; ordinary Playground setup
+does not need it. Remote MCP hosting and production hardening remain separate work.

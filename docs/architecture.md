@@ -190,6 +190,30 @@ serverless database support is a separate requirement.
 
 See [jobs, realtime, and adapters](jobs-realtime.md) for public contracts and limits.
 
+## Milestone 7 decisions
+
+Discovery derives from the existing permission-filtered UI contract, without
+changing UI or database schema versions. The compact catalog avoids repeating
+field metadata; per-model descriptions include JSON schemas for reads and permitted
+writes. Callable defaults are not evaluated, static Link defaults are not exposed,
+and child-only models remain reachable through readable parents.
+
+The MCP implementation is a small sequential stdio server. It authenticates through
+one application session and forwards tools to existing HTTP routes. The backend
+remains the authority for tenant, model, field, row, action, and job access. Reads
+are the default; an operator must enable writes at process startup. Tool input
+cannot change the origin, session, or HTTP headers. Transport bounds, no redirects,
+private session files, and no automatic write retries keep this boundary explicit.
+
+The core uses only the standard library. The official MCP SDK is optional test
+instrumentation, pinned with transitive hashes in `requirements-mcp.lock` and
+constrained by the development lock. It verifies protocol interoperability without
+adding a runtime dependency. The starter command writes a small authenticated
+consumer application using public exports and refuses existing directories.
+
+See [discovery and local connectors](connector.md) for contracts, commands, client
+approval responsibilities, limits, and the application development workflow.
+
 ## Deferred work
 
 WebSockets, arbitrary schema conversions, PostgreSQL, large-dataset benchmarks,

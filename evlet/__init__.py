@@ -37,3 +37,8 @@ from .object_storage import S3Storage
 from .serverless import LambdaHTTP
 
 __all__ += ["LambdaHTTP", "S3Storage"]
+
+from .connector import ConnectorError, HTTPClient
+from .mcp import MCPServer
+
+__all__ += ["ConnectorError", "HTTPClient", "MCPServer"]
