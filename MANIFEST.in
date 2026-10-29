@@ -1,5 +1,5 @@
-include README.md AGENTS.md requirements-dev.lock requirements-server.lock requirements-s3.lock requirements-mcp.in requirements-mcp.lock
-recursive-include docs *.md
+include README.md AGENTS.md requirements-dev.lock requirements-server.lock requirements-s3.lock requirements-mcp.in requirements-mcp.lock requirements-postgres.lock
+recursive-include docs *.md *.json
 recursive-include examples *.py
 recursive-include tests *.py
 recursive-include scripts *.py *.sh

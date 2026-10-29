@@ -72,7 +72,7 @@ class Query:
                         raise ValueError('in expects at most 100 values')
                     if any(item is None for item in value):
                         raise ValueError('Use isnull to query null values')
-                    clauses.append(f'{column} IN ({", ".join("?" for _ in value)})' if value else '0')
+                    clauses.append(f'{column} IN ({", ".join("?" for _ in value)})' if value else '1=0')
                     values.extend(self.value(field, item) for item in value)
                 elif operator in ('contains', 'icontains', 'startswith'):
                     if not isinstance(field, Text) or not isinstance(value, str):
@@ -124,7 +124,7 @@ class Query:
                     raise ValueError('Order fields must be strings')
                 descending = key.startswith('-')
                 column, _ = self.reference(key[1:] if descending else key)
-                clauses.append(column + (' DESC' if descending else ' ASC'))
+                clauses.append(column + (' DESC NULLS LAST' if descending else ' ASC NULLS FIRST'))
             if not any(key.lstrip('-') == 'id' for key in order_by):
                 clauses.append('"record"."id" ASC')
         except ValueError as exc:

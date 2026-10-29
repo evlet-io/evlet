@@ -20,8 +20,7 @@ class EventStore:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_events (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, model TEXT NOT NULL, record_id INTEGER NOT NULL, deleted INTEGER NOT NULL)')
 
     def publish(self, tx, model, record_id, *, deleted=False):
-        path = tx.connection.execute('PRAGMA database_list').fetchone()[2]
-        if Path(path).resolve() != self.database.path.resolve():
+        if not self.database.owns(tx):
             raise ValueError('Event transaction belongs to another database')
         if type(record_id) is not int or not 1 <= record_id <= 2**63 - 1:
             raise ValueError('Use a valid record ID')

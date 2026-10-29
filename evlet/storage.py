@@ -18,7 +18,7 @@ class SQLiteStorage:
         with database.transaction() as tx:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_attachments (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, record_id INTEGER NOT NULL, name TEXT NOT NULL, content BLOB NOT NULL)')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_attachment_owner ON evlet_attachments(model,record_id)')
-            columns = {row['name'] for row in tx.connection.execute('PRAGMA table_info(evlet_attachments)')}
+            columns = database.columns(tx.connection, 'evlet_attachments')
             for name, kind in (('storage_key', 'TEXT'), ('file_size', 'INTEGER'), ('storage_kind', 'TEXT')):
                 if name not in columns:
                     tx.connection.execute(f'ALTER TABLE evlet_attachments ADD COLUMN {name} {kind}')
@@ -83,8 +83,7 @@ class LocalFileStorage(SQLiteStorage):
         return self.root / key
 
     def add(self, tx, model, record_id, name, content):
-        bound_path = tx.connection.execute('PRAGMA database_list').fetchone()[2]
-        if self.database is None or Path(bound_path).resolve() != self.database.path.resolve():
+        if self.database is None or not self.database.owns(tx):
             raise StorageError('Attachment transaction belongs to another database')
         key = secrets.token_hex(32)
         try:

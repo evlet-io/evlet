@@ -82,7 +82,7 @@ class Application:
             logger.exception("Attachment storage failed")
             status, payload = 503, {"error": "Attachment temporarily unavailable"}
         except sqlite3.OperationalError:
-            logger.exception("SQLite operation failed")
+            logger.exception("Database operation failed")
             status, payload = 503, {"error": "Database temporarily unavailable"}
         except Exception:
             logger.exception("Unhandled request failure")
@@ -216,5 +216,6 @@ class Application:
                     return
                 await send({"type": "lifespan.startup.complete"})
             elif event["type"] == "lifespan.shutdown":
+                await asyncio.to_thread(self.database.close)
                 await send({"type": "lifespan.shutdown.complete"})
                 return

@@ -1,11 +1,9 @@
 # Evlet
 
 A small Python application framework for business applications. This repository
-implements **Milestone 7**: compact model discovery, authenticated local MCP tools,
-and a small application starter, on top of tenant isolation, accounts, permissions,
-business actions, durable jobs, live updates, and SQLite.
-The Vue 3/PrimeVue Playground includes Customer, Invoice, Payment, and Project
-with child tasks.
+implements **Milestone 8**: optional PostgreSQL persistence, large-data and
+concurrency measurements, tenant security regression tests, and deployment
+operations documentation. SQLite remains the default; PostgreSQL is optional.
 
 Python model definitions remain authoritative. The core has **zero third-party
 runtime dependencies**. No database server, Redis, Docker, or worker is required.
@@ -239,3 +237,13 @@ checks. No external provider or additional runtime dependency is required.
 Install `requirements-mcp.lock` with `--require-hashes` to include the optional
 official-client interoperability test. CI includes it; ordinary Playground setup
 does not need it. Remote MCP hosting and production hardening remain separate work.
+
+## Milestone 8: performance and hardening
+
+- [PostgreSQL setup, transaction behavior, and migration limits](docs/postgresql.md)
+- [Reproducible workload and measured adapter comparison](docs/performance.md)
+- [Deployment, backup, recovery, and monitoring](docs/production-operations.md)
+
+The existing tenant catalog remains SQLite-only. PostgreSQL supports authenticated
+single-application deployments and conservatively serializes writes per database.
+No production scale or parallel-write capacity is implied by this release.

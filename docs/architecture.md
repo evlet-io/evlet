@@ -216,5 +216,32 @@ approval responsibilities, limits, and the application development workflow.
 
 ## Deferred work
 
-WebSockets, arbitrary schema conversions, PostgreSQL, large-dataset benchmarks,
-and broader production hardening remain later work.
+WebSockets, arbitrary schema conversions, PostgreSQL tenant-catalog integration,
+parallel write scheduling, and production-target validation remain later work.
+
+
+## Milestone 8 decisions
+
+PostgreSQL is an optional driver-backed Database implementation. Models, validation,
+query compilation, authentication, permissions, and business handlers stay shared.
+A small private connection adapter binds parameters and adapts framework-generated
+SQL; native schema introspection and migrations live separately. A bounded optional
+Psycopg pool reuses connections and resets session state after each operation. It is not a general
+SQL translation layer. The base wheel imports without Psycopg installed.
+
+An explicit transaction advisory lock preserves the existing serialized-write
+contract across PostgreSQL processes, including business actions and queue claims.
+Read pages use repeatable-read snapshots. This initial adapter does not provide
+parallel writes within one database, and the operator-managed SQLite tenant catalog
+is not extended to remote credentials or PostgreSQL provisioning.
+
+Private storage, events, and jobs check their owning database through a shared
+boundary instead of assuming a SQLite file. Session revocation/expiry and login
+counter cleanup now have explicit indexes. Repeated security headers are rejected
+before authentication. Nullable ordering is explicit on both adapters.
+
+Reproducible benchmarks use synthetic large ledgers and real databases, with
+continuous authenticated ASGI readers, paced invoice transactions, SQL reports,
+index comparisons, and measured resource/bundle sizes. They do not model a complete
+accounting system or prove deployment capacity. See [performance](performance.md),
+[PostgreSQL](postgresql.md), and [operations](production-operations.md).

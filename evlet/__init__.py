@@ -42,3 +42,7 @@ from .connector import ConnectorError, HTTPClient
 from .mcp import MCPServer
 
 __all__ += ["ConnectorError", "HTTPClient", "MCPServer"]
+
+from .postgres import PostgreSQLDatabase
+
+__all__ += ["PostgreSQLDatabase"]

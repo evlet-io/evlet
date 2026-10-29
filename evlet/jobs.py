@@ -88,9 +88,8 @@ class JobQueue:
                 enabled INTEGER NOT NULL DEFAULT 1)''')
 
     def _bound(self, tx):
-        path = tx.connection.execute('PRAGMA database_list').fetchone()[2]
         row = tx.connection.execute('SELECT tenant FROM evlet_job_namespace WHERE id=1').fetchone()
-        if Path(path).resolve() != self.database.path.resolve() or not row or row[0] != self.tenant:
+        if not self.database.owns(tx) or not row or row[0] != self.tenant:
             raise ValueError('Job transaction belongs to another tenant database')
 
     def enqueue(self, tx, task, payload, *, user=None, target=None, run_at=None, key=None):
