@@ -40,8 +40,10 @@ use the same launcher with Python and Node already installed. Set
 `EVLET_OPEN_BROWSER=0` for noninteractive validation.
 
 For an existing Milestone 1, 2, or 3 database, stop the launcher and run
-`.venv/bin/python -m examples.playground.migrate` before restarting it. This creates
-a backup and preserves existing records. See the [model engine guide](docs/model-engine.md)
+`.venv/bin/python -m examples.playground.migrate` before restarting it. SQLite upgrades create
+a backup and preserve existing records. When `EVLET_POSTGRES_DSN` is set, the
+command upgrades PostgreSQL instead; take an operator-managed PostgreSQL backup
+first, as described in the [PostgreSQL guide](docs/postgresql.md). See the [model engine guide](docs/model-engine.md)
 for the API, migration operations, and current limits.
 
 ## Install for development

@@ -125,6 +125,8 @@ class PostgreSQLDatabase(Database):
             for name in (table, *model.__fields__):
                 if len(name.encode()) > 63:
                     raise ValueError('PostgreSQL identifiers cannot exceed 63 bytes')
+        from .postgres_schema import validate_indexes
+        validate_indexes(registry)
         self._dsn, self.driver, self.timeout = dsn, psycopg, timeout
         self._pool_factory = ConnectionPool
         self._pool = None
