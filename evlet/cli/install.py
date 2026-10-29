@@ -1,5 +1,6 @@
 """Stage installation, preserve a backup, and recover the database/lock boundary."""
 
+from contextlib import closing
 from datetime import datetime, timezone
 import json
 import os
@@ -14,7 +15,7 @@ from .project import child, instance_guard, atomic_json, json_text, sync_directo
 
 
 def snapshot(source, target):
-    with sqlite3.connect(source) as old, sqlite3.connect(target) as new:
+    with closing(sqlite3.connect(source)) as old, closing(sqlite3.connect(target)) as new:
         old.backup(new)
     os.chmod(target, 0o600)
 
@@ -82,18 +83,18 @@ def install(root, name, *, app_name=None, trust=False, confirm=None):
             # Detect source edits during registration before publishing the result.
             if {'apps': {package.name: package.locked() for package in packages}} != after:
                 raise ValueError('App sources changed during installation; retry with stable sources')
-            with sqlite3.connect(stage) as connection:
+            with closing(sqlite3.connect(stage)) as connection:
                 connection.execute('PRAGMA wal_checkpoint(TRUNCATE)')
                 connection.execute('PRAGMA journal_mode=DELETE')
             os.chmod(stage, 0o600)
             with stage.open('rb') as stream:
                 os.fsync(stream.fileno())
             if database.exists():
-                with sqlite3.connect(database) as connection:
+                with closing(sqlite3.connect(database)) as connection:
                     busy, _, _ = connection.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()
                     if busy:
                         raise ValueError('Database is busy; stop all writers before installation')
-                    connection.execute('PRAGMA journal_mode=DELETE')
+                    connection.execute('PRAGMA journal_mode=DELETE').fetchone()
             atomic_json(path / '.install-journal.json', {'before': before, 'after': after})
             os.replace(stage, database)
             sync_directory(data)

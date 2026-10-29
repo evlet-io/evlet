@@ -1,5 +1,6 @@
 """Explicit app contributions and per-instance runtime configuration."""
 
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 import importlib
@@ -110,7 +111,7 @@ def read_lock(path):
 def database_state(database):
     if not database.exists():
         return {'apps': {}}
-    with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True) as connection:
+    with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as connection:
         exists = connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_installed_apps'").fetchone()
         if not exists:
             raise ValueError('Database is not managed by this instance installer; do not adopt existing customer databases implicitly')
@@ -194,7 +195,7 @@ def migration_plan(definitions, database):
             available[key] = Migration(key, *migration.operations)
     existing = []
     if database.exists():
-        with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True) as connection:
+        with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as connection:
             if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_migrations'").fetchone():
                 existing = [row[0] for row in connection.execute('SELECT name FROM evlet_migrations ORDER BY position')]
     if set(existing) - available.keys():

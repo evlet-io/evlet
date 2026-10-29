@@ -407,3 +407,22 @@ app = AppDefinition(models=models, migrations=migrations, actions=actions,
     assert first.business.jobs.run_one()
     assert first.database.get(model, record.id).title == 'Completed job'
     assert not second.business.jobs.run_one()
+
+
+def test_install_and_backup_close_connections_without_garbage_collection(project):
+    import gc
+    gc.collect()
+    gc.disable()
+    try:
+        install(project, 'acme', app_name='notes', trust=True)
+        app = runtime(project)
+        record = app.database.create(app.registry.models['notesitem'], title='No implicit cleanup')
+        create_app(project, 'crm')
+        install(project, 'acme', app_name='crm', trust=True)
+        change_model(project)
+        install(project, 'acme', trust=True)
+        app = runtime(project)
+        assert app.database.get(app.registry.models['notesitem'], record.id).title == 'No implicit cleanup'
+    finally:
+        gc.enable()
+        gc.collect()
