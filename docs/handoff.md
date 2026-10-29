@@ -73,9 +73,11 @@ workers. A database-only backup is insufficient for external attachments.
 
 Milestone 7 local verification on 29 October 2026 covers:
 
-- 275 backend tests and 80 frontend tests. New tests cover discovery, constraints,
+- 280 backend tests and 80 frontend tests. New tests cover discovery, constraints,
   child schemas, row/field rules, session and tenant revocation, private session
   files, protocol bounds, blocked redirects, invalid responses, and uncertain writes.
+  Logout recovery tests cover expired and revoked sessions, signing in again at the
+  same file path, and retaining the file after permission, server, or network errors.
 - Official MCP client interoperability over a real stdio subprocess and HTTP server:
   initialization, tools, JSON schemas, record writes, actions, validation failures,
   and session revocation against temporary tenant databases.

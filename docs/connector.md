@@ -71,9 +71,11 @@ A connector uses one account and one origin; each tenant needs a separate sessio
 python -m evlet logout --session ~/.evlet/playground.session.json
 ```
 
-Logout revokes the server session and removes the file. If the server cannot be
-reached, the command reports the failure and retains the file for a later attempt.
-There is no password storage, refresh credential, or automatic sign-in.
+Logout revokes the server session and removes the file. A 401 response means the
+saved session is no longer accepted, so logout removes the file and lets you sign
+in again at the same path. Network, permission, and server
+failures retain the file for a later attempt. There is no password storage,
+refresh credential, or automatic sign-in.
 
 ## Discovery contract
 
