@@ -341,3 +341,19 @@ def test_editable_picker_contracts_compile_with_bindings():
         assert "value" in catalog[name]["bindings"]
         assert "on_change" in catalog[name]["events"]
     assert json.loads(json.dumps(schema)) == schema
+
+
+def test_input_prefixes_remain_presentation_metadata():
+    from evlet.ui import CurrencyInput
+    from examples.playground.ui import playground_ui
+
+    view = PageView("price", layout=CurrencyInput(prefix="AED", value="123456789.01"))
+    props = SchemaCompiler().compile(view).to_dict()["layout"]["props"]
+    assert props["prefix"] == "AED"
+    assert props["value"] == "123456789.01"
+    ui = playground_ui()
+    schema = Registry(Project, Customer).ui_schema()
+    form = ui.resolve("/app/project/new", schema)["view"]
+    planning = form["layout"]["slots"]["children"][1]
+    budget = next(node for node in planning["slots"]["children"] if node["props"]["field"] == "budget")
+    assert budget["props"]["prefix"] == "AED"

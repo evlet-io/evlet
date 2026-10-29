@@ -1,3 +1,4 @@
+import { SelectInput } from "./SelectInput";
 import {
   createEffect,
   createMemo,
@@ -5,12 +6,11 @@ import {
   createUniqueId,
   For,
   on,
-  onCleanup,
-  onMount,
   Show,
   splitProps,
   type JSX,
 } from "solid-js";
+import { AnchoredPopover } from "./AnchoredPopover";
 import { Portal } from "solid-js/web";
 import { callHandler, forwardRef } from "./helpers";
 import {
@@ -25,7 +25,6 @@ import {
   parseDate,
   parseDateTime,
   parseTime,
-  popupPosition,
   todayValue,
 } from "./date-time";
 
@@ -165,7 +164,7 @@ function DateTimeInput(props: DateTimeInputProps & { mode: Mode }) {
         '[data-current="true"]',
       );
       if (p.mode === "time") current?.scrollIntoView({ block: "nearest" });
-      if (focus)
+      if (focus && !panel?.contains(document.activeElement))
         (
           current || panel?.querySelector<HTMLButtonElement>('[role="option"]')
         )?.focus();
@@ -346,12 +345,14 @@ function DateTimeInput(props: DateTimeInputProps & { mode: Mode }) {
       </Show>
       <Show when={open()}>
         <Portal mount={input.closest("dialog") || document.body}>
-          <PickerPopup
+          <AnchoredPopover
             anchor={anchor}
             control={input}
             id={popupId}
             label={label()}
-            timeOnly={p.mode === "time"}
+            width={p.mode === "time" ? 252 : 290}
+            role="dialog"
+            class="ev-picker-popover"
             onClose={close}
             panelRef={(el) => (panel = el)}
           >
@@ -409,12 +410,12 @@ function DateTimeInput(props: DateTimeInputProps & { mode: Mode }) {
                 >
                   ‹
                 </button>
-                <select
+                <SelectInput
                   aria-label="Month"
                   value={+month().slice(5, 7)}
-                  onChange={(e) => {
+                  onChange={(nextValue) => {
                     const [y, , d] = month().split("-").map(Number),
-                      m = +e.currentTarget.value;
+                      m = +nextValue;
                     const value = dateValue(y, m, d) || dateValue(y, m, 1)!;
                     setMonth(value);
                     setDay(value);
@@ -430,7 +431,7 @@ function DateTimeInput(props: DateTimeInputProps & { mode: Mode }) {
                       </option>
                     )}
                   </For>
-                </select>
+                </SelectInput>
                 <input
                   aria-label="Year"
                   inputmode="numeric"
@@ -568,141 +569,9 @@ function DateTimeInput(props: DateTimeInputProps & { mode: Mode }) {
                 Clear
               </button>
             </div>
-          </PickerPopup>
+          </AnchoredPopover>
         </Portal>
       </Show>
-    </div>
-  );
-}
-
-function PickerPopup(props: {
-  anchor: HTMLElement;
-  control: HTMLInputElement;
-  id: string;
-  label: string;
-  timeOnly: boolean;
-  onClose: (focus?: boolean) => void;
-  panelRef: (el: HTMLDivElement) => void;
-  children: JSX.Element;
-}) {
-  let panel!: HTMLDivElement,
-    frame = 0;
-  const [position, setPosition] = createSignal({
-    left: 0,
-    top: 0,
-    width: props.timeOnly ? 252 : 290,
-    maxHeight: 500,
-    placement: "bottom",
-  });
-  const update = () => {
-    const rect = props.control.getBoundingClientRect(),
-      visual = window.visualViewport;
-    const viewport = {
-      width: visual?.width || window.innerWidth,
-      height: visual?.height || window.innerHeight,
-      left: visual?.offsetLeft || 0,
-      top: visual?.offsetTop || 0,
-    };
-    if (
-      rect.bottom < (viewport.top || 0) ||
-      rect.top > viewport.height + (viewport.top || 0)
-    ) {
-      props.onClose();
-      return;
-    }
-    for (
-      let ancestor = props.anchor.parentElement;
-      ancestor && ancestor !== document.body;
-      ancestor = ancestor.parentElement
-    ) {
-      const style = getComputedStyle(ancestor);
-      if (/auto|scroll|hidden|clip/.test(style.overflowY)) {
-        const bounds = ancestor.getBoundingClientRect();
-        if (rect.bottom <= bounds.top || rect.top >= bounds.bottom) {
-          props.onClose();
-          return;
-        }
-      }
-    }
-    setPosition(
-      popupPosition(
-        rect,
-        {
-          width: props.timeOnly ? 252 : 290,
-          height: panel.scrollHeight + panel.offsetHeight - panel.clientHeight,
-        },
-        viewport,
-      ),
-    );
-  };
-  const schedule = () => {
-    cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(update);
-  };
-  onMount(() => {
-    panel.showPopover?.();
-    update();
-    const outside = (e: Event) => {
-      if (
-        !props.anchor.contains(e.target as Node) &&
-        !panel.contains(e.target as Node)
-      )
-        props.onClose();
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        props.onClose(true);
-      }
-    };
-    document.addEventListener("pointerdown", outside, true);
-    document.addEventListener("focusin", outside, true);
-    document.addEventListener("keydown", key, true);
-    document.addEventListener("scroll", schedule, true);
-    window.addEventListener("resize", schedule);
-    window.visualViewport?.addEventListener("resize", schedule);
-    window.visualViewport?.addEventListener("scroll", schedule);
-    const resize = new ResizeObserver(schedule);
-    resize.observe(props.anchor);
-    resize.observe(panel);
-    onCleanup(() => {
-      cancelAnimationFrame(frame);
-      resize.disconnect();
-      panel.hidePopover?.();
-      document.removeEventListener("pointerdown", outside, true);
-      document.removeEventListener("focusin", outside, true);
-      document.removeEventListener("keydown", key, true);
-      document.removeEventListener("scroll", schedule, true);
-      window.removeEventListener("resize", schedule);
-      window.visualViewport?.removeEventListener("resize", schedule);
-      window.visualViewport?.removeEventListener("scroll", schedule);
-    });
-  });
-  return (
-    <div
-      ref={(el) => {
-        panel = el;
-        props.panelRef(el);
-      }}
-      id={props.id}
-      class="ev-picker-popover"
-      popover={
-        typeof HTMLElement.prototype.showPopover === "function"
-          ? "manual"
-          : undefined
-      }
-      role="dialog"
-      aria-label={props.label}
-      data-placement={position().placement}
-      style={{
-        left: position().left + "px",
-        top: position().top + "px",
-        width: position().width + "px",
-        "max-height": position().maxHeight + "px",
-      }}
-    >
-      {props.children}
     </div>
   );
 }

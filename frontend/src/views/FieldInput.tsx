@@ -1,6 +1,8 @@
+import { SelectInput } from "../ui";
 import {
   createSignal,
   createResource,
+  onCleanup,
   Show,
   Switch,
   Match,
@@ -10,7 +12,7 @@ import type { FieldSchema } from "../runtime/types";
 import { useApp, messageFor } from "../runtime/Context";
 import { getRecord, listRecords } from "../api";
 import { recordLabel } from "../schema";
-import { Button, DatePicker, DateTimePicker } from "../ui";
+import { Button, DatePicker, DateTimePicker, InputGroup } from "../ui";
 export interface FieldInputProps {
   field: FieldSchema;
   value: any;
@@ -20,6 +22,8 @@ export interface FieldInputProps {
   invalid?: boolean;
   describedBy?: string;
   required?: boolean;
+  prefix?: string;
+  suffix?: string;
 }
 export default function FieldInput(props: FieldInputProps) {
   const required = () => props.required ?? props.field.required;
@@ -76,16 +80,16 @@ export default function FieldInput(props: FieldInputProps) {
       <Match
         when={props.field.type === "select" || props.field.type === "boolean"}
       >
-        <select
+        <SelectInput
           {...common()}
           value={props.value == null ? "" : String(props.value)}
-          onChange={(e) =>
+          onChange={(nextValue) =>
             props.onChange(
-              e.currentTarget.value === ""
+              nextValue === ""
                 ? null
                 : props.field.type === "boolean"
-                  ? e.currentTarget.value === "true"
-                  : e.currentTarget.value,
+                  ? nextValue === "true"
+                  : nextValue,
             )
           }
         >
@@ -114,7 +118,7 @@ export default function FieldInput(props: FieldInputProps) {
               No
             </option>
           </Show>
-        </select>
+        </SelectInput>
       </Match>
       <Match when={props.field.type === "longtext"}>
         <textarea
@@ -127,38 +131,39 @@ export default function FieldInput(props: FieldInputProps) {
         />
       </Match>
       <Match when={true}>
-        <input
-          {...common()}
-          value={props.value == null ? "" : String(props.value)}
-          type={
-            ["date", "email", "url"].includes(props.field.type)
-              ? props.field.type
-              : "text"
-          }
-          inputMode={
-            ["currency", "decimal"].includes(props.field.type)
-              ? "decimal"
-              : props.field.type === "integer"
-                ? "numeric"
-                : undefined
-          }
-          maxLength={props.field.max_length}
-          placeholder={
-            props.field.placeholder ||
-            (props.field.type === "datetime"
-              ? "2026-10-29T09:00:00+04:00"
-              : undefined)
-          }
-          onInput={(e) => props.onChange(e.currentTarget.value)}
-        />
+        <InputGroup prefix={props.prefix} suffix={props.suffix}>
+          <input
+            {...common()}
+            value={props.value == null ? "" : String(props.value)}
+            type={
+              ["date", "email", "url"].includes(props.field.type)
+                ? props.field.type
+                : "text"
+            }
+            inputMode={
+              ["currency", "decimal"].includes(props.field.type)
+                ? "decimal"
+                : props.field.type === "integer"
+                  ? "numeric"
+                  : undefined
+            }
+            maxLength={props.field.max_length}
+            placeholder={
+              props.field.placeholder ||
+              (props.field.type === "datetime"
+                ? "2026-10-29T09:00:00+04:00"
+                : undefined)
+            }
+            onInput={(e) => props.onChange(e.currentTarget.value)}
+          />
+        </InputGroup>
       </Match>
     </Switch>
   );
 }
 function LinkInput(props: FieldInputProps) {
   const app = useApp();
-  const [search, setSearch] = createSignal(""),
-    [query, setQuery] = createSignal(""),
+  const [query, setQuery] = createSignal(""),
     [offset, setOffset] = createSignal(0);
   const target = () => app.models.find((m) => m.name === props.field.target);
   const [page, { refetch }] = createResource(
@@ -176,24 +181,46 @@ function LinkInput(props: FieldInputProps) {
       items.unshift(current);
     return items;
   };
-  const find = () => {
-    setOffset(0);
-    setQuery(search().trim());
-    void refetch();
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(searchTimer));
+  const find = (text: string) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      setOffset(0);
+      setQuery(text.trim());
+    }, 200);
   };
   return (
     <div class="link-picker">
-      <select
+      <SelectInput
+        onSearch={find}
+        searchLabel={props.field.label}
+        loading={page.loading}
+        footer={
+          <>
+            <Show when={offset() > 0}>
+              <Button
+                size="small"
+                onClick={() => setOffset((v) => Math.max(0, v - 20))}
+              >
+                Previous choices
+              </Button>
+            </Show>
+            <Show when={offset() + 20 < (page.error ? 0 : page()?.total || 0)}>
+              <Button size="small" onClick={() => setOffset((v) => v + 20)}>
+                More choices
+              </Button>
+            </Show>
+          </>
+        }
         id={props.id}
         value={props.value ?? ""}
         required={props.required ?? props.field.required}
         disabled={props.disabled}
         aria-invalid={props.invalid}
         aria-describedby={props.describedBy}
-        onChange={(e) =>
-          props.onChange(
-            e.currentTarget.value ? Number(e.currentTarget.value) : null,
-          )
+        onChange={(nextValue) =>
+          props.onChange(nextValue ? Number(nextValue) : null)
         }
       >
         <option value="" selected={props.value == null}>
@@ -218,40 +245,7 @@ function LinkInput(props: FieldInputProps) {
             </option>
           )}
         </For>
-      </select>
-      <Show when={!props.disabled}>
-        <div class="link-search">
-          <input
-            type="search"
-            aria-label={"Search " + props.field.label}
-            placeholder={"Find " + props.field.label.toLowerCase() + "…"}
-            value={search()}
-            onInput={(e) => setSearch(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                find();
-              }
-            }}
-          />
-          <Button size="small" onClick={find}>
-            Find
-          </Button>
-          <Show when={offset() > 0}>
-            <Button
-              size="small"
-              onClick={() => setOffset((v) => Math.max(0, v - 20))}
-            >
-              Previous
-            </Button>
-          </Show>
-          <Show when={offset() + 20 < (page.error ? 0 : page()?.total || 0)}>
-            <Button size="small" onClick={() => setOffset((v) => v + 20)}>
-              More
-            </Button>
-          </Show>
-        </div>
-      </Show>
+      </SelectInput>
       <Show when={page.loading}>
         <small role="status">Loading choices…</small>
       </Show>

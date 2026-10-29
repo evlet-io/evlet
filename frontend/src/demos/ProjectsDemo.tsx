@@ -1,3 +1,4 @@
+import { SelectInput } from "../ui";
 import {
   batch,
   createEffect,
@@ -1000,28 +1001,28 @@ export default function ProjectsDemo(props: { shell: (props: import("../ui").App
                 </Field>
                 <Field label="Owner">
                   {(c) => (
-                    <select
+                    <SelectInput
                       id={c.id}
                       value={form.owner}
-                      onChange={(e) => setForm('owner', e.currentTarget.value)}
+                      onChange={(nextValue) => setForm('owner', nextValue)}
                     >
                       <For each={Object.entries(people)}>
                         {([id, person]) => <option value={id}>{person.name}</option>}
                       </For>
-                    </select>
+                    </SelectInput>
                   )}
                 </Field>
                 <Field label="Status">
                   {(c) => (
-                    <select
+                    <SelectInput
                       id={c.id}
                       value={form.status}
-                      onChange={(e) => setForm('status', e.currentTarget.value)}
+                      onChange={(nextValue) => setForm('status', nextValue)}
                     >
                       <For each={Object.entries(statusLabels)}>
                         {([id, label]) => <option value={id}>{label}</option>}
                       </For>
-                    </select>
+                    </SelectInput>
                   )}
                 </Field>
                 <Field label="Due date" required>
@@ -1033,14 +1034,14 @@ export default function ProjectsDemo(props: { shell: (props: import("../ui").App
                 </Field>
                 <Field label="Priority">
                   {(c) => (
-                    <select
+                    <SelectInput
                       id={c.id}
                       value={form.priority}
-                      onChange={(e) => setForm('priority', e.currentTarget.value)}
+                      onChange={(nextValue) => setForm('priority', nextValue)}
                     >
                       <option value="normal">Normal</option>
                       <option value="high">High priority</option>
-                    </select>
+                    </SelectInput>
                   )}
                 </Field>
                 <fieldset class="ev-field demo-color-field">
@@ -1105,37 +1106,37 @@ export default function ProjectsDemo(props: { shell: (props: import("../ui").App
               <div class="ev-form-grid">
                 <Field label="Owner">
                   {(c) => (
-                    <select
+                    <SelectInput
                       id={c.id}
                       value={owner()}
-                      onChange={(e) => setOwner(e.currentTarget.value)}
+                      onChange={(nextValue) => setOwner(nextValue)}
                     >
                       <option value="all">Anyone</option>
                       <For each={Object.entries(people)}>
                         {([id, person]) => <option value={id}>{person.name}</option>}
                       </For>
-                    </select>
+                    </SelectInput>
                   )}
                 </Field>
                 <Field label="Priority">
                   {(c) => (
-                    <select
+                    <SelectInput
                       id={c.id}
                       value={priority()}
-                      onChange={(e) => setPriority(e.currentTarget.value)}
+                      onChange={(nextValue) => setPriority(nextValue)}
                     >
                       <option value="all">Any priority</option>
                       <option value="high">High priority</option>
                       <option value="normal">Normal</option>
-                    </select>
+                    </SelectInput>
                   )}
                 </Field>
                 <Field label="Due date" class="ev-full">
                   {(c) => (
-                    <select id={c.id} value={due()} onChange={(e) => setDue(e.currentTarget.value)}>
+                    <SelectInput id={c.id} value={due()} onChange={(nextValue) => setDue(nextValue)}>
                       <option value="all">Any time</option>
                       <option value="soon">Due this week</option>
-                    </select>
+                    </SelectInput>
                   )}
                 </Field>
               </div>
@@ -1343,6 +1344,11 @@ export default function ProjectsDemo(props: { shell: (props: import("../ui").App
             }
             toolbar={
               <ListToolbar
+                selection={<Show when={checked().size}><div class="ev-selection-summary" role="status">
+                  <strong>{checked().size} selected</strong>
+                  <Button variant="ghost" size="small" onClick={() => setChecked(new Set())}>Clear</Button>
+                  <Button variant="ghost" size="small" onClick={archive}>Archive selected</Button>
+                </div></Show>}
                 leading={
                   <>
                     <label class="ev-search-field">
@@ -1376,29 +1382,29 @@ export default function ProjectsDemo(props: { shell: (props: import("../ui").App
                   <>
                     <label class="ev-select-wrap demo-owner-select">
                       <Icon name="people" />
-                      <select
+                      <SelectInput
                         aria-label="Filter by owner"
                         value={owner()}
-                        onChange={(e) => setOwner(e.currentTarget.value)}
+                        onChange={(nextValue) => setOwner(nextValue)}
                       >
                         <option value="all">Anyone</option>
                         <For each={Object.entries(people)}>
                           {([id, person]) => <option value={id}>{person.name}</option>}
                         </For>
-                      </select>
+                      </SelectInput>
                     </label>
                     <label class="ev-select-wrap">
                       <Icon name="sort" />
-                      <select
+                      <SelectInput
                         aria-label="Sort projects"
                         value={sort()}
-                        onChange={(e) => setSort(e.currentTarget.value)}
+                        onChange={(nextValue) => setSort(nextValue)}
                       >
                         <option value="manual">Last updated</option>
                         <option value="due">Due date</option>
                         <option value="name">Name</option>
                         <option value="progress">Progress</option>
-                      </select>
+                      </SelectInput>
                     </label>
                     <IconButton aria-label="Export projects" title="Export CSV" onClick={exportCSV}>
                       <Icon name="download" />
@@ -1467,12 +1473,8 @@ export default function ProjectsDemo(props: { shell: (props: import("../ui").App
                 getLabel={(p) => p.name}
                 selectedKey={selected()}
                 selection={checked()}
+                selectionInToolbar
                 onSelectionChange={setChecked}
-                selectionActions={
-                  <Button variant="ghost" size="small" onClick={archive}>
-                    Archive selected
-                  </Button>
-                }
                 rowActions={(p) => (
                   <IconButton
                     class="ev-row-menu"

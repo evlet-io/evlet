@@ -1252,3 +1252,54 @@ select:focus, textarea:focus,
   .docs-components-scroll > .component-explorer { display: grid; grid-template-rows: minmax(100px, 150px) minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
   .component-explorer > aside { max-height: none; }
 }
+
+/* Checks keep their own dimensions instead of inheriting text-field padding. */
+input[type="checkbox"], .ev-field input[type="checkbox"], .record-form input[type="checkbox"] {
+  width: 16px; height: 16px; min-height: 16px; padding: 0; flex: 0 0 16px;
+  border-radius: 4px; vertical-align: middle; margin: 0; cursor: pointer;
+}
+.ev-field-check { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px 9px; align-items: center; }
+.ev-field-check > label { grid-column: 2; grid-row: 1; margin: 0; cursor: pointer; }
+.ev-field-check > input { grid-column: 1; grid-row: 1; }
+.ev-field-check > small { grid-column: 2; }
+input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.ev-input-control, .ev-input-group { width: 100%; min-width: 0; }
+.ev-input-group { display: flex; align-items: stretch; border: 1px solid #dce1eb; border-radius: 6px; overflow: hidden; background: #fff; }
+.ev-input-addon { flex-shrink: 0; display: flex; align-items: center; padding: 0 11px; background: #f5f7fa; color: #748096; font-size: 11px; white-space: nowrap; }
+.ev-input-addon:first-child { border-right: 1px solid #e3e7ee; }
+.ev-input-addon:last-child { border-left: 1px solid #e3e7ee; }
+.ev-input-group > input { flex: 1; width: 0; min-width: 0; height: 34px; min-height: 34px; border: 0 !important; border-radius: 0; box-shadow: none !important; }
+.ev-input-group:focus-within { border-color: var(--ev-accent); outline: 1px solid var(--ev-accent); outline-offset: -2px; }
+.record-form .ev-input-group > input { height: 35px; min-height: 35px; }
+.ev-input-group:has(input:disabled) { opacity: .65; }
+.ev-select { position: relative; min-width: 0; }
+.ev-field .ev-select, .link-picker > .ev-select { width: 100%; }
+.ev-select-trigger { width: 100%; min-height: 35px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #fff; border: 1px solid #dce1eb; border-radius: 6px; padding: 8px 10px; color: var(--ev-ink); font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
+.ev-select-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ev-select-chevron { width: 16px; height: 16px; flex: 0 0 16px; color: #8390a3; pointer-events: none; }
+.ev-select-trigger:focus, .ev-select-trigger[aria-expanded="true"] { outline: none; border-color: var(--ev-accent); box-shadow: inset 0 0 0 1px var(--ev-accent); }
+.ev-select-trigger:disabled { cursor: default; color: #7b8599; background: #f6f8fb; }
+.ev-select > .ev-select-validation { position: absolute; top: 0; left: 0; width: 1px; height: 1px; min-height: 0; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+.ev-select-popup { position: fixed; inset: auto; margin: 0; padding: 6px; background: #fff; border: 1px solid #dce2ec; border-radius: 8px; box-shadow: 0 6px 24px #26395b21; z-index: 1000; overflow: auto; color: var(--ev-ink); font: 12px var(--ev-font); }
+.ev-select-popup .ev-select-search { display: block; width: 100%; height: 33px; min-height: 33px; margin-bottom: 5px; padding: 7px 9px; border-radius: 5px; background: #fafbfe; font: inherit; }
+.ev-select-options { max-height: 230px; overflow: auto; overscroll-behavior: contain; }
+.ev-select-options > button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 32px; padding: 7px 9px; border: 0; border-radius: 4px; background: transparent; font: inherit; text-align: left; color: inherit; cursor: pointer; }
+.ev-select-options > button:hover, .ev-select-options > .is-active { background: #f0f4fb; }
+.ev-select-options > button[aria-selected="true"] { color: var(--ev-accent); background: #edf3fe; }
+.ev-select-options > button:disabled { color: #a7afbd; cursor: default; }
+.ev-option-check { font-size: 13px; flex-shrink: 0; }
+.ev-select-empty { margin: 0; padding: 13px 9px; color: var(--ev-muted); }
+.ev-select-footer { display: flex; gap: 8px; justify-content: space-between; }
+.ev-select-footer:empty { display: none; }
+.ev-select-wrap { min-width: 0; }
+.ev-select-wrap > .ev-select { flex: 1; }
+.ev-select-wrap .ev-select-trigger { border: 0; background: transparent; min-height: 33px; }
+.ev-select-wrap:focus-within { border-color: var(--ev-accent); box-shadow: inset 0 0 0 1px var(--ev-accent); }
+.ev-select-wrap .ev-select-trigger:focus, .ev-select-wrap .ev-select-trigger[aria-expanded="true"] { box-shadow: none; }
+.ev-calendar-heading > .ev-select { flex: 1; }
+.ev-calendar-heading .ev-select-trigger { min-height: 30px; height: 30px; padding: 4px 7px; font-weight: 600; }
+.ev-selection-summary { display: flex; align-items: center; gap: 12px; min-height: 35px; white-space: nowrap; font-size: 12px; }
+.ev-selection-summary > strong { color: var(--ev-accent); font-weight: 600; }
+.ev-selection-hidden { visibility: hidden; pointer-events: none; }
+.ev-toolbar { min-height: 49px; }

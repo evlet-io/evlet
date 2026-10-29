@@ -818,6 +818,8 @@ function ComponentSample(props: { contract: ComponentContract }) {
   if (type === "Checkbox" || type === "Switch") p.value = true;
   if (type === "TextInput" || type === "TextArea" || type === "SearchBox")
     p.value = "Hello, Evlet";
+  if (type === "CurrencyInput") { p.value = "1250.00"; p.prefix = "AED"; }
+  if (type === "TextInput") { p.value = "example.com"; p.prefix = "https://"; }
   if (type === "DatePicker") {
     p.value = "2026-12-10";
     p.placeholder = "DD MMM YYYY";

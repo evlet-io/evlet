@@ -1,3 +1,4 @@
+import { SelectInput, InputGroup } from "../ui";
 import {
   createSignal,
   createResource,
@@ -275,6 +276,11 @@ function Standard(props: RendererProps) {
       </Match>
       <Match when={controls.includes(type)}>
         <LabelledField
+          class={
+            type === "Checkbox" || type === "Switch"
+              ? "ev-field-check"
+              : undefined
+          }
           label={p().label || p().aria_label || props.node.id}
           required={p().required}
           help={p().help}
@@ -326,97 +332,92 @@ function Standard(props: RendererProps) {
                 />
               </Match>
               <Match when={type === "Select" || type === "MultiSelect"}>
-                <select
+                <SelectInput
                   id={control.id}
                   multiple={type === "MultiSelect"}
                   value={value() ?? ""}
                   disabled={p().disabled}
                   required={p().required}
-                  aria-describedby={control.describedBy}
-                  onChange={(e) =>
-                    change(
-                      type === "MultiSelect"
-                        ? Array.from(
-                            e.currentTarget.selectedOptions,
-                            (o) => o.value,
-                          )
-                        : e.currentTarget.value,
-                    )
-                  }
-                  onFocus={() => event("on_focus")}
-                  onBlur={() => event("on_blur")}
-                >
-                  <Show when={type === "Select"}>
-                    <option
-                      value=""
-                      selected={value() == null || value() === ""}
-                    >
-                      Choose a value
-                    </option>
-                  </Show>
-                  <For each={options()}>
-                    {(item: any) => (
-                      <option
-                        value={item.value}
-                        selected={
-                          type === "MultiSelect" && Array.isArray(value())
-                            ? value().includes(item.value)
-                            : String(value()) === String(item.value)
-                        }
-                      >
-                        {item.label}
-                      </option>
-                    )}
-                  </For>
-                </select>
-              </Match>
-              <Match when={true}>
-                <input
-                  id={control.id}
-                  type={
-                    type === "Checkbox" || type === "Switch"
-                      ? "checkbox"
-                      : type === "NumberInput"
-                        ? "number"
-                        : type === "SearchBox"
-                          ? "search"
-                          : "text"
-                  }
-                  role={type === "Switch" ? "switch" : undefined}
-                  value={value() ?? ""}
-                  checked={!!value()}
-                  inputMode={type === "CurrencyInput" ? "decimal" : undefined}
-                  min={p().min}
-                  max={p().max}
-                  step={p().step}
-                  required={
-                    p().required && !["Checkbox", "Switch"].includes(type)
-                  }
-                  disabled={p().disabled}
-                  placeholder={p().placeholder}
-                  maxLength={p().max_length}
                   aria-invalid={control.invalid}
                   aria-describedby={control.describedBy}
-                  onInput={(e) =>
-                    change(
-                      ["Checkbox", "Switch"].includes(type)
-                        ? e.currentTarget.checked
-                        : type === "NumberInput"
-                          ? e.currentTarget.value === ""
-                            ? null
-                            : Number(e.currentTarget.value)
-                          : e.currentTarget.value,
-                      "on_input",
-                    )
+                  options={
+                    type === "MultiSelect"
+                      ? options()
+                      : [{ value: "", label: "Choose a value" }, ...options()]
                   }
+                  onChange={(next) => change(next)}
+                  onMultipleChange={(next) => change(next)}
+                  onFocus={() => event("on_focus")}
+                  onBlur={() => event("on_blur")}
+                />
+              </Match>
+              <Match when={type === "Checkbox" || type === "Switch"}>
+                <input
+                  id={control.id}
+                  type="checkbox"
+                  class="ev-check"
+                  role={type === "Switch" ? "switch" : undefined}
+                  checked={!!value()}
+                  disabled={p().disabled}
+                  aria-describedby={control.describedBy}
+                  aria-invalid={control.invalid}
                   onChange={(e) => {
-                    if (["Checkbox", "Switch"].includes(type))
-                      change(e.currentTarget.checked);
-                    else event("on_change", value());
+                    change(e.currentTarget.checked, "on_input");
+                    event("on_change", e.currentTarget.checked);
                   }}
                   onFocus={() => event("on_focus")}
                   onBlur={() => event("on_blur")}
                 />
+              </Match>
+              <Match when={true}>
+                <InputGroup prefix={p().prefix} suffix={p().suffix}>
+                  <input
+                    id={control.id}
+                    type={
+                      type === "Checkbox" || type === "Switch"
+                        ? "checkbox"
+                        : type === "NumberInput"
+                          ? "number"
+                          : type === "SearchBox"
+                            ? "search"
+                            : "text"
+                    }
+                    role={type === "Switch" ? "switch" : undefined}
+                    value={value() ?? ""}
+                    checked={!!value()}
+                    inputMode={type === "CurrencyInput" ? "decimal" : undefined}
+                    min={p().min}
+                    max={p().max}
+                    step={p().step}
+                    required={
+                      p().required && !["Checkbox", "Switch"].includes(type)
+                    }
+                    disabled={p().disabled}
+                    placeholder={p().placeholder}
+                    maxLength={p().max_length}
+                    aria-invalid={control.invalid}
+                    aria-describedby={control.describedBy}
+                    onInput={(e) =>
+                      change(
+                        ["Checkbox", "Switch"].includes(type)
+                          ? e.currentTarget.checked
+                          : type === "NumberInput"
+                            ? e.currentTarget.value === ""
+                              ? null
+                              : Number(e.currentTarget.value)
+                            : e.currentTarget.value,
+                        "on_input",
+                      )
+                    }
+                    onChange={(e) => {
+                      if (["Checkbox", "Switch"].includes(type))
+                        change(e.currentTarget.checked);
+                      else event("on_change", value());
+                    }}
+                    onFocus={() => event("on_focus")}
+                    onBlur={() => event("on_blur")}
+                  />
+                </InputGroup>
               </Match>
             </Switch>
           )}

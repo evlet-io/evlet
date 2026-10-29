@@ -87,7 +87,10 @@ URLs, refresh and back navigation. Final counts and CI status belong in the PR.
 Date and time controls are custom editable pickers shared by Python pages, model
 forms and the Projects demo. Short dates use DDMMYY and times accept entries such
 as 6.30pm. Component list and detail panes scroll independently. See `docs/ui.md`
-for accepted formats and keyboard behavior.
+for accepted formats and keyboard behavior. Searchable custom selects replace
+native dropdowns. Field prefixes are configurable, with AED set explicitly in the
+Playground. Checkboxes keep compact inline labels, and list selection actions use
+the existing toolbar without pushing the table down.
 
 Vue and PrimeVue remain only in `frontend/legacy` and development dependencies for
 regression comparison. The active production bundle uses Solid and the custom

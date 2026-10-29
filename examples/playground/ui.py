@@ -31,6 +31,14 @@ from evlet.ui import (
 
 def playground_ui():
     ui = ViewRegistry()
+    for view_name, field_name in (
+        ("invoice.form", "total"),
+        ("payment.form", "amount"),
+        ("project.form", "budget"),
+    ):
+        def currency_prefix(view, name=field_name):
+            view.field(name).prefix = "AED"
+        ui.extend(view_name, currency_prefix, name="currency_prefix")
     ui.components.register(
         ComponentDefinition(
             name="ProjectsDemo",

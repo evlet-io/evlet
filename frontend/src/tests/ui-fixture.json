@@ -428,7 +428,8 @@
                       "events": {},
                       "id": "total",
                       "props": {
-                        "field": "total"
+                        "field": "total",
+                        "prefix": "AED"
                       },
                       "slots": {},
                       "type": "Field",
@@ -736,7 +737,8 @@
                       "events": {},
                       "id": "amount",
                       "props": {
-                        "field": "amount"
+                        "field": "amount",
+                        "prefix": "AED"
                       },
                       "slots": {},
                       "type": "Field",
@@ -1089,7 +1091,8 @@
                       "events": {},
                       "id": "budget",
                       "props": {
-                        "field": "budget"
+                        "field": "budget",
+                        "prefix": "AED"
                       },
                       "slots": {},
                       "type": "Field",
@@ -2599,7 +2602,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -2616,7 +2621,7 @@
         "accessibility": "Preserve native semantics and provide an accessible label for controls.",
         "renderer": "TextInput",
         "version": 1,
-        "example": "TextInput(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+        "example": "TextInput(label=\"Website\", prefix=\"https://\", bindings={\"value\": Bind(\"domain\")})"
       },
       {
         "name": "TextArea",
@@ -2640,7 +2645,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -2681,7 +2688,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -2722,7 +2731,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -2739,7 +2750,7 @@
         "accessibility": "Preserve native semantics and provide an accessible label for controls.",
         "renderer": "CurrencyInput",
         "version": 1,
-        "example": "CurrencyInput(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+        "example": "CurrencyInput(label=\"Amount\", prefix=\"AED\", bindings={\"value\": Bind(\"amount\")})"
       },
       {
         "name": "Checkbox",
@@ -2763,7 +2774,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -2804,7 +2817,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -2845,7 +2860,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -2858,7 +2875,7 @@
           "value"
         ],
         "defaults": {},
-        "description": "A labelled native control with safe, scoped data binding.",
+        "description": "Searchable choices with keyboard navigation and scoped data binding.",
         "accessibility": "Preserve native semantics and provide an accessible label for controls.",
         "renderer": "Select",
         "version": 1,
@@ -2886,7 +2903,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -2899,7 +2918,7 @@
           "value"
         ],
         "defaults": {},
-        "description": "A labelled native control with safe, scoped data binding.",
+        "description": "Searchable choices with keyboard navigation and scoped data binding.",
         "accessibility": "Preserve native semantics and provide an accessible label for controls.",
         "renderer": "MultiSelect",
         "version": 1,
@@ -2927,7 +2946,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -2968,7 +2989,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -3009,7 +3032,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -3050,7 +3075,9 @@
           "options": "array",
           "multiple": "boolean",
           "error": "string",
-          "rows": "number"
+          "rows": "number",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -3082,7 +3109,9 @@
           "field": "string",
           "label": "string",
           "required": "boolean",
-          "value": "any"
+          "value": "any",
+          "prefix": "string",
+          "suffix": "string"
         },
         "events": [
           "on_change",
@@ -3374,7 +3403,23 @@
         "example": "CustomComponent(\"ProjectsDemo\")"
       }
     ],
-    "extensions": []
+    "extensions": [
+      {
+        "target": "invoice.form",
+        "layer": "application",
+        "name": "currency_prefix"
+      },
+      {
+        "target": "payment.form",
+        "layer": "application",
+        "name": "currency_prefix"
+      },
+      {
+        "target": "project.form",
+        "layer": "application",
+        "name": "currency_prefix"
+      }
+    ]
   },
   "models": [
     {

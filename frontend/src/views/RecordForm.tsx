@@ -226,6 +226,11 @@ export default function RecordForm(props: {
         (field.default_kind === "none" || field.type === "boolean");
       return (
         <Field
+          class={
+            field.type === "boolean" && field.required
+              ? "ev-field-check"
+              : undefined
+          }
           label={p.label || field.label}
           required={required && !field.read_only && canEdit()}
           error={errors()[field.name]}
@@ -248,6 +253,8 @@ export default function RecordForm(props: {
           {(control) => (
             <FieldInput
               field={field}
+              prefix={p.prefix}
+              suffix={p.suffix}
               id={control.id}
               required={required}
               disabled={!canEdit() || busy() || field.read_only || p.disabled}
@@ -536,6 +543,11 @@ export default function RecordForm(props: {
                               <For each={childFields(child)}>
                                 {(field) => (
                                   <Field
+                                    class={
+                                      field.type === "boolean" && field.required
+                                        ? "ev-field-check"
+                                        : undefined
+                                    }
                                     label={field.label}
                                     required={
                                       field.required && !field.read_only

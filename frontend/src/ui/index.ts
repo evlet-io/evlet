@@ -5,3 +5,5 @@ export * from './components/RecordList';
 export * from './components/RecordPreview';
 export * from './components/primitives';
 export * from './components/DateTimePicker';
+export * from './components/SelectInput';
+export * from './components/InputGroup';

@@ -109,6 +109,32 @@ is filtered by the same model and field policy as the existing schema endpoint.
 Custom pages can specify `roles=("admin",)` and `requires=(Customer,)`.
 A page’s UI visibility is not a replacement for server-side authorization.
 
+## Input controls
+
+Select and MultiSelect use searchable dropdowns with keyboard navigation. Type to
+filter choices, use the arrow keys and Enter to select, and Escape to close.
+Record links search the server and keep paginated choices inside the dropdown.
+Disabled choices stay unavailable, and a missing linked record keeps its ID until
+the user chooses a replacement. Controls share the same anchored popup behavior
+as date pickers, including inside dialogs.
+
+`TextInput`, `NumberInput`, `CurrencyInput` and model `Field` definitions accept
+`prefix` and `suffix`. These are display labels; they do not alter stored values
+or convert currency. Currency and decimal values remain exact strings. The
+Playground explicitly configures AED for its currency fields; the framework does
+not assume a currency. Number controls have no spinner arrows.
+
+```python
+CurrencyInput(label="Amount", prefix="AED", bindings={"value": Bind("amount")})
+TextInput(label="Website", prefix="https://", bindings={"value": Bind("domain")})
+view.field("budget").prefix = "AED"
+```
+
+List selection counts and bulk actions replace the existing toolbar content,
+keeping the table in place. Solid consumers use the `selection` slot on `ListToolbar` with
+`selectionInToolbar` on `RecordList`; standalone lists retain their inline
+selection summary by default.
+
 ## Editable dates and times
 
 `DatePicker`, `TimePicker` and `DateTimePicker` use the same custom controls in

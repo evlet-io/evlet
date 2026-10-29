@@ -125,6 +125,8 @@ INPUT_PROPS = {
     "multiple": "boolean",
     "error": "string",
     "rows": "number",
+    "prefix": "string",
+    "suffix": "string",
 }
 
 
@@ -250,14 +252,25 @@ def default_components():
             description=(
                 "Editable date and time controls. Dates use day-month-year; 101226 becomes 10 Dec 2026. Times accept 6.30pm and display 18:30. Values normalize on Enter or blur. Invalid input stays editable."
                 if name in ("DatePicker", "TimePicker", "DateTimePicker")
+                else "Searchable choices with keyboard navigation and scoped data binding."
+                if name in ("Select", "MultiSelect")
                 else "A labelled native control with safe, scoped data binding."
             ),
-            example=f'{name}(label="Value", bindings={{"value": Bind("value")}})',
+            example=(
+                'CurrencyInput(label="Amount", prefix="AED", bindings={"value": Bind("amount")})'
+                if name == "CurrencyInput"
+                else 'TextInput(label="Website", prefix="https://", bindings={"value": Bind("domain")})'
+                if name == "TextInput"
+                else f'{name}(label="Value", bindings={{"value": Bind("value")}})'
+            ),
         )
     add(
         "Field",
         "input",
-        {"field": "string", "label": "string", "required": "boolean", "value": "any"},
+        {
+            "field": "string", "label": "string", "required": "boolean",
+            "value": "any", "prefix": "string", "suffix": "string",
+        },
         bindings=("value",),
         events=("on_change", "on_input"),
         description="Render a field from the current model contract.",

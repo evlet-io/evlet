@@ -263,21 +263,23 @@ export function ViewBar(props: ViewBarProps) {
   );
 }
 export interface ListToolbarProps extends ElementProps {
+  selection?: JSX.Element;
   leading?: JSX.Element;
   trailing?: JSX.Element;
 }
 export function ListToolbar(props: ListToolbarProps) {
-  const [p, rest] = splitProps(props, ['leading', 'trailing', 'children', 'class', 'classList']);
+  const [p, rest] = splitProps(props, ['selection', 'leading', 'trailing', 'children', 'class', 'classList']);
+  const selectionContent = contentSlot(() => p.selection);
   return (
     <div {...rest} class={cx('ev-toolbar', p.class)} classList={p.classList}>
-      <div class="ev-toolbar-left">{p.leading}</div>
+      <div class="ev-toolbar-left"><Show when={selectionContent()} fallback={p.leading}>{selectionContent()}</Show></div>
       {p.children}
-      <div class="ev-toolbar-right">{p.trailing}</div>
+      <div class="ev-toolbar-right" classList={{"ev-selection-hidden": !!selectionContent()}}>{p.trailing}</div>
     </div>
   );
 }
 export function ListFooter(props: ListToolbarProps) {
-  const [p, rest] = splitProps(props, ['leading', 'trailing', 'children', 'class', 'classList']);
+  const [p, rest] = splitProps(props, ['selection', 'leading', 'trailing', 'children', 'class', 'classList']);
   return (
     <div {...rest} class={cx('ev-table-footer', p.class)} classList={p.classList}>
       <span>{p.leading}</span>

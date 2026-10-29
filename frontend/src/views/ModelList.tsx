@@ -1,3 +1,4 @@
+import { SelectInput } from "../ui";
 import {
   createSignal,
   createMemo,
@@ -285,12 +286,12 @@ export default function ModelList(props: { model: ModelSchema }) {
             viewSwitcher={
               <>
                 <Show when={selectable().length > 1}>
-                  <select
+                  <SelectInput
                     class="category-field"
                     aria-label="Categorize by"
                     value={categoryField()}
-                    onChange={(e) => {
-                      setCategoryField(e.currentTarget.value);
+                    onChange={(nextValue) => {
+                      setCategoryField(nextValue);
                       apply({ filters: {}, offset: 0 });
                     }}
                   >
@@ -304,7 +305,7 @@ export default function ModelList(props: { model: ModelSchema }) {
                         </option>
                       )}
                     </For>
-                  </select>
+                  </SelectInput>
                 </Show>
                 <ViewSwitcher
                   value={mode()}
@@ -328,6 +329,25 @@ export default function ModelList(props: { model: ModelSchema }) {
         }
         toolbar={
           <ListToolbar
+            selection={
+              <Show when={selection().size}>
+                <div class="ev-selection-summary" role="status">
+                  <strong>{selection().size} selected</strong>
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    onClick={() => setSelection(new Set())}
+                  >
+                    Clear
+                  </Button>
+                  <Show when={model.permissions?.delete !== false}>
+                    <Button size="small" onClick={() => setModal("delete")}>
+                      Delete selected
+                    </Button>
+                  </Show>
+                </div>
+              </Show>
+            }
             leading={
               <>
                 <form
@@ -360,13 +380,11 @@ export default function ModelList(props: { model: ModelSchema }) {
             }
             trailing={
               <>
-                <select
+                <SelectInput
                   aria-label="Saved filters"
                   value=""
-                  onChange={(e) => {
-                    const item = saved().find(
-                      (s) => s.name === e.currentTarget.value,
-                    );
+                  onChange={(nextValue) => {
+                    const item = saved().find((s) => s.name === nextValue);
                     if (item) apply({ ...item.query, offset: 0 });
                   }}
                 >
@@ -374,7 +392,7 @@ export default function ModelList(props: { model: ModelSchema }) {
                   <For each={saved()}>
                     {(item) => <option value={item.name}>{item.name}</option>}
                   </For>
-                </select>
+                </SelectInput>
                 <IconButton
                   aria-label="Column settings"
                   title="Column settings"
@@ -548,14 +566,8 @@ export default function ModelList(props: { model: ModelSchema }) {
                   getLabel={(r) => recordLabel(model, r)}
                   selectedKey={selected()}
                   selection={selection()}
+                  selectionInToolbar
                   onSelectionChange={setSelection}
-                  selectionActions={
-                    <Show when={model.permissions?.delete !== false}>
-                      <Button size="small" onClick={() => setModal("delete")}>
-                        Delete selected
-                      </Button>
-                    </Show>
-                  }
                   rowActions={(record) => (
                     <IconButton
                       aria-label={"Open " + recordLabel(model, record)}
@@ -602,12 +614,12 @@ export default function ModelList(props: { model: ModelSchema }) {
                 }
                 trailing={
                   <div class="pagination">
-                    <select
+                    <SelectInput
                       aria-label="Records per page"
                       value={query().limit}
-                      onChange={(e) =>
+                      onChange={(nextValue) =>
                         apply({
-                          limit: Number(e.currentTarget.value),
+                          limit: Number(nextValue),
                           offset: 0,
                         })
                       }
@@ -626,7 +638,7 @@ export default function ModelList(props: { model: ModelSchema }) {
                           </option>
                         )}
                       </For>
-                    </select>
+                    </SelectInput>
                     <Button
                       size="small"
                       disabled={query().offset === 0 || page.loading}
@@ -680,16 +692,16 @@ export default function ModelList(props: { model: ModelSchema }) {
         <For each={filterRows()}>
           {(row) => (
             <div class="filter-row">
-              <select
+              <SelectInput
                 aria-label="Filter field"
                 value={row.name}
-                onChange={(e) =>
+                onChange={(nextValue) =>
                   setFilterRows((rows) =>
                     rows.map((r) =>
                       r.key === row.key
                         ? {
                             ...r,
-                            name: e.currentTarget.value,
+                            name: nextValue,
                             operator: "eq",
                             value: null,
                           }
@@ -708,12 +720,12 @@ export default function ModelList(props: { model: ModelSchema }) {
                     </option>
                   )}
                 </For>
-              </select>
-              <select
+              </SelectInput>
+              <SelectInput
                 aria-label="Comparison"
                 value={row.operator}
-                onChange={(e) => {
-                  const value = e.currentTarget.value;
+                onChange={(nextValue) => {
+                  const value = nextValue;
                   setFilterRows((rows) =>
                     rows.map((r) =>
                       r.key === row.key
@@ -768,7 +780,7 @@ export default function ModelList(props: { model: ModelSchema }) {
                     </option>
                   )}
                 </For>
-              </select>
+              </SelectInput>
               <Field label="Value">
                 {(control) => (
                   <FieldInput

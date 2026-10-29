@@ -10,6 +10,7 @@ export interface RecordListProps<T> extends Omit<ElementProps, 'onSelectionChang
   onSelectionChange?: (keys: Set<string | number>) => void;
   rowActions?: (record: T) => JSX.Element;
   selectionActions?: JSX.Element;
+  selectionInToolbar?: boolean;
   empty?: JSX.Element;
   footer?: JSX.Element;
   tableProps?: JSX.IntrinsicElements['table'];
@@ -26,6 +27,7 @@ export function RecordList<T>(props: RecordListProps<T>) {
     'onSelectionChange',
     'rowActions',
     'selectionActions',
+    'selectionInToolbar',
     'empty',
     'footer',
     'tableProps',
@@ -52,7 +54,7 @@ export function RecordList<T>(props: RecordListProps<T>) {
   };
   return (
     <div {...rest} class={cx('ev-table-card', p.class)} classList={p.classList}>
-      <Show when={p.selection?.size}>
+      <Show when={!p.selectionInToolbar && p.selection?.size}>
         <div class="ev-selection-bar">
           <span>{p.selection?.size} selected</span>
           {p.selectionActions}

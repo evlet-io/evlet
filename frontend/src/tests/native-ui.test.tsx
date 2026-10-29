@@ -103,9 +103,8 @@ it("renders Python state, conditional fields, reset and dialog operations", asyn
   const view = ui.views.find((v) => v.name === "layouts_demo")!;
   context("/demo/layouts", () => <ViewRenderer view={view} />);
   expect(screen.queryByLabelText(/Company name/)).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("Customer type"), {
-    target: { value: "Company" },
-  });
+  fireEvent.click(screen.getByRole("combobox", { name: "Customer type" }));
+  fireEvent.click(screen.getByRole("option", { name: "Company" }));
   fireEvent.input(screen.getByLabelText("Name"), {
     target: { value: "Aster" },
   });
@@ -472,10 +471,14 @@ it("shows saved select and link values after asynchronous choices arrive", async
       />
     </>
   ));
-  await screen.findByRole("option", { name: "Existing customer" });
+  await screen.findByText("Existing customer");
   const selects = screen.getAllByRole("combobox");
-  expect(selects[0]).toHaveValue("planned");
-  expect(selects[1]).toHaveValue("1");
+  expect(selects[0]).toHaveTextContent("planned");
+  expect(selects[1]).toHaveTextContent("Existing customer");
+  fireEvent.click(selects[1]);
+  expect(
+    screen.getByRole("option", { name: "Existing customer" }),
+  ).toHaveAttribute("aria-selected", "true");
 });
 
 it("retains an unavailable linked record and shows a recoverable error", async () => {
@@ -495,6 +498,50 @@ it("retains an unavailable linked record and shows a recoverable error", async (
     />
   ));
   await screen.findByText(/Choices temporarily unavailable/);
-  expect(screen.getByRole("combobox")).toHaveValue("7");
+  expect(screen.getByRole("combobox")).toHaveTextContent("#7");
+  fireEvent.click(screen.getByRole("combobox"));
   expect(screen.getByRole("option", { name: "#7" })).toBeInTheDocument();
+});
+
+it("searches linked records on the server inside the dropdown", async () => {
+  const field = models
+    .find((m) => m.name === "project")!
+    .fields.find((f) => f.name === "customer")!;
+  api.listRecords.mockImplementation(
+    async (_model, _limit, _offset, _filters, _order, q) => ({
+      items:
+        q === "beta"
+          ? [{ id: 2, name: "Beta customer" }]
+          : [{ id: 1, name: "Alpha customer" }],
+      total: 1,
+    }),
+  );
+  const changed = vi.fn();
+  context("/app/project/new", () => (
+    <FieldInput
+      id="customer-search"
+      field={field}
+      value={null}
+      onChange={changed}
+    />
+  ));
+  fireEvent.click(screen.getByRole("combobox"));
+  await screen.findByRole("option", { name: "Alpha customer" });
+  fireEvent.input(screen.getByRole("combobox", { name: "Search Customer" }), {
+    target: { value: "beta" },
+  });
+  await screen.findByRole("option", { name: "Beta customer" });
+  expect(api.listRecords).toHaveBeenLastCalledWith(
+    "customer",
+    20,
+    0,
+    {},
+    "-id",
+    "beta",
+  );
+  expect(
+    screen.queryByRole("option", { name: "Alpha customer" }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("option", { name: "Beta customer" }));
+  expect(changed).toHaveBeenCalledWith(2);
 });

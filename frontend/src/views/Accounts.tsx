@@ -1,3 +1,4 @@
+import { SelectInput } from "../ui";
 import { createResource, createSignal, For, Show } from "solid-js";
 import { PageHeader, Button, Field, Badge, Modal } from "../ui";
 import { request, authRequest } from "../api";
@@ -97,18 +98,18 @@ export default function Accounts() {
                             ) : null}
                           </td>
                           <td>
-                            <select
+                            <SelectInput
                               aria-label={"Role for " + user.username}
                               value={user.role}
                               disabled={busy()}
-                              onChange={(e) =>
-                                update(user.id, { role: e.currentTarget.value })
+                              onChange={(nextValue) =>
+                                update(user.id, { role: nextValue })
                               }
                             >
                               <option>admin</option>
                               <option>editor</option>
                               <option>viewer</option>
-                            </select>
+                            </SelectInput>
                           </td>
                           <td>
                             <Badge tone={user.active ? "success" : "neutral"}>
@@ -191,15 +192,15 @@ export default function Accounts() {
           </Field>
           <Field label="Role">
             {(c) => (
-              <select
+              <SelectInput
                 id={c.id}
                 value={role()}
-                onChange={(e) => setRole(e.currentTarget.value)}
+                onChange={(nextValue) => setRole(nextValue)}
               >
                 <option>viewer</option>
                 <option>editor</option>
                 <option>admin</option>
-              </select>
+              </SelectInput>
             )}
           </Field>
           <Show when={error()}>
