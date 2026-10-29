@@ -22,6 +22,7 @@ import {
   CategoryTabs,
   ExplorerView,
   Field,
+  DatePicker,
   Glyph,
   IconButton,
   ListFooter,
@@ -1025,13 +1026,9 @@ export default function ProjectsDemo(props: { shell: (props: import("../ui").App
                 </Field>
                 <Field label="Due date" required>
                   {(c) => (
-                    <input
-                      id={c.id}
-                      type="date"
-                      value={form.due}
-                      onInput={(e) => setForm('due', e.currentTarget.value)}
-                      required
-                    />
+                    <DatePicker id={c.id} value={form.due}
+                      onChange={(value) => setForm('due', value)}
+                      onDraftChange={(value) => setForm('due', value)} required />
                   )}
                 </Field>
                 <Field label="Priority">

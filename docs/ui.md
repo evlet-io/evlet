@@ -109,6 +109,29 @@ is filtered by the same model and field policy as the existing schema endpoint.
 Custom pages can specify `roles=("admin",)` and `requires=(Customer,)`.
 A page’s UI visibility is not a replacement for server-side authorization.
 
+## Editable dates and times
+
+`DatePicker`, `TimePicker` and `DateTimePicker` use the same custom controls in
+Python views, generated forms and the component explorer. Click the input or its
+icon to open the picker. The input remains editable while the picker is open.
+
+- `101226`, `10/12/26` and `10 Dec 2026` display as `10 Dec 2026` and store
+  `2026-12-10`. Numeric dates use day-month-year; two-digit years mean 2000–2099.
+- `6.30pm`, `630pm` and `18:30` display and store `18:30`.
+- Enter or leaving the field normalizes a valid entry. An invalid entry remains
+  visible with an error and prevents form submission.
+- Date/time values retain their stored timezone offset, seconds and fractional
+  seconds. A new value without an offset uses the browser's local timezone.
+- Alt+Down opens the picker with keyboard focus; arrow keys move between dates
+  or time options. Escape closes it and returns focus to the input.
+
+The popup follows its input while scrolling, flips above when needed and stays
+within the viewport. It also works inside a dialog. Focus thickens and colors the
+existing field border without adding an outer ring.
+
+The component explorer has independent scroll areas for its component list and
+details. Selecting another component resets only the details pane to the top.
+
 ## Layout vocabulary
 
 The outer layout is separate from the active page:

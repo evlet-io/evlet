@@ -2940,11 +2940,52 @@
           "value"
         ],
         "defaults": {},
-        "description": "A labelled native control with safe, scoped data binding.",
+        "description": "Editable date and time controls. Dates use day-month-year; 101226 becomes 10 Dec 2026. Times accept 6.30pm and display 18:30. Values normalize on Enter or blur. Invalid input stays editable.",
         "accessibility": "Preserve native semantics and provide an accessible label for controls.",
         "renderer": "DatePicker",
         "version": 1,
         "example": "DatePicker(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
+      },
+      {
+        "name": "TimePicker",
+        "category": "input",
+        "props": {
+          "class": "string",
+          "style": "object",
+          "visible": "boolean",
+          "disabled": "boolean",
+          "width": "number",
+          "aria_label": "string",
+          "label": "string",
+          "value": "any",
+          "placeholder": "string",
+          "required": "boolean",
+          "help": "string",
+          "min": "number",
+          "max": "number",
+          "step": "string",
+          "max_length": "number",
+          "options": "array",
+          "multiple": "boolean",
+          "error": "string",
+          "rows": "number"
+        },
+        "events": [
+          "on_change",
+          "on_input",
+          "on_focus",
+          "on_blur"
+        ],
+        "slots": [],
+        "bindings": [
+          "value"
+        ],
+        "defaults": {},
+        "description": "Editable date and time controls. Dates use day-month-year; 101226 becomes 10 Dec 2026. Times accept 6.30pm and display 18:30. Values normalize on Enter or blur. Invalid input stays editable.",
+        "accessibility": "Preserve native semantics and provide an accessible label for controls.",
+        "renderer": "TimePicker",
+        "version": 1,
+        "example": "TimePicker(label=\"Value\", bindings={\"value\": Bind(\"value\")})"
       },
       {
         "name": "DateTimePicker",
@@ -2981,7 +3022,7 @@
           "value"
         ],
         "defaults": {},
-        "description": "A labelled native control with safe, scoped data binding.",
+        "description": "Editable date and time controls. Dates use day-month-year; 101226 becomes 10 Dec 2026. Times accept 6.30pm and display 18:30. Values normalize on Enter or blur. Invalid input stays editable.",
         "accessibility": "Preserve native semantics and provide an accessible label for controls.",
         "renderer": "DateTimePicker",
         "version": 1,

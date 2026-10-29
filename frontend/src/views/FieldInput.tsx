@@ -10,7 +10,7 @@ import type { FieldSchema } from "../runtime/types";
 import { useApp, messageFor } from "../runtime/Context";
 import { getRecord, listRecords } from "../api";
 import { recordLabel } from "../schema";
-import { Button } from "../ui";
+import { Button, DatePicker, DateTimePicker } from "../ui";
 export interface FieldInputProps {
   field: FieldSchema;
   value: any;
@@ -43,6 +43,22 @@ export default function FieldInput(props: FieldInputProps) {
           This value exceeds the browser integer range. Use the Python API to
           read or change it exactly.
         </p>
+      </Match>
+      <Match when={props.field.type === "date"}>
+        <DatePicker
+          {...common()}
+          value={props.value}
+          onChange={props.onChange}
+          onDraftChange={props.onChange}
+        />
+      </Match>
+      <Match when={props.field.type === "datetime"}>
+        <DateTimePicker
+          {...common()}
+          value={props.value}
+          onChange={props.onChange}
+          onDraftChange={props.onChange}
+        />
       </Match>
       <Match when={props.field.type === "link"}>
         <LinkInput {...props} />

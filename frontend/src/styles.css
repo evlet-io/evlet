@@ -1231,3 +1231,24 @@ progress {
 @media(max-width:760px){.docs-view>.ev-metrics>.ev-metric:first-child{grid-column:1/-1}.docs-view .ev-page-subtitle{max-width:240px}.docs-view .ev-title-line{column-gap:7px}}
 
 .ui-formlayout > h2, .ui-formlayout > .muted { grid-column: 1 / -1; }
+
+/* Strengthen the existing edge without adding a second focus frame. */
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus, textarea:focus,
+.ev-field input:not([type="checkbox"]):not([type="radio"]):focus,
+.ev-field select:focus, .ev-field textarea:focus {
+  outline: none;
+  border-color: var(--ev-accent);
+  box-shadow: inset 0 0 0 1px var(--ev-accent);
+}
+.ev-search-field:focus-within { border-color: var(--ev-accent); box-shadow: inset 0 0 0 1px var(--ev-accent); }
+.ev-search-field input:focus { outline: none; box-shadow: none; }
+.docs-components-scroll { display: flex; overflow: hidden; padding-bottom: 0; scrollbar-gutter: auto; }
+.docs-components-scroll > .component-explorer { flex: 1; min-height: 0; min-width: 0; }
+.component-explorer > aside, .component-explorer > article { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.component-explorer > aside { align-self: stretch; }
+.component-explorer > aside input { position: sticky; top: 0; z-index: 1; background: #fff; }
+@media (max-width: 760px) {
+  .docs-components-scroll > .component-explorer { display: grid; grid-template-rows: minmax(100px, 150px) minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
+  .component-explorer > aside { max-height: none; }
+}

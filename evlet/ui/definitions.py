@@ -175,6 +175,7 @@ for _name in (
     "Select",
     "MultiSelect",
     "DatePicker",
+    "TimePicker",
     "DateTimePicker",
     "ButtonGroup",
     "DropdownButton",

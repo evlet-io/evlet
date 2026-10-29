@@ -185,7 +185,10 @@ export default function Docs(props: { path: string }) {
           ]}
         />
       </Show>
-      <div class="docs-scroll">
+      <div
+        class="docs-scroll"
+        classList={{ "docs-components-scroll": topic() === "components" }}
+      >
         <Switch>
           <Match when={topic() === "overview"}>
             <div class="docs-columns">
@@ -665,12 +668,17 @@ function ComponentExplorer() {
   const app = useApp();
   const [search, setSearch] = createSignal(""),
     [selected, setSelected] = createSignal("Button");
+  let detail!: HTMLElement;
+  const choose = (name: string) => {
+    setSelected(name);
+    if (detail) detail.scrollTop = 0;
+  };
   const current = () =>
     app.ui.components.find((c) => c.name === selected()) ||
     app.ui.components[0];
   return (
     <div class="component-explorer">
-      <aside>
+      <aside aria-label="Component list" tabIndex={0}>
         <input
           type="search"
           aria-label="Find a component"
@@ -692,7 +700,7 @@ function ComponentExplorer() {
                 {(component) => (
                   <button
                     classList={{ selected: component.name === selected() }}
-                    onClick={() => setSelected(component.name)}
+                    onClick={() => choose(component.name)}
                   >
                     {component.name}
                   </button>
@@ -702,7 +710,7 @@ function ComponentExplorer() {
           )}
         </For>
       </aside>
-      <article>
+      <article ref={detail} aria-label="Component details" tabIndex={0}>
         <Show when={current()} keyed>
           {(contract) => (
             <>
@@ -810,8 +818,18 @@ function ComponentSample(props: { contract: ComponentContract }) {
   if (type === "Checkbox" || type === "Switch") p.value = true;
   if (type === "TextInput" || type === "TextArea" || type === "SearchBox")
     p.value = "Hello, Evlet";
-  if (type === "DatePicker") p.value = "2026-10-29";
-  if (type === "DateTimePicker") p.value = "2026-10-29T09:30";
+  if (type === "DatePicker") {
+    p.value = "2026-12-10";
+    p.placeholder = "DD MMM YYYY";
+  }
+  if (type === "TimePicker") {
+    p.value = "18:30";
+    p.placeholder = "HH:mm";
+  }
+  if (type === "DateTimePicker") {
+    p.value = "2026-12-10T18:30:00+04:00";
+    p.placeholder = "DD MMM YYYY, HH:mm";
+  }
   if (type === "Select") p.value = "Active";
   if (type === "MultiSelect") p.value = ["Active"];
   if (type === "Tabs") p.value = "details";

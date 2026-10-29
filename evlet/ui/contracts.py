@@ -237,6 +237,7 @@ def default_components():
         "Select",
         "MultiSelect",
         "DatePicker",
+        "TimePicker",
         "DateTimePicker",
         "SearchBox",
     ):
@@ -246,7 +247,11 @@ def default_components():
             INPUT_PROPS,
             events=("on_change", "on_input", "on_focus", "on_blur"),
             bindings=("value",),
-            description="A labelled native control with safe, scoped data binding.",
+            description=(
+                "Editable date and time controls. Dates use day-month-year; 101226 becomes 10 Dec 2026. Times accept 6.30pm and display 18:30. Values normalize on Enter or blur. Invalid input stays editable."
+                if name in ("DatePicker", "TimePicker", "DateTimePicker")
+                else "A labelled native control with safe, scoped data binding."
+            ),
             example=f'{name}(label="Value", bindings={{"value": Bind("value")}})',
         )
     add(

@@ -310,3 +310,34 @@ def test_generated_extension_rejects_unknown_model_fields(secured):
     )
     with pytest.raises(ValueError, match="Unknown model field: missing"):
         ui.validate(secured.business.schema(User(1, "owner", "admin")))
+
+
+def test_editable_picker_contracts_compile_with_bindings():
+    from evlet.ui import DatePicker, TimePicker, DateTimePicker
+
+    ui = ViewRegistry([
+        PageView(
+            "schedule",
+            route="/schedule",
+            state={
+                "date": "2026-12-10",
+                "time": "18:30",
+                "meeting": "2026-12-10T18:30+04:00",
+            },
+            layout=Column(children=[
+                DatePicker(id="day", bindings={"value": Bind("date")}),
+                TimePicker(id="time", bindings={"value": Bind("time")}),
+                DateTimePicker(id="meeting", bindings={"value": Bind("meeting")}),
+            ]),
+        ),
+    ])
+    schema = ui.compile()
+    children = schema["views"][0]["layout"]["slots"]["children"]
+    names = ["DatePicker", "TimePicker", "DateTimePicker"]
+    assert [child["type"] for child in children] == names
+    catalog = {item["name"]: item for item in ui.components.catalog()}
+    for name in names:
+        assert catalog[name]["renderer"] == name
+        assert "value" in catalog[name]["bindings"]
+        assert "on_change" in catalog[name]["events"]
+    assert json.loads(json.dumps(schema)) == schema

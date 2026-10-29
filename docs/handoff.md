@@ -77,12 +77,17 @@ PostgreSQL 14 and 18.
 
 ## Validation and boundaries
 
-Local checks cover the backend suite, 118 frontend tests (including all 80 legacy
+Local checks cover the backend suite, frontend tests (including all 80 legacy
 regressions), TypeScript, the production build, tenant isolation, real HTTP CRUD,
 package build and clean wheel installation. Browser checks cover login to Docs,
 Projects, Python reactive fields/dialogs, persisted customer creation, model form
 sections and saved dropdown values, fixed scroll areas, mobile navigation, direct
 URLs, refresh and back navigation. Final counts and CI status belong in the PR.
+
+Date and time controls are custom editable pickers shared by Python pages, model
+forms and the Projects demo. Short dates use DDMMYY and times accept entries such
+as 6.30pm. Component list and detail panes scroll independently. See `docs/ui.md`
+for accepted formats and keyboard behavior.
 
 Vue and PrimeVue remain only in `frontend/legacy` and development dependencies for
 regression comparison. The active production bundle uses Solid and the custom

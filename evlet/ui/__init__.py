@@ -41,6 +41,7 @@ from .definitions import (
     Select,
     MultiSelect,
     DatePicker,
+    TimePicker,
     DateTimePicker,
     ButtonGroup,
     DropdownButton,

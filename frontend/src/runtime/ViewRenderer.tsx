@@ -20,6 +20,9 @@ import {
   Field as LabelledField,
   CategoryTabs,
   PageHeader,
+  DatePicker,
+  TimePicker,
+  DateTimePicker,
   Glyph,
 } from "../ui";
 import { request, listRecords, recordRequest } from "../api";
@@ -170,6 +173,7 @@ function Standard(props: RendererProps) {
     "Select",
     "MultiSelect",
     "DatePicker",
+    "TimePicker",
     "DateTimePicker",
     "SearchBox",
   ];
@@ -278,6 +282,32 @@ function Standard(props: RendererProps) {
         >
           {(control) => (
             <Switch>
+              <Match
+                when={["DatePicker", "TimePicker", "DateTimePicker"].includes(
+                  type,
+                )}
+              >
+                <Dynamic
+                  component={
+                    type === "DatePicker"
+                      ? DatePicker
+                      : type === "TimePicker"
+                        ? TimePicker
+                        : DateTimePicker
+                  }
+                  id={control.id}
+                  value={value() ?? ""}
+                  required={p().required}
+                  disabled={p().disabled}
+                  placeholder={p().placeholder}
+                  aria-invalid={control.invalid}
+                  aria-describedby={control.describedBy}
+                  onChange={(next: string) => change(next, "on_change")}
+                  onDraftChange={(next: string) => change(next, "on_input")}
+                  onFocus={() => event("on_focus")}
+                  onBlur={() => event("on_blur")}
+                />
+              </Match>
               <Match when={type === "TextArea"}>
                 <textarea
                   id={control.id}
@@ -346,15 +376,11 @@ function Standard(props: RendererProps) {
                   type={
                     type === "Checkbox" || type === "Switch"
                       ? "checkbox"
-                      : type === "DatePicker"
-                        ? "date"
-                        : type === "DateTimePicker"
-                          ? "datetime-local"
-                          : type === "NumberInput"
-                            ? "number"
-                            : type === "SearchBox"
-                              ? "search"
-                              : "text"
+                      : type === "NumberInput"
+                        ? "number"
+                        : type === "SearchBox"
+                          ? "search"
+                          : "text"
                   }
                   role={type === "Switch" ? "switch" : undefined}
                   value={value() ?? ""}
@@ -576,6 +602,7 @@ for (const name of [
   "Select",
   "MultiSelect",
   "DatePicker",
+  "TimePicker",
   "DateTimePicker",
   "SearchBox",
   "Field",

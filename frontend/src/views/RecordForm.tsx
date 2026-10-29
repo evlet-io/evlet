@@ -239,7 +239,7 @@ export default function RecordForm(props: {
               ? `Up to ${field.scale} decimal places.`
               : "",
             field.type === "datetime"
-              ? "Include the timezone, for example +04:00."
+              ? "Type a date and time. The saved timezone is kept."
               : "",
           ]
             .filter(Boolean)
