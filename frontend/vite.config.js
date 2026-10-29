@@ -1,9 +1,11 @@
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 
+const backendPort = Number(process.env.EVLET_BACKEND_PORT || 8000)
+if (!Number.isInteger(backendPort) || backendPort < 1024 || backendPort > 65535) throw new Error('Invalid backend port')
 const proxy = {
-  '/api': 'http://127.0.0.1:8000',
-  '/health': 'http://127.0.0.1:8000',
+  '/api': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: false },
+  '/health': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: false },
 }
 
 export default defineConfig({

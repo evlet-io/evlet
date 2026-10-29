@@ -44,7 +44,10 @@ def password_hash(password, salt=None):
 
 
 class LocalAuth:
-    def __init__(self, database, *, origins, secure_cookies=True, allow_setup=False):
+    def __init__(self, database, *, origins, secure_cookies=True, allow_setup=False, cookie_name='evlet_session'):
+        if cookie_name not in ('evlet_session', '__Host-evlet_session') or (cookie_name.startswith('__Host-') and not secure_cookies):
+            raise ValueError('Invalid session cookie configuration')
+        self.cookie_name = cookie_name
         self.database = database
         self.origins = frozenset(origins)
         if not self.origins:
@@ -53,7 +56,7 @@ class LocalAuth:
             url = urlsplit(origin)
             if url.scheme not in ('http', 'https') or not url.netloc or url.path or url.query or url.fragment or url.username:
                 raise ValueError('Use exact HTTP origins without paths')
-            if not secure_cookies and url.hostname not in ('localhost', '127.0.0.1', '::1'):
+            if not secure_cookies and url.hostname not in ('localhost', '127.0.0.1', '::1') and not (url.hostname or '').endswith('.localhost'):
                 raise ValueError('Insecure cookies are limited to loopback development origins')
         self.hosts = {urlsplit(origin).netloc.encode() for origin in self.origins}
         self.secure_cookies = secure_cookies
@@ -77,12 +80,11 @@ class LocalAuth:
         if scope['method'] not in ('GET', 'HEAD') and headers.get(b'x-evlet-request') != b'1':
             raise AccessError(403, 'Missing request protection header')
 
-    @staticmethod
-    def token(scope):
+    def token(self, scope):
         cookie = SimpleCookie()
         try:
             cookie.load(dict(scope.get('headers', [])).get(b'cookie', b'').decode('latin1'))
-            value = cookie.get('evlet_session')
+            value = cookie.get(self.cookie_name)
             token = value.value if value else ''
             return hashlib.sha256(token.encode()).hexdigest()
         except (CookieError, UnicodeError):
@@ -167,7 +169,7 @@ class LocalAuth:
         return {'user': User(account['id'], account['username'], account['role']).public(), 'csrf': csrf}, [self.cookie(token)]
 
     def cookie(self, token):
-        value = f'evlet_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={28800 if token else 0}'
+        value = f'{self.cookie_name}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={28800 if token else 0}'
         if self.secure_cookies:
             value += '; Secure'
         return b'set-cookie', value.encode()

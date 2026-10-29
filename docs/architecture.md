@@ -147,7 +147,27 @@ needed. Grouped form layouts remain renderer-neutral metadata.
 See [business capabilities](business-capabilities.md) for the public APIs, security
 boundaries, upgrade path, and limits.
 
+## Milestone 5 decisions
+
+An operator-managed SQLite catalog maps verified hostnames to immutable tenant
+contexts. The ASGI router resolves Host before database access and supplies an
+application with its own accounts, sessions, database, and file directory. Runtime
+database connections use existing-file mode. Forwarded host headers never select
+a tenant. Cached applications are replaced when their domain set changes.
+
+Private attachments now use a small storage interface. SQLite remains the default
+for existing applications. Tenant applications use immutable local files with
+transactional metadata, database-bound storage directories, and explicit orphan
+collection. Existing BLOB attachments remain readable without copying them.
+
+The Playground provides trusted provisioning and DNS TXT verification commands.
+Production tenants have no browser administrator setup and use secure host-prefixed
+cookies. Deployment rendering emits explicit verified Caddy hosts and a restricted
+single-worker systemd service. Local smoke checks exercise real Vite and Caddy
+traffic; public DNS, public certificates, and Linux service operation need separate
+deployment verification. See [tenancy and deployment](tenancy-deployment.md).
+
 ## Deferred work
 
-Tenant isolation, deployment, jobs, realtime, storage adapters, arbitrary schema
-conversions, and production hardening remain later work.
+Jobs, realtime, object storage, serverless adapters, arbitrary schema conversions,
+and broader production hardening remain later work.

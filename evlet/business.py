@@ -1,4 +1,4 @@
-"""Explicit actions, owned child collections, and private SQLite attachments."""
+"""Explicit actions, owned child collections, and private attachments."""
 
 import base64
 import binascii
@@ -13,6 +13,7 @@ from .metadata import view_for
 from .models import ValidationError, identifier
 from .permissions import Policy
 from .query import Query
+from .storage import SQLiteStorage
 
 
 @dataclass(frozen=True)
@@ -39,8 +40,9 @@ class Download:
 
 
 class Business:
-    def __init__(self, database, auth, *, policy=None, actions=(), children=(), attachments=()):
+    def __init__(self, database, auth, *, policy=None, actions=(), children=(), attachments=(), storage=None):
         self.database, self.registry, self.auth = database, database.registry, auth
+        self.tenant = None
         if auth.database is not database:
             raise ValueError('Authentication must use the application database')
         self.policy = policy or Policy(self.registry)
@@ -48,6 +50,7 @@ class Business:
             raise ValueError('Policy must use the application registry')
         self.actions, self.children, self.child_models = {}, {}, set()
         self.attachments = set(attachments)
+        self.storage = storage if storage is not None else SQLiteStorage()
         for model in self.attachments:
             self.registry.name_for(model)
         for action in actions:
@@ -72,12 +75,12 @@ class Business:
 
     def initialize(self):
         self.auth.initialize()
-        with self.database.transaction() as tx:
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_attachments (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, record_id INTEGER NOT NULL, name TEXT NOT NULL, content BLOB NOT NULL)')
-            tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_attachment_owner ON evlet_attachments(model,record_id)')
+        self.storage.initialize(self.database)
 
     def schema(self, user):
         result = self.registry.ui_schema()
+        if self.tenant:
+            result['tenant'] = self.tenant
         available = {name for name, model in self.registry.models.items() if self.policy.allows(user, model, 'read')}
         result['models'] = [entry for entry in result['models'] if entry['name'] in available]
         for entry in result['models']:
@@ -102,11 +105,11 @@ class Business:
         if path == '/api/auth/session' and method == 'GET':
             try:
                 user, csrf = self.auth.session(scope)
-                return 200, {'user': user.public(), 'csrf': csrf}, []
+                return 200, {'user': user.public(), 'csrf': csrf, **({'tenant': self.tenant} if self.tenant else {})}, []
             except AccessError as exc:
                 if exc.status != 401:
                     raise
-                return 200, {'user': None, 'setup': self.auth.allow_setup and self.auth.setup_needed()}, []
+                return 200, {'user': None, 'setup': self.auth.allow_setup and self.auth.setup_needed(), **({'tenant': self.tenant} if self.tenant else {})}, []
         if path == '/api/auth/setup' and method == 'POST':
             self.auth.setup(scope, body)
             return 201, {'created': True}, []
@@ -315,7 +318,7 @@ class Business:
             self.policy.record(tx, user, model, record_id, 'read' if method == 'GET' else 'update')
             args = (name, record_id)
             if method == 'GET' and file_id is None:
-                rows = tx.connection.execute('SELECT id,name,length(content) AS size FROM evlet_attachments WHERE model=? AND record_id=? ORDER BY id', args)
+                rows = tx.connection.execute('SELECT id,name,COALESCE(file_size,length(content)) AS size FROM evlet_attachments WHERE model=? AND record_id=? ORDER BY id', args)
                 return 200, {'items': [dict(row) for row in rows]}, []
             if method == 'POST' and file_id is None:
                 filename = body.get('name')
@@ -330,13 +333,13 @@ class Business:
                     raise ValidationError({'attachment': 'Use a nonempty file up to 1 MiB'})
                 if tx.connection.execute('SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=?', args).fetchone()[0] >= 10:
                     raise ValidationError({'attachment': 'Use at most 10 attachments per record'})
-                file_id = tx.connection.execute('INSERT INTO evlet_attachments(model,record_id,name,content) VALUES (?,?,?,?)', (*args, filename, content)).lastrowid
+                file_id = self.storage.add(tx, *args, filename, content)
                 return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []
             row = tx.connection.execute('SELECT * FROM evlet_attachments WHERE model=? AND record_id=? AND id=?', (*args, file_id)).fetchone()
             if row is None:
                 raise AccessError(404, 'Attachment not found')
             if method == 'GET':
-                return 200, Download(row['content']), [(b'content-type', b'application/octet-stream'), (b'content-disposition', ("attachment; filename*=UTF-8''" + quote(row['name'], safe='')).encode()), (b'content-security-policy', b"default-src 'none'; sandbox")]
+                return 200, Download(self.storage.read(row)), [(b'content-type', b'application/octet-stream'), (b'content-disposition', ("attachment; filename*=UTF-8''" + quote(row['name'], safe='')).encode()), (b'content-security-policy', b"default-src 'none'; sandbox")]
             if method == 'DELETE':
                 tx.connection.execute('DELETE FROM evlet_attachments WHERE id=?', (file_id,))
                 return 204, None, []

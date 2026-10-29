@@ -10,6 +10,7 @@ from .database import ConflictError, NotFoundError
 from .models import ValidationError
 from .auth import AccessError
 from .business import Business, Download
+from .storage import StorageError
 
 logger = logging.getLogger(__name__)
 MAX_BODY_BYTES = 64 * 1024
@@ -23,12 +24,12 @@ class HTTPError(Exception):
 
 
 class Application:
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=()):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None):
         self.database = database
         self.registry = database.registry
-        if auth is None and (policy is not None or actions or children or attachments):
+        if auth is None and (policy is not None or actions or children or attachments or storage is not None):
             raise ValueError("Business features require authentication")
-        self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments)
+        self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -74,6 +75,9 @@ class Application:
             status, payload = 404, {"error": "Record not found"}
         except ConflictError as exc:
             status, payload = 409, {"error": str(exc)}
+        except StorageError:
+            logger.exception("Attachment storage failed")
+            status, payload = 503, {"error": "Attachment temporarily unavailable"}
         except sqlite3.OperationalError:
             logger.exception("SQLite operation failed")
             status, payload = 503, {"error": "Database temporarily unavailable"}
@@ -156,14 +160,17 @@ class Application:
         return 200, {"items": [record.to_dict() for record in records],
                      "limit": limit, "offset": offset, "total": total}, []
 
+    def initialize(self):
+        self.database.initialize()
+        if self.business:
+            self.business.initialize()
+
     async def _lifespan(self, receive, send):
         while True:
             event = await receive()
             if event["type"] == "lifespan.startup":
                 try:
-                    await asyncio.to_thread(self.database.initialize)
-                    if self.business:
-                        await asyncio.to_thread(self.business.initialize)
+                    await asyncio.to_thread(self.initialize)
                 except Exception:
                     logger.exception("Database initialization failed")
                     await send({"type": "lifespan.startup.failed", "message": "Database initialization failed"})

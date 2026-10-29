@@ -1,8 +1,9 @@
 # Evlet
 
 A small Python application framework for business applications. This repository
-implements **Milestone 4**: local accounts, permissions, child tables, custom
-actions, private attachments, and grouped forms, backed by typed models and SQLite.
+implements **Milestone 5**: tenant isolation, hostname routing, private file storage,
+and a reference server deployment, on top of accounts, permissions, business actions,
+child tables, typed models, and SQLite.
 The Vue 3/PrimeVue Playground includes Customer, Invoice, Payment, and Project
 with child tasks.
 
@@ -35,7 +36,7 @@ using the app. Press **Control-C** to stop both servers; your SQLite data remain
 On later runs, use `bash scripts/playground.sh` from the same folder. The launcher
 activates Homebrew's versioned Node and Python paths for its own process only.
 
-Logs are in `examples/playground/.data/logs/`. If ports 8000 or 5173 are already
+Logs are in `examples/playground/.data/logs/5173/` by default. If ports 8000 or 5173 are already
 occupied, the launcher exits without stopping any existing service. Linux can
 use the same launcher with Python and Node already installed. Set
 `EVLET_OPEN_BROWSER=0` for noninteractive validation.
@@ -197,3 +198,16 @@ for Milestone 3 metadata, defaults, generated screens, and upgrade instructions.
 See [business capabilities](docs/business-capabilities.md) for Milestone 4 APIs,
 account setup, permissions, actions, children, attachments, and limits. The next
 milestone covers multi-tenancy and hosting.
+
+
+## Milestone 5: tenants and deployment
+
+The [tenant and deployment guide](docs/tenancy-deployment.md) covers separate tenant
+SQLite files, hostname routing, DNS ownership verification, private file storage,
+and the Caddy/systemd reference deployment. The ordinary Playground retains its
+existing database and startup command. Tenant setup uses a separate catalog and
+prompts for its first administrator through the local management command.
+
+Run `python scripts/smoke_tenants.py` with the virtual environment active to check
+two disposable tenants over HTTP. Add `--frontend` to test Vite or `--caddy` to test
+local HTTPS after building the frontend. No deployment runs automatically.

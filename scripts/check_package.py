@@ -44,8 +44,18 @@ def main():
         protected = app.business.schema(User(1, 'viewer', 'viewer'))
         if protected['models'][0]['permissions']['update']:
             raise RuntimeError('Installed package failed permission metadata')
+        from evlet import LocalFileStorage, TenantRegistry
+        storage = LocalFileStorage(Path(directory) / 'files')
+        storage.initialize(updated)
+        with updated.transaction() as tx:
+            file_id = storage.add(tx, 'product', item.id, 'test.txt', b'installed wheel')
+            row = tx.connection.execute('SELECT * FROM evlet_attachments WHERE id=?', (file_id,)).fetchone()
+            assert storage.read(row) == b'installed wheel'
+        catalog = TenantRegistry.create(Path(directory) / 'tenant-state', development=True)
+        tenant = catalog.create_tenant('alpha', 'Alpha', 'alpha.localhost')
+        assert tenant.origins and catalog.resolve('alpha.localhost') is None
         updated.delete(UpdatedProduct, item.id)
-    print("Installed wheel: migrations, updates, queries, deletes; import, model definition, SQLite persistence, and currency round trip passed")
+    print("Installed wheel: migrations, updates, queries, deletes; import, model definition, SQLite persistence, currency, tenant catalog, and private file round trips passed")
 
 
 if __name__ == "__main__":

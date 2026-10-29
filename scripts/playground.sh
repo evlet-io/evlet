@@ -29,11 +29,24 @@ fi
 "$python_command" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else "Python 3.12+ is required")'
 node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major !== 24 || minor < 15) { console.error("Use Node 24.15+ in the 24.x line"); process.exit(1) }'
 
+export EVLET_BACKEND_PORT="${EVLET_BACKEND_PORT:-8000}"
+export EVLET_FRONTEND_PORT="${EVLET_FRONTEND_PORT:-5173}"
+export EVLET_PLAYGROUND_HOST="${EVLET_PLAYGROUND_HOST:-127.0.0.1}"
+application="${EVLET_APPLICATION:-examples.playground.app:create_app}"
+
 # Check before installing or launching anything. Never stop another process to
 # free a port, and never start a second instance over a running Playground.
 "$python_command" - <<'PY'
+import os
+import re
 import socket
-for port in (8000, 5173):
+host = os.environ['EVLET_PLAYGROUND_HOST']
+if host not in ('localhost', '127.0.0.1') and not re.fullmatch(r'[a-z0-9][a-z0-9.-]*\.localhost', host):
+    raise SystemExit('Use a loopback Playground hostname')
+ports = [int(os.environ[name]) for name in ('EVLET_BACKEND_PORT', 'EVLET_FRONTEND_PORT')]
+if len(set(ports)) != 2 or any(not 1024 <= port <= 65535 for port in ports):
+    raise SystemExit('Use two different unprivileged ports')
+for port in ports:
     with socket.socket() as connection:
         connection.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
@@ -54,7 +67,7 @@ if [[ ! -x .venv/bin/python || ! -f frontend/node_modules/vite/bin/vite.js ]]; t
   exit 1
 fi
 
-log_directory='examples/playground/.data/logs'
+log_directory="examples/playground/.data/logs/$EVLET_FRONTEND_PORT"
 mkdir -p "$log_directory"
 backend_pid=''
 frontend_pid=''
@@ -74,10 +87,10 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-.venv/bin/python -m uvicorn examples.playground.app:create_app --factory --host 127.0.0.1 --port 8000 >> "$log_directory/backend.log" 2>&1 &
+.venv/bin/python -m uvicorn "$application" --factory --no-proxy-headers --host 127.0.0.1 --port "$EVLET_BACKEND_PORT" >> "$log_directory/backend.log" 2>&1 &
 backend_pid=$!
 # Run Node directly so the PID belongs to Vite rather than an npm wrapper.
-node frontend/node_modules/vite/bin/vite.js frontend --host 127.0.0.1 --port 5173 --strictPort >> "$log_directory/frontend.log" 2>&1 &
+node frontend/node_modules/vite/bin/vite.js frontend --host 127.0.0.1 --port "$EVLET_FRONTEND_PORT" --strictPort >> "$log_directory/frontend.log" 2>&1 &
 frontend_pid=$!
 
 if ! .venv/bin/python - "$backend_pid" "$frontend_pid" <<'PY'
@@ -85,7 +98,12 @@ import json
 import os
 import sys
 import time
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
+
+port = os.environ['EVLET_FRONTEND_PORT']
+host = os.environ['EVLET_PLAYGROUND_HOST']
+def request(path):
+    return urlopen(Request(f'http://127.0.0.1:{port}{path}', headers={'Host': f'{host}:{port}'}), timeout=1)
 
 for attempt in range(100):
     try:
@@ -94,9 +112,9 @@ for attempt in range(100):
     except ProcessLookupError:
         raise SystemExit('A development server exited during startup.')
     try:
-        with urlopen('http://127.0.0.1:5173/health', timeout=1) as response:
+        with request('/health') as response:
             healthy = json.load(response) == {'status': 'ok'}
-        with urlopen('http://127.0.0.1:5173/api/auth/session', timeout=1) as response:
+        with request('/api/auth/session') as response:
             session = json.load(response)
         if healthy and 'user' in session:
             break
@@ -106,7 +124,7 @@ for attempt in range(100):
 else:
     raise SystemExit('The Playground did not become ready.')
 print('Playground is ready. Keep this terminal open; press Control-C to stop.')
-print('Browser address: http://127.0.0.1:5173')
+print(f'Browser address: http://{host}:{port}')
 PY
 then
   tail -n 30 "$log_directory/backend.log" "$log_directory/frontend.log" >&2
@@ -115,9 +133,9 @@ fi
 
 if [[ "${EVLET_OPEN_BROWSER:-1}" != '0' ]]; then
   if [[ "$(uname -s)" == 'Darwin' ]]; then
-    open 'http://127.0.0.1:5173' || true
+    open "http://$EVLET_PLAYGROUND_HOST:$EVLET_FRONTEND_PORT" || true
   elif command -v xdg-open >/dev/null 2>&1; then
-    xdg-open 'http://127.0.0.1:5173' >/dev/null 2>&1 || true
+    xdg-open "http://$EVLET_PLAYGROUND_HOST:$EVLET_FRONTEND_PORT" >/dev/null 2>&1 || true
   fi
 fi
 

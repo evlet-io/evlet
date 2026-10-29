@@ -30,7 +30,11 @@ def create_app():
                                        'http://127.0.0.1:8000', 'http://localhost:8000',
                                        'http://127.0.0.1:4173', 'http://localhost:4173'),
                      secure_cookies=False, allow_setup=True)
-    return Application(database, auth=auth, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
+    return build_app(database, auth)
+
+
+def build_app(database, auth, *, storage=None):
+    return Application(database, auth=auth, storage=storage, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
                        actions=(Action(Project, 'start', 'Start project', start_project),
                                 Action(Project, 'complete', 'Complete project', complete_project)),
                        attachments=(Project,))
