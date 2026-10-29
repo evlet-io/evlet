@@ -19,7 +19,7 @@ class SQLiteStorage:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_attachments (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, record_id INTEGER NOT NULL, name TEXT NOT NULL, content BLOB NOT NULL)')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_attachment_owner ON evlet_attachments(model,record_id)')
             columns = {row['name'] for row in tx.connection.execute('PRAGMA table_info(evlet_attachments)')}
-            for name, kind in (('storage_key', 'TEXT'), ('file_size', 'INTEGER')):
+            for name, kind in (('storage_key', 'TEXT'), ('file_size', 'INTEGER'), ('storage_kind', 'TEXT')):
                 if name not in columns:
                     tx.connection.execute(f'ALTER TABLE evlet_attachments ADD COLUMN {name} {kind}')
 
@@ -106,6 +106,8 @@ class LocalFileStorage(SQLiteStorage):
     def read(self, row):
         if row['storage_key'] is None:
             return super().read(row)
+        if row['storage_kind'] not in (None, 'local'):
+            raise StorageError('Attachment requires its original storage adapter')
         try:
             self._check_binding()
             fd = os.open(self._path(row['storage_key']), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)

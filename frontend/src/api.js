@@ -2,9 +2,11 @@ let csrf = ''
 export const setCsrf = value => { csrf = value }
 
 export class ApiError extends Error {
-  constructor(message, fields = {}) {
+  constructor(message, fields = {}, status = 0) {
     super(message)
     this.fields = fields
+    this.status = status
+    this.retryable = status === 0 || status >= 500 || [408, 429].includes(status)
   }
 }
 
@@ -17,15 +19,18 @@ export async function request(path, options = {}) {
   } catch {
     throw new ApiError('Unable to reach the server. Check the connection and try again.')
   }
+  if (response.status === 401 && !path.endsWith('/login')) window.dispatchEvent(new Event('evlet-session-ended'))
   if (response.status === 204 && response.ok) return null
   let data
   try {
     data = await response.json()
-  } catch {
-    throw new ApiError('The server returned an unreadable response.')
+  } catch (cause) {
+    const failure = new ApiError('The server returned an unreadable response.', {}, response.status)
+    // A successful header does not guarantee that the response body arrived.
+    if (response.ok && (cause instanceof TypeError || cause?.name === 'AbortError')) failure.retryable = true
+    throw failure
   }
-  if (response.status === 401 && !path.endsWith('/login')) window.dispatchEvent(new Event('evlet-session-ended'))
-  if (!response.ok) throw new ApiError(data.error || 'The request failed.', data.fields)
+  if (!response.ok) throw new ApiError(data.error || 'The request failed.', data.fields, response.status)
   return data
 }
 

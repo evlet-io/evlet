@@ -71,13 +71,14 @@ log_directory="examples/playground/.data/logs/$EVLET_FRONTEND_PORT"
 mkdir -p "$log_directory"
 backend_pid=''
 frontend_pid=''
+worker_pid=''
 cleanup() {
-  for server_pid in "$frontend_pid" "$backend_pid"; do
+  for server_pid in "$worker_pid" "$frontend_pid" "$backend_pid"; do
     if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
       kill -TERM "$server_pid" 2>/dev/null || true
     fi
   done
-  for server_pid in "$frontend_pid" "$backend_pid"; do
+  for server_pid in "$worker_pid" "$frontend_pid" "$backend_pid"; do
     if [[ -n "$server_pid" ]]; then
       wait "$server_pid" 2>/dev/null || true
     fi
@@ -131,6 +132,11 @@ then
   exit 1
 fi
 
+if [[ "${EVLET_RUN_JOBS:-1}" == '1' ]]; then
+  .venv/bin/python -m examples.playground.worker >> "$log_directory/worker.log" 2>&1 &
+  worker_pid=$!
+fi
+
 if [[ "${EVLET_OPEN_BROWSER:-1}" != '0' ]]; then
   if [[ "$(uname -s)" == 'Darwin' ]]; then
     open "http://$EVLET_PLAYGROUND_HOST:$EVLET_FRONTEND_PORT" || true
@@ -140,6 +146,10 @@ if [[ "${EVLET_OPEN_BROWSER:-1}" != '0' ]]; then
 fi
 
 while kill -0 "$backend_pid" 2>/dev/null && kill -0 "$frontend_pid" 2>/dev/null; do
+  if [[ -n "$worker_pid" ]] && ! kill -0 "$worker_pid" 2>/dev/null; then
+    echo "The job worker stopped. Check $log_directory/worker.log." >&2
+    exit 1
+  fi
   sleep 1
 done
 echo "A server stopped. Check $log_directory/backend.log and $log_directory/frontend.log." >&2

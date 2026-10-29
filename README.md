@@ -1,9 +1,9 @@
 # Evlet
 
 A small Python application framework for business applications. This repository
-implements **Milestone 5**: tenant isolation, hostname routing, private file storage,
-and a reference server deployment, on top of accounts, permissions, business actions,
-child tables, typed models, and SQLite.
+implements **Milestone 6**: durable background jobs, interval schedules, live record
+updates, and optional Lambda HTTP and S3-compatible storage adapters, on top of
+tenant isolation, accounts, permissions, business actions, and SQLite.
 The Vue 3/PrimeVue Playground includes Customer, Invoice, Payment, and Project
 with child tasks.
 
@@ -30,9 +30,9 @@ This private repository requires your GitHub account to have access. You can als
 download the feature branch as a ZIP while signed in to GitHub, extract it, open
 Terminal in the extracted folder, and run the same launcher command.
 
-The launcher installs the locked dependencies, starts both servers, checks the
-API, and opens the Playground in your default browser. Keep Terminal open while
-using the app. Press **Control-C** to stop both servers; your SQLite data remains.
+The launcher installs the locked dependencies, starts both servers and an optional
+job worker, checks the API, and opens the Playground in your default browser. Keep Terminal open while
+using the app. Press **Control-C** to stop its processes; your SQLite data remains.
 On later runs, use `bash scripts/playground.sh` from the same folder. The launcher
 activates Homebrew's versioned Node and Python paths for its own process only.
 
@@ -97,7 +97,9 @@ or Viewer accounts. Then create a customer, an invoice referencing it, and a pay
 referencing that invoice. Refresh or restart the backend to verify persistence.
 The default database is `examples/playground/.data/playground.sqlite3`, ignored
 by Git. `EVLET_DATABASE` can select another SQLite file. Each database has its own accounts.
-Projects demonstrate child tasks, Start/Complete actions, and private attachments.
+Projects demonstrate child tasks, Start/Complete actions, private attachments, and
+a queued **Recalculate progress** action. The launcher starts its worker; with
+manual startup, run `.venv/bin/python -m examples.playground.worker` separately.
 
 Check the live workflow from the root:
 
@@ -179,8 +181,8 @@ This is a development preview, not a deployment recipe.
   conversions are not supported. Startup rejects schema drift.
 - Local accounts and backend model/record/field permissions are implemented.
   The Playground uses them; a bare `Application(database)` stays unauthenticated
-  for compatibility. Keep development servers on loopback. No tenant isolation,
-  jobs, realtime, SSO, email recovery, or deployment adapters yet.
+  for compatibility. Keep development servers on loopback. SSO and email recovery
+  remain outside the implemented scope.
 - Currency has two decimal places and no currency-code conversion. The Playground
   is a persistence example, not a ledger or payment processor.
 - Email is a bounded text field; browser email validation is convenience only.
@@ -196,8 +198,7 @@ and [agent instructions](AGENTS.md). The [model engine guide](docs/model-engine.
 covers the model engine. See [application generation](docs/application-generation.md)
 for Milestone 3 metadata, defaults, generated screens, and upgrade instructions.
 See [business capabilities](docs/business-capabilities.md) for Milestone 4 APIs,
-account setup, permissions, actions, children, attachments, and limits. The next
-milestone covers multi-tenancy and hosting.
+account setup, permissions, actions, children, attachments, and limits.
 
 
 ## Milestone 5: tenants and deployment
@@ -211,3 +212,16 @@ prompts for its first administrator through the local management command.
 Run `python scripts/smoke_tenants.py` with the virtual environment active to check
 two disposable tenants over HTTP. Add `--frontend` to test Vite or `--caddy` to test
 local HTTPS after building the frontend. No deployment runs automatically.
+
+
+## Milestone 6: jobs, live updates, and adapters
+
+The [jobs and live-update guide](docs/jobs-realtime.md) covers transactional jobs,
+retries, schedules, permission-filtered SSE and polling, and the optional S3/R2
+storage and Lambda HTTP adapters. No Redis or distributed queue is required.
+Use `EVLET_RUN_JOBS=0` to run the Playground without a worker.
+
+The Lambda adapter supplies HTTP transport only. It does not make the SQLite
+Playground deployable on an ephemeral filesystem. No cloud resources are created,
+and live cloud operation has not been verified. WebSockets and broader production
+hardening remain deferred.

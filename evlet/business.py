@@ -14,6 +14,7 @@ from .models import ValidationError, identifier
 from .permissions import Policy
 from .query import Query
 from .storage import SQLiteStorage
+from .jobs import JobReceipt
 
 
 @dataclass(frozen=True)
@@ -40,9 +41,12 @@ class Download:
 
 
 class Business:
-    def __init__(self, database, auth, *, policy=None, actions=(), children=(), attachments=(), storage=None):
+    def __init__(self, database, auth, *, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None):
         self.database, self.registry, self.auth = database, database.registry, auth
         self.tenant = None
+        self.jobs, self.events = jobs, events
+        if any(service is not None and service.database is not database for service in (jobs, events)):
+            raise ValueError('Jobs and events must use the application database')
         if auth.database is not database:
             raise ValueError('Authentication must use the application database')
         self.policy = policy or Policy(self.registry)
@@ -76,9 +80,39 @@ class Business:
     def initialize(self):
         self.auth.initialize()
         self.storage.initialize(self.database)
+        if self.events:
+            self.events.initialize()
+        if self.jobs:
+            self.jobs.policy = self.policy
+            self.jobs.initialize()
+
+    def changed(self, tx, model, record_id, *, deleted=False):
+        if self.events:
+            self.events.publish(tx, model, record_id, deleted=deleted)
+
+    def event_page(self, scope):
+        if self.events is None or scope['method'] != 'GET':
+            raise AccessError(404, 'Events are unavailable')
+        self.auth.guard(scope)
+        guard = scope.get('evlet.tenant_active')
+        if guard is not None and not guard():
+            raise AccessError(421, 'Tenant is unavailable')
+        user, _ = self.auth.session(scope)
+        try:
+            query = parse_qs(scope.get('query_string', b'').decode('ascii'), keep_blank_values=True, max_num_fields=1)
+            if set(query) - {'cursor'} or any(len(values) != 1 for values in query.values()):
+                raise ValueError()
+            cursor = query.get('cursor', [None])[0]
+            if b'last-event-id' in dict(scope.get('headers', [])):
+                cursor = dict(scope['headers'])[b'last-event-id'].decode('ascii')
+        except (ValueError, UnicodeError):
+            raise ValidationError({'cursor': 'Invalid event cursor'})
+        return self.events.page(user, self.policy, after=cursor)
 
     def schema(self, user):
         result = self.registry.ui_schema()
+        if self.events or self.jobs:
+            result['capabilities'] = {'events': self.events is not None, 'jobs': self.jobs is not None}
         if self.tenant:
             result['tenant'] = self.tenant
         available = {name for name, model in self.registry.models.items() if self.policy.allows(user, model, 'read')}
@@ -123,6 +157,13 @@ class Business:
             return self.accounts(scope, body, user)
         if path == '/api/schema' and method == 'GET':
             return 200, self.schema(user), []
+        if path == '/api/_events' and method == 'GET':
+            return 200, self.event_page(scope), []
+        if path.startswith('/api/_jobs/') and method == 'GET' and self.jobs:
+            value = path.removeprefix('/api/_jobs/')
+            if not re.fullmatch('[1-9][0-9]{0,18}', value) or int(value) > 2**63-1:
+                raise AccessError(404, 'Job not found')
+            return 200, self.jobs.status(int(value), user), []
         parts = path.split('/')
         model = self.registry.models.get(parts[2]) if len(parts) >= 3 and parts[:2] == ['', 'api'] else None
         if model is None or model in self.child_models:
@@ -137,6 +178,7 @@ class Business:
                 record = tx.create(model, **values)
                 self.policy.record(tx, user, model, record.id, 'create')
                 self.save_children(tx, user, record, children)
+                self.changed(tx, model, record.id)
                 result = self.detail(tx, user, record)
             return 201, result, [(b'location', f'/api/{parts[2]}/{record.id}'.encode())]
         if len(parts) < 4 or not re.fullmatch(r'[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1:
@@ -152,9 +194,12 @@ class Business:
                 raise ValidationError({'_form': 'This action takes no arguments'})
             with self.database.transaction() as tx:
                 record = self.policy.record(tx, user, model, record_id, 'update')
-                action.handler(tx, user, record)
+                outcome = action.handler(tx, user, record)
+                self.changed(tx, model, record_id)
                 record = self.policy.record(tx, user, model, record_id)
                 result = self.detail(tx, user, record)
+            if isinstance(outcome, JobReceipt):
+                return 202, {'job': outcome.public(), 'record': result}, []
             return 200, result, []
         if len(parts) != 4 or method not in ('GET', 'PATCH', 'DELETE'):
             raise AccessError(405, 'Method not allowed')
@@ -166,6 +211,7 @@ class Business:
                         for row in tx.list(child.model, filters={child.link: record_id}, limit=100):
                             self.policy.record(tx, user, child.model, row.id, 'delete')
                             tx.delete(child.model, row.id)
+                self.changed(tx, model, record_id, deleted=True)
                 tx.delete(model, record_id)
                 tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (parts[2], record_id))
                 return 204, None, []
@@ -175,6 +221,7 @@ class Business:
                 record = tx.update(model, record_id, **values)
                 self.policy.record(tx, user, model, record_id, 'update')
                 self.save_children(tx, user, record, children)
+                self.changed(tx, model, record_id)
             result = self.detail(tx, user, record)
         return 200, result, []
 
@@ -334,6 +381,7 @@ class Business:
                 if tx.connection.execute('SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=?', args).fetchone()[0] >= 10:
                     raise ValidationError({'attachment': 'Use at most 10 attachments per record'})
                 file_id = self.storage.add(tx, *args, filename, content)
+                self.changed(tx, model, record_id)
                 return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []
             row = tx.connection.execute('SELECT * FROM evlet_attachments WHERE model=? AND record_id=? AND id=?', (*args, file_id)).fetchone()
             if row is None:
@@ -342,5 +390,6 @@ class Business:
                 return 200, Download(self.storage.read(row)), [(b'content-type', b'application/octet-stream'), (b'content-disposition', ("attachment; filename*=UTF-8''" + quote(row['name'], safe='')).encode()), (b'content-security-policy', b"default-src 'none'; sandbox")]
             if method == 'DELETE':
                 tx.connection.execute('DELETE FROM evlet_attachments WHERE id=?', (file_id,))
+                self.changed(tx, model, record_id)
                 return 204, None, []
         raise AccessError(405, 'Method not allowed')

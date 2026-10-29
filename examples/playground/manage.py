@@ -8,7 +8,8 @@ from pathlib import Path
 import sqlite3
 import subprocess
 
-from evlet import TenantRegistry
+from evlet import TenantRegistry, User
+from .models import Project
 from evlet.deployment import render_deployment
 from .tenants import tenant_app
 
@@ -51,6 +52,15 @@ def main(argv=None):
     for name in ('challenge', 'verify-domain', 'enable-domain', 'disable-domain'):
         commands.add_parser(name).add_argument('hostname')
     commands.add_parser('list')
+    commands.add_parser('jobs').add_argument('slug')
+    retry = commands.add_parser('retry-job')
+    retry.add_argument('slug'); retry.add_argument('job_id', type=int)
+    schedule = commands.add_parser('schedule-progress')
+    schedule.add_argument('slug'); schedule.add_argument('name'); schedule.add_argument('project_id', type=int)
+    schedule.add_argument('--every', type=int, required=True); schedule.add_argument('--actor-id', type=int, required=True)
+    schedule.add_argument('--start-at', type=int)
+    for name in ('enable-schedule', 'disable-schedule'):
+        command = commands.add_parser(name); command.add_argument('slug'); command.add_argument('name')
     commands.add_parser('render').add_argument('--output', required=True)
     args = parser.parse_args(argv)
     os.umask(0o077)
@@ -92,6 +102,20 @@ def main(argv=None):
             print('Domain state updated.')
         elif args.command == 'list':
             print(json.dumps(catalog.inventory(), indent=2))
+        elif args.command in ('jobs', 'retry-job', 'schedule-progress', 'enable-schedule', 'disable-schedule'):
+            app = tenant_app(catalog.get(args.slug)); app.initialize()
+            jobs = app.business.jobs
+            if args.command == 'jobs':
+                print(json.dumps(jobs.recent(), indent=2))
+            elif args.command == 'retry-job':
+                jobs.retry(args.job_id); print('Failed job queued for retry.')
+            elif args.command == 'schedule-progress':
+                jobs.schedule(args.name, 'project_progress', {'project_id': args.project_id}, every=args.every,
+                              start_at=args.start_at, user=User(args.actor_id, 'operator-selected', 'viewer'), target=(Project, args.project_id))
+                print('Schedule registered. The worker rechecks the account and permissions before execution.')
+            else:
+                jobs.set_schedule_active(args.name, args.command == 'enable-schedule')
+                print('Schedule state updated.')
         elif args.command == 'render':
             files = render_deployment(catalog)
             target = Path(args.output)

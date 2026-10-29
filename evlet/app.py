@@ -24,12 +24,12 @@ class HTTPError(Exception):
 
 
 class Application:
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None):
         self.database = database
         self.registry = database.registry
-        if auth is None and (policy is not None or actions or children or attachments or storage is not None):
+        if auth is None and (policy is not None or actions or children or attachments or storage is not None or jobs is not None or events is not None):
             raise ValueError("Business features require authentication")
-        self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage)
+        self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -42,6 +42,9 @@ class Application:
             raise ValueError("Unsupported ASGI scope")
         headers = []
         try:
+            if scope['path'] == '/api/_events/stream' and self.business:
+                await self._event_stream(scope, receive, send)
+                return
             body = None
             if scope["method"] in ("POST", "PATCH"):
                 content_type = dict(scope.get("headers", [])).get(b"content-type", b"")
@@ -93,6 +96,42 @@ class Application:
             response_headers.append((b"content-length", str(len(encoded)).encode()))
         await send({"type": "http.response.start", "status": status, "headers": response_headers})
         await send({"type": "http.response.body", "body": encoded})
+
+    async def _event_stream(self, scope, receive, send):
+        page = await asyncio.to_thread(self.business.event_page, scope)
+        await send({'type': 'http.response.start', 'status': 200, 'headers': [
+            (b'content-type', b'text/event-stream'), (b'cache-control', b'no-store'),
+            (b'x-accel-buffering', b'no'), (b'x-content-type-options', b'nosniff')]})
+        async def disconnected():
+            while (await receive())['type'] != 'http.disconnect':
+                pass
+        disconnect = asyncio.create_task(disconnected())
+        try:
+            for iteration in range(25):
+                encoded = ('id: ' + page['cursor'] + '\nevent: evlet\ndata: ' + json.dumps(page) + '\n\n').encode()
+                await send({'type': 'http.response.body', 'body': encoded, 'more_body': True})
+                done, _ = await asyncio.wait({disconnect}, timeout=0.05 if page['more'] else 1)
+                if done:
+                    return
+                headers = [(key, value) for key, value in scope.get('headers', []) if key != b'last-event-id']
+                headers.append((b'last-event-id', page['cursor'].encode()))
+                try:
+                    page = await asyncio.to_thread(self.business.event_page, {**scope, 'headers': headers})
+                except AccessError:
+                    await send({'type': 'http.response.body', 'body': b'event: unavailable\ndata: {}\n\n', 'more_body': True})
+                    return
+                except Exception:
+                    logger.exception('Event stream failed')
+                    return
+        except OSError:
+            return
+        finally:
+            disconnect.cancel()
+            await asyncio.gather(disconnect, return_exceptions=True)
+            try:
+                await send({'type': 'http.response.body', 'body': b'', 'more_body': False})
+            except OSError:
+                pass
 
     @staticmethod
     def _invalid_constant(value):

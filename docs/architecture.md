@@ -167,7 +167,30 @@ single-worker systemd service. Local smoke checks exercise real Vite and Caddy
 traffic; public DNS, public certificates, and Linux service operation need separate
 deployment verification. See [tenancy and deployment](tenancy-deployment.md).
 
+## Milestone 6 decisions
+
+The optional queue shares the application's SQLite transaction boundary. Enqueue
+commits with business changes. Random claim leases fence stale workers, and task
+writes commit with completion and an event. User accounts and target permissions
+are rechecked at execution. Short handlers hold one database write lock; this is
+not a distributed or long-running job system. External side effects require their
+own idempotency handling. Interval scheduling coalesces missed occurrences.
+
+Record invalidations are retained in SQLite with opaque replay cursors and current
+permission filtering. SSE rechecks sessions and tenant activation on delivery;
+buffered transports use polling. The renderer updates lists and details without
+replacing unsaved forms. The event log is a hint, not a record store or audit log.
+
+S3Storage adds private remote bytes with transactional local metadata, namespace
+binding, conditional writes, and explicit orphan collection. The boto3 extra is
+optional and has its own hash lock; core imports still require no external package.
+The LambdaHTTP adapter translates AWS payload-v2 requests to ASGI and buffers the
+response. It provides no persistence, lifespan, worker, or deployment. Durable
+serverless database support is a separate requirement.
+
+See [jobs, realtime, and adapters](jobs-realtime.md) for public contracts and limits.
+
 ## Deferred work
 
-Jobs, realtime, object storage, serverless adapters, arbitrary schema conversions,
+WebSockets, arbitrary schema conversions, PostgreSQL, large-dataset benchmarks,
 and broader production hardening remain later work.

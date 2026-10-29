@@ -129,6 +129,39 @@ def main():
                 assert request(slug, '/api/project/1/attachments/1', auth=auth)[1] == slug.encode()
                 assert request(slug, '/api/project/1/attachments/1', auth=credentials[other])[0] == 401
                 assert request(slug, '/api/auth/session', auth=auth, headers={'X-Forwarded-Host': other + suffix, 'X-Forwarded-For': '203.0.113.12'})[1]['tenant']['slug'] == slug
+            jobs = {}
+            for slug in ('alpha', 'beta'):
+                status, result, _ = request(slug, '/api/project/1/actions/refresh_progress', 'POST', {}, credentials[slug])
+                assert status == 202
+                jobs[slug] = result['job']['id']
+            cursor = request('alpha', '/api/_events', auth=credentials['alpha'])[1]['cursor']
+            host = 'alpha' + suffix
+            authority = host if production else f'{host}:{target_port}'
+            stream = TLSConnection(target_port, context, host) if production else http.client.HTTPConnection('127.0.0.1', target_port, timeout=4)
+            stream.request('GET', '/api/_events/stream?cursor=' + cursor, headers={'Host': authority, 'Cookie': credentials['alpha']['cookie']})
+            feed = stream.getresponse()
+            try:
+                assert feed.status == 200 and feed.getheader('Content-Type') == 'text/event-stream'
+                start([sys.executable, '-m', 'examples.playground.worker'])
+                observed = False
+                for line_number in range(80):
+                    line = feed.readline()
+                    if line.startswith(b'data: '):
+                        page = json.loads(line[6:])
+                        if any(item['model'] == 'project' and item['id'] == 1 for item in page['items']):
+                            observed = True; break
+                assert observed, 'No job completion event arrived over SSE'
+            finally:
+                feed.close(); stream.close()
+            for slug in ('alpha', 'beta'):
+                for attempt in range(50):
+                    status = request(slug, f'/api/_jobs/{jobs[slug]}', auth=credentials[slug])[1]
+                    if status['state'] == 'succeeded': break
+                    time.sleep(0.1)
+                else: raise AssertionError('Worker did not complete the queued task')
+                assert request(slug, '/api/project/1', auth=credentials[slug])[1]['progress'] == 100
+            replay = request('alpha', '/api/_events?cursor=' + cursor, auth=credentials['alpha'])[1]
+            assert any(item['model'] == 'project' for item in replay['items'])
             if not production:
                 assert request('unknown', '/health')[0] == 421
             elif (ROOT / 'frontend/dist/index.html').exists():
@@ -145,7 +178,7 @@ def main():
             catalog.set_active('alpha', False)
             assert request('alpha', '/api/auth/session', auth=credentials['alpha'])[0] == 421
             assert request('beta', '/api/project/1', auth=credentials['beta'])[0] == 200
-            print('Two-tenant smoke passed: sign-in, records, children, actions, files, replay rejection, restart, and revocation' + (' through local Caddy HTTPS.' if production else ' through Vite.' if args.frontend else '.'))
+            print('Two-tenant smoke passed: sign-in, records, children, actions, files, durable jobs, SSE/polling replay, restart, and revocation' + (' through local Caddy HTTPS.' if production else ' through Vite.' if args.frontend else '.'))
         except BaseException:
             log.flush(); log.seek(0); print(log.read(), file=sys.stderr)
             raise

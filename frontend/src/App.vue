@@ -9,6 +9,7 @@ import RecordDetail from './RecordDetail.vue'
 import RecordExtras from './RecordExtras.vue'
 import QueryControls from './QueryControls.vue'
 import { createRecord, deleteRecord, getRecord, getSchema, listRecords, updateRecord } from './api.js'
+import { subscribeEvents } from './events.js'
 import { fieldFor, formatValue, recordLabel, validateSchema, visibleFields } from './schema.js'
 
 const sections = ref([]), active = ref(null)
@@ -20,7 +21,25 @@ const rows = ref([]), labels = ref({}), offset = ref(0), total = ref(0)
 const loading = ref(true), saving = ref(false), reading = ref(false), connected = ref(false)
 const error = ref(''), success = ref(''), errors = ref({}), resetKey = ref(0)
 const busy = computed(() => loading.value || saving.value || reading.value)
-let generation = 0, recordGeneration = 0
+let alive = true
+let generation = 0, recordGeneration = 0, stopEvents = null, refreshTimer = null, pendingEvents = []
+function changed(page) {
+  if (!alive) return
+  pendingEvents.push(...page.items)
+  if (page.reset) pendingEvents.push({ model: active.value })
+  clearTimeout(refreshTimer)
+  refreshTimer = setTimeout(refreshChanges, 100)
+}
+async function refreshChanges() {
+  if (!alive) return
+  if (busy.value) { refreshTimer = setTimeout(refreshChanges, 200); return }
+  const changes = pendingEvents.splice(0)
+  if (!changes.some(item => item.model === active.value)) return
+  if (detail.value && changes.some(item => item.model === active.value && item.id === detail.value.id && item.deleted)) detail.value = null
+  const selected = detail.value?.id, model = active.value
+  await loadPage()
+  if (alive && selected && model === active.value && detail.value?.id === selected && !editing.value) await openRecord(selected)
+}
 
 async function resolveLabels(model, records) {
   const targets = new Map()
@@ -65,7 +84,15 @@ async function loadPage() {
 async function connect() {
   error.value = ''; loading.value = true
   try {
-    sections.value = validateSchema(await getSchema())
+    const schema = await getSchema()
+    if (!alive) return
+    sections.value = validateSchema(schema)
+    stopEvents?.()
+    if (schema.capabilities?.events) {
+      stopEvents = subscribeEvents(changed)
+      await stopEvents.ready
+      if (!alive) return
+    }
     active.value = navigation.value[0]?.name || null
     connected.value = true
     await loadPage()
@@ -132,7 +159,7 @@ async function remove() {
 async function applyQuery(value) { if (busy.value) return; query.value = value; offset.value = 0; await loadPage() }
 async function updated(record) { detail.value = record; await loadPage() }
 onMounted(connect)
-onBeforeUnmount(() => { generation++; recordGeneration++ })
+onBeforeUnmount(() => { alive = false; generation++; recordGeneration++; stopEvents?.(); clearTimeout(refreshTimer); pendingEvents = [] })
 </script>
 
 <template>

@@ -508,6 +508,10 @@
         {
           "name": "complete",
           "label": "Complete project"
+        },
+        {
+          "name": "refresh_progress",
+          "label": "Recalculate progress"
         }
       ],
       "attachments": true
@@ -592,5 +596,9 @@
       "actions": [],
       "attachments": false
     }
-  ]
+  ],
+  "capabilities": {
+    "events": true,
+    "jobs": true
+  }
 }
