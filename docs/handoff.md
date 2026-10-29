@@ -1,6 +1,6 @@
 # Continue Evlet locally
 
-Use the existing checkout of `dxb-aslam/evlet` on `milestone-8-review-fixes`. Preserve
+Use the existing checkout of `evlet-io/evlet` on `milestone-8-review-fixes`. Preserve
 the stash named `Preserve local foundation work before Milestone 1 continuation`.
 Do not create a worktree, merge, deploy, or expand the milestone without a request.
 

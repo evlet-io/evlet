@@ -4,13 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evlet"
-version = "0.1.0"
+version = "0.1.1"
 description = "A small Python application framework with SQLite and a neutral UI schema"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/evlet-io/evlet"
+Repository = "https://github.com/evlet-io/evlet"
+Issues = "https://github.com/evlet-io/evlet/issues"
 
 [project.scripts]
 evlet = "evlet.cli:main"

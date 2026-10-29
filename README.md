@@ -25,7 +25,7 @@ distribution or a repository checkout and the setup below.
 
 ## License
 
-Evlet is available under the [MIT License](https://github.com/dxb-aslam/evlet/blob/main/LICENSE).
+Evlet is available under the [MIT License](https://github.com/evlet-io/evlet/blob/main/LICENSE).
 
 ## Open the Playground on macOS
 
@@ -38,7 +38,7 @@ brew install git python@3.12 node@24
 Then, in Terminal:
 
 ```bash
-git clone https://github.com/dxb-aslam/evlet.git
+git clone https://github.com/evlet-io/evlet.git
 cd evlet
 bash scripts/playground.sh --setup
 ```
@@ -177,7 +177,7 @@ npm --prefix frontend test
 npm --prefix frontend run build
 .venv/bin/python -m build --no-isolation
 python3 -m venv /tmp/evlet-wheel-check
-/tmp/evlet-wheel-check/bin/python -m pip install --no-deps dist/evlet-0.1.0-py3-none-any.whl
+/tmp/evlet-wheel-check/bin/python -m pip install --no-deps dist/evlet-0.1.1-py3-none-any.whl
 /tmp/evlet-wheel-check/bin/python -I scripts/check_package.py
 ```
 
