@@ -47,8 +47,11 @@ describe the current implementation; the Vue renderer has been replaced.
 
 ## Dependencies and their purpose
 
-The Python runtime core has no third-party dependencies. The `dev` extra adds
-pytest (tests), Uvicorn (ASGI development server), and build (distribution checks).
+The model, persistence and ASGI APIs continue to use the standard library.
+The integrated CLI installs Uvicorn so `pip install evlet` can immediately serve
+an instance, and packaging to validate Python requirement and version standards.
+These avoid a custom HTTP server or an incomplete dependency parser. The `dev`
+extra adds pytest (tests) and build (distribution checks).
 setuptools is the packaging build backend. `requirements-dev.lock` pins the
 resolved Python setup dependencies and their transitive dependencies with hashes.
 
@@ -251,3 +254,12 @@ continuous authenticated ASGI readers, paced invoice transactions, SQL reports,
 index comparisons, and measured resource/bundle sizes. They do not model a complete
 accounting system or prove deployment capacity. See [performance](performance.md),
 [PostgreSQL](postgresql.md), and [operations](production-operations.md).
+
+## Projects, app packages and instances
+
+The integrated CLI composes existing Application, Registry, Policy, migration,
+job and UI APIs through explicit AppDefinition registrations. Instance config
+selects isolated SQLite/local storage. Git fetches only perform static validation;
+trusted installation stages database changes and publishes a separate app lock
+with a recoverable journal. Existing framework modules retain their public names.
+See [the CLI guide](cli.md) for commands, resource packaging and boundaries.

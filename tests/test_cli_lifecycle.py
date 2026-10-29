@@ -1,0 +1,409 @@
+"""Real package/instance lifecycle tests with disposable SQLite databases."""
+
+from pathlib import Path
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+
+import pytest
+
+from evlet import User
+from evlet.cli.app import create_app, fetch_app
+from evlet.cli.instance import create_instance
+from evlet.cli.install import install
+from evlet.cli.main import main
+from evlet.cli.project import project_root, instance_guard
+from evlet.cli.setup import setup
+from evlet.instances import load_runtime, read_lock, database_state
+from evlet.packages import read_package, resolve_packages, validate_url
+
+
+@pytest.fixture
+def project(tmp_path):
+    root = setup(tmp_path / 'project').resolve()
+    create_app(root, 'notes')
+    create_instance(root, 'acme')
+    yield root
+    for name in list(sys.modules):
+        if name in ("notes", "crm") or name.startswith(("notes.", "crm.")):
+            del sys.modules[name]
+
+
+def runtime(root, name='acme'):
+    app = load_runtime(root, name)
+    app.initialize()
+    return app
+
+
+def change_model(root, *, migration=True, fail=False):
+    package = root / 'apps/notes/notes'
+    model_file = package / 'models/__init__.py'
+    original = model_file.read_text()
+    model_file.write_text(original.replace('Model, Text', 'Model, Text, Boolean').replace('    class Meta:', '    done = Boolean(default=False)\n\n    class Meta:'))
+    if migration:
+        frozen = original.split('models = ')[0]
+        (package / 'migrations/__init__.py').write_text('from evlet import AddField, Boolean, CreateModel, Migration\n' + frozen + '\nmigrations = (Migration("0001_initial", CreateModel(NotesItem)), Migration("0002_done", AddField("notesitem", "' + ('unknown' if fail else 'done') + '", Boolean(default=False))))\n')
+
+
+def test_setup_only_containers_and_never_overwrites(tmp_path):
+    root = setup(tmp_path / 'p')
+    assert sorted(path.name for path in root.iterdir()) == ['apps', 'instances']
+    with pytest.raises(FileExistsError):
+        setup(root)
+    assert not list(root.rglob('*.sqlite3'))
+
+
+def test_discovery_from_child_and_explicit_override(project, monkeypatch):
+    monkeypatch.chdir(project / 'apps/notes/notes/models')
+    assert project_root() == project
+    assert project_root(project) == project
+    with pytest.raises(ValueError, match='No Evlet project'):
+        project_root(project / 'apps')
+
+
+@pytest.mark.parametrize('name', ['../outside', 'A', 'class', 'a-b', '', '_app', 'evlet', 'json'])
+def test_invalid_app_names_leave_no_app(project, name):
+    before = set((project / 'apps').iterdir())
+    with pytest.raises(ValueError):
+        create_app(project, name)
+    assert set((project / 'apps').iterdir()) == before
+
+
+def test_instances_start_without_database(project):
+    path = project / 'instances/acme'
+    assert {item.name for item in path.iterdir()} == {'config.py', 'apps.lock'}
+    assert read_lock(path) == {'apps': {}}
+
+
+def test_untrusted_install_does_not_execute_source(project, tmp_path):
+    marker = tmp_path / 'executed'
+    hooks = project / 'apps/notes/notes/hooks.py'
+    hooks.write_text(f'from pathlib import Path\nPath({str(marker)!r}).touch()\n' + hooks.read_text())
+    with pytest.raises(ValueError, match='explicit trust'):
+        install(project, 'acme', app_name='notes')
+    assert not marker.exists()
+    assert not (project / 'instances/acme/data').exists()
+
+
+def test_static_metadata_never_imports_app(project, tmp_path):
+    marker = tmp_path / 'executed'
+    hooks = project / 'apps/notes/notes/hooks.py'
+    hooks.write_text(f'from pathlib import Path\nPath({str(marker)!r}).touch()\nraise RuntimeError("do not import")\n')
+    package = read_package(project / 'apps/notes')
+    assert package.name == 'notes'
+    assert resolve_packages(project, ['notes'])[0].name == 'notes'
+    assert not marker.exists()
+
+
+def test_same_app_two_instances_have_separate_records_and_files(project):
+    create_instance(project, 'beta')
+    for name in ('acme', 'beta'):
+        install(project, name, app_name='notes', trust=True)
+    first, second = runtime(project), runtime(project, 'beta')
+    model = first.registry.models['notesitem']
+    record = first.database.create(model, title='Only Acme')
+    assert second.database.count(second.registry.models['notesitem']) == 0
+    with first.database.transaction() as tx:
+        file_id = first.business.storage.add(tx, 'notesitem', record.id, 'private.txt', b'private bytes')
+        row = tx.connection.execute('SELECT * FROM evlet_attachments WHERE id=?', (file_id,)).fetchone()
+        assert first.business.storage.read(row) == b'private bytes'
+        with pytest.raises(Exception):
+            second.business.storage.read(row)
+    assert first.business.storage.root != second.business.storage.root
+    assert first.business.auth.database.path != second.business.auth.database.path
+    assert first.business.jobs.tenant != second.business.jobs.tenant
+
+
+def test_install_second_app_preserves_records_and_history(project):
+    install(project, 'acme', app_name='notes', trust=True)
+    app = runtime(project)
+    app.database.create(app.registry.models['notesitem'], title='Keep me')
+    create_app(project, 'crm')
+    result = install(project, 'acme', app_name='crm', trust=True)
+    app = runtime(project)
+    assert set(app.registry.models) == {'notesitem', 'crmitem'}
+    assert app.database.list(app.registry.models['notesitem'])[0].title == 'Keep me'
+    assert Path(result['backup']).is_file()
+    assert set(read_lock(project / 'instances/acme')['apps']) == {'notes', 'crm'}
+
+
+def test_missing_dependency_fails_before_import_or_data(project):
+    path = project / 'apps/notes/pyproject.toml'
+    path.write_text(path.read_text().replace('"evlet>=0.1.0,<0.2"', '"evlet>=0.1.0,<0.2", "missing_evlet_test_dependency>=1"'))
+    with pytest.raises(ValueError, match='Missing dependency'):
+        install(project, 'acme', app_name='notes', trust=True)
+    assert not (project / 'instances/acme/data').exists()
+
+
+def test_local_dependency_installed_first(project):
+    create_app(project, 'crm')
+    path = project / 'apps/notes/pyproject.toml'
+    path.write_text(path.read_text().replace('"evlet>=0.1.0,<0.2"', '"evlet>=0.1.0,<0.2", "crm>=0.1"'))
+    result = install(project, 'acme', app_name='notes', trust=True)
+    assert result['apps'] == ['crm', 'notes']
+    assert set(runtime(project).registry.models) == {'crmitem', 'notesitem'}
+
+
+def test_circular_dependencies_rejected(project):
+    create_app(project, 'crm')
+    for name, dependency in (('notes', 'crm'), ('crm', 'notes')):
+        path = project / f'apps/{name}/pyproject.toml'
+        path.write_text(path.read_text().replace('"evlet>=0.1.0,<0.2"', f'"evlet>=0.1.0,<0.2", "{dependency}>=0.1"'))
+    with pytest.raises(ValueError, match='Circular'):
+        install(project, 'acme', app_name='notes', trust=True)
+
+
+def test_model_change_needs_explicit_migration_and_preserves_data(project):
+    install(project, 'acme', app_name='notes', trust=True)
+    app = runtime(project)
+    app.database.create(app.registry.models['notesitem'], title='Original')
+    change_model(project)
+    with pytest.raises(ValueError, match='differs from apps.lock'):
+        runtime(project)
+    result = install(project, 'acme', trust=True)
+    assert len(result['migrations']) == 1
+    app = runtime(project)
+    record = app.database.list(app.registry.models['notesitem'])[0]
+    assert record.title == 'Original' and record.done is False
+
+
+def test_failed_migration_preserves_database_lock_and_files(project):
+    install(project, 'acme', app_name='notes', trust=True)
+    app = runtime(project)
+    item = app.database.create(app.registry.models['notesitem'], title='Do not lose me')
+    path = project / 'instances/acme'
+    before = (path / 'apps.lock').read_bytes()
+    change_model(project, fail=True)
+    with pytest.raises(ValueError, match='Migrations do not match'):
+        install(project, 'acme', trust=True)
+    assert (path / 'apps.lock').read_bytes() == before
+    with sqlite3.connect(path / 'data/database.sqlite3') as connection:
+        assert connection.execute('SELECT title FROM notesitem WHERE id=?', (item.id,)).fetchone()[0] == 'Do not lose me'
+        assert 'done' not in [row[1] for row in connection.execute('PRAGMA table_info(notesitem)')]
+    assert not (path / '.install-journal.json').exists()
+
+
+def test_recover_commit_between_database_and_lock(project, monkeypatch):
+    import importlib
+    installer = importlib.import_module('evlet.cli.install')
+    original = installer.atomic_json
+    def fail_lock(path, value):
+        if path.name == 'apps.lock':
+            raise OSError('simulated disk failure')
+        original(path, value)
+    monkeypatch.setattr(installer, 'atomic_json', fail_lock)
+    with pytest.raises(OSError, match='disk failure'):
+        install(project, 'acme', app_name='notes', trust=True)
+    with pytest.raises(ValueError, match='Interrupted'):
+        runtime(project)
+    monkeypatch.setattr(installer, 'atomic_json', original)
+    result = install(project, 'acme', trust=True)
+    assert result['apps'] == ['notes']
+    assert read_lock(project / 'instances/acme') == database_state(project / 'instances/acme/data/database.sqlite3')
+    assert runtime(project).registry.models['notesitem']
+
+
+def test_active_server_guard_prevents_install(project):
+    with instance_guard(project / 'instances/acme', serving=True):
+        with pytest.raises(ValueError, match='in use'):
+            install(project, 'acme', app_name='notes', trust=True)
+    assert not (project / 'instances/acme/data').exists()
+
+
+def test_lock_database_mismatch_fails_closed(project):
+    install(project, 'acme', app_name='notes', trust=True)
+    path = project / 'instances/acme/apps.lock'
+    value = json.loads(path.read_text()); value['apps']['notes']['version'] = '99.0'
+    path.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match='differs from apps.lock'):
+        runtime(project)
+
+
+def test_view_action_and_permission_registration(project):
+    package = project / 'apps/notes/notes'
+    (package / 'hooks.py').write_text('''from evlet import AppDefinition, Action, Rule
+from evlet.ui import PageView, Column, Text
+from .models import models, NotesItem
+from .migrations import migrations
+
+def rename(tx, user, record):
+    tx.update(NotesItem, record.id, title='Changed by action')
+
+app = AppDefinition(models=models, migrations=migrations,
+    actions=(Action(NotesItem, 'rename', 'Rename', rename),),
+    permissions={('viewer', NotesItem): Rule(operations=())},
+    views=(PageView('notes_home', route='/notes', title='Notes', layout=Column(children=[Text('Notes page')])),))
+''')
+    install(project, 'acme', app_name='notes', trust=True)
+    app = runtime(project)
+    model = app.registry.models['notesitem']
+    assert not app.business.policy.allows(User(1, 'read', 'viewer'), model, 'read')
+    assert app.ui.resolve('/notes', app.registry.ui_schema(), User(1, 'owner', 'admin'))['view']['title'] == 'Notes'
+    item = app.database.create(model, title='Before')
+    with app.database.transaction() as tx:
+        app.business.actions[model, 'rename'].handler(tx, User(1, 'owner', 'admin'), item)
+    assert app.database.get(model, item.id).title == 'Changed by action'
+
+
+def test_schedule_registered_without_running_jobs(project):
+    path = project / 'apps/notes/notes/hooks.py'
+    path.write_text(path.read_text().replace('from evlet import AppDefinition', 'from evlet import AppDefinition, Task, Schedule').replace('permissions=rules, migrations=migrations)', 'permissions=rules, migrations=migrations, tasks=(Task("notes_task", lambda tx, context, payload: None),), schedules=(Schedule("notes_hourly", "notes_task", 3600),))'))
+    install(project, 'acme', app_name='notes', trust=True)
+    install(project, 'acme', trust=True)
+    app = runtime(project)
+    with app.database.transaction() as tx:
+        assert tx.connection.execute('SELECT COUNT(*) FROM evlet_schedules').fetchone()[0] == 1
+        assert tx.connection.execute('SELECT COUNT(*) FROM evlet_jobs').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('url', ['file:///tmp/app', '/tmp/app', 'http://example.com/app.git', 'https://user:secret@example.com/app.git', 'ext::sh anything', '--help'])
+def test_git_url_validation(url):
+    with pytest.raises(ValueError):
+        validate_url(url)
+
+
+def test_fetch_uses_staging_and_does_not_run_python(project, tmp_path, monkeypatch):
+    import evlet.cli.app as command
+    source = project / 'apps/notes'
+    marker = tmp_path / 'executed'
+    (source / 'notes/__init__.py').write_text(f'from pathlib import Path\nPath({str(marker)!r}).touch()\n')
+    for args in (['init'], ['add', '.'], ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-m', 'Initial app']):
+        subprocess.run(['git', '-C', str(source), *args], check=True, capture_output=True)
+    destination = setup(tmp_path / 'fetched')
+    actual_run = subprocess.run
+    def local_transport(args, **options):
+        if 'clone' in args:
+            assert options['env']['GIT_CONFIG_GLOBAL'] == os.devnull
+            assert '--no-recurse-submodules' in args
+            args = ['git', '-c', 'core.hooksPath=' + os.devnull, 'clone', '--', str(source), args[-1]]
+        return actual_run(args, **options)
+    monkeypatch.setattr(command.subprocess, 'run', local_transport)
+    report = fetch_app(destination, 'https://example.test/notes.git')
+    assert 'Static validation passed' in report
+    assert read_package(destination / 'apps/notes').locked()['commit']
+    assert not marker.exists()
+    with pytest.raises(ValueError, match='already exists'):
+        fetch_app(destination, 'https://example.test/notes.git')
+    assert not list((destination / 'apps').glob('.fetch-*'))
+
+
+def test_cli_lists_and_backward_compatible_starter(project, capsys, tmp_path):
+    main(['--project', str(project), 'app', '--list'])
+    assert 'notes\t0.1.0' in capsys.readouterr().out
+    main(['instance', '--list', '--project', str(project)])
+    assert 'acme\tno installed apps' in capsys.readouterr().out
+    main(['new', str(tmp_path / 'old_starter')])
+    assert (tmp_path / 'old_starter/app.py').is_file()
+
+
+def test_registration_ignores_stale_same_timestamp_bytecode(project):
+    import py_compile
+    file = project / 'apps/notes/notes/models/__init__.py'
+    py_compile.compile(str(file), doraise=True)
+    before = file.stat()
+    file.write_text(file.read_text().replace("label = 'Item'", "label = 'Note'"))
+    os.utime(file, ns=(before.st_atime_ns, before.st_mtime_ns))
+    install(project, 'acme', app_name='notes', trust=True)
+    assert runtime(project).registry.ui_schema()['models'][0]['label'] == 'Note'
+
+
+def test_two_apps_can_append_migrations_in_interleaved_order(project):
+    install(project, 'acme', app_name='notes', trust=True)
+    create_app(project, 'crm')
+    install(project, 'acme', app_name='crm', trust=True)
+    change_model(project)
+    install(project, 'acme', trust=True)
+    app = runtime(project)
+    assert 'done' in app.registry.models['notesitem'].__fields__
+    with app.database.transaction() as tx:
+        names = [row[0] for row in tx.connection.execute('SELECT name FROM evlet_migrations ORDER BY position')]
+    assert names == ['app5_notes__0001_initial', 'app3_crm__0001_initial', 'app5_notes__0002_done']
+
+
+def test_failed_first_install_leaves_no_published_database(project):
+    path = project / 'apps/notes/notes/hooks.py'
+    path.write_text('raise ValueError("invalid app registration")\n')
+    with pytest.raises(ValueError, match='invalid app registration'):
+        install(project, 'acme', app_name='notes', trust=True)
+    assert not (project / 'instances/acme/data/database.sqlite3').exists()
+    assert not (project / 'instances/acme/files').exists()
+    assert read_lock(project / 'instances/acme') == {'apps': {}}
+
+
+def test_interrupted_before_database_publish_recovers_old_state(project, monkeypatch):
+    import importlib
+    installer = importlib.import_module('evlet.cli.install')
+    original = installer.os.replace
+    def fail_database(source, target):
+        if Path(target).name == 'database.sqlite3':
+            raise OSError('simulated failure before publish')
+        return original(source, target)
+    monkeypatch.setattr(installer.os, 'replace', fail_database)
+    with pytest.raises(OSError, match='before publish'):
+        install(project, 'acme', app_name='notes', trust=True)
+    monkeypatch.setattr(installer.os, 'replace', original)
+    install(project, 'acme', app_name='notes', trust=True)
+    assert runtime(project).registry.models['notesitem']
+
+
+def test_instance_symlink_cannot_redirect_install(project, tmp_path):
+    outside = tmp_path / 'outside'; outside.mkdir()
+    (project / 'instances/acme/data').symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match='symbolic link'):
+        install(project, 'acme', app_name='notes', trust=True)
+    assert not list(outside.iterdir())
+
+
+def test_playground_ignores_customer_database_environment(tmp_path, monkeypatch):
+    from evlet.cli.playground import playground_app
+    customer = tmp_path / 'customer.sqlite3'
+    customer.write_bytes(b'preserve existing database')
+    monkeypatch.setenv('EVLET_DATABASE', str(customer))
+    monkeypatch.setenv('EVLET_POSTGRES_DSN', 'never connect to this server')
+    app = playground_app(tmp_path / 'demo')
+    assert app.database.path != customer
+    assert customer.read_bytes() == b'preserve existing database'
+    assert app.database.count(app.registry.models['customer']) == 1
+
+
+def test_docs_are_available_without_project_or_database(tmp_path, monkeypatch):
+    from evlet.cli.docs import documentation, render_markdown
+    monkeypatch.chdir(tmp_path)
+    assert 'evlet setup myproject' in documentation()['cli.md']
+    assert not list(tmp_path.iterdir())
+    html = render_markdown('<script>alert(1)</script>\n[x](javascript:alert)\n```python\nx = 1\n```')
+    assert '<script>' not in html and 'href="javascript:' not in html
+    assert '<pre><code>x = 1' in html
+
+
+def test_bound_actions_use_the_selected_instance_queue(project):
+    path = project / 'apps/notes/notes/hooks.py'
+    path.write_text('''from evlet import AppDefinition, Action, Task
+from .models import models, NotesItem
+from .migrations import migrations
+
+def rename(tx, context, payload):
+    tx.update(NotesItem, payload['id'], title='Completed job')
+
+def actions(services):
+    def queue(tx, user, record):
+        return services.jobs.enqueue(tx, 'notes_rename', {'id': record.id}, target=(NotesItem, record.id))
+    return (Action(NotesItem, 'queue', 'Queue rename', queue),)
+
+app = AppDefinition(models=models, migrations=migrations, actions=actions,
+                    tasks=(Task('notes_rename', rename),))
+''')
+    install(project, 'acme', app_name='notes', trust=True)
+    create_instance(project, 'beta')
+    install(project, 'beta', app_name='notes', trust=True)
+    first, second = runtime(project), runtime(project, 'beta')
+    model = first.registry.models['notesitem']
+    record = first.database.create(model, title='Before queue')
+    with first.database.transaction() as tx:
+        receipt = first.business.actions[model, 'queue'].handler(tx, None, record)
+    assert receipt.state == 'queued'
+    assert first.business.jobs.run_one()
+    assert first.database.get(model, record.id).title == 'Completed job'
+    assert not second.business.jobs.run_one()

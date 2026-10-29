@@ -105,3 +105,13 @@ handoff. The current component catalog and extension boundaries are documented i
 visual editor remain outside this change. Do not describe this as production
 ready. No cloud deployment, public DNS/TLS, live object storage or release activation
 was performed.
+
+## CLI and package lifecycle
+
+The cli-app-instances branch builds on solid-ui-playground without changing its
+UI or business engines. Read docs/cli.md for project/app/instance commands,
+AppDefinition and Instance APIs, staged installs and recovery. Existing working
+Playground data remains untouched. The build bundles the maintained examples
+and documentation alongside the existing compiled UI. tests/test_cli_lifecycle.py
+uses only temporary projects and databases. Do not migrate the working Playground
+into this new directory structure implicitly.

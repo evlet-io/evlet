@@ -1,5 +1,25 @@
 # Evlet
 
+## Project and instance CLI
+
+Install once, create apps, create isolated instances and run them. The Python
+package includes the browser UI, Playground and offline documentation.
+
+```sh
+evlet setup myproject
+cd myproject
+evlet app notes
+evlet instance acme
+evlet install notes --instance acme
+evlet serve acme
+```
+
+Read [the CLI guide](docs/cli.md) for trusted installation, Git sources,
+dependencies, migrations, recovery and deployment boundaries. `evlet playground`
+and `evlet docs` work without a project. The existing APIs and contributor
+commands below remain available.
+
+
 A Python application framework with a native SolidJS interface. Define models and
 pages in Python, then use generated lists, forms and routes in the browser. The
 Playground opens with sign-in, Docs and Demo Pages, including the Projects example.
