@@ -8,6 +8,25 @@ operations documentation. SQLite remains the default; PostgreSQL is optional.
 Python model definitions remain authoritative. The core has **zero third-party
 runtime dependencies**. No database server, Redis, Docker, or worker is required.
 
+## Install the Python package
+
+Requires Python 3.12 or newer:
+
+```bash
+python -m pip install evlet
+evlet --help
+```
+
+Optional adapters are available with `python -m pip install 'evlet[postgres]'`
+or `python -m pip install 'evlet[s3]'`. To serve an application, install an ASGI
+server such as Uvicorn separately. The installed Python package contains the
+framework and command-line tools. The Vue Playground requires the source
+distribution or a repository checkout and the setup below.
+
+## License
+
+Evlet is available under the [MIT License](https://github.com/dxb-aslam/evlet/blob/main/LICENSE).
+
 ## Open the Playground on macOS
 
 Install Git, Python 3.12+, and Node 24.15+ (24.x). If you use Homebrew:
