@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import App from './App.vue'
 import RecordExtras from './RecordExtras.vue'
+import { request } from './api.js'
 import schema from './test-business-schema.json'
 
 let wrapper
@@ -101,14 +102,19 @@ it.each([401, 403, 404])('does not retry permanent job access failure %s', async
   expect(wrapper.text()).not.toContain('Checking again shortly.')
 })
 
-it('retries the completed record read after a temporary failure', async () => {
+it.each(['503', 'body download'])('retries the completed record read after a temporary %s failure', async failure => {
   vi.useFakeTimers()
   let recordRequests = 0
   vi.stubGlobal('fetch', vi.fn(async path => {
     if (path.endsWith('/attachments')) return response({ items: [] })
     if (path.includes('/actions/')) return response({ job: { id: 7, state: 'queued' }, record: { id: 1 } }, 202)
     if (path === '/api/_jobs/7') return response({ id: 7, state: 'succeeded' })
-    if (++recordRequests === 1) return response({ error: 'Temporarily unavailable' }, 503)
+    if (++recordRequests === 1) {
+      if (failure === 'body download') return new Response(new ReadableStream({
+        start(controller) { controller.error(new TypeError('Connection terminated while reading body')) },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      return response({ error: 'Temporarily unavailable' }, 503)
+    }
     return response({ id: 1, progress: 50 })
   }))
   wrapper = mount(RecordExtras, { props: { model: schema.models.find(model => model.name === 'project'), models: schema.models, record: { id: 1 } }, global: { plugins: [PrimeVue] } })
@@ -141,4 +147,48 @@ it.each(['record', 'job', 'unmount'])('cancels a scheduled retry when changing %
   await vi.advanceTimersByTimeAsync(10000)
   expect(oldStatusRequests).toBe(1)
   if (wrapper) expect(wrapper.text()).not.toContain('Checking again shortly.')
+})
+
+it('resumes job tracking when the connection fails while reading a successful response body', async () => {
+  vi.useFakeTimers()
+  let statusRequests = 0
+  vi.stubGlobal('fetch', vi.fn(async path => {
+    if (path.endsWith('/attachments')) return response({ items: [] })
+    if (path.includes('/actions/')) return response({ job: { id: 7, state: 'queued' }, record: { id: 1 } }, 202)
+    if (path === '/api/_jobs/7') {
+      if (++statusRequests === 1) return new Response(new ReadableStream({
+        start(controller) { controller.error(new TypeError('Connection terminated while reading body')) },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      return response({ id: 7, state: 'succeeded' })
+    }
+    return response({ id: 1, name: 'Project', progress: 50 })
+  }))
+  wrapper = mount(RecordExtras, {
+    props: { model: schema.models.find(model => model.name === 'project'), models: schema.models, record: { id: 1 } },
+    global: { plugins: [PrimeVue] },
+  })
+  await flushPromises()
+  await wrapper.findAll('button').find(button => button.text() === 'Recalculate progress').trigger('click')
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(60000); await flushPromises()
+  expect(wrapper.text()).toContain('Background task: completed')
+  expect(statusRequests).toBe(2)
+})
+
+it.each([
+  [200, 'TypeError', true],
+  [200, 'AbortError', true],
+  [200, 'SyntaxError', false],
+  [403, 'TypeError', false],
+  [503, 'SyntaxError', true],
+])('classifies response-body failure %s/%s while retaining HTTP status', async (status, kind, retryable) => {
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    if (kind === 'SyntaxError') return new Response('invalid JSON', { status })
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.error(kind === 'TypeError' ? new TypeError('Body download failed') : new DOMException('Body download aborted', 'AbortError'))
+      },
+    }), { status })
+  }))
+  await expect(request('/api/_jobs/7')).rejects.toMatchObject({ status, retryable })
 })

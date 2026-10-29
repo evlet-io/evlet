@@ -6,6 +6,7 @@ export class ApiError extends Error {
     super(message)
     this.fields = fields
     this.status = status
+    this.retryable = status === 0 || status >= 500 || [408, 429].includes(status)
   }
 }
 
@@ -23,8 +24,11 @@ export async function request(path, options = {}) {
   let data
   try {
     data = await response.json()
-  } catch {
-    throw new ApiError('The server returned an unreadable response.', {}, response.status)
+  } catch (cause) {
+    const failure = new ApiError('The server returned an unreadable response.', {}, response.status)
+    // A successful header does not guarantee that the response body arrived.
+    if (response.ok && (cause instanceof TypeError || cause?.name === 'AbortError')) failure.retryable = true
+    throw failure
   }
   if (!response.ok) throw new ApiError(data.error || 'The request failed.', data.fields, response.status)
   return data

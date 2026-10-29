@@ -52,7 +52,7 @@ async function checkJob(id, current) {
     }
   } catch (failure) {
     if (current !== generation || job.value?.id !== id) return
-    const retry = failure.status === 0 || failure.status >= 500 || [408, 429].includes(failure.status)
+    const retry = failure.retryable
     jobError.value = failure.message + (retry ? ' Checking again shortly.' : '')
     if (retry) jobTimer = setTimeout(() => checkJob(id, current), 3000)
   }

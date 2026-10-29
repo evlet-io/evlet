@@ -184,7 +184,8 @@ its first successful recovery refreshes the displayed records before continuing
 from the new cursor. Live refresh updates the current list and open details while
 preserving unsaved form values. Navigating away or signing
 out closes subscriptions and pending status checks. Job-status reads retry network
-failures, HTTP 408/429, and server errors after three seconds. Permanent access or
+failures, including interrupted response-body downloads after HTTP 200, as well
+as HTTP 408/429 and server errors after three seconds. Permanent access or
 missing-record errors stop tracking; a new record or job cancels pending retries.
 WebSockets are deferred;
 these updates only require server-to-browser delivery.
