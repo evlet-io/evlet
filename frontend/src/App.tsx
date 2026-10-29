@@ -32,6 +32,10 @@ import {
   Glyph,
   Modal,
   Toast,
+  createDialogs,
+  DialogHost,
+  useValidationDialogs,
+  type DialogController,
   type AppShellProps,
 } from "./ui";
 import { Icons, Icon } from "./demos/icons";
@@ -74,7 +78,14 @@ export function Logo() {
   );
 }
 export default function App() {
-  const router = createRouter();
+  const dialogs = createDialogs();
+  useValidationDialogs(dialogs);
+  const router = createRouter(() => dialogs.confirm({
+    title: "Discard unsaved changes?",
+    message: "Your changes have not been saved. Leave this page and discard them?",
+    confirmLabel: "Discard changes",
+    cancelLabel: "Keep editing",
+  }));
   const [user, setUser] = createSignal<User | null>(null),
     [setup, setSetup] = createSignal(false),
     [connecting, setConnecting] = createSignal(true),
@@ -85,6 +96,7 @@ export default function App() {
     [password, setPassword] = createSignal("");
   let alive = true;
   const expired = () => {
+    dialogs.dismissAll();
     setUser(null);
     setCsrf("");
     setError("Your session ended. Sign in again.");
@@ -103,7 +115,10 @@ export default function App() {
       if (data.user && ["/", "/login"].includes(location.pathname))
         router.navigate("/docs", true, true);
     } catch (e) {
-      if (alive) setError(messageFor(e));
+      if (alive) {
+        setError(messageFor(e));
+        void dialogs.error(messageFor(e), "Unable to connect");
+      }
     } finally {
       if (alive) setConnecting(false);
     }
@@ -131,13 +146,16 @@ export default function App() {
       setPassword("");
       router.navigate("/docs", true, true);
     } catch (e) {
-      if (alive) setError(messageFor(e));
+      if (alive) {
+        setError(messageFor(e));
+        void dialogs.error(messageFor(e), "Unable to sign in");
+      }
     } finally {
       if (alive) setBusy(false);
     }
   }
   async function logout() {
-    if (!router.navigate("/docs")) return;
+    if (!(await router.navigate("/docs"))) return;
     setBusy(true);
     try {
       await authRequest("logout", {});
@@ -147,6 +165,7 @@ export default function App() {
       setError("");
     } catch (e) {
       setError(messageFor(e));
+      void dialogs.error(messageFor(e), "Unable to sign out");
     } finally {
       setBusy(false);
     }
@@ -163,6 +182,7 @@ export default function App() {
   return (
     <>
       <Icons />
+      <DialogHost dialogs={dialogs} />
       <Show
         when={!connecting()}
         fallback={
@@ -259,6 +279,7 @@ export default function App() {
                 user={account}
                 tenant={tenant()}
                 router={router}
+                dialogs={dialogs}
                 onLogout={logout}
                 accountError={error()}
                 busy={busy()}
@@ -271,6 +292,7 @@ export default function App() {
   );
 }
 function Workspace(props: {
+  dialogs: DialogController;
   user: User;
   tenant: any;
   router: ReturnType<typeof createRouter>;
@@ -300,8 +322,8 @@ function Workspace(props: {
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => setNotice(""), 6500);
   };
-  const navigate = (path: string) => {
-    if (props.router.navigate(path)) {
+  const navigate = async (path: string) => {
+    if (await props.router.navigate(path)) {
       setNavOpen(false);
       setSearchOpen(false);
     }
@@ -361,6 +383,7 @@ function Workspace(props: {
     user: props.user,
     tenant: props.tenant?.name || "local",
     router: props.router,
+    dialogs: props.dialogs,
     notify,
     refresh: revision,
     capabilities: data()!.capabilities,

@@ -166,6 +166,15 @@ export default function RecordForm(props: {
       if (alive && current === sequence) setLoading(false);
     }
   }
+  async function reloadDraft() {
+    if (isDirty() && !(await app.dialogs.confirm({
+      title: "Reload this record?",
+      message: "Your unsaved changes will be discarded and replaced with the latest saved record.",
+      confirmLabel: "Discard and reload",
+      cancelLabel: "Keep editing",
+    }))) return;
+    if (alive) await load();
+  }
   async function save(e?: SubmitEvent) {
     e?.preventDefault();
     if (busy() || !canEdit() || loading()) return;
@@ -179,7 +188,10 @@ export default function RecordForm(props: {
       childDirty(),
     );
     setErrors(payload.errors);
-    if (Object.keys(payload.errors).length) return;
+    if (Object.keys(payload.errors).length) {
+      void app.dialogs.error(Object.values(payload.errors).join("\n"), "Check your entries");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -203,6 +215,7 @@ export default function RecordForm(props: {
         );
     } catch (e: any) {
       if (alive) {
+        void app.dialogs.error(messageFor(e), "Unable to save");
         setErrors(e.fields || {});
         setError(messageFor(e));
         if (e.status === 409) setStale(true);
@@ -324,7 +337,10 @@ export default function RecordForm(props: {
         jobTimer = setTimeout(() => pollJob(result.job.id), 500);
       } else app.notify("Action completed.");
     } catch (e) {
-      if (alive) setError(messageFor(e));
+      if (alive) {
+        setError(messageFor(e));
+        void app.dialogs.error(messageFor(e));
+      }
     } finally {
       if (alive) setBusy(false);
     }
@@ -366,6 +382,7 @@ export default function RecordForm(props: {
       if (alive) {
         setDialog("");
         setError(messageFor(e));
+        void app.dialogs.error(messageFor(e), "Unable to delete record");
       }
     } finally {
       if (alive) setBusy(false);
@@ -487,13 +504,7 @@ export default function RecordForm(props: {
             {error()}{" "}
             <Show when={!isNew}>
               <Button
-                onClick={() => {
-                  if (
-                    !isDirty() ||
-                    window.confirm("Discard your draft and reload?")
-                  )
-                    void load();
-                }}
+                onClick={reloadDraft}
               >
                 Reload
               </Button>
@@ -505,14 +516,7 @@ export default function RecordForm(props: {
             The server has newer changes. Your draft is still here.{" "}
             <Button
               size="small"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Discard your draft and reload the current record?",
-                  )
-                )
-                  void load();
-              }}
+              onClick={reloadDraft}
             >
               Reload record
             </Button>
@@ -738,6 +742,7 @@ function Attachments(props: {
   disabled: boolean;
   revision: number;
 }) {
+  const app = useApp();
   const [files, setFiles] = createSignal<any[]>([]),
     [error, setError] = createSignal(""),
     [busy, setBusy] = createSignal(false);
@@ -772,6 +777,7 @@ function Attachments(props: {
     setError("");
     if (!file.size || file.size > 1024 * 1024) {
       setError("Use a nonempty file up to 1 MiB.");
+      void app.dialogs.error("Use a nonempty file up to 1 MiB.", "Unable to attach file");
       input.value = "";
       return;
     }
@@ -791,7 +797,10 @@ function Attachments(props: {
       );
       if (alive) setFiles((old) => [...old, saved]);
     } catch (e) {
-      if (alive) setError(messageFor(e));
+      if (alive) {
+        setError(messageFor(e));
+        void app.dialogs.error(messageFor(e), "Unable to update attachments");
+      }
     } finally {
       if (alive) setBusy(false);
       input.value = "";
@@ -805,7 +814,10 @@ function Attachments(props: {
       await request(base + "/" + id, { method: "DELETE" });
       if (alive) setFiles((old) => old.filter((f) => f.id !== id));
     } catch (e) {
-      if (alive) setError(messageFor(e));
+      if (alive) {
+        setError(messageFor(e));
+        void app.dialogs.error(messageFor(e), "Unable to update attachments");
+      }
     } finally {
       if (alive) setBusy(false);
     }

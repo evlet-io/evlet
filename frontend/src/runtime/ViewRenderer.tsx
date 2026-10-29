@@ -652,7 +652,7 @@ export function makeRuntime(
           const op = eventState.evaluate(raw);
           switch (op.op) {
             case "navigate":
-              app.router.navigate(op.path);
+              if (!(await app.router.navigate(op.path))) return;
               break;
             case "back":
               history.back();
@@ -707,7 +707,7 @@ export function makeRuntime(
           }
         }
       } catch (error) {
-        app.notify(messageFor(error));
+        void app.dialogs.error(messageFor(error));
       }
     },
   };

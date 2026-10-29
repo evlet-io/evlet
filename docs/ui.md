@@ -109,6 +109,23 @@ is filtered by the same model and field policy as the existing schema endpoint.
 Custom pages can specify `roles=("admin",)` and `requires=(Customer,)`.
 A page’s UI visibility is not a replacement for server-side authorization.
 
+## Prompts and errors
+
+Confirmations and action errors use Evlet dialogs. Cancelling navigation or a
+record reload keeps the unsaved draft. Back and Forward use the same confirmation.
+Validation errors use an Evlet dialog and return focus to the first invalid field;
+field errors also stay next to their inputs. Loading and background errors remain
+in the relevant view so they do not interrupt editing.
+
+Custom Solid components use `useApp().dialogs.confirm({title, message,
+confirmLabel, cancelLabel})`, which resolves to a boolean, or
+`useApp().dialogs.error(message, title)`. Await confirmation before changing data.
+Dialogs support keyboard focus, Escape, cancellation and queued requests. Do not
+call `window.alert`, `window.confirm` or `window.prompt` in application code.
+
+Closing or reloading a dirty page retains the browser's unsaved-change warning.
+Browsers do not permit a custom interactive dialog during tab unload.
+
 ## Input controls
 
 Select and MultiSelect use searchable dropdowns with keyboard navigation. Type to

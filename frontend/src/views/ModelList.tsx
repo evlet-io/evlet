@@ -252,7 +252,10 @@ export default function ModelList(props: { model: ModelSchema }) {
     setModal("");
     await refetch();
     app.notify(`${removed} record${removed === 1 ? "" : "s"} deleted.`);
-    if (failures.length) setError(failures.join(" "));
+    if (failures.length) {
+      setError(failures.join(" "));
+      void app.dialogs.error(failures.join("\n"), "Some records could not be deleted");
+    }
   }
   return (
     <>

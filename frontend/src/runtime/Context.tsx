@@ -1,7 +1,9 @@
 import { createContext, useContext, type Accessor } from "solid-js";
 import type { UIDocument, ModelSchema, User } from "./types";
 import type { createRouter } from "./Router";
+import type { DialogController } from "../ui";
 export interface ApplicationContext {
+  dialogs: DialogController;
   ui: UIDocument;
   models: ModelSchema[];
   user: User;

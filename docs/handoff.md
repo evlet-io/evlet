@@ -90,7 +90,9 @@ as 6.30pm. Component list and detail panes scroll independently. See `docs/ui.md
 for accepted formats and keyboard behavior. Searchable custom selects replace
 native dropdowns. Field prefixes are configurable, with AED set explicitly in the
 Playground. Checkboxes keep compact inline labels, and list selection actions use
-the existing toolbar without pushing the table down.
+the existing toolbar without pushing the table down. Confirmations, validation
+and action errors use Evlet dialogs. Only the tab close/reload unsaved-change
+warning remains browser-owned, as required by browser restrictions.
 
 Vue and PrimeVue remain only in `frontend/legacy` and development dependencies for
 regression comparison. The active production bundle uses Solid and the custom

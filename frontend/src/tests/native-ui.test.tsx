@@ -8,6 +8,7 @@ import {
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
+import { createDialogs, DialogHost } from "../ui";
 import FieldInput from "../views/FieldInput";
 import ModelList from "../views/ModelList";
 import RecordForm, { buildRecordPayload } from "../views/RecordForm";
@@ -39,7 +40,8 @@ function context(
 ) {
   history.replaceState({}, "", path);
   return render(() => {
-    const router = createRouter();
+    const dialogs = createDialogs();
+    const router = createRouter(() => dialogs.confirm({title: "Discard unsaved changes?", message: "Your changes have not been saved.", confirmLabel: "Discard changes"}));
     return (
       <AppContext.Provider
         value={{
@@ -48,11 +50,13 @@ function context(
           user,
           tenant: "local",
           router,
+          dialogs,
           notify: vi.fn(),
           refresh,
           capabilities: {},
         }}
       >
+        <DialogHost dialogs={dialogs} />
         {body()}
       </AppContext.Provider>
     );
@@ -229,13 +233,25 @@ it("loads a generated form, sends the revision, and preserves the draft on confl
     target: { value: "My draft" },
   });
   fireEvent.submit(screen.getByLabelText(/Name/).closest("form")!);
-  await screen.findByText("This record changed.");
+  const failure = await screen.findByRole("alertdialog", {name: "Unable to save"});
+  expect(failure).toHaveTextContent("This record changed.");
+  fireEvent.click(within(failure).getByRole("button", {name: "OK"}));
   expect(screen.getByLabelText(/Name/)).toHaveValue("My draft");
   const call = api.request.mock.calls.find(
     ([, options]) => options?.method === "PATCH",
   )!;
   expect(call[1].headers["If-Match"]).toBe('"revision-one"');
   expect(JSON.parse(call[1].body)).toEqual({ name: "My draft" });
+  const requests = api.request.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", {name: "Reload record"}));
+  const reload = await screen.findByRole("dialog", {name: "Reload this record?"});
+  fireEvent.click(within(reload).getByRole("button", {name: "Keep editing"}));
+  expect(screen.getByLabelText(/Name/)).toHaveValue("My draft");
+  expect(api.request.mock.calls).toHaveLength(requests);
+  fireEvent.click(screen.getByRole("button", {name: "Reload record"}));
+  fireEvent.click(screen.getByRole("button", {name: "Discard and reload"}));
+  await screen.findByDisplayValue("Original");
+  expect(api.request.mock.calls).toHaveLength(requests + 1);
 });
 it("renders viewer fields read-only and hides mutations", async () => {
   api.request.mockResolvedValue({
@@ -341,7 +357,9 @@ it("validates an uploaded file and shows attachment failures without losing the 
   fireEvent.change(screen.getByLabelText("Attach file"), {
     target: { files: [new File([], "empty.txt")] },
   });
-  await screen.findByText("Use a nonempty file up to 1 MiB.");
+  const failure = await screen.findByRole("alertdialog", {name: "Unable to attach file"});
+  expect(failure).toHaveTextContent("Use a nonempty file up to 1 MiB.");
+  fireEvent.click(within(failure).getByRole("button", {name: "OK"}));
   expect(api.recordRequest).not.toHaveBeenCalled();
   expect(screen.getByDisplayValue("Project")).toBeInTheDocument();
 });
@@ -544,4 +562,18 @@ it("searches linked records on the server inside the dropdown", async () => {
   ).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("option", { name: "Beta customer" }));
   expect(changed).toHaveBeenCalledWith(2);
+});
+
+it("does not sign out while unsaved navigation is awaiting a decision", async () => {
+  history.replaceState({}, "", "/app/customer/new");
+  api.request.mockImplementation(async (path: string) => path === "/api/auth/session" ? { user, csrf: "test-csrf" } : path === "/api/ui" ? ui : {});
+  render(() => <App />);
+  await screen.findByRole("heading", {name: "New customer"});
+  fireEvent.input(screen.getByLabelText(/Name/), {target: {value: "Keep this draft"}});
+  fireEvent.click(screen.getByRole("button", {name: "Sign out"}));
+  await screen.findByRole("dialog", {name: "Discard unsaved changes?"});
+  expect(api.authRequest).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", {name: "Keep editing"}));
+  expect(screen.getByLabelText(/Name/)).toHaveValue("Keep this draft");
+  expect(api.authRequest).not.toHaveBeenCalled();
 });

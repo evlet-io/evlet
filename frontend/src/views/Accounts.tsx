@@ -33,6 +33,7 @@ export default function Accounts() {
       await refetch();
     } catch (e) {
       setError(messageFor(e));
+      void app.dialogs.error(messageFor(e), "Unable to update accounts");
     } finally {
       setBusy(false);
     }
@@ -47,6 +48,7 @@ export default function Accounts() {
       app.notify("Account updated.");
     } catch (e) {
       setError(messageFor(e));
+      void app.dialogs.error(messageFor(e), "Unable to update accounts");
       void refetch();
     } finally {
       setBusy(false);

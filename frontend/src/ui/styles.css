@@ -3038,3 +3038,6 @@
 .ev-picker-time-row input { width: 100%; font: 12px var(--ev-font); padding: 6px 8px; min-height: 31px; height: 31px; }
 .ev-picker-zone { color: #929caf; font-size: 10px; align-self: flex-end; padding-bottom: 9px; }
 .ev-picker-time-row .ev-picker-apply { color: #fff; background: var(--ev-accent); padding: 8px 10px; border-radius: 5px; font-size: 11px; }
+
+.ev-message-dialog { width: 420px; }
+.ev-message-copy { margin: 0; line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }

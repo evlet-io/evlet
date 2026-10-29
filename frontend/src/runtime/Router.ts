@@ -57,23 +57,90 @@ export function matchRoute(
     params: {},
   };
 }
-export function createRouter() {
-  const [location, setLocation] = createSignal(
-    window.location.pathname + window.location.search,
-  );
+export function createRouter(confirmDiscard: () => Promise<boolean>) {
+  const path = () => window.location.pathname + window.location.search;
+  const [location, setLocation] = createSignal(path());
+  const position = () => Number.isInteger(history.state?.evletIndex) ? history.state.evletIndex as number : undefined;
+  let index = position() ?? 0;
+  history.replaceState({ ...history.state, evletIndex: index }, "");
   let guard: (() => boolean) | undefined;
-  let previous = location();
-  const allowed = () =>
-    !guard || !guard() || window.confirm("Discard your unsaved changes?");
-  const update = () => {
-    if (!allowed()) {
-      history.pushState({}, "", previous);
+  let pending = false;
+  let generation = 0;
+  let disposed = false;
+  let restore: (() => void) | undefined;
+  let restored: Promise<void> | undefined;
+  let replay = false;
+  async function allowed() {
+    if (!guard?.()) return true;
+    const currentGuard = guard;
+    const currentGeneration = generation;
+    const answer = await confirmDiscard();
+    return answer && !disposed && generation === currentGeneration && guard === currentGuard;
+  }
+  function restoreCurrent(targetIndex: number) {
+    if (!restored) {
+      restored = new Promise<void>((resolve) => {
+        restore = resolve;
+        history.go(index - targetIndex);
+      });
+    }
+    return restored;
+  }
+  function commit() {
+    index = position() ?? index;
+    history.replaceState({ ...history.state, evletIndex: index }, "");
+    setLocation(path());
+  }
+  const update = async () => {
+    const targetIndex = position();
+    if (restore) {
+      if (targetIndex !== index && targetIndex !== undefined) {
+        history.go(index - targetIndex);
+        return;
+      }
+      const done = restore;
+      restore = undefined;
+      restored = undefined;
+      done();
       return;
     }
-    previous = window.location.pathname + window.location.search;
-    setLocation(previous);
+    if (replay) {
+      replay = false;
+      pending = false;
+      commit();
+      return;
+    }
+    if (pending) {
+      if (targetIndex !== undefined && targetIndex !== index) {
+        void restoreCurrent(targetIndex);
+      }
+      return;
+    }
+    if (!guard?.()) { commit(); return; }
+    pending = true;
+    const target = path();
+    if (targetIndex !== undefined && targetIndex !== index) {
+      // Restore the current entry before asking, then replay the same traversal.
+      await restoreCurrent(targetIndex);
+      if (disposed) return;
+      const accepted = await allowed();
+      if (restored) await restored;
+      if (accepted && !disposed) {
+        replay = true;
+        history.go(targetIndex - index);
+      } else pending = false;
+    } else {
+      // An entry from outside the router has no position to traverse back to.
+      history.replaceState({ ...history.state, evletIndex: index }, "", location());
+      if (await allowed()) {
+        history.pushState({ evletIndex: ++index }, "", target);
+        setLocation(target);
+      }
+      pending = false;
+    }
   };
   const before = (event: BeforeUnloadEvent) => {
+    // Browsers only permit their own warning when closing or reloading a tab.
     if (guard?.()) {
       event.preventDefault();
       event.returnValue = "";
@@ -82,6 +149,9 @@ export function createRouter() {
   window.addEventListener("popstate", update);
   window.addEventListener("beforeunload", before);
   onCleanup(() => {
+    disposed = true;
+    generation++;
+    restore?.();
     window.removeEventListener("popstate", update);
     window.removeEventListener("beforeunload", before);
   });
@@ -89,20 +159,27 @@ export function createRouter() {
     location,
     setGuard(value?: () => boolean) {
       guard = value;
+      generation++;
     },
-    navigate(path: string, replace = false, bypass = false) {
+    async navigate(path: string, replace = false, bypass = false) {
       if (
-        !path.startsWith("/") ||
-        path.startsWith("//") ||
-        path.includes("\\") ||
-        /[\r\n\0]/.test(path)
-      )
-        throw new Error("Use an application-relative URL");
-      if (!bypass && !allowed()) return false;
-      history[replace ? "replaceState" : "pushState"]({}, "", path);
-      previous = path;
-      setLocation(path);
-      return true;
+        !path.startsWith("/") || path.startsWith("//") ||
+        path.includes("\\") || /[\r\n\0]/.test(path)
+      ) throw new Error("Use an application-relative URL");
+      if (disposed || (!bypass && pending)) return false;
+      if (bypass) generation++;
+      pending = true;
+      try {
+        const accepted = bypass || await allowed();
+        if (restored) await restored;
+        if (!accepted || disposed) return false;
+        if (!replace) index++;
+        history[replace ? "replaceState" : "pushState"]({ ...history.state, evletIndex: index }, "", path);
+        setLocation(path);
+        return true;
+      } finally {
+        pending = false;
+      }
     },
   };
 }
