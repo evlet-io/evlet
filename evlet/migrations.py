@@ -159,7 +159,10 @@ class AddField:
         value = self.backfill if self.backfill is not MISSING else self.field.default
         if callable(value):
             raise SchemaError('Migration backfills must be fixed values')
-        cleaned = self.field.clean(value)
+        try:
+            cleaned = self.field.clean(value)
+        except ValueError as exc:
+            raise SchemaError(str(exc)) from exc
         if isinstance(cleaned, str) and '\x00' in cleaned:
             raise SchemaError('Migration backfills cannot contain NUL characters')
         return cleaned

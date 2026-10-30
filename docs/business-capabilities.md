@@ -25,8 +25,11 @@ Sessions last eight hours. Cookies are HttpOnly, SameSite=Strict, and Secure by
 default. The Playground explicitly permits insecure cookies only for its loopback
 HTTP origins. The database stores a SHA-256 session-token digest. Logout, password
 changes, role changes, and disabling an account invalidate the affected sessions.
-Failed sign-ins are limited to ten attempts per client address in 15 minutes;
-successful sign-in resets that client's counter. Proxy forwarding headers are not
+Sign-in attempts are limited to ten per client-network and username pair in 15
+minutes, with a broader 100-attempt network cap. IPv6 clients share their /64 prefix.
+Success clears only that account's pair counter, not the network cap or other users'
+counters. Password hashing admits at most two concurrent operations per process;
+excess work gets HTTP 503 without waiting for a hashing slot. Proxy forwarding headers are not
 trusted. There is no SSO, email recovery, MFA, or tenant account directory yet.
 
 Use exact origins when configuring authentication:
@@ -45,6 +48,10 @@ role='admin')` can provision an account after initialization. `auth.update_user(
 `getpass`; do not put real passwords in shell arguments, history, or source files.
 
 `Application(database)` remains an unauthenticated development API for compatibility.
+It accepts only loopback Host names by default and rejects foreign Origins.
+A trusted development deployment can pass explicit Host header values, for example
+`Application(database, hosts=('dev.example.test',))`; this does not enable
+authentication or make the API suitable for public access.
 Passing business features without authentication raises an error. The Playground
 always configures authentication. Direct Python database sessions are trusted and
 do not apply HTTP permissions.
@@ -229,3 +236,7 @@ existing account. Its account is retained only in that disposable test database.
 Tenant routing, hosting, custom domains, storage adapters, jobs, realtime, external
 integrations, and production hardening remain later milestones. Nothing in this
 milestone merges or deploys the application.
+
+Child collection replacement applies to the rows the user can see. Hidden rows
+are preserved; submitting a hidden child ID is rejected. Deleting a parent still
+requires permission to delete every owned child.

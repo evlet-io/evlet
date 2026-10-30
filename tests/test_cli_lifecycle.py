@@ -131,7 +131,7 @@ def test_install_second_app_preserves_records_and_history(project):
 
 def test_missing_dependency_fails_before_import_or_data(project):
     path = project / 'apps/notes/pyproject.toml'
-    path.write_text(path.read_text().replace('"evlet>=0.1.0,<0.2"', '"evlet>=0.1.0,<0.2", "missing_evlet_test_dependency>=1"'))
+    path.write_text(path.read_text().replace('"evlet>=0.1.2,<0.2"', '"evlet>=0.1.2,<0.2", "missing_evlet_test_dependency>=1"'))
     with pytest.raises(ValueError, match='Missing dependency'):
         install(project, 'acme', app_name='notes', trust=True)
     assert not (project / 'instances/acme/data').exists()
@@ -140,7 +140,7 @@ def test_missing_dependency_fails_before_import_or_data(project):
 def test_local_dependency_installed_first(project):
     create_app(project, 'crm')
     path = project / 'apps/notes/pyproject.toml'
-    path.write_text(path.read_text().replace('"evlet>=0.1.0,<0.2"', '"evlet>=0.1.0,<0.2", "crm>=0.1"'))
+    path.write_text(path.read_text().replace('"evlet>=0.1.2,<0.2"', '"evlet>=0.1.2,<0.2", "crm>=0.1"'))
     result = install(project, 'acme', app_name='notes', trust=True)
     assert result['apps'] == ['crm', 'notes']
     assert set(runtime(project).registry.models) == {'crmitem', 'notesitem'}
@@ -150,7 +150,7 @@ def test_circular_dependencies_rejected(project):
     create_app(project, 'crm')
     for name, dependency in (('notes', 'crm'), ('crm', 'notes')):
         path = project / f'apps/{name}/pyproject.toml'
-        path.write_text(path.read_text().replace('"evlet>=0.1.0,<0.2"', f'"evlet>=0.1.0,<0.2", "{dependency}>=0.1"'))
+        path.write_text(path.read_text().replace('"evlet>=0.1.2,<0.2"', f'"evlet>=0.1.2,<0.2", "{dependency}>=0.1"'))
     with pytest.raises(ValueError, match='Circular'):
         install(project, 'acme', app_name='notes', trust=True)
 
@@ -515,3 +515,90 @@ def test_runtime_source_policy_leaves_unrelated_packages_alone(project, tmp_path
     finally:
         sys.modules.pop('unmanaged_package.helper', None)
         sys.modules.pop('unmanaged_package', None)
+
+
+def test_local_lock_is_portable_and_moving_project_keeps_data(project, tmp_path, monkeypatch):
+    import shutil
+    install(project, 'acme', app_name='notes', trust=True)
+    app = runtime(project)
+    app.database.create(app.registry.models['notesitem'], title='Portable')
+    app.database.close()
+    assert read_lock(project/'instances/acme')['apps']['notes']['source'] == 'apps/notes'
+    moved = tmp_path/'moved'
+    shutil.copytree(project, moved)
+    for name in list(sys.modules):
+        if name == 'notes' or name.startswith('notes.'):
+            monkeypatch.delitem(sys.modules, name)
+    other = runtime(moved)
+    assert other.database.list(other.registry.models['notesitem'])[0].title == 'Portable'
+
+
+def test_legacy_absolute_local_lock_remains_readable(project, monkeypatch):
+    from evlet.cli.project import atomic_json, json_text
+    install(project, 'acme', app_name='notes', trust=True)
+    path = project/'instances/acme'
+    old = read_lock(path)
+    old['apps']['notes']['source'] = '/previous/machine/project/apps/notes'
+    atomic_json(path/'apps.lock', old)
+    with sqlite3.connect(path/'data/database.sqlite3') as connection:
+        connection.execute('UPDATE evlet_installed_apps SET manifest=? WHERE id=1', (json_text(old),))
+    assert runtime(project).registry.models['notesitem']
+    install(project, 'acme', confirm=lambda message: pytest.fail('Relocation alone must not request trust'))
+    assert read_lock(path)['apps']['notes']['source'] == 'apps/notes'
+
+
+def test_app_root_helpers_are_not_exposed_during_registration(project):
+    helper = project/'apps/notes/outside_lock_helper.py'
+    helper.write_text('value = 1\n')
+    hooks = project/'apps/notes/notes/hooks.py'
+    hooks.write_text('import outside_lock_helper\n' + hooks.read_text())
+    with pytest.raises(ModuleNotFoundError, match='outside_lock_helper'):
+        install(project, 'acme', app_name='notes', trust=True)
+    assert str(helper.parent) not in sys.path
+
+
+@pytest.mark.parametrize('name', ['uvicorn', 'packaging', 'boto3'])
+def test_app_names_do_not_shadow_runtime_libraries(project, name):
+    with pytest.raises(ValueError, match='conflicts'):
+        create_app(project, name)
+    assert not (project/'apps'/name).exists()
+
+
+def test_scaffold_preserves_underscores_and_uses_supported_evlet_version(project):
+    for name in ('shop_x', 'shopx'):
+        create_app(project, name)
+        install(project, 'acme', app_name=name, trust=True)
+    assert {'shop_xitem', 'shopxitem'} <= runtime(project).registry.models.keys()
+    metadata = (project/'apps/shop_x/pyproject.toml').read_text()
+    assert 'evlet>=0.1.2,<0.2' in metadata and 'title = "Shop X"' in metadata
+    for name in list(sys.modules):
+        if name.split('.')[0] in ('shop_x', 'shopx'):
+            del sys.modules[name]
+
+
+def test_unchanged_migrate_does_not_create_backup(project):
+    install(project, 'acme', app_name='notes', trust=True)
+    path = project/'instances/acme/data/backups'
+    before = list(path.glob('*'))
+    result = install(project, 'acme')
+    assert result['backup'] is None and result['migrations'] == []
+    assert list(path.glob('*')) == before
+
+
+def test_instance_session_uses_its_name_and_unique_preference_identity(project):
+    from test_business import http
+    install(project, 'acme', app_name='notes', trust=True)
+    create_instance(project, 'beta')
+    install(project, 'beta', app_name='notes', trust=True)
+    first, second = runtime(project), runtime(project, 'beta')
+    a = http(first, 'GET', '/api/auth/session')[1]['application']
+    b = http(second, 'GET', '/api/auth/session')[1]['application']
+    assert a['name'] == 'Acme' and b['name'] == 'Beta'
+    assert not a['playground'] and not b['playground']
+    assert a['id'] != b['id']
+    assert http(runtime(project), 'GET', '/api/auth/session')[1]['application']['id'] == a['id']
+
+
+def test_offline_docs_exclude_internal_handoff():
+    from evlet.cli.docs import documentation
+    assert 'handoff.md' not in documentation()

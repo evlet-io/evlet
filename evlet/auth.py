@@ -8,11 +8,13 @@ import ipaddress
 import re
 import secrets
 import time
+from threading import BoundedSemaphore
 from urllib.parse import urlsplit
 
 from .models import ValidationError
 
 ROLES = ('admin', 'editor', 'viewer')
+_HASH_SLOTS = BoundedSemaphore(2)
 
 
 class AccessError(Exception):
@@ -38,8 +40,13 @@ def password_hash(password, salt=None):
     except UnicodeError:
         raise ValidationError({'password': 'Use valid Unicode text'})
     salt = secrets.token_hex(16) if salt is None else salt
-    digest = hashlib.scrypt(encoded, salt=bytes.fromhex(salt),
-                            n=2**17, r=8, p=1, maxmem=256 * 1024 * 1024).hex()
+    if not _HASH_SLOTS.acquire(blocking=False):
+        raise AccessError(503, 'Password service is busy. Try again shortly.')
+    try:
+        digest = hashlib.scrypt(encoded, salt=bytes.fromhex(salt),
+                                n=2**17, r=8, p=1, maxmem=256 * 1024 * 1024).hex()
+    finally:
+        _HASH_SLOTS.release()
     return f'scrypt:{salt}:{digest}'
 
 
@@ -137,7 +144,7 @@ class LocalAuth:
 
     def setup(self, scope, body):
         try:
-            loopback = ipaddress.ip_address(scope.get('client', ('',))[0]).is_loopback
+            loopback = ipaddress.ip_address((scope.get('client') or ('',))[0]).is_loopback
         except ValueError:
             loopback = False
         if not self.allow_setup or not loopback or not self.setup_needed():
@@ -152,14 +159,26 @@ class LocalAuth:
         if set(body) != {'username', 'password'} or not all(isinstance(body[k], str) for k in body):
             raise AccessError(401, 'Invalid username or password')
         now = int(time.time())
-        client = hashlib.sha256(scope.get('client', ('unknown',))[0].encode()).hexdigest()
+        username = body['username'].lower()
+        if not re.fullmatch(r'[a-z0-9_.-]{3,64}', username):
+            raise AccessError(401, 'Invalid username or password')
+        address = (scope.get('client') or ('unknown',))[0]
+        try:
+            ip = ipaddress.ip_address(address)
+            address = str(ipaddress.ip_network(f'{ip}/64', strict=False)) if ip.version == 6 else str(ip)
+        except ValueError:
+            address = 'unknown'
+        client = hashlib.sha256(('network:' + address).encode()).hexdigest()
+        pair = hashlib.sha256(('account:' + address + ':' + username).encode()).hexdigest()
         with self.database.transaction() as tx:
             tx.connection.execute('DELETE FROM evlet_login_limits WHERE resets<=?', (now,))
             tx.connection.execute('DELETE FROM evlet_sessions WHERE expires<=?', (now,))
-            row = tx.connection.execute('SELECT attempts FROM evlet_login_limits WHERE client=?', (client,)).fetchone()
-            if row and row['attempts'] >= 10:
-                raise AccessError(429, 'Too many sign-in attempts. Try again in 15 minutes.')
-            tx.connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1', (client, now + 900))
+            for key, limit in ((pair, 10), (client, 100)):
+                row = tx.connection.execute('SELECT attempts FROM evlet_login_limits WHERE client=?', (key,)).fetchone()
+                if row and row['attempts'] >= limit:
+                    raise AccessError(429, 'Too many sign-in attempts. Try again in 15 minutes.')
+            for key in (pair, client):
+                tx.connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1', (key, now + 900))
             account = tx.connection.execute('SELECT * FROM evlet_users WHERE username=?', (body['username'].lower(),)).fetchone()
         stored = account['password'] if account else 'scrypt:' + '00' * 16 + ':' + '00' * 64
         try:
@@ -174,7 +193,7 @@ class LocalAuth:
             current = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (account['id'],)).fetchone()
             if not current or not current['active'] or current['password'] != stored or current['role'] != account['role']:
                 raise AccessError(401, 'Invalid username or password')
-            tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (client,))
+            tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (pair,))
             tx.connection.execute('DELETE FROM evlet_sessions WHERE token=?', (self.token(scope),))
             tx.connection.execute('INSERT INTO evlet_sessions VALUES (?,?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), account['id'], csrf, now + 28800))
         return {'user': User(account['id'], account['username'], account['role']).public(), 'csrf': csrf}, [self.cookie(token)]

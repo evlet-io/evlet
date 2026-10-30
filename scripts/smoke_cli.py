@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from evlet import HTTPClient
 
@@ -72,9 +72,17 @@ def main():
             assert client.get('/api/notesitem')['items'][0]['title'] == 'Survives restart'
             busy = command('migrate', 'acme', '--trust', '--project', root, check=False)
             assert busy.returncode == 1 and 'in use' in busy.stderr
+            stream = urlopen(Request(url + '/api/_events/stream', headers={'Cookie':client.cookie}), timeout=10)
+            assert stream.readline().startswith(b'id:')
+            shutdown_started = time.monotonic()
+        assert time.monotonic() - shutdown_started < 5, 'Open event stream delayed shutdown'
+        stream.close()
         with server('dev', '--instance', 'acme', '--project', root) as url:
             client = HTTPClient(url).login('owner', password)
             assert client.get('/api/notesitem')['items'][0]['title'] == 'Survives restart'
+            stream = urlopen(Request(url + '/api/_events/stream', headers={'Cookie':client.cookie}), timeout=10)
+            assert stream.readline().startswith(b'id:')
+            reload_started = time.monotonic()
             model = root / 'apps/notes/notes/models/__init__.py'
             model.write_text(model.read_text().replace("plural = 'Items'", "plural = 'Reloaded notes'"))
             for _ in range(80):
@@ -86,6 +94,8 @@ def main():
                 time.sleep(.15)
             else:
                 raise RuntimeError('Python development reload did not update the UI schema')
+            assert time.monotonic() - reload_started < 5, 'Open event stream delayed reload'
+            stream.close()
         command('migrate', 'acme', '--trust', '--project', root)
         with server('serve', 'acme', '--project', root) as url:
             client = HTTPClient(url).login('owner', password)

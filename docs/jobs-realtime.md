@@ -277,3 +277,10 @@ execution, event polling, SSE, cookie replay rejection, and persistence. Its
 `--frontend` and `--caddy` variants test Vite and local HTTPS. All use disposable
 state and stop their own processes. Local validation does not establish public
 cloud operation, production capacity, or deployment readiness.
+
+A known database failure before a task handler starts, or a graceful stop after
+claiming, returns the job to the queue without consuming an attempt. Handler
+failures still use the task retry policy. A crashed worker retains the existing
+lease recovery and attempt limit. CLI servers end live event streams before
+waiting for graceful shutdown; other ASGI hosts can call `Application.stop()`
+when beginning their shutdown drain.

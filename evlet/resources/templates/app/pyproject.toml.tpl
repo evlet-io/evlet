@@ -6,11 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "{{name}}"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["evlet>=0.1.0,<0.2"]
+dependencies = ["evlet>=0.1.2,<0.2"]
 
 [tool.evlet]
 app = true
-title = "{{name}}"
+title = "{{title}}"
 
 [tool.setuptools.packages.find]
 include = ["{{name}}*"]

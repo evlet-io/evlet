@@ -112,6 +112,9 @@ def operation(value):
         r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?", value.args["action"]
     ):
         raise ValueError("Use a registered action name")
+    if value.kind == "execute" and value.args["model"] is not None:
+        if not isinstance(value.args["model"], str) or not re.fullmatch(r"[a-z][a-z0-9_]*", value.args["model"]):
+            raise ValueError("Use a registered model name")
     return {"op": value.kind, **serializable(value.args)}
 
 
@@ -200,10 +203,8 @@ class SchemaCompiler:
             if "style" in props and isinstance(props["style"], dict):
                 if any(
                     not isinstance(v, (str, int, float))
-                    or any(
-                        word in str(v).lower()
-                        for word in ("url(", "expression(", "@import", "javascript:")
-                    )
+                    or "\\" in str(v) or "/*" in str(v)
+                    or re.search(r"(?:url|(?:-webkit-)?image-set|image|src|expression)\s*\(|@import|javascript:", str(v), re.I)
                     for v in props["style"].values()
                 ):
                     raise ValueError(

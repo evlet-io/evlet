@@ -74,7 +74,9 @@ class Model(metaclass=ModelType):
 
     @classmethod
     def _from_row(cls, row):
-        instance = cls(**{
+        # Stored snapshots must remain readable after business rules change.
+        instance = cls.__new__(cls)
+        instance._values = MappingProxyType({
             name: field.from_storage(row[name]) for name, field in cls.__fields__.items()
         })
         instance._id = row["id"]

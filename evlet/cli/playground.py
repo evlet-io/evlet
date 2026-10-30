@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 
 from .. import Database, LocalAuth
-from .serve import ManagedRuntime
+from .serve import ManagedRuntime, run_server
 
 
 def modules():
@@ -33,7 +33,6 @@ def playground_app(directory, port=8000):
 
 
 def playground(*, port=8000):
-    import uvicorn
     with tempfile.TemporaryDirectory(prefix='evlet-playground-') as directory:
         print(f'Playground: http://127.0.0.1:{port}\nDemo data is temporary. Create an administrator to explore the existing UI.', flush=True)
-        uvicorn.run(ManagedRuntime(lambda: playground_app(directory, port), jobs=True), host='127.0.0.1', port=port, lifespan='on', proxy_headers=False)
+        run_server(ManagedRuntime(lambda: playground_app(directory, port), jobs=True), host='127.0.0.1', port=port, lifespan='on', proxy_headers=False)

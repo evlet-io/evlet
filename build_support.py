@@ -19,5 +19,7 @@ class BuildPy(build_py):
             shutil.copy2(root / 'examples/playground' / name, playground / name)
         docs = resources / 'docs'
         docs.mkdir(parents=True, exist_ok=True)
+        (docs / 'handoff.md').unlink(missing_ok=True)
         for path in (root / 'docs').glob('*.md'):
-            shutil.copy2(path, docs / path.name)
+            if path.name != 'handoff.md':
+                shutil.copy2(path, docs / path.name)

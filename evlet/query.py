@@ -59,7 +59,7 @@ class Query:
                 if not isinstance(key, str):
                     raise ValueError('Filter names must be strings')
                 parts = key.split('__')
-                operator = parts.pop() if parts[-1] in OPERATORS else 'eq'
+                operator = parts.pop() if len(parts) > 1 and parts[-1] in OPERATORS else 'eq'
                 column, field = self.reference('__'.join(parts))
                 if operator == 'isnull':
                     if type(value) is not bool:

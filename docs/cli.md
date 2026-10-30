@@ -4,6 +4,9 @@ The installed Python package contains the CLI, browser UI, Playground, templates
 and documentation. Python 3.12 or later is required. Ordinary app development and
 serving need no Node.js, Vite, separate frontend server or framework checkout.
 
+For a step-by-step walkthrough, read [Your first site](getting-started.md).
+See [What you can customize](customizing.md) and [App upgrades](app-upgrades.md) next.
+
 ## First project
 
 ```sh
@@ -86,7 +89,7 @@ versions and distributions. Their `pyproject.toml` uses standard Python metadata
 name = "notes"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["evlet>=0.1.0,<0.2"]
+dependencies = ["evlet>=0.1.2,<0.2"]
 
 [tool.evlet]
 app = true
@@ -94,7 +97,7 @@ title = "Notes"
 ```
 
 Use a lowercase Python package name, at most 48 characters, with letters, digits
-and underscores. Framework and standard-library names are reserved. The current
+and underscores. Framework, standard-library and installed-library names are reserved. The current
 layout is a package directly below the app directory, with a static name/version
 and an explicit `hooks.py`; `src` layouts and dynamic metadata are not supported.
 Keep customer data and secrets in instances, outside the app repository.
@@ -128,7 +131,8 @@ HTTP. Hooks, integration helpers and event-producing action handlers are ordinar
 trusted Python code. No source code is sent to the browser for execution.
 
 Models, actions, routes, permission rules and task names must not conflict across
-apps. The generated starter prefixes its example model with the app name.
+apps. The generated starter preserves the complete app name, including underscores,
+in its example model prefix. Handwritten models must still have unique names.
 Permission rules use existing `(role, model): Rule(...)` pairs. Duplicates fail
 installation rather than silently replacing another app's rules. HTTP clients and
 cross-app user workflows must continue through permission-checked interfaces.
@@ -209,21 +213,24 @@ names with the app identity and preserves the combined database's applied order.
 A later release of one app can append migrations after another app's history.
 Checksums reject changed, removed or reordered applied migrations.
 
-Installation validates contributions, creates a SQLite backup, and runs the
+A changed installation validates contributions, creates a SQLite backup, and runs the
 migration batch against a staged copy. It initializes the existing services and
 registers schedules there. Only after validation does it publish the database,
 record the installed manifest and atomically replace `apps.lock`. A failed staged
 migration leaves the active database, lock and private files intact. Backups stay
-under `data/backups/`; retain matching source revisions and private files as part
+under `data/backups/`; unchanged migrations validate without another backup; retain matching source revisions and private files as part
 of your backup policy. SQL backups alone do not include uploaded file bytes.
 
 The lock records each app's version, source, full Git commit when available, and
-SHA-256 of metadata and package contents. The database stores the actual installed
+SHA-256 of `pyproject.toml` and files inside the named app package, excluding bytecode caches. Root-level files outside that package are not included or made importable by the loader. The database stores the actual installed
 manifest separately. Git revisions identify repository sources; the content hash
 also detects uncommitted changes. Reproducing an uncommitted/local app requires
-preserving those exact source files. The lock is not a source-code archive.
+preserving those exact source files. The lock is not a source-code archive. Local sources use project-relative paths.
+Older absolute local paths remain readable when they identify the same app package;
+`migrate` converts them and the database manifest together. Trusted Python code can
+still import installed dependencies and access its environment; the lock is not a sandbox.
 
-Registered app imports always compile their Python source, including helpers first
+Imports inside registered app packages compile their Python source, including helpers first
 loaded by actions or jobs. Stale bytecode caches are ignored and sourceless `.pyc`
 helpers are rejected. Unrelated Python dependencies keep their normal import
 behavior.
@@ -235,7 +242,7 @@ Lifecycle commands and CLI servers hold an instance file lock. Stop servers and
 other Python writers before installing or migrating. Direct Python consumers
 must cooperate with that operational rule; arbitrary external writers cannot be
 made safe by a CLI file lock. Several CLI server processes may share a running
-instance on POSIX; migration needs the exclusive lock.
+instance on POSIX and Windows; migration needs the exclusive lock.
 
 An interrupted database/lock publication leaves a recovery journal. Serving
 refuses that state. Run `evlet migrate acme --trust` after reviewing the current
@@ -243,9 +250,9 @@ sources. Recovery reconciles the lock only when the database matches one of the
 recorded states, then retries normal validation. Unknown mismatches fail closed
 and require restoring the matching database, files, lock and app source together.
 
-App updates/removal, automatic source checkout, rollback commands and backup/
-restore commands remain later lifecycle work. Do not remove app source used by an
-instance. Changing a schedule's task, payload or interval needs a later explicit
+There are no automatic app update/removal, source checkout, rollback or backup/
+restore commands. Use [App upgrades](app-upgrades.md) for the supported workflow.
+Do not remove app source used by an instance. Changing a schedule's task, payload or interval needs a later explicit
 schedule-update API; unchanged schedules retain their due time and activation.
 
 ## Schedules
@@ -280,3 +287,11 @@ Framework contributors still need Node.js to build browser assets before creatin
 a wheel. Run the frontend tests/build, Python tests, `python -m build`, and the
 installed-package checks. Packaging copies the maintained source examples and
 guides into the wheel; generated projects contain no framework copies.
+
+Expected startup failures print a short message. Use `evlet serve acme --debug`
+or `evlet dev --instance acme --debug` for a traceback. CLI shutdown and reload
+close live-update streams before waiting for active requests.
+
+Private Git repositories require an `ssh://` URL and configured SSH authentication.
+Fetch disables global Git configuration, including HTTPS credential helpers, to
+avoid running checkout hooks and filters.

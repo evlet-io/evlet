@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import sqlite3
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 
 from .database import ConflictError, NotFoundError
 from .models import ValidationError
@@ -25,8 +25,14 @@ class HTTPError(Exception):
 
 
 class Application:
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet"):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None):
         from .ui import ViewRegistry
+        if isinstance(hosts, (str, bytes)):
+            raise ValueError("Pass a collection of explicit Host header values")
+        self.hosts = None if hosts is None else frozenset(hosts)
+        if hosts is not None and (not self.hosts or any(not isinstance(host, str) or not host for host in self.hosts)):
+            raise ValueError("Configure explicit Host header values")
+        self._stopping = asyncio.Event()
         self.name = name
         self.ui = ui or ViewRegistry(views)
         if ui is not None and views:
@@ -37,6 +43,8 @@ class Application:
         if auth is None and (policy is not None or actions or children or attachments or storage is not None or jobs is not None or events is not None):
             raise ValueError("Business features require authentication")
         self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
+        if self.business:
+            self.business.application = {"name": name, "playground": name == "Evlet Playground"}
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -49,6 +57,8 @@ class Application:
             raise ValueError("Unsupported ASGI scope")
         headers = []
         try:
+            if self.business is None:
+                self._guard_local(scope)
             if scope['path'] == '/api/_events/stream' and self.business:
                 await self._event_stream(scope, receive, send)
                 return
@@ -104,6 +114,32 @@ class Application:
         await send({"type": "http.response.start", "status": status, "headers": response_headers})
         await send({"type": "http.response.body", "body": encoded})
 
+    def _guard_local(self, scope):
+        headers = {}
+        for key, value in scope.get('headers', []):
+            key = key.lower()
+            if key in (b'host', b'origin', b'sec-fetch-site') and key in headers:
+                raise AccessError(403, 'Repeated security header')
+            headers[key] = value
+        authority = headers.get(b'host', b'').decode('latin1')
+        try:
+            host = urlsplit('//' + authority)
+            port = host.port
+            if not authority or any(ord(char) <= 32 for char in authority) or host.username or host.password or host.path or host.query or host.fragment:
+                raise ValueError()
+            allowed = authority in self.hosts if self.hosts is not None else host.hostname in ('localhost', '127.0.0.1', '::1')
+            if not allowed:
+                raise ValueError()
+            if b'origin' in headers:
+                origin = urlsplit(headers[b'origin'].decode('latin1'))
+                scheme = scope.get('scheme', 'http')
+                if origin.scheme != scheme or origin.hostname != host.hostname or origin.port != port or origin.username or origin.password or origin.path or origin.query or origin.fragment:
+                    raise ValueError()
+            if headers.get(b'sec-fetch-site') == b'cross-site':
+                raise ValueError()
+        except ValueError:
+            raise AccessError(403, 'Unrecognized host or origin') from None
+
     async def _event_stream(self, scope, receive, send):
         page = await asyncio.to_thread(self.business.event_page, scope)
         await send({'type': 'http.response.start', 'status': 200, 'headers': [
@@ -113,11 +149,12 @@ class Application:
             while (await receive())['type'] != 'http.disconnect':
                 pass
         disconnect = asyncio.create_task(disconnected())
+        stopping = asyncio.create_task(self._stopping.wait())
         try:
             for iteration in range(25):
                 encoded = ('id: ' + page['cursor'] + '\nevent: evlet\ndata: ' + json.dumps(page) + '\n\n').encode()
                 await send({'type': 'http.response.body', 'body': encoded, 'more_body': True})
-                done, _ = await asyncio.wait({disconnect}, timeout=0.05 if page['more'] else 1)
+                done, _ = await asyncio.wait({disconnect, stopping}, timeout=0.05 if page['more'] else 1, return_when=asyncio.FIRST_COMPLETED)
                 if done:
                     return
                 headers = [(key, value) for key, value in scope.get('headers', []) if key != b'last-event-id']
@@ -134,7 +171,8 @@ class Application:
             return
         finally:
             disconnect.cancel()
-            await asyncio.gather(disconnect, return_exceptions=True)
+            stopping.cancel()
+            await asyncio.gather(disconnect, stopping, return_exceptions=True)
             try:
                 await send({'type': 'http.response.body', 'body': b'', 'more_body': False})
             except OSError:
@@ -242,10 +280,15 @@ class Application:
         if self.business:
             self.business.initialize()
 
+    def stop(self):
+        """End live streams before an ASGI server waits for open connections."""
+        self._stopping.set()
+
     async def _lifespan(self, receive, send):
         while True:
             event = await receive()
             if event["type"] == "lifespan.startup":
+                self._stopping = asyncio.Event()
                 try:
                     await asyncio.to_thread(self.initialize)
                 except Exception:
@@ -254,6 +297,7 @@ class Application:
                     return
                 await send({"type": "lifespan.startup.complete"})
             elif event["type"] == "lifespan.shutdown":
+                self.stop()
                 await asyncio.to_thread(self.database.close)
                 await send({"type": "lifespan.shutdown.complete"})
                 return

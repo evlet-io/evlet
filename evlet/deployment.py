@@ -14,6 +14,7 @@ def render_deployment(catalog):
 
 def deployment_files(hosts):
     from .tenancy import hostname
+    from .ui.serving import CSP
     hosts = sorted({hostname(host) for host in hosts})
     if not hosts or any(host.endswith('.localhost') for host in hosts):
         raise ValueError('Use exact production hostnames')
@@ -31,6 +32,8 @@ def deployment_files(hosts):
         file_server
     }}
     header X-Content-Type-Options nosniff
+    header Content-Security-Policy "{CSP}"
+    header Strict-Transport-Security "max-age=31536000"
 }}
 ''')
     service = '''[Unit]

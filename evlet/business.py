@@ -47,6 +47,7 @@ class Business:
     def __init__(self, database, auth, *, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None):
         self.database, self.registry, self.auth = database, database.registry, auth
         self.tenant = None
+        self.application = None
         self.jobs, self.events = jobs, events
         if any(service is not None and service.database is not database for service in (jobs, events)):
             raise ValueError('Jobs and events must use the application database')
@@ -88,6 +89,10 @@ class Business:
         if self.jobs:
             self.jobs.policy = self.policy
             self.jobs.initialize()
+            if self.application is not None:
+                with self.database._connection() as connection:
+                    namespace = connection.execute('SELECT namespace FROM evlet_job_namespace WHERE id=1').fetchone()[0]
+                self.application['id'] = hashlib.sha256(namespace.encode()).hexdigest()
 
     def changed(self, tx, model, record_id, *, deleted=False):
         if self.events:
@@ -140,13 +145,17 @@ class Business:
         path, method = scope['path'], scope['method']
         self.auth.guard(scope)
         if path == '/api/auth/session' and method == 'GET':
+            info = dict(self.application or {})
+            if self.tenant:
+                info.update(name=self.tenant['label'], playground=False)
+            extra = {'application': info} if info else {}
             try:
                 user, csrf = self.auth.session(scope)
-                return 200, {'user': user.public(), 'csrf': csrf, **({'tenant': self.tenant} if self.tenant else {})}, []
+                return 200, {'user': user.public(), 'csrf': csrf, **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
             except AccessError as exc:
                 if exc.status != 401:
                     raise
-                return 200, {'user': None, 'setup': self.auth.allow_setup and self.auth.setup_needed(), **({'tenant': self.tenant} if self.tenant else {})}, []
+                return 200, {'user': None, 'setup': self.auth.allow_setup and self.auth.setup_needed(), **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
         if path == '/api/auth/setup' and method == 'POST':
             self.auth.setup(scope, body)
             return 201, {'created': True}, []
@@ -289,7 +298,13 @@ class Business:
                 raise ValidationError({'children': 'Use a known child collection with at most 100 rows'})
             if tx.count(child.model, filters={child.link: parent.id}) > 100:
                 raise ValidationError({'children': 'This collection exceeds the 100-row editor limit'})
-            existing = {row.id: row for row in tx.list(child.model, filters={child.link: parent.id}, limit=100)}
+            existing, hidden = {}, set()
+            for row in tx.list(child.model, filters={child.link: parent.id}, limit=100):
+                existing[row.id] = row
+                try:
+                    self.policy.record(tx, user, child.model, row.id)
+                except AccessError:
+                    hidden.add(row.id)
             kept = set()
             for row in rows:
                 if not isinstance(row, dict):
@@ -311,7 +326,7 @@ class Business:
                     self.policy.require(user, child.model, 'create')
                     added = tx.create(child.model, **{**values, child.link: parent.id})
                     self.policy.record(tx, user, child.model, added.id, 'create')
-            for row_id in existing.keys() - kept:
+            for row_id in existing.keys() - kept - hidden:
                 self.policy.record(tx, user, child.model, row_id, 'delete')
                 tx.delete(child.model, row_id)
 

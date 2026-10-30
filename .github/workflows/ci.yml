@@ -38,7 +38,7 @@ jobs:
       - name: Verify installed wheel
         run: |
           python -m venv /tmp/evlet-wheel-check
-          /tmp/evlet-wheel-check/bin/python -m pip install dist/evlet-0.1.2-py3-none-any.whl
+          /tmp/evlet-wheel-check/bin/python -m pip install dist/evlet-*.whl
           /tmp/evlet-wheel-check/bin/python -I scripts/check_package.py
           /tmp/evlet-wheel-check/bin/python -I scripts/smoke_cli.py
       - name: Live Playground smoke
@@ -103,3 +103,14 @@ jobs:
       - run: python -m pip install --require-hashes -r requirements-dev.lock -r requirements-postgres.lock
       - run: python -m pip install --no-build-isolation --no-deps -e .
       - run: python -m pytest tests/test_postgres.py tests/test_hardening.py
+
+  windows-locks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --require-hashes -r requirements-dev.lock
+      - run: python -m pip install --no-build-isolation --no-deps -e .
+      - run: python -m pytest tests/test_instance_lock.py

@@ -577,3 +577,44 @@ it("does not sign out while unsaved navigation is awaiting a decision", async ()
   expect(screen.getByLabelText(/Name/)).toHaveValue("Keep this draft");
   expect(api.authRequest).not.toHaveBeenCalled();
 });
+
+it("does not save default columns until the user edits preferences", async () => {
+  context("/app/customer", () => <ModelList model={customer} />);
+  await waitFor(() => expect(api.listRecords).toHaveBeenCalled());
+  expect(localStorage.getItem("evlet:list:v2:local:1:customer")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Column settings" }));
+  const dialog = await screen.findByRole("dialog", { name: "Visible columns" });
+  fireEvent.click(within(dialog).getByLabelText("ID"));
+  await waitFor(() => expect(localStorage.getItem("evlet:list:v2:local:1:customer")).not.toBeNull());
+  const saved = JSON.parse(localStorage.getItem("evlet:list:v2:local:1:customer")!);
+  expect(saved.defaults).toEqual(customer.list_fields);
+  expect(saved.columns).not.toContain("id");
+});
+
+it("uses new model defaults after list fields change", async () => {
+  localStorage.setItem("evlet:list:v2:local:1:customer", JSON.stringify({columns:["name"], defaults:["name"], saved:[]}));
+  const revised = {...customer, list_fields:["name", "email"]};
+  context("/app/customer", () => <ModelList model={revised} />);
+  await screen.findByRole("button", {name:"Sort by Email"});
+  expect(screen.getByRole("button", {name:"Sort by Name"})).toBeInTheDocument();
+});
+
+it("shows the instance name on first administrator setup", async () => {
+  api.request.mockResolvedValue({user:null, setup:true, application:{name:"Acme", id:"acme-instance", playground:false}});
+  render(() => <App />);
+  await screen.findByRole("heading", {name:"Set up Acme"});
+  expect(document.querySelector(".login-brand")?.textContent).toContain("Acme");
+  expect(document.querySelector(".login-brand")?.textContent).not.toContain("Playground");
+});
+
+it("keeps real-instance preferences separate on the same origin", async () => {
+  localStorage.setItem("evlet:list:v2:first-instance:1:customer", JSON.stringify({columns:["name"], defaults:customer.list_fields, saved:[]}));
+  history.replaceState({}, "", "/app/customer");
+  api.request.mockImplementation(async (path:string) => path === "/api/auth/session"
+    ? {user, csrf:"token", application:{name:"Second", id:"second-instance", playground:false}}
+    : path === "/api/ui" ? ui : {});
+  render(() => <App />);
+  await screen.findByRole("button", {name:"Sort by Email"});
+  expect(document.querySelector(".brand-label")?.textContent).toBe("Second");
+  expect(screen.queryByText("Local playground")).not.toBeInTheDocument();
+});

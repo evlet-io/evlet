@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import re
 import secrets
+import sqlite3
 import time
 
 from .auth import AccessError, User
@@ -177,11 +178,15 @@ class JobQueue:
         job_id, token = claim
         now = int(time.time()) if now is None else timestamp(now)
         task = None
+        started = False
         try:
             with self.database.transaction() as tx:
                 self._bound(tx)
                 row = tx.connection.execute("SELECT * FROM evlet_jobs WHERE id=? AND state='running' AND lease=? AND lease_until>?", (job_id, token, now)).fetchone()
-                if row is None or not active():
+                if row is None:
+                    return False
+                if not active():
+                    self._release_claim(tx, job_id, token, now)
                     return False
                 task = self.tasks.get(row['task'])
                 if task is None:
@@ -200,7 +205,9 @@ class JobQueue:
                 namespace = tx.connection.execute('SELECT namespace FROM evlet_job_namespace WHERE id=1').fetchone()[0]
                 stable_key = hashlib.sha256((namespace + ':' + (row['dedupe'] or f'job:{job_id}')).encode()).hexdigest()
                 context = JobContext(job_id, self.tenant, row['attempts'], user, stable_key)
-                task.handler(tx, context, json.loads(row['payload']))
+                payload = json.loads(row['payload'])
+                started = True
+                task.handler(tx, context, payload)
                 tx.connection.execute("UPDATE evlet_jobs SET state='succeeded',completed_at=?,lease=NULL,lease_until=NULL WHERE id=? AND lease=?", (int(time.time()), job_id, token))
                 if self.events and row['model']:
                     self.events.publish(tx, self.database.registry.models[row['model']], row['record_id'])
@@ -211,10 +218,17 @@ class JobQueue:
                 row = tx.connection.execute("SELECT * FROM evlet_jobs WHERE id=? AND state='running' AND lease=?", (job_id, token)).fetchone()
                 if row is None:
                     return False
+                if not started and isinstance(exc, sqlite3.OperationalError):
+                    self._release_claim(tx, job_id, token, now + 1)
+                    return False
                 retry = task is not None and row['attempts'] < row['max_attempts'] and not isinstance(exc, (AccessError, NotFoundError, ValidationError))
                 due = now + min(86400, task.retry_delay * 2 ** (row['attempts'] - 1)) if retry else now
                 tx.connection.execute('UPDATE evlet_jobs SET state=?,run_at=?,completed_at=?,lease=NULL,lease_until=NULL,error=? WHERE id=? AND lease=?', ('queued' if retry else 'failed', due, None if retry else now, type(exc).__name__, job_id, token))
             return True
+
+    @staticmethod
+    def _release_claim(tx, job_id, token, due):
+        tx.connection.execute("UPDATE evlet_jobs SET state='queued',attempts=attempts-1,run_at=?,lease=NULL,lease_until=NULL,error=NULL WHERE id=? AND state='running' AND lease=?", (due, job_id, token))
 
     def run_one(self, *, active=lambda: True, now=None):
         if not active():

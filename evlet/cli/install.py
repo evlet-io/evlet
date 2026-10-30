@@ -10,7 +10,7 @@ import tempfile
 
 from ..instances import (read_instance, read_lock, require_consistent, database_state,
                          build_instance, register_schedules)
-from ..packages import resolve_packages
+from ..packages import resolve_packages, portable_lock_entry
 from .project import child, instance_guard, atomic_json, json_text, sync_directory
 
 
@@ -52,10 +52,17 @@ def install(root, name, *, app_name=None, trust=False, confirm=None):
             raise ValueError('No installed apps to migrate')
         packages = resolve_packages(root, names)
         after = {'apps': {package.name: package.locked() for package in packages}}
-        changed = [package.name for package in packages if before['apps'].get(package.name) != after['apps'][package.name]]
+        changed = [package.name for package in packages if package.name not in before['apps'] or portable_lock_entry(package.name, before['apps'][package.name]) != after['apps'][package.name]]
         if changed and not trust:
             if confirm is None or not confirm('Trust and execute these local Python apps: ' + ', '.join(changed) + '?'):
                 raise ValueError('Installation requires explicit trust. Review the apps, then use --trust for non-interactive installation')
+        if before == after:
+            app, _ = build_instance(config, path, packages)
+            try:
+                app.initialize()
+            finally:
+                app.database.close()
+            return {'apps': [package.name for package in packages], 'migrations': [], 'backup': None}
         data = path / 'data'
         data.mkdir(mode=0o700, exist_ok=True)
         if data.is_symlink():

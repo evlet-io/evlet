@@ -171,8 +171,6 @@ def load_definitions(packages):
                 if old and not Path(old).resolve().is_relative_to(package.path):
                     raise ValueError(f'App {package.name} conflicts with an already imported Python package')
                 del sys.modules[name]
-    paths = [str(package.path) for package in packages]
-    sys.path[:0] = paths
     importlib.invalidate_caches()
     if _runtime_imports not in sys.meta_path:
         sys.meta_path.insert(0, _runtime_imports)
@@ -191,8 +189,6 @@ def load_definitions(packages):
         return definitions
     finally:
         sys.meta_path.remove(finder)
-        for path in paths:
-            sys.path.remove(path)
 
 
 def migration_plan(definitions, database):
@@ -267,7 +263,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
         actions.extend(definition.actions(services) if callable(definition.actions) else definition.actions)
     options = {key: tuple(item for _, definition in definitions for item in getattr(definition, key)) for key in ('children', 'attachments')}
     app = Application(database, auth=auth, policy=policy, ui=views, events=events, jobs=jobs,
-                      storage=storage, name=config.name, actions=actions, **options)
+                      storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, **options)
     return app, tuple(schedules)
 
 
@@ -286,7 +282,7 @@ def register_schedules(app, schedules):
 
 def load_runtime(root, name, *, port=8000, development=False):
     from .cli.project import child
-    from .packages import resolve_packages
+    from .packages import resolve_packages, portable_lock_entry
     path = child(root, 'instances', name)
     config = read_instance(path)
     locked = require_consistent(path)
@@ -297,7 +293,7 @@ def load_runtime(root, name, *, port=8000, development=False):
         raise ValueError('App dependencies changed; run evlet migrate before serving')
     for package in packages:
         current = package.locked()
-        expected = locked['apps'][package.name]
+        expected = portable_lock_entry(package.name, locked['apps'][package.name])
         if current != expected and (not development or any(current[key] != expected[key] for key in ('version', 'source', 'commit'))):
             raise ValueError(f'{package.name} differs from apps.lock; stop serving and run evlet migrate {name}')
     app, _ = build_instance(config, path, packages, port=port)

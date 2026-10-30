@@ -170,7 +170,7 @@ def migrate(database, migrations):
     validate_indexes(database.registry)
     migrations, checksums = _migration_plan(migrations)
     try:
-        with database.transaction() as tx:
+        with database.transaction(timeout=database.migration_timeout) as tx:
             db = tx.connection
             fresh = not tables(db)
             _metadata(db)
