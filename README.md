@@ -32,21 +32,17 @@ No database server, Redis, Docker, or worker is required.
 
 ## Install the Python package
 
-Requires Python 3.12 or newer. PyPI currently provides version 0.1.1:
+Requires Python 3.12 or newer. Version 0.1.2 includes the project and instance CLI,
+SolidJS UI, Playground and offline documentation:
 
 ```bash
-python -m pip install evlet
+python -m pip install --upgrade evlet
 evlet --help
 ```
 
-The published 0.1.1 package predates the project and instance CLI and the SolidJS
-UI described here. For those features, follow [Install for development](#install-for-development)
-and run `npm --prefix frontend run build` once before using the CLI. These changes
-have not been published to PyPI.
-
 Optional adapters are available with `python -m pip install 'evlet[postgres]'`
-or `python -m pip install 'evlet[s3]'`. A package built from this checkout includes
-the CLI, Uvicorn, the built SolidJS UI, Playground and offline documentation. Run `evlet playground`
+or `python -m pip install 'evlet[s3]'`. The package includes the CLI, Uvicorn,
+the built SolidJS UI, Playground and offline documentation. Run `evlet playground`
 to explore it or `evlet docs` to read the documentation. Node is needed only when
 developing the frontend from a repository checkout.
 
@@ -205,7 +201,7 @@ npm --prefix frontend test
 npm --prefix frontend run build
 .venv/bin/python -m build --no-isolation
 python3 -m venv /tmp/evlet-wheel-check
-/tmp/evlet-wheel-check/bin/python -m pip install dist/evlet-0.1.1-py3-none-any.whl
+/tmp/evlet-wheel-check/bin/python -m pip install dist/evlet-0.1.2-py3-none-any.whl
 /tmp/evlet-wheel-check/bin/python -I scripts/check_package.py
 /tmp/evlet-wheel-check/bin/python -I scripts/smoke_cli.py
 ```
