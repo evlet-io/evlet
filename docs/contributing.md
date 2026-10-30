@@ -197,7 +197,7 @@ See [Evlet UI](ui.md) for Python pages, layouts, component contracts, state,
 routes, generated records and custom Solid components.
 
 Read [architecture decisions](architecture.md), the [full specification](specification.md),
-and [agent instructions](AGENTS.md). The [model engine guide](model-engine.md)
+and [agent instructions](../AGENTS.md). The [model engine guide](model-engine.md)
 covers the model engine. See [application generation](application-generation.md)
 for Milestone 3 metadata, defaults, generated screens, and upgrade instructions.
 See [business capabilities](business-capabilities.md) for Milestone 4 APIs,
