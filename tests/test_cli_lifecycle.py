@@ -426,3 +426,92 @@ def test_install_and_backup_close_connections_without_garbage_collection(project
     finally:
         gc.enable()
         gc.collect()
+
+
+@pytest.mark.parametrize('consumer', ['action', 'job'])
+@pytest.mark.parametrize('helper_kind', ['stale_cache', 'sourceless'])
+@pytest.mark.parametrize('layout', ['module', 'package', 'namespace'])
+def test_lazy_app_imports_keep_source_policy(project, consumer, helper_kind, layout):
+    import py_compile
+
+    package = project / 'apps/notes/notes'
+    folder = package if layout == 'module' else package / 'nested'
+    folder.mkdir(exist_ok=True)
+    if layout == 'package':
+        (folder / '__init__.py').write_text('')
+    helper = folder / 'helper.py'
+    module = 'helper' if layout == 'module' else 'nested.helper'
+    (package / 'hooks.py').write_text('''from evlet import AppDefinition, Action, Task
+from .models import models, NotesItem
+from .migrations import migrations
+
+def update(tx, user, record):
+    from .helper import title
+    tx.update(NotesItem, record.id, title=title())
+
+def work(tx, context, payload):
+    from .helper import title
+    tx.update(NotesItem, payload['id'], title=title())
+
+app = AppDefinition(models=models, migrations=migrations,
+    actions=(Action(NotesItem, 'update_title', 'Update title', update),),
+    tasks=(Task('notes_title', work, max_attempts=1),))
+'''.replace('.helper import', '.' + module + ' import'))
+    if helper_kind == 'stale_cache':
+        helper.write_text("def title():\n    return 'Before'\n")
+        py_compile.compile(str(helper), doraise=True)
+        before = helper.stat()
+        helper.write_text("def title():\n    return 'After!'\n")
+        os.utime(helper, ns=(before.st_atime_ns, before.st_mtime_ns))
+    install(project, 'acme', app_name='notes', trust=True)
+    locked = read_package(project / 'apps/notes').locked()
+    app = runtime(project)
+    model = app.registry.models['notesitem']
+    record = app.database.create(model, title='Original')
+    if helper_kind == 'sourceless':
+        helper.write_text("def title():\n    return 'Untracked bytecode'\n")
+        py_compile.compile(str(helper), cfile=str(folder / 'helper.pyc'), doraise=True)
+        helper.unlink()
+        assert read_package(project / 'apps/notes').locked() == locked
+    assert 'notes.' + module not in sys.modules
+    if consumer == 'action':
+        def invoke():
+            with app.database.transaction() as tx:
+                app.business.actions[model, 'update_title'].handler(tx, User(1, 'owner', 'admin'), record)
+        if helper_kind == 'sourceless':
+            with pytest.raises(ImportError, match='source files'):
+                invoke()
+        else:
+            invoke()
+    else:
+        with app.database.transaction() as tx:
+            receipt = app.business.jobs.enqueue(tx, 'notes_title', {'id': record.id}, target=(model, record.id))
+        assert app.business.jobs.run_one()
+        with app.database.transaction() as tx:
+            state = tx.connection.execute('SELECT state,error FROM evlet_jobs WHERE id=?', (receipt.id,)).fetchone()
+        assert state['state'] == ('failed' if helper_kind == 'sourceless' else 'succeeded')
+        if helper_kind == 'sourceless':
+            assert state['error'] == 'ImportError'
+    assert app.database.get(model, record.id).title == ('Original' if helper_kind == 'sourceless' else 'After!')
+
+
+def test_runtime_source_policy_leaves_unrelated_packages_alone(project, tmp_path, monkeypatch):
+    import importlib
+    import py_compile
+
+    install(project, 'acme', app_name='notes', trust=True)
+    runtime(project)
+    package = tmp_path / 'unmanaged_package'
+    package.mkdir()
+    (package / '__init__.py').write_text('')
+    helper = package / 'helper.py'
+    helper.write_text("value = 'ordinary dependency'\n")
+    py_compile.compile(str(helper), cfile=str(package / 'helper.pyc'), doraise=True)
+    helper.unlink()
+    monkeypatch.syspath_prepend(str(tmp_path))
+    try:
+        module = importlib.import_module('unmanaged_package.helper')
+        assert module.value == 'ordinary dependency'
+    finally:
+        sys.modules.pop('unmanaged_package.helper', None)
+        sys.modules.pop('unmanaged_package', None)

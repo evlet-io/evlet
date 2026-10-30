@@ -222,6 +222,12 @@ SHA-256 of metadata and package contents. The database stores the actual install
 manifest separately. Git revisions identify repository sources; the content hash
 also detects uncommitted changes. Reproducing an uncommitted/local app requires
 preserving those exact source files. The lock is not a source-code archive.
+
+Registered app imports always compile their Python source, including helpers first
+loaded by actions or jobs. Stale bytecode caches are ignored and sourceless `.pyc`
+helpers are rejected. Unrelated Python dependencies keep their normal import
+behavior.
+
 Python dependency constraints are verified against the active environment;
 retain that environment's dependency lock for reproducible deployment.
 

@@ -132,24 +132,34 @@ def require_consistent(path):
 
 class _SourceLoader(SourceFileLoader):
     def get_code(self, fullname):
-        # Registration must execute the source just fingerprinted, not timestamp-based bytecode.
+        # Application imports use Python source, not timestamp-based bytecode.
         return self.source_to_code(self.get_data(self.path), self.path)
 
 
 class _AppImports(MetaPathFinder):
-    def __init__(self, packages):
+    def __init__(self, packages=()):
         self.paths = {package.name: package.path for package in packages}
 
     def find_spec(self, fullname, path=None, target=None):
-        root = self.paths.get(fullname.split('.')[0])
+        package_name = fullname.split('.')[0]
+        root = self.paths.get(package_name)
         if root is None:
-            return None
+            package = sys.modules.get(package_name)
+            loader = getattr(getattr(package, '__spec__', None), 'loader', None)
+            if not isinstance(loader, _SourceLoader):
+                return None
+            root = Path(loader.path).parent.parent
         spec = PathFinder.find_spec(fullname, path if path is not None else [str(root)])
         if spec and isinstance(spec.loader, SourceFileLoader):
             spec.loader = _SourceLoader(fullname, spec.origin)
         elif spec and isinstance(spec.loader, SourcelessFileLoader):
-            raise ImportError('Application registrations require Python source files')
+            raise ImportError('Application imports require Python source files')
         return spec
+
+
+# This finder retains no app paths. Loaded package specs identify its scope,
+# including helpers first imported from an action or a background task.
+_runtime_imports = _AppImports()
 
 
 def load_definitions(packages):
@@ -164,6 +174,8 @@ def load_definitions(packages):
     paths = [str(package.path) for package in packages]
     sys.path[:0] = paths
     importlib.invalidate_caches()
+    if _runtime_imports not in sys.meta_path:
+        sys.meta_path.insert(0, _runtime_imports)
     finder = _AppImports(packages)
     sys.meta_path.insert(0, finder)
     try:
