@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 import sys
 
-from .connector import ConnectorError, HTTPClient
-from .mcp import MCPServer
+from ..connector import ConnectorError, HTTPClient
+from ..mcp import MCPServer
 
 
 STARTER_MODELS = '''from evlet import Boolean, Model, Registry, Text
@@ -49,13 +49,16 @@ Activate an environment containing the framework and Uvicorn, then run from this
 folder:
 
 ```bash
-python -m uvicorn app:create_app --factory --host 127.0.0.1 --port 8000
+python -m uvicorn app:create_app --factory --host 127.0.0.1 --port 8000 --reload
 ```
 
-For the generated browser UI, run `npm --prefix frontend run dev` from the
-framework checkout, then open http://127.0.0.1:5173. Create your own administrator
-when prompted. No default account or password is provided. Both servers must be
-on the same machine and these ports must be free.
+Open http://127.0.0.1:8000. Create your administrator when prompted, then sign in.
+Docs opens first; Items is in the sidebar. The installed package includes the
+browser UI, so ordinary application development needs only Python. No default
+account or password is provided.
+
+When running from a source checkout, build the bundled browser UI once with
+`npm --prefix frontend ci && npm --prefix frontend run build`.
 
 `models.py` owns the definitions. The authenticated API exposes schema, compact
 discovery, and ordinary record routes. Data is stored in `.data/` and survives

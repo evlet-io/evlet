@@ -16,6 +16,14 @@ def main():
     if Path(evlet.__file__).resolve().is_relative_to(checkout / "evlet"):
         raise RuntimeError("Package check imported the checkout instead of the installed wheel")
 
+    from evlet.ui import PageView, Column, Text as UIText, SchemaCompiler
+    from evlet.ui.serving import static_response
+    compiled = SchemaCompiler().compile(PageView("example", route="/example", layout=Column(children=[UIText("Ready")])))
+    assert compiled.to_dict()["layout"]["slots"]["children"][0]["props"]["text"] == "Ready"
+    response = static_response("/docs")
+    assert response and b'<div id="root">' in response[1].content
+    assert list((Path(evlet.__file__).parent / "ui/static/assets").glob("*.js"))
+
     from evlet import PostgreSQLDatabase
     try:
         PostgreSQLDatabase('dbname=unused', Registry())
@@ -88,8 +96,31 @@ def main():
         subprocess.run([sys.executable, '-I', '-m', 'evlet', 'new', str(Path(directory) / 'starter')], check=True, stdout=subprocess.DEVNULL)
         assert (Path(directory) / 'starter/models.py').is_file()
 
+        from evlet.cli.docs import documentation
+        from evlet.cli.playground import playground_app
+        assert 'cli.md' in documentation() and 'ui.md' in documentation()
+        demo = playground_app(Path(directory) / 'demo')
+        assert 'projects_demo' in demo.ui.views
+        assert demo.database.count(demo.registry.models['customer']) == 1
+        demo.database.close()
+        project = Path(directory) / 'project'
+        commands = [
+            ['setup', str(project)],
+            ['app', 'notes', '--project', str(project)],
+            ['instance', 'acme', '--project', str(project)],
+            ['install', 'notes', '--instance', 'acme', '--trust', '--project', str(project)],
+            ['migrate', 'acme', '--trust', '--project', str(project)],
+        ]
+        for command in commands:
+            subprocess.run([sys.executable, '-I', '-m', 'evlet', *command], check=True, stdout=subprocess.DEVNULL)
+        from evlet.instances import load_runtime
+        instance = load_runtime(project, 'acme')
+        instance.initialize()
+        assert instance.registry.models['notesitem']
+        assert instance.business.auth.setup_needed()
+        instance.database.close()
         updated.delete(UpdatedProduct, item.id)
-    print("Installed wheel: migrations, updates, queries, deletes; import, model definition, SQLite persistence, currency, tenant catalog, private files, jobs, event replay, discovery, connector imports, and starter creation passed")
+    print("Installed wheel: migrations, updates, queries, deletes; import, model definition, SQLite persistence, currency, tenant catalog, private files, jobs, event replay, discovery, connector imports, starter creation, project/app/instance lifecycle, bundled Playground and offline docs passed")
 
 
 if __name__ == "__main__":

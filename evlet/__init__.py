@@ -46,3 +46,11 @@ __all__ += ["ConnectorError", "HTTPClient", "MCPServer"]
 from .postgres import PostgreSQLDatabase
 
 __all__ += ["PostgreSQLDatabase"]
+
+from .ui.application import App
+
+__all__ += ["App"]
+
+from .instances import AppDefinition, Instance, Schedule
+
+__all__ += ["AppDefinition", "Instance", "Schedule"]

@@ -88,7 +88,11 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-.venv/bin/python -m uvicorn "$application" --factory --no-proxy-headers --host 127.0.0.1 --port "$EVLET_BACKEND_PORT" >> "$log_directory/backend.log" 2>&1 &
+reload_options=()
+if [[ "${EVLET_RELOAD:-1}" == '1' ]]; then
+  reload_options=(--reload --reload-dir evlet --reload-dir examples)
+fi
+.venv/bin/python -m uvicorn "$application" --factory "${reload_options[@]}" --no-proxy-headers --host 127.0.0.1 --port "$EVLET_BACKEND_PORT" >> "$log_directory/backend.log" 2>&1 &
 backend_pid=$!
 # Run Node directly so the PID belongs to Vite rather than an npm wrapper.
 node frontend/node_modules/vite/bin/vite.js frontend --host 127.0.0.1 --port "$EVLET_FRONTEND_PORT" --strictPort >> "$log_directory/frontend.log" 2>&1 &

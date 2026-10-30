@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["packaging>=24,<27", "uvicorn>=0.34,<1"]
 
 [project.urls]
 Homepage = "https://github.com/evlet-io/evlet"
@@ -23,7 +23,7 @@ evlet = "evlet.cli:main"
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.3.6,<4", "psycopg-pool>=3.3.3,<4"]
 s3 = ["boto3>=1.43.119,<2"]
-dev = ["pytest>=8,<10", "uvicorn>=0.34,<1", "build>=1,<2", "setuptools>=75"]
+dev = ["pytest>=8,<10", "uvicorn>=0.34,<1", "build>=1,<2", "setuptools>=77.0.3"]
 
 [tool.setuptools.packages.find]
 include = ["evlet*"]
@@ -31,3 +31,11 @@ include = ["evlet*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.setuptools.package-data]
+evlet = ["py.typed", "ui/*.pyi", "ui/static/*.html", "ui/static/assets/*.js", "ui/static/assets/*.css", "ui/static/assets/*.svg"]
+
+"evlet.resources" = ["templates/**/*.tpl", "docs/*.md"]
+
+[tool.setuptools.cmdclass]
+build_py = "build_support.BuildPy"
