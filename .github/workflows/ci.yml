@@ -38,8 +38,9 @@ jobs:
       - name: Verify installed wheel
         run: |
           python -m venv /tmp/evlet-wheel-check
-          /tmp/evlet-wheel-check/bin/python -m pip install --no-deps dist/evlet-0.1.0-py3-none-any.whl
+          /tmp/evlet-wheel-check/bin/python -m pip install dist/evlet-0.1.0-py3-none-any.whl
           /tmp/evlet-wheel-check/bin/python -I scripts/check_package.py
+          /tmp/evlet-wheel-check/bin/python -I scripts/smoke_cli.py
       - name: Live Playground smoke
         env:
           EVLET_DATABASE: ${{ runner.temp }}/evlet-smoke.sqlite3

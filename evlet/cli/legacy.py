@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 import sys
 
-from .connector import ConnectorError, HTTPClient
-from .mcp import MCPServer
+from ..connector import ConnectorError, HTTPClient
+from ..mcp import MCPServer
 
 
 STARTER_MODELS = '''from evlet import Boolean, Model, Registry, Text
