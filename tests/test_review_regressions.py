@@ -205,3 +205,47 @@ def test_scoped_child_edit_preserves_hidden_children(secured):
     assert hidden.title == 'Hidden'
     assert editor('PATCH',path, {'children':{'tasks':[{'id':hidden.id,'title':'Forbidden'}]}})[0] == 404
     assert secured.database.get(ProjectTask, hidden.id).title == 'Hidden'
+
+
+def test_mapped_ipv4_and_loopback_clients_do_not_share_one_throttle_key(secured):
+    auth = secured.business.auth
+    for index in range(10):
+        with pytest.raises(AccessError) as failure:
+            auth.login({'client': (f'::ffff:198.51.100.{index + 1}', 1)}, {'username': 'admin', 'password': 'wrong'})
+        assert failure.value.status == 401
+    assert auth.login({'client': ('::ffff:203.0.113.77', 1)}, {'username': 'admin', 'password': PASSWORD})[0]['user']['username'] == 'admin'
+    assert auth.login({'client': ('::1', 1)}, {'username': 'admin', 'password': PASSWORD})[0]['user']['username'] == 'admin'
+    # A mapped address and its plain IPv4 form are the same client.
+    for _ in range(10):
+        with pytest.raises(AccessError):
+            auth.login({'client': ('::ffff:198.51.100.200', 1)}, {'username': 'editor', 'password': 'wrong'})
+    with pytest.raises(AccessError) as failure:
+        auth.login({'client': ('198.51.100.200', 1)}, {'username': 'editor', 'password': PASSWORD})
+    assert failure.value.status == 429
+    # Link-local neighbours are not merged either, while routable IPv6 still shares its /64.
+    from evlet.auth import client_network
+    assert client_network('fe80::1') == 'fe80::1' and client_network('fe80::2') == 'fe80::2'
+    assert client_network('2001:db8::1') == client_network('2001:db8::ffff') == '2001:db8::/64'
+    assert client_network('::ffff:10.0.0.1') == '10.0.0.1' and client_network('::') == '::'
+    assert client_network('::10.0.0.2') == '10.0.0.2' and client_network('::1') == '::1'
+    assert client_network('not an address') == client_network(None) == 'unknown'
+
+
+def test_busy_password_service_does_not_consume_sign_in_attempts(secured, monkeypatch):
+    import evlet.auth as module
+    auth = secured.business.auth
+    busy = threading.BoundedSemaphore(1)
+    assert busy.acquire(blocking=False)
+    monkeypatch.setattr(module, '_HASH_SLOTS', busy)
+    scope = {'client': ('203.0.113.9', 1), 'headers': []}
+    for _ in range(12):
+        with pytest.raises(AccessError) as failure:
+            auth.login(scope, {'username': 'admin', 'password': PASSWORD})
+        assert failure.value.status == 503
+    with secured.database._connection() as connection:
+        assert connection.execute('SELECT count(*) FROM evlet_login_limits').fetchone()[0] == 0
+    busy.release()
+    assert auth.login(scope, {'username': 'admin', 'password': PASSWORD})[0]['user']['username'] == 'admin'
+    with pytest.raises(AccessError) as failure:
+        auth.login(scope, {'username': 'admin', 'password': 'wrong'})
+    assert failure.value.status == 401

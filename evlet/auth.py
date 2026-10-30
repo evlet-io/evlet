@@ -1,5 +1,6 @@
 """Local accounts and revocable cookie sessions for a single application database."""
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import hmac
@@ -32,22 +33,55 @@ class User:
         return {'id': self.id, 'username': self.username, 'role': self.role}
 
 
-def password_hash(password, salt=None):
-    if not isinstance(password, str) or not 15 <= len(password) <= 128:
-        raise ValidationError({'password': 'Use between 15 and 128 characters'})
-    try:
-        encoded = password.encode('utf-8')
-    except UnicodeError:
-        raise ValidationError({'password': 'Use valid Unicode text'})
-    salt = secrets.token_hex(16) if salt is None else salt
+@contextmanager
+def hashing_slot():
+    """Hold one bounded password-hashing slot, or fail fast with 503 instead of queueing."""
     if not _HASH_SLOTS.acquire(blocking=False):
         raise AccessError(503, 'Password service is busy. Try again shortly.')
     try:
-        digest = hashlib.scrypt(encoded, salt=bytes.fromhex(salt),
-                                n=2**17, r=8, p=1, maxmem=256 * 1024 * 1024).hex()
+        yield
     finally:
         _HASH_SLOTS.release()
+
+
+def _encode(password):
+    if not isinstance(password, str) or not 15 <= len(password) <= 128:
+        raise ValidationError({'password': 'Use between 15 and 128 characters'})
+    try:
+        return password.encode('utf-8')
+    except UnicodeError:
+        raise ValidationError({'password': 'Use valid Unicode text'})
+
+
+def _scrypt(encoded, salt):
+    """Callers hold a hashing slot."""
+    digest = hashlib.scrypt(encoded, salt=bytes.fromhex(salt),
+                            n=2**17, r=8, p=1, maxmem=256 * 1024 * 1024).hex()
     return f'scrypt:{salt}:{digest}'
+
+
+def password_hash(password, salt=None):
+    encoded = _encode(password)
+    salt = secrets.token_hex(16) if salt is None else salt
+    with hashing_slot():
+        return _scrypt(encoded, salt)
+
+
+def client_network(address):
+    """Throttle key: IPv4 and non-routable IPv6 addresses exactly, routable IPv6 by /64 prefix."""
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return 'unknown'
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        # IPv4 clients of a dual-stack socket keep their own address instead of sharing ::/64.
+        ip = ip.ipv4_mapped
+    elif ip.version == 6 and 1 < int(ip) < 2**32:
+        # Deprecated IPv4-compatible form (::a.b.c.d) likewise identifies one IPv4 client.
+        ip = ipaddress.IPv4Address(int(ip))
+    if ip.version == 6 and not (ip.is_loopback or ip.is_link_local or ip.is_unspecified):
+        return str(ipaddress.ip_network(f'{ip}/64', strict=False))
+    return str(ip)
 
 
 class LocalAuth:
@@ -162,29 +196,26 @@ class LocalAuth:
         username = body['username'].lower()
         if not re.fullmatch(r'[a-z0-9_.-]{3,64}', username):
             raise AccessError(401, 'Invalid username or password')
-        address = (scope.get('client') or ('unknown',))[0]
-        try:
-            ip = ipaddress.ip_address(address)
-            address = str(ipaddress.ip_network(f'{ip}/64', strict=False)) if ip.version == 6 else str(ip)
-        except ValueError:
-            address = 'unknown'
+        address = client_network((scope.get('client') or ('unknown',))[0])
         client = hashlib.sha256(('network:' + address).encode()).hexdigest()
         pair = hashlib.sha256(('account:' + address + ':' + username).encode()).hexdigest()
-        with self.database.transaction() as tx:
-            tx.connection.execute('DELETE FROM evlet_login_limits WHERE resets<=?', (now,))
-            tx.connection.execute('DELETE FROM evlet_sessions WHERE expires<=?', (now,))
-            for key, limit in ((pair, 10), (client, 100)):
-                row = tx.connection.execute('SELECT attempts FROM evlet_login_limits WHERE client=?', (key,)).fetchone()
-                if row and row['attempts'] >= limit:
-                    raise AccessError(429, 'Too many sign-in attempts. Try again in 15 minutes.')
-            for key in (pair, client):
-                tx.connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1', (key, now + 900))
-            account = tx.connection.execute('SELECT * FROM evlet_users WHERE username=?', (body['username'].lower(),)).fetchone()
-        stored = account['password'] if account else 'scrypt:' + '00' * 16 + ':' + '00' * 64
-        try:
-            candidate = password_hash(body['password'], stored.split(':')[1])
-        except (ValueError, UnicodeError):
-            candidate = ''
+        # Take the hashing slot first: a busy 503 is answered before any attempt is recorded.
+        with hashing_slot():
+            with self.database.transaction() as tx:
+                tx.connection.execute('DELETE FROM evlet_login_limits WHERE resets<=?', (now,))
+                tx.connection.execute('DELETE FROM evlet_sessions WHERE expires<=?', (now,))
+                for key, limit in ((pair, 10), (client, 100)):
+                    row = tx.connection.execute('SELECT attempts FROM evlet_login_limits WHERE client=?', (key,)).fetchone()
+                    if row and row['attempts'] >= limit:
+                        raise AccessError(429, 'Too many sign-in attempts. Try again in 15 minutes.')
+                for key in (pair, client):
+                    tx.connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1', (key, now + 900))
+                account = tx.connection.execute('SELECT * FROM evlet_users WHERE username=?', (username,)).fetchone()
+            stored = account['password'] if account else 'scrypt:' + '00' * 16 + ':' + '00' * 64
+            try:
+                candidate = _scrypt(_encode(body['password']), stored.split(':')[1])
+            except (ValueError, UnicodeError):
+                candidate = ''
         if not hmac.compare_digest(candidate, stored) or not account or not account['active']:
             raise AccessError(401, 'Invalid username or password')
         token, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)

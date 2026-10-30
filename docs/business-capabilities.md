@@ -26,10 +26,13 @@ default. The Playground explicitly permits insecure cookies only for its loopbac
 HTTP origins. The database stores a SHA-256 session-token digest. Logout, password
 changes, role changes, and disabling an account invalidate the affected sessions.
 Sign-in attempts are limited to ten per client-network and username pair in 15
-minutes, with a broader 100-attempt network cap. IPv6 clients share their /64 prefix.
+minutes, with a broader 100-attempt network cap. Routable IPv6 clients share their /64 prefix; IPv4 clients reached through a
+dual-stack socket keep their own address, and loopback or link-local addresses are
+never merged.
 Success clears only that account's pair counter, not the network cap or other users'
 counters. Password hashing admits at most two concurrent operations per process;
-excess work gets HTTP 503 without waiting for a hashing slot. Proxy forwarding headers are not
+excess work gets HTTP 503 without waiting for a hashing slot, and a busy response
+is not counted as a sign-in attempt. Proxy forwarding headers are not
 trusted. There is no SSO, email recovery, MFA, or tenant account directory yet.
 
 Use exact origins when configuring authentication:
