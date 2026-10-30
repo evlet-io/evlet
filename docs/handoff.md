@@ -1,9 +1,9 @@
 # Continue Evlet locally
 
-Use the existing checkout of `dxb-aslam/evlet` on `solid-ui-playground`.
-Read `AGENTS.md`, `docs/ui.md` and `docs/architecture.md` first. Preserve the stash
-named `Preserve local foundation work before Milestone 1 continuation`. Do not
-create a worktree, merge or deploy without a request.
+Use the existing checkout of `evlet-io/evlet`. Read `AGENTS.md`, `docs/ui.md`,
+`docs/cli.md` and `docs/architecture.md` first. Preserve the stash named
+`Preserve local foundation work before Milestone 1 continuation`. Do not create a
+worktree, merge or deploy without a request.
 
 ## Current scope
 

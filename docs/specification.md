@@ -5,7 +5,7 @@
 
 **Date:** 28 October 2026
 
-**Repository:** https://github.com/dxb-aslam/evlet
+**Repository:** https://github.com/evlet-io/evlet
 
 **Development environment:** Codex Cloud
 
@@ -832,7 +832,7 @@ Local development should remain supported but must not be required.
 
 Repository:
 
-https://github.com/dxb-aslam/evlet
+https://github.com/evlet-io/evlet
 
 Work on feature branches.
 
@@ -1066,7 +1066,7 @@ Do not:
 
 The repository has been created privately at:
 
-https://github.com/dxb-aslam/evlet
+https://github.com/evlet-io/evlet
 
 The immediate task is **Milestone 1 only**.
 

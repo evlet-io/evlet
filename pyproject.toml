@@ -1,14 +1,21 @@
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "evlet"
-version = "0.1.0"
+version = "0.1.1"
 description = "A small Python application framework with SQLite and a neutral UI schema"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = ["packaging>=24,<27", "uvicorn>=0.34,<1"]
+
+[project.urls]
+Homepage = "https://github.com/evlet-io/evlet"
+Repository = "https://github.com/evlet-io/evlet"
+Issues = "https://github.com/evlet-io/evlet/issues"
 
 [project.scripts]
 evlet = "evlet.cli:main"
@@ -16,7 +23,7 @@ evlet = "evlet.cli:main"
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.3.6,<4", "psycopg-pool>=3.3.3,<4"]
 s3 = ["boto3>=1.43.119,<2"]
-dev = ["pytest>=8,<10", "uvicorn>=0.34,<1", "build>=1,<2", "setuptools>=75"]
+dev = ["pytest>=8,<10", "uvicorn>=0.34,<1", "build>=1,<2", "setuptools>=77.0.3"]
 
 [tool.setuptools.packages.find]
 include = ["evlet*"]

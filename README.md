@@ -26,8 +26,33 @@ Playground opens with sign-in, Docs and Demo Pages, including the Projects examp
 SQLite remains the default; PostgreSQL is optional. The completed backend
 milestones remain available through the same APIs.
 
-Python model definitions remain authoritative. The core has **zero third-party
-runtime dependencies**. No database server, Redis, Docker, or worker is required.
+Python model definitions remain authoritative. The core uses the Python standard
+library; the CLI installs Packaging for dependency checks and Uvicorn for serving.
+No database server, Redis, Docker, or worker is required.
+
+## Install the Python package
+
+Requires Python 3.12 or newer. PyPI currently provides version 0.1.1:
+
+```bash
+python -m pip install evlet
+evlet --help
+```
+
+The published 0.1.1 package predates the project and instance CLI and the SolidJS
+UI described here. For those features, follow [Install for development](#install-for-development)
+and run `npm --prefix frontend run build` once before using the CLI. These changes
+have not been published to PyPI.
+
+Optional adapters are available with `python -m pip install 'evlet[postgres]'`
+or `python -m pip install 'evlet[s3]'`. A package built from this checkout includes
+the CLI, Uvicorn, the built SolidJS UI, Playground and offline documentation. Run `evlet playground`
+to explore it or `evlet docs` to read the documentation. Node is needed only when
+developing the frontend from a repository checkout.
+
+## License
+
+Evlet is available under the [MIT License](https://github.com/evlet-io/evlet/blob/main/LICENSE).
 
 ## Open the Playground on macOS
 
@@ -40,13 +65,13 @@ brew install git python@3.12 node@24
 Then, in Terminal:
 
 ```bash
-git clone https://github.com/dxb-aslam/evlet.git
+git clone https://github.com/evlet-io/evlet.git
 cd evlet
 bash scripts/playground.sh --setup
 ```
 
 This private repository requires your GitHub account to have access. You can also
-download the feature branch as a ZIP while signed in to GitHub, extract it, open
+download the repository as a ZIP while signed in to GitHub, extract it, open
 Terminal in the extracted folder, and run the same launcher command.
 
 The launcher installs the locked dependencies, starts both servers and an optional
@@ -180,7 +205,7 @@ npm --prefix frontend test
 npm --prefix frontend run build
 .venv/bin/python -m build --no-isolation
 python3 -m venv /tmp/evlet-wheel-check
-/tmp/evlet-wheel-check/bin/python -m pip install dist/evlet-0.1.0-py3-none-any.whl
+/tmp/evlet-wheel-check/bin/python -m pip install dist/evlet-0.1.1-py3-none-any.whl
 /tmp/evlet-wheel-check/bin/python -I scripts/check_package.py
 /tmp/evlet-wheel-check/bin/python -I scripts/smoke_cli.py
 ```
