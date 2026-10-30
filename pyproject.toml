@@ -24,3 +24,6 @@ include = ["evlet*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.setuptools.package-data]
+evlet = ["py.typed", "ui/*.pyi", "ui/static/*.html", "ui/static/assets/*.js", "ui/static/assets/*.css", "ui/static/assets/*.svg"]

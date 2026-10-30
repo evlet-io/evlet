@@ -1,83 +1,107 @@
 # Continue Evlet locally
 
-Use the existing checkout of `dxb-aslam/evlet` on `milestone-8-review-fixes`. Preserve
-the stash named `Preserve local foundation work before Milestone 1 continuation`.
-Do not create a worktree, merge, deploy, or expand the milestone without a request.
+Use the existing checkout of `dxb-aslam/evlet` on `solid-ui-playground`.
+Read `AGENTS.md`, `docs/ui.md` and `docs/architecture.md` first. Preserve the stash
+named `Preserve local foundation work before Milestone 1 continuation`. Do not
+create a worktree, merge or deploy without a request.
 
 ## Current scope
 
-Milestones 1 through 7 were reviewed and merged. Milestone 7 merged at `d722e1e`.
-Milestone 8 merged in PR #8 at `f9029ca`. This follow-up fixes the migration
-command's backend selection, rejects unsupported indexed-text definitions before
-startup, and reserves generated identity-object names for fresh and migrated
-PostgreSQL schemas. Keep all three fixes covered by the PostgreSQL regression suite.
+The native frontend now uses SolidJS and the approved custom component library.
+Sign-in opens Docs. Demo Pages contains the original Projects Explorer View and a
+Python-authored layouts/state example. Models contains the real generated CRUD
+screens; Accounts is available to administrators.
 
-Milestone 8 includes:
+Keep the approved light sidebar, blue active state, fixed top bar and sidebar,
+independent list and preview scrolling, and expanded summary cards. Do not bring
+back automatic header/card collapse. Each shell and view area supports its own
+content and element properties; the public terminology is in `docs/ui.md`.
 
-- Optional PostgreSQL database/session API, native schema checks, atomic migrations,
-  authenticated business routes, and a bounded pool with session cleanup.
-- Shared ownership checks for private storage, jobs, and events.
-- Explicit null ordering, portable empty filters, and literal-safe parameter binding.
-- Session revocation/expiry and login cleanup indexes; duplicate security-header rejection.
-- Real PostgreSQL parity, rollback, snapshot, concurrency, and pool-isolation tests.
-- Concurrent cross-tenant cookie replay and warmed-route revocation tests.
-- Reproducible large-ledger benchmarks and measured adapter comparisons.
-- PostgreSQL CI, dependency hash lock, and deployment/recovery documentation.
+Python UI definitions live in `evlet/ui`. Components, layouts and views compile to
+immutable versioned schemas. The registry validates contracts, routes, component
+IDs, extensions and declarative expressions. The frontend resolves registered
+renderers, bindings and actions without executable source in schemas. The same
+contracts drive the component explorer and examples in Docs.
 
-Read `AGENTS.md`, `docs/architecture.md`, `docs/postgresql.md`,
-`docs/performance.md`, and `docs/production-operations.md` before continuing.
-Existing business, tenancy, jobs, and connector guides remain applicable.
+Generated lists use server queries, URL state, categories, saved local filters,
+column preferences, row selection and a record preview. Forms preserve model
+layout groups, defaults, exact decimal strings, permissions, children, actions,
+private attachments, background jobs and unsaved input. Conditional fields and
+extensions share the ordinary form controller. Optional If-Match revisions reject
+stale record mutations with 409; existing clients without the header still work.
 
-PostgreSQL is optional. SQLite remains the default. The existing tenant catalog
-and provisioning commands are SQLite-only. PostgreSQL framework writes serialize
-per database; higher parallel write capacity remains unimplemented. Do not describe
-this release as production ready. No public schema/UI contract was changed.
+The Python model/database engines and existing endpoints remain in place. Backend
+Milestones 1 through 8 and the review fixes at `7371ed5` are preserved. Upstream
+main includes the review fixes in PR #9 at `60a97fa`. Read the existing model,
+business, tenancy, jobs, connector, PostgreSQL and operations guides when changing
+those areas. SQLite remains the default; PostgreSQL is optional.
 
 ## Preserved state
 
-The working database is `examples/playground/.data/playground.sqlite3`. It was not
-opened or changed for Milestone 8. Previous migration backups, local accounts,
-attachments, and the preserved stash remain in place. Do not assume historical
-record counts still describe the user's current data.
+The user's working database is `examples/playground/.data/playground.sqlite3`.
+Do not replace it with test data or reset its accounts. Existing migration backups,
+attachments and the preserved stash remain in place. This UI upgrade needs no data
+migration. Do not assume historical record counts describe current user data.
 
-Validation uses disposable databases. PostgreSQL tests create uniquely named
-`evlet_test_*` databases on the configured test cluster and remove only those.
-Benchmark databases contain synthetic records only. No production database, public
-DNS, cloud storage, or deployment was changed. No user credentials were invented.
+Browser and HTTP verification used a separate disposable database. Projects under
+Demo Pages stores sample records in browser storage. Projects under Models uses
+the authenticated database. Keep that distinction visible in Docs.
 
-## Commands
+## Run and validate
 
 ```sh
-.venv/bin/python -m pip install --require-hashes -r requirements-postgres.lock
+bash scripts/playground.sh --setup
 .venv/bin/python -m pytest
 npm --prefix frontend test
 npm --prefix frontend run build
+.venv/bin/python scripts/smoke_tenants.py
 .venv/bin/python -m build --no-isolation
 ```
 
-Set `EVLET_TEST_POSTGRES_DSN` to a disposable PostgreSQL cluster to include all
-PostgreSQL tests. Its test role needs CREATE/DROP DATABASE permission. Without that
-environment setting the optional PostgreSQL tests skip; the ordinary suite still
-runs without the driver. CI adds PostgreSQL 14 and 18 jobs with the driver installed.
+On later starts omit `--setup`. The local browser address is
+http://127.0.0.1:5173. Python source reload is enabled by default; set
+`EVLET_RELOAD=0` to disable it. The launcher refuses occupied ports and only stops
+its own processes.
 
-For the Playground, set `EVLET_POSTGRES_DSN` only when intentionally selecting a
-separate PostgreSQL database. The app and migration command now share the database selection. PostgreSQL
-migrations require an operator-managed backup; SQLite upgrades retain their
-automatic backup.
-Read `docs/postgresql.md` before using this option or adding worker processes.
+The production frontend build also installs assets in `evlet/ui/static`. Build it
+before building a wheel or source archive. An installed wheel serves the native UI
+at http://127.0.0.1:8000 without Node or Vite. `evlet new` creates an ordinary Python
+application with instructions for the bundled UI. The source tree ignores generated
+assets; CI builds them before packaging.
 
-## Validation status
+Use `scripts/check_package.py` with a clean wheel-installed interpreter and `-I`.
+Use `scripts/smoke.py --setup` only against a new disposable database. Optional
+PostgreSQL tests require `EVLET_TEST_POSTGRES_DSN` and a disposable cluster with
+CREATE/DROP DATABASE permission. They skip when that setting is absent; CI covers
+PostgreSQL 14 and 18.
 
-The full 324-test backend suite passed with real PostgreSQL enabled, including
-15 new cases for the review fixes. All 80 frontend tests, the frontend build,
-source/wheel builds, and the clean base wheel installation check passed.
-PostgreSQL tests cover both index kinds, 500-character multibyte boundaries,
-HTTP validation, both model registration orders, legacy identity-name migration,
-and the real migration CLI's database selection. SQLite migration backups remain
-covered. The earlier sustained benchmark evidence is in `docs/performance.md`;
-these fixes did not rerun those measurements.
-Review current CI on the PR before merging. Local PostgreSQL testing uses version
-14; version 18 is covered by the configured CI job, not inferred from local tests.
-The frontend still emits its existing large-chunk advisory. No frontend redesign
-is included. Public TLS/DNS, Linux services, live S3, and production hardware remain
-unverified. Source changes are prepared for independent review, not automatic merge.
+## Validation and boundaries
+
+Local checks cover the backend suite, frontend tests (including all 80 legacy
+regressions), TypeScript, the production build, tenant isolation, real HTTP CRUD,
+package build and clean wheel installation. Browser checks cover login to Docs,
+Projects, Python reactive fields/dialogs, persisted customer creation, model form
+sections and saved dropdown values, fixed scroll areas, mobile navigation, direct
+URLs, refresh and back navigation. Final counts and CI status belong in the PR.
+
+Date and time controls are custom editable pickers shared by Python pages, model
+forms and the Projects demo. Short dates use DDMMYY and times accept entries such
+as 6.30pm. Component list and detail panes scroll independently. See `docs/ui.md`
+for accepted formats and keyboard behavior. Searchable custom selects replace
+native dropdowns. Field prefixes are configurable, with AED set explicitly in the
+Playground. Checkboxes keep compact inline labels, and list selection actions use
+the existing toolbar without pushing the table down. Confirmations, validation
+and action errors use Evlet dialogs. Only the tab close/reload unsaved-change
+warning remains browser-owned, as required by browser restrictions.
+
+Vue and PrimeVue remain only in `frontend/legacy` and development dependencies for
+regression comparison. The active production bundle uses Solid and the custom
+components. Projects and Accounts load separately. The backend adds no mandatory
+runtime dependency.
+
+This is the working UI foundation, not every item in the longer architecture
+handoff. The current component catalog and extension boundaries are documented in
+`docs/ui.md`. Advanced tree/calendar controls, remote preference sync, SSO and a
+visual editor remain outside this change. Do not describe this as production
+ready. No cloud deployment, public DNS/TLS, live object storage or release activation
+was performed.
