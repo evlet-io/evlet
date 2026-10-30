@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { subscribeEvents } from '../events.js'
+import contracts from './record-fixture.json'
 
 let close
 const response = data => ({ ok: true, status: 200, json: async () => data })
@@ -60,4 +61,18 @@ it('requests one refresh after cursor recovery and keeps the recovered cursor', 
   await vi.advanceTimersByTimeAsync(3000)
   expect(fetch).toHaveBeenLastCalledWith('/api/_events?cursor=recovered', expect.anything())
   expect(changed).toHaveBeenCalledOnce()
+})
+
+
+it('consumes the shared Python event contract and retains its replay cursor', async () => {
+  vi.useFakeTimers(); vi.stubGlobal('EventSource', Source)
+  const fetch = vi.fn(async () => response({ items: [], cursor: '0', reset: false, more: false }))
+  vi.stubGlobal('fetch', fetch)
+  const changed = vi.fn(); close = subscribeEvents(changed); await close.ready
+  const source = Source.instances[0]
+  source.emit('evlet', contracts.events)
+  expect(changed).toHaveBeenCalledExactlyOnceWith(contracts.events)
+  source.readyState = 2; source.onerror()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(fetch).toHaveBeenLastCalledWith(`/api/_events?cursor=${contracts.events.cursor}`, expect.anything())
 })

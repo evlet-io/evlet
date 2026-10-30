@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, quote
 from .auth import AccessError, ROLES
 from .database import Session
 from .fields import Link
-from .metadata import view_for
+from .ui.metadata import view_for
 from .models import ValidationError, identifier
 from .permissions import Policy
 from .query import Query

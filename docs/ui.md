@@ -354,3 +354,37 @@ user’s working database, accounts, attachments and existing migration history.
 Model views keep their generated name and route. Use PageView for a custom route.
 Generated forms preserve the model’s named layout groups. The first group has
 ID `main_details`; later groups use `section_2`, `section_3`, and so on.
+
+## Work across the UI boundary
+
+Browser code lives in `frontend/`. Python UI definitions, model screen metadata,
+compilation and browser routes live in `evlet/ui/`. `Application` delegates UI
+routes through one dispatch hook; record operations, authentication, permissions,
+storage and jobs remain with their existing services. Imports from
+`evlet.metadata` remain supported through a compatibility re-export.
+
+The shared fixtures under `frontend/src/tests/` cover:
+
+- `ui-fixture.json`: the Playground's `/api/ui` response and model schema.
+- `record-fixture.json`: a paginated record list, a record with child rows, and an
+  event page. Only the opaque random cursor value is normalized; its format and
+  the rest of the response are checked.
+
+The generator runs the actual authenticated ASGI routes against a temporary
+SQLite database. Python compares the responses with committed fixtures, and the
+browser tests render or consume the same payloads. For an intentional contract
+change, run from the repository root:
+
+```sh
+.venv/bin/python -m scripts.generate_ui_fixtures
+.venv/bin/python -m pytest tests/test_ui_contracts.py tests/test_ui.py
+npm --prefix frontend test
+```
+
+Review the fixture diff before accepting it. A failed comparison should not be
+fixed by silently regenerating a contract the other side cannot consume.
+
+For features that span both sides, agree the response shape and fixture first,
+then implement and test both producers and consumers. Link titles, aggregate
+queries, server-checked field rules, filtered link choices and printing need this
+process before implementation. These notes do not add those features.

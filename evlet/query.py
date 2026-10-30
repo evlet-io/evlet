@@ -98,7 +98,7 @@ class Query:
             search.encode('utf-8')
             search = search.strip()
             if search:
-                from .metadata import view_for
+                from .ui.metadata import view_for
                 matches = ['CAST("record"."id" AS TEXT) = ?']
                 values.append(search.removeprefix('#'))
                 for name in (view_for(self.model)['search_fields'] if search_fields is None else search_fields):

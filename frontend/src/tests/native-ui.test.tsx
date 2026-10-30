@@ -17,6 +17,7 @@ import { AppContext } from "../runtime/Context";
 import { createState, evaluate, componentState } from "../runtime/StateStore";
 import { createRouter, matchRoute } from "../runtime/Router";
 import fixtures from "./ui-fixture.json";
+import records from "./record-fixture.json";
 import type { UIDocument, ModelSchema } from "../runtime/types";
 const api = vi.hoisted(() => ({
   request: vi.fn(),
@@ -617,4 +618,25 @@ it("keeps real-instance preferences separate on the same origin", async () => {
   await screen.findByRole("button", {name:"Sort by Email"});
   expect(document.querySelector(".brand-label")?.textContent).toBe("Second");
   expect(screen.queryByText("Local playground")).not.toBeInTheDocument();
+});
+
+
+it("renders the shared Python record list contract", async () => {
+  const project = models.find((m) => m.name === "project")!;
+  api.listRecords.mockResolvedValue(records.list);
+  context("/app/project", () => <ModelList model={project} />);
+  await screen.findByText("Website launch");
+  expect(screen.getByText("1250.50")).toBeInTheDocument();
+  expect(screen.getByText("1–1 of 1")).toBeInTheDocument();
+});
+
+it("loads the shared Python record detail and children contract", async () => {
+  const project = models.find((m) => m.name === "project")!;
+  api.request.mockImplementation(async (path: string) => path.endsWith("/attachments")
+    ? {items: []} : {data: records.detail, etag: '\"contract\"'});
+  context("/app/project/1", () => <RecordForm model={project} recordId="1" />);
+  await screen.findByDisplayValue("Website launch");
+  expect(screen.getByDisplayValue("Prepare content")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("Review pages")).toBeInTheDocument();
+  expect(screen.getAllByRole("checkbox").filter((input) => (input as HTMLInputElement).checked)).toHaveLength(1);
 });
