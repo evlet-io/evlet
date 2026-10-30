@@ -53,10 +53,12 @@ export default function ModelList(props: { model: ModelSchema }) {
     100,
     Math.max(1, viewOptions().page_size || 25),
   );
-  const prefKey = `evlet:list:${app.tenant}:${app.user.id}:${model.name}`;
+  const prefKey = `evlet:list:v2:${app.tenant}:${app.user.id}:${model.name}`;
+  const defaultColumns = viewOptions().columns || model.list_fields;
   let prefs: any = {};
   try {
     prefs = JSON.parse(localStorage.getItem(prefKey) || "{}");
+    if (!prefs || typeof prefs !== "object" || Array.isArray(prefs)) prefs = {};
   } catch {}
   const fields = () => [
     {
@@ -90,14 +92,14 @@ export default function ModelList(props: { model: ModelSchema }) {
     };
   });
   const [search, setSearch] = createSignal(query().q),
-    [columns, setColumns] = createSignal<string[]>(
-      Array.isArray(prefs.columns)
+    [columns, updateColumns] = createSignal<string[]>(
+      Array.isArray(prefs.columns) && JSON.stringify(prefs.defaults) === JSON.stringify(defaultColumns)
         ? prefs.columns.filter((name: string) =>
             fields().some((f) => f.name === name),
           )
-        : viewOptions().columns || model.list_fields,
+        : defaultColumns,
     ),
-    [saved, setSaved] = createSignal<any[]>(
+    [saved, updateSaved] = createSignal<any[]>(
       Array.isArray(prefs.saved) ? prefs.saved : [],
     ),
     [selection, setSelection] = createSignal<Set<string | number>>(new Set()),
@@ -111,6 +113,15 @@ export default function ModelList(props: { model: ModelSchema }) {
     [categoryField, setCategoryField] = createSignal(
       model.fields.find((f) => f.type === "select" && !f.hidden)?.name || "",
     );
+  const [preferencesEdited, setPreferencesEdited] = createSignal(false);
+  const setColumns = (value: string[] | ((current: string[]) => string[])) => {
+    setPreferencesEdited(true);
+    return updateColumns(value);
+  };
+  const setSaved = (value: any[] | ((current: any[]) => any[])) => {
+    setPreferencesEdited(true);
+    return updateSaved(value);
+  };
   const apply = (patch: Partial<Query>) => {
     const q = { ...query(), ...patch };
     const p = new URLSearchParams();
@@ -126,10 +137,11 @@ export default function ModelList(props: { model: ModelSchema }) {
   };
   createEffect(() => setSearch(query().q));
   createEffect(() => {
+    if (!preferencesEdited()) return;
     try {
       localStorage.setItem(
         prefKey,
-        JSON.stringify({ columns: columns(), saved: saved() }),
+        JSON.stringify({ columns: columns(), defaults: defaultColumns, saved: saved() }),
       );
     } catch {}
   });

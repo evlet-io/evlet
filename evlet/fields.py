@@ -88,6 +88,8 @@ class Text(Field):
             value.encode("utf-8")
         except UnicodeError as exc:
             raise ValueError("Expected valid Unicode text") from exc
+        if "\x00" in value:
+            raise ValueError("Text must not contain NUL characters")
         if self.required and not value.strip():
             raise ValueError("This field must not be blank")
         if len(value) > self.max_length:

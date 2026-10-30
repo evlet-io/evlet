@@ -98,7 +98,7 @@ class Policy:
             if not isinstance(key, str):
                 raise AccessError(403, 'Query field is unavailable')
             parts = key.lstrip('-').split('__')
-            if parts[-1] in OPERATORS:
+            if len(parts) > 1 and parts[-1] in OPERATORS:
                 parts.pop()
             # Cross-model query paths could disclose restricted rows or fields.
             if len(parts) != 1 or parts[0] not in readable:

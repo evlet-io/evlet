@@ -3,6 +3,7 @@
 from pathlib import Path
 from ..business import Download
 
+CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 STATIC = Path(__file__).with_name("static")
 TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -31,7 +32,7 @@ def static_response(path):
             (b"content-type", TYPES[target.suffix].encode()),
             (
                 b"content-security-policy",
-                b"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+                CSP.encode(),
             ),
         ],
     )

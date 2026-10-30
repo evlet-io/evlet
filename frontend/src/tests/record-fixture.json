@@ -1,0 +1,60 @@
+{
+  "list": {
+    "items": [
+      {
+        "id": 1,
+        "name": "Website launch",
+        "customer": 1,
+        "status": "planned",
+        "budget": "1250.50",
+        "progress": 0,
+        "starts_on": null,
+        "notes": null
+      }
+    ],
+    "total": 1,
+    "limit": 20,
+    "offset": 0
+  },
+  "detail": {
+    "id": 1,
+    "name": "Website launch",
+    "customer": 1,
+    "status": "planned",
+    "budget": "1250.50",
+    "progress": 0,
+    "starts_on": null,
+    "notes": null,
+    "children": {
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Prepare content",
+          "done": false
+        },
+        {
+          "id": 2,
+          "title": "Review pages",
+          "done": true
+        }
+      ]
+    }
+  },
+  "events": {
+    "items": [
+      {
+        "model": "customer",
+        "id": 1,
+        "deleted": false
+      },
+      {
+        "model": "project",
+        "id": 1,
+        "deleted": false
+      }
+    ],
+    "cursor": "000000000000000000000000000000000000000000000000",
+    "reset": false,
+    "more": false
+  }
+}

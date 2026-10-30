@@ -74,7 +74,9 @@ class Model(metaclass=ModelType):
 
     @classmethod
     def _from_row(cls, row):
-        instance = cls(**{
+        # Stored snapshots must remain readable after business rules change.
+        instance = cls.__new__(cls)
+        instance._values = MappingProxyType({
             name: field.from_storage(row[name]) for name, field in cls.__fields__.items()
         })
         instance._id = row["id"]
@@ -98,7 +100,7 @@ class Registry:
             for field in model.__fields__.values():
                 if isinstance(field, Link) and field.target not in models:
                     raise ValueError(f"Link target for {model.__name__}.{field.name} is not registered")
-        from .metadata import view_for
+        from .ui.metadata import view_for
         for model in models:
             view_for(model)
         self.models = MappingProxyType(registered)
@@ -110,7 +112,7 @@ class Registry:
         return name
 
     def ui_schema(self):
-        from .metadata import ui_schema
+        from .ui.metadata import ui_schema
         return ui_schema(self)
 
     def schema(self):

@@ -363,3 +363,26 @@ def test_playground_migration_cli_uses_postgres_and_preserves_sqlite(pg_dsn, tmp
     assert app.database.get(Customer, 1).name == 'Keep PostgreSQL record'
     assert sqlite_path.read_bytes() == before
     assert not list(tmp_path.glob('*.backup'))
+
+
+def test_migration_has_its_own_timeout_and_pool_restores_request_limit(pg_dsn, monkeypatch):
+    from evlet import Boolean
+    import evlet.postgres_schema as schema
+    class Item(Model):
+        title = Text()
+    old = PostgreSQLDatabase(pg_dsn, Registry(Item), timeout=1)
+    old.initialize(); old.create(Item, title='Keep')
+    class Item(Model):
+        title = Text()
+        done = Boolean(default=False)
+    db = PostgreSQLDatabase(pg_dsn, Registry(Item), timeout=1, migration_timeout=3)
+    original = schema.apply
+    def slower(connection, operation):
+        assert connection.execute("SELECT current_setting('statement_timeout')").fetchone()[0] == '3s'
+        connection.execute('SELECT pg_sleep(1.1)')
+        original(connection, operation)
+    monkeypatch.setattr(schema, 'apply', slower)
+    assert db.migrate([Migration('add_done', AddField('item', 'done', Boolean(default=False)))]) == ['add_done']
+    assert db.get(Item, 1).title == 'Keep'
+    with db._connection() as connection:
+        assert connection.execute("SELECT current_setting('statement_timeout')").fetchone()[0] == '1s'

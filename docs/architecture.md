@@ -68,6 +68,10 @@ migration regression harness. They are not imported by the production entry poin
 `evlet.ui` definitions → `ViewRegistry` → `SchemaCompiler` → version 1 UI schemas
 → registered Solid renderers. `/api/ui` is separate from the existing model schema.
 See [Evlet UI](ui.md) for state, extension order, route resolution, and packaging.
+`evlet/ui/routes.py` owns UI HTTP routes and browser fallbacks;
+`evlet/ui/metadata.py` owns model screen metadata. The old `evlet.metadata` imports
+remain supported. Shared page, record and event fixtures are checked against real
+HTTP responses and used by browser tests.
 
 - `GET /health`: executes a database probe and returns `{"status":"ok"}`.
 - `GET /api/schema`: returns schema version 1 and registered model metadata.

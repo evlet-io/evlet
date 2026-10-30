@@ -17,6 +17,7 @@ import { AppContext } from "../runtime/Context";
 import { createState, evaluate, componentState } from "../runtime/StateStore";
 import { createRouter, matchRoute } from "../runtime/Router";
 import fixtures from "./ui-fixture.json";
+import records from "./record-fixture.json";
 import type { UIDocument, ModelSchema } from "../runtime/types";
 const api = vi.hoisted(() => ({
   request: vi.fn(),
@@ -576,4 +577,66 @@ it("does not sign out while unsaved navigation is awaiting a decision", async ()
   fireEvent.click(screen.getByRole("button", {name: "Keep editing"}));
   expect(screen.getByLabelText(/Name/)).toHaveValue("Keep this draft");
   expect(api.authRequest).not.toHaveBeenCalled();
+});
+
+it("does not save default columns until the user edits preferences", async () => {
+  context("/app/customer", () => <ModelList model={customer} />);
+  await waitFor(() => expect(api.listRecords).toHaveBeenCalled());
+  expect(localStorage.getItem("evlet:list:v2:local:1:customer")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Column settings" }));
+  const dialog = await screen.findByRole("dialog", { name: "Visible columns" });
+  fireEvent.click(within(dialog).getByLabelText("ID"));
+  await waitFor(() => expect(localStorage.getItem("evlet:list:v2:local:1:customer")).not.toBeNull());
+  const saved = JSON.parse(localStorage.getItem("evlet:list:v2:local:1:customer")!);
+  expect(saved.defaults).toEqual(customer.list_fields);
+  expect(saved.columns).not.toContain("id");
+});
+
+it("uses new model defaults after list fields change", async () => {
+  localStorage.setItem("evlet:list:v2:local:1:customer", JSON.stringify({columns:["name"], defaults:["name"], saved:[]}));
+  const revised = {...customer, list_fields:["name", "email"]};
+  context("/app/customer", () => <ModelList model={revised} />);
+  await screen.findByRole("button", {name:"Sort by Email"});
+  expect(screen.getByRole("button", {name:"Sort by Name"})).toBeInTheDocument();
+});
+
+it("shows the instance name on first administrator setup", async () => {
+  api.request.mockResolvedValue({user:null, setup:true, application:{name:"Acme", id:"acme-instance", playground:false}});
+  render(() => <App />);
+  await screen.findByRole("heading", {name:"Set up Acme"});
+  expect(document.querySelector(".login-brand")?.textContent).toContain("Acme");
+  expect(document.querySelector(".login-brand")?.textContent).not.toContain("Playground");
+});
+
+it("keeps real-instance preferences separate on the same origin", async () => {
+  localStorage.setItem("evlet:list:v2:first-instance:1:customer", JSON.stringify({columns:["name"], defaults:customer.list_fields, saved:[]}));
+  history.replaceState({}, "", "/app/customer");
+  api.request.mockImplementation(async (path:string) => path === "/api/auth/session"
+    ? {user, csrf:"token", application:{name:"Second", id:"second-instance", playground:false}}
+    : path === "/api/ui" ? ui : {});
+  render(() => <App />);
+  await screen.findByRole("button", {name:"Sort by Email"});
+  expect(document.querySelector(".brand-label")?.textContent).toBe("Second");
+  expect(screen.queryByText("Local playground")).not.toBeInTheDocument();
+});
+
+
+it("renders the shared Python record list contract", async () => {
+  const project = models.find((m) => m.name === "project")!;
+  api.listRecords.mockResolvedValue(records.list);
+  context("/app/project", () => <ModelList model={project} />);
+  await screen.findByText("Website launch");
+  expect(screen.getByText("1250.50")).toBeInTheDocument();
+  expect(screen.getByText("1–1 of 1")).toBeInTheDocument();
+});
+
+it("loads the shared Python record detail and children contract", async () => {
+  const project = models.find((m) => m.name === "project")!;
+  api.request.mockImplementation(async (path: string) => path.endsWith("/attachments")
+    ? {items: []} : {data: records.detail, etag: '\"contract\"'});
+  context("/app/project/1", () => <RecordForm model={project} recordId="1" />);
+  await screen.findByDisplayValue("Website launch");
+  expect(screen.getByDisplayValue("Prepare content")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("Review pages")).toBeInTheDocument();
+  expect(screen.getAllByRole("checkbox").filter((input) => (input as HTMLInputElement).checked)).toHaveLength(1);
 });

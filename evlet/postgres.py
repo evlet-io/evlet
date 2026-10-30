@@ -109,7 +109,7 @@ class PostgreSQLDatabase(Database):
     locks. Reads use MVCC; this version does not promise parallel tenant writes.
     """
 
-    def __init__(self, dsn, registry, *, migrations=None, timeout=5, max_connections=10):
+    def __init__(self, dsn, registry, *, migrations=None, timeout=5, max_connections=10, migration_timeout=300):
         try:
             import psycopg
             from psycopg_pool import ConnectionPool
@@ -119,6 +119,9 @@ class PostgreSQLDatabase(Database):
             raise ValueError('Configure a PostgreSQL connection string')
         if type(timeout) is not int or not 1 <= timeout <= 300:
             raise ValueError('Use a timeout between 1 and 300 seconds')
+        if type(migration_timeout) is not int or not 1 <= migration_timeout <= 86400:
+            raise ValueError('Use a migration timeout between 1 and 86400 seconds')
+        self.migration_timeout = migration_timeout
         if type(max_connections) is not int or not 1 <= max_connections <= 100:
             raise ValueError('Use between 1 and 100 pooled connections')
         for table, model in registry.models.items():
@@ -184,10 +187,14 @@ class PostgreSQLDatabase(Database):
             raise sqlite3.OperationalError('PostgreSQL operation failed') from None
 
     @contextmanager
-    def transaction(self):
+    def transaction(self, *, timeout=None):
+        if timeout is not None and (type(timeout) is not int or not 1 <= timeout <= 86400):
+            raise ValueError('Use a transaction timeout between 1 and 86400 seconds')
         with self._connection() as connection:
             try:
                 connection.execute('BEGIN ISOLATION LEVEL READ COMMITTED')
+                if timeout is not None:
+                    connection.execute("SELECT set_config('statement_timeout', ?, true), set_config('lock_timeout', ?, true), set_config('idle_in_transaction_session_timeout', ?, true)", (str(timeout * 1000),) * 3)
                 connection.execute('SELECT pg_advisory_xact_lock(1163283540)')
                 yield Session(connection, self.registry)
                 connection.commit()

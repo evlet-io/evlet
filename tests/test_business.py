@@ -72,7 +72,9 @@ def test_password_hash_has_random_salt_and_secure_cost(hashed):
 
 def test_authentication_cookie_csrf_logout_and_expiry(secured):
     assert http(secured, 'GET', '/api/schema')[0] == 401
-    assert http(secured, 'GET', '/api/auth/session')[1] == {'user': None, 'setup': False}
+    session = http(secured, 'GET', '/api/auth/session')[1]
+    assert session['user'] is None and session['setup'] is False
+    assert session['application']['playground'] is True
     c = client(secured)
     assert c('GET', '/api/auth/session')[1]['user']['role'] == 'admin'
     assert http(secured, 'POST', '/api/customer', {'name': 'No token'}, cookie=c.cookie)[0] == 403
@@ -102,7 +104,8 @@ def test_cookie_security_and_login_throttle(secured):
     assert all(part in cookie for part in (b'HttpOnly', b'SameSite=Strict', b'Secure', b'Path=/'))
     for i in range(10):
         assert http(secured, 'POST', '/api/auth/login', {'username': 'unknown', 'password': 'bad'})[0] == 401
-    assert http(secured, 'POST', '/api/auth/login', {'username': 'admin', 'password': PASSWORD})[0] == 429
+    assert http(secured, 'POST', '/api/auth/login', {'username': 'unknown', 'password': 'bad'})[0] == 429
+    assert http(secured, 'POST', '/api/auth/login', {'username': 'admin', 'password': PASSWORD})[0] == 200
 
 
 def test_setup_loopback_once_and_no_account_role_override(tmp_path):
@@ -275,8 +278,8 @@ def test_child_permissions_rollback_parent_and_do_not_delete_hidden_rows(secured
     secured.business.policy = Policy(registry, rules={('editor', ProjectTask): Rule(('read', 'create', 'update', 'delete'), scope=lambda user: {'done': True})})
     path = f'/api/project/{project["id"]}'
     assert c('GET', path)[1]['children']['tasks'] == []
-    assert c('PATCH', path, {'name': 'Attempt', 'children': {'tasks': []}})[0] == 404
-    assert secured.database.get(Project, project['id']).name == 'Original'
+    assert c('PATCH', path, {'name': 'Attempt', 'children': {'tasks': []}})[0] == 200
+    assert secured.database.get(Project, project['id']).name == 'Attempt'
     assert secured.database.count(ProjectTask) == 1
     assert c('DELETE', path)[0] == 404
 

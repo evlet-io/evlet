@@ -63,12 +63,10 @@ def instance_guard(path, *, serving=False):
     if lock.is_symlink():
         raise ValueError('Instance lock cannot be a symbolic link')
     fd = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0), 0o600)
-    with os.fdopen(fd, 'a+b') as stream:
+    with os.fdopen(fd, 'r+b') as stream:
         try:
             if os.name == 'nt':
-                import msvcrt
-                stream.seek(0); stream.write(b'0'); stream.flush(); stream.seek(0)
-                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                unlock = _windows_lock(stream, exclusive=not serving)
             else:
                 import fcntl
                 fcntl.flock(stream, (fcntl.LOCK_SH if serving else fcntl.LOCK_EX) | fcntl.LOCK_NB)
@@ -78,6 +76,33 @@ def instance_guard(path, *, serving=False):
             yield
         finally:
             if os.name == 'nt':
-                stream.seek(0); msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                unlock()
             else:
                 fcntl.flock(stream, fcntl.LOCK_UN)
+
+
+def _windows_lock(stream, *, exclusive):
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    class Overlapped(ctypes.Structure):
+        _fields_ = [('Internal', ctypes.c_size_t), ('InternalHigh', ctypes.c_size_t),
+                    ('Offset', wintypes.DWORD), ('OffsetHigh', wintypes.DWORD),
+                    ('hEvent', wintypes.HANDLE)]
+
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.LockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
+                                 wintypes.DWORD, wintypes.DWORD, ctypes.POINTER(Overlapped)]
+    kernel.LockFileEx.restype = wintypes.BOOL
+    kernel.UnlockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
+                                   wintypes.DWORD, ctypes.POINTER(Overlapped)]
+    kernel.UnlockFileEx.restype = wintypes.BOOL
+    handle = msvcrt.get_osfhandle(stream.fileno())
+    overlapped = Overlapped()
+    if not kernel.LockFileEx(handle, 1 | (2 if exclusive else 0), 0, 1, 0, ctypes.byref(overlapped)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    def unlock():
+        if not kernel.UnlockFileEx(handle, 0, 1, 0, ctypes.byref(overlapped)):
+            raise ctypes.WinError(ctypes.get_last_error())
+    return unlock

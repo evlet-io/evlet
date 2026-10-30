@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import hashlib
 from importlib import metadata
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import subprocess
 import sys
@@ -35,7 +35,7 @@ class Package:
             if path.is_file():
                 digest.update(str(path.relative_to(self.path)).encode() + b'\0')
                 digest.update(hashlib.sha256(path.read_bytes()).digest())
-        source, commit = str(self.path), None
+        source, commit = 'apps/' + self.name, None
         if (self.path / '.git').exists():
             commit = git(self.path, 'rev-parse', 'HEAD').strip()
             if not re.fullmatch('[0-9a-f]{40}|[0-9a-f]{64}', commit):
@@ -44,6 +44,15 @@ class Package:
             if result.returncode == 0:
                 source = result.stdout.strip()
         return {'version': self.version, 'source': source, 'commit': commit, 'sha256': digest.hexdigest()}
+
+
+def portable_lock_entry(name, entry):
+    """Read older local locks without requiring their original absolute location."""
+    source = entry['source']
+    path = PureWindowsPath(source) if PureWindowsPath(source).is_absolute() else Path(source)
+    if path.is_absolute() and path.name == name and path.parent.name == 'apps':
+        return {**entry, 'source': 'apps/' + name}
+    return entry
 
 
 def git(path, *args):
@@ -58,7 +67,7 @@ def validate_url(url):
     if parsed.scheme not in ('https', 'ssh') or not parsed.hostname or not parsed.path.strip('/') or parsed.password or parsed.query or parsed.fragment:
         raise ValueError('Use an HTTPS or ssh:// Git URL without a password, query or fragment')
     if parsed.scheme == 'https' and parsed.username:
-        raise ValueError('Keep Git credentials out of application URLs; use a credential helper')
+        raise ValueError('Keep Git credentials out of application URLs; use an ssh:// URL and SSH authentication for private repositories')
     if any(ord(char) < 33 for char in url):
         raise ValueError('Invalid Git URL')
     return url
@@ -84,8 +93,9 @@ def read_package(path):
     if set(options) - {'app', 'title'}:
         raise ValueError('Unknown tool.evlet option; supported options are app and title')
     name = valid_name(project.get('name'))
-    if name == 'evlet' or name in sys.stdlib_module_names:
-        raise ValueError('Application name conflicts with the framework or Python standard library')
+    reserved = {'evlet', 'uvicorn', 'packaging', 'psycopg', 'psycopg_pool', 'boto3', 'botocore'}
+    if name in reserved or name in sys.stdlib_module_names or name in metadata.packages_distributions():
+        raise ValueError('Application name conflicts with the framework, Python standard library or an installed Python package')
     version = project.get('version')
     if not isinstance(version, str):
         raise ValueError('App metadata requires a static project.version')
@@ -100,7 +110,7 @@ def read_package(path):
         raise ValueError('project.dependencies must be an array of requirement strings')
     requirements = tuple(Requirement(item) for item in dependencies)
     if not any(canonicalize_name(item.name) == 'evlet' and not item.url and (not item.marker or item.marker.evaluate()) for item in requirements):
-        raise ValueError('Apps must declare an active Evlet dependency, such as evlet>=0.1.0')
+        raise ValueError('Apps must declare an active Evlet dependency, such as evlet>=0.1.2')
     for requirement in requirements:
         if requirement.url:
             raise ValueError('Direct URL dependencies are not supported; fetch apps separately and declare version constraints')

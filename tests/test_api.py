@@ -21,7 +21,7 @@ def request(app, method, path, data=None, *, body=None, content_type=b"applicati
         async def send(event):
             messages.append(event)
         await app({"type": "http", "method": method, "path": route,
-                   "query_string": query.encode(), "headers": [(b"content-type", content_type)]}, receive, send)
+                   "query_string": query.encode(), "headers": [(b"host", b"localhost"), (b"content-type", content_type)]}, receive, send)
         return messages[0]["status"], json.loads(messages[1]["body"]) if messages[1]["body"] else None, dict(messages[0]["headers"])
     return asyncio.run(run())
 

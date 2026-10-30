@@ -78,9 +78,10 @@ count = database.count(Invoice, filters={"customer": customer.id})
 ```
 
 Filter keys contain a field path and an optional operator separated by `__`.
-A plain key means equality. Supported operators are `eq`, `ne`, `gt`, `gte`,
+A plain key means equality, including a field named `gt` or `contains`. Supported operators are `eq`, `ne`, `gt`, `gte`,
 `lt`, `lte`, `in`, `isnull`, `contains`, `icontains`, and `startswith`. Filters
-combine with AND. Link paths allow up to three relationship hops, for example
+`ne` uses SQL inequality: it excludes NULL rows when compared with a non-NULL
+value. Use `isnull` explicitly for NULL values. Filters combine with AND. Link paths allow up to three relationship hops, for example
 `invoice__customer__name`. Ordering accepts the same paths and a leading `-`
 for descending order. IDs break ties when no ID order is supplied.
 
@@ -191,3 +192,9 @@ edit, confirmed delete, search, and ordering controls use the public HTTP API.
 Tax rate and status are stored example fields; they do not calculate tax, settle
 invoices, post a ledger, or trigger workflow actions. Existing email remains Text
 so this upgrade does not retroactively reject previously accepted addresses.
+
+Stored rows are decoded without rerunning custom field validators or
+`Model.validate()`. New records and updates still run those rules, so an older row
+can be read and repaired after a rule is tightened. Text fields reject NUL
+characters on both SQLite and PostgreSQL. Text collation and Unicode case folding
+can differ by database backend; explicit nullable ordering is shared.

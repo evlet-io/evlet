@@ -13,7 +13,7 @@ def documentation():
     folder = files('evlet.resources').joinpath('docs')
     if not folder.is_dir():
         folder = Path(__file__).resolve().parents[2] / 'docs'
-    result = {path.name: path.read_text(encoding='utf-8') for path in sorted(folder.glob('*.md'))}
+    result = {path.name: path.read_text(encoding='utf-8') for path in sorted(folder.glob('*.md')) if path.name != 'handoff.md'}
     if 'cli.md' not in result:
         raise ValueError('Installed documentation is incomplete')
     return result

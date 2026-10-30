@@ -41,6 +41,7 @@ def parser():
             command.add_argument('--jobs', action='store_true', help='Run the existing short-task queue in this process')
         else:
             command.add_argument('--instance', help='Required when the project has several instances')
+        command.add_argument('--debug', action='store_true', help='Show tracebacks for expected startup errors')
         command.add_argument('--host', default='127.0.0.1')
         command.add_argument('--port', type=int, default=8000)
     for name, port in (('playground', 8000), ('docs', 8001)):
@@ -125,7 +126,7 @@ def main(argv=None):
                     name = input('Choose an instance (' + ', '.join(names) + '): ').strip()
                 else:
                     raise ValueError('Select an instance with evlet dev --instance NAME. Create and install an app first')
-            serve(root, name, host=args.host, port=args.port, development=args.command == 'dev', jobs=getattr(args, 'jobs', False))
+            serve(root, name, host=args.host, port=args.port, development=args.command == 'dev', jobs=getattr(args, 'jobs', False), debug=args.debug)
     except (KeyboardInterrupt, BrokenPipeError):
         return
     except (ValueError, TypeError, SyntaxError, OSError, RuntimeError, ImportError, sqlite3.Error, subprocess.SubprocessError) as exc:

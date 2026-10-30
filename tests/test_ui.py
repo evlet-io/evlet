@@ -357,3 +357,24 @@ def test_input_prefixes_remain_presentation_metadata():
     planning = form["layout"]["slots"]["children"][1]
     budget = next(node for node in planning["slots"]["children"] if node["props"]["field"] == "budget")
     assert budget["props"]["prefix"] == "AED"
+
+
+@pytest.mark.parametrize('value', ['image-set("https://example.test/a.png" 1x)', '-webkit-image-set("https://example.test/a.png" 1x)', r'\75rl(https://example.test/a.png)', 'u/**/rl(https://example.test/a.png)', 'image("https://example.test/a.png")'])
+def test_styles_cannot_hide_external_resources(value):
+    with pytest.raises(ValueError, match='Styles'):
+        SchemaCompiler().compile(PageView('unsafe', layout=Text('Unsafe', style={'background':value})))
+
+
+@pytest.mark.parametrize('model', ['../auth', '/customer', 'customer?x=1', 'customer/1', 12])
+def test_execute_action_rejects_non_model_paths(model):
+    from evlet.ui import ExecuteAction
+    with pytest.raises(ValueError, match='model name'):
+        SchemaCompiler().compile(PageView('unsafe', layout=Button('Run', on_click=ExecuteAction('rename', model=model, record_id=1))))
+
+
+def test_rendered_deployment_preserves_browser_security_headers():
+    from evlet.deployment import deployment_files
+    from evlet.ui.serving import CSP
+    caddy = deployment_files(['app.example.com'])['Caddyfile']
+    assert f'Content-Security-Policy "{CSP}"' in caddy
+    assert 'frame-ancestors' in caddy and 'Strict-Transport-Security' in caddy

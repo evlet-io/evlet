@@ -103,6 +103,11 @@ connection initialization behavior.
 
 ## Migrations
 
+Migrations use a separate `migration_timeout` of 300 seconds by default. Configure
+it with `PostgreSQLDatabase(..., migration_timeout=900)` for longer maintenance
+operations. Request timeouts keep their existing setting, and pooled connections
+return to that setting after the migration transaction.
+
 `initialize()` checks the stored schema definition, migration checksums, column
 types, identity/primary keys, foreign keys, and indexes. Existing definitions must
 match. `database.migrate(history)` applies supported AddField, RenameField,

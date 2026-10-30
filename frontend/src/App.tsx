@@ -91,7 +91,8 @@ export default function App() {
     [connecting, setConnecting] = createSignal(true),
     [busy, setBusy] = createSignal(false),
     [error, setError] = createSignal(""),
-    [tenant, setTenant] = createSignal<any>(null);
+    [tenant, setTenant] = createSignal<any>(null),
+    [application, setApplication] = createSignal<any>({});
   const [username, setUsername] = createSignal(""),
     [password, setPassword] = createSignal("");
   let alive = true;
@@ -112,6 +113,7 @@ export default function App() {
       setUser(data.user);
       setSetup(!!data.setup);
       setTenant(data.tenant);
+      setApplication(data.application || {});
       if (data.user && ["/", "/login"].includes(location.pathname))
         router.navigate("/docs", true, true);
     } catch (e) {
@@ -200,11 +202,11 @@ export default function App() {
               <a class="login-brand" href="/login">
                 <Logo />
                 <strong>evlet</strong>
-                <span>Playground</span>
+                <span>{application().playground ? "Playground" : application().name || "Your workspace"}</span>
               </a>
               <div class="login-card">
                 <Badge tone="info">{tenant()?.label || "Your workspace"}</Badge>
-                <h1>{setup() ? "Set up your Playground" : "Welcome back"}</h1>
+                <h1>{setup() ? `Set up ${application().playground ? "your Playground" : application().name || "your workspace"}` : "Welcome back"}</h1>
                 <p>
                   {setup()
                     ? "Create the first administrator account."
@@ -278,6 +280,7 @@ export default function App() {
               <Workspace
                 user={account}
                 tenant={tenant()}
+                application={application()}
                 router={router}
                 dialogs={dialogs}
                 onLogout={logout}
@@ -295,6 +298,7 @@ function Workspace(props: {
   dialogs: DialogController;
   user: User;
   tenant: any;
+  application: any;
   router: ReturnType<typeof createRouter>;
   onLogout: () => void;
   accountError: string;
@@ -381,7 +385,7 @@ function Workspace(props: {
     ui: data()!.ui,
     models: data()!.models,
     user: props.user,
-    tenant: props.tenant?.name || "local",
+    tenant: props.application?.id || props.tenant?.name || data()!.ui.name,
     router: props.router,
     dialogs: props.dialogs,
     notify,
@@ -417,7 +421,7 @@ function Workspace(props: {
                   name={
                     <>
                       <strong>evlet</strong>
-                      <span class="brand-label">Playground</span>
+                      <span class="brand-label">{props.application?.playground ? "Playground" : props.tenant?.label || props.application?.name || data()!.ui.name}</span>
                     </>
                   }
                 />
@@ -425,7 +429,7 @@ function Workspace(props: {
               workspaceSwitcher={
                 <WorkspaceSwitcher
                   name={props.tenant?.label || data()!.ui.name}
-                  description="Local playground"
+                  description={props.application?.playground ? "Local playground" : "Your workspace"}
                   icon={<span class="workspace-letter">E</span>}
                   onClick={() => navigate("/docs")}
                 />
