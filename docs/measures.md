@@ -211,6 +211,8 @@ GET /api/invoice/aggregate?measures=amount:sum:total,count:count,outstanding&gro
 * `group_by` (optional): comma-separated `field` or `field:day`, `field:month`,
   `field:year`, up to four.
 * `filters` (optional): a JSON object in the list filter syntax.
+* `q` (optional): the list's search text, matched like the list's search box against the
+  model's search fields the caller may read (at most 200 characters).
 
 ```json
 {"group_by": ["status", "posting_date__month"],
@@ -225,7 +227,8 @@ month keys are `"YYYY-MM"` and year keys are integers. Empty values are `null`.
 ### GET /api/{model}/measures
 
 The declared model-level measures the caller may read, for a list page. It takes the
-same optional `filters` as the list, so totals can follow the list's filters.
+same optional `filters` and `q` (search) as the list, so totals follow the list's filters and
+its search box.
 
 ```json
 {"measures": {"outstanding": "110.00", "count": 4}}

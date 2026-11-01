@@ -111,17 +111,17 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   });
   const refresh = () => reload.set(reload.peek() + 1);
 
-  // Model-level measures (Phase 9) follow the list's filters.
+  // Model-level measures (Phase 9) follow the list's filters and its search box.
   const declared = (model.measures ?? []).filter(measure => !measure.per_record);
   const measures = cell<Record<string, unknown> | null>(null);
   if (declared.length) effect(() => {
-    const current = serverFilters.get();
+    const current = serverFilters.get(), text = query.get();
     reload.get();
-    void api.measures(name, current).then(values => measures.set(values), () => measures.set(null));
+    void api.measures(name, current, text).then(values => measures.set(values), () => measures.set(null));
   });
   // Saved view counts and board column totals by state, from one aggregate (Phase 9): a count
   // and the board's declared sum measure, with the measure's own where. The aggregate route
-  // works without declared measures. It has no search, so totals are not shown while searching.
+  // works without declared measures and follows the search box too.
   const sumMeasure = declared.find(measure => measure.function === 'sum' && measure.field && !measure.where) ?? declared.find(measure => measure.function === 'sum' && measure.field);
   const valueField = sumMeasure?.field ? fieldOf(model, sumMeasure.field) : undefined;
   const countName = sumMeasure?.name === 'n' ? 'records' : 'n';
@@ -131,16 +131,17 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   if (state) effect(() => {
     const others = { ...serverFilters.get() };
     delete others[state.field];
+    const text = query.get();
     reload.get();
     totalsTick.get();
     const mine = ++aggregateTicket;
-    void api.aggregate(name, [`${countName}:count`, ...(sumMeasure ? [sumMeasure.name] : [])], [state.field], others)
+    void api.aggregate(name, [`${countName}:count`, ...(sumMeasure ? [sumMeasure.name] : [])], [state.field], others, text)
       .then(result => { if (mine === aggregateTicket) grouped.set(result.items); }, () => { if (mine === aggregateTicket) grouped.set(null); });
   });
   const counts = derive(() => grouped.get() && state ? Object.fromEntries(grouped.get()!.map(item => [String(item[state.field]), Number(item[countName])])) : null);
   const boardTotals = derive<Record<string, BoardTotal> | null>(() => {
     const items = grouped.get();
-    if (!items || !state || query.get()) return null;
+    if (!items || !state) return null;
     const amountOf = (item: Record<string, unknown> | undefined) => sumMeasure ? item?.[sumMeasure.name] ?? '0' : null;
     const all = items.reduce((sum, item) => sum + (Number(amountOf(item)) || 0), 0);
     return Object.fromEntries(state.states.map(value => {

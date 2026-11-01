@@ -101,6 +101,15 @@ def test_list_sort_search_filter_and_paging(crm):
     by_stage = admin('GET', '/api/deal/aggregate?measures=value:sum:total,deals:count&group_by=stage')[1]['items']
     assert {row['stage'] for row in by_stage} >= {'lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'}
     assert sum(Decimal(row['value']) for row in by_stage if row['stage'] not in ('won', 'lost', 'void')) == Decimal(measures['pipeline'])
+    # The measures and the aggregate follow the list's search box, with the list's readable search fields.
+    rollout = admin('GET', '/api/deal?limit=50&offset=0&q=rollout')[1]
+    searched = admin('GET', '/api/deal/measures?q=rollout')[1]['measures']
+    assert searched['deals'] == rollout['total'] == 2
+    assert Decimal(searched['pipeline']) + Decimal(searched['won']) == sum(Decimal(item['total']) for item in rollout['items']
+                                                                          if item['stage'] not in ('lost', 'void'))
+    stages = admin('GET', '/api/deal/aggregate?measures=n:count&group_by=stage&q=rollout')[1]['items']
+    assert sum(row['n'] for row in stages) == 2
+    assert login(crm, 'vera')('GET', '/api/deal/measures?q=' + 'x' * 201)[0] == 422
     # Won this month is a declared measure: won_on from the first of this month in Dubai, decided at query time.
     month = dubai_today().strftime('%Y-%m')
     won = admin('GET', '/api/deal/aggregate?measures=won:sum:total&group_by=won_on:month&filters=' + quote(json.dumps({'stage': 'won'})))[1]['items']

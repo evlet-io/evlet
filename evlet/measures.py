@@ -487,12 +487,13 @@ def aggregate(tx, model, measures, group_by=(), filters=None):
     return execute(tx.connection, tx.registry, model, compiled, groups, where, values)
 
 
-def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, zone='UTC'):
-    """Declared measure values: model-level over the filtered records, or per record over related rows."""
+def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, zone='UTC', search=('', None)):
+    """Declared measure values: model-level over the filtered (and searched) records, or per record over related
+    rows. `search` is the list search text and the fields it looks in (None: the model's search fields)."""
     scope_for = scope_for or (lambda target: ('', ()))
     if record_id is None:
         # Filters are checked even when no measure is available.
-        where, values = SqlQuery(tx.registry, model).where(filters)
+        where, values = SqlQuery(tx.registry, model).where(filters, search[0], search_fields=search[1])
         if not items:
             return {}
         where, values = combine(where, values, *scope_for(model))
@@ -555,7 +556,14 @@ def expression_names(node):
     return names
 
 
-def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=None):
+def searched(business, user, model, search):
+    """The list search for this role: the text and the model's search fields it may read, as the list uses."""
+    from .ui.metadata import view_for
+    readable = business.policy.fields(user, model)
+    return search, [name for name in view_for(model)['search_fields'] if name in readable]
+
+
+def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=None, search=''):
     policy, registry = business.policy, business.registry
     policy.require(user, model, 'read')
     readable = policy.fields(user, model)
@@ -578,7 +586,8 @@ def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=N
     if any(not allowed(policy, user, item) for item in compiled):
         raise AccessError(403, UNAVAILABLE)
     policy.query_fields(user, model, filters, ())
-    where, values = SqlQuery(registry, model).where(filters)
+    text, fields = searched(business, user, model, search)
+    where, values = SqlQuery(registry, model).where(filters, text, search_fields=fields)
     where, values = combine(where, values, *policy.scope_sql(user, model))
     return execute(tx.connection, registry, model, compiled, groups, where, values, getattr(business, 'timezone', None) or 'UTC')
 
@@ -588,7 +597,7 @@ def available(business, user, model, per_record):
             if (item.link is not None) == per_record and allowed(business.policy, user, item)]
 
 
-def scoped_measures(business, tx, user, model, record_id=None, filters=None):
+def scoped_measures(business, tx, user, model, record_id=None, filters=None, search=''):
     """Declared measures this role may read; others are left out. Row scopes apply to every model."""
     policy = business.policy
     policy.require(user, model, 'read')
@@ -597,7 +606,8 @@ def scoped_measures(business, tx, user, model, record_id=None, filters=None):
         policy.query_fields(user, model, filters, ())
     else:
         policy.record(tx, user, model, record_id)
-    return values_for(tx, model, items, record_id, filters, lambda target: policy.scope_sql(user, target), getattr(business, 'timezone', None) or 'UTC')
+    return values_for(tx, model, items, record_id, filters, lambda target: policy.scope_sql(user, target),
+                      getattr(business, 'timezone', None) or 'UTC', searched(business, user, model, search))
 
 
 def schema(business, user, model):
@@ -669,20 +679,20 @@ def route(business, scope, user, model, parts):
         record_id = int(parts[3])
     business.policy.require(user, model, 'read')
     if parts[3] == 'aggregate':
-        query, filters = parameters(scope, {'measures', 'group_by', 'filters'})
+        query, filters = parameters(scope, {'measures', 'group_by', 'filters', 'q'})
         requested, group_by = parse_measures(query.get('measures', '')), parse_groups(query.get('group_by', ''))
     else:
-        query, filters = parameters(scope, set() if record_id else {'filters'})
+        query, filters = parameters(scope, set() if record_id else {'filters', 'q'})
     with business.database._connection() as connection:
         connection.execute('BEGIN')
         tx = Session(connection, business.registry)
         if parts[3] == 'aggregate':
-            rows = scoped_aggregate(business, tx, user, model, requested, group_by, filters)
+            rows = scoped_aggregate(business, tx, user, model, requested, group_by, filters, query.get('q', ''))
             compiled, groups = prepare(business.registry, model, requested, group_by)
             items = [{**{group.key: encode_group(model, group, row[group.key]) for group in groups},
                       **{item.name: encode(item, row[item.name]) for item in compiled}} for row in rows]
             return 200, {'group_by': [group.key for group in groups], 'measures': list(requested), 'items': items}, []
-        result = scoped_measures(business, tx, user, model, record_id, filters)
+        result = scoped_measures(business, tx, user, model, record_id, filters, query.get('q', ''))
     items = {item.name: item for item in declared(business.registry, model)}
     return 200, {'measures': {name: encode(items[name], value) for name, value in result.items()}}, []
 

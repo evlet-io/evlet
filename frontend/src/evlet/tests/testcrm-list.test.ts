@@ -44,6 +44,10 @@ describe('testCRM: sign in and the deals list', () => {
     typeInto(host.querySelector<HTMLInputElement>('.toolbar input')!, 'planning');
     await until(() => expect(titles(host)).toEqual(['Production planning module']));
     expect(listed(run, sent).pop()).toMatchObject({ q: 'planning', offset: '0', limit: '50' });
+    // The measures strip and the per-stage counts follow the search box.
+    await until(() => expect(sent.map(item => item.url)).toEqual(expect.arrayContaining([
+      expect.stringMatching(/\/api\/deal\/measures\?q=planning$/), expect.stringMatching(/\/api\/deal\/aggregate\?.*q=planning/)])));
+    await until(() => expect(text(byText(host, '.ev-list [role="tab"]', /^All deals/))).toBe('All deals1'));
     typeInto(host.querySelector<HTMLInputElement>('.toolbar input')!, '');
     await until(() => expect(titles(host).length).toBe(8));
     click(byText(host, '.ev-list [role="tab"]', /^Proposal/));

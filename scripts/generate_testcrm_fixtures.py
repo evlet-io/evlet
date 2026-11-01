@@ -129,7 +129,8 @@ class Scenario:
     def list_page(self, model, query=''):
         """What the list page reads: the page, the measures strip, counts per state and linked titles."""
         page = self.get(f'/api/{model}?limit=50&offset=0' + query)
-        self.get(f'/api/{model}/measures' + (('?' + query.lstrip('&')) if 'filters=' in query else ''))
+        kept = '&'.join(part for part in query.lstrip('&').split('&') if part.startswith(('filters=', 'q=')))
+        self.get(f'/api/{model}/measures' + ('?' + kept if kept else ''))
         self.links(model, page['items'])
         return page
 
@@ -175,6 +176,7 @@ def record(app, out):
     sara.list_page('deal')
     sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage')
     sara.list_page('deal', '&q=planning')
+    sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage&q=planning')
     sara.list_page('deal', '&filters=' + quote(json.dumps({'stage': 'proposal'}, separators=(',', ':'))))
     sara.list_page('deal', '&order_by=total')
     sara.list_page('deal', '&order_by=-total')

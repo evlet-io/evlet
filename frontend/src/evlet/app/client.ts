@@ -41,10 +41,10 @@ export class AppClient extends ApiClient {
     await this.request('POST', '/api/auth/setup', { body: { username, password } });
   }
 
-  /** Declared model-level measures (Phase 9), following the list's filters. */
-  async measures(model: string, filters?: Record<string, unknown>) {
+  /** Declared model-level measures (Phase 9), following the list's filters and search text. */
+  async measures(model: string, filters?: Record<string, unknown>, q?: string) {
     return (await this.request<{ measures: Record<string, unknown> }>('GET', `/api/${model}/measures`,
-      { query: { filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined } })).data.measures;
+      { query: { filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined, q: q || undefined } })).data.measures;
   }
 
   /** Declared per-record measures (Phase 9). */
@@ -53,10 +53,10 @@ export class AppClient extends ApiClient {
   }
 
   /** An ad hoc aggregate (Phase 9): measures as `name:function:field`, grouped by fields. */
-  async aggregate(model: string, measures: string[], groupBy: string[] = [], filters?: Record<string, unknown>) {
+  async aggregate(model: string, measures: string[], groupBy: string[] = [], filters?: Record<string, unknown>, q?: string) {
     return (await this.request<{ group_by: string[]; measures: string[]; items: Array<Record<string, unknown>> }>('GET', `/api/${model}/aggregate`, { query: {
       measures: measures.join(','), group_by: groupBy.length ? groupBy.join(',') : undefined,
-      filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined,
+      filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined, q: q || undefined,
     } })).data;
   }
 
