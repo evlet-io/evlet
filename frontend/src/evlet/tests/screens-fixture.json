@@ -2332,6 +2332,7 @@
  "session_setup": {
   "body": {
    "application": {
+    "docs": "/docs",
     "name": "Evlet",
     "playground": false
    },
@@ -3818,6 +3819,7 @@
  "viewer_session": {
   "body": {
    "application": {
+    "docs": "/docs",
     "name": "Evlet",
     "playground": false
    },

@@ -47,7 +47,7 @@ class Application:
             raise ValueError("Business features require authentication")
         self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
-            self.business.application = {"name": name, "playground": bool(playground)}
+            self.business.application = {"name": name, "playground": bool(playground), "docs": "/docs" if self.routes.docs else None}
             from .forms import Forms
             self.business.forms = Forms(self.business, reports)
             self.business.apis = tuple(apis)

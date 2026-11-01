@@ -8,7 +8,7 @@ import { Avatar, Icon, IconButton, Key } from '../ui/base';
 import { tooltip } from '../ui/tooltip';
 import { MenuButton, mountToasts, openModal, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
 import { applyTheme, type Theme } from './prefs';
-import type { AppContext } from './context';
+import { docsOn, type AppContext } from './context';
 import { groupOf, identity, rootModels, type ScreenModel } from './meta';
 
 const PHONE = '(max-width: 760px)';
@@ -68,7 +68,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     <div class="side-body">
       <div class="side-app"><b>${appName}</b><span>${workspace}</span></div>
       <nav class="nav">
-        ${navItem({ href: router.href('docs', {}), icon: 'file-text', tint: 'slate', label: 'Docs', active: () => ['docs', 'topic', 'home'].includes(route.get()?.name ?? '') })}
+        ${docsOn(ctx.session) ? navItem({ href: router.href('docs', {}), icon: 'file-text', tint: 'slate', label: 'Docs', active: () => ['docs', 'topic', 'home'].includes(route.get()?.name ?? '') }) : null}
         ${groups.map(([name, list]) => html`<div class="nav-group"><div class="nav-label">${name}</div>${list.map(modelItem)}</div>`)}
         ${when(() => recents.get().length > 0, () => html`<div class="nav-group"><div class="nav-label">Recent</div>${() => recents.get().map(item => {
           const model = models.find(entry => entry.name === item.model)!;
@@ -92,7 +92,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     <div class="top-actions">
       <button type="button" class="top-search desktop-only" on:click=${() => ctx.openPalette()}>${Icon('search', { size: 'sm' })}<span>Search</span>${Key('⌘K')}</button>
       <span class="mobile-only">${IconButton({ icon: 'search', tip: 'Search', onClick: () => ctx.openPalette() })}</span>
-      <span class="desktop-only">${IconButton({ icon: 'circle-help', tip: 'Shortcuts  ?', onClick: () => openShortcuts() })}</span>
+      <span class="desktop-only">${IconButton({ icon: 'circle-help', tip: 'Shortcuts  ?', onClick: () => openShortcuts(docsOn(ctx.session)) })}</span>
       ${creatable.length ? [html`<span class="sep desktop-only"></span>`, MenuButton({ label: 'New', icon: 'plus', variant: 'primary', size: 'small', hideLabelOnPhone: true, menuLabel: 'New',
         items: () => creatable.map(model => ({ label: `New ${model.label.toLowerCase()}`, icon: identity(model).icon, tint: identity(model).tint,
           onSelect: () => void router.go('create', { model: model.name }) })) })] : null}
@@ -118,12 +118,12 @@ function keys(ctx: AppContext, event: KeyboardEvent) {
   const key = event.key.toLowerCase();
   if (pendingG && Date.now() - pendingG < 900) {
     pendingG = 0;
-    if (key === 'd' || key === 'h') { event.preventDefault(); void ctx.router.go('docs', {}); }
+    if ((key === 'd' || key === 'h') && docsOn(ctx.session)) { event.preventDefault(); void ctx.router.go('docs', {}); }
     return;
   }
   if (key === 'g') { pendingG = Date.now(); return; }
   if (event.key === '[') { event.preventDefault(); ctx.toggleSidebar(); return; }
-  if (event.key === '?') { event.preventDefault(); openShortcuts(); return; }
+  if (event.key === '?') { event.preventDefault(); openShortcuts(docsOn(ctx.session)); return; }
   if (event.key === '/') { const input = ctx.pageSearch.peek(); if (input?.isConnected) { event.preventDefault(); input.focus(); } return; }
   if (key === 'c') { const create = ctx.createHere.peek(); if (create) { event.preventDefault(); create(); } }
 }
@@ -133,7 +133,8 @@ const SHORTCUTS: Array<[string, string]> = [
   ['[', 'Toggle the sidebar'], ['?', 'Shortcuts'], ['⌘ Enter', 'Save a form or dialog'], ['Esc', 'Close the top layer, then clear the selection'],
 ];
 
-export function openShortcuts() {
+export function openShortcuts(docs = true) {
+  const shown = SHORTCUTS.filter(([, what]) => docs || what !== 'Go to Docs');
   return openModal({ title: 'Keyboard shortcuts', icon: 'command', tint: 'slate', narrow: true,
-    body: () => html`<dl class="ev-keys">${SHORTCUTS.map(([keys, what]) => html`<dt>${keys.split(' or ').map((part, index) => [index ? ' or ' : '', Key(part)])}</dt><dd>${what}</dd>`)}</dl>` });
+    body: () => html`<dl class="ev-keys">${shown.map(([keys, what]) => html`<dt>${keys.split(' or ').map((part, index) => [index ? ' or ' : '', Key(part)])}</dt><dd>${what}</dd>`)}</dl>` });
 }

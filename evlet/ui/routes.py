@@ -45,9 +45,12 @@ def dispatch(application, scope):
         if target:
             return 302, Download(b''), [(b'location', target.encode())]
         found = application.routes.match(host, path)
-        if found is None or not _serves(application, *found): raise HTTPError(404, 'Route not found')
-        response = static_response(path)
-        if response is not None: return response
+        served = found is not None and _serves(application, *found)
+        if not served and path.startswith('/assets/'): raise HTTPError(404, 'Route not found')
+        response = static_response(path if served else '/')
+        # Unknown browser paths get the app's own not-found page, with a 404 status.
+        if response is not None: return response if served else (404, *response[1:])
+        if not served: raise HTTPError(404, 'Route not found')
         raise HTTPError(404, 'UI assets are not built. Run the frontend production build.')
     return None
 

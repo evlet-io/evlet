@@ -6850,6 +6850,7 @@
  "invoice_session": {
   "body": {
    "application": {
+    "docs": "/docs",
     "name": "Evlet",
     "playground": false
    },
@@ -8934,6 +8935,7 @@
  "session": {
   "body": {
    "application": {
+    "docs": "/docs",
     "name": "Evlet",
     "playground": false
    },
@@ -8950,6 +8952,7 @@
  "session_anonymous": {
   "body": {
    "application": {
+    "docs": "/docs",
     "name": "Evlet",
     "playground": false
    },

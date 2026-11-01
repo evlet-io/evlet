@@ -67,9 +67,11 @@ content security policy (`default-src 'self'`). It uses the system font stack.
 ## Routes
 
 The Python server returns the app for these paths (`evlet/ui/routes.py`, through the
-instance route table in [routing.md](routing.md)); anything else outside `/api/` is a 404.
+instance route table in [routing.md](routing.md)). Any other path outside `/api/` and
+`/assets/` returns the app with status 404, so the browser shows its own page.
 `/docs` is on in development and off once an instance sets a domain, unless its
-`routes.py` turns it on.
+`routes.py` turns it on. The session's `application.docs` tells the browser; with
+Docs off it starts on the first list the role can open and hides the Docs links.
 
 | Path | Screen |
 | --- | --- |

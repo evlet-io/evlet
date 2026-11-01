@@ -40,9 +40,10 @@ The framework has its own frontends: `evlet.desk` at `/app` (the generated scree
 `evlet.docs` at `/docs`, `evlet.controls` at `/controls` and `evlet.settings` at
 `/settings`.
 
-Status: app frontends resolve, take part in the clash check and appear in
-`evlet routes`, but they are not served yet and answer 404. `evlet.controls` also
-answers 404 for now, and `evlet.settings` serves only `/settings/accounts`.
+Status: app frontends are validated and checked for clashes, but they are not served
+yet, so an instance with any app frontend fails at boot with a "not available yet"
+message naming it. `evlet.controls` answers 404 for now, and `evlet.settings` serves
+only `/settings/accounts`.
 Sub-hosts, sign-in realms, API scopes and the `static` and `server` kinds come next.
 Flat-layout apps cannot register frontends yet.
 
@@ -84,13 +85,22 @@ controls = ControlsAccess(allow_ips=("10.0.0.0/8",), require_two_step=True)
   HTTPS origin and secure cookies, and allows binding beyond loopback. `evlet dev`
   refuses both.
 - `paths` moves app frontends to another single segment. Framework frontends can't move.
-- `root` on the primary host makes `/` redirect to that frontend.
+- `root` on the primary host will make `/` redirect to that frontend. It fails at
+  boot as "not available yet" until app frontends are served.
 - `docs`: Docs are on in development and off when a primary host or `Instance.domain`
   is set. `Docs(enabled=True)` or `Docs(enabled=False)` overrides that. Moving docs
-  or limiting them to roles is not available yet.
+  or limiting them to roles is not available yet. `GET /api/auth/session` reports it
+  as `application.docs`: `"/docs"` or `null`. With Docs off, the browser starts on
+  the first list the role can open and shows no Docs links or shortcut.
 - `controls` can only tighten access to Controls. It is stored with the route table
   for the Controls page.
 - `hosts` (sub-hosts) are not available yet; boot fails if it is set.
+- Any other top-level name fails boot, so a typo such as `primay` is caught. Imports
+  (modules, classes, functions, frontends) and names starting with `_` are skipped.
+  Each known name must have its type: `paths` a dict, `hosts` a tuple, and so on.
+- `evlet dev` refuses an instance whose `routes.py` sets `primary`, before it starts
+  the server. Host headers must be plain lowercase `host` or `host:port`; on a primary
+  host they must match its origin exactly, the same set `LocalAuth` accepts.
 
 ## Resolution
 

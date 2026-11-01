@@ -9,7 +9,7 @@ from evlet import AppDefinition, ControlsAccess, Docs, Frontend, Host, Instance
 from evlet.cli.install import install
 from evlet.cli.main import main
 from evlet.instances import load_runtime
-from evlet.routing import RESERVED, reserved, resolve_routes
+from evlet.routing import RESERVED, host_name, require_served, reserved, resolve_routes
 from evlet.ui import Column, PageView, Text, ViewRegistry
 from evlet.ui.registry import route_pattern
 from evlet.ui.serving import STATIC, static_response
@@ -51,6 +51,15 @@ def test_without_routes_py_every_browser_path_is_served_as_before(secured):
     assert http(secured, 'GET', '/health')[0] == 200
     assert http(secured, 'GET', '/api/customer')[0] == 401
     assert http(secured, 'GET', '/docs', headers={b'host': b'evil.example'})[0] == 403
+    # Unknown browser paths get the app's not-found page; unknown assets stay plain 404s.
+    status, payload, headers = http(secured, 'GET', '/missing')
+    assert status == 404 and b'<div id="evlet-app">' in payload and b"frame-ancestors 'none'" in headers[b'content-security-policy']
+    status, payload, _ = http(secured, 'GET', '/assets/missing.js')
+    assert status == 404 and isinstance(payload, dict)
+
+
+def test_session_tells_the_browser_whether_docs_are_on(secured):
+    assert http(secured, 'GET', '/api/auth/session')[1]['application']['docs'] == '/docs'
 
 
 def app(name, *frontends, views=()):
@@ -109,7 +118,8 @@ def test_routes_py_moves_frontends_and_redirects_the_root():
     assert [(row.path, row.serves, row.source) for row in table.rows()[-3:]] == [
         ('/sales', 'crm.crm', 'routes.py'), ('/portal', 'crm.portal', 'app crm'), ('/', '-> /sales', 'routes.py')]
     assert table.match(b'erp.acme.com', '/sales/deals') == ('crm.crm', '/sales', '/deals')
-    assert table.match(b'erp.acme.com:443', '/crm') == ('evlet.desk', '/', '/crm')
+    assert table.match(b'erp.acme.com', '/crm') == ('evlet.desk', '/', '/crm')
+    assert table.match(b'erp.acme.com:443', '/crm') is None and table.authorities() == ('erp.acme.com',)
     assert table.match(b'portal.acme.com', '/sales') is None
     assert table.redirect(b'erp.acme.com', '/') == '/sales' and table.redirect(b'erp.acme.com', '/x') is None
     assert table.origins() == ('https://erp.acme.com',) and table.hosts() == ('erp.acme.com',)
@@ -170,13 +180,67 @@ def test_declarations_validate_their_fields():
         AppDefinition(frontends=('crm',))
 
 
-def write_app(project):
-    package = project / 'apps/notes/notes'
-    (package / 'frontends.py').write_text('from evlet import Frontend\n\nboard = Frontend("board", path="/board", title="Board")\n'
-                                          'portal = Frontend("portal", kind="static", dist="portal/dist", path="/portal", auth="portal")\n')
-    hooks = package / 'hooks.py'
-    hooks.write_text(hooks.read_text().replace('from .migrations import migrations', 'from .migrations import migrations\nfrom .frontends import board, portal')
-                     .replace('migrations=migrations)', 'migrations=migrations, frontends=(board, portal))'))
+@pytest.mark.parametrize('value', ['erp.acme.com', b'127.0.0.1:8000', 'localhost:1', '[::1]:8000', 'a-b.example:65535'])
+def test_host_headers_are_normalized_strictly(value):
+    assert host_name(value) is not None
+
+
+@pytest.mark.parametrize('value', ['', 'ERP.acme.com', 'user@erp.acme.com', 'erp.acme.com/x', 'erp.acme.com?x', 'erp.acme.com#x',
+                                   'erp.acme.com:', 'erp.acme.com:0', 'erp.acme.com:65536', 'erp.acme.com:80x', 'erp..acme.com',
+                                   'erp acme', '[::1', '[nothost]:80', '-erp.com', None, b'\xff'])
+def test_invalid_host_headers_match_nothing(value):
+    assert host_name(value) is None
+    assert resolve_routes().match(value, '/app/x') is None
+
+
+@pytest.mark.parametrize('names, message', [
+    ({'primay': Host('erp.acme.com')}, "unknown name 'primay'"),
+    ({'doc': Docs(enabled=False)}, "unknown name 'doc'"),
+    ({'control': ControlsAccess()}, "unknown name 'control'"),
+    ({'path': {}}, "unknown name 'path'"),
+    ({'hosts': None}, 'hosts must be a tuple of Host'),
+    ({'hosts': ('portal.acme.com',)}, 'hosts must be a tuple of Host'),
+    ({'controls': {}}, 'controls must be ControlsAccess'),
+    ({'paths': None}, 'paths must be a dict'),
+    ({'paths': []}, 'paths must be a dict'),
+    ({'primary': 'erp.acme.com'}, 'primary must be Host'),
+    ({'docs': False}, 'docs must be Docs'),
+])
+def test_routes_py_rejects_unknown_names_and_wrong_types(names, message):
+    with pytest.raises(ValueError, match=re.escape(f'instances/acme/routes.py: {message}')):
+        resolve_routes((), Instance('acme'), names)
+
+
+def test_routes_py_skips_imports_and_private_names():
+    import os
+    namespace = {'__builtins__': {}, '_helper': 1, 'os': os, 'Host': Host, 'crm': Frontend('crm', path='/crm'),
+                 'reserved': reserved, 'docs': Docs(enabled=False)}
+    assert not resolve_routes((), Instance('acme'), namespace).docs
+
+
+TABLE = '''HOST           PATH        SERVES           SIGN-IN   SOURCE
+erp.acme.com   /controls   evlet.controls   control   locked
+erp.acme.com   /settings   evlet.settings   desk      locked
+erp.acme.com   /app        evlet.desk       desk      locked
+erp.acme.com   /reports    evlet.reports    desk      locked
+erp.acme.com   /login      evlet.login      public    locked
+erp.acme.com   /assets     evlet.assets     public    locked
+erp.acme.com   /health     evlet.health     public    locked
+erp.acme.com   /api/*      evlet.api        desk      locked
+erp.acme.com   /sales      crm.crm          desk      routes.py
+erp.acme.com   /portal     crm.portal       portal    app crm
+erp.acme.com   /           -> /sales        desk      routes.py'''
+
+
+def test_frontends_and_root_resolve_but_are_refused_until_served():
+    crm, portal = Frontend('crm', path='/crm'), Frontend('portal', kind='static', dist='portal/dist', path='/portal', auth='portal')
+    table = resolve_routes([app('crm', crm, portal)], Instance('acme'), {'primary': Host('erp.acme.com', root=crm), 'paths': {crm: '/sales'}})
+    assert table.text() == TABLE
+    with pytest.raises(ValueError, match='root= on the primary host is not available yet'):
+        require_served(table)
+    with pytest.raises(ValueError, match=r'^Frontend crm.crm in app crm is not available yet'):
+        require_served(resolve_routes([app('crm', crm)]))
+    require_served(resolve_routes([app('notes', views=(PageView('feed', route='/feed'),))]))
 
 
 ROUTES = '''HOST           PATH        SERVES           SIGN-IN   SOURCE
@@ -188,44 +252,63 @@ erp.acme.com   /login      evlet.login      public    locked
 erp.acme.com   /assets     evlet.assets     public    locked
 erp.acme.com   /health     evlet.health     public    locked
 erp.acme.com   /api/*      evlet.api        desk      locked
-erp.acme.com   /sales      notes.board      desk      routes.py
-erp.acme.com   /portal     notes.portal     portal    app notes
-erp.acme.com   /           -> /sales        desk      routes.py
+erp.acme.com   /           evlet.desk       desk      framework
 '''
 
 
 def test_instance_routes_py_resolves_on_start_and_prints_with_evlet_routes(project, capsys):
-    write_app(project)
     install(project, 'acme', app_name='notes', trust=True)
     instance = project / 'instances/acme'
     main(['routes', 'acme', '--project', str(project)])
     assert '/docs       evlet.docs       desk      framework' in capsys.readouterr().out
-    (instance / 'routes.py').write_text('from evlet import Host, ControlsAccess\nfrom notes.frontends import board\n\n'
-                                        'primary = Host("erp.acme.com", root=board)\npaths = {board: "/sales"}\n'
-                                        'controls = ControlsAccess(allow_ips=("10.0.0.0/8",))\n')
+    (instance / 'routes.py').write_text('from evlet import Host, ControlsAccess\n\n'
+                                        'primary = Host("erp.acme.com")\ncontrols = ControlsAccess(allow_ips=("10.0.0.0/8",))\n')
     main(['routes', 'acme', '--project', str(project)])
     assert capsys.readouterr().out == ROUTES
     application = runtime(project)
     try:
-        assert application.business.auth.origins == {'https://erp.acme.com'} and application.business.auth.secure_cookies
+        auth = application.business.auth
+        assert auth.origins == set(application.routes.origins()) == {'https://erp.acme.com'} and auth.secure_cookies
+        assert auth.hosts == {value.encode() for value in application.routes.authorities()}
         assert application.routes.controls.allow_ips == ('10.0.0.0/8',)
         host = {b'host': b'erp.acme.com', b'origin': b'https://erp.acme.com'}
-        status, _, headers = http(application, 'GET', '/', headers=host)
-        assert status == 302 and headers[b'location'] == b'/sales'
+        assert http(application, 'GET', '/api/auth/session', headers=host)[1]['application']['docs'] is None
         assert http(application, 'GET', '/docs', headers=host)[0] == 404
-        assert http(application, 'GET', '/sales', headers=host)[0] == 404
         assert http(application, 'GET', '/', headers={b'host': b'127.0.0.1:8000'})[0] == 403
     finally:
         application.database.close()
     with pytest.raises(ValueError, match='Development serving requires a local instance'):
         load_runtime(project, 'acme', development=True)
+    with pytest.raises(SystemExit) as exit:
+        main(['dev', '--instance', 'acme', '--project', str(project)])
+    assert exit.value.code == 1 and 'Development serving requires a local instance' in capsys.readouterr().err
     (instance / 'routes.py').unlink()
     with pytest.raises(ValueError, match='Configure an HTTPS domain'):
         load_runtime(project, 'acme', public=True)
+    with pytest.raises(SystemExit):
+        main(['serve', 'acme', '--host', '0.0.0.0', '--project', str(project)])
+    assert 'Configure an HTTPS domain' in capsys.readouterr().err
     (instance / 'routes.py').write_text('from evlet import Host\nprimary = Host("erp.acme.com")\n')
     config = instance / 'config.py'
     config.write_text(config.read_text().replace('domain=None', 'domain="www.acme.com"'))
     with pytest.raises(ValueError, match='sets domain www.acme.com but instances/acme/routes.py sets primary erp.acme.com'):
+        runtime(project)
+
+
+def test_app_frontends_fail_boot_until_served(project):
+    package = project / 'apps/notes/notes'
+    (package / 'frontends.py').write_text('from evlet import Frontend\n\nboard = Frontend("board", path="/board")\n')
+    hooks = package / 'hooks.py'
+    hooks.write_text(hooks.read_text().replace('from .migrations import migrations', 'from .migrations import migrations\nfrom .frontends import board')
+                     .replace('migrations=migrations)', 'migrations=migrations, frontends=(board,))'))
+    with pytest.raises(ValueError, match='^Frontend notes.board in app notes is not available yet'):
+        install(project, 'acme', app_name='notes', trust=True)
+
+
+def test_routes_py_typo_fails_boot(project):
+    install(project, 'acme', app_name='notes', trust=True)
+    (project / 'instances/acme/routes.py').write_text('from evlet import Host\nprimay = Host("erp.acme.com")\n')
+    with pytest.raises(ValueError, match="instances/acme/routes.py: unknown name 'primay'"):
         runtime(project)
 
 
