@@ -680,3 +680,14 @@ def test_ref_defaults_copy_parent_values_once():
     assert doc.rows[row_handle].values['warehouse'] == 'Main'
     doc.set(doc.root.handle, 'warehouse', 'Other')
     assert doc.rows[row_handle].values['warehouse'] == 'Main'
+
+
+def test_browser_fixtures_match_python_plans_and_results():
+    import json
+    from pathlib import Path
+    from finite_fixtures import collect, NUMERIC
+    path = Path(__file__).resolve().parents[1] / 'frontend/src/tests/finite-fixtures.json'
+    assert json.loads(path.read_text()) == json.loads(json.dumps(collect())), 'Run scripts/generate_finite_fixtures.py'
+    for op, a, b in NUMERIC:
+        if op != 'round':
+            assert text({'add': add, 'sub': sub, 'mul': mul, 'div': div}[op](parse(a), parse(b))) == plain(reference(op, a, b))
