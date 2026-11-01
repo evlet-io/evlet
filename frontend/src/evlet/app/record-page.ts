@@ -1,0 +1,602 @@
+// The generated record (doc) view of a model (docs/ui-design/README.md section 7): header with the
+// title, the document number, moves and actions; lifecycle banners; status flow; summary strip;
+// tabs for Activity, Details, each Table, Related and Postings; the side panel. New records use
+// the same layout with inputs and a Create button. Everything the model and the role do not
+// send is absent: fields, actions, moves, tables and blocks come from the schema and detail.
+
+import { html, match, when, type Child } from '../dom';
+import { ApiError, ValidationError, type RecordData } from '../api';
+import { batch, cell, derive, effect, onCleanup, untrack, type Readable } from '../reactive';
+import { RecordStore, type Field, type Rules } from '../model/record';
+import type { FieldSchema } from '../model/schema';
+import { Avatar, Button, Chip, EmptyState, Icon, IconTile, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
+import { ChildTable } from '../ui/childtable';
+import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
+import { displayValue, fieldFor, localField, stateTint, type FieldLike } from '../ui/fields';
+import { FormSection, KeyValueList } from '../ui/inline';
+import { humanize } from '../ui/kinds';
+import { copyText, DialogFooter, MenuButton, openModal, toast, type MenuItem } from '../ui/layers';
+import { DataTable, emptyPrefs, type Column } from '../ui/table';
+import { formatDateTime } from '../model/format';
+import type { AppContext } from './context';
+import type { JournalEntry } from './client';
+import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, screenModel, sections, sequenceField,
+  summaryFields, titleOf, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
+import { cellView } from './list-page';
+
+const RESERVED = new Set(['tab']);
+// A reactive part inside a list of children (arrays are read once; a template hole stays live).
+const live = (render: () => Child) => html`${render}`;
+
+/** A field as a screen shows it: the State lock and the role's write access close it, with the reason. */
+function gate(field: Field, locked: Readable<boolean>, canWrite: boolean): FieldLike {
+  const meta: FieldSchema = canWrite ? field.meta : { ...field.meta, read_only: true };
+  const stateLocked = derive(() => locked.get() && !(field.meta as any).editable_when_locked);
+  const rules = derive<Rules>(() => { const rules = field.rules.get(); return stateLocked.get() && !rules.locked ? { ...rules, locked: true } : rules; });
+  const editable = derive(() => canWrite && field.editable.get() && !stateLocked.get());
+  // A view over the field (its prototype), so recordOf() still finds the record; writes go to the field itself.
+  return Object.create(field, {
+    meta: { value: meta }, rules: { value: rules }, editable: { value: editable },
+    set: { value: (value: unknown) => field.set(value) },
+    touched: { get: () => field.touched, set: (value: boolean) => { field.touched = value; } },
+  }) as FieldLike;
+}
+
+/** Ask before discarding unsaved changes; resolves true to leave. */
+export function confirmDiscard(): Promise<boolean> {
+  return new Promise(resolve => {
+    let answered = false;
+    openModal({ title: 'Discard unsaved changes?', icon: 'info', tint: 'amber', narrow: true,
+      body: () => html`<p>Your changes have not been saved. Leave this page and discard them?</p>`,
+      footer: done => DialogFooter({ cancel: () => { answered = true; resolve(false); done(); }, submit: { label: 'Discard changes', variant: 'danger', onClick: () => { answered = true; resolve(true); done(); } } }),
+      onClose: () => { if (!answered) resolve(false); } });
+  });
+}
+
+function initialValues(model: ScreenModel, query: Record<string, string>) {
+  const values: Record<string, unknown> = {};
+  for (const [name, text] of Object.entries(query)) {
+    const meta = fieldOf(model, name);
+    if (RESERVED.has(name) || !meta || meta.read_only || meta.compute || isStateField(model, meta)) continue;
+    values[name] = meta.type === 'link' || meta.type === 'integer' ? (Number.isSafeInteger(Number(text)) ? Number(text) : null) : meta.type === 'boolean' ? text === 'true' : text;
+  }
+  return values;
+}
+
+export function RecordPage(ctx: AppContext, name: string, idText: string): HTMLElement {
+  const { api, router } = ctx;
+  const model = screenModel(ctx.schema, name);
+  const isNew = idText === 'new';
+  const id = isNew ? null : Number(idText);
+  if (!isNew && !(Number.isSafeInteger(id) && id! > 0)) return missing(ctx, model);
+  const store = new RecordStore({ api, schema: ctx.schema, model: name });
+  onCleanup(() => store.dispose());
+  const status = cell<'loading' | 'ready' | 'missing' | 'error'>('loading', { name: `${name} page` });
+  const failure = cell<string>('');
+  const detail = isNew ? cell<RecordData | null>(null) : api.detail(name, id!);
+  const extras = derive<DetailExtras>(() => extrasOf(detail.get()));
+  const query = router.route.peek()?.query ?? {};
+
+  const load = async () => {
+    status.set('loading');
+    try {
+      if (isNew) await store.create(initialValues(model, query));
+      else await store.open(id!);
+      status.set('ready');
+    } catch (error) {
+      if (error instanceof ApiError && (error.kind === 'not_found' || error.kind === 'forbidden')) status.set('missing');
+      else if (error instanceof ApiError && error.kind === 'aborted') return;
+      else if (store.loadError.peek() && untrack(() => { try { return Boolean(store.root); } catch { return false; } })) status.set('ready');
+      else { failure.set(error instanceof ApiError ? error.message : 'This record could not be opened.'); status.set('error'); }
+    }
+  };
+  void load();
+
+  const page = html`<div class="ev-record">${match(status, {
+    loading: () => html`<div class="page"><p class="muted" role="status">Loading…</p></div>`,
+    missing: () => missing(ctx, model),
+    error: () => html`<div class="page">${EmptyState({ icon: 'info', tint: 'rose', title: 'This record could not be opened', text: () => failure.get(), action: Button({ label: 'Try again', onClick: () => void load() }) })}</div>`,
+    ready: () => RecordView(ctx, model, store, { isNew, extras, detail, query }),
+  })}</div>` as HTMLElement;
+  return page;
+}
+
+function missing(ctx: AppContext, model: ScreenModel): HTMLElement {
+  ctx.crumbs.set([{ label: model.plural, href: ctx.router.href('list', { model: model.name }) }, { label: 'Not found' }]);
+  return html`<div class="page">${EmptyState({ icon: identity(model).icon, tint: identity(model).tint, title: `${model.label} not found`,
+    text: 'It may have been deleted, or your role cannot open it.', action: Button({ label: `Open ${model.plural.toLowerCase()}`, onClick: () => void ctx.router.go('list', { model: model.name }) }) })}</div>` as HTMLElement;
+}
+
+interface ViewOptions { isNew: boolean; extras: Readable<DetailExtras>; detail: Readable<RecordData | null>; query: Record<string, string> }
+
+function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, options: ViewOptions): HTMLElement {
+  const { api, router, prefs } = ctx;
+  const { isNew, extras } = options;
+  const name = model.name, look = identity(model);
+  const canUpdate = model.permissions?.update !== false;
+  const canWrite = isNew ? model.permissions?.create !== false : canUpdate;
+  const state = model.state && fieldOf(model, model.state.field) ? model.state : null;
+  const locked = derive(() => Boolean(extras.get()._locked));
+  const views = new Map<string, FieldLike>();
+  const view = (field: string): FieldLike => {
+    let found = views.get(field);
+    if (!found) views.set(field, found = gate(store.field(field), locked, canWrite));
+    return found;
+  };
+  const has = (field: string) => store.root.fields.has(field);
+  const sequence = sequenceField(model);
+  const stateValue = state ? () => String(store.field(state.field).value.get() ?? '') : () => '';
+  const recordId = () => store.id;
+
+  // ---------- title and crumbs ----------
+
+  const titleText = derive(() => {
+    if (isNew) return `New ${model.label.toLowerCase()}`;
+    const field = has(model.title_field) ? store.field(model.title_field) : null;
+    const data: Record<string, unknown> = { id: store.id, [model.title_field]: field?.value.get() };
+    return titleOf(model, data);
+  });
+  effect(() => ctx.crumbs.set([{ label: model.plural, href: router.href('list', { model: name }) }, { label: titleText.get() }]));
+  if (!isNew) {
+    const remember = () => {
+      const entry = { model: name, id: store.id!, title: untrack(() => titleText.get()) };
+      prefs.recentRecords.set([entry, ...prefs.recentRecords.peek().filter(item => !(item.model === name && item.id === entry.id))].slice(0, 8));
+    };
+    remember();
+  }
+
+  // ---------- unsaved changes ----------
+
+  let leaving = false;
+  const changedNew = () => [...store.root.fields.values()].some(field => field.touched) || [...store.root.tables.values()].some(table => table.rows.peek().length > 0);
+  router.confirmLeave(() => !leaving && (isNew ? changedNew() : store.dirty.peek()), () => confirmDiscard());
+
+  const save = async () => {
+    if (store.saving.peek()) return false;
+    const created = isNew;
+    let ok = false;
+    try { ok = await store.save(); } catch (error) { toast((error as Error).message, { icon: 'info' }); return false; }
+    if (!ok) {
+      toast(store.conflict.peek() ? 'Not saved: this record changed since you opened it.' : 'Not saved. Check the highlighted values.', { icon: 'info' });
+      return false;
+    }
+    if (created) {
+      leaving = true;
+      toast(`${model.label} created`);
+      void router.go('record', { model: name, id: String(store.id) }, {}, { replace: true });
+    } else toast('Saved');
+    return true;
+  };
+
+  // ---------- moves, actions, void and revise ----------
+
+  const blockedMove = (to: string): string | null => {
+    if (isNew) return 'Save the record first';
+    if (store.dirty.get()) return 'Save or discard your changes first';
+    const move = extras.get()._moves?.find(item => item.to === to);
+    if (!move) return `This record cannot move from ${humanize(stateValue())} to ${humanize(to)}`;
+    return move.allowed ? null : move.reason ?? `${move.label} is not available now`;
+  };
+  const runMove = async (to: string) => {
+    const label = extras.peek()._moves?.find(item => item.to === to)?.label ?? humanize(to);
+    const ok = await store.move(to);
+    if (!ok) { toast(store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`, { icon: 'info' }); return; }
+    const number = sequence && has(sequence.name) ? store.field(sequence.name).value.peek() : null;
+    toast(number && sequence?.name !== undefined && (sequence as any).sequence?.assign_on === to ? `${label} done. Number ${number}.` : `Moved to ${humanize(to)}`);
+  };
+  const actions = (): ActionMeta[] => {
+    const declared = model.actions ?? [];
+    const allowed = extras.get()._actions;
+    // A detail lists the actions this role may run; without it, the schema's actions are the ones.
+    return allowed ? allowed.map(item => ({ ...declared.find(action => action.name === item.name), name: item.name, label: item.label })) : declared;
+  };
+  const actionBlocked = (action: ActionMeta): string | null => {
+    if (isNew) return 'Save the record first';
+    if (store.dirty.get()) return 'Save or discard your changes first';
+    const entry = extras.get()._actions?.find(item => item.name === action.name);
+    return entry && !entry.allowed ? entry.reason ?? `${action.label} is not available now` : null;
+  };
+  const runAction = (action: ActionMeta) => {
+    const inputs = actionInputs(action);
+    if (!inputs.length) {
+      void store.runAction(action.name).then(ok => toast(ok ? `${action.label} done` : store.formError.peek() ?? `${action.label} did not run`, { icon: ok ? 'check' : 'info' }));
+      return;
+    }
+    ActionDialog(action, inputs, async values => {
+      const ok = await store.runAction(action.name, values);
+      if (ok) toast(`${action.label} done`);
+      return ok ? null : store.formError.peek() ?? store.conflict.peek()?.message ?? `${action.label} did not run`;
+    });
+  };
+  const correct = (kind: 'void' | 'revise') => {
+    const reason = localField({ name: 'reason', type: 'longtext', label: 'Reason', required: true, max_length: 1000 } as any, '');
+    const title = kind === 'void' ? `Void ${titleText.peek()}` : `Revise ${titleText.peek()}`;
+    const note = kind === 'void' ? 'Voiding keeps the record and its number, and reverses what it posted. It can’t be undone.'
+      : 'Revising voids this record and opens an editable copy. The copy gets its own number when it is issued.';
+    let busy = false;
+    const submit = async (close: () => void) => {
+      const text = String(reason.value.peek() ?? '').trim();
+      if (!text) { reason.error.set('Give a reason'); return; }
+      if (text.length > 1000) { reason.error.set('Use at most 1,000 characters'); return; }
+      if (busy) return;
+      busy = true;
+      try {
+        if (store.dirty.peek()) { reason.error.set('Save or discard your changes first'); return; }
+        const response = kind === 'void' ? await api.voidRecord(name, store.id!, text, store.etag.peek()) : await api.revise(name, store.id!, text, store.etag.peek());
+        close();
+        if (kind === 'void') {
+          store.applyServer(response.data, response.etag);
+          await store.loadAll().catch(() => {});
+          toast('Voided. The number stays used.', { icon: 'circle-x' });
+        } else {
+          toast('Revised. You are editing the new draft.', { icon: 'copy' });
+          const firstTable = model.children?.[0]?.name;
+          void router.go('record', { model: name, id: String(response.data.id) }, firstTable ? { tab: `t-${firstTable}` } : {});
+        }
+      } catch (error) {
+        if (error instanceof ValidationError && error.fields.reason) reason.error.set(error.fields.reason);
+        else reason.error.set(error instanceof ApiError ? error.message : 'This did not work. Try again.');
+      } finally { busy = false; }
+    };
+    let closeDialog = () => {};
+    closeDialog = openModal({ title, icon: kind === 'void' ? 'circle-x' : 'copy', tint: kind === 'void' ? 'rose' : 'blue', narrow: true,
+      onSubmit: () => void submit(closeDialog),
+      body: () => [html`<p class="muted">${note}</p>`, fieldFor({ field: reason, full: true })],
+      footer: close => DialogFooter({ cancel: close, submit: { label: kind === 'void' ? `Void ${model.label.toLowerCase()}` : `Revise ${model.label.toLowerCase()}`,
+        variant: kind === 'void' ? 'danger' : 'primary', onClick: () => void submit(close) } }) });
+  };
+  const remove = () => openModal({ title: `Delete ${titleText.peek()}?`, icon: 'trash-2', tint: 'rose', narrow: true,
+    body: () => html`<p>This can’t be undone.</p>`,
+    footer: close => DialogFooter({ cancel: close, submit: { label: 'Delete', variant: 'danger', icon: 'trash-2', onClick: async () => {
+      try {
+        await api.remove(name, store.id!, store.etag.peek());
+        close(); leaving = true;
+        prefs.recentRecords.set(prefs.recentRecords.peek().filter(item => !(item.model === name && item.id === store.id)));
+        toast(`${model.label} deleted`, { icon: 'trash-2' });
+        void router.go('list', { model: name });
+      } catch (error) { close(); toast(error instanceof ApiError ? error.message : 'Not deleted.', { icon: 'info' }); }
+    } } }) });
+
+  const moreItems = (): MenuItem[] => {
+    const items: MenuItem[] = [{ label: 'Copy link', icon: 'link', onSelect: () => void copyText(location.href, 'the link') }];
+    if (!isNew) items.push({ label: 'Reload', icon: 'rotate-ccw', onSelect: () => void store.reload().catch(() => {}) });
+    const now = extras.peek();
+    if (now._revise) items.push({ label: `Revise ${model.label.toLowerCase()}`, icon: 'copy', disabled: !now._revise.allowed, onSelect: () => correct('revise') });
+    if (now._void) items.push({ label: `Void ${model.label.toLowerCase()}`, icon: 'circle-x', danger: true, disabled: !now._void.allowed, onSelect: () => correct('void') });
+    if (!isNew && model.permissions?.delete && !locked.peek()) items.push('separator', { label: 'Delete', icon: 'trash-2', danger: true, onSelect: remove });
+    return items;
+  };
+
+  const headerActions = (): Child => {
+    if (isNew) return null;
+    const moves = extras.get()._moves ?? [];
+    const firstAllowed = moves.findIndex(move => move.allowed);
+    const moveButtons = moves.map((move, index) => MoveButton({ label: move.label, icon: 'arrow-right', blocked: () => blockedMove(move.to),
+      variant: index === (firstAllowed < 0 ? 0 : firstAllowed) ? (/won|paid|done|complete|approve/i.test(move.to) ? 'success' : 'primary') : 'default',
+      onMove: () => void runMove(move.to) }));
+    const actionButtons = actions().map(action => MoveButton({ label: action.label, icon: 'zap', blocked: () => actionBlocked(action),
+      variant: !moves.length && action === actions()[0] ? 'primary' : 'default', onMove: () => runAction(action) }));
+    return [...moveButtons, ...actionButtons, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items: moreItems, menuLabel: 'More actions' })];
+  };
+
+  // ---------- header ----------
+
+  // The title is edited in place, except a new record's and a document number.
+  const titleProp = isNew || !has(model.title_field) || (sequence && model.title_field === sequence.name) ? () => titleText.get() : view(model.title_field);
+  const markName = () => titleText.get();
+  const mark = look.person ? Avatar({ name: markName, size: 'xl' }) : RecordMark({ name: markName, size: 'lg', tint: look.tint });
+  const metaFacts = keyFields(model).filter(meta => meta.name !== model.title_field && has(meta.name) && !isStateField(model, meta)).slice(0, 3)
+    .map(meta => html`<span class="ev-fact" title=${meta.label}>${displayValue(view(meta.name), { links: ctx.links, empty: `No ${meta.label.toLowerCase()}` })}</span>`);
+  const numberFact = sequence && has(sequence.name) && !isNew ? when(() => !store.field(sequence.name).value.get(),
+    () => html`<span class="muted">${(sequence as any).sequence?.assign_on && (sequence as any).sequence.assign_on !== 'create' ? `Number assigned on ${humanize((sequence as any).sequence.assign_on).toLowerCase()}` : 'Number assigned on save'}</span>`) : null;
+  const header = DocHeader({
+    type: model.label, icon: look.icon, mark,
+    title: titleProp,
+    mono: () => Boolean(sequence && model.title_field === sequence.name && has(sequence.name) && store.field(sequence.name).value.get()),
+    meta: [...metaFacts, numberFact].filter(Boolean) as Child[],
+    actions: [live(headerActions)],
+  });
+
+  // ---------- banners ----------
+
+  const link = (target: number, label: string) => html`<a class="link-q" href=${router.href('record', { model: name, id: String(target) })}>${label}</a>`;
+  const lifecycle = state && (state.locked?.length || state.voidable?.length) && !isNew ? () => {
+    const value = stateValue(), now = extras.get(), revises = has('revises') ? store.field('revises').value.get() as number | null : null;
+    const revisedBy = now.revised_by ?? null;
+    const reviseOf = revises ? [' Revision of ', link(revises, `${model.label} ${revises}`), '.'] : [];
+    if (value === 'void') return StateBanner({ tone: 'danger', title: 'Void.', text: [`This ${model.label.toLowerCase()} was voided. What it posted was reversed and its number is kept.`,
+      ...(revisedBy ? [' Replaced by ', link(revisedBy, `${model.label} ${revisedBy}`), '.'] : []), ...reviseOf] });
+    if (now._locked) {
+      const buttons = [now._revise?.allowed ? Button({ label: 'Revise', icon: 'copy', size: 'small', onClick: () => correct('revise') }) : null,
+        now._void?.allowed ? Button({ label: 'Void', icon: 'circle-x', size: 'small', variant: 'soft-danger', onClick: () => correct('void') }) : null].filter(Boolean) as Node[];
+      const editable = model.fields.filter(field => (field as any).editable_when_locked).map(field => field.label.toLowerCase());
+      return StateBanner({ tone: 'info', title: `${humanize(value)} and locked.`, actions: buttons,
+        text: [editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.', now._void || now._revise ? ' To correct it, void or revise.' : '', ...reviseOf] });
+    }
+    const next = (state.moves.find(move => (Array.isArray(move.from) ? move.from : [move.from]).includes(value) && state.locked?.includes(move.to)));
+    return StateBanner({ tone: 'neutral', title: `${humanize(value)}.`, text: [next ? `Everything can change until it is ${humanize(next.to).toLowerCase()}.` : 'Everything can change.', ...reviseOf] });
+  } : null;
+  const problems = () => {
+    const conflict = store.conflict.get(), form = store.formError.get(), load = store.loadError.get();
+    return [
+      conflict ? StateBanner({ tone: 'danger', title: 'Changed elsewhere.', text: 'This record changed since you opened it. Your draft is still here: copy what you need, then reload.',
+        actions: [Button({ label: 'Reload', icon: 'rotate-ccw', size: 'small', onClick: () => void store.reload().catch(() => {}) })] }) : null,
+      form && !conflict ? StateBanner({ tone: 'danger', title: 'Not saved.', text: form }) : null,
+      load ? StateBanner({ tone: 'danger', title: 'Some rows did not load.', text: `${load.message} Editing waits until every row is here.`,
+        actions: [Button({ label: 'Try again', size: 'small', onClick: () => void store.loadAll().catch(() => {}) })] }) : null,
+    ];
+  };
+
+  // ---------- flow and summary ----------
+
+  const flow = state && !isNew ? (() => {
+    const { steps, good, bad } = flowFromState(state as any);
+    return StatusFlow({ steps, good, bad, current: stateValue, label: `${model.label} status`, blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) });
+  })() : null;
+
+  const perRecord = (model.measures ?? []).filter(measure => measure.per_record);
+  const recordMeasures = cell<Record<string, unknown> | null>(null);
+  if (perRecord.length && !isNew) effect(() => { options.detail.get(); void api.recordMeasures(name, store.id!).then(values => recordMeasures.set(values), () => recordMeasures.set(null)); });
+  const stats: StatProps[] = summaryFields(model).filter(meta => has(meta.name)).map(meta => ({
+    label: meta.label, value: () => {
+      const value = view(meta.name).value.get();
+      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, Number(value)).get() ?? '…';
+      return formatOf(meta, value) || '—';
+    },
+    note: view(meta.name).calculated ? 'Calculated' : undefined,
+  }));
+  for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureText(ctx.schema, model, measure, recordMeasures.get()![measure.name]) : '…' });
+  const summary = stats.length && !isNew ? SummaryStrip(stats) : null;
+
+  // ---------- tabs ----------
+
+  const tables = (model.children ?? []).filter(child => store.root.tables.has(child.name));
+  const journal = Boolean(model.journal) && !isNew;
+  const relations = !isNew ? (model.relations ?? []).filter(relation => ctx.schema.schema.models.some(item => item.name === relation.model)) : [];
+  const tabItems: TabItem[] = [
+    ...(journal ? [{ id: 'activity', label: 'Activity' }] : []),
+    { id: 'details', label: 'Details' },
+    ...tables.map(child => ({ id: `t-${child.name}`, label: child.label, count: () => store.table(child.name).rows.get().length })),
+    ...(relations.length ? [{ id: 'related', label: 'Related' }] : []),
+  ];
+  const postings = !isNew && model.effects?.length ? derive(() => extras.get()._effects ?? null) : null;
+  if (postings) tabItems.push({ id: 'postings', label: 'Postings', count: () => postings.get()?.length ? postings.get()!.reduce((sum, item) => sum + item.rows + item.reversals, 0) : null });
+  const wanted = options.query.tab;
+  const active = cell(tabItems.some(tab => tab.id === wanted) ? wanted! : tabItems[0].id, { name: `${name} tab` });
+  effect(() => {
+    const tab = active.get();
+    untrack(() => {
+      const current = router.route.peek();
+      if (!current || current.name !== (isNew ? 'create' : 'record')) return;
+      if ((current.query.tab ?? tabItems[0].id) === tab) return;
+      const next = { ...current.query };
+      if (tab === tabItems[0].id) delete next.tab; else next.tab = tab;
+      void router.navigate(router.href(current.name as 'record', current.params as any, next), { replace: true });
+    });
+  });
+  const tabs = Tabs({ tabs: tabItems, active, label: `${model.label} sections`, doc: true, idPrefix: `ev-rec-${name}` });
+
+  const details = () => {
+    const groups = sections(model).map(section => ({ ...section, fields: section.fields.filter(meta => has(meta.name)) })).filter(section => section.fields.length);
+    const childLinks = tables.length && !isNew ? tables.map(child => {
+      const table = store.table(child.name);
+      const sums = model.fields.filter(meta => (meta.compute as any)?.$expr === 'aggregate' && (meta.compute as any).table === child.name && has(meta.name));
+      return html`<button type="button" class="fs-link" on:click=${() => active.set(`t-${child.name}`)}>${IconTile('rows-3', { tint: look.tint, size: 30 })}
+        <span class="grow"><b>${() => { const count = table.rows.get().length; return count ? `${count} ${count === 1 ? 'row' : 'rows'}` : `No ${child.label.toLowerCase()} yet`; }}</b>
+        <span class="muted">${() => sums.map(meta => `${meta.label} ${formatOf(meta, store.field(meta.name).value.get())}`).join(' · ') || child.label}</span></span>${Icon('chevron-right', { size: 'sm', className: 'muted' })}</button>`;
+    }) : null;
+    if (isNew) return html`<div class="ev-new-form">${groups.map(section => html`<section class="fs" aria-label=${section.label}><div class="fs-h"><h3>${section.label}</h3></div>
+      <div class="fs-g">${section.fields.filter(meta => !meta.read_only && !meta.compute && !isStateField(model, meta)).map(meta => fieldFor({ field: view(meta.name), links: ctx.links }))}</div></section>`)}</div>`;
+    return groups.map((section, index) => FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
+      extra: index === groups.length - 1 ? childLinks : null }));
+  };
+  const lockedText = () => model.fields.some(field => (field as any).editable_when_locked) ? `Locked. Lines can’t change while it is ${humanize(stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
+  const tablePanel = (child: { name: string; label: string }) => ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
+    locked: () => locked.get() || !canWrite, lockedText: untrack(lockedText), links: ctx.links, crumb: () => titleText.get(),
+    prefs: prefs.cell(`grid.${name}.${child.name}`, emptyPrefs()) });
+
+  const panels = [
+    journal ? TabPanel(tabs, 'activity', active, () => Activity(ctx, model, store)) : null,
+    TabPanel(tabs, 'details', active, details),
+    ...tables.map(child => TabPanel(tabs, `t-${child.name}`, active, () => tablePanel(child))),
+    relations.length ? TabPanel(tabs, 'related', active, () => Related(ctx, model, store.id!, relations)) : null,
+    postings ? TabPanel(tabs, 'postings', active, () => Postings(ctx, postings)) : null,
+  ];
+
+  // ---------- save bar ----------
+
+  const saveBar = isNew
+    ? html`<div class="ev-savebar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => void router.go('list', { model: name }) })}
+        <span class="grow muted">${Icon('info', { size: 'sm' })} Values are checked again when you create it.</span>
+        ${Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check', disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save() })}</div>`
+    : when(() => store.dirty.get(), () => html`<div class="ev-savebar" role="region" aria-label="Unsaved changes">
+        <span class="grow">${Icon('pencil', { size: 'sm' })} Unsaved changes</span>
+        ${Button({ label: 'Discard', variant: 'ghost', onClick: () => void store.revert() })}
+        ${Button({ label: () => store.saving.get() ? 'Saving…' : 'Save', variant: 'primary', icon: 'check', disabled: () => store.saving.get(), onClick: () => void save() })}</div>`);
+
+  // ---------- side panel ----------
+
+  const side = isNew ? undefined : SidePanel(ctx, model, store, view, relations, active);
+
+  const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right',
+    main: [header, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
+  frame.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && (isNew || store.dirty.peek())) { event.preventDefault(); void save(); }
+  });
+  return frame;
+}
+
+// ---------- action dialog ----------
+
+const ARGUMENT_TYPES: Record<string, string> = { str: 'text', int: 'integer', bool: 'boolean', float: 'decimal' };
+
+function actionInputs(action: ActionMeta): FieldSchema[] {
+  if (action.inputs?.length) return action.inputs;
+  return (action.arguments ?? []).map(argument => ({ name: argument.name, type: ARGUMENT_TYPES[argument.type] ?? 'text', label: humanize(argument.name),
+    required: argument.required, read_only: false, default: argument.default }) as FieldSchema);
+}
+
+/** Small dialog that collects an action's inputs, checks them in place and runs it. */
+export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (values: Record<string, unknown>) => Promise<string | null>) {
+  const fields = inputs.map(meta => localField(meta as any, meta.default ?? (meta.type === 'boolean' ? false : null)));
+  const note = cell<string>('');
+  let busy = false;
+  const submit = async (close: () => void) => {
+    let valid = true;
+    for (const field of fields) {
+      const value = field.value.peek();
+      if (field.meta.required && (value === null || value === undefined || value === '')) { field.error.set(`${field.meta.label} is required`); valid = false; }
+    }
+    if (!valid || busy) return;
+    busy = true;
+    const values = Object.fromEntries(fields.filter(field => field.value.peek() !== null && field.value.peek() !== '').map(field => [field.meta.name, field.value.peek()]));
+    const problem = await run(values);
+    busy = false;
+    if (problem) { note.set(problem); return; }
+    close();
+  };
+  let closeDialog = () => {};
+  closeDialog = openModal({ title: action.label, icon: 'zap', tint: 'blue', narrow: true, onSubmit: () => void submit(closeDialog),
+    body: () => [...fields.map(field => fieldFor({ field, full: true })), html`<p class="ev-error" role="alert" hidden=${() => !note.get()}>${() => note.get()}</p>`],
+    footer: close => DialogFooter({ cancel: close, submit: { label: action.label, onClick: () => void submit(close) } }) });
+  return closeDialog;
+}
+
+// ---------- side panel ----------
+
+function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view: (name: string) => FieldLike, relations: NonNullable<ScreenModel['relations']>, active: { set(value: string): void }): Child {
+  const has = (field: string) => store.root.fields.has(field);
+  const keys = keyFields(model).filter(meta => has(meta.name));
+  const blocks: Child[] = [];
+  if (keys.length) blocks.push(SideBlock({ title: 'Key fields', action: html`<button type="button" class="h-link" on:click=${() => active.set('details')}>All fields</button>`,
+    body: KeyValueList(keys.map(meta => view(meta.name)), { links: ctx.links }) }));
+  if (relations.length) blocks.push(SideBlock({ title: 'Related', body: html`<div>${relations.map(relation => {
+    const total = cell<number | null>(null);
+    void ctx.api.related(model.name, store.id!, relation.name, { limit: 1 }).then(page => total.set(page.total), () => total.set(null));
+    const target = screenModel(ctx.schema, relation.model);
+    return html`<button type="button" class="mini-card" on:click=${() => active.set('related')}>${IconTile(identity(target).icon, { tint: identity(target).tint, size: 28 })}
+      <span class="grow"><span class="nm">${relation.label}</span><span class="sub">${() => total.get() === null ? 'Open to see them' : `${total.get()} ${total.get() === 1 ? 'record' : 'records'}`}</span></span>${Icon('chevron-right', { size: 'sm', className: 'muted' })}</button>`;
+  })}</div>` }));
+  if (model.attachments) blocks.push(SideBlock({ title: 'Files', body: Files(ctx, model, store) }));
+  const revises = has('revises') ? view('revises') : null;
+  const extras = () => extrasOf(ctx.api.detail(model.name, store.id!).get());
+  blocks.push(SideBlock({ title: 'Record info', body: html`<dl class="fields">
+    <dt>ID</dt><dd class="num mono">${String(store.id)}</dd>
+    ${revises ? when(() => Boolean(revises.value.get()), () => html`<dt>Revises</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(revises.value.get()) })}>${() => `${model.label} ${revises.value.get()}`}</a></dd>`) : null}
+    ${when(() => Boolean(extras().revised_by), () => html`<dt>Revised by</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(extras().revised_by) })}>${() => `${model.label} ${extras().revised_by}`}</a></dd>`)}
+    </dl>` }));
+  return blocks;
+}
+
+function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
+  const files = cell<Array<{ id: number; name: string; size: number }> | null>(null);
+  const problem = cell('');
+  const load = () => void ctx.api.attachments(model.name, store.id!).then(items => files.set(items), error => problem.set(error instanceof ApiError ? error.message : 'Files could not be loaded.'));
+  load();
+  const canWrite = model.permissions?.update !== false;
+  const limits = model.attachment_limits ?? { max_files: 10, max_size: 1_048_576 };
+  const size = (bytes: number) => bytes >= 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  const upload = (event: Event) => {
+    const input = event.target as HTMLInputElement, file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    if (file.size > limits.max_size) { toast(`Use a file up to ${size(limits.max_size)}`, { icon: 'info' }); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = String(reader.result).split(',')[1] ?? '';
+      ctx.api.upload(model.name, store.id!, file.name, content).then(() => { toast(`${file.name} attached`, { icon: 'paperclip' }); load(); },
+        error => toast(error instanceof ApiError ? `Not attached: ${error.message}` : 'Not attached.', { icon: 'info' }));
+    };
+    reader.readAsDataURL(file);
+  };
+  return html`<div class="ev-files">
+    ${() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : files.get() === null ? html`<p class="muted">Loading…</p>` : files.get()!.length === 0
+      ? html`<p class="muted">No files yet.</p>` : html`<div class="files">${files.get()!.map(file => html`<div class="file">${Icon('paperclip', { size: 'sm', className: 'muted' })}
+        <div style="flex:1;min-width:0"><a class="link" rel="external" href=${`/api/${model.name}/${store.id}/attachments/${file.id}`}>${file.name}</a><div class="muted" style="font-size:12px">${size(file.size)}</div></div></div>`)}</div>`}
+    ${canWrite ? html`<label class="btn sm ev-upload">${Icon('upload', { size: 'sm', className: 'tint' })}Attach a file<input type="file" hidden on:change=${upload}></label>` : null}</div>`;
+}
+
+// ---------- related ----------
+
+function Related(ctx: AppContext, model: ScreenModel, id: number, relations: NonNullable<ScreenModel['relations']>): Child {
+  return relations.map(relation => {
+    const target = screenModel(ctx.schema, relation.model);
+    const rows = cell<RecordData[]>([]), total = cell<number | null>(null), problem = cell('');
+    const more = (offset: number) => void ctx.api.related(model.name, id, relation.name, { limit: relation.limit, offset })
+      .then(page => batch(() => { rows.set([...rows.peek(), ...page.items]); total.set(page.total); }), error => problem.set(error instanceof ApiError ? error.message : 'Not loaded.'));
+    more(0);
+    const columns: Column<RecordData>[] = listFields(target).filter(meta => meta.name !== relation.link).slice(0, 4).map((meta, index) => ({
+      key: meta.name, label: meta.label, width: index === 0 ? 220 : 150, value: (row: RecordData) => row[meta.name],
+      align: ['currency', 'decimal', 'integer', 'percent'].includes(meta.type) ? 'right' : 'left', sortable: false,
+      render: index === 0 ? (row: () => RecordData) => html`<a class="ev-row-link" href=${() => ctx.router.href('record', { model: target.name, id: String(row().id) })}>${() => titleOf(target, row())}</a>`
+        : (row: () => RecordData) => cellView(ctx, target, meta, row),
+    }));
+    return html`<section class="panel ev-related" aria-label=${relation.label}><div class="panel-h"><h3>${relation.label}</h3><span class="muted num">${() => total.get() === null ? '' : String(total.get())}</span></div>
+      ${() => problem.get() ? html`<p class="muted" style="padding:12px">${problem.get()}</p>` : null}
+      ${DataTable<RecordData>({ columns, rows, key: row => row.id, label: relation.label, onOpen: row => void ctx.router.go('record', { model: target.name, id: String(row.id) }), height: 300,
+        empty: () => html`<span class="muted">${`No ${relation.label.toLowerCase()} yet.`}</span>` })}
+      ${when(() => (total.get() ?? 0) > rows.get().length, () => html`<div class="ev-more">${Button({ label: 'Show more', size: 'small', onClick: () => more(rows.peek().length) })}</div>`)}</section>`;
+  });
+}
+
+// ---------- postings ----------
+
+function Postings(ctx: AppContext, effects: Readable<DetailExtras['_effects'] | null>): Child {
+  const label = (target: string) => { try { return ctx.schema.model(target).plural; } catch { return humanize(target); } };
+  return live(() => !effects.get()?.length ? EmptyState({ icon: 'layers', tint: 'teal', title: 'Nothing posted yet', text: 'Rows this record posts to other records show up here once it is posted.' }) : [
+    InfoNote('Rows this record posted to other records. They are read only. Voiding writes mirror rows that cancel them.'),
+    html`<div class="panel"><table class="dt"><thead><tr><th scope="col">Posted to</th><th scope="col" class="r">Rows</th><th scope="col" class="r">Reversals</th><th scope="col">Check</th></tr></thead>
+      <tbody>${() => (effects.get() ?? []).map(item => html`<tr><td>${label(item.target)}</td><td class="r num">${String(item.rows)}</td><td class="r num">${String(item.reversals)}</td>
+        <td>${item.balanced === undefined ? html`<span class="muted">Not checked</span>` : item.balanced ? Chip({ label: 'Balanced', tone: 'green', icon: 'check' }) : Chip({ label: 'Not balanced', tone: 'rose', icon: 'info' })}</td></tr>`)}</tbody></table></div>`]);
+}
+
+// ---------- activity (journal) ----------
+
+const KINDS: Record<string, [string, any, string]> = {
+  created: ['plus', 'green', 'created this record'], changed: ['pencil', 'blue', 'changed'], moved: ['arrow-right', 'violet', 'moved it'],
+  voided: ['circle-x', 'rose', 'voided it'], revised: ['copy', 'blue', 'revised it'], effects: ['layers', 'teal', 'posted rows'], file: ['paperclip', 'slate', 'attached a file'],
+  note: ['sticky-note', 'amber', 'added a note'], message: ['mail', 'blue', 'logged a message'], call: ['phone', 'green', 'logged a call'],
+  follow_up: ['circle-check', 'amber', 'planned a follow-up'], follow_up_done: ['check', 'green', 'completed a follow-up'],
+};
+
+function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
+  const entries = cell<JournalEntry[] | null>(null), problem = cell('');
+  const load = () => void ctx.api.journal(model.name, store.id!, { limit: 50 }).then(page => entries.set(page.items), error => problem.set(error instanceof ApiError ? error.message : 'The history could not be loaded.'));
+  load();
+  const text = cell('');
+  const label = (field: string) => fieldOf(model, field)?.label ?? humanize(field);
+  const value = (field: string, raw: unknown) => { const meta = fieldOf(model, field); return raw === null || raw === undefined || raw === '' ? 'empty' : meta ? formatOf(meta, raw) : String(raw); };
+  const addNote = async () => {
+    const body = text.peek().trim();
+    if (!body) return;
+    try { await ctx.api.addNote(model.name, store.id!, body); text.set(''); toast('Note added', { icon: 'sticky-note' }); load(); }
+    catch (error) { toast(error instanceof ApiError ? error.message : 'The note was not added.', { icon: 'info' }); }
+  };
+  const day = (at: string) => {
+    const date = formatDateTime(at).slice(0, 10);
+    return date === formatDateTime(new Date()).slice(0, 10) ? 'Today' : date;
+  };
+  const entry = (item: JournalEntry) => {
+    const [icon, tint, verb] = KINDS[item.kind] ?? ['activity', 'slate', humanize(item.kind).toLowerCase()];
+    const data = item.data ?? {};
+    const detail = item.kind === 'moved' ? ` from ${humanize(String(data.from ?? ''))} to ${humanize(String(data.to ?? ''))}` : '';
+    const body = item.kind === 'changed' && Array.isArray(data.changes)
+      ? html`<div class="note">${data.changes.map((change: any) => html`<div class="ev-diff"><b>${label(change.field)}</b> <s class="muted">${value(change.field, change.old)}</s> ${Icon('arrow-right', { size: 'xs' })} ${value(change.field, change.new)}</div>`)}</div>`
+      : data.text || data.reason ? html`<div class="note">${String(data.text ?? data.reason)}</div>` : null;
+    return html`<div class="tl-item"><span class=${`ic b-${tint}`}>${Icon(icon, { size: 'sm' })}</span><div class="bd">
+      <div class="hd"><b>${item.actor ?? 'The system'}</b> ${verb}${detail}<span class="tm">${formatDateTime(item.at).slice(11)}</span></div>${body}</div></div>`;
+  };
+  return [
+    model.state ? InfoNote('Append-only history. Entries are never edited or removed.', 'lock') : null,
+    html`<div class="composer"><textarea aria-label="Note" placeholder="Write a note" prop:value=${text} on:input=${(event: Event) => text.set((event.target as HTMLTextAreaElement).value)}
+      on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.stopPropagation(); void addNote(); } }}></textarea>
+      <div class="cf"><span class="grow"></span>${Button({ label: 'Save note', variant: 'primary', size: 'small', disabled: () => !text.get().trim(), onClick: () => void addNote() })}</div></div>`,
+    live(() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : entries.get() === null ? html`<p class="muted">Loading…</p>`
+      : !entries.get()!.length ? EmptyState({ icon: 'activity', tint: 'slate', title: 'No activity yet', text: 'Changes, moves and notes for this record land here.' })
+      : html`<div class="timeline">${(() => {
+        let last = '';
+        return entries.get()!.flatMap(item => { const label = day(item.at); const head = label !== last ? html`<div class="tl-day">${label}</div>` : null; last = label; return [head, entry(item)]; });
+      })()}</div>`),
+  ];
+}
+
