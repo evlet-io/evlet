@@ -1,5 +1,6 @@
 """Field definitions, validation, and storage conversion."""
 
+from contextvars import ContextVar
 from datetime import date, datetime, timezone
 from datetime import time as TimeValue
 from decimal import Context, Decimal as DecimalValue, InvalidOperation, localcontext
@@ -8,6 +9,8 @@ import re
 from urllib.parse import urlsplit
 
 MISSING = object()
+# Options Controls adds to Select fields on this instance, {field: (option, ...)}, set for each request and job.
+ADDED_CHOICES = ContextVar("evlet_added_choices", default={})
 
 
 class _CurrentUser:
@@ -444,8 +447,8 @@ class Select(Text):
 
     def validate(self, value):
         value = super().validate(value)
-        if value not in self.choices:
-            raise ValueError("Choose one of: " + ", ".join(self.choices))
+        if value not in self.choices and value not in ADDED_CHOICES.get().get(self, ()):
+            raise ValueError("Choose one of: " + ", ".join((*self.choices, *ADDED_CHOICES.get().get(self, ()))))
         return value
 
     def metadata(self):

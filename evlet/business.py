@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, quote
 
 from .auth import AccessError
 from .database import ROW_LIMIT, Session
-from .fields import Link
+from .fields import ADDED_CHOICES, Link
 from .ui.metadata import view_for
 from .models import ValidationError, identifier
 from .permissions import Policy
@@ -150,11 +150,11 @@ class Business:
                 for root, plan in self.registry.plans.items():
                     tx.connection.execute('UPDATE evlet_calculation_versions SET plan_hash=? WHERE plan_hash=?',
                                           (self.registry.formula_hashes[root], plan['model_schema_hash']))
-        if self.registry.sequences:
-            from .sequences import ensure_counters
+        if self.registry.sequences or self.registry.naming:
+            from .sequences import upgrade_counters
             with self.database.transaction() as tx:
-                # Document number counters, updated in each assigning write transaction.
-                ensure_counters(tx.connection)
+                # Document number and naming counters, updated in each assigning write transaction.
+                upgrade_counters(tx.connection)
         if self.journals:
             from .journal import ensure_table
             with self.database.transaction() as tx:
@@ -184,8 +184,12 @@ class Business:
     @contextmanager
     def context(self, user, *, readonly=False):
         from .documents import Context
-        with self.database.transaction() as tx:
-            yield Context(self, tx, user, readonly=readonly)
+        token = ADDED_CHOICES.set(self.controls.custom.choices)
+        try:
+            with self.database.transaction() as tx:
+                yield Context(self, tx, user, readonly=readonly)
+        finally:
+            ADDED_CHOICES.reset(token)
 
     def event_page(self, scope):
         if self.events is None or scope['method'] != 'GET':
@@ -276,6 +280,8 @@ class Business:
             entry['list_fields'] = [name for name in entry['list_fields'] if name == 'id' or name in readable]
             entry['search_fields'] = [name for name in entry['search_fields'] if name in readable]
             entry['layout'] = [{**group, 'fields': [name for name in group['fields'] if name in readable]} for group in entry.get('layout', [])]
+            # Controls overrides: labels, rules, options, layout and list view on this instance.
+            self.controls.custom.merge(entry, model, readable)
             if entry['title_field'] not in readable:
                 entry['title_field'] = 'id'
             entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
@@ -331,6 +337,14 @@ class Business:
         return routes.docs_path
 
     def dispatch(self, scope, body):
+        # Options Controls added to choice fields are valid for this request.
+        token = ADDED_CHOICES.set(self.controls.custom.choices)
+        try:
+            return self._dispatch(scope, body)
+        finally:
+            ADDED_CHOICES.reset(token)
+
+    def _dispatch(self, scope, body):
         path, method = scope['path'], scope['method']
         self.auth.guard(scope)
         if path == '/api/auth/session' and method == 'GET':
@@ -553,6 +567,14 @@ class Business:
                 self.policy.require(user, model, 'create')
                 values, children = self.split_body(body)
                 self.policy.check_values(tx, user, model, values)
+                values = self.controls.custom.prepare(model, values)
+                cleaned = dict(model(**values)._values)
+                self.controls.custom.enforce(model, cleaned, None)
+                from .documents import host_today
+                from .sequences import name_new
+                name = name_new(tx.connection, self.registry, model, cleaned, host_today(self), user.username)
+                if name:
+                    values[self.registry.naming[model].field] = name
                 record = tx.create(model, **values)
                 self.policy.record(tx, user, model, record.id, 'create')
                 self.save_children(tx, user, record, children)
@@ -614,6 +636,7 @@ class Business:
             if method == 'PATCH':
                 values, children = self.split_body(body)
                 self.policy.check_values(tx, user, model, values)
+                self.controls.custom.enforce(model, dict(model(**{**record._values, **values})._values), record._values)
                 record = tx.update(model, record_id, **values)
                 self.policy.record(tx, user, model, record_id, 'update')
                 self.save_children(tx, user, record, children)
