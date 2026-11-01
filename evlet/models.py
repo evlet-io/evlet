@@ -185,6 +185,9 @@ class Registry:
         from .business import ChildTable
         from .calc import CalcError, LIMITS, uses_finite, root_language
         self.children = []
+        for model in models:
+            if isinstance(model, type) and issubclass(model, Child):
+                raise ValueError(f'{model.__name__} is a Child row model. Declare row models inside their document with Table(...)')
         expanded = list(models)
 
         def finite(model, seen=()):

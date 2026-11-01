@@ -37,6 +37,11 @@ class Invoice(Model):
     grand_total = Currency(compute=items.sum("total"))
 ```
 
+A `Child` is registered only through a `Table`. `Registry(InvoiceItem)` is refused with
+`InvoiceItem is a Child row model. Declare row models inside their document with Table(...)`.
+In an app's `models.py`, where discovery registers every model class it finds, nest the row
+class in its document (`class Invoice(Model): class Item(Child): ...`).
+
 A root selects finite-v1 with `Meta.calculation_language`, or by using expression
 computes, `initial=` or a field rule (`applies_when`, `required_when`, `locked_when`)
 anywhere in its tree. Such a model is written through `Context` and the HTTP routes, like any

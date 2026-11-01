@@ -93,8 +93,9 @@ screen test opens the same deal on its Activity tab and adds a note through the 
 
 ## Gaps found
 
-- **A Child at module level is a root model.** Discovery registers every `Model` subclass in
-  `models.py`, so a `Child` used by `Table(...)` must be nested in its document class.
+- **A Child at module level.** Discovery registers every `Model` subclass in `models.py`. A `Child`
+  there is now refused with `Line is a Child row model. Declare row models inside their document
+  with Table(...)`, instead of becoming a root model.
 - **Screens.** Fixed here: the child table footer took a filtered sum (`recurring_total`) for the
   Amount column; the lines lock note kept the state the page opened with; the Related side block
   did not count again after a move or action. Still open: a list measures strip that ignores the

@@ -29,3 +29,12 @@ def test_layout_leaves_fields_for_other_and_names_mistakes():
     # Registration checks layouts the same way.
     with pytest.raises(ValueError, match='more than once'):
         Registry(model((('Visit', ('title', 'title')),)))
+
+
+def test_a_child_is_not_a_root_model():
+    line = type('OrderLine', (Child,), {'qty': Integer()})
+    with pytest.raises(ValueError, match=r'OrderLine is a Child row model\. Declare row models inside their document with Table\(\.\.\.\)'):
+        Registry(line)
+    # Used through a Table it registers as the document's rows.
+    order = type('Order', (Model,), {'permissions': EVERYTHING, 'lines': Table(line)})
+    assert [child.name for child in Registry(order).children] == ['lines']
