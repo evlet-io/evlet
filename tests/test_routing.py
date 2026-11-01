@@ -19,7 +19,7 @@ from test_cli_lifecycle import create_app, environment_stub, project, runtime
 
 def legacy_served(app, path):
     """The browser paths Application served before the route table, kept as the reference."""
-    builtin = path in ('/', '/login', '/docs', '/settings/accounts') or path.startswith('/docs/') or path.startswith('/assets/')
+    builtin = path in ('/', '/login', '/docs') or path.startswith('/docs/') or path.startswith('/assets/')
     generated = re.fullmatch(r'/app/([a-z][a-z0-9_]*)(?:/(new|[1-9][0-9]{0,15})(/view)?)?', path)
     known_report = path.startswith('/reports/') and path.removeprefix('/reports/') in app.business.forms.reports
     custom = any(view.route and route_pattern(view.route).fullmatch(path) for view in app.ui.views.values())
@@ -51,6 +51,9 @@ def test_without_routes_py_every_browser_path_is_served_as_before(secured):
     assert http(secured, 'GET', '/health')[0] == 200
     assert http(secured, 'GET', '/api/customer')[0] == 401
     assert http(secured, 'GET', '/docs', headers={b'host': b'evil.example'})[0] == 403
+    # Accounts moved to Controls, which sends anonymous visitors to sign in.
+    assert http(secured, 'GET', '/settings/accounts')[2][b'location'] == b'/controls/users'
+    assert http(secured, 'GET', '/controls')[2][b'location'] == b'/login?next=/controls'
     # Unknown browser paths get the app's not-found page; unknown assets stay plain 404s.
     status, payload, headers = http(secured, 'GET', '/missing')
     assert status == 404 and b'<div id="evlet-app">' in payload and b"frame-ancestors 'none'" in headers[b'content-security-policy']

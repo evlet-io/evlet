@@ -41,7 +41,7 @@ function open(path: string, save: (sent: Sent) => { status: number; body: any })
     ['GET', /\/api\/auth\/session$/, () => ({ status: 200, body: { user: { id: 1, username: 'owner', role: 'admin' }, csrf: 'token' }, etag: null })],
     ['GET', /\/api\/_controls\/state$/, () => ({ status: 200, body: state(), etag: null })],
     ['GET', /\/api\/_controls\/overrides$/, () => ({ status: 200, body: overrides(saved), etag: null })],
-    ['POST', /\/api\/_controls\/overrides$/, sent => {
+    ['POST', /\/api\/_controls\/overrides$/, (sent: Sent) => {
       const reply = save(sent);
       if (reply.status === 200) for (const change of sent.body.changes) saved = { ...saved, [change.key]: change.value };
       return { ...reply, etag: null };

@@ -18,7 +18,7 @@
 .ctl-nav-item span:first-of-type{flex:1}
 .ctl-count{font-size:11.5px;color:var(--fg-3);font-weight:550}
 .ctl-side-foot{display:flex;align-items:center;gap:8px;padding:10px 6px 2px;border-top:1px solid var(--divider)}
-.ctl-side-foot>span{flex:1;display:flex;flex-direction:column;min-width:0}
+.ctl-side-foot>span:not(.avatar){flex:1;display:flex;flex-direction:column;min-width:0}
 .ctl-side-foot strong{font-size:13px}
 .ctl-side-foot small{font-size:11.5px;color:var(--fg-3)}
 .ctl-main{flex:1;display:flex;flex-direction:column;min-width:0}
@@ -75,8 +75,8 @@
 .ctl-legend{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--fg-3)}
 .ctl-src{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-2);white-space:nowrap}
 .ctl-src i{width:8px;height:8px;border-radius:50%;background:var(--fg-4)}
-.ctl-src.app i{background:var(--t-blue)}
-.ctl-src.ov i{background:var(--t-amber)}
+.ctl-src.s-app i{background:var(--t-blue)}
+.ctl-src.s-ov i{background:var(--t-amber)}
 
 .ctl-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px}
 .ctl-tabs button{display:flex;align-items:center;gap:6px;height:36px;padding:0 10px;color:var(--fg-3);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}
