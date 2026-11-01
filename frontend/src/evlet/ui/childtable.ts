@@ -40,7 +40,8 @@ export interface ChildTableProps {
   tint?: Tint;
   /** Locks the lines (for example once the record is issued). */
   locked?: Prop<boolean>;
-  lockedText?: string;
+  /** Why the lines are locked; read when the lock shows, so it follows the record's state. */
+  lockedText?: Prop<string>;
   /** Footer values by column; defaults to the parent's sums over this table. */
   totals?: Record<string, FieldLike | Prop<string>>;
   /** Totals under the table (net, VAT, grand total); defaults to the footer sums. */
@@ -385,7 +386,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
             ? valueText(sums[column().key]) : index() === 0 ? `Total · ${rows.get().length} ${rows.get().length === 1 ? 'line' : 'lines'}` : ''}</td>`)}</tr></tfoot>`)}
       </table>
     </div>
-    <div class="g-under">${when(locked, () => html`<span class="g-lock">${Icon('lock', { size: 'xs' })}${props.lockedText ?? 'Locked. Lines can’t change after the record is issued.'}</span>`,
+    <div class="g-under">${when(locked, () => html`<span class="g-lock">${Icon('lock', { size: 'xs' })}${() => read(props.lockedText ?? 'Locked. Lines can’t change after the record is issued.')}</span>`,
       () => html`${Button({ icon: 'plus', label: 'Add row', size: 'small', className: 'g-add', disabled: () => !record.ready.get(), onClick: add })}<span class="muted hide-sm">${Key('Tab')} next cell · ${Key('Enter')} cell below · ${Key('Esc')} cancel</span>`)}
       <span class="grow"></span>${summary.length ? html`<div class="g-sum">${summary.map(item => html`<div class:gt=${Boolean(item.grand)}><span>${item.label}</span><b class="num">${item.value}</b></div>`)}</div>` : null}</div>
   </div>` as HTMLElement;

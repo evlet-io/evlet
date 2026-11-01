@@ -401,7 +401,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   };
   const lockedText = () => model.fields.some(field => (field as any).editable_when_locked) ? `Locked. Lines can’t change while it is ${humanize(stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
   const tablePanel = (child: { name: string; label: string }) => ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
-    locked: () => locked.get() || !canWrite, lockedText: untrack(lockedText), links: ctx.links, crumb: () => titleText.get(),
+    locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, crumb: () => titleText.get(),
     prefs: prefs.cell(`grid.${name}.${child.name}`, emptyPrefs()) });
 
   const panels = [
@@ -481,7 +481,11 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
     body: KeyValueList(keys.map(meta => view(meta.name)), { links: ctx.links }) }));
   if (relations.length) blocks.push(SideBlock({ title: 'Related', body: html`<div>${relations.map(relation => {
     const total = cell<number | null>(null);
-    void ctx.api.related(model.name, store.id!, relation.name, { limit: 1 }).then(page => total.set(page.total), () => total.set(null));
+    // Counted again after every write of this record: a move or an action may add related records.
+    effect(() => {
+      store.etag.get();
+      void ctx.api.related(model.name, store.id!, relation.name, { limit: 1 }).then(page => total.set(page.total), () => total.set(null));
+    });
     const target = screenModel(ctx.schema, relation.model);
     return html`<button type="button" class="mini-card" on:click=${() => active.set('related')}>${IconTile(identity(target).icon, { tint: identity(target).tint, size: 28 })}
       <span class="grow"><span class="nm">${relation.label}</span><span class="sub">${() => total.get() === null ? 'Open to see them' : `${total.get()} ${total.get() === 1 ? 'record' : 'records'}`}</span></span>${Icon('chevron-right', { size: 'sm', className: 'muted' })}</button>`;
