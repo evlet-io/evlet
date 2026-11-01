@@ -213,6 +213,22 @@ class Registry:
             model = owners[model]
         return model
 
+    def finite_reads(self, model, name):
+        """(scope, model, field) inputs of a finite computed field, resolved to models."""
+        plan, path, owners = self.plan_for(model), [], {child.model: child for child in self.children}
+        item = model
+        while item in owners:
+            path.insert(0, owners[item].name)
+            item = owners[item].parent
+        field = next(entry for entry in plan['fields'] if entry['path'] == path and entry['field'] == name)
+        tables = {child.name: child.model for child in self.children if child.parent is model}
+        result = []
+        for scope, table, read in field['reads']:
+            if scope == 'self': result.append(('self', model, read))
+            elif scope == 'parent': result.append(('parent', owners[model].parent, read))
+            else: result.append((scope, tables[table], read))
+        return result
+
     def plan_for(self, model):
         """The finite plan governing a model's document, or None for legacy calculation."""
         return self.plans.get(self.root_of(model))

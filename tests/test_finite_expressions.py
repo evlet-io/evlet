@@ -691,3 +691,32 @@ def test_browser_fixtures_match_python_plans_and_results():
     for op, a, b in NUMERIC:
         if op != 'round':
             assert text({'add': add, 'sub': sub, 'mul': mul, 'div': div}[op](parse(a), parse(b))) == plain(reference(op, a, b))
+
+
+def test_review_regressions_for_engine_edges():
+    from decimal import Decimal as PyDecimal
+    from evlet.calc import Expr, to_decimal
+    qty = Decimal()
+    assert isinstance(qty == 1, Expr) and isinstance(qty != None, Expr)  # noqa: E711
+    assert (qty == qty) is True and (qty == Decimal()) is False
+    with pytest.raises(CalcError, match='COMPUTE_RANGE_ERROR'):
+        parse(PyDecimal('1E+5000'))
+    assert to_decimal(parse('1234567890123456789012345678.12345')) == PyDecimal('1234567890123456789012345678.12345')
+    with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
+        document(Invoice, {'children': {'items': [{'id': True}]}})
+    doc = document(Invoice, {'inclusive': False})
+    root = doc.root.handle
+
+    def failing(cmds):
+        new = cmds.add_row(root, 'items', {'qty': '1', 'rate': '7'})
+        cmds.observe(new, 'total', lambda result: None)
+        raise RuntimeError('stop')
+    with pytest.raises(RuntimeError):
+        doc.batch(failing)
+    assert doc.subscriptions() == 0 and len(doc.rows) == 1
+    doc.observe(root, 'grand_total', lambda result: doc.dispose())
+    with pytest.raises(CalcError, match='REACTIVE_REENTRANCY'):
+        doc.add_row(root, 'items', {'qty': '1', 'rate': '1'})
+    assert doc.snapshot()['grand_total'] == '1.05'
+    with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
+        doc.observe(root, 'missing', lambda result: None)

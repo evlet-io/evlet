@@ -87,8 +87,13 @@ class Business:
                 raise ValueError('Child tables require a unique model and required parent Link')
             self.children[child.parent, child.name] = child
             self.child_models.add(child.model)
-        if any(child.parent in self.child_models for child in children):
-            raise ValueError('Nested child tables are not supported')
+        registered = set(self.registry.children)
+        if any(child.parent in self.child_models and child not in registered for child in children):
+            raise ValueError('Nested child tables are only supported for finite-v1 Table declarations')
+        for action in self.actions.values():
+            if self.registry.plan_for(action.model) is not None and not hasattr(getattr(action.model, action.name, None), '__action__'):
+                raise ValueError(f'Legacy Action {action.name!r} would bypass finite-v1 settlement on '
+                                 f'{action.model.__name__}; declare it with @action on the model instead')
         if any('children' in model.__fields__ for model in self.registry.models.values()):
             raise ValueError('children is reserved for owned collections')
 
@@ -244,8 +249,10 @@ class Business:
             model = self.registry.resolve(path.removeprefix('/api/_draft/'))
             if not getattr(model, '__declaration_mode__', False) or model in self.child_models:
                 raise AccessError(404, 'Draft evaluation is unavailable')
-            if set(body) - {'id', 'values', 'revision'} or not isinstance(body.get('values', {}), dict):
+            if set(body) - {'id', 'values', 'revision', 'calculation'} or not isinstance(body.get('values', {}), dict):
                 raise ValidationError({'draft': 'Invalid draft request'})
+            if 'calculation' in body:
+                self.check_calculation(model, body['calculation'])
             with self.context(user, readonly=True) as context:
                 draft, previous = load_draft(context, model, body.get('id'), body.get('values', {}), preview=True)
                 errors, states = settle(context, draft, complete=False, previous=previous)
@@ -253,19 +260,26 @@ class Business:
                     allowed = self.policy.fields(user, item._definition)
                     return {'id': item.id, '_key': item.key, '_sources': source_values(item, allowed), **{name: field.serialize(item._values.get(name))
                             for name, field in item._definition.__declared_fields__.items() if name in allowed and not name.startswith('evlet_')}}
-                result = values(draft)
-                result['children'] = {}
-                for child in self.children.values():
-                    if child.parent is model and self.policy.allows(user, child.model, 'read'):
+                allowed_errors = set()
+
+                def tree(item, prefix):
+                    result = values(item)
+                    allowed_errors.update(prefix + name for name in result if name not in ('_key', 'id', '_sources'))
+                    owned = [child for child in self.children.values() if child.parent is item._definition]
+                    if owned or item is draft:
+                        result['children'] = {}
+                    for child in owned:
+                        if not self.policy.allows(user, child.model, 'read'):
+                            continue
                         rows = []
-                        for row in draft._rows.get(child.name, []):
+                        for row in item._rows.get(child.name, []):
                             if row.id:
                                 try: self.policy.record(context._tx, user, child.model, row.id)
                                 except AccessError: continue
-                            rows.append(values(row))
+                            rows.append(tree(row, prefix + child.name + '.' + row.key + '.'))
                         result['children'][child.name] = rows
-                allowed_errors = {name for name in result if name not in ('children', '_key', 'id')}
-                allowed_errors |= {table + '.' + row['_key'] + '.' + name for table, rows in result['children'].items() for row in rows for name in row if name not in ('_key', 'id')}
+                    return result
+                result = tree(draft, '')
                 errors = {key: value for key, value in errors.items() if key in allowed_errors}
                 states = {key: value for key, value in states.items() if key in allowed_errors}
             return 200, {'values': result, 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
@@ -350,6 +364,10 @@ class Business:
             action = parts[5] if len(parts) == 6 and parts[4] == 'actions' and method == 'POST' else None
             if not ((len(parts) == 3 and method == 'POST') or (len(parts) == 4 and method == 'PATCH') or action):
                 raise AccessError(405, 'Method not allowed')
+            plan = self.registry.plan_for(model)
+            if plan is not None and '_calculation' in body:
+                body = dict(body)
+                self.check_calculation(model, body.pop('_calculation'))
             with self.context(user) as context:
                 if record_id:
                     record = self.policy.record(context._tx, user, model, record_id, 'update')
@@ -357,7 +375,10 @@ class Business:
                         raise AccessError(428, 'A current If-Match revision is required')
                     self.check_revision(scope, context._tx, user, record)
                 result = context._write(model, record_id, {} if action else body, action=action, arguments=body if action else None)
-            return (201 if record_id is None else 200), result, [(b'etag', self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome')}))]
+            etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome')})
+            if plan is not None:
+                result['_calculation'] = {'language': plan['language'], 'model_schema_hash': plan['model_schema_hash']}
+            return (201 if record_id is None else 200), result, [(b'etag', etag)]
         if len(parts) == 3 and method == 'GET':
             return self.page(scope, user, model)
         if len(parts) == 3 and method == 'POST':
@@ -418,6 +439,14 @@ class Business:
                 self.changed(tx, model, record_id)
             result = self.detail(tx, user, record)
         return 200, result, [(b'etag', self.revision(result))]
+
+    def check_calculation(self, model, calculation):
+        """A finite-v1 client names the plan it previewed; a different active plan is a conflict."""
+        plan = self.registry.plan_for(model)
+        if plan is None or not isinstance(calculation, dict) or set(calculation) - {'language', 'model_schema_hash', 'client_revision'}:
+            raise ValidationError({'calculation': 'Invalid calculation metadata'})
+        if calculation.get('language', plan['language']) != plan['language'] or calculation.get('model_schema_hash') != plan['model_schema_hash']:
+            raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this document uses a newer calculation plan; reload it')
 
     @staticmethod
     def revision(detail):
@@ -525,7 +554,7 @@ class Business:
                     self.policy.record(tx, user, child.model, row.id)
                 except AccessError:
                     continue
-                value = self.policy.serialize(tx, user, row)
+                value = self.detail(tx, user, row) if any(item.parent is child.model for item in self.children.values()) else self.policy.serialize(tx, user, row)
                 value.pop(child.link, None)
                 value.pop('evlet_position', None)
                 children[child.name].append(value)

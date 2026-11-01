@@ -204,15 +204,45 @@ def collect():
     scenarios = []
     for name, model, data, commands in SCENARIOS + [random_scenario(seed) for seed in (1, 2, 3)]:
         document = Document(plans[model], data)
-        steps = [{'snapshot': strip(document.snapshot()), 'revision': document.revision, 'evaluated': document.trace['evaluated']}]
+        steps = [{'snapshot': strip(document.snapshot()), 'revision': document.revision, 'trace': document.trace}]
         for command in commands:
             try:
                 apply(document, command)
                 steps.append({'command': command, 'snapshot': strip(document.snapshot()), 'revision': document.revision,
-                              'evaluated': document.trace['evaluated']})
+                              'trace': document.trace})
             except CalcError as exc:
                 steps.append({'command': command, 'error': exc.code, 'snapshot': strip(document.snapshot()), 'revision': document.revision})
         scenarios.append({'name': name, 'model': model, 'data': data, 'steps': steps})
     return {'plans': plans, 'scenarios': scenarios, 'numeric': numeric_cases(),
             'invalid_plans': [{'name': 'unknown-op', 'expression': {'$expr': 'eval', 'args': []}},
-                              {'name': 'prototype', 'expression': {'$expr': 'ref', 'scope': 'self', 'field': '__proto__'}}]}
+                              {'name': 'prototype', 'expression': {'$expr': 'ref', 'scope': 'self', 'field': '__proto__'}},
+                              {'name': 'scope', 'expression': {'$expr': 'ref', 'scope': 'window', 'field': 'qty'}},
+                              {'name': 'round-scale', 'expression': {'$expr': 'round', 'args': [{'$expr': 'literal', 'type': 'decimal', 'value': '1'},
+                                                                                                {'$expr': 'literal', 'type': 'integer', 'value': 50000000}]}},
+                              {'name': 'deep', 'expression': deep(40)}],
+            'invalid_inputs': invalid_inputs(plans['states'])}
+
+
+def deep(depth):
+    node = {'$expr': 'literal', 'type': 'decimal', 'value': '1'}
+    for _ in range(depth):
+        node = {'$expr': 'neg', 'args': [node]}
+    return node
+
+
+def invalid_inputs(plan):
+    """Edge inputs whose outcome both runtimes must agree on."""
+    cases = []
+    for value in [2.0, 1e20, 2.5, '2.0', '-0', '01', True, {'__proto__': {'a': '9'}}, '9' * 41, -(2**53)]:
+        document = Document(plan, {'a': value})
+        snap = document.snapshot()
+        cases.append({'input': value, 'sum_null': snap.get('_states', {}).get('sum_null'), 'whole': snap['whole'],
+                      'whole_state': snap.get('_states', {}).get('whole')})
+    structure = []
+    for data in [{'__proto__': {'a': '9'}}, {'valueOf': '1'}, {'id': True}, {'id': 3.0}, {'id': 2**60}]:
+        try:
+            Document(plan, data)
+            structure.append({'data': data, 'error': None})
+        except CalcError as exc:
+            structure.append({'data': data, 'error': exc.code})
+    return {'values': cases, 'documents': structure}

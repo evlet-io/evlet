@@ -13,6 +13,7 @@ from .fields import MISSING, Link
 from .models import ValidationError, identifier
 from .query import Query
 from .reactivity import evaluate, graph, round_field, plans
+from .calc import CalcError, Document, LIMITS, is_finite, to_decimal
 
 
 class Snapshot:
@@ -61,6 +62,8 @@ class Draft:
         if self._readonly:
             raise AttributeError('Evaluation drafts are read only')
         if name in self._definition.__declared_fields__:
+            if is_finite(self._definition.__declared_fields__[name]):
+                raise ValidationError({name: 'COMPUTED_FIELD_WRITE: this value is calculated'})
             self._values[name] = value
         elif name in self._definition.__tables__:
             if not isinstance(value, (list, tuple)) or len(value) > 100:
@@ -169,12 +172,13 @@ class Context:
             record = business.policy.record(tx, user, model, record_id, 'delete')
             before, _ = load_draft(self, model, record_id, {}, preview=True)
             child_changes = {}
+            for prefix, item in walk(before):
+                if item is not before: business.policy.record(tx, user, item._definition, item.id, 'delete')
             for child in business.children.values():
                 if child.parent is not model: continue
                 rows = before._rows.get(child.name, [])
-                for row in rows: business.policy.record(tx, user, child.model, row.id, 'delete')
                 child_changes[child.name] = {'added': [], 'updated': [], 'removed': [row.id for row in rows], 'reordered': False}
-                for row in rows: tx.delete(child.model, row.id)
+                for row in rows: delete_tree(business, tx, child.model, row.id)
             tx.delete(model, record.id)
             tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (business.registry.name_for(model), record_id))
             reaction = getattr(model, 'changed', None)
@@ -218,44 +222,70 @@ def load_draft(context, model, record_id, values, *, preview=False):
     business.policy.require(user, model, 'read' if preview and record_id else operation)
     current = business.policy.record(tx, user, model, record_id, 'read' if preview else operation) if record_id else None
     scalars, collections = business.split_body(values)
+    computed_write(business, model, scalars, '')
     business.policy.check_values(tx, user, model, scalars)
-    if set(collections) - {child.name for child in business.children.values() if child.parent is model}:
-        raise ValidationError({'children': 'Unknown child collection'})
     draft = Draft(model, {**(dict(current._values) if current else {}), **scalars}, context=context, record_id=record_id)
     object.__setattr__(draft, '_submitted', frozenset(scalars))
     old = Draft(model, dict(current._values), context=context, record_id=record_id) if current else None
+    load_rows(context, model, draft, old, record_id, collections, preview, '')
+    if business.registry.plan_for(model) is not None and sum(1 for _ in walk(draft)) > LIMITS['document_rows']:
+        raise ValidationError({'children': 'This document exceeds the owned row limit'})
+    return draft, old
+
+
+def computed_write(business, model, values, prefix):
+    """Finite-v1 calculated fields have one writer: clients submit sources only."""
+    if business.registry.plan_for(model) is None:
+        return
+    written = [name for name in values if name in model.__declared_fields__ and is_finite(model.__declared_fields__[name])]
+    if written:
+        raise ValidationError({prefix + name: 'COMPUTED_FIELD_WRITE: this value is calculated' for name in written})
+
+
+def load_rows(context, model, draft, old, record_id, collections, preview, prefix):
+    """Merge submitted child collections at every depth, keeping hidden rows."""
+    business, tx, user = context._business, context._tx, context.user
+    if set(collections) - {child.name for child in business.children.values() if child.parent is model}:
+        raise ValidationError({prefix + 'children': 'Unknown child collection'})
     for child in business.children.values():
         if child.parent is not model: continue
         existing = tx.list(child.model, filters={child.link: record_id}, limit=100, order_by=('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',)) if record_id else []
         if record_id and tx.count(child.model, filters={child.link: record_id}) > 100:
-            raise ValidationError({'children': 'This collection exceeds the 100-row editor limit'})
+            raise ValidationError({prefix + 'children': 'This collection exceeds the 100-row editor limit'})
         originals = {row.id: row for row in existing}
         hidden = set()
         for row in existing:
             try: business.policy.record(tx, user, child.model, row.id)
             except AccessError: hidden.add(row.id)
+
+        def stored(row, owner):
+            item = Draft(child.model, row._values, context=context, parent=owner, record_id=row.id)
+            load_rows(context, child.model, item, None, row.id, {}, True, prefix + child.name + '.' + item.key + '.')
+            return item
         if old is not None:
-            old._rows[child.name] = [Draft(child.model, row._values, context=context, parent=old, record_id=row.id) for row in existing]
+            old._rows[child.name] = [stored(row, old) for row in existing]
         if child.name not in collections:
-            draft._rows[child.name] = [Draft(child.model, row._values, context=context, parent=draft, record_id=row.id) for row in existing]
+            draft._rows[child.name] = [stored(row, draft) for row in existing]
             continue
         rows = collections[child.name]
         if not isinstance(rows, list) or len(rows) > 100:
-            raise ValidationError({child.name: 'Use at most 100 rows'})
+            raise ValidationError({prefix + child.name: 'Use at most 100 rows'})
         kept, keys, merged = set(), set(), []
         for index, value in enumerate(rows):
             if not isinstance(value, dict):
-                raise ValidationError({child.name: 'Each row must be an object'})
+                raise ValidationError({prefix + child.name: 'Each row must be an object'})
             value = dict(value)
             row_id = value.pop('id', None)
             temporary = value.pop('_key', None)
             if temporary is not None and (not isinstance(temporary, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', temporary) or temporary in keys):
-                raise ValidationError({child.name: 'Row keys must be distinct strings of at most 64 letters, digits, hyphens or underscores'})
+                raise ValidationError({prefix + child.name: 'Row keys must be distinct strings of at most 64 letters, digits, hyphens or underscores'})
             keys.add(temporary) if temporary is not None else None
+            value, nested = business.split_body(value)
+            computed_write(business, child.model, value, prefix + child.name + '.')
             business.policy.check_values(tx, user, child.model, value)
             if row_id is not None:
                 if type(row_id) is not int or row_id not in originals or row_id in kept or row_id in hidden:
-                    raise ValidationError({child.name: 'Child ID must belong to this parent and appear once'})
+                    raise ValidationError({prefix + child.name: 'Child ID must belong to this parent and appear once'})
                 business.policy.record(tx, user, child.model, row_id, 'read' if preview or not value else 'update')
                 kept.add(row_id)
             elif not preview:
@@ -264,13 +294,28 @@ def load_draft(context, model, record_id, values, *, preview=False):
             object.__setattr__(row, '_submitted', frozenset(value))
             if 'evlet_position' in child.model.__fields__: row._values['evlet_position'] = index
             if temporary is not None: object.__setattr__(row, 'key', temporary)
+            load_rows(context, child.model, row, None, row_id, nested, preview, prefix + child.name + '.' + row.key + '.')
             merged.append(row)
         for row_id in originals.keys() - kept - hidden:
             if not preview: business.policy.record(tx, user, child.model, row_id, 'delete')
-        merged.extend(Draft(child.model, originals[row_id]._values, context=context, parent=draft, record_id=row_id) for row_id in hidden)
-        if len(merged) > 100: raise ValidationError({child.name: 'Use at most 100 rows'})
+        merged.extend(stored(originals[row_id], draft) for row_id in sorted(hidden))
+        if len(merged) > 100: raise ValidationError({prefix + child.name: 'Use at most 100 rows'})
         draft._rows[child.name] = merged
-    return draft, old
+
+
+def walk(draft, prefix=''):
+    """Pre-order (prefix, draft) pairs: a document, then each row and its descendants."""
+    yield prefix, draft
+    for name, rows in draft._rows.items():
+        for row in rows:
+            yield from walk(row, prefix + name + '.' + row.key + '.')
+
+
+def matching(previous, item, draft):
+    """The prior version of a row (same model and ID) anywhere in the previous tree."""
+    if item is draft: return previous
+    if previous is None or item.id is None: return None
+    return next((row for _, row in walk(previous) if row is not previous and row.id == item.id and row._definition is item._definition), None)
 
 
 def settle(context, draft, *, complete, previous=None):
@@ -278,7 +323,7 @@ def settle(context, draft, *, complete, previous=None):
     nodes, order = graph(registry, draft._definition)
     errors, states = {}, {}
     source_cache = {}
-    all_drafts = [('', draft)] + [(name + '.' + row.key + '.', row) for name, rows in draft._rows.items() for row in rows]
+    all_drafts = list(walk(draft))
     # Owner links of legacy child tables are set from the saved parent at write time.
     owner_links = {child.model: child.link for child in context._business.children.values() if child.parent is draft._definition}
     def internal(item):
@@ -304,7 +349,7 @@ def settle(context, draft, *, complete, previous=None):
             link = item._definition.__declared_fields__.get(link_name)
             if not isinstance(link, Link) or target_name not in link.target.__declared_fields__:
                 raise ValueError('Fetch must reference a declared Link target field')
-            old = previous if item is draft else next((row for rows in (previous._rows.values() if previous else ()) for row in rows if row.id is not None and row.id == item.id and row._definition is item._definition), None)
+            old = matching(previous, item, draft)
             if not field.read_only and name in item._submitted and item._values.get(name) is not None:
                 if old is None or old._values.get(name) != item._values.get(name) or old._values.get(link_name) == item._values.get(link_name): continue
             if not field.read_only and old is not None and old._values.get(link_name) == item._values.get(link_name): continue
@@ -316,7 +361,10 @@ def settle(context, draft, *, complete, previous=None):
                     value = getattr(record, target_name)
                 item._values[name] = field.clean(value)
             except ValueError as exc: errors[prefix + name] = str(exc)
-    for key in order:
+    plan = registry.plan_for(draft._definition)
+    if plan is not None:
+        finite_settle(plan, draft, errors, states, complete)
+    for key in ([] if plan is not None else order):
         parts = key.split('.')
         items = [(draft, '')] if len(parts) == 1 else [(row, parts[0] + '.' + row.key + '.') for row in draft._rows.get(parts[0], [])]
         name = parts[-1]
@@ -399,7 +447,7 @@ def settle(context, draft, *, complete, previous=None):
             for name, field in item._definition.__declared_fields__.items():
                 if name in internal(item): continue
                 try:
-                    old = previous if item is draft else next((row for rows in (previous._rows.values() if previous else ()) for row in rows if row.id is not None and row.id == item.id and row._definition is item._definition), None)
+                    old = matching(previous, item, draft)
                     if name in item._submitted and field.read_only_if is not None and evaluate(plans(item._definition)[name]['read_only_if'], item.read):
                         if old is None or old._values.get(name) != item._values.get(name):
                             raise ValueError('This field is read only in the current state')
@@ -423,6 +471,51 @@ def settle(context, draft, *, complete, previous=None):
                 except ValidationError as exc: errors.update({prefix + key: value for key, value in exc.errors.items()})
         if errors: raise ValidationError(errors)
     return errors, states
+
+
+MESSAGES = {'COMPUTE_INPUT_MISSING': 'A required calculation input is missing',
+            'COMPUTE_DIVISION_BY_ZERO': 'Division by zero', 'COMPUTE_RANGE_ERROR': 'Calculation exceeds the supported range',
+            'COMPUTE_SCALE_ERROR': 'The result needs an explicit round() to fit this field',
+            'COMPUTE_TYPE_ERROR': 'An input has the wrong type', 'PARENT_CONTEXT_REQUIRED': 'The owning document is unavailable'}
+
+
+def finite_settle(plan, draft, errors, states, complete):
+    """Authoritative finite-v1 evaluation over the whole draft tree in this transaction."""
+    def data(item):
+        values = {name: item._values.get(name) for name, field in item._definition.__declared_fields__.items()
+                  if not is_finite(field) and name not in getattr(item._definition, '__internal_fields__', ())}
+        values['_key'], values['id'] = item.key, item.id
+        if item._rows:
+            values['children'] = {name: [data(row) for row in rows] for name, rows in item._rows.items()}
+        return values
+    try:
+        document = Document(plan, data(draft))
+    except CalcError as exc:
+        raise ValidationError({'_form': f'{exc.code}: {exc.message}'}) from None
+    fields = {}
+    for field in plan['fields']:
+        fields.setdefault(tuple(field['path']), []).append(field)
+
+    def apply(item, row, prefix):
+        for field in fields.get(row.path, ()):
+            name = field['field']
+            result = document.results[row.handle, name]
+            definition = item._definition.__declared_fields__[name]
+            value = None
+            if result.state == 'ready' and result.value is not None:
+                value = int(to_decimal(result.value)) if field['target_type'] == 'integer' else to_decimal(result.value) if field['result_type'] == 'decimal' else result.value
+                value = definition.validate(value)
+            item._values[name] = value
+            if result.state == 'ready':
+                continue
+            states[prefix + name] = 'missing-input' if result.state == 'pending' else 'error'
+            # Pending optional virtual results may stay pending; stored results and errors block saves.
+            if result.state == 'error' or complete and field['stored']:
+                errors[prefix + name] = f"{result.code}: {MESSAGES.get(result.code, 'The calculation failed')}"
+        for name, rows in item._rows.items():
+            for child, child_row in zip(rows, row.children.get(name, [])):
+                apply(child, child_row, prefix + name + '.' + child.key + '.')
+    apply(draft, document.root, '')
 
 
 @contextmanager
@@ -505,29 +598,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     record = write_snapshot(tx, draft)
     context._active[-1] = (model, record.id)
     business.policy.record(tx, user, model, record.id, 'update' if before else 'create')
-    child_changes, keys = {}, {}
-    for child in business.children.values():
-        if child.parent is not model: continue
-        old_rows = before._rows.get(child.name, []) if before else []
-        old_ids = {row.id for row in old_rows}
-        rows = draft._rows.get(child.name, [])
-        retained = {row.id for row in rows if row.id}
-        for row_id in old_ids - retained: tx.delete(child.model, row_id)
-        added, updated = [], []
-        old_values = {row.id: row.stored_values() for row in old_rows}
-        for row in rows:
-            row._values[child.link] = record.id
-            if row.id is None:
-                write_snapshot(tx, row)
-                business.policy.record(tx, user, child.model, row.id, 'create')
-                added.append(row.id)
-                keys[row.key] = row.id
-            elif row.stored_values() != old_values[row.id]:
-                business.policy.record(tx, user, child.model, row.id, 'update')
-                write_snapshot(tx, row)
-                updated.append(row.id)
-        child_changes[child.name] = {'added': added, 'updated': updated, 'removed': sorted(old_ids - retained),
-                                     'reordered': [row.id for row in old_rows] != [row.id for row in rows]}
+    keys = {}
+    child_changes = persist_rows(context, model, draft, before, record.id, keys)
     after = draft.stored_values()
     change = Change('create' if before is None else 'action' if action else 'update', user,
                     freeze(prior) if prior is not None else None, freeze(after),
@@ -542,6 +614,45 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     if keys: result['_row_ids'] = keys
     if outcome is not None: result['_outcome'] = outcome
     return result
+
+
+def persist_rows(context, model, draft, before, owner_id, keys):
+    """Write owned rows parent-before-child; delete removed subtrees child-before-parent."""
+    business, tx, user = context._business, context._tx, context.user
+    changes = {}
+    for child in business.children.values():
+        if child.parent is not model: continue
+        old_rows = before._rows.get(child.name, []) if before else []
+        old_by_id = {row.id: row for row in old_rows}
+        rows = draft._rows.get(child.name, [])
+        retained = {row.id for row in rows if row.id}
+        for row_id in set(old_by_id) - retained: delete_tree(business, tx, child.model, row_id)
+        added, updated, nested = [], [], {}
+        for row in rows:
+            row._values[child.link] = owner_id
+            if row.id is None:
+                write_snapshot(tx, row)
+                business.policy.record(tx, user, child.model, row.id, 'create')
+                added.append(row.id)
+                keys[row.key] = row.id
+            elif row.stored_values() != old_by_id[row.id].stored_values():
+                business.policy.record(tx, user, child.model, row.id, 'update')
+                write_snapshot(tx, row)
+                updated.append(row.id)
+            inner = persist_rows(context, child.model, row, old_by_id.get(row.id), row.id, keys)
+            if inner: nested[row.id] = inner
+        changes[child.name] = {'added': added, 'updated': updated, 'removed': sorted(set(old_by_id) - retained),
+                               'reordered': [row.id for row in old_rows] != [row.id for row in rows]}
+        if nested: changes[child.name]['rows'] = nested
+    return changes
+
+
+def delete_tree(business, tx, model, record_id):
+    for child in business.children.values():
+        if child.parent is model:
+            for row in tx.list(child.model, filters={child.link: record_id}, limit=100):
+                delete_tree(business, tx, child.model, row.id)
+    tx.delete(model, record_id)
 
 
 def typed_arguments(function, values, *, skip=0):

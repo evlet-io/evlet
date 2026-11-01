@@ -63,8 +63,16 @@ class Field:
     def __set__(self, instance, value):
         raise AttributeError("Records are snapshots; use Database.update() to save changes")
 
-    # Finite calculations: descriptors build expressions. Equality stays identity-based
-    # so fields remain safe dictionary keys; use F("name") == value or where(name=value).
+    # Finite calculations: descriptors build expressions. Field-to-field equality stays
+    # identity-based so fields remain safe dictionary keys; compare two fields with F("a") == F("b").
+    __hash__ = object.__hash__
+
+    def __eq__(self, other):
+        return self is other if isinstance(other, Field) or other is MISSING else _expr('eq', self, other)
+
+    def __ne__(self, other):
+        return self is not other if isinstance(other, Field) or other is MISSING else _expr('ne', self, other)
+
     def __add__(self, other): return _expr('add', self, other)
     def __radd__(self, other): return _expr('add', other, self)
     def __sub__(self, other): return _expr('sub', self, other)

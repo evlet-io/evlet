@@ -75,13 +75,19 @@ class Policy:
         if not self.allows(user, model, operation):
             raise AccessError(403, 'You do not have permission for this operation')
 
-    def fields(self, user, model, *, write=False, _visiting=frozenset()):
+    def presented(self, user, model):
+        """Fields this role may see before derivation checks."""
         rule = self.rule(user, model)
         readable = set(model.__declared_fields__ if rule.read_fields is None else rule.read_fields)
         # Links to models that cannot be read must not expose their identifiers.
         readable = {name for name in readable if not isinstance(model.__declared_fields__[name], Link) or self.allows(user, model.__declared_fields__[name].target, 'read')}
         if model in self.governed:
             readable = {name for name in readable if not model.__declared_fields__[name].hidden}
+        return readable
+
+    def fields(self, user, model, *, write=False, _visiting=frozenset()):
+        rule = self.rule(user, model)
+        readable = self.presented(user, model)
         if getattr(model, '__declaration_mode__', False):
             readable = {name for name in readable if self.derivation_allowed(user, model, name, _visiting)}
         if not write:
@@ -91,7 +97,20 @@ class Policy:
 
     def derivation_allowed(self, user, model, name, visiting=frozenset()):
         from .reactivity import plans, references
+        from .calc import is_finite
         field = model.__declared_fields__[name]
+        if is_finite(field):
+            # A finite result is readable only when every input and whole collection it reads is.
+            # Finite plans are acyclic and rules depend only on the role, so results are cached.
+            cache = self.__dict__.setdefault('_derived', {})
+            key = (user.role, model, name)
+            if key not in cache:
+                cache[key] = all(
+                    self.allows(user, target, 'read')
+                    and not (scope in ('member', 'membership') and self.rule(user, target).scope is not None)
+                    and (read is None or read in self.presented(user, target) and self.derivation_allowed(user, target, read))
+                    for scope, target, read in self.registry.finite_reads(model, name))
+            return cache[key]
         paths = set(getattr(field.query, '__depends__', ()))
         paths |= references(plans(model)[name].get('compute'))
         if not paths: return True

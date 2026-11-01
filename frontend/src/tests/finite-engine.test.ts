@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import fixtures from './finite-fixtures.json';
 import engineSource from '../runtime/FiniteEngine.ts?raw';
-import { FiniteDocument, CalcError, parse, text, add, sub, mul, div, quantize } from '../runtime/FiniteEngine';
+import fixtureSource from './finite-fixtures.json?raw';
+import { FiniteDocument, CalcError, parse, text, add, sub, mul, div, quantize, fingerprint, sha256, canonical } from '../runtime/FiniteEngine';
 
 const plans = fixtures.plans as Record<string, any>;
 
@@ -24,6 +25,30 @@ function strip(value: any): any {
 }
 
 describe('finite-v1 browser evaluator against the Python plans', () => {
+  it('fingerprints plans exactly like Python', () => {
+    for (const plan of Object.values(plans)) expect(fingerprint(plan)).toBe(plan.model_schema_hash);
+    expect(sha256('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+    expect(canonical({b: ['é', '\u007f', null], a: true})).toBe('{"a":true,"b":["\\u00e9","\\u007f",null]}');
+  });
+
+  it('agrees with Python on edge inputs and malformed documents', () => {
+    // JSON.parse keeps "__proto__" as an own key, as a network response would; the module import does not.
+    const inputs = JSON.parse(fixtureSource).invalid_inputs;
+    for (const item of inputs.values) {
+      const snap = new FiniteDocument(plans.states, {a: item.input}).snapshot();
+      expect([snap._states?.sum_null ?? null, snap.whole, snap._states?.whole ?? null]).toEqual([item.sum_null, item.whole, item.whole_state]);
+    }
+    for (const item of inputs.documents) {
+      let code: string | null = null;
+      try { new FiniteDocument(plans.states, structuredClone(item.data)); } catch (exc) { code = (exc as CalcError).code; }
+      expect(code).toBe(item.error);
+    }
+    const document = new FiniteDocument(plans.invoice, {children: {items: [{_key: 'a'}]}});
+    expect(() => document.reorder(document.root.handle, 'items', ['h2,h3'] as any)).toThrow('DOCUMENT_STRUCTURE_ERROR');
+    expect(() => document.set(document.root.handle, '__proto__', {inclusive: true})).toThrow('DOCUMENT_STRUCTURE_ERROR');
+    expect(() => new FiniteDocument(plans.invoice, {children: {items: null}})).toThrow('DOCUMENT_STRUCTURE_ERROR');
+  });
+
   it('imports without SolidJS or the DOM', () => {
     expect(engineSource).not.toMatch(/^\s*import\b/m);
     expect(engineSource).not.toMatch(/\b(window|globalThis)\.|solid-js|\bdocument\.(createElement|body|querySelector)/);
@@ -41,7 +66,7 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
       const document = new FiniteDocument(plans[scenario.model], structuredClone(scenario.data));
       const [initial, ...steps] = scenario.steps;
       expect(strip(document.snapshot())).toEqual(initial.snapshot);
-      expect(document.trace.evaluated).toBe(initial.evaluated);
+      expect(document.trace).toEqual(initial.trace);
       for (const step of steps) {
         if (step.error) {
           let code = '';
@@ -49,7 +74,7 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
           expect(code).toBe(step.error);
         } else {
           apply(document, structuredClone(step.command));
-          expect(document.trace.evaluated).toBe(step.evaluated);
+          expect(document.trace).toEqual(step.trace);
         }
         expect(strip(document.snapshot())).toEqual(step.snapshot);
         expect(document.revision).toBe(step.revision);
@@ -62,10 +87,12 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
   it('rejects unknown plans, operations and async batches', () => {
     const plan = plans.invoice;
     expect(() => new FiniteDocument({...plan, numeric_profile: 'decimal28-half-up-v1'})).toThrow('SCHEMA_VERSION_MISMATCH');
+    expect(() => new FiniteDocument({...plan, fields: plan.fields.slice(1)})).toThrow('SCHEMA_VERSION_MISMATCH');
     for (const invalid of fixtures.invalid_plans as any[]) {
       const broken = structuredClone(plan);
       broken.fields[broken.fields.length - 1].expression = invalid.expression;
-      expect(() => new FiniteDocument(broken, {})).toThrow();
+      broken.model_schema_hash = fingerprint(broken);
+      expect(() => new FiniteDocument(broken, {})).toThrow('UNSUPPORTED_EXPRESSION');
     }
     const document = new FiniteDocument(plan, {children: {items: []}});
     expect(() => document.batch(async () => undefined)).toThrow('ASYNC_BATCH_UNSUPPORTED');

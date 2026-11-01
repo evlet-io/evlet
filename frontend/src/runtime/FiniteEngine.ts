@@ -20,10 +20,14 @@ export function normalize(coef: bigint, scale: number): Num {
   return new Num(coef, scale);
 }
 const NUMBER = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/;
+const own = (object: any, key: string) => object !== null && typeof object === 'object' && Object.prototype.hasOwnProperty.call(object, key);
+const ownValue = (object: any, key: string) => own(object, key) ? object[key] : undefined;
+// JSON integers as both runtimes see them: safe whole numbers, never Booleans.
+const integer = (value: unknown): number | null => typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
 export function parse(value: unknown): Num {
   if (value instanceof Num) return value;
   if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value)) throw new CalcError(Number.isInteger(value) ? 'COMPUTE_RANGE_ERROR' : 'COMPUTE_TYPE_ERROR', 'Use an exact decimal string');
+    if (integer(value) === null) throw new CalcError(Number.isInteger(value) ? 'COMPUTE_RANGE_ERROR' : 'COMPUTE_TYPE_ERROR', 'Use an exact decimal string or a safe integer');
     return normalize(BigInt(value), 0);
   }
   if (typeof value === 'string' && value.length <= 128 && NUMBER.test(value)) {
@@ -240,9 +244,95 @@ type Node = string;
 const nodeKey = (handle: string, field: string): Node => handle + '\u0000' + field;
 const nodeParts = (node: Node) => node.split('\u0000') as [string, string];
 
+export const LIMITS = {expression_nodes: 128, expression_depth: 32, table_depth: 8, collection_rows: 100, document_rows: 1000,
+  graph_nodes: 50000, graph_edges: 250000, evaluation_steps: 1000000, decimal_text: 128};
+
 export function checkPlan(plan: any) {
   if (!plan || plan.plan_version !== 1 || plan.language !== LANGUAGE || plan.numeric_profile !== PROFILE || plan.expression_version !== 1)
     throw new CalcError('SCHEMA_VERSION_MISMATCH', 'Unsupported calculation plan, language or profile');
+  if (plan.model_schema_hash !== fingerprint(plan))
+    throw new CalcError('SCHEMA_VERSION_MISMATCH', 'The calculation plan does not match its fingerprint');
+  if (canonical(plan.limits) !== canonical(LIMITS)) throw new CalcError('SCHEMA_VERSION_MISMATCH', 'The calculation plan uses different engine limits');
+  for (const field of plan.fields) {
+    if (field.scale !== null && (integer(field.scale) === null || field.scale < 0 || field.scale > MAX_SCALE))
+      throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target scale');
+    checkNode(field.expression, 0, {count: 0});
+  }
+}
+
+const SCOPES = new Set(['self', 'parent', 'row']), LITERALS = new Set(['decimal', 'integer', 'boolean', 'text', 'null']);
+const FIELD = /^[A-Za-z][A-Za-z0-9_]*$/;
+// Closed, bounded IR: unknown operations, scopes or shapes fail before evaluation.
+function checkNode(node: any, depth: number, counter: {count: number}) {
+  counter.count++;
+  if (!node || typeof node !== 'object' || Array.isArray(node) || depth > LIMITS.expression_depth || counter.count > LIMITS.expression_nodes)
+    throw new CalcError('UNSUPPORTED_EXPRESSION', 'Calculation plans must be bounded expression objects');
+  const op = ownValue(node, '$expr');
+  let ok: boolean;
+  if (op === 'literal') ok = LITERALS.has(node.type) && (node.type !== 'integer' || (integer(node.value) !== null && node.value >= 0 && node.value <= MAX_SCALE));
+  else if (op === 'ref') ok = SCOPES.has(node.scope) && typeof node.field === 'string' && FIELD.test(node.field);
+  else if (op === 'aggregate') {
+    ok = ['sum', 'min', 'max', 'count'].includes(node.kind) && typeof node.table === 'string';
+    if (ok && node.where !== null && node.where !== undefined) checkNode(node.where, depth + 1, counter);
+  } else {
+    ok = OPERATIONS.has(op) && Array.isArray(node.args);
+    if (ok) for (const arg of node.args) checkNode(arg, depth + 1, counter);
+  }
+  if (!ok) throw new CalcError('UNSUPPORTED_EXPRESSION', 'Unknown or malformed calculation node');
+}
+
+// Python-compatible canonical JSON (sorted keys, compact, ASCII escapes) and SHA-256.
+export function canonical(value: any): string {
+  if (value === null) return 'null';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'string') {
+    let out = '"';
+    for (let index = 0; index < value.length; index++) {
+      const code = value.charCodeAt(index), char = value[index];
+      const named: Record<string, string> = {'"': '\\"', '\\': '\\\\', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t'};
+      out += own(named, char) ? named[char] : code < 0x20 || code > 0x7e ? '\\u' + code.toString(16).padStart(4, '0') : char;
+    }
+    return out + '"';
+  }
+  if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
+  return '{' + Object.keys(value).sort().map(key => canonical(key) + ':' + canonical(value[key])).join(',') + '}';
+}
+export function fingerprint(plan: any) {
+  const body = Object.fromEntries(Object.entries(plan).filter(([key]) => key !== 'model_schema_hash'));
+  return 'sha256:' + sha256(canonical(body));
+}
+const K = Uint32Array.from([0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01,
+  0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa,
+  0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138,
+  0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624,
+  0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f,
+  0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]);
+// Synchronous SHA-256 over an ASCII string (canonical() output is always ASCII).
+export function sha256(ascii: string) {
+  const length = ascii.length, total = ((length + 9 + 63) >> 6) << 6, bytes = new Uint8Array(total);
+  for (let index = 0; index < length; index++) bytes[index] = ascii.charCodeAt(index);
+  bytes[length] = 0x80;
+  const view = new DataView(bytes.buffer);
+  view.setUint32(total - 4, length * 8);
+  view.setUint32(total - 8, Math.floor(length / 0x20000000));
+  const hash = Uint32Array.from([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const w = new Uint32Array(64), rotate = (x: number, n: number) => (x >>> n) | (x << (32 - n));
+  for (let offset = 0; offset < total; offset += 64) {
+    for (let i = 0; i < 16; i++) w[i] = view.getUint32(offset + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotate(w[i - 15], 7) ^ rotate(w[i - 15], 18) ^ (w[i - 15] >>> 3), s1 = rotate(w[i - 2], 17) ^ rotate(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = hash;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (h + (rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
+      const t2 = ((rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    [a, b, c, d, e, f, g, h].forEach((value, index) => { hash[index] = (hash[index] + value) >>> 0; });
+  }
+  return [...hash].map(value => value.toString(16).padStart(8, '0')).join('');
 }
 
 // A browser document session: one bound graph, synchronous batches, one publication per batch.
@@ -265,7 +355,7 @@ export class FiniteDocument {
   private publishing = false;
   private disposed = false;
 
-  constructor(readonly plan: any, data: any = {}, private budget = plan?.limits?.evaluation_steps) {
+  constructor(readonly plan: any, data: any = {}, private budget: number = plan?.limits?.evaluation_steps) {
     checkPlan(plan);
     for (const entry of Object.values<any>(plan.tables)) this.schema.set(entry.path.join('/'), entry);
     plan.fields.forEach((field: any, position: number) => {
@@ -286,30 +376,31 @@ export class FiniteDocument {
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Rows must be objects');
     const entry = this.schema.get(path.join('/'));
     if (!entry) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown collection ' + address(path, ''));
-    const id = data.id ?? null;
-    if (id !== null && (!Number.isSafeInteger(id) || id < 1)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be positive integers');
+    const rawId = ownValue(data, 'id') ?? null, id = rawId === null ? null : integer(rawId);
+    if (rawId !== null && (id === null || id < 1)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be positive safe integers');
     const handle = this.handle();
-    const key = data._key ?? null;
+    const key = ownValue(data, '_key') ?? null;
     if (key !== null && (typeof key !== 'string' || !KEY.test(key)))
       throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row keys use at most 64 letters, digits, hyphens or underscores');
-    const row: Row = {handle, path, values: {}, parent: owner, children: {}, id, key: key || (id ? String(id) : handle), label: '', order: 0};
+    const row: Row = {handle, path, values: Object.create(null), parent: owner, children: Object.create(null), id, key: key || (id ? String(id) : handle), label: '', order: 0};
     this.rows.set(handle, row);
     if (this.rows.size > this.plan.limits.document_rows) throw new CalcError('CALCULATION_LIMIT_EXCEEDED', 'The document has too many rows');
     const fresh = created === null ? id === null : created;
     for (const [name, value] of Object.entries(data)) {
       if (name === 'id' || name === '_key' || name === 'children' || name === '_handle') continue;
-      const meta = entry.fields[name];
+      const meta = ownValue(entry.fields, name);
       if (!meta) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown field ' + name);
       if (meta.computed && created) throw new CalcError('COMPUTED_FIELD_WRITE', name + ' is calculated');
       if (!meta.computed) row.values[name] = value;
     }
     if (fresh) this.defaults(row, entry);
-    const children = data.children || {};
-    if (typeof children !== 'object' || Object.keys(children).some(name => !entry.tables.includes(name)))
+    const children = ownValue(data, 'children') || {};
+    if (typeof children !== 'object' || Array.isArray(children) || Object.keys(children).some(name => !entry.tables.includes(name)))
       throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown child collection');
     for (const table of entry.tables) {
-      const items = children[table] || [];
-      if (!Array.isArray(items) || items.length > this.plan.limits.collection_rows)
+      const items = own(children, table) ? children[table] : [];
+      if (!Array.isArray(items)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', table + ' must be a list of rows');
+      if (items.length > this.plan.limits.collection_rows)
         throw new CalcError('CALCULATION_LIMIT_EXCEEDED', table + ' exceeds the collection row limit');
       row.children[table] = [];
       for (const item of items) this.place(row, table, this.build(item, [...path, table], row, created), row.children[table].length);
@@ -320,7 +411,7 @@ export class FiniteDocument {
   private defaults(row: Row, entry: any) {
     for (const [name, meta] of Object.entries<any>(entry.fields)) {
       const fallback = meta.default;
-      if (name in row.values || !fallback || fallback.server) continue;
+      if (own(row.values, name) || !fallback || fallback.server) continue;
       if ('ref' in fallback) {
         const parts = fallback.ref.split('.');
         if (parts[0] !== 'parent' || parts.length !== 2 || !row.parent) continue;
@@ -384,8 +475,8 @@ export class FiniteDocument {
   result(row: Row, field: string): Result {
     const node = nodeKey(row.handle, field);
     if (this.deps.has(node)) return this.results.get(node) || pending('COMPUTE_INPUT_MISSING', [row.label + field]);
-    const meta = this.schema.get(row.path.join('/')).fields[field];
-    return meta ? sourceValue(meta, row.values[field], row.label + field) : failed('UNSUPPORTED_EXPRESSION', [row.label + field]);
+    const meta = ownValue(this.schema.get(row.path.join('/')).fields, field);
+    return meta ? sourceValue(meta, ownValue(row.values, field), row.label + field) : failed('UNSUPPORTED_EXPRESSION', [row.label + field]);
   }
 
   private settle(changed: Set<Node>, fresh: Set<Node>) {
@@ -426,9 +517,14 @@ export class FiniteDocument {
     if (!outer) return;
     const batch = this.current;
     this.current = null;
-    let failures: unknown[];
-    try { failures = this.commit(batch); }
+    let notify: Array<() => void>;
+    try { notify = this.commit(batch); }
     catch (exc) { this.restore(batch.snapshot); throw exc; }
+    // The batch is committed; observer failures are reported after publication, never rolled back.
+    const failures: unknown[] = [];
+    this.publishing = true;
+    try { for (const deliver of notify) { try { deliver(); } catch (exc) { failures.push(exc); } } }
+    finally { this.publishing = false; }
     if (failures.length) throw failures[0];
   }
 
@@ -451,7 +547,7 @@ export class FiniteDocument {
 
   set(handle: string, field: string, value: unknown) {
     this.command(() => {
-      const row = this.row(handle), meta = this.schema.get(row.path.join('/')).fields[field];
+      const row = this.row(handle), meta = ownValue(this.schema.get(row.path.join('/')).fields, field);
       if (!meta) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown field ' + field);
       if (meta.computed) throw new CalcError('COMPUTED_FIELD_WRITE', row.label + field + ' is calculated');
       row.values[field] = value;
@@ -490,7 +586,8 @@ export class FiniteDocument {
       const old = [...parent.children[table]], seen = new Set<number>();
       parent.children[table] = [];
       for (const data of items) {
-        const id = data?.id ?? null;
+        const rawId = ownValue(data, 'id') ?? null, id = rawId === null ? null : integer(rawId);
+        if (rawId !== null && id === null) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be positive safe integers');
         let row: Row;
         if (id !== null) {
           if (!existing.has(id) || seen.has(id)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must belong to this collection and appear once');
@@ -498,7 +595,7 @@ export class FiniteDocument {
           row = existing.get(id)!;
           for (const [name, value] of Object.entries(data)) {
             if (name === 'id' || name === '_key' || name === 'children') continue;
-            const meta = this.schema.get(row.path.join('/')).fields[name];
+            const meta = ownValue(this.schema.get(row.path.join('/')).fields, name);
             if (!meta || meta.computed) throw new CalcError(meta ? 'COMPUTED_FIELD_WRITE' : 'DOCUMENT_STRUCTURE_ERROR', name + ' cannot be written');
             row.values[name] = value;
             this.current.sources.add(nodeKey(row.handle, name));
@@ -514,7 +611,8 @@ export class FiniteDocument {
   reorder(owner: string, table: string, handles: string[]) {
     this.command(() => {
       const parent = this.row(owner), items = parent.children[table];
-      if (!items || [...handles].sort().join() !== items.map(row => row.handle).sort().join())
+      const wanted = Array.isArray(handles) ? handles.map(String).sort() : null, current = (items || []).map(row => row.handle).sort();
+      if (!items || !wanted || wanted.length !== current.length || wanted.some((handle, index) => handle !== current[index]))
         throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Reorder needs every row of the collection exactly once');
       parent.children[table] = handles.map(handle => this.rows.get(handle)!);
       this.current.order.add(nodeKey(owner, table));
@@ -531,8 +629,9 @@ export class FiniteDocument {
       const source = row.parent!;
       source.children[table] = source.children[table].filter(item => item !== row);
       this.structure(source.handle, table);
-      if (!Number.isInteger(at) || at < 0 || at > destination.children[table].length) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Use a valid destination position');
-      this.place(destination, table, row, at);
+      const position = integer(at);
+      if (position === null || position < 0 || position > destination.children[table].length) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Use a valid destination position');
+      this.place(destination, table, row, position);
       this.structure(owner, table);
       const stack = [row];
       while (stack.length) { const item = stack.pop()!; this.current.moved.add(item.handle); for (const items of Object.values(item.children)) stack.push(...items); }
@@ -552,7 +651,9 @@ export class FiniteDocument {
   private capture() {
     return {rows: new Map([...this.rows].map(([handle, row]) => [handle, {row, values: {...row.values},
       children: Object.fromEntries(Object.entries(row.children).map(([table, items]) => [table, [...items]])), parent: row.parent}])),
-      results: new Map(this.results), next: this.next};
+      results: new Map(this.results), next: this.next, counts: new Map(this.counts), trace: this.trace,
+      observers: new Map([...this.observers].map(([node, items]) => [node, [...items]])),
+      tables: new Map([...this.tableObservers].map(([node, items]) => [node, [...items]]))};
   }
 
   private restore(snapshot: any) {
@@ -560,10 +661,14 @@ export class FiniteDocument {
     this.rows = new Map([...snapshot.rows].map(([handle, state]: any) => [handle, state.row]));
     this.results = snapshot.results;
     this.next = snapshot.next;
+    this.counts = snapshot.counts;
+    this.trace = snapshot.trace;
+    this.observers = snapshot.observers;
+    this.tableObservers = snapshot.tables;
     this.bind();
   }
 
-  private commit(batch: any): unknown[] {
+  private commit(batch: any): Array<() => void> {
     const old = new Set(this.deps.keys());
     if (batch.structure) this.bind();
     const live = new Set(this.deps.keys());
@@ -575,27 +680,24 @@ export class FiniteDocument {
     if (batch.structure) this.structureRevision++;
     for (const node of [...this.observers.keys()]) if (!this.rows.has(nodeParts(node)[0])) this.observers.delete(node);
     for (const node of [...this.tableObservers.keys()]) if (!this.rows.has(nodeParts(node)[0])) this.tableObservers.delete(node);
-    const failures: unknown[] = [];
-    this.publishing = true;
-    try {
-      for (const [node, listeners] of [...this.observers]) {
-        if (!updated.has(node) && !batch.sources.has(node)) continue;
-        const [handle, field] = nodeParts(node), outcome = this.result(this.rows.get(handle)!, field);
-        for (const listener of [...listeners]) { try { listener(outcome); } catch (exc) { failures.push(exc); } }
-      }
-      for (const [node, listeners] of [...this.tableObservers]) {
-        const [handle, table] = nodeParts(node);
-        if (!batch.membership.has(nodeKey(handle, '#' + table)) && !batch.order.has(node)) continue;
-        const handles = this.rows.get(handle)!.children[table].map(row => row.handle);
-        for (const listener of [...listeners]) { try { listener(handles); } catch (exc) { failures.push(exc); } }
-      }
-    } finally { this.publishing = false; }
-    return failures;
+    const notify: Array<() => void> = [];
+    for (const [node, listeners] of [...this.observers]) {
+      if (!updated.has(node) && !batch.sources.has(node)) continue;
+      const [handle, field] = nodeParts(node), outcome = this.result(this.rows.get(handle)!, field);
+      for (const listener of [...listeners]) notify.push(() => listener(outcome));
+    }
+    for (const [node, listeners] of [...this.tableObservers]) {
+      const [handle, table] = nodeParts(node);
+      if (!batch.membership.has(nodeKey(handle, '#' + table)) && !batch.order.has(node)) continue;
+      const handles = this.rows.get(handle)!.children[table].map(row => row.handle);
+      for (const listener of [...listeners]) notify.push(() => listener(handles));
+    }
+    return notify;
   }
 
   observe(handle: string, field: string, listener: (result: Result) => void) {
     this.usable();
-    this.row(handle);
+    if (!own(this.schema.get(this.row(handle).path.join('/')).fields, field)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown field ' + field);
     const node = nodeKey(handle, field);
     if (!this.observers.has(node)) this.observers.set(node, []);
     this.observers.get(node)!.push(listener);
@@ -604,7 +706,7 @@ export class FiniteDocument {
 
   observeTable(handle: string, table: string, listener: (handles: string[]) => void) {
     this.usable();
-    this.row(handle);
+    if (!this.schema.get(this.row(handle).path.join('/')).tables.includes(table)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown collection ' + table);
     const node = nodeKey(handle, table);
     if (!this.tableObservers.has(node)) this.tableObservers.set(node, []);
     this.tableObservers.get(node)!.push(listener);
@@ -652,6 +754,8 @@ export class FiniteDocument {
   }
 
   dispose() {
+    if (this.disposed) return;
+    if (this.publishing) throw new CalcError('REACTIVE_REENTRANCY', 'Observers cannot dispose the document during publication');
     this.observers.clear(); this.tableObservers.clear(); this.rows.clear(); this.results.clear();
     this.deps = new Map(); this.dependents = new Map(); this.order = [];
     this.disposed = true;

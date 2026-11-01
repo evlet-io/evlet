@@ -59,18 +59,28 @@ def normalize(coef, scale):
 NUMBER = re.compile(r'-?(0|[1-9][0-9]*)(\.[0-9]+)?')
 
 
+def integer(value):
+    """JSON integers as both runtimes see them: safe whole numbers, never Booleans."""
+    if type(value) is float and value.is_integer():
+        value = int(value)
+    return value if type(value) is int and abs(value) <= SAFE_INTEGER else None
+
+
 def parse(value):
     """Strict numeric input: decimal strings, safe integers or exact Python decimals."""
     if isinstance(value, Num):
         return value
-    if type(value) is int:
-        if abs(value) > SAFE_INTEGER:
-            raise CalcError('COMPUTE_RANGE_ERROR', 'Integer inputs must fit the browser safe range')
-        return normalize(value, 0)
+    if type(value) in (int, float):
+        if integer(value) is None:
+            raise CalcError('COMPUTE_RANGE_ERROR' if type(value) is int or value.is_integer() else 'COMPUTE_TYPE_ERROR',
+                            'Use an exact decimal string or a safe integer')
+        return normalize(integer(value), 0)
     if isinstance(value, PyDecimal):
         if not value.is_finite():
             raise CalcError('COMPUTE_TYPE_ERROR', 'Use a finite decimal value')
         sign, digits, exponent = value.as_tuple()
+        if exponent > MAX_DIGITS or exponent < -(MAX_SCALE + MAX_DIGITS) or len(digits) > 2 * MAX_DIGITS + MAX_SCALE:
+            raise CalcError('COMPUTE_RANGE_ERROR', 'Calculation exceeds the supported range')
         coef = int(''.join(map(str, digits)) or '0') * (-1 if sign else 1)
         return normalize(coef * 10**exponent, 0) if exponent >= 0 else normalize(coef, -exponent)
     if isinstance(value, str) and len(value) <= LIMITS['decimal_text'] and NUMBER.fullmatch(value):
@@ -146,7 +156,8 @@ def total(values):
 
 
 def to_decimal(value):
-    return PyDecimal(value.coef).scaleb(-value.scale)
+    from decimal import Context
+    return PyDecimal(value.coef).scaleb(-value.scale, context=Context(prec=MAX_DIGITS + MAX_SCALE + 2))
 
 
 # Authoring expressions. They are immutable and only build a closed tree.
@@ -832,7 +843,7 @@ class Document:
         self.templates = {}
         for position, field in enumerate(plan['fields']):
             self.templates.setdefault(tuple(field['path']), []).append((position, field))
-        self.budget_limit = budget or plan['limits']['evaluation_steps']
+        self.budget_limit = plan['limits']['evaluation_steps'] if budget is None else budget
         self.rows, self.results, self.counts = {}, {}, {}
         self.observers, self.table_observers = {}, {}
         self.revision, self.structure_revision, self._next = 0, 0, 0
@@ -857,8 +868,10 @@ class Document:
         if entry is None:
             raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'Unknown collection {address(path, "")}')
         record_id = data.get('id')
-        if record_id is not None and (type(record_id) is not int or record_id < 1):
-            raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be positive integers')
+        if record_id is not None:
+            record_id = integer(record_id)
+            if record_id is None or record_id < 1:
+                raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be positive safe integers')
         handle = self._handle()
         key = data.get('_key')
         if key is not None and (not isinstance(key, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', key)):
@@ -885,7 +898,9 @@ class Document:
             raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown child collection')
         for table in entry['tables']:
             items = children.get(table, [])
-            if not isinstance(items, list) or len(items) > self.plan['limits']['collection_rows']:
+            if not isinstance(items, list):
+                raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'{table} must be a list of rows')
+            if len(items) > self.plan['limits']['collection_rows']:
                 raise CalcError('CALCULATION_LIMIT_EXCEEDED', f'{table} exceeds the collection row limit')
             row.children[table] = []
             for item in items:
@@ -1010,12 +1025,13 @@ class Document:
         if outer:
             batch, self._batch = self._batch, None
             try:
-                failures = self._commit(batch)
+                notify = self._commit(batch)
             except BaseException:
                 self._restore(batch['snapshot'])
                 raise
+            # The batch is committed; observer failures are reported after publication, never rolled back.
+            failures = self._publish(*notify)
             if failures:
-                # The batch is committed; an observer's failure is reported, not rolled back.
                 raise failures[0]
 
     def _command(self, run):
@@ -1081,6 +1097,9 @@ class Document:
             seen = set()
             for data in items:
                 record_id = data.get('id') if isinstance(data, dict) else None
+                if record_id is not None and integer(record_id) is None:
+                    raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be positive safe integers')
+                record_id = None if record_id is None else integer(record_id)
                 if record_id is not None:
                     if record_id not in existing or record_id in seen:
                         raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must belong to this collection and appear once')
@@ -1107,7 +1126,7 @@ class Document:
         def run():
             parent_row = self._row(owner)
             items = parent_row.children.get(table)
-            if items is None or sorted(handles) != sorted(row.handle for row in items):
+            if items is None or not isinstance(handles, list) or sorted(map(str, handles)) != sorted(row.handle for row in items):
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Reorder needs every row of the collection exactly once')
             parent_row.children[table] = [self.rows[handle] for handle in handles]
             self._batch['order'].add((owner, table))
@@ -1127,9 +1146,10 @@ class Document:
             source = row.parent
             source.children[table].remove(row)
             self._structure(source.handle, table)
-            if type(at) is not int or not 0 <= at <= len(destination.children[table]):
+            position = integer(at)
+            if position is None or not 0 <= position <= len(destination.children[table]):
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Use a valid destination position')
-            self._place(destination, table, row, at)
+            self._place(destination, table, row, position)
             self._structure(owner, table)
             stack = [row]
             while stack:
@@ -1156,15 +1176,18 @@ class Document:
             stack.extend(child for items in item.children.values() for child in items)
 
     def _capture(self):
-        return {handle: (row, dict(row.values), {table: list(items) for table, items in row.children.items()}, row.parent)
-                for handle, row in self.rows.items()}, dict(self.results), self._next
+        return ({handle: (row, dict(row.values), {table: list(items) for table, items in row.children.items()}, row.parent)
+                 for handle, row in self.rows.items()}, dict(self.results), self._next, dict(self.counts),
+                {key: list(items) for key, items in self.observers.items()},
+                {key: list(items) for key, items in self.table_observers.items()}, dict(self.trace))
 
     def _restore(self, snapshot):
-        rows, results, counter = snapshot
+        rows, results, counter, counts, observers, tables, trace = snapshot
         for handle, (row, values, children, owner) in rows.items():
             row.values, row.children, row.parent = values, children, owner
         self.rows = {handle: state[0] for handle, state in rows.items()}
-        self.results, self._next = results, counter
+        self.results, self._next, self.counts, self.trace = results, counter, counts, trace
+        self.observers, self.table_observers = observers, tables
         self._bind()
 
     def _commit(self, batch):
@@ -1178,7 +1201,7 @@ class Document:
         fresh = (live - old) | {node for node in live if node[0] in batch['moved']}
         updated = self._settle(batch['sources'] | batch['membership'], fresh)
         if not (updated or batch['sources'] or batch['structure']):
-            return []
+            return [], []
         self.revision += 1
         if batch['structure']:
             self.structure_revision += 1
@@ -1189,6 +1212,9 @@ class Document:
         notify = [(node, listeners) for node, listeners in self.observers.items() if node in updated or node in batch['sources']]
         tables = [(key, listeners) for key, listeners in self.table_observers.items()
                   if (key[0], '#' + key[1]) in batch['membership'] or key in batch['order']]
+        return notify, tables
+
+    def _publish(self, notify, tables):
         self._publishing, failures = True, []
         try:
             for (handle, field), listeners in notify:
@@ -1209,7 +1235,8 @@ class Document:
 
     def observe(self, handle, field, listener):
         self._usable()
-        self._row(handle)
+        if field not in self.schema[self._row(handle).path]['fields']:
+            raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'Unknown field {field}')
         listeners = self.observers.setdefault((handle, field), [])
         listeners.append(listener)
 
@@ -1220,7 +1247,8 @@ class Document:
 
     def observe_table(self, handle, table, listener):
         self._usable()
-        self._row(handle)
+        if table not in self.schema[self._row(handle).path]['tables']:
+            raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'Unknown collection {table}')
         listeners = self.table_observers.setdefault((handle, table), [])
         listeners.append(listener)
 
@@ -1282,6 +1310,10 @@ class Document:
         return result
 
     def dispose(self):
+        if self._disposed:
+            return
+        if self._publishing:
+            raise CalcError('REACTIVE_REENTRANCY', 'Observers cannot dispose the document during publication')
         self.observers.clear()
         self.table_observers.clear()
         self.rows.clear()
@@ -1302,3 +1334,36 @@ def check_plan(plan):
         raise CalcError('SCHEMA_VERSION_MISMATCH', 'Unsupported calculation plan, language or profile')
     if plan.get('model_schema_hash') != fingerprint(plan):
         raise CalcError('SCHEMA_VERSION_MISMATCH', 'The calculation plan does not match its fingerprint')
+    if plan.get('limits') != LIMITS:
+        raise CalcError('SCHEMA_VERSION_MISMATCH', 'The calculation plan uses different engine limits')
+    for field in plan['fields']:
+        scale = field.get('scale')
+        if scale is not None and (type(scale) is not int or not 0 <= scale <= MAX_SCALE):
+            raise CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target scale')
+        check_node(field['expression'], 0, [0])
+
+
+SCOPES = {'self', 'parent', 'row'}
+LITERALS = {'decimal', 'integer', 'boolean', 'text', 'null'}
+
+
+def check_node(node, depth, count):
+    """Closed, bounded IR: unknown operations, scopes or shapes fail before evaluation."""
+    count[0] += 1
+    if not isinstance(node, dict) or depth > LIMITS['expression_depth'] or count[0] > LIMITS['expression_nodes']:
+        raise CalcError('UNSUPPORTED_EXPRESSION', 'Calculation plans must be bounded expression objects')
+    op = node.get('$expr')
+    if op == 'literal':
+        ok = node.get('type') in LITERALS and (node['type'] != 'integer' or integer(node.get('value')) is not None and 0 <= node['value'] <= MAX_SCALE)
+    elif op == 'ref':
+        ok = node.get('scope') in SCOPES and isinstance(node.get('field'), str) and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', node['field']) is not None
+    elif op == 'aggregate':
+        ok = node.get('kind') in ('sum', 'min', 'max', 'count') and isinstance(node.get('table'), str)
+        if ok and node.get('where') is not None:
+            check_node(node['where'], depth + 1, count)
+    else:
+        ok = op in OPERATIONS and isinstance(node.get('args'), list)
+        for arg in node.get('args', []) if ok else []:
+            check_node(arg, depth + 1, count)
+    if not ok:
+        raise CalcError('UNSUPPORTED_EXPRESSION', f'Unknown or malformed calculation node {op!r}')
