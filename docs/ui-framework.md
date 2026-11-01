@@ -12,6 +12,7 @@ screens and the switch away from SolidJS follow in later phases. The code lives 
 | `router.ts` | Typed route table over the History API, link handling, guards |
 | `api.ts` | Fetch client for the Python routes: session, CSRF, ETags, typed errors |
 | `model/record.ts` | Record store: a cell per field, row stores per Table, draft over saved values |
+| `model/session.ts` | Calculation session: the finite-v1 engine bound to a record's cells |
 | `model/changes.ts` | Save bodies and Table change sets |
 | `model/format.ts` | AED money, DD-MM-YYYY dates, GST time |
 | `model/schema.ts` | Types for `GET /api/schema` |
