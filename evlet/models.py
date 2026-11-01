@@ -77,6 +77,8 @@ class ModelType(type):
         for key, value in namespace.items():
             if isinstance(value, Field):
                 identifier(key)
+                if key.startswith('x_'):
+                    raise ValueError(f"{name}.{key}: names starting with x_ are kept for fields added on an instance")
                 if "__" in key or key.lower() == "id" or key == "to_dict" or any(
                     hasattr(base, key) and key not in getattr(base, "__fields__", {})
                     for base in bases
@@ -287,6 +289,9 @@ class Registry:
         # Document numbers: {model: {field name: Sequence}}.
         from .sequences import compile_sequences
         self.sequences = compile_sequences(self, models, plans, child_models)
+        # Naming series ({model: NamingRules}); Controls replaces an entry when its series are overridden.
+        from .sequences import compile_namings
+        self.naming = compile_namings(models, child_models)
         from .measures import compile_declared
         self.measures = MappingProxyType(compile_declared(self, models))
         # Rows documents post to other models (Meta.effects); the targets' rows are read only.
@@ -345,9 +350,10 @@ class Registry:
         return deepcopy(self._ui_schema)
 
     def schema(self):
+        """The stored schema app migrations work from. Instance fields (x_) belong to Controls, not to it."""
         return {"version": 1, "models": [
             {"name": name, "label": model.__name__,
-             "fields": [field.metadata() for field in model.__fields__.values()]}
+             "fields": [field.metadata() for name, field in model.__fields__.items() if not name.startswith('x_')]}
             for name, model in self.models.items()
         ]}
 

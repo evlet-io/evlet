@@ -10,18 +10,20 @@ from types import MappingProxyType
 from urllib.parse import parse_qs, quote
 
 from .auth import ROLE_ID, ROLES, AccessError
+from .customization import Customization, attach
 from .fields import Link
 from .models import ValidationError
 from .permissions import CORRECTIONS, Policy, Rule, default_rule
 
 OPERATIONS = ('read', 'create', 'update', 'delete', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
-PAGES = ('overview', 'users', 'roles', 'permissions', 'security')
+PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'models', 'naming')
 SETTINGS = MappingProxyType({
     'security.password_min': 15, 'security.session_hours': 8, 'security.lockout': 10,
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
 })
 NOT_FOUND = 'Route not found'
+AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming'}
 ADMIN_ONLY = 'Only an admin can do this: change admin accounts, give the admin role, manage roles or decide who opens Controls.'
 RESERVED_ROLES = ('controls', 'portal', 'public')
 TWO_STEP = 'Controls needs two-step sign-in, which this instance does not have yet. Remove require_two_step from routes.py for now.'
@@ -148,6 +150,7 @@ class Controls:
         self.ready, self.version, self.lock = False, None, Lock()
         self.apps, self.app_of, self.app_roles, self.scopes = [], {}, {}, {}
         self.roles, self.settings, self.problems = {}, dict(SETTINGS), []
+        self.custom = Customization(self)
 
     # ---------- set-up ----------
 
@@ -170,6 +173,7 @@ class Controls:
             self.file = self.business.policy
         with self.database.transaction() as tx:
             ensure_schema(tx.connection)
+            self.custom.initialize(tx.connection)
             # Roles the app files name are created when missing, with the base the app declares.
             for role, base in self.file.roles.items():
                 if role not in ROLES:
@@ -195,12 +199,17 @@ class Controls:
                     return
                 roles = {row['id']: dict(row) for row in connection.execute('SELECT * FROM evlet_roles')}
                 stored = [dict(row) for row in connection.execute('SELECT kind,key,value FROM evlet_overrides ORDER BY kind,key')]
-            self.apply(version, roles, stored)
+                fields = [(row[0], row[1], json.loads(row[2])) for row in connection.execute('SELECT model,name,definition FROM evlet_custom_fields ORDER BY created_at, name')]
+            self.apply(version, roles, stored, fields)
 
-    def apply(self, version, roles, stored):
-        """Build the Policy and settings. An override that no longer validates fails closed and is reported."""
+    def apply(self, version, roles, stored, fields=()):
+        """Build the Policy, settings and model customization. An override that no longer validates fails
+        closed and is reported. Instance fields are attached first, so the rest sees them."""
         problems, perms, settings = [], {}, dict(SETTINGS)
         self.roles = roles
+        if not self.business.tenant:
+            attach(self.registry, fields)
+        self.custom.apply([row for row in stored if row['kind'] in ('field', 'layout', 'list', 'naming')], problems)
         self.base = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles))
         for row in stored:
             try:
@@ -213,7 +222,7 @@ class Controls:
                     perms[role, model] = self.rule(role, model, self.check_perm(row['key'], value))
                 elif row['kind'] == 'setting':
                     settings[row['key']] = self.check_setting(row['key'], value)
-                else:
+                elif row['kind'] not in ('field', 'layout', 'list', 'naming'):
                     raise ValueError('This kind of change is not available yet.')
             except (ValueError, KeyError, TypeError) as exc:
                 problems.append({'kind': row['kind'], 'key': row['key'], 'error': str(exc)})
@@ -225,10 +234,10 @@ class Controls:
                 elif row['kind'] == 'setting' and row['key'] in SETTINGS:
                     settings[row['key']] = strictest(row['key'], value, roles)
         try:
-            policy = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles), overrides=perms)
+            policy = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles), overrides=perms, read_only=self.custom.read_only)
         except ValueError as exc:
             problems.append({'kind': 'perm', 'key': 'all', 'error': f'{exc}. Every role except admin is denied until this is fixed.'})
-            policy = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles),
+            policy = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles), read_only=self.custom.read_only,
                             overrides={(role, model): Rule(()) for role in roles if role != 'admin' for model in self.registry.models.values()})
         self.business.policy = policy
         if self.business.jobs is not None:
@@ -464,7 +473,9 @@ class Controls:
                 return None
             value = self.check_setting(key, value)
             return None if value == SETTINGS[key] else value
-        raise ValueError('This kind of change is not available yet.')
+        if kind == 'custom':
+            raise ValueError('Add and remove instance fields with Add field and Remove field.')
+        return self.custom.check(kind, key, value)
 
     def overrides(self):
         with self.database._connection() as connection:
@@ -482,6 +493,8 @@ class Controls:
                               'source': 'app' if declared else 'framework', **meta('perm', key)})
         for key, file in SETTINGS.items():
             items.append({'kind': 'setting', 'key': key, 'file': file, 'value': value('setting', key), **meta('setting', key)})
+        for kind, key, file in self.custom.items():
+            items.append({'kind': kind, 'key': key, 'file': file, 'value': value(kind, key), **meta(kind, key)})
         return {'items': items, 'problems': self.problems, 'version': self.version}
 
     def save(self, user, body):
@@ -514,7 +527,7 @@ class Controls:
                 else:
                     connection.execute('INSERT INTO evlet_overrides(kind,key,value,changed_by,changed_at) VALUES (?,?,?,?,?) ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value, changed_by=excluded.changed_by, changed_at=excluded.changed_at',
                                        (kind, key, json.dumps(value, sort_keys=True), user.id, now))
-                area, target = ('Permissions', key.replace('|', ' · ')) if kind == 'perm' else ('Security', key)
+                area, target = AREAS[kind], key.replace('|', ' · ')
                 audit(connection, user.username, area, target, 'Reset to the file value' if value is None else 'Changed', before, value)
                 if key == 'security.session_hours':
                     # Sessions keep their start: a shorter length ends the ones already older than it.
@@ -524,6 +537,9 @@ class Controls:
             version = self.publish(tx)
         self.refresh()
         return {'version': version, 'saved': len(checked)}
+
+    def audit(self, *row):
+        audit(*row)
 
     def publish(self, tx):
         version = bump(tx.connection)
@@ -688,8 +704,9 @@ class Controls:
             models.append({'name': name, 'label': getattr(model.Meta, 'label', None) or name, 'app': self.app_of.get(name),
                            'fields': [{'name': key, 'label': field.label or key.replace('_', ' ').capitalize(), 'read_only': bool(field.read_only)}
                                       for key, field in fields.items() if not key.startswith('evlet_')],
-                           'scopes': self.presets(model)})
-        attention = [{'tone': 'amber', 'icon': 'alert', 'page': 'permissions' if item['kind'] == 'perm' else 'security',
+                           'scopes': self.presets(model), **self.custom.model_state(model)})
+        pages = {'perm': 'permissions', 'setting': 'security', 'naming': 'naming'}
+        attention = [{'tone': 'amber', 'icon': 'alert', 'page': pages.get(item['kind'], 'models'),
                       'title': f"An override no longer applies: {item['key'].replace('|', ' · ')}", 'text': item['error']} for item in self.problems]
         controls = self.routes.controls
         return {
@@ -702,6 +719,7 @@ class Controls:
             'controls': {'allow_ips': list(controls.allow_ips), 'require_two_step': controls.require_two_step},
             'attention': attention, 'overrides': overrides, 'users': {'active': active or 0, 'total': total},
             'audit': recent, 'two_step': False, 'links': self.links_ready(), 'client': str(client_ip(scope, self.business.auth) or ''),
+            'remove_fields': self.custom.drop, 'instance_fields': not self.business.tenant,
         }
 
     # ---------- HTTP ----------
@@ -738,6 +756,18 @@ class Controls:
             if method == 'POST':
                 self.create_role(user, body)
                 return 201, {'items': self.role_list()}, []
+        match = re.fullmatch(r'/fields/([A-Za-z][A-Za-z0-9_]{0,63})(?:/(x_[a-z0-9_]{1,38}))?', path)
+        if match and method == 'POST' and not match[2]:
+            return 201, self.custom.add_field(user, match[1], body), []
+        if match and method == 'DELETE' and match[2]:
+            return 200, self.custom.remove_field(user, match[1], match[2]), []
+        match = re.fullmatch(r'/naming/([A-Za-z][A-Za-z0-9_]{0,63})/(counters|try)', path)
+        if match and match[2] == 'counters' and method == 'GET':
+            return 200, self.custom.counters(match[1]), []
+        if match and match[2] == 'counters' and method == 'POST':
+            return 200, self.custom.set_counter(user, match[1], body), []
+        if match and match[2] == 'try' and method == 'POST':
+            return 200, self.custom.try_name(match[1], body), []
         match = re.fullmatch(r'/roles/([a-z][a-z0-9_]{1,30})', path)
         if match and method == 'PATCH':
             self.change_role(user, match[1], body)

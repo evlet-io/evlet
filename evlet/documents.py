@@ -323,7 +323,9 @@ def load_draft(context, model, record_id, values, *, preview=False):
     sequence_write(model, scalars, current, business.policy.fields(user, model))
     computed_write(business, model, scalars, '')
     business.policy.check_values(tx, user, model, scalars)
-    draft = Draft(model, {**(dict(current._values) if current else {}), **scalars}, context=context, record_id=record_id)
+    # A new record takes the defaults Controls set on this instance for fields the caller left out.
+    values = business.controls.custom.prepare(model, scalars) if current is None else scalars
+    draft = Draft(model, {**(dict(current._values) if current else {}), **values}, context=context, record_id=record_id)
     object.__setattr__(draft, '_submitted', frozenset(scalars))
     old = Draft(model, dict(current._values), context=context, record_id=record_id) if current else None
     # Finite-v1 roots bound the rows they load; legacy roots keep the per-collection limit only.
@@ -1057,8 +1059,10 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
 
     def data(item, path=()):
         # A new row leaves out initial fields the caller did not supply, so their suggestions apply.
+        # Instance fields (x_) are plain values no formula can read, so the plan never sees them.
         values = {name: item._values.get(name) for name, field in item._definition.__declared_fields__.items()
                   if (not is_finite(field) or kept and field.stored) and name not in getattr(item._definition, '__internal_fields__', ())
+                  and not name.startswith('x_')
                   and not (item.id is None and (path, name) in initials and name not in item._submitted)}
         # Engine keys are internal: saved rows by ID and new rows by draft, so a client _key never meets a saved ID.
         values['_key'], values['id'] = ('s' + str(item.id)) if item.id else 'n' + str(id(item)), item.id
@@ -1069,7 +1073,7 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
     def sync(session, row, item, old, path):
         """This write's changes to one saved row, then its collections, as session commands."""
         for name, field in item._definition.__declared_fields__.items():
-            if is_finite(field) or name in getattr(item._definition, '__internal_fields__', ()):
+            if is_finite(field) or name in getattr(item._definition, '__internal_fields__', ()) or name.startswith('x_'):
                 continue
             value, before = item._values.get(name), old._values.get(name)
             if name in item._submitted or value != before or type(value) is not type(before):
@@ -1264,9 +1268,16 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     settle(context, draft, complete=True, previous=before, kept=locked_write)
     if locked_write:
         states.keep_saved(draft, before)
-    # Document numbers are assigned on the settled draft, in this transaction.
+    if action is None and move is None:
+        # Required fields and retired options set in Controls apply to ordinary writes.
+        business.controls.custom.enforce(model, draft._values, before._values if before else None)
+    # Document numbers and names are assigned on the settled draft, in this transaction.
     from . import sequences
     numbers = sequences.assign(context, model, draft, before, declared_move)
+    if before is None:
+        name = sequences.name_new(tx.connection, business.registry, model, draft._values, host_today(business), user.username)
+        if name:
+            draft._values[business.registry.naming[model].field] = name
     prior = before.stored_values() if before else None
     after = draft.stored_values()
     if prior == after:

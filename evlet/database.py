@@ -7,7 +7,7 @@ import sqlite3
 from .fields import Link, MISSING, Reference
 from .models import ValidationError, identifier
 from .query import SqlQuery
-from .sequences import raw_write
+from .sequences import name_new, raw_write
 
 # Most rows one list call returns, and most rows one child collection may hold in an editor.
 ROW_LIMIT = 100
@@ -189,6 +189,11 @@ class Session:
         table = identifier(self.registry.name_for(model))
         record = model(**values)
         numbers = raw_write(self, model, values, None, record._values)
+        # A trusted session may give a naming field a value (imports); otherwise the series names it.
+        from datetime import datetime, timezone
+        name = name_new(self.connection, self.registry, model, record._values, datetime.now(timezone.utc).date().isoformat())
+        if name:
+            numbers = {**numbers, self.registry.naming[model].field: name}
         if numbers:
             record = model(**{**record._values, **numbers})
         self.check_references(model, record._values)

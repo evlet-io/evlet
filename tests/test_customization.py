@@ -1,0 +1,570 @@
+"""Controls model customization: field, layout and list overrides, instance fields, naming series and counters."""
+
+from concurrent.futures import ThreadPoolExecutor
+import json
+import sqlite3
+
+import pytest
+
+from evlet import (Application, Database, Date, Decimal, LocalAuth, Link, LongText, Model, Move, Naming, Registry, Select, Series,
+                   State, Text)
+from evlet.expressions import ConditionError, UnknownField, parse
+from test_business import client, hashed  # noqa: F401
+from test_controls import add_user, password, save  # noqa: F401
+from test_postgres import pg_dsn  # noqa: F401
+
+
+def models():
+    """Fresh classes per test: instance fields are attached to the classes themselves."""
+    class Customer(Model):
+        name = Text(required=True)
+
+    class Lead(Model):
+        title = Text(required=True)
+        source = Select(('web', 'walk_in', 'referral'))
+        value = Decimal(scale=2)
+        customer = Link(Customer)
+        notes = LongText()
+
+    class Invoice(Model):
+        reference = Text(unique=True)
+        customer = Text(required=True)
+        total = Decimal(scale=2, default='0')
+        tax_rate = Decimal(scale=2, default='5')
+        status = Select(('draft', 'sent'), default='draft')
+        posting_date = Date()
+
+        class Meta:
+            naming = Naming('reference', Series('ZR-{YYYY}-{####}', when='tax_rate == 0', label='Zero-rated', id='zero'),
+                            Series('INV-{YYYY}-{####}', label='Invoices'), date_field='posting_date')
+
+    class Order(Model):
+        reference = Text(unique=True)
+        amount = Decimal(scale=2)
+        status = State(('draft', 'done'), moves=(Move('draft', 'done', 'Finish'),))
+
+        class Meta:
+            naming = Naming('reference', Series('ORD-{#####}'))
+
+    return Customer, Lead, Invoice, Order
+
+
+def build(path, *classes, name='custom.sqlite3'):
+    database = Database(path / name, Registry(*classes))
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+    app.initialize()
+    return app
+
+
+@pytest.fixture
+def app(tmp_path, hashed):
+    app = build(tmp_path, *models())
+    for role in ('admin', 'editor', 'viewer'):
+        add_user(app, role, role)
+    return app
+
+
+def model_of(app, name):
+    return app.registry.models[name.lower()]
+
+
+def schema_of(c, name):
+    return next(entry for entry in c('GET', '/api/schema')[1]['models'] if entry['name'] == name)
+
+
+def field_of(entry, name):
+    return next(field for field in entry['fields'] if field['name'] == name)
+
+
+# ---------- fields ----------
+
+def test_a_required_override_is_enforced_by_post_and_shown_in_the_schema(app):
+    admin = client(app)
+    assert save(admin, ('field', 'Lead.value', {'required': True, 'label': 'Expected value'}))[0] == 200
+    status, payload, _ = admin('POST', '/api/lead', {'title': 'Fit-out'})
+    assert status == 422 and payload['fields'] == {'value': 'This field is required'}
+    assert admin('POST', '/api/lead', {'title': 'Fit-out', 'value': '1200.00'})[0] == 201
+    entry = schema_of(client(app, 'editor'), 'lead')
+    assert field_of(entry, 'value')['required'] is True and field_of(entry, 'value')['label'] == 'Expected value'
+    # Rows saved before the override are not back-filled; an edit must fill the field.
+    with app.database.transaction() as tx:
+        old = tx.create(model_of(app, 'Lead'), title='Old lead')
+    assert admin('PATCH', f'/api/lead/{old.id}', {'title': 'Old lead, renamed'})[1]['fields'] == {'value': 'This field is required'}
+    status, payload, _ = admin('POST', '/api/order', {})
+    assert status == 201
+    assert save(admin, ('field', 'Order.amount', {'required': True}))[0] == 200
+    assert admin('POST', '/api/order', {})[1]['fields'] == {'amount': 'This field is required'}
+
+
+def test_a_hidden_option_is_refused_on_create_and_kept_on_an_unchanged_update(app):
+    admin = client(app)
+    with app.database.transaction() as tx:
+        kept = tx.create(model_of(app, 'Lead'), title='Walked in', source='walk_in')
+    assert save(admin, ('field', 'Lead.source', {'options_hidden': ['walk_in'], 'options_add': ['exhibition']}))[0] == 200
+    status, payload, _ = admin('POST', '/api/lead', {'title': 'New', 'source': 'walk_in'})
+    assert status == 422 and payload['fields'] == {'source': 'This option is no longer offered. Choose another one.'}
+    assert admin('POST', '/api/lead', {'title': 'Stand visit', 'source': 'exhibition'})[1]['source'] == 'exhibition'
+    status, record, _ = admin('PATCH', f'/api/lead/{kept.id}', {'title': 'Walked in, called back', 'source': 'walk_in'})
+    assert status == 200 and record['source'] == 'walk_in'
+    moved = admin('POST', '/api/lead', {'title': 'Moved', 'source': 'web'})[1]
+    assert admin('PATCH', f'/api/lead/{moved["id"]}', {'source': 'walk_in'})[0] == 422
+    field = field_of(schema_of(admin, 'lead'), 'source')
+    assert field['choices'] == ['web', 'referral', 'exhibition'] and field['retired_choices'] == ['walk_in']
+
+
+def test_read_only_and_default_overrides_apply_to_the_api(app):
+    admin, editor = client(app), client(app, 'editor')
+    assert save(admin, ('field', 'Lead.notes', {'read_only': True}), ('field', 'Lead.source', {'default': 'referral'}))[0] == 200
+    assert editor('POST', '/api/lead', {'title': 'A', 'notes': 'hello'})[0] == 403
+    record = editor('POST', '/api/lead', {'title': 'A'})[1]
+    assert record['source'] == 'referral'
+    entry = schema_of(editor, 'lead')
+    assert field_of(entry, 'notes')['read_only'] is True
+    assert field_of(entry, 'source')['default'] == 'referral' and field_of(entry, 'source')['default_kind'] == 'static'
+    with app.database.transaction() as tx:
+        # Server code still writes a field that is read only for people.
+        assert tx.update(model_of(app, 'Lead'), record['id'], notes='from a job').notes == 'from a job'
+
+
+@pytest.mark.parametrize('key, value, message', [
+    ('Lead.title', {'required': False}, 'is required in models.py and stays required'),
+    ('Lead.title', {'hidden': True}, "A required field can't be hidden"),
+    ('Lead.value', {'required': True, 'hidden': True}, "A required field can't be hidden"),
+    ('Lead.title', {'label': '  '}, "A label can't be empty."),
+    ('Lead.source', {'options_hidden': ['web', 'walk_in', 'referral']}, 'Keep at least one option shown.'),
+    ('Lead.source', {'options_add': ['web']}, 'web is already an option.'),
+    ('Lead.source', {'options_add': ['Walk In']}, 'is not a usable option'),
+    ('Lead.source', {'default': 'walk_in', 'options_hidden': ['walk_in']}, 'Choose a default from the options shown.'),
+    ('Lead.customer', {'default': 1}, "Links don't take a default."),
+    ('Lead.value', {'default': 'lots'}, 'The default is not a valid value'),
+    ('Lead.title', {'options_add': ['x']}, 'Only choice fields have options.'),
+    ('Invoice.reference', {'required': True}, 'filled by the app or the server'),
+])
+def test_field_overrides_can_only_make_things_stricter(app, key, value, message):
+    status, payload, _ = save(client(app), ('field', key, value))
+    assert status == 422 and message in payload['fields']['changes.0'], payload
+
+
+def test_a_field_override_that_no_longer_validates_makes_the_field_read_only(app):
+    with app.database.transaction() as tx:
+        tx.connection.execute("INSERT INTO evlet_overrides(kind,key,value) VALUES ('field','Lead.source',?)", (json.dumps({'options_add': ['web']}),))
+        tx.connection.execute('UPDATE evlet_config SET version=version+1')
+    admin = client(app)
+    assert admin('POST', '/api/lead', {'title': 'x', 'source': 'web'})[0] == 403
+    state = admin('GET', '/api/_controls/state')[1]
+    assert any(item['page'] == 'models' and 'Lead.source' in item['title'] for item in state['attention'])
+
+
+# ---------- layout and list ----------
+
+def test_an_unplaced_field_is_added_to_the_last_section(app):
+    admin = client(app)
+    layout = [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 12}]}, {'title': 'Money', 'fields': [{'name': 'value', 'width': 6}]}]
+    assert save(admin, ('layout', 'Lead', layout))[0] == 200
+    entry = schema_of(admin, 'lead')
+    assert entry['layout'] == [{'label': 'Lead', 'fields': ['title'], 'wide': ['title']},
+                               {'label': 'Money', 'fields': ['value', 'source', 'customer', 'notes'], 'wide': ['notes']}]
+    for bad, message in (([], 'Keep between 1 and 12 sections.'), ([{'title': '', 'fields': []}], 'Give every section a title'),
+                         ([{'title': 'A', 'fields': [{'name': 'title', 'width': 6}, {'name': 'title', 'width': 6}]}], 'Put each field in one place.'),
+                         ([{'title': 'A', 'fields': [{'name': 'nothing', 'width': 6}]}], 'Place fields of Lead by name')):
+        assert message in save(admin, ('layout', 'Lead', bad))[1]['fields']['changes.0']
+    ui = admin('GET', '/api/ui')[1]
+    form = next(view for view in ui['views'] if view['name'] == 'lead.form')
+    assert [group['id'] for group in form['layout']['slots']['children']] == ['main_details', 'section_2']
+
+
+def test_a_list_override_sets_columns_page_size_and_sort_and_drops_unreadable_columns(app):
+    admin = client(app)
+    value = {'columns': ['title', 'value', 'source'], 'page_size': 25, 'sort': '-value'}
+    assert save(admin, ('list', 'Lead', value), ('perm', 'editor|Lead', {'ops': ['read'], 'read': ['title', 'source', 'customer', 'notes'], 'write': None, 'scope': None}))[0] == 200
+    entry = schema_of(admin, 'lead')
+    assert (entry['list_fields'], entry['page_size'], entry['order_by']) == (['id', 'title', 'value', 'source'], 25, '-value')
+    entry = schema_of(client(app, 'editor'), 'lead')
+    assert entry['list_fields'] == ['id', 'title', 'source'] and 'order_by' not in entry
+    assert save(admin, ('list', 'Lead', {**value, 'page_size': 30}))[1]['fields']['changes.0'] == 'Show 25, 50 or 100 rows per page.'
+
+
+# ---------- instance fields ----------
+
+def backups(app):
+    folder = app.database.path.parent / 'backups'
+    return sorted(folder.iterdir()) if folder.exists() else []
+
+
+def columns(app, table):
+    with app.database._connection() as db:
+        return [row[1] for row in db.execute(f'PRAGMA table_info({table})')]
+
+
+def test_adding_and_removing_an_instance_field_takes_backups_and_cleans_overrides(app):
+    admin = client(app)
+    status, added, _ = admin('POST', '/api/_controls/fields/Invoice', {'name': 'branch', 'type': 'Text', 'label': 'Branch'})
+    assert status == 201 and added['name'] == 'x_branch' and len(backups(app)) == 1
+    assert 'x_branch' in columns(app, 'invoice')
+    record = admin('POST', '/api/invoice', {'customer': 'Gulf Steel', 'x_branch': 'dxb'})[1]
+    assert record['x_branch'] == 'dxb'
+    assert field_of(schema_of(admin, 'invoice'), 'x_branch')['label'] == 'Branch'
+    series = [{'id': 'dubai', 'label': 'Dubai', 'format': 'DXB-{####}', 'when': 'x_branch == "dxb"'},
+              {'id': 'default', 'label': 'Invoices', 'format': 'INV-{YYYY}-{####}', 'when': ''}]
+    assert save(admin, ('field', 'Invoice.x_branch', {'label': 'Branch code'}),
+                ('list', 'Invoice', {'columns': ['reference', 'x_branch'], 'page_size': 50, 'sort': '-x_branch'}),
+                ('layout', 'Invoice', [{'title': 'Main', 'fields': [{'name': 'customer', 'width': 6}, {'name': 'x_branch', 'width': 6}]}]),
+                ('perm', 'editor|Invoice', {'ops': ['read'], 'read': ['reference', 'x_branch'], 'write': None, 'scope': None}),
+                ('naming', 'Invoice', series))[0] == 200
+    assert admin('POST', '/api/invoice', {'customer': 'Noor', 'x_branch': 'dxb'})[1]['reference'] == 'DXB-0001'
+    status, removed, _ = admin('DELETE', '/api/_controls/fields/Invoice/x_branch')
+    assert status == 200 and len(backups(app)) == 2
+    assert 'x_branch' not in columns(app, 'invoice') and 'x_branch' not in model_of(app, 'Invoice').__declared_fields__
+    overrides = {(item['kind'], item['key']): item['value'] for item in admin('GET', '/api/_controls/overrides')[1]['items']}
+    assert ('field', 'Invoice.x_branch') not in overrides
+    assert overrides[('list', 'Invoice')] == {'columns': ['reference'], 'page_size': 50, 'sort': '-id'}
+    assert overrides[('layout', 'Invoice')] == [{'title': 'Main', 'fields': [{'name': 'customer', 'width': 6}]}]
+    assert overrides[('perm', 'editor|Invoice')]['read'] == ['reference']
+    assert overrides[('naming', 'Invoice')] == [series[1]]
+    assert admin('GET', '/api/_controls/state')[1]['attention'] == []
+    assert admin('POST', '/api/invoice', {'customer': 'Blue Dune'})[0] == 201
+    with app.database._connection() as db:
+        details = [row[0] for row in db.execute("SELECT detail FROM evlet_audit WHERE area='Models' ORDER BY id")]
+    assert details[0].startswith('Field added (Text)') and details[-1].startswith('Field removed with 5 overrides cleaned')
+
+
+def test_instance_field_rules(app):
+    admin = client(app)
+    admin('POST', '/api/lead', {'title': 'One'})
+    for body, field, message in (({'name': 'Bad Name', 'type': 'Text', 'label': 'T'}, 'name', 'Use lowercase letters'),
+                                 ({'name': 'size', 'type': 'Blob', 'label': 'T'}, 'type', None),
+                                 ({'name': 'kind', 'type': 'Select', 'label': 'Kind', 'options': ['one']}, 'options', None),
+                                 ({'name': 'due', 'type': 'Date', 'label': 'Due', 'required': True}, 'default', '1 records already exist')):
+        status, payload, _ = admin('POST', '/api/_controls/fields/Lead', body)
+        assert status == 422 and field in payload['fields'] and (message is None or message in payload['fields'][field]), payload
+    assert admin('POST', '/api/_controls/fields/Lead', {'name': 'title', 'type': 'Text', 'label': 'T'})[0] == 201
+    assert admin('POST', '/api/_controls/fields/Lead', {'name': 'x_title', 'type': 'Text', 'label': 'T'})[1]['fields']['name'] == 'Lead already has a field called x_title.'
+    status, _, _ = admin('POST', '/api/_controls/fields/Lead', {'name': 'tier', 'type': 'Select', 'label': 'Tier', 'options': ['gold', 'silver'],
+                                                                 'required': True, 'default': 'silver'})
+    assert status == 201
+    assert admin('GET', '/api/lead')[1]['items'][0]['x_tier'] == 'silver'
+    assert admin('POST', '/api/lead', {'title': 'Two', 'x_tier': None})[1]['fields'] == {'x_tier': 'This field is required'}
+    assert admin('POST', '/api/_controls/fields/Lead', {'name': 'account', 'type': 'Link', 'label': 'Account', 'target': 'customer'})[0] == 201
+    customer = admin('POST', '/api/customer', {'name': 'Gulf Steel'})[1]
+    assert admin('POST', '/api/lead', {'title': 'Three', 'x_tier': 'gold', 'x_account': customer['id']})[1]['x_account'] == customer['id']
+    assert admin('DELETE', '/api/_controls/fields/Lead/x_account')[0] == 200
+    assert admin('DELETE', '/api/_controls/fields/Lead/x_nothing')[0] == 404
+    assert client(app, 'editor')('POST', '/api/_controls/fields/Lead', {'name': 'a', 'type': 'Text', 'label': 'A'})[0] == 404
+
+
+def test_old_sqlite_disables_removal_with_a_message(tmp_path, hashed, monkeypatch):
+    from evlet import customization
+    monkeypatch.setattr(customization, 'sqlite_version', lambda connection: '3.31.1')
+    app = build(tmp_path, *models())
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    assert admin('POST', '/api/_controls/fields/Lead', {'name': 'grade', 'type': 'Integer', 'label': 'Grade'})[0] == 201
+    status, payload, _ = admin('DELETE', '/api/_controls/fields/Lead/x_grade')
+    assert status == 409 and payload['error'].startswith('Removing a field needs SQLite 3.35 or later, and this server has 3.31.1.')
+    assert admin('GET', '/api/_controls/state')[1]['remove_fields'] == payload['error']
+    assert 'x_grade' in columns(app, 'lead')
+
+
+def test_a_second_process_picks_up_an_instance_field(tmp_path, hashed):
+    first = build(tmp_path, *models())
+    add_user(first, 'admin', 'admin')
+    second = build(tmp_path, *models())
+    assert client(first)('POST', '/api/_controls/fields/Lead', {'name': 'region', 'type': 'Text', 'label': 'Region'})[0] == 201
+    record = client(second)('POST', '/api/lead', {'title': 'Elsewhere', 'x_region': 'north'})[1]
+    assert record['x_region'] == 'north'
+    # A restart reads the instance fields again; app schema checks leave x_ columns alone.
+    third = build(tmp_path, *models())
+    assert client(third)('GET', f'/api/lead/{record["id"]}')[1]['x_region'] == 'north'
+
+
+def test_app_fields_cannot_use_the_instance_prefix():
+    with pytest.raises(ValueError, match='kept for fields added on an instance'):
+        type('Clash', (Model,), {'x_code': Text()})
+
+
+# ---------- the condition language ----------
+
+def fields():
+    return models()[2].__declared_fields__
+
+
+@pytest.mark.parametrize('source', [
+    'total >= 250000', 'status == "sent"', "status == 'sent'", 'status != "draft"', 'total > 1', 'total < 1', 'total <= 1',
+    'status in ("sent", "draft")', 'customer != empty', 'not status == "sent"', '(total > 1 or tax_rate == 0) and status == "sent"',
+    'posting_date >= "2026-01-01"', 'total == -5.25',
+])
+def test_each_grammar_rule_parses(source):
+    assert parse(source, fields()).fields
+
+
+@pytest.mark.parametrize('source, message', [
+    ('status = "sent"', 'Use == to compare, not =.'),
+    ('totl > 5', "totl isn't a field on this model. Did you mean total?"),
+    ('status == export', 'Put text values in quotes, like "export".'),
+    ('status == "sent', 'A quote is not closed.'),
+    ('zzz == 1', "zzz isn't a field on this model."),
+    ('total > ', 'A value is missing at the end.'),
+    ('total >= 1 and', 'The condition ends too early.'),
+    ('total 5', 'Compare total with ==, !=, >, >=, < or <=.'),
+    ('total > 1 status == "sent"', 'Unexpected "status". Join conditions with and / or.'),
+    ('len(customer) > 2', "len isn't a field on this model."),
+    ('customer.name == "a"', '"." isn\'t allowed here.'),
+    ('total + 1 > 2', '"+" isn\'t allowed here.'),
+    ('(total > 1', 'A bracket is not closed.'),
+    ('status in "sent"', 'Put the values in brackets'),
+    ('total == "5"', 'total is a number, so leave out the quotes.'),
+    ('status == 5', 'Put text values in quotes, like "5".'),
+    ('x' * 501, 'Keep a condition under 500 characters.'),
+    ('not ' * 11 + 'total > 1', 'Nest brackets and not at most 10 deep.'),
+    ('== 1', 'Start with a field name'),
+])
+def test_each_grammar_error_has_its_message(source, message):
+    with pytest.raises(ConditionError) as raised:
+        parse(source, fields())
+    assert str(raised.value).startswith(message)
+
+
+def test_conditions_compare_by_type():
+    from datetime import date
+    from decimal import Decimal as D
+    values = {'total': D('250000.00'), 'status': 'sent', 'customer': '', 'tax_rate': D('0'), 'posting_date': date(2026, 3, 1)}
+    assert parse('total >= 250000 and status == "sent"', fields()).matches(values)
+    assert parse('customer == empty and tax_rate == 0', fields()).matches(values)
+    assert parse('posting_date < "2026-12-31"', fields()).matches(values)
+    assert not parse('status in ("draft")', fields()).matches(values)
+    assert parse('not (total < 1)', fields()).matches(values)
+    with pytest.raises(UnknownField):
+        parse('x_gone == "a"', fields())
+
+
+# ---------- naming series ----------
+
+def test_the_first_matching_series_wins_and_the_last_catches_everything_else(app):
+    admin = client(app)
+    assert admin('POST', '/api/invoice', {'customer': 'A', 'tax_rate': '0', 'posting_date': '2026-03-01'})[1]['reference'] == 'ZR-2026-0001'
+    assert admin('POST', '/api/invoice', {'customer': 'B', 'posting_date': '2026-03-01'})[1]['reference'] == 'INV-2026-0001'
+    series = [{'id': 'large', 'label': 'Large contracts', 'format': 'LC-{YY}{MM}-{customer}-{###}', 'when': 'total >= 250000 and status == "sent"'},
+              {'id': 'zero', 'label': 'Zero-rated', 'format': 'ZR-{YYYY}-{####}', 'when': 'tax_rate == 0'},
+              {'id': 'default', 'label': 'Invoices', 'format': 'INV-{YYYY}-{####}', 'when': ''}]
+    assert save(admin, ('naming', 'Invoice', series))[0] == 200
+    big = {'customer': 'Gulf Steel', 'total': '300000', 'status': 'sent', 'tax_rate': '0', 'posting_date': '2026-11-02'}
+    assert admin('POST', '/api/invoice', big)[1]['reference'] == 'LC-2611-Gulf-Steel-001'
+    assert admin('POST', '/api/invoice', {**big, 'status': 'draft'})[1]['reference'] == 'ZR-2026-0002'
+    assert admin('POST', '/api/invoice', {'customer': 'C', 'posting_date': '2026-11-02'})[1]['reference'] == 'INV-2026-0002'
+    assert admin('POST', '/api/invoice', {'customer': 'D', 'reference': 'MINE-1'})[0] == 403
+    assert field_of(schema_of(admin, 'invoice'), 'reference')['read_only'] is True
+    assert admin('POST', '/api/order', {})[1]['reference'] == 'ORD-00001'
+
+
+@pytest.mark.parametrize('series, message', [
+    ([{'id': 'a', 'label': 'A', 'format': 'A-{####}', 'when': 'total > 1'}], 'The last series has no condition'),
+    ([{'id': 'a', 'label': 'A', 'format': 'A-{####}', 'when': ''}, {'id': 'b', 'label': 'B', 'format': 'B-{####}', 'when': ''}], 'Only the last series'),
+    ([{'id': 'a', 'label': 'A', 'format': 'A-{####}', 'when': 'totl > 1'}, {'id': 'b', 'label': 'B', 'format': 'B-{####}', 'when': ''}], 'Did you mean total?'),
+    ([{'id': 'a', 'label': 'A', 'format': 'A-{##}', 'when': ''}], 'A counter has 3 to 8 #'),
+    ([{'id': 'a', 'label': 'A', 'format': 'A-{YYYY}', 'when': ''}], 'Use exactly one counter'),
+    ([{'id': 'a', 'label': 'A', 'format': 'A-{####', 'when': ''}], 'A brace is not closed.'),
+    ([{'id': 'a', 'label': 'A', 'format': 'A-{branch}-{####}', 'when': ''}], "{branch} isn't a token or a field on Invoice."),
+    ([{'id': 'a', 'label': 'A', 'format': 'A-{total}-{####}', 'when': ''}], 'must be a short text field'),
+    ([{'id': 'a', 'label': 'A', 'format': 'A' * 41 + '{####}', 'when': ''}], 'Keep it under 40 characters.'),
+])
+def test_naming_overrides_are_checked_when_saved(app, series, message):
+    status, payload, _ = save(client(app), ('naming', 'Invoice', series))
+    assert status == 422 and message in payload['fields']['changes.0'], payload
+
+
+def test_a_series_whose_condition_names_a_missing_field_is_skipped_and_listed(app):
+    series = [{'id': 'gone', 'label': 'Gone', 'format': 'G-{####}', 'when': 'x_gone == "a"'},
+              {'id': 'default', 'label': 'Invoices', 'format': 'N-{####}', 'when': ''}]
+    with app.database.transaction() as tx:
+        tx.connection.execute("INSERT INTO evlet_overrides(kind,key,value) VALUES ('naming','Invoice',?)", (json.dumps(series),))
+        tx.connection.execute('UPDATE evlet_config SET version=version+1')
+    admin = client(app)
+    assert admin('POST', '/api/invoice', {'customer': 'A'})[1]['reference'] == 'N-0001'
+    attention = admin('GET', '/api/_controls/state')[1]['attention']
+    assert attention[0]['page'] == 'naming' and 'Series gone is skipped' in attention[0]['text']
+
+
+def test_a_year_change_starts_a_new_counter(app):
+    admin = client(app)
+    names = [admin('POST', '/api/invoice', {'customer': 'A', 'posting_date': day})[1]['reference']
+             for day in ('2025-12-31', '2026-01-01', '2025-12-30', '2026-01-02')]
+    assert names == ['INV-2025-0001', 'INV-2026-0001', 'INV-2025-0002', 'INV-2026-0002']
+    counters = admin('GET', '/api/_controls/naming/Invoice/counters')[1]
+    assert {item['prefix']: (item['value'], item['last_name'], item['next']) for item in counters['items']} == {
+        'INV-2025-': (2, 'INV-2025-0002', 'INV-2025-0003'), 'INV-2026-': (2, 'INV-2026-0002', 'INV-2026-0003')}
+    assert {item['changed_by'] for item in counters['items']} == {'admin'}
+
+
+def test_fifty_concurrent_creates_get_distinct_names(app):
+    admin = client(app)
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        results = list(pool.map(lambda index: admin('POST', '/api/invoice', {'customer': f'C{index}', 'posting_date': '2026-05-05'}), range(50)))
+    assert all(status == 201 for status, _, _ in results)
+    names = {record['reference'] for _, record, _ in results}
+    assert names == {f'INV-2026-{number:04d}' for number in range(1, 51)}
+
+
+def test_imported_names_are_kept_and_skipped(app):
+    with app.database.transaction() as tx:
+        tx.create(model_of(app, 'Invoice'), customer='Old', reference='INV-2026-0001', posting_date='2026-02-02')
+        assert tx.create(model_of(app, 'Invoice'), customer='Script', posting_date='2026-02-02').reference == 'INV-2026-0002'
+    assert client(app)('POST', '/api/invoice', {'customer': 'New', 'posting_date': '2026-02-02'})[1]['reference'] == 'INV-2026-0003'
+
+
+def test_a_counter_cannot_be_set_below_the_last_issued_name(app):
+    admin = client(app)
+    for _ in range(3):
+        admin('POST', '/api/invoice', {'customer': 'A', 'posting_date': '2026-04-04'})
+    url = '/api/_controls/naming/Invoice/counters'
+    status, payload, _ = admin('POST', url, {'prefix': 'INV-2026-', 'value': 2, 'note': 'Oops'})
+    assert status == 422 and payload['fields']['value'].startswith('Lower than INV-2026-0003, which already exists.')
+    assert admin('POST', url, {'prefix': 'INV-2026-', 'value': 500, 'note': ' '})[1]['fields']['note'].startswith('Give a reason')
+    assert admin('POST', url, {'prefix': 'XX-', 'value': 5, 'note': 'x'})[1]['fields']['prefix'] == 'No series of this model uses this prefix.'
+    items = admin('POST', url, {'prefix': 'INV-2026-', 'value': 500, 'note': 'Continues from the old system'})[1]['items']
+    assert items[0]['how'] == 'set' and items[0]['note'] == 'Continues from the old system' and items[0]['next'] == 'INV-2026-0501'
+    assert admin('POST', url, {'prefix': 'ZR-2027-', 'value': 37, 'note': 'Carried over'})[0] == 200
+    assert admin('POST', '/api/invoice', {'customer': 'B', 'posting_date': '2026-04-04'})[1]['reference'] == 'INV-2026-0501'
+    with app.database._connection() as db:
+        assert db.execute("SELECT detail FROM evlet_audit WHERE area='Naming'").fetchone()[0] == 'Counter 3 → 500 · Continues from the old system'
+    assert client(app, 'editor')('GET', url)[0] == 404
+
+
+def test_try_it_changes_no_counter(app):
+    admin = client(app)
+    admin('POST', '/api/invoice', {'customer': 'A', 'posting_date': '2026-04-04'})
+    with app.database._connection() as db:
+        before = [tuple(row) for row in db.execute('SELECT * FROM evlet_sequence')]
+    url = '/api/_controls/naming/Invoice/try'
+    result = admin('POST', url, {'values': {'customer': 'A', 'tax_rate': '0', 'posting_date': '2026-04-04'}})[1]
+    assert (result['match'], result['name']) == ('zero', 'ZR-2026-0001')
+    assert admin('POST', url, {'values': {'posting_date': '2026-04-04'}})[1]['name'] == 'INV-2026-0002'
+    draft = [{'id': 'big', 'label': 'Big', 'format': 'BIG-{####}', 'when': 'totl > 5'},
+             {'id': 'all', 'label': 'All', 'format': 'ALL-{####}', 'when': ''}]
+    result = admin('POST', url, {'values': {'total': '10'}, 'series': draft})[1]
+    assert result['checks'][0]['when'] == "totl isn't a field on this model. Did you mean total?" and result['name'] == 'ALL-0001'
+    with app.database._connection() as db:
+        assert [tuple(row) for row in db.execute('SELECT * FROM evlet_sequence')] == before
+
+
+def test_naming_declarations_are_checked():
+    with pytest.raises(ValueError, match='must be a stored Text field with unique=True'):
+        class Bad(Model):
+            reference = Text()
+
+            class Meta:
+                naming = Naming('reference', Series('B-{####}'))
+        Registry(Bad)
+    with pytest.raises(ValueError, match='The last series has no condition'):
+        Naming('reference', Series('B-{####}', when='total > 1'))
+    with pytest.raises(ValueError, match='Use exactly one counter'):
+        Series('B-{YYYY}')
+
+
+def test_the_counter_table_gains_its_new_columns(tmp_path):
+    path = tmp_path / 'old.sqlite3'
+    with sqlite3.connect(path) as db:
+        db.execute('CREATE TABLE evlet_sequence (model TEXT NOT NULL, field TEXT NOT NULL, scope_key TEXT NOT NULL, period TEXT NOT NULL, '
+                   '"last" INTEGER NOT NULL, PRIMARY KEY (model, field, scope_key, period))')
+    from evlet.sequences import upgrade_counters
+    with sqlite3.connect(path) as db:
+        upgrade_counters(db)
+        assert {row[1] for row in db.execute('PRAGMA table_info(evlet_sequence)')} >= {'last_name', 'how', 'note', 'changed_by', 'changed_at'}
+
+
+def test_an_instance_field_on_a_finite_document(tmp_path, hashed):
+    from evlet import Currency
+    from evlet.calc import round
+
+    class Quote(Model):
+        qty = Decimal(default=1)
+        rate = Currency(default=0)
+        amount = Currency(compute=round(qty * rate, 2))
+
+        class Meta:
+            calculation_language = 'finite-v1'
+
+    app = build(tmp_path, Quote)
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    first = admin('POST', '/api/quote', {'qty': '2', 'rate': '3'})
+    assert admin('POST', '/api/_controls/fields/Quote', {'name': 'note', 'type': 'Text', 'label': 'Note'})[0] == 201
+    status, record, _ = admin('POST', '/api/quote', {'qty': '2', 'rate': '4', 'x_note': 'rush'})
+    assert status == 201, record
+    assert (record['amount'], record['x_note']) == ('8.00', 'rush')
+    # The new field is part of each record now, so the revision a client holds from before has moved.
+    assert admin('PATCH', f'/api/quote/{first[1]["id"]}', {'x_note': 'later'}, headers={b'if-match': first[2][b'etag']})[0] == 409
+    etag = admin('GET', f'/api/quote/{first[1]["id"]}')[2][b'etag']
+    status, record, _ = admin('PATCH', f'/api/quote/{first[1]["id"]}', {'x_note': 'later'}, headers={b'if-match': etag})
+    assert status == 200, record
+    assert (record['amount'], record['x_note']) == ('6.00', 'later')
+
+
+# ---------- PostgreSQL ----------
+
+@pytest.fixture
+def pg(pg_dsn, hashed):
+    from evlet import PostgreSQLDatabase
+    classes = models()
+    database = PostgreSQLDatabase(pg_dsn, Registry(*classes))
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+    app.initialize()
+    for role in ('admin', 'editor'):
+        add_user(app, role, role)
+    return app
+
+
+def test_postgresql_field_overrides_and_naming(pg):
+    admin = client(pg)
+    assert save(admin, ('field', 'Lead.value', {'required': True}), ('field', 'Lead.source', {'options_hidden': ['walk_in']}))[0] == 200
+    assert admin('POST', '/api/lead', {'title': 'A'})[1]['fields'] == {'value': 'This field is required'}
+    assert admin('POST', '/api/lead', {'title': 'A', 'value': '1', 'source': 'walk_in'})[0] == 422
+    names = [admin('POST', '/api/invoice', {'customer': 'A', 'posting_date': day, **extra})[1]['reference']
+             for day, extra in (('2025-12-31', {}), ('2026-01-01', {}), ('2026-01-01', {'tax_rate': '0'}))]
+    assert names == ['INV-2025-0001', 'INV-2026-0001', 'ZR-2026-0001']
+    url = '/api/_controls/naming/Invoice/counters'
+    assert admin('POST', url, {'prefix': 'INV-2026-', 'value': 0, 'note': 'x'})[0] == 422
+    assert admin('POST', url, {'prefix': 'INV-2026-', 'value': 41, 'note': 'Old system'})[0] == 200
+    before = admin('GET', url)[1]
+    assert admin('POST', '/api/_controls/naming/Invoice/try', {'values': {'posting_date': '2026-01-05'}})[1]['name'] == 'INV-2026-0042'
+    assert admin('GET', url)[1] == before
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        results = list(pool.map(lambda index: admin('POST', '/api/invoice', {'customer': f'C{index}', 'posting_date': '2026-01-05'}), range(50)))
+    assert {record['reference'] for _, record, _ in results} == {f'INV-2026-{number:04d}' for number in range(42, 92)}
+
+
+def test_postgresql_instance_fields(pg):
+    admin = client(pg)
+    admin('POST', '/api/lead', {'title': 'Before'})
+    status, added, _ = admin('POST', '/api/_controls/fields/Lead', {'name': 'account', 'type': 'Link', 'label': 'Account', 'target': 'customer'})
+    assert status == 201 and added['backup'] is None
+    customer = admin('POST', '/api/customer', {'name': 'Gulf Steel'})[1]
+    assert admin('POST', '/api/lead', {'title': 'After', 'x_account': customer['id']})[1]['x_account'] == customer['id']
+    assert admin('POST', '/api/lead', {'title': 'Bad', 'x_account': 999})[0] in (404, 422)
+    assert save(admin, ('list', 'Lead', {'columns': ['title', 'x_account'], 'page_size': 25, 'sort': 'title'}))[0] == 200
+    assert admin('DELETE', '/api/_controls/fields/Lead/x_account')[0] == 200
+    with pg.database._connection() as db:
+        names = {row[0] for row in db.execute("SELECT column_name FROM information_schema.columns WHERE table_name='lead'")}
+    assert 'x_account' not in names
+    overrides = {(item['kind'], item['key']): item['value'] for item in admin('GET', '/api/_controls/overrides')[1]['items']}
+    assert overrides[('list', 'Lead')]['columns'] == ['title']
+
+
+def test_a_revision_gets_a_new_name(tmp_path, hashed):
+    class Quote(Model):
+        reference = Text(unique=True)
+        status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),), locked=('issued', 'void'),
+                       final=('void',), voidable=('issued',))
+
+        class Meta:
+            revisable = True
+            naming = Naming('reference', Series('Q-{###}'))
+
+    app = build(tmp_path, Quote)
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    status, record, headers = admin('POST', '/api/quote', {})
+    assert (status, record['reference']) == (201, 'Q-001')
+    status, record, headers = admin('POST', '/api/quote/1/moves/issued', {}, headers={b'if-match': headers[b'etag']})
+    assert status == 200, record
+    status, copy, _ = admin('POST', '/api/quote/1/revise', {'reason': 'Wrong price'}, headers={b'if-match': headers[b'etag']})
+    assert status == 201 and copy['reference'] == 'Q-002', copy

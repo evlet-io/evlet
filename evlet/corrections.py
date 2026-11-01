@@ -154,6 +154,11 @@ def revise(context, model, record_id, reason):
     settle(context, copy, complete=True)
     # A number due on create is assigned to the copy as it would be to any new record.
     numbers = sequences.assign(context, model, copy, None, None)
+    # So is a name from the model's naming series (the copy's unique fields start empty).
+    from .documents import host_today
+    name = sequences.name_new(tx.connection, business.registry, model, copy._values, host_today(business), user.username)
+    if name:
+        copy._values[business.registry.naming[model].field] = name
     saved = write_snapshot(tx, copy)
     plan = business.registry.plan_for(model)
     if plan is not None:

@@ -23,7 +23,8 @@ def plural_for(label):
 def view_for(model):
     meta = getattr(model, 'Meta', None)
     allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
-               'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments', 'effects'}
+               'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments', 'effects',
+               'naming'}
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
             raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
@@ -42,7 +43,10 @@ def view_for(model):
     for value, maximum, names in ((columns, 8, {'id', *visible}), (search, 8, {name for name, field in visible.items() if isinstance(field, Text)})):
         if not isinstance(value, (tuple, list)) or len(value) > maximum or any(not isinstance(name, str) or name not in names for name in value) or len(set(value)) != len(value):
             raise ValueError('View fields must be distinct visible field names, with at most eight entries')
-    layout = getattr(meta, 'layout', (('Details', tuple(visible)),))
+    # Instance fields (x_) the app file can't name go to the last group of a declared layout.
+    added = [name for name in visible if name.startswith('x_')]
+    layout = getattr(meta, 'layout', None)
+    layout = (('Details', tuple(visible)),) if layout is None else (*layout[:-1], (layout[-1][0], (*layout[-1][1], *added))) if added and layout else layout
     used = []
     groups = []
     if not isinstance(layout, (tuple, list)) or len(layout) > 8:

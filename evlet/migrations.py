@@ -85,19 +85,25 @@ def _tables(connection):
     return {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*' AND name NOT GLOB 'evlet_*'")}
 
 
+def app_fields(model):
+    """Stored fields from the app files. Instance fields (x_) are added and removed by Controls, so
+    schema checks and app migrations leave their columns alone."""
+    return {key: field for key, field in model.__fields__.items() if not key.startswith('x_')}
+
+
 def _check(connection, registry, *, rows=False):
     for name, model in registry.models.items():
         table = identifier(name)
         columns = connection.execute(f'PRAGMA table_info({table})').fetchall()
-        actual = {row['name']: (row['type'].upper(), bool(row['notnull']), row['pk']) for row in columns}
+        actual = {row['name']: (row['type'].upper(), bool(row['notnull']), row['pk']) for row in columns if not row['name'].startswith('x_')}
         expected = {'id': ('INTEGER', False, 1), **{
-            column: (sql_type, field.required, 0) for key, field in model.__fields__.items() for column, sql_type in field.columns(key)}}
+            column: (sql_type, field.required, 0) for key, field in app_fields(model).items() for column, sql_type in field.columns(key)}}
         if actual != expected:
             raise SchemaError(f'{name}: database columns differ from models; run explicit migrations')
         links = {(row['from'], row['table'], row['to'], row['on_delete'])
-                 for row in connection.execute(f'PRAGMA foreign_key_list({table})')}
+                 for row in connection.execute(f'PRAGMA foreign_key_list({table})') if not row['from'].startswith('x_')}
         expected_links = {(key, storage_name(field.target), 'id', 'NO ACTION')
-                          for key, field in model.__fields__.items() if isinstance(field, Link)}
+                          for key, field in app_fields(model).items() if isinstance(field, Link)}
         if links != expected_links:
             raise SchemaError(f'{name}: foreign keys differ from models')
         unique, indexed, partial = set(), set(), set()
