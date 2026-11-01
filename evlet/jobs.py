@@ -91,6 +91,9 @@ class JobQueue:
                 model TEXT, record_id INTEGER, interval INTEGER NOT NULL, next_run INTEGER NOT NULL,
                 enabled INTEGER NOT NULL DEFAULT 1)''')
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_calendar_schedules (name TEXT PRIMARY KEY, expression TEXT NOT NULL, timezone TEXT NOT NULL)')
+            # retired=1 marks a schedule disabled because its declaration was removed, not by an operator.
+            if 'retired' not in self.database.columns(tx.connection, 'evlet_calendar_schedules'):
+                tx.connection.execute('ALTER TABLE evlet_calendar_schedules ADD COLUMN retired INTEGER NOT NULL DEFAULT 0')
 
     def _bound(self, tx):
         row = tx.connection.execute('SELECT tenant FROM evlet_job_namespace WHERE id=1').fetchone()

@@ -165,3 +165,43 @@ def test_calendar_schedule_rows_are_written_together(tmp_path):
     queue.schedule('nightly', 'calendar_test', {}, every=60, calendar=('0 2 * * *', 'UTC'))
     with database._connection() as connection:
         assert connection.execute('SELECT expression FROM evlet_calendar_schedules WHERE name=?', ('nightly',)).fetchone()[0] == '0 2 * * *'
+
+
+def test_restored_calendar_schedule_is_enabled_and_task_changes_apply(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import sqlite3, time
+    from evlet import JobQueue, Task
+    from evlet.instances import register_schedules
+    from evlet.services import CalendarSchedule
+
+    now = int(datetime(2026, 11, 1, tzinfo=timezone.utc).timestamp())
+    monkeypatch.setattr(time, 'time', lambda: now)
+    path = tmp_path / 'cron.sqlite3'
+    database = Database(path, Registry())
+    database.initialize()
+    with sqlite3.connect(path) as connection:
+        # A database created before the retired column existed.
+        connection.execute('CREATE TABLE evlet_calendar_schedules (name TEXT PRIMARY KEY, expression TEXT NOT NULL, timezone TEXT NOT NULL)')
+    noop = lambda tx, context, payload: None
+    queue = JobQueue(database, [Task('nightly', noop), Task('other', noop), Task('paused', noop)])
+    queue.initialize()
+    queue.initialize()
+    app = SimpleNamespace(database=database, business=SimpleNamespace(jobs=queue, timezone='UTC'))
+    nightly, paused = CalendarSchedule('nightly', 'nightly', '0 2 * * *'), CalendarSchedule('paused', 'paused', '0 3 * * *')
+    register_schedules(app, [nightly, paused])
+    queue.set_schedule_active('paused', False)
+    register_schedules(app, [])
+    later = now + 86400 * 2
+    monkeypatch.setattr(time, 'time', lambda: later)
+    register_schedules(app, [CalendarSchedule('nightly', 'other', '0 2 * * *'), paused])
+    def rows():
+        with database._connection() as connection:
+            return {row['name']: dict(row) for row in connection.execute('SELECT name,task,enabled,next_run FROM evlet_schedules')}
+    assert rows()['nightly'] == {'name': 'nightly', 'task': 'other', 'enabled': 1, 'next_run': Calendar('0 2 * * *').next(later)}
+    assert rows()['paused']['enabled'] == 0
+    assert queue.tick(now=later + 86400) == 1 and queue.recent()[0]['task'] == 'other'
+    # An operator cannot keep an undeclared schedule running: each release disables it again.
+    register_schedules(app, [paused])
+    queue.set_schedule_active('nightly', True)
+    register_schedules(app, [paused])
+    assert rows()['nightly']['enabled'] == 0

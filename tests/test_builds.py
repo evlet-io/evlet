@@ -224,3 +224,13 @@ def test_delegated_commands_keep_the_working_directory_off_sys_path(tmp_path, mo
     monkeypatch.delenv('EVLET_DELEGATED_PROJECT', raising=False)
     setup.delegate(root, ['serve'])
     assert calls[0][1:] == ['-P', '-m', 'evlet', 'serve']
+
+
+def test_build_subprocess_ignores_modules_in_the_working_directory(project, monkeypatch, tmp_path):
+    create_app(project, 'notes')
+    cwd, marker = tmp_path / 'elsewhere', tmp_path / 'shadowed'
+    cwd.mkdir()
+    (cwd / 'decimal.py').write_text(f'open({str(marker)!r}, "w").close()\nraise SystemExit("shadow module imported")\n')
+    monkeypatch.chdir(cwd)
+    prepare(project, resolve_packages(project, ['notes']))
+    assert not marker.exists()

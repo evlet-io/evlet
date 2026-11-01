@@ -103,7 +103,7 @@ def evaluate(value, read):
             context.prec = 82
             return number(sum(values, Decimal(0))) if op == 'sum' else (min(values) if op == 'min' else max(values)) if values else None
     if op == 'neg':
-        return -number(a)
+        return number(a).copy_negate()
     b = evaluate(args[1], read)
     if op in ('add', 'sub', 'mul', 'div'):
         a, b = number(a), number(b)

@@ -8,5 +8,6 @@
   {"source":"qty * rate","expression":{"$expr":"mul","args":[{"$expr":"ref","args":["qty"]},{"$expr":"ref","args":["rate"]}]},"inputs":{"qty":"1","rate":"0.015"},"scale":2,"expected":"0.02"},
   {"source":"qty * rate","expression":{"$expr":"mul","args":[{"$expr":"ref","args":["qty"]},{"$expr":"ref","args":["rate"]}]},"inputs":{"qty":null,"rate":"2"},"scale":2,"error":true},
   {"source":"1 / 0","expression":{"$expr":"div","args":[1,0]},"inputs":{},"scale":2,"error":true},
-  {"source":"qty * rate","expression":{"$expr":"mul","args":[{"$expr":"ref","args":["qty"]},{"$expr":"ref","args":["rate"]}]},"inputs":{"qty":"92233720368547758.08","rate":"1"},"scale":2,"error":true}
+  {"source":"qty * rate","expression":{"$expr":"mul","args":[{"$expr":"ref","args":["qty"]},{"$expr":"ref","args":["rate"]}]},"inputs":{"qty":"92233720368547758.08","rate":"1"},"scale":2,"error":true},
+  {"source":"-(qty * fx)","expression":{"$expr":"neg","args":[{"$expr":"mul","args":[{"$expr":"ref","args":["qty"]},{"$expr":"ref","args":["fx"]}]}]},"inputs":{"qty":"1016111116.666666665","fx":"10.000000003"},"scale":2,"expected":"-10161111169.71"}
 ]

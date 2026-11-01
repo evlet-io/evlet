@@ -14,7 +14,12 @@ def identifier(name):
 
 
 def storage_name(model):
-    return getattr(model, 'storage_name', model.__name__.lower())
+    # A field may itself be called storage_name, so only a str class attribute names the table.
+    for cls in model.__mro__:
+        value = vars(cls).get('storage_name')
+        if isinstance(value, str):
+            return value
+    return model.__name__.lower()
 
 
 class ValidationError(ValueError):
@@ -139,7 +144,7 @@ class Registry:
                 expand(child, owners + (table.child,), nested)
 
         def generate(model, name, table):
-            storage = table.storage_name or getattr(model, 'storage_name', model.__name__.lower()) + '_' + name
+            storage = table.storage_name or storage_name(model) + '_' + name
             identifier(storage)
             identifier(table.owner_field)
             if table.owner_field in table.child.__declared_fields__ or 'evlet_position' in table.child.__declared_fields__:
@@ -164,7 +169,7 @@ class Registry:
             if not isinstance(model, type) or not issubclass(model, Model) or model is Model:
                 raise ValueError("Register Model subclasses")
             if getattr(model, '__transient__', False): raise ValueError('Transient forms cannot be persistent models')
-            name = getattr(model, 'storage_name', model.__name__.lower())
+            name = storage_name(model)
             identifier(name)
             if not re.fullmatch('[a-z][a-z0-9_]*', name):
                 # Model names are also UI routes, which are lowercase.
@@ -234,7 +239,7 @@ class Registry:
         return self.plans.get(self.root_of(model))
 
     def name_for(self, model):
-        name = getattr(model, 'storage_name', model.__name__.lower())
+        name = storage_name(model)
         if self.models.get(name) is not model:
             raise ValueError("Model does not belong to this registry")
         return name

@@ -121,6 +121,22 @@ def test_browser_server_shared_vectors():
             assert run() == vector['expected']
 
 
+def test_negation_keeps_full_precision_before_currency_rounding(tmp_path):
+    class Refund(Model):
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+        title = Text(required=True)
+        qty = Decimal(scale=9)
+        fx = Decimal(scale=9)
+        credit = Currency(compute='-(qty * fx)')
+        debit = Currency(compute='qty * fx')
+    database = Database(tmp_path / 'refund.sqlite3', Registry(Refund))
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
+    app.initialize()
+    http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
+    status, body, _ = client(app)('POST', '/api/refund', {'title': 'x', 'qty': '1016111116.666666665', 'fx': '10.000000003'})
+    assert status == 201 and (body['credit'], body['debit']) == ('-10161111169.71', '10161111169.71')
+
+
 def test_document_contract_fixture(application):
     from scripts.generate_document_fixtures import collect
     fixture = json.loads((Path(__file__).resolve().parents[1] / 'frontend/src/tests/document-contract.json').read_text())
