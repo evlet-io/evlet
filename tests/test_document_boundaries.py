@@ -381,3 +381,11 @@ def test_child_validation_errors_hide_restricted_fields_but_keep_row_messages(tm
     for key in ('²', '9' * 20):
         status, result, _ = c('POST', '/api/quote', {'children': {'lines': [{'_key': key, 'qty': '9'}]}})
         assert status == 422 and 'margin' not in str(result)
+
+
+def test_storage_names_must_be_lowercase_routes():
+    class SalesOrder(Model):
+        storage_name = 'SalesOrders'
+        name = Text()
+    with pytest.raises(ValueError, match='lowercase'):
+        Registry(SalesOrder)

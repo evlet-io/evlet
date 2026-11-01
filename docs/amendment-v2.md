@@ -64,7 +64,9 @@ opening instance databases. Pip failure leaves acquisition/build incomplete.
 
 Models default to `app.ClassName`; `resource_id = "app.StableName"` provides an
 explicit app-owned identity. `storage_name` separately controls the SQL table and
-existing `/api/table` alias. Existing table names do not change automatically.
+existing `/api/table` alias. It must use lowercase letters, digits and
+underscores, because it is also the `/app/...` route. Existing table names do not
+change automatically.
 Nested child storage defaults to `parent_table_collection`. Two parents may
 therefore each define a nested `Item` class.
 

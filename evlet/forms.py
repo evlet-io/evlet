@@ -73,7 +73,7 @@ def metadata(definition, name, source=None):
 def draft_values(draft):
     from .documents import source_values
     return {**{name: field.serialize(draft._values.get(name)) for name, field in draft._definition.__declared_fields__.items()},
-            '_sources': source_values(draft),
+            '_sources': source_values(draft, set(draft._definition.__declared_fields__)),
             '_source': {} if draft.source is None else {key: value for key, value in draft.source._data.items() if not isinstance(value, (Snapshot, tuple))},
             'children': {name: [{'_key': row.key, **draft_values(row)} for row in rows] for name, rows in draft._rows.items()}}
 

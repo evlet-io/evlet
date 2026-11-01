@@ -142,6 +142,9 @@ class Registry:
             if getattr(model, '__transient__', False): raise ValueError('Transient forms cannot be persistent models')
             name = getattr(model, 'storage_name', model.__name__.lower())
             identifier(name)
+            if not re.fullmatch('[a-z][a-z0-9_]*', name):
+                # Model names are also UI routes, which are lowercase.
+                raise ValueError(f'storage_name must use lowercase letters, digits and underscores: {name!r}')
             if name in ("schema", "auth") or name.startswith("evlet_"):
                 raise ValueError("The model name is reserved for metadata")
             if name in registered:

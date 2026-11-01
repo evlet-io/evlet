@@ -113,6 +113,9 @@ also restores pending jobs and schedules, so review those before restarting work
 target=(Model, id))` creates an interval schedule. Intervals range from 60 seconds
 to one year. `start_at` defaults to one interval from now. Names are unique and
 use lowercase letters, digits, and underscores, beginning with a letter.
+Calendar schedules pass `calendar=(expression, timezone)` so the schedule and its
+calendar are written in one transaction; apps normally declare `CalendarSchedule`
+instead of calling this directly.
 
 The worker calls `tick()` before claiming work. Each tick processes at most 100 due
 schedules. An occurrence and its next due time commit together. After downtime,
