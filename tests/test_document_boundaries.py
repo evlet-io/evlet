@@ -343,3 +343,18 @@ def test_float_action_arguments_accept_whole_json_numbers():
         typed_arguments(apply, {'count': 1.5}, skip=1)
     with pytest.raises(ValidationError):
         typed_arguments(apply, {'rate': True}, skip=1)
+
+
+def test_validation_errors_do_not_name_hidden_fields(tmp_path):
+    class Payslip(Model):
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete'), read_fields=('name',), write_fields=('name',))}
+        name = Text()
+        bonus = Currency(default='0')
+        def validate(self):
+            if self.name == 'bad':
+                raise ValidationError({'bonus': 'Bonus exceeds the approved band', 'name': 'Check the name'})
+    app = application(tmp_path, Payslip)
+    status, result, _ = client(app)('POST', '/api/payslip', {'name': 'bad'})
+    assert status == 422
+    assert result['fields'] == {'name': 'Check the name', '_form': 'One or more values are invalid'}
+    assert 'bonus' not in str(result) and 'band' not in str(result)
