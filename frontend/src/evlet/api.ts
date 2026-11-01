@@ -80,16 +80,31 @@ function recordPath(model: string, id: number) {
   return `${modelPath(model)}/${id}`;
 }
 
-// One signal that aborts when any of the given signals aborts.
-function anySignal(signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
+// One signal that aborts when any of the given signals aborts, and a release that drops
+// the listeners it added (the page signal lives longer than any request).
+function anySignal(signals: Array<AbortSignal | undefined>): { signal: AbortSignal | undefined; release: () => void } {
   const list = signals.filter((signal): signal is AbortSignal => Boolean(signal));
-  if (list.length < 2) return list[0];
+  if (list.length < 2) return { signal: list[0], release: () => {} };
+  if (typeof (AbortSignal as any).any === 'function') return { signal: (AbortSignal as any).any(list), release: () => {} };
   const controller = new AbortController();
-  for (const signal of list) {
-    if (signal.aborted) { controller.abort(signal.reason); break; }
-    signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
-  }
-  return controller.signal;
+  const listeners = list.map(signal => {
+    const abort = () => controller.abort(signal.reason);
+    if (signal.aborted) controller.abort(signal.reason); else signal.addEventListener('abort', abort, { once: true });
+    return [signal, abort] as const;
+  });
+  return { signal: controller.signal, release: () => { for (const [signal, abort] of listeners) signal.removeEventListener('abort', abort); } };
+}
+
+// The error for a failed response. The class depends only on the status, so a 409 from a
+// proxy with an HTML body is still a ConflictError.
+function failure(status: number, data: any): ApiError {
+  const message = typeof data?.error === 'string' ? data.error : status === 422 ? 'Some values are not valid.'
+    : status === 409 || status === 412 || status === 428 ? 'This record changed since you opened it. Reload it before saving.' : 'The request failed.';
+  const fields: FieldErrors = data?.fields && typeof data.fields === 'object' && !Array.isArray(data.fields) ? data.fields : {};
+  const kind = kindOf(status);
+  if (kind === 'validation') return new ValidationError(message, status, kind, fields);
+  if (kind === 'conflict') return new ConflictError(message, status, kind, fields);
+  return new ApiError(message, status, kind, fields);
 }
 
 function kindOf(status: number): ErrorKind {
@@ -121,7 +136,15 @@ export class ApiClient {
     if (options.ifMatch) headers['If-Match'] = options.ifMatch;
     const query = Object.entries(options.query ?? {}).filter(([, value]) => value !== undefined && value !== '');
     const url = (this.options.base ?? '') + path + (query.length ? '?' + new URLSearchParams(query.map(([key, value]) => [key, String(value)])) : '');
-    const signal = anySignal([options.signal, this.options.signal?.()]);
+    const { signal, release } = anySignal([options.signal, this.options.signal?.()]);
+    try {
+      return await this.send<T>(method, path, url, headers, options, signal);
+    } finally {
+      release();
+    }
+  }
+
+  private async send<T>(method: string, path: string, url: string, headers: Record<string, string>, options: RequestOptions, signal: AbortSignal | undefined): Promise<ApiResponse<T>> {
     let response: Response;
     try {
       response = await this.fetcher(url, { method, headers, credentials: 'same-origin', body: options.body === undefined ? undefined : JSON.stringify(options.body), signal });
@@ -140,17 +163,11 @@ export class ApiClient {
     try {
       data = await response.json();
     } catch {
+      if (!response.ok) throw failure(response.status, null);
       // A successful status line does not guarantee that the body arrived.
-      throw new ApiError('The server returned an unreadable response.', response.status, response.ok ? 'network' : kindOf(response.status));
+      throw new ApiError('The server returned an unreadable response.', response.status, 'network');
     }
-    if (!response.ok) {
-      const message = typeof data?.error === 'string' ? data.error : 'The request failed.';
-      const fields: FieldErrors = data?.fields && typeof data.fields === 'object' ? data.fields : {};
-      const kind = kindOf(response.status);
-      if (kind === 'validation') throw new ValidationError(message, response.status, kind, fields);
-      if (kind === 'conflict') throw new ConflictError(message, response.status, kind, fields);
-      throw new ApiError(message, response.status, kind, fields);
-    }
+    if (!response.ok) throw failure(response.status, data);
     return { data: data as T, etag, status: response.status };
   }
 

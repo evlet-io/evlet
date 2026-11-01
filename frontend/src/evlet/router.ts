@@ -33,6 +33,18 @@ export interface RouterOptions { base?: string; window?: Window }
 interface Compiled { name: string; pattern: RegExp; keys: string[]; parts: string[] }
 
 const PARAM = /^:([A-Za-z_][A-Za-z0-9_]*)$/;
+// URL parsers treat a segment of only dots (also written %2E) as "here" or "up", so a
+// parameter such as '..' cannot travel as itself. Such a segment, and any value that looks
+// like an encoded one, is encoded one extra time and decoded one extra time on match.
+const LAYERED_DOTS = /^(?:%(?:25)*2E)+$/i;
+function encodeSegment(value: string) {
+  if (/^\.+$/.test(value)) return encodeURIComponent(value.replace(/\./g, '%2E'));
+  return LAYERED_DOTS.test(value) ? encodeURIComponent(encodeURIComponent(value)) : encodeURIComponent(value);
+}
+function decodeSegment(segment: string) {
+  const decoded = decodeURIComponent(segment);
+  return LAYERED_DOTS.test(decoded) ? decodeURIComponent(decoded) : decoded;
+}
 
 function compile(name: string, path: string): Compiled {
   if (!path.startsWith('/')) throw new Error(`Route ${name} must start with /`);
@@ -81,7 +93,7 @@ export class Router<R extends Record<string, string>> {
       if (!found) continue;
       const params: Record<string, string> = {};
       try {
-        route.keys.forEach((key, index) => { params[key] = decodeURIComponent(found[index + 1]); });
+        route.keys.forEach((key, index) => { params[key] = decodeSegment(found[index + 1]); });
       } catch { return null; }
       return { name: route.name, params, query: Object.fromEntries(parsed.searchParams), url: path + parsed.search };
     }
@@ -98,7 +110,7 @@ export class Router<R extends Record<string, string>> {
       if (!param) return part;
       const value = values[param[1]];
       if (value === undefined || value === '') throw new Error(`Route ${name} needs ${param[1]}`);
-      return encodeURIComponent(value);
+      return encodeSegment(value);
     }).join('/');
     const search = new URLSearchParams(query).toString();
     return this.base + path + (search ? '?' + search : '');

@@ -17,7 +17,9 @@ function fullRow(row: Row, withKey: boolean): Body {
   const body: Body = withKey ? { _key: row.key } : {};
   for (const field of writable(row)) {
     const value = field.value.peek();
+    // An empty value the user chose (a cleared default) is sent, so the server keeps it empty.
     if (present(value)) body[field.name] = value;
+    else if (field.touched) body[field.name] = null;
   }
   const children: Body = {};
   for (const [name, table] of row.tables) {
