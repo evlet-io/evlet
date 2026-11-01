@@ -18,10 +18,13 @@ import './controls.css';
 import { describe, Drafts, ipAllowed } from './drafts';
 import { RolesPage, UsersPage } from './people';
 import { PermissionsPage, SecurityPage } from './access';
+import { ModelsPage } from './models';
+import { NamingPage } from './naming';
 
 export const ROUTES = {
   overview: '/controls', users: '/controls/users', roles: '/controls/roles',
   permissions: '/controls/permissions', security: '/controls/security',
+  models: '/controls/models', naming: '/controls/naming',
 } as const;
 export type ControlsRouter = Router<typeof ROUTES>;
 export const controlsRouter = (options: { window?: Window } = {}): ControlsRouter => createRouter(ROUTES, options);
@@ -39,6 +42,7 @@ export interface ControlsContext {
 const NAV: Array<[string, Array<[keyof typeof ROUTES, string, string]>]> = [
   ['', [['overview', 'Overview', 'layout-grid']]],
   ['People', [['users', 'Users', 'users'], ['roles', 'Roles', 'user-cog']]],
+  ['Build', [['models', 'Models', 'layers'], ['naming', 'Naming', 'hash']]],
   ['Access', [['permissions', 'Permissions', 'list-checks'], ['security', 'Security', 'lock']]],
 ];
 const TITLES = Object.fromEntries(NAV.flatMap(([group, items]) => items.map(([id, label]) => [id, [group, label]])));
@@ -167,13 +171,15 @@ function Shell(ctx: ControlsContext): HTMLElement {
       case 'roles': return RolesPage(ctx);
       case 'permissions': return PermissionsPage(ctx);
       case 'security': return SecurityPage(ctx);
+      case 'models': return ModelsPage(ctx);
+      case 'naming': return NamingPage(ctx);
       default: return Overview(ctx);
     }
   };
   mountToasts();
   return html`<div class="ctl">${side}<div class="ctl-scrim" class:show=${open} on:click=${() => open.set(false)}></div>
     <div class="ctl-main">${top}<div class="ctl-host" id="ctl-host">
-      <div class="ctl-page" class:wide=${() => route.get() === 'permissions'}>${match(route, {}, page)}</div>${ChangeBar(ctx)}</div></div></div>` as HTMLElement;
+      <div class="ctl-page" class:wide=${() => ['permissions', 'models'].includes(route.get())}>${match(route, {}, page)}</div>${ChangeBar(ctx)}</div></div></div>` as HTMLElement;
 }
 
 export function ChangeBar(ctx: ControlsContext): Node {
@@ -214,12 +220,12 @@ function Overview(ctx: ControlsContext): HTMLElement {
     html`<button type="button" class="ctl-tile" class:hero=${hero} on:click=${() => go(page)}><span class="t-label">${label}${Icon(icon, { size: 'sm' })}</span>
       <span class="t-val">${value}<small>${note}</small></span></button>`;
   return html`<div>
-    ${Head('Controls', 'Users, access and security for this instance. Defaults come from the installed apps. What you change here is saved to this instance only.', null,
+    ${Head('Controls', 'Users, access, models and security for this instance. Defaults come from the installed apps. What you change here is saved to this instance only.', null,
       html` <span class="ctl-badge violet">Admin only</span>`)}
     <div class="ctl-grid g4">
       ${tile('Overrides on this instance', 'list-checks', () => s().overrides, () => 'changed from app files', 'permissions', true)}
       ${tile('Active users', 'users', () => s().users.active, () => `of ${s().users.total}`, 'users')}
-      ${tile('Installed apps', 'package', () => s().apps.length, () => plural(s().models.length, 'model'), 'permissions')}
+      ${tile('Installed apps', 'package', () => s().apps.length, () => plural(s().models.length, 'model'), 'models')}
       ${tile('Roles', 'user-cog', () => s().roles.length, () => `${s().roles.filter(role => role.kind === 'custom').length} custom`, 'roles')}
     </div>
     <div class="ctl-grid main">
