@@ -12,10 +12,17 @@ import time
 from threading import BoundedSemaphore
 from urllib.parse import urlsplit
 
-from .models import ValidationError
+from .models import ValidationError, identifier
 
-ROLES = ('admin', 'editor', 'viewer')
+ROLES = ('admin', 'editor', 'viewer', 'portal')
+# Public endpoints run as this role. No account can have it.
+PUBLIC = 'public'
 _HASH_SLOTS = BoundedSemaphore(2)
+
+
+def role_realm(role):
+    """The sign-in realm of a role: portal users sign in on portal hosts, everyone else on the desk."""
+    return 'portal' if role == 'portal' else 'desk'
 
 
 class AccessError(Exception):
@@ -28,6 +35,8 @@ class User:
     id: int
     username: str
     role: str
+    # (model, record id) pairs from evlet_user_links, read by row scopes such as own_customer.
+    links: tuple = ()
 
     def public(self):
         return {'id': self.id, 'username': self.username, 'role': self.role}
@@ -85,7 +94,7 @@ def client_network(address):
 
 
 class LocalAuth:
-    def __init__(self, database, *, origins, secure_cookies=True, allow_setup=False, cookie_name='evlet_session'):
+    def __init__(self, database, *, origins, secure_cookies=True, allow_setup=False, cookie_name='evlet_session', realms=None):
         if cookie_name not in ('evlet_session', '__Host-evlet_session') or (cookie_name.startswith('__Host-') and not secure_cookies):
             raise ValueError('Invalid session cookie configuration')
         self.cookie_name = cookie_name
@@ -101,14 +110,22 @@ class LocalAuth:
                 raise ValueError('Insecure cookies are limited to loopback development origins')
         from .routing import authority
         self.hosts = {authority(origin).encode() for origin in self.origins}
+        self.realms = {}
+        for origin, realm in dict(realms or {}).items():
+            if origin not in self.origins or realm not in ('portal', 'public'):
+                raise ValueError('Realms map configured origins to portal or public')
+            self.realms[authority(origin).encode()] = realm
         self.secure_cookies = secure_cookies
         self.allow_setup = allow_setup
 
     def initialize(self):
         with self.database.transaction() as tx:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)')
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, csrf TEXT NOT NULL, expires INTEGER NOT NULL)')
+            tx.connection.execute("CREATE TABLE IF NOT EXISTS evlet_sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, csrf TEXT NOT NULL, expires INTEGER NOT NULL, realm TEXT NOT NULL DEFAULT 'desk')")
+            if 'realm' not in self.database.columns(tx.connection, 'evlet_sessions'):
+                tx.connection.execute("ALTER TABLE evlet_sessions ADD COLUMN realm TEXT NOT NULL DEFAULT 'desk'")
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_login_limits (client TEXT PRIMARY KEY, attempts INTEGER NOT NULL, resets INTEGER NOT NULL)')
+            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_user_links (user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, model TEXT NOT NULL, record_id INTEGER NOT NULL, PRIMARY KEY (user_id, model, record_id))')
 
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_session_user ON evlet_sessions(user_id)')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_session_expiry ON evlet_sessions(expires)')
@@ -133,27 +150,43 @@ class LocalAuth:
         if scope['method'] not in ('GET', 'HEAD') and headers.get(b'x-evlet-request') != b'1':
             raise AccessError(403, 'Missing request protection header')
 
+    def cookie_for(self, realm):
+        """Host-only cookies, one name per realm, so a portal and a desk session never mix. Public hosts have none."""
+        return {'desk': self.cookie_name, 'portal': self.cookie_name.replace('evlet_session', 'evlet_portal_session')}.get(realm)
+
+    def realm(self, scope):
+        """The realm of the request's host: desk unless the route table made it a portal or public host."""
+        return self.realms.get(dict(scope.get('headers', [])).get(b'host'), 'desk')
+
     def token(self, scope):
+        name = self.cookie_for(self.realm(scope))
+        if name is None:
+            return ''
         cookie = SimpleCookie()
         try:
             cookie.load(dict(scope.get('headers', [])).get(b'cookie', b'').decode('latin1'))
-            value = cookie.get(self.cookie_name)
+            value = cookie.get(name)
             token = value.value if value else ''
             return hashlib.sha256(token.encode()).hexdigest()
         except (CookieError, UnicodeError):
             return ''
 
     def session(self, scope):
+        realm = self.realm(scope)
         with self.database._connection() as connection:
-            row = connection.execute('SELECT u.id, u.username, u.role, s.csrf FROM evlet_sessions s JOIN evlet_users u ON u.id=s.user_id WHERE s.token=? AND s.expires>? AND u.active=1',
-                                     (self.token(scope), int(time.time()))).fetchone()
-        if row is None:
+            # One statement: the session, its user and the user's record links.
+            rows = connection.execute('SELECT u.id, u.username, u.role, s.csrf, l.model, l.record_id FROM evlet_sessions s JOIN evlet_users u ON u.id=s.user_id '
+                                      'LEFT JOIN evlet_user_links l ON l.user_id=u.id WHERE s.token=? AND s.realm=? AND s.expires>? AND u.active=1 ORDER BY l.model, l.record_id',
+                                      (self.token(scope), realm, int(time.time()))).fetchall()
+        row = rows[0] if rows else None
+        links = tuple((item['model'], item['record_id']) for item in rows if item['model'] is not None)
+        if row is None or role_realm(row['role']) != realm:
             raise AccessError(401, 'Sign in to continue')
         if scope['method'] not in ('GET', 'HEAD'):
             supplied = dict(scope.get('headers', [])).get(b'x-csrf-token', b'')
             if not hmac.compare_digest(supplied, row['csrf'].encode('ascii')):
                 raise AccessError(403, 'Invalid request token')
-        return User(row['id'], row['username'], row['role']), row['csrf']
+        return User(row['id'], row['username'], row['role'], links), row['csrf']
 
     @staticmethod
     def account_values(body):
@@ -164,7 +197,7 @@ class LocalAuth:
         if not isinstance(name, str) or not re.fullmatch(r'[a-zA-Z0-9_.-]{3,64}', name):
             raise ValidationError({'username': 'Use 3 to 64 letters, numbers, dots, hyphens, or underscores'})
         if role not in ROLES:
-            raise ValidationError({'role': 'Choose admin, editor, or viewer'})
+            raise ValidationError({'role': 'Choose admin, editor, viewer, or portal'})
         return name.lower(), password_hash(body.get('password')), role
 
     def create_user(self, **values):
@@ -217,7 +250,9 @@ class LocalAuth:
                 candidate = _scrypt(_encode(body['password']), stored.split(':')[1])
             except (ValueError, UnicodeError):
                 candidate = ''
-        if not hmac.compare_digest(candidate, stored) or not account or not account['active']:
+        # A portal user on a desk host, or a desk user on a portal host, gets the same answer as a wrong password.
+        realm = self.realm(scope)
+        if not hmac.compare_digest(candidate, stored) or not account or not account['active'] or role_realm(account['role']) != realm:
             raise AccessError(401, 'Invalid username or password')
         token, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
         with self.database.transaction() as tx:
@@ -227,11 +262,11 @@ class LocalAuth:
                 raise AccessError(401, 'Invalid username or password')
             tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (pair,))
             tx.connection.execute('DELETE FROM evlet_sessions WHERE token=?', (self.token(scope),))
-            tx.connection.execute('INSERT INTO evlet_sessions VALUES (?,?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), account['id'], csrf, now + 28800))
-        return {'user': User(account['id'], account['username'], account['role']).public(), 'csrf': csrf}, [self.cookie(token)]
+            tx.connection.execute('INSERT INTO evlet_sessions(token,user_id,csrf,expires,realm) VALUES (?,?,?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), account['id'], csrf, now + 28800, realm))
+        return {'user': User(account['id'], account['username'], account['role']).public(), 'csrf': csrf}, [self.cookie(token, realm)]
 
-    def cookie(self, token):
-        value = f'{self.cookie_name}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={28800 if token else 0}'
+    def cookie(self, token, realm='desk'):
+        value = f'{self.cookie_for(realm)}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={28800 if token else 0}'
         if self.secure_cookies:
             value += '; Secure'
         return b'set-cookie', value.encode()
@@ -239,7 +274,33 @@ class LocalAuth:
     def logout(self, scope):
         with self.database.transaction() as tx:
             tx.connection.execute('DELETE FROM evlet_sessions WHERE token=?', (self.token(scope),))
-        return [self.cookie('')]
+        return [self.cookie('', self.realm(scope))]
+
+    def _link_target(self, model, record_id):
+        name = self.database.registry.name_for(self.database.registry.resolve(model))
+        if type(record_id) is not int or not 0 < record_id < 2**63:
+            raise ValidationError({'record_id': 'Use a record ID'})
+        return name
+
+    def link_user(self, user_id, model, record_id):
+        """Link an account to a record, such as a portal user to their customer. Row scopes read these links."""
+        name = self._link_target(model, record_id)
+        with self.database.transaction() as tx:
+            if not tx.connection.execute('SELECT 1 FROM evlet_users WHERE id=?', (user_id,)).fetchone():
+                raise AccessError(404, 'Account not found')
+            if not tx.connection.execute(f'SELECT 1 FROM {identifier(name)} WHERE id=?', (record_id,)).fetchone():
+                raise AccessError(404, 'Record not found')
+            tx.connection.execute('INSERT INTO evlet_user_links(user_id,model,record_id) VALUES (?,?,?) ON CONFLICT DO NOTHING', (user_id, name, record_id))
+
+    def unlink_user(self, user_id, model, record_id):
+        name = self._link_target(model, record_id)
+        with self.database.transaction() as tx:
+            tx.connection.execute('DELETE FROM evlet_user_links WHERE user_id=? AND model=? AND record_id=?', (user_id, name, record_id))
+
+    def user_links(self, user_id):
+        with self.database._connection() as connection:
+            return tuple((row['model'], row['record_id']) for row in connection.execute(
+                'SELECT model, record_id FROM evlet_user_links WHERE user_id=? ORDER BY model, record_id', (user_id,)))
 
     def users(self):
         return self.user_page()['items']

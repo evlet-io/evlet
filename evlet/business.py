@@ -135,6 +135,9 @@ class Business:
     def initialize(self):
         self.auth.initialize()
         self.storage.initialize(self.database)
+        if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
+            with self.database.transaction() as tx:
+                tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_public_limits (client TEXT NOT NULL, period INTEGER NOT NULL, calls INTEGER NOT NULL, resets INTEGER NOT NULL, PRIMARY KEY (client, period))')
         if self.registry.plans:
             with self.database.transaction() as tx:
                 # The plan each saved finite-v1 document was calculated with (history guard).
@@ -335,6 +338,11 @@ class Business:
         if path == '/api/auth/login' and method == 'POST':
             payload, headers = self.auth.login(scope, body)
             return 200, payload, headers
+        if path.startswith('/api/_services/'):
+            from .services import dispatch, endpoint_for
+            endpoint = endpoint_for(self, path)
+            if endpoint is not None and endpoint.public:
+                return dispatch(self, scope, body, None)
         user, csrf = self.auth.session(scope)
         if path.startswith('/api/_services/'):
             from .services import dispatch
