@@ -38,7 +38,7 @@ export function Icon(name: string, options: { size?: IconSize; tint?: Tint; labe
 /** Icon on a soft tinted square, 22 to 44 px. */
 export function IconTile(name: string, options: { tint?: Tint; size?: number } = {}): HTMLElement {
   const size = Math.max(22, Math.min(44, options.size ?? 32));
-  const element = html`<span class="ph-icon b-${tint(options.tint)}" style="${`width:${size}px;height:${size}px;border-radius:${Math.round(size / 3.6)}px`}">${Icon(name, { size: size >= 32 ? 'lg' : size >= 26 ? 'md' : 'sm' })}</span>` as HTMLElement;
+  const element = html`<span class="ph-icon b-${tint(options.tint)}" style:width=${`${size}px`} style:height=${`${size}px`} style:border-radius=${`${Math.round(size / 3.6)}px`}>${Icon(name, { size: size >= 32 ? 'lg' : size >= 26 ? 'md' : 'sm' })}</span>` as HTMLElement;
   return element;
 }
 
@@ -204,7 +204,7 @@ export function ProgressBar(props: { value: Prop<number>; tint?: Tint; label?: s
 /** Four rising bars and a number; grey to amber to green with the score. */
 export function ScoreBars(props: { score: Prop<number> }): HTMLElement {
   const score = () => Math.max(0, Math.min(100, Number(read(props.score)) || 0));
-  const bars = [0, 1, 2, 3].map(index => html`<i class:on=${() => score() >= 25 * index + 1} style="${`height:${6 + index * 3}px`}"></i>`);
+  const bars = [0, 1, 2, 3].map(index => html`<i class:on=${() => score() >= 25 * index + 1} style:height=${`${6 + index * 3}px`}></i>`);
   return html`<span class=${() => `score ${score() >= 70 ? 'c-green' : score() >= 45 ? 'c-amber' : 'c-slate'}`} aria-label=${() => `Score ${score()}`}><span class="bars" aria-hidden="true">${bars}</span><span class="num">${() => String(score())}</span></span>` as HTMLElement;
 }
 
