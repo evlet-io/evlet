@@ -47,6 +47,7 @@ evlet serve acme --port 8000
 evlet dev --instance acme
 evlet migrate acme --trust
 evlet effects check acme
+evlet routes acme
 evlet playground --port 8000
 evlet docs --port 8001
 ```
@@ -77,6 +78,9 @@ but not rendered by the browser interface.
 `effects check` recomputes the rows records post to other models and reports differences.
 It reads one snapshot without writing or taking the write lock, so it may run beside a server;
 it exits with status 1 when there is any difference. See [effects.md](effects.md).
+`routes` loads the installed apps and the optional `routes.py` the same way `serve`
+does, then prints the resolved hosts and paths, marking locked rows and where each
+row came from. See [routing.md](routing.md).
 
 ## App package
 
@@ -200,6 +204,7 @@ dependencies fail. Merely passing static validation does not establish trust.
 ```text
 instances/acme/
   config.py
+  routes.py        (optional)
   apps.lock
   data/database.sqlite3
   data/backups/
@@ -219,6 +224,12 @@ from evlet import Instance
 
 instance = Instance(name="acme", domain=None, timezone="UTC")
 ```
+
+`routes.py` is optional trusted Python that moves app frontends, sets the primary
+host and turns Docs on or off. It must be a regular file inside the instance folder,
+not a symbolic link. Without it every frontend mounts at its default path and the
+URLs are unchanged. Docs are on in development and off once a domain or primary host
+is set. See [routing.md](routing.md).
 
 `database` and `storage` are reserved and optional. They default to `"sqlite"` and
 `"local"`, the only values accepted today. New `config.py` files leave them out.

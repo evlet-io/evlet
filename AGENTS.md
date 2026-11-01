@@ -5,7 +5,7 @@ The browser interface is Evlet's own UI framework (`frontend/src/evlet/`); Solid
 the Vue harness, the Projects demo and the Python page renderer were removed from it.
 Preserve the completed backend milestones and the Python UI contracts (`/api/ui`,
 native panels), which stay tested but are not rendered. Keep login, Docs after sign-in
-and generated model screens working. Read `docs/ui.md` and `docs/ui-framework.md` for
+and generated model screens working. Read `docs/ui.md`, `docs/ui-framework.md` and `docs/routing.md` for
 the routes, the public UI API and its boundaries. Read
 `docs/business-capabilities.md`, `docs/finite-calculations.md`, `docs/tenancy-deployment.md`,
 `docs/jobs-realtime.md`, and `docs/connector.md` for public APIs and permission
