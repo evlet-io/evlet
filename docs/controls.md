@@ -2,7 +2,7 @@
 
 `/controls` is the locked admin page of an instance. It is the framework frontend
 `evlet.controls`, not a generated model. This release has Overview, Users, Roles,
-Permissions and Security.
+Models, Naming, Permissions and Security.
 
 ## Access
 
@@ -82,6 +82,74 @@ and matches no records.
 | `security.two_step_roles` | `["admin"]` | Admin stays. Saved now, enforced once two-step sign-in exists. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
 
+## Models
+
+The Models page changes fields, the form layout and the list view of each model on this
+instance. These are overrides too, saved with the change bar.
+
+**Fields** (kind `field`, key `Model.field`). The value holds only what changed:
+
+| Prop | Rule |
+|---|---|
+| `label`, `help_text`, `placeholder` | Text. A label can't be empty. |
+| `hidden` | Left out of forms and lists. The API still returns the field. A required field can't be hidden. |
+| `required` | Can be turned on, not off. Rows saved before stay empty until someone edits them; an API create or update must fill the field. |
+| `read_only` | Can be turned on, not off. No role can write it through the API; actions and server code still can. |
+| `default` | Must pass the field's own check. New records only. Links take no default. |
+| `options_add` | Choice fields: new options in lowercase letters, digits and underscores. |
+| `options_hidden` | Choice fields: options from the app hidden from new values. A record that holds one keeps it, and saving it unchanged is allowed. One option stays shown. |
+
+Fields the app or the server fills (calculated fields, State, Sequence and naming fields) take
+only the label, help text, placeholder and hidden. The rules are checked by the API on every
+create and update, legacy and document models alike; `/api/schema` and `/api/ui` show the merged
+values (`choices` lists the shown options and `retired_choices` the hidden ones).
+
+**Form layout** (kind `layout`, key `Model`): `[{"title": ..., "fields": [{"name": ..., "width": 6 | 12}]}]`,
+1 to 12 sections, each with a title, each field placed once. Fields placed nowhere, such as a field an
+app adds later, go to the last section. Section ids stay positional (`main_details`, `section_2`, ...).
+The browser renders forms from this layout; `width: 12` makes a field full width.
+
+**List view** (kind `list`, key `Model`): `{"columns": [...], "page_size": 25 | 50 | 100, "sort": "field" | "-field"}`,
+1 to 8 columns. `/api/schema` drops the columns a role can't read and gives `page_size` and `order_by`.
+
+### Instance fields
+
+Add field creates a column on this instance only, named `x_` plus a slug, 40 characters at most.
+App models can't declare `x_` names, so an app never clashes with one, and app migrations and
+schema checks leave `x_` columns alone. Types: Text, LongText, Integer, Decimal, Currency, Date,
+Boolean, Select and Link.
+
+Adding and removing save at once, one at a time: a SQLite backup into `data/backups/` (next to the
+database file), then `ALTER TABLE` in a transaction with the definition in `evlet_custom_fields`, an
+audit row and a new config version. Every process attaches the field to the model class when it
+sees the new version. A required field needs a default when the table has rows; the default fills
+them. Required is asked for on API writes only, so app code that does not know the field keeps
+working. Removing drops the column and takes the field out of every override that names it:
+its own field override, list columns and sort, layout, permission field lists (a role left with no
+readable field loses access) and naming series that use it. Removal needs SQLite 3.35 or later; on
+an older SQLite the page says so and only adding works. On PostgreSQL the change runs in one
+transaction and backups are the operator's job. Tenant instances don't have instance fields yet.
+
+### When an override no longer applies
+
+An override that fails its check on start fails closed and is listed under Needs attention:
+a field override makes the field read only for every role until it is fixed or reset; a layout,
+list or naming override falls back to the app file. A naming series whose condition names a
+field that no longer exists is skipped, and the rest of the list still applies.
+
+## Naming
+
+Models with `Meta.naming` (see [Document numbers](sequences.md#naming-series)) appear on the
+Naming page. The series list is an override (kind `naming`, key `Model`):
+`[{"id", "label", "format", "when"}]`. Series are checked from the top and the first whose
+condition matches names the record; the last series has no condition, and only it. Conditions
+and formats are checked when saved and again on start.
+
+Counters are instance data and save at once. Each shows its current value, the next name and the
+last change: the last name issued and who issued it, or "Set by hand" with its reason. Setting a
+counter needs a reason, writes an audit row and can't go below the number in the last issued
+name. Try it shows which series a record would use and its name; it never changes a counter.
+
 ## Audit log
 
 `evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles and
@@ -96,3 +164,6 @@ overrides all write to it.
 | `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end"}` |
 | `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules and audit rows; refused access is a 403 there |
 | `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls" and descriptions |
+| `POST /api/_controls/fields/<Model>`, `DELETE /api/_controls/fields/<Model>/<x_name>` | Add or remove an instance field: `{name, type, label, help_text, required, default, options, target}` |
+| `GET/POST /api/_controls/naming/<Model>/counters` | Counters; set one with `{prefix, value, note}` |
+| `POST /api/_controls/naming/<Model>/try` | `{values, series?}`: the matching series and name, and a check of each draft series. No counter changes |
