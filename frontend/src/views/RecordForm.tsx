@@ -17,11 +17,14 @@ import {
   Glyph,
 } from "../ui";
 import FieldInput from "./FieldInput";
+import TransientForm, { formPayload } from './TransientForm';
+import NativePanels from './NativePanels';
 import { request, recordRequest } from "../api";
 import { inputValue, visibleFields, recordLabel, formatValue } from "../schema";
 import { useApp, messageFor } from "../runtime/Context";
 import { NodeRenderer, makeRuntime } from "../runtime/ViewRenderer";
 import { createState } from "../runtime/StateStore";
+import { calculateDocument, documentRead, documentValue, behaviorValue, fieldFilters } from '../runtime/DocumentState';
 import type { ModelSchema, RecordData, FieldSchema } from "../runtime/types";
 
 export function buildRecordPayload(
@@ -53,6 +56,7 @@ export function buildRecordPayload(
     const childModel = models.find((m) => m.name === child.model)!;
     children[child.name] = (collections[child.name] || []).map((row) => {
       const item: Record<string, any> = row.id ? { id: row.id } : {};
+      if (model.document_version && row._key) item._key = row._key;
       if (row.id && childModel.permissions?.update === false) return item;
       for (const field of visibleFields(childModel).filter(
         (f) => f.name !== child.link && !f.read_only,
@@ -104,8 +108,16 @@ export default function RecordForm(props: {
     [dialog, setDialog] = createSignal(""),
     [job, setJob] = createSignal<any>(null),
     [jobError, setJobError] = createSignal("");
+  const [businessDialog, setBusinessDialog] = createSignal<any>(null),
+    [dialogValues, setDialogValues] = createSignal<any>({}),
+    [dialogReady, setDialogReady] = createSignal(false);
+  const [previewPending, setPreviewPending] = createSignal(false);
+  const [querySources, setQuerySources] = createSignal<any>({});
+  const [argumentAction, setArgumentAction] = createSignal<any>(null), [argumentValues, setArgumentValues] = createSignal<any>({});
   let alive = true,
     sequence = 0,
+    draftRevision = 0,
+    previewTimer: ReturnType<typeof setTimeout> | undefined,
     jobTimer: ReturnType<typeof setTimeout> | undefined,
     form!: HTMLFormElement;
   const canEdit = () =>
@@ -120,8 +132,58 @@ export default function RecordForm(props: {
       delete copy[field.name];
       return copy;
     });
+    recalculate();
   };
+  function condition(definition: ModelSchema, field: FieldSchema, kind: string, values: any, fallback: boolean, parent?: {model: ModelSchema; values: any}) {
+    const expression = definition.behavior?.[field.name]?.[kind];
+    if (!expression) return fallback;
+    try { return !!behaviorValue(expression, documentRead(definition, values, collections(), app.models, parent)); }
+    catch { return kind === 'read_only_if'; }
+  }
+  function recalculate(hydrating = false) {
+    if (!model.document_version) return;
+    setQuerySources({});
+    for (const field of model.fields) if (model.behavior?.[field.name]?.query) state.write('record.' + field.name, null);
+    setCollections(current => Object.fromEntries(Object.entries(current).map(([name, rows]) => {
+      const table = model.children?.find(table => table.name === name);
+      const definition = app.models.find(item => item.name === table?.model);
+      return [name, rows.map(row => ({...row, _sources: {}, ...Object.fromEntries((definition?.fields || []).filter(field => definition?.behavior?.[field.name]?.query).map(field => [field.name, null]))}))];
+    })));
+    const result = calculateDocument(model, app.models, {...state.state.record, _sources: querySources()}, collections());
+    for (const field of model.fields) if (model.behavior?.[field.name]?.compute && (!hydrating || field.stored === false)) state.write('record.' + field.name, result.values[field.name]);
+    if (!hydrating) setCollections(result.children);
+    setErrors(result.errors);
+    const revision = ++draftRevision;
+    clearTimeout(previewTimer);
+    setPreviewPending(true);
+    previewTimer = setTimeout(async () => {
+      const payload = buildRecordPayload(model, app.models, state.state.record, dirty(), !isNew, collections(), childDirty());
+      if (Object.keys(payload.errors).length) {setPreviewPending(false); return;}
+      try {
+        const response = await request('/api/_draft/' + model.name, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: isNew ? null : recordId, values: payload.data, revision})});
+        if (!alive || revision !== draftRevision || response.revision !== revision) return;
+        setQuerySources(response.values._sources || {});
+        for (const field of model.fields) if ((!hydrating || field.stored === false) && ['query', 'compute', 'fetch'].some(kind => model.behavior?.[field.name]?.[kind]) || isNew && field.default_kind === 'callable' && !dirty().has(field.name)) state.write('record.' + field.name, response.values[field.name]);
+        setCollections(current => Object.fromEntries(Object.entries(current).map(([name, rows]) => {
+          const table = model.children?.find(table => table.name === name);
+          const definition = app.models.find(item => item.name === table?.model);
+          return [name, rows.map(row => {
+            const resolved = response.values.children?.[name]?.find((candidate: any) => row.id ? candidate.id === row.id : candidate._key === row._key);
+            if (!resolved) return row;
+            const next = {...row, _sources: resolved._sources || {}};
+            for (const field of definition?.fields || []) if ((!hydrating || field.stored === false) && ['query', 'compute', 'fetch'].some(kind => definition?.behavior?.[field.name]?.[kind])) next[field.name] = resolved[field.name];
+            return next;
+          })];
+        })));
+        setErrors(response.errors || {});
+      } catch (error) { if (alive && revision === draftRevision) setError(messageFor(error)); }
+      finally {if (alive && revision === draftRevision) setPreviewPending(false);}
+    }, 200);
+  }
   function initialize(data: RecordData | null, revision = "") {
+    ++draftRevision;
+    clearTimeout(previewTimer);
+    setPreviewPending(false);
     setRecord(data);
     setEtag(revision);
     setDirty(new Set<string>());
@@ -144,10 +206,11 @@ export default function RecordForm(props: {
       Object.fromEntries(
         (model.children || []).map((child) => [
           child.name,
-          structuredClone(data?.children?.[child.name] || []),
+          structuredClone(data?.children?.[child.name] || []).map((row: any) => ({...row, _key: String(row.id)})),
         ]),
       ),
     );
+    if (model.document_version) recalculate(true);
   }
   async function load() {
     if (isNew) return;
@@ -235,9 +298,10 @@ export default function RecordForm(props: {
       const field = model.fields.find((f) => f.name === node.props.field);
       if (!field) return null;
       const required =
-        (p.required ?? field.required) &&
+        condition(model, field, 'required_if', state.state.record, p.required ?? field.required) &&
         (field.default_kind === "none" || field.type === "boolean");
       return (
+        <Show when={condition(model, field, 'visible_if', state.state.record, true)}>
         <Field
           class={
             field.type === "boolean" && field.required
@@ -270,7 +334,8 @@ export default function RecordForm(props: {
               suffix={p.suffix}
               id={control.id}
               required={required}
-              disabled={!canEdit() || busy() || field.read_only || p.disabled}
+              disabled={!canEdit() || busy() || field.read_only || p.disabled || condition(model, field, 'read_only_if', state.state.record, false)}
+              filters={fieldFilters(model, field, state.state.record, collections(), app.models)}
               invalid={control.invalid}
               describedBy={control.describedBy}
               value={state.state.record[field.name]}
@@ -288,6 +353,7 @@ export default function RecordForm(props: {
             />
           )}
         </Field>
+        </Show>
       );
     },
   });
@@ -299,6 +365,7 @@ export default function RecordForm(props: {
       ),
     }));
     setChildDirty((old) => new Set([...old, name]));
+    recalculate();
   }
   function childFields(child: any) {
     return visibleFields(
@@ -315,20 +382,35 @@ export default function RecordForm(props: {
       ] !== false
     );
   }
-  async function action(name: string) {
+  async function action(name: string, argumentsValue?: Record<string, any>) {
     if (busy() || isDirty()) return;
+    const definition = model.actions?.find(item => item.name === name);
+    if (argumentsValue === undefined && definition?.arguments?.length) {
+      setArgumentValues(Object.fromEntries(definition.arguments.map(item => [item.name, item.default ?? (item.type === 'bool' ? false : '')])));
+      setArgumentAction(definition); return;
+    }
     setBusy(true);
     setError("");
     try {
+      if (model.actions?.find(item => item.name === name)?.dialog) {
+        const loaded = await request('/api/_dialogs/' + model.name + '/' + recordId + '/' + name + '/load', {
+          method: 'POST', headers: {'Content-Type': 'application/json', 'If-Match': etag()}, body: '{}'});
+        if (alive) {
+          setDialogValues(loaded.values);
+          setBusinessDialog({...loaded, name, key: crypto.randomUUID(), etag: etag()});
+        }
+        return;
+      }
       const result = await request(base + "/" + recordId + "/actions/" + name, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(etag() ? { "If-Match": etag() } : {}),
         },
-        body: "{}",
+        body: JSON.stringify(argumentsValue || {}),
       });
       if (!alive) return;
+      setArgumentAction(null);
       await load();
       if (result.job) {
         setJob(result.job);
@@ -344,6 +426,21 @@ export default function RecordForm(props: {
     } finally {
       if (alive) setBusy(false);
     }
+  }
+  async function submitBusinessDialog() {
+    const current = businessDialog();
+    if (!current || !dialogReady() || busy()) return;
+    setBusy(true);
+    try {
+      await request('/api/_dialogs/' + model.name + '/' + recordId + '/' + current.name + '/submit', {
+        method: 'POST', headers: {'Content-Type': 'application/json', 'If-Match': current.etag},
+        body: JSON.stringify({key: current.key, values: formPayload(current.definition, dialogValues())})});
+      if (!alive) return;
+      setBusinessDialog(null);
+      await load();
+      app.notify('Action completed.');
+    } catch (error) {if (alive) void app.dialogs.error(messageFor(error), 'Unable to complete action');}
+    finally {if (alive) setBusy(false);}
   }
   async function pollJob(id: number) {
     if (!alive || job()?.id !== id) return;
@@ -408,6 +505,8 @@ export default function RecordForm(props: {
     alive = false;
     sequence++;
     clearTimeout(jobTimer);
+    clearTimeout(previewTimer);
+    draftRevision++;
     app.router.setGuard();
   });
   return (
@@ -537,8 +636,8 @@ export default function RecordForm(props: {
                         <h2>{child.label}</h2>
                         <Badge>{collections()[child.name]?.length || 0}</Badge>
                       </header>
-                      <For each={collections()[child.name] || []}>
-                        {(row, index) => (
+                      <For each={(collections()[child.name] || []).map(row => row._key || String(row.id))}>
+                        {(key, index) => {const row = () => (collections()[child.name] || []).find(item => (item._key || String(item.id)) === key) || {}; return (
                           <fieldset class="child-row">
                             <legend>
                               {child.label} {index() + 1}
@@ -546,6 +645,7 @@ export default function RecordForm(props: {
                             <div class="child-fields">
                               <For each={childFields(child)}>
                                 {(field) => (
+                                  <Show when={condition(app.models.find(item => item.name === child.model)!, field, 'visible_if', row(), true, {model, values: state.state.record})}>
                                   <Field
                                     class={
                                       field.type === "boolean" && field.required
@@ -553,20 +653,23 @@ export default function RecordForm(props: {
                                         : undefined
                                     }
                                     label={field.label}
+                                    error={errors()[child.name + '.' + key + '.' + field.name]}
                                     required={
-                                      field.required && !field.read_only
+                                      condition(app.models.find(item => item.name === child.model)!, field, 'required_if', row(), field.required, {model, values: state.state.record}) && !field.read_only
                                     }
                                   >
                                     {(control) => (
                                       <FieldInput
                                         field={field}
                                         id={control.id}
-                                        value={row[field.name]}
+                                        value={row()[field.name]}
+                                        filters={fieldFilters(app.models.find(item => item.name === child.model)!, field, row(), collections(), app.models, {model, values: state.state.record})}
                                         disabled={
                                           field.read_only ||
+                                          condition(app.models.find(item => item.name === child.model)!, field, 'read_only_if', row(), false, {model, values: state.state.record}) ||
                                           !childPermission(
                                             child,
-                                            row.id ? "update" : "create",
+                                            row().id ? "update" : "create",
                                           ) ||
                                           !canEdit() ||
                                           busy()
@@ -582,13 +685,20 @@ export default function RecordForm(props: {
                                       />
                                     )}
                                   </Field>
+                                  </Show>
                                 )}
                               </For>
                             </div>
+                            <Show when={model.document_version && canEdit() && childPermission(child, 'update')}>
+                              <Button size="small" disabled={busy() || index() === 0} onClick={() => {
+                                setCollections(current => {const rows = [...current[child.name]]; [rows[index()-1], rows[index()]] = [rows[index()], rows[index()-1]]; return {...current, [child.name]: rows};});
+                                setChildDirty(current => new Set([...current, child.name])); recalculate();
+                              }}>Move up</Button>
+                            </Show>
                             <Show
                               when={
                                 canEdit() &&
-                                (!row.id || childPermission(child, "delete"))
+                                (!row().id || childPermission(child, "delete"))
                               }
                             >
                               <Button
@@ -604,13 +714,14 @@ export default function RecordForm(props: {
                                   setChildDirty(
                                     (old) => new Set([...old, child.name]),
                                   );
+                                  recalculate();
                                 }}
                               >
                                 Remove row
                               </Button>
                             </Show>
                           </fieldset>
-                        )}
+                        );}}
                       </For>
                       <Show
                         when={canEdit() && childPermission(child, "create")}
@@ -629,6 +740,15 @@ export default function RecordForm(props: {
                                   : null,
                               ]),
                             );
+                            row._key = crypto.randomUUID();
+                            const childModel = app.models.find(item => item.name === child.model)!;
+                            for (const field of childFields(child)) {
+                              const expression = childModel.behavior?.[field.name]?.default_ref;
+                              if (expression) {
+                                try { row[field.name] = documentValue(field, behaviorValue(expression, documentRead(childModel, row, collections(), app.models, {model, values: state.state.record}))); }
+                                catch { row[field.name] = null; }
+                              }
+                            }
                             setCollections((old) => ({
                               ...old,
                               [child.name]: [...(old[child.name] || []), row],
@@ -636,6 +756,7 @@ export default function RecordForm(props: {
                             setChildDirty(
                               (old) => new Set([...old, child.name]),
                             );
+                            recalculate();
                           }}
                         >
                           Add {child.label.toLowerCase()} row
@@ -649,6 +770,8 @@ export default function RecordForm(props: {
                     {errors().children}
                   </p>
                 </Show>
+                <Show when={previewPending()}><p role="status">Updating derived values…</p></Show>
+                <For each={Object.entries(errors()).filter(([path]) => path.includes('.'))}>{([path, message]) => <p role="alert">{path}: {message}</p>}</For>
                 <Show when={canEdit()}>
                   <div class="form-actions">
                     <Button variant="primary" type="submit" disabled={busy()}>
@@ -668,6 +791,7 @@ export default function RecordForm(props: {
               </fieldset>
             </form>
             <aside class="record-aside">
+              <NativePanels target={model.resource || model.name} record={state.state.record} />
               <h3>{model.label}</h3>
               <p>
                 {isNew
@@ -733,6 +857,24 @@ export default function RecordForm(props: {
           This removes this record and its child rows. This cannot be undone.
         </p>
       </Modal>
+      <Show when={argumentAction()} keyed>{current => <Modal title={current.label} open onClose={() => {if (!busy()) setArgumentAction(null);}}
+        footer={<><Button disabled={busy()} onClick={() => setArgumentAction(null)}>Cancel</Button><Button variant="primary" disabled={busy() || current.arguments.some((item: any) => item.required && argumentValues()[item.name] === '')} onClick={() => {
+          const values = Object.fromEntries(current.arguments.map((item: any) => [item.name, ['int', 'float'].includes(item.type) ? Number(argumentValues()[item.name]) : argumentValues()[item.name]]));
+          void action(current.name, values);
+        }}>Run</Button></>}>
+        <For each={current.arguments}>{(item: any) => <Field label={item.name.replaceAll('_', ' ')} required={item.required}>{control =>
+          <input id={control.id} type={item.type === 'bool' ? 'checkbox' : ['int', 'float'].includes(item.type) ? 'number' : 'text'}
+            step={item.type === 'int' ? 1 : 'any'} checked={argumentValues()[item.name] === true} value={argumentValues()[item.name]}
+            onInput={event => setArgumentValues((values: any) => ({...values, [item.name]: item.type === 'bool' ? event.currentTarget.checked : event.currentTarget.value}))} />
+        }</Field>}</For>
+      </Modal>}</Show>
+      <Show when={businessDialog()} keyed>{current => <Modal title={current.definition.label} open onClose={() => {if (!busy()) setBusinessDialog(null);}}
+        footer={<><Button disabled={busy()} onClick={() => setBusinessDialog(null)}>Cancel</Button><Button variant="primary" disabled={busy() || !dialogReady()} onClick={submitBusinessDialog}>Submit</Button></>}>
+        <NativePanels target={(model.resource || model.name) + '.' + current.name} record={record()} />
+        <fieldset disabled={busy()}><TransientForm definition={current.definition} initial={current.values}
+          evaluateUrl={'/api/_dialogs/' + model.name + '/' + recordId + '/' + current.name + '/evaluate'} headers={{'If-Match': current.etag}}
+          onValues={(values, ready) => {setDialogValues(values); setDialogReady(ready);}} /></fieldset>
+      </Modal>}</Show>
     </div>
   );
 }

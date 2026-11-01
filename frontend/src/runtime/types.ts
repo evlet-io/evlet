@@ -1,11 +1,12 @@
 export interface FieldSchema {
+  stored?: boolean;
   name: string;
   label: string;
   type: string;
   required: boolean;
   read_only?: boolean;
   hidden?: boolean;
-  default_kind: "none" | "static" | "callable";
+  default_kind: "none" | "static" | "callable" | "reference";
   default?: any;
   choices?: string[];
   target?: string;
@@ -17,6 +18,12 @@ export interface FieldSchema {
   placeholder?: string;
 }
 export interface ModelSchema {
+  document_version?: number;
+  resource?: string;
+  behavior?: Record<string, Record<string, any>>;
+  sources?: Record<string, Record<string, {type: string; scale?: number}>>;
+  source_fields?: FieldSchema[];
+  order?: string[];
   name: string;
   label: string;
   plural: string;
@@ -29,7 +36,7 @@ export interface ModelSchema {
   permissions?: { create: boolean; update: boolean; delete: boolean };
   attachments?: boolean;
   children?: { name: string; model: string; link: string; label: string }[];
-  actions?: { name: string; label: string }[];
+  actions?: { name: string; label: string; dialog?: boolean; arguments?: {name: string; type: string; required: boolean; default?: any}[] }[];
 }
 export interface NodeSchema {
   id: string;

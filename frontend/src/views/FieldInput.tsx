@@ -24,6 +24,7 @@ export interface FieldInputProps {
   required?: boolean;
   prefix?: string;
   suffix?: string;
+  filters?: Record<string, any> | null;
 }
 export default function FieldInput(props: FieldInputProps) {
   const required = () => props.required ?? props.field.required;
@@ -167,8 +168,8 @@ function LinkInput(props: FieldInputProps) {
     [offset, setOffset] = createSignal(0);
   const target = () => app.models.find((m) => m.name === props.field.target);
   const [page, { refetch }] = createResource(
-    () => ({ target: props.field.target, q: query(), offset: offset() }),
-    (args) => listRecords(args.target!, 20, args.offset, {}, "-id", args.q),
+    () => props.filters === null ? false : ({ target: props.field.target, q: query(), offset: offset(), filters: props.filters || {} }),
+    (args) => listRecords(args.target!, 20, args.offset, args.filters, "-id", args.q),
   );
   const [selected, { refetch: reloadSelected }] = createResource(
     () => props.value,
@@ -216,7 +217,7 @@ function LinkInput(props: FieldInputProps) {
         id={props.id}
         value={props.value ?? ""}
         required={props.required ?? props.field.required}
-        disabled={props.disabled}
+        disabled={props.disabled || props.filters === null}
         aria-invalid={props.invalid}
         aria-describedby={props.describedBy}
         onChange={(nextValue) =>

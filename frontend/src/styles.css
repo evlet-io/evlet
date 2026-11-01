@@ -918,6 +918,10 @@ progress {
   min-width: 0;
   align-self: start;
 }
+.report-filters { margin-bottom: 20px; }
+.report-filters > .ev-btn { margin-top: 18px; }
+.transient-fields { display: grid; gap: 16px; }
+.transient-fields .child-row { display: grid; gap: 14px; }
 .record-form .ui-formlayout {
   gap: 20px 22px;
 }
