@@ -197,7 +197,7 @@ def test_native_modules_with_clashing_outputs_are_rejected(tmp_path):
     views.mkdir(parents=True)
     (tmp_path / 'clash/pyproject.toml').write_text('[project]\nname = "clash"\n')
     (views / 'panel.ts').write_text('export default {}')
-    (views / 'panel.js').write_text('export default {}')
+    (views / 'Panel.js').write_text('export default {}')
     package = Package(tmp_path / 'clash', 'clash', '1.0', 'Clash', (), layout='flat')
     with pytest.raises(ValueError, match='overwrite each other'):
         build_assets((package,), tmp_path / 'stage', set())

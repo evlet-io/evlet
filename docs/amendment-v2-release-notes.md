@@ -17,14 +17,24 @@ to the existing framework. It is based on
   the published generation intact; active runtimes cannot switch generations
   in place. Build and acquisition do not install or migrate an instance.
 - New resource declarations require explicit permissions. Legacy permission
-  defaults remain unchanged. Logical resource IDs do not rename SQL tables or
+  defaults remain unchanged; computed fields or `@action` alone do not opt a
+  model into default-deny. Owned children follow their document unless they
+  declare their own permissions. Logical resource IDs do not rename SQL tables or
   existing HTTP aliases.
+- Generated view names, overrides, extensions and routes use the schema model
+  name, which honours `storage_name`. An override named after the class (for
+  example `salesorder.list` for `storage_name = "sales_orders"`) now fails at
+  registration instead of being silently ignored; rename it to
+  `sales_orders.list`.
+- Legacy apps keep their exact `apps.lock` source selection. Flat apps skip
+  dotfiles, virtual environments and root-level `build`, `dist` and `tests`.
 - Immutable stored records are retained. Draft operations add owned children,
   row order, exact calculations, conditional fields, Link filters, controlled
   fetching, virtual queries and partial preview. Complete saves recompute and
   validate on the server.
-- New document PATCH, actions and deletion require `If-Match`. Legacy routes
-  retain their existing optional revision contract. A rendered record is not
+- New document PATCH, actions and deletion require `If-Match`, including legacy
+  `Action` handlers registered on a document model. Legacy routes on plain
+  models retain their existing optional revision contract. A rendered record is not
   dirty merely because a volatile preview refreshed.
 - Typed actions, immutable change sets and source-bound dialogs share existing
   write transactions. Dialog retries use actor/source/input-scoped idempotency.
