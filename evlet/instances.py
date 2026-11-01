@@ -4,6 +4,7 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 import importlib
+from importlib.util import spec_from_file_location
 from importlib.abc import MetaPathFinder
 from importlib.machinery import PathFinder, SourceFileLoader, SourcelessFileLoader
 import json
@@ -11,6 +12,7 @@ import re
 import runpy
 import sqlite3
 import sys
+from zoneinfo import ZoneInfo
 from types import SimpleNamespace
 
 from .app import Application
@@ -31,10 +33,12 @@ class Instance:
     database: str = 'sqlite'
     storage: str = 'local'
     domain: str | None = None
+    timezone: str = 'UTC'
 
     def __post_init__(self):
         from .cli.project import valid_name
         valid_name(self.name)
+        ZoneInfo(self.timezone)
         if self.database != 'sqlite':
             raise ValueError('The instance CLI supports isolated SQLite databases; use the existing PostgreSQL API for separately configured databases')
         if self.storage != 'local':
@@ -65,14 +69,17 @@ class AppDefinition:
     tasks: tuple = ()
     schedules: tuple = ()
     ui: object = None
+    reports: tuple = ()
+    apis: tuple = ()
 
     def __post_init__(self):
-        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules'):
+        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis'):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         if not callable(self.actions):
             object.__setattr__(self, 'actions', tuple(self.actions))
         object.__setattr__(self, 'permissions', dict(self.permissions))
-        if any(not isinstance(schedule, Schedule) for schedule in self.schedules):
+        from .services import CalendarSchedule
+        if any(not isinstance(schedule, (Schedule, CalendarSchedule)) for schedule in self.schedules):
             raise ValueError('Register Schedule definitions')
 
 
@@ -138,7 +145,7 @@ class _SourceLoader(SourceFileLoader):
 
 class _AppImports(MetaPathFinder):
     def __init__(self, packages=()):
-        self.paths = {package.name: package.path for package in packages}
+        self.paths = {package.name: package.source_root for package in packages}
 
     def find_spec(self, fullname, path=None, target=None):
         package_name = fullname.split('.')[0]
@@ -148,8 +155,15 @@ class _AppImports(MetaPathFinder):
             loader = getattr(getattr(package, '__spec__', None), 'loader', None)
             if not isinstance(loader, _SourceLoader):
                 return None
-            root = Path(loader.path).parent.parent
-        spec = PathFinder.find_spec(fullname, path if path is not None else [str(root)])
+            root = Path(loader.path).parent
+        if fullname == package_name:
+            spec = spec_from_file_location(fullname, root / '__init__.py', submodule_search_locations=[str(root)])
+        else:
+            spec = PathFinder.find_spec(fullname, path)
+        if spec is None:
+            raise ImportError('Application imports require Python source files: ' + fullname)
+        if spec and spec.origin and not Path(spec.origin).resolve().is_relative_to(root.resolve()):
+            raise ImportError('Application imports cannot escape their package root')
         if spec and isinstance(spec.loader, SourceFileLoader):
             spec.loader = _SourceLoader(fullname, spec.origin)
         elif spec and isinstance(spec.loader, SourcelessFileLoader):
@@ -161,14 +175,51 @@ class _AppImports(MetaPathFinder):
 # including helpers first imported from an action or a background task.
 _runtime_imports = _AppImports()
 
+from threading import RLock
+from contextlib import contextmanager
+_import_lock = RLock()
+_active_sources = {}
 
-def load_definitions(packages):
+
+@contextmanager
+def activate_generation(app):
+    packages = getattr(app, '_source_packages', ())
+    with _import_lock:
+        for package in packages:
+            active = _active_sources.get(package.name)
+            if active and active[0] != package.source_root:
+                raise ValueError('Another generation is active; stop its runtime before loading ' + package.name)
+        for package in packages:
+            path, count = _active_sources.get(package.name, (package.source_root, 0))
+            _active_sources[package.name] = (path, count + 1)
+    try: yield
+    finally:
+        with _import_lock:
+            for package in packages:
+                path, count = _active_sources[package.name]
+                if count == 1: del _active_sources[package.name]
+                else: _active_sources[package.name] = (path, count - 1)
+
+
+def load_definitions(packages, *, modules=None):
+    with _import_lock:
+        for package in packages:
+            active = _active_sources.get(package.name)
+            if active and active[0] != package.source_root:
+                raise ValueError('Another generation is active; stop its runtime before loading ' + package.name)
+        return _load_definitions(packages, modules=modules)
+
+
+def _load_definitions(packages, *, modules=None):
     # All imports happen only after the caller has selected and trusted these apps.
     for package in packages:
         for name in list(sys.modules):
             if name == package.name or name.startswith(package.name + '.'):
                 old = getattr(sys.modules[name], '__file__', None)
-                if old and not Path(old).resolve().is_relative_to(package.path):
+                loader = getattr(getattr(sys.modules[name], '__spec__', None), 'loader', None)
+                if old and Path(old).resolve().is_relative_to(package.path) and isinstance(loader, _SourceLoader):
+                    continue
+                if old and not Path(old).resolve().is_relative_to(package.path) and not isinstance(loader, _SourceLoader):
                     raise ValueError(f'App {package.name} conflicts with an already imported Python package')
                 del sys.modules[name]
     importlib.invalidate_caches()
@@ -179,6 +230,10 @@ def load_definitions(packages):
     try:
         definitions = []
         for package in packages:
+            if package.layout == 'flat':
+                from .builds import discover
+                definitions.append((package.name, discover(package, None if modules is None else modules[package.name])))
+                continue
             module = importlib.import_module(package.name + '.hooks')
             if not Path(module.__file__).resolve().is_relative_to(package.path):
                 raise ValueError(f'Loaded {package.name} from the wrong source directory')
@@ -219,8 +274,11 @@ def migration_plan(definitions, database):
 
 
 def build_instance(config, path, packages, *, port=8000, database_path=None, storage_path=None):
-    definitions = load_definitions(packages)
+    from .builds import prepare
+    pinned, manifest = prepare(path.parent.parent, packages)
+    definitions = load_definitions(pinned, modules=manifest['modules'])
     registry = Registry(*(model for _, definition in definitions for model in definition.models))
+    registry._freeze_ui = True
     database_path = database_path or path / 'data/database.sqlite3'
     migrations = migration_plan(definitions, database_path)
     database = Database(database_path, registry, migrations=migrations)
@@ -263,12 +321,42 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
         actions.extend(definition.actions(services) if callable(definition.actions) else definition.actions)
     options = {key: tuple(item for _, definition in definitions for item in getattr(definition, key)) for key in ('children', 'attachments')}
     app = Application(database, auth=auth, policy=policy, ui=views, events=events, jobs=jobs,
+                      reports=tuple(report for _, definition in definitions for report in definition.reports),
+                      apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
                       storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, **options)
+    app.business.timezone = config.timezone
+    app.business.build_manifest = manifest
+    app._source_packages = pinned
+    app.business.build_directory = path.parent.parent / '.evlet' / 'builds' / manifest['fingerprint']
     return app, tuple(schedules)
 
 
 def register_schedules(app, schedules):
+    from .services import Calendar, CalendarSchedule
+    import time
+    calendar_names = {schedule.name for schedule in schedules if isinstance(schedule, CalendarSchedule)}
+    with app.database.transaction() as tx:
+        for row in tx.connection.execute('SELECT name FROM evlet_calendar_schedules').fetchall():
+            if row['name'] not in calendar_names:
+                tx.connection.execute('UPDATE evlet_schedules SET enabled=0 WHERE name=?', (row['name'],))
     for schedule in schedules:
+        if isinstance(schedule, CalendarSchedule):
+            zone = schedule.timezone or getattr(app.business, 'timezone', 'UTC')
+            calendar = Calendar(schedule.expression, zone)
+            with app.database.transaction() as tx:
+                old = tx.connection.execute('SELECT * FROM evlet_calendar_schedules WHERE name=?', (schedule.name,)).fetchone()
+                existing = tx.connection.execute('SELECT name FROM evlet_schedules WHERE name=?', (schedule.name,)).fetchone()
+            if not existing:
+                app.business.jobs.schedule(schedule.name, schedule.task, {}, every=60, start_at=calendar.next(int(time.time())))
+            elif old is None:
+                raise ValueError('Calendar schedule collides with an interval schedule')
+            with app.database.transaction() as tx:
+                if old is None:
+                    tx.connection.execute('INSERT INTO evlet_calendar_schedules(name,expression,timezone) VALUES (?,?,?)', (schedule.name, schedule.expression, zone))
+                elif (old['expression'], old['timezone']) != (schedule.expression, zone):
+                    tx.connection.execute('UPDATE evlet_calendar_schedules SET expression=?, timezone=? WHERE name=?', (schedule.expression, zone, schedule.name))
+                    tx.connection.execute('UPDATE evlet_schedules SET next_run=?, task=? WHERE name=?', (calendar.next(int(time.time())), schedule.task, schedule.name))
+            continue
         if not isinstance(schedule, Schedule):
             raise ValueError('Register Schedule definitions')
         with app.database.transaction() as tx:

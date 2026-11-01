@@ -1,0 +1,12 @@
+[
+  {"source":"qty * rate","expression":{"$expr":"mul","args":[{"$expr":"ref","args":["qty"]},{"$expr":"ref","args":["rate"]}]},"inputs":{"qty":"3","rate":"0.10"},"scale":2,"expected":"0.30"},
+  {"source":"sum(items.amount)","expression":{"$expr":"sum","args":[{"$expr":"ref","args":["items.amount"]}]},"inputs":{"items.amount":["0.10","0.20"]},"scale":2,"expected":"0.30"},
+  {"source":"sum(items.amount)","expression":{"$expr":"sum","args":[{"$expr":"ref","args":["items.amount"]}]},"inputs":{"items.amount":[]},"scale":2,"expected":"0.00"},
+  {"source":"1 / 0 if False else 7","expression":{"$expr":"choose","args":[false,{"$expr":"div","args":[1,0]},7]},"inputs":{},"scale":2,"expected":"7.00"},
+  {"source":"1 / 3","expression":{"$expr":"div","args":[1,3]},"inputs":{},"scale":4,"expected":"0.3333"},
+  {"source":"qty * rate","expression":{"$expr":"mul","args":[{"$expr":"ref","args":["qty"]},{"$expr":"ref","args":["rate"]}]},"inputs":{"qty":"1","rate":"0.005"},"scale":2,"expected":"0.00"},
+  {"source":"qty * rate","expression":{"$expr":"mul","args":[{"$expr":"ref","args":["qty"]},{"$expr":"ref","args":["rate"]}]},"inputs":{"qty":"1","rate":"0.015"},"scale":2,"expected":"0.02"},
+  {"source":"qty * rate","expression":{"$expr":"mul","args":[{"$expr":"ref","args":["qty"]},{"$expr":"ref","args":["rate"]}]},"inputs":{"qty":null,"rate":"2"},"scale":2,"error":true},
+  {"source":"1 / 0","expression":{"$expr":"div","args":[1,0]},"inputs":{},"scale":2,"error":true},
+  {"source":"qty * rate","expression":{"$expr":"mul","args":[{"$expr":"ref","args":["qty"]},{"$expr":"ref","args":["rate"]}]},"inputs":{"qty":"92233720368547758.08","rate":"1"},"scale":2,"error":true}
+]

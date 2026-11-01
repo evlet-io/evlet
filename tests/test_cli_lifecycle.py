@@ -10,7 +10,7 @@ import sys
 import pytest
 
 from evlet import User
-from evlet.cli.app import create_app, fetch_app
+from evlet.cli.app import create_app as scaffold_app, fetch_app
 from evlet.cli.instance import create_instance
 from evlet.cli.install import install
 from evlet.cli.main import main
@@ -18,6 +18,18 @@ from evlet.cli.project import project_root, instance_guard
 from evlet.cli.setup import setup
 from evlet.instances import load_runtime, read_lock, database_state
 from evlet.packages import read_package, resolve_packages, validate_url
+
+
+def create_app(root, name):
+    # Keep this suite as the unchanged legacy upgrade/compatibility fixture.
+    return scaffold_app(root, name, legacy=True)
+
+
+@pytest.fixture(autouse=True)
+def environment_stub(monkeypatch):
+    import importlib
+    module = importlib.import_module('evlet.cli.setup')
+    monkeypatch.setattr(module, 'create_environment', lambda root, framework: (root / '.venv').mkdir())
 
 
 @pytest.fixture
@@ -47,9 +59,9 @@ def change_model(root, *, migration=True, fail=False):
         (package / 'migrations/__init__.py').write_text('from evlet import AddField, Boolean, CreateModel, Migration\n' + frozen + '\nmigrations = (Migration("0001_initial", CreateModel(NotesItem)), Migration("0002_done", AddField("notesitem", "' + ('unknown' if fail else 'done') + '", Boolean(default=False))))\n')
 
 
-def test_setup_only_containers_and_never_overwrites(tmp_path):
+def test_setup_containers_environment_and_never_overwrites(tmp_path):
     root = setup(tmp_path / 'p')
-    assert sorted(path.name for path in root.iterdir()) == ['apps', 'instances']
+    assert sorted(path.name for path in root.iterdir()) == ['.venv', 'apps', 'instances']
     with pytest.raises(FileExistsError):
         setup(root)
     assert not list(root.rglob('*.sqlite3'))
@@ -552,7 +564,7 @@ def test_app_root_helpers_are_not_exposed_during_registration(project):
     helper.write_text('value = 1\n')
     hooks = project/'apps/notes/notes/hooks.py'
     hooks.write_text('import outside_lock_helper\n' + hooks.read_text())
-    with pytest.raises(ModuleNotFoundError, match='outside_lock_helper'):
+    with pytest.raises(ValueError, match='outside_lock_helper'):
         install(project, 'acme', app_name='notes', trust=True)
     assert str(helper.parent) not in sys.path
 

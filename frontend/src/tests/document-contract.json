@@ -1,0 +1,428 @@
+{
+  "models": [
+    {
+      "name": "order",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "title",
+            "status",
+            "total"
+          ]
+        }
+      ],
+      "label": "Order",
+      "plural": "Orders",
+      "description": "",
+      "title_field": "title",
+      "list_fields": [
+        "id",
+        "title",
+        "status",
+        "total"
+      ],
+      "search_fields": [
+        "title",
+        "status"
+      ],
+      "fields": [
+        {
+          "name": "title",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Status",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "default_kind": "static",
+          "default": "Draft"
+        },
+        {
+          "name": "total",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": null,
+          "maximum": null,
+          "label": "Total",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": true,
+          "default_kind": "none"
+        }
+      ],
+      "document_version": 1,
+      "resource": "order",
+      "behavior": {
+        "title": {},
+        "status": {},
+        "total": {
+          "compute": {
+            "$expr": "sum",
+            "args": [
+              {
+                "$expr": "ref",
+                "args": [
+                  "items.amount"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "order": [
+        "title",
+        "status",
+        "items.amount",
+        "total",
+        "items.qty",
+        "items.rate",
+        "items.stock",
+        "items.evlet_owner",
+        "items.evlet_position"
+      ],
+      "sources": {},
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": false,
+      "children": [
+        {
+          "name": "items",
+          "model": "order_items",
+          "link": "evlet_owner",
+          "label": "Items"
+        }
+      ],
+      "actions": [
+        {
+          "name": "confirm",
+          "label": "Confirm",
+          "arguments": [
+            {
+              "name": "note",
+              "type": "str",
+              "required": false,
+              "default": ""
+            }
+          ]
+        }
+      ],
+      "attachments": false
+    },
+    {
+      "name": "order_items",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "qty",
+            "rate",
+            "amount",
+            "stock"
+          ]
+        }
+      ],
+      "label": "Item",
+      "plural": "Items",
+      "description": "",
+      "title_field": "id",
+      "list_fields": [
+        "id",
+        "qty",
+        "rate",
+        "amount",
+        "stock"
+      ],
+      "search_fields": [],
+      "fields": [
+        {
+          "name": "qty",
+          "type": "decimal",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "scale": 4,
+          "minimum": "0",
+          "maximum": null,
+          "label": "Qty",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "1.0000"
+        },
+        {
+          "name": "rate",
+          "type": "currency",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": null,
+          "maximum": null,
+          "label": "Rate",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "0.00"
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": null,
+          "maximum": null,
+          "label": "Amount",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": true,
+          "default_kind": "none"
+        },
+        {
+          "name": "stock",
+          "type": "decimal",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 4,
+          "minimum": null,
+          "maximum": null,
+          "label": "Stock",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": false,
+          "default_kind": "none"
+        }
+      ],
+      "document_version": 1,
+      "resource": "Order.items",
+      "behavior": {
+        "qty": {},
+        "rate": {},
+        "amount": {
+          "compute": {
+            "$expr": "mul",
+            "args": [
+              {
+                "$expr": "ref",
+                "args": [
+                  "qty"
+                ]
+              },
+              {
+                "$expr": "ref",
+                "args": [
+                  "rate"
+                ]
+              }
+            ]
+          }
+        },
+        "stock": {
+          "query": true
+        }
+      },
+      "order": [],
+      "sources": {},
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": true,
+      "children": [],
+      "actions": [],
+      "attachments": false
+    }
+  ],
+  "input": {
+    "title": "Contract",
+    "children": {
+      "items": [
+        {
+          "_key": "first",
+          "qty": "3",
+          "rate": "0.10"
+        },
+        {
+          "_key": "second",
+          "qty": "2",
+          "rate": "1.25"
+        }
+      ]
+    }
+  },
+  "preview": {
+    "values": {
+      "id": null,
+      "_sources": {},
+      "title": "Contract",
+      "status": "Draft",
+      "total": "2.80",
+      "children": {
+        "items": [
+          {
+            "id": null,
+            "_key": "first",
+            "_sources": {},
+            "qty": "3.0000",
+            "rate": "0.10",
+            "amount": "0.30",
+            "stock": "5.0000"
+          },
+          {
+            "id": null,
+            "_key": "second",
+            "_sources": {},
+            "qty": "2.0000",
+            "rate": "1.25",
+            "amount": "2.50",
+            "stock": "4.0000"
+          }
+        ]
+      }
+    },
+    "errors": {},
+    "states": {
+      "items.first.stock": "ready",
+      "items.second.stock": "ready"
+    },
+    "revision": 4
+  },
+  "form": {
+    "computed": {},
+    "dependencies": {},
+    "icon": "grid",
+    "kind": "form",
+    "layout": {
+      "bindings": {},
+      "events": {},
+      "id": "order.form.root",
+      "props": {
+        "gap": 16
+      },
+      "slots": {
+        "children": [
+          {
+            "bindings": {},
+            "events": {},
+            "id": "main_details",
+            "props": {
+              "gap": 16,
+              "title": ""
+            },
+            "slots": {
+              "children": [
+                {
+                  "bindings": {},
+                  "events": {},
+                  "id": "title",
+                  "props": {
+                    "field": "title"
+                  },
+                  "slots": {},
+                  "type": "Field",
+                  "version": 1
+                },
+                {
+                  "bindings": {},
+                  "events": {},
+                  "id": "status",
+                  "props": {
+                    "field": "status"
+                  },
+                  "slots": {},
+                  "type": "Field",
+                  "version": 1
+                },
+                {
+                  "bindings": {},
+                  "events": {},
+                  "id": "total",
+                  "props": {
+                    "field": "total"
+                  },
+                  "slots": {},
+                  "type": "Field",
+                  "version": 1
+                }
+              ]
+            },
+            "type": "FormLayout",
+            "version": 1
+          }
+        ]
+      },
+      "type": "Column",
+      "version": 1
+    },
+    "model": "order",
+    "name": "order.form",
+    "options": {},
+    "route": null,
+    "section": "Models",
+    "state": {},
+    "subtitle": "",
+    "title": "Order",
+    "version": 1
+  },
+  "saved": {
+    "id": 1,
+    "title": "Contract",
+    "status": "Draft",
+    "total": "2.80",
+    "children": {
+      "items": [
+        {
+          "id": 1,
+          "qty": "3.0000",
+          "rate": "0.10",
+          "amount": "0.30"
+        },
+        {
+          "id": 2,
+          "qty": "2.0000",
+          "rate": "1.25",
+          "amount": "2.50"
+        }
+      ]
+    }
+  },
+  "etag": "\"7a6bd5e311e11599561178bbb1c763ce54313bd16da097fe828e1948e127cd25\""
+}

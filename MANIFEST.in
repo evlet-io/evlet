@@ -1,6 +1,6 @@
 include README.md AGENTS.md requirements-dev.lock requirements-server.lock requirements-s3.lock requirements-mcp.in requirements-mcp.lock requirements-postgres.lock
 recursive-include docs *.md *.json
-recursive-include examples *.py
+recursive-include examples *.py *.toml *.ts *.js *.md
 recursive-include tests *.py
 recursive-include scripts *.py *.sh
 include frontend/package.json frontend/package-lock.json frontend/index.html frontend/vite.config.js

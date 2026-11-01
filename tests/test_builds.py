@@ -1,0 +1,135 @@
+from pathlib import Path
+import json
+import shutil
+import sys
+
+import pytest
+
+from evlet import User
+from evlet.builds import prepare
+from evlet.cli.app import create_app
+from evlet.cli.instance import create_instance
+from evlet.cli.install import install
+from evlet.instances import load_runtime
+from evlet.packages import read_package, resolve_packages
+from test_business import http, client, PASSWORD
+
+
+@pytest.fixture
+def project(tmp_path):
+    root = tmp_path / 'project'
+    (root / 'apps').mkdir(parents=True)
+    (root / 'instances').mkdir()
+    yield root
+    for name in list(sys.modules):
+        if name.split('.')[0] in ('notes', 'amendment'):
+            del sys.modules[name]
+
+
+def test_flat_scaffold_discovery_and_atomic_build(project, monkeypatch, tmp_path):
+    create_app(project, 'notes')
+    package = read_package(project / 'apps/notes')
+    assert package.layout == 'flat'
+    assert not (package.path / 'hooks.py').exists()
+    monkeypatch.chdir(tmp_path)
+    packages = resolve_packages(project, ['notes'])
+    pinned, first = prepare(project, packages)
+    assert first['models'][0]['resource'] == 'notes.NotesItem'
+    assert prepare(project, packages)[1]['fingerprint'] == first['fingerprint']
+    pointer = (project / '.evlet/current.json').read_bytes()
+    model = package.path / 'models/item.py'
+    model.write_text(model.read_text() + '\nraise ValueError("broken build")\n')
+    with pytest.raises(ValueError, match='broken build'): prepare(project, packages)
+    assert (project / '.evlet/current.json').read_bytes() == pointer
+    assert not list((project / 'instances').rglob('*.sqlite3'))
+    assert not list((project / '.evlet/builds').glob('.build-*'))
+
+
+def test_hashes_ignore_generated_files_and_reject_links(project, tmp_path):
+    package = read_package(create_app(project, 'notes'))
+    before = package.locked()
+    (package.path / '__pycache__').mkdir()
+    (package.path / '__pycache__/ignored.pyc').write_bytes(b'cache')
+    (package.path / 'build').mkdir()
+    (package.path / 'build/ignored.py').write_text('raise RuntimeError()')
+    assert package.locked() == before
+    (package.path / 'models/escape.py').symlink_to(tmp_path / 'elsewhere.py')
+    with pytest.raises(ValueError, match='symbolic'): package.locked()
+
+
+def test_reference_app_full_public_flow(project):
+    source = Path(__file__).resolve().parents[1] / 'examples/amendment'
+    shutil.copytree(source, project / 'apps/amendment', ignore=shutil.ignore_patterns('__pycache__', '*.egg-info', 'build', 'dist'))
+    create_instance(project, 'acme')
+    result = install(project, 'acme', app_name='amendment', trust=True)
+    assert result['apps'] == ['amendment']
+    app = load_runtime(project, 'acme')
+    app.initialize()
+    assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
+    c = client(app)
+    company = c('POST', '/api/company', {'name': 'Example'})[1]['id']
+    warehouse = c('POST', '/api/warehouse', {'name': 'Stores', 'company': company})[1]['id']
+    item = c('POST', '/api/itemmaster', {'name': 'Sample', 'description': 'Reference item'})[1]['id']
+    bom = c('POST', '/api/bom', {'name': 'Standard', 'item': item, 'company': company})[1]['id']
+    assert c('POST', '/api/stockbalance', {'item': item, 'warehouse': warehouse, 'actual_qty': '12'})[0] == 201
+    values = {'name': 'SO-1', 'company': company, 'warehouse': warehouse, 'children': {'items': [{'_key': 'r1', 'item': item, 'qty': '3', 'rate': '2.25'}]}}
+    preview = c('POST', '/api/_draft/salesorder', {'values': values, 'revision': 1})
+    assert preview[0] == 200, preview
+    assert preview[1]['values']['children']['items'][0]['available_qty'] == '12.0000'
+    status, order, _ = c('POST', '/api/salesorder', values)
+    assert status == 201, order
+    assert order['total'] == '6.75' and order['children']['items'][0]['description'] == 'Reference item'
+    source = c('GET', '/api/salesorder/' + str(order['id']))
+    headers = {b'if-match': source[2][b'etag']}
+    base = '/api/_dialogs/salesorder/' + str(order['id']) + '/create_work_orders'
+    dialog = c('POST', base + '/load', {}, headers=headers)
+    assert dialog[0] == 200, dialog
+    row = dialog[1]['values']['children']['items'][0]
+    submission = {'key': 'plan-once', 'values': {'children': {'items': [{'_key': row['_key'], 'selected': True, 'qty': '2', 'bom': bom}]}}}
+    planned = c('POST', base + '/submit', submission, headers=headers)
+    assert planned[0] == 200, planned
+    assert c('POST', base + '/submit', submission, headers=headers)[1] == planned[1]
+    assert c('GET', '/api/workorder')[1]['total'] == 1
+    assert c('GET', '/api/salesorder/' + str(order['id']))[2][b'etag'] == headers[b'if-match']
+    report = c('POST', '/api/_reports/amendment.SalesRegister', {'filters': {'company': company}})
+    assert report[0] == 200, report
+    assert report[1]['rows'][0]['total'] == '6.75'
+    assert c('GET', f'/api/_services/amendment.services.integrations.warehouse.checks.balance_count?warehouse={warehouse}')[1] == {'count': 1}
+    manifest = app.business.build_manifest
+    assert len(manifest['apis']) == len(manifest['schedules']) == len(manifest['native']['panels']) == 1
+    schema = c('GET', '/api/schema')[1]
+    native_url = schema['native_panels'][0]['url']
+    assert c('GET', native_url)[0] == 200
+    with app.database.transaction() as tx:
+        assert tx.connection.execute('SELECT count(*) FROM evlet_schedules').fetchone()[0] == 1
+        assert tx.connection.execute('SELECT count(*) FROM evlet_jobs').fetchone()[0] == 0
+    install(project, 'acme', trust=True)
+
+    # Both requests start with the same source revision and one remaining unit.
+    from concurrent.futures import ThreadPoolExecutor
+    remaining_dialog = c('POST', base + '/load', {}, headers=headers)[1]
+    remaining_row = remaining_dialog['values']['children']['items'][0]
+    def plan_one(key):
+        return c('POST', base + '/submit', {'key': key, 'values': {'children': {'items': [{'_key': remaining_row['_key'], 'selected': True, 'qty': '1', 'bom': bom}]}}}, headers=headers)[0]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(plan_one, ['concurrent-a', 'concurrent-b']))
+    assert sorted(statuses) == [200, 422]
+    assert c('GET', '/api/workorder')[1]['total'] == 2
+
+
+def test_active_generation_pins_late_imports_and_rejects_replacement(project):
+    from evlet.instances import activate_generation, load_definitions
+    from importlib import import_module
+    create_app(project, 'notes')
+    (project / 'apps/notes/support.py').write_text('value = "original"\n')
+    create_instance(project, 'acme')
+    install(project, 'acme', app_name='notes', trust=True)
+    app = load_runtime(project, 'acme')
+    with activate_generation(app):
+        (project / 'apps/notes/support.py').write_text('value = "changed"\n')
+        pinned, manifest = prepare(project, resolve_packages(project, ['notes']))
+        with pytest.raises(ValueError, match='generation is active'): load_definitions(pinned, modules=manifest['modules'])
+        assert import_module('notes.support').value == 'original'
+    definitions = load_definitions(pinned, modules=manifest['modules'])
+    assert import_module('notes.support').value == 'changed'
+    assert load_definitions(pinned, modules=manifest['modules'])[0][1].models[0] is definitions[0][1].models[0]

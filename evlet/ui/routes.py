@@ -9,6 +9,13 @@ def dispatch(application, scope):
     from ..app import HTTPError
 
     path, method = scope['path'], scope['method']
+    if path.startswith('/assets/apps/') and method == 'GET' and application.business:
+        application.business.auth.guard(scope)
+        user, _ = application.business.auth.session(scope)
+        from ..native import serve
+        response = serve(application.business, path, user)
+        if response is None: raise HTTPError(404, 'Native asset is unavailable')
+        return response
     if path in ('/api/ui', '/api/ui/resolve'):
         application._method(method, ['GET'])
         user = None
@@ -35,8 +42,9 @@ def dispatch(application, scope):
         builtin = path in ('/', '/login', '/docs', '/settings/accounts') or path.startswith('/docs/') or path.startswith('/assets/')
         generated = re.fullmatch(r'/app/([a-z][a-z0-9_]*)(?:/(new|[1-9][0-9]{0,15})(/view)?)?', path)
         known_model = generated and generated[1] in application.registry.models
+        known_report = application.business and path.startswith('/reports/') and path.removeprefix('/reports/') in application.business.forms.reports
         custom = any(view.route and route_pattern(view.route).fullmatch(path) for view in application.ui.views.values())
-        if not (builtin or known_model or custom): raise HTTPError(404, 'Route not found')
+        if not (builtin or known_model or known_report or custom): raise HTTPError(404, 'Route not found')
         response = static_response(path)
         if response is not None: return response
         raise HTTPError(404, 'UI assets are not built. Run the frontend production build.')

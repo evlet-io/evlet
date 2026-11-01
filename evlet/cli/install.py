@@ -50,12 +50,14 @@ def install(root, name, *, app_name=None, trust=False, confirm=None):
         names = sorted(set(before['apps']) | ({app_name} if app_name else set()))
         if not names:
             raise ValueError('No installed apps to migrate')
-        packages = resolve_packages(root, names)
+        packages = resolve_packages(root, names, check_installed=False)
         after = {'apps': {package.name: package.locked() for package in packages}}
         changed = [package.name for package in packages if package.name not in before['apps'] or portable_lock_entry(package.name, before['apps'][package.name]) != after['apps'][package.name]]
         if changed and not trust:
             if confirm is None or not confirm('Trust and execute these local Python apps: ' + ', '.join(changed) + '?'):
                 raise ValueError('Installation requires explicit trust. Review the apps, then use --trust for non-interactive installation')
+        from .app import prepare_dependencies
+        packages = prepare_dependencies(root, names)
         if before == after:
             app, _ = build_instance(config, path, packages)
             try:

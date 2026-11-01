@@ -4,7 +4,7 @@ import hashlib
 import sqlite3
 
 from .fields import Link, Text
-from .models import identifier
+from .models import identifier, storage_name
 from .migrations import (SchemaError, AddField, AddIndex, CreateModel, RenameField,
                          _metadata, _definition, _migration_plan, _history,
                          _normalized, _planned_definition)
@@ -44,7 +44,7 @@ def index(db, table, field, unique=False):
 def links(db, table, model):
     for name, field in model.__fields__.items():
         if isinstance(field, Link):
-            db.execute(f'ALTER TABLE {identifier(table)} ADD FOREIGN KEY ({identifier(name)}) REFERENCES {identifier(field.target.__name__.lower())}(id)')
+            db.execute(f'ALTER TABLE {identifier(table)} ADD FOREIGN KEY ({identifier(name)}) REFERENCES {identifier(storage_name(field.target))}(id)')
 
 
 def reserve_id_names(db, table):
@@ -88,7 +88,7 @@ def check(db, registry, rows=False):
             JOIN pg_attribute a ON a.attrelid=t.oid AND a.attnum=c.conkey[1]
             JOIN pg_attribute ta ON ta.attrelid=target.oid AND ta.attnum=c.confkey[1]
             WHERE n.nspname='public' AND t.relname=? AND c.contype='f' ''', (table,))
-        if {tuple(r.values()) for r in foreign} != {(name, field.target.__name__.lower(), 'id', 'a', 'public', 1, 1, True) for name, field in model.__fields__.items() if isinstance(field, Link)}:
+        if {tuple(r.values()) for r in foreign} != {(name, storage_name(field.target), 'id', 'a', 'public', 1, 1, True) for name, field in model.__fields__.items() if isinstance(field, Link)}:
             raise SchemaError(f'{table}: foreign keys differ from models')
         indexes = db.execute('''SELECT i.indisunique,i.indisprimary,array_agg(a.attname ORDER BY k.ordinality) AS fields
             FROM pg_index i JOIN pg_class t ON t.oid=i.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace
@@ -147,7 +147,7 @@ def initialize(database):
 
 def apply(db, op):
     if isinstance(op, CreateModel):
-        table = op.model.__name__.lower()
+        table = storage_name(op.model)
         create(db, table, op.model)
         links(db, table, op.model)
     elif isinstance(op, AddIndex):
@@ -162,7 +162,7 @@ def apply(db, op):
         literal = db.database.driver.sql.Literal(value).as_string(db.raw)
         db.execute(f'ALTER TABLE {identifier(op.table)} ADD COLUMN {column(op.name, op.field)} DEFAULT {literal}')
         if isinstance(op.field, Link):
-            db.execute(f'ALTER TABLE {identifier(op.table)} ADD FOREIGN KEY ({identifier(op.name)}) REFERENCES {identifier(op.field.target.__name__.lower())}(id)')
+            db.execute(f'ALTER TABLE {identifier(op.table)} ADD FOREIGN KEY ({identifier(op.name)}) REFERENCES {identifier(storage_name(op.field.target))}(id)')
         if op.field.index or op.field.unique: index(db, op.table, op.name, op.field.unique)
 
 

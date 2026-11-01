@@ -5,7 +5,8 @@ from .database import ConflictError, Database, NotFoundError
 from .fields import (Boolean, Currency, Date, DateTime, Decimal, Email, Integer,
                      Link, LongText, Select, Text, URL)
 from .migrations import AddField, AddIndex, CreateModel, Migration, RenameField, SchemaError
-from .models import Model, Registry, ValidationError
+from .models import Model, Registry, ValidationError, Child
+from .declarations import Ref, Table, Query, action, depends
 
 __all__ = [
     "AddField", "AddIndex", "Application", "Boolean", "ConflictError", "CreateModel",
@@ -54,3 +55,8 @@ __all__ += ["App"]
 from .instances import AppDefinition, Instance, Schedule
 
 __all__ += ["AppDefinition", "Instance", "Schedule"]
+__all__ += ["Child", "Table", "Ref", "Query", "action", "depends"]
+from .forms import Dialog, Report, Column
+__all__ += ["Dialog", "Report", "Column"]
+from .services import api, cron
+__all__ += ["api", "cron"]

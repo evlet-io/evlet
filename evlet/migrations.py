@@ -8,7 +8,7 @@ import re
 import sqlite3
 
 from .fields import Field, Link, MISSING
-from .models import identifier
+from .models import identifier, storage_name
 
 
 class SchemaError(ValueError):
@@ -20,7 +20,7 @@ def _column(name, field):
     if field.required:
         sql += ' NOT NULL'
     if isinstance(field, Link):
-        sql += f' REFERENCES {identifier(field.target.__name__.lower())}("id")'
+        sql += f' REFERENCES {identifier(storage_name(field.target))}("id")'
     return sql
 
 
@@ -66,7 +66,7 @@ def _check(connection, registry, *, rows=False):
             raise SchemaError(f'{name}: database columns differ from models; run explicit migrations')
         links = {(row['from'], row['table'], row['to'], row['on_delete'])
                  for row in connection.execute(f'PRAGMA foreign_key_list({table})')}
-        expected_links = {(key, field.target.__name__.lower(), 'id', 'NO ACTION')
+        expected_links = {(key, storage_name(field.target), 'id', 'NO ACTION')
                           for key, field in model.__fields__.items() if isinstance(field, Link)}
         if links != expected_links:
             raise SchemaError(f'{name}: foreign keys differ from models')
@@ -220,11 +220,11 @@ class CreateModel:
     model: type
 
     def signature(self):
-        return {'operation': 'create_model', 'name': self.model.__name__.lower(),
+        return {'operation': 'create_model', 'name': storage_name(self.model),
                 'fields': [field.metadata() for field in self.model.__fields__.values()]}
 
     def apply(self, connection):
-        _create(connection, self.model.__name__.lower(), self.model)
+        _create(connection, storage_name(self.model), self.model)
 
 
 class Migration:
@@ -246,7 +246,7 @@ def _planned_definition(saved, pending):
     for migration in pending:
         for operation in migration.operations:
             if isinstance(operation, CreateModel):
-                name = operation.model.__name__.lower()
+                name = storage_name(operation.model)
                 if name in models:
                     raise SchemaError(f'{name} already exists in the schema')
                 models[name] = {'name': name, 'label': operation.model.__name__,

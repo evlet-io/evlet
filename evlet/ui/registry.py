@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import re
+import json
 from .compiler import SchemaCompiler, safe_path
 from .contracts import default_components
 from .definitions import View, ListView, FormView, DetailView, Column, FormLayout, Field
@@ -77,10 +78,12 @@ class ViewRegistry:
     def __init__(self, views=(), *, components=None):
         self.components = components or default_components()
         self.views, self.extensions = {}, []
+        self._compiled = {}
         for view in views:
             self.register(view)
 
     def register(self, view):
+        self._compiled.clear()
         if not isinstance(view, View):
             raise TypeError("Register a View")
         if view.name in self.views:
@@ -118,6 +121,7 @@ class ViewRegistry:
             raise ValueError("Extensions use application or site layers")
 
         def register(function):
+            self._compiled.clear()
             extension_name = name or function.__name__
             if any(
                 item[3] == extension_name and item[0] == target and item[1] == layer
@@ -143,6 +147,12 @@ class ViewRegistry:
         return view
 
     def compile(self, model_schema=None, user=None, *, validate_fields=False):
+        key = (getattr(user, 'role', None), validate_fields, json.dumps(model_schema, sort_keys=True))
+        if key not in self._compiled:
+            self._compiled[key] = self._compile(model_schema, user, validate_fields=validate_fields)
+        return deepcopy(self._compiled[key])
+
+    def _compile(self, model_schema=None, user=None, *, validate_fields=False):
         models = (model_schema or {}).get("models", [])
         readable = {item["name"] for item in models}
         generated, overrides = [], set()
