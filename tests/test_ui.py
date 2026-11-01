@@ -285,6 +285,23 @@ def test_static_ui_preserves_unknown_routes_and_api_authentication(secured):
     assert http(secured, "GET", "/api/customer")[0] == 401
 
 
+def test_fonts_are_bundled_and_served_from_assets(secured):
+    import re
+    from evlet.ui.serving import STATIC
+    styles = [path for path in (STATIC / "assets").glob("*.css")]
+    if not styles:
+        pytest.skip("Build browser assets before checking static serving")
+    css = "\n".join(path.read_text() for path in styles)
+    # Inter and JetBrains Mono come from /assets, never from another host, and swap in when loaded.
+    fonts = sorted(set(re.findall(r"url\((?:/assets/)?([^)/]+\.woff2)\)", css)))
+    assert len(fonts) == 3 and "fonts.googleapis.com" not in css and "font-display:swap" in css.replace(" ", "")
+    assert "font-family:Inter;" in css and "font-family:JetBrains Mono;" in css and "ui-monospace" in css and "system-ui" in css
+    for name in fonts:
+        status, payload, headers = http(secured, "GET", "/assets/" + name)
+        assert status == 200 and payload[:4] == b"wOF2" and headers[b"content-type"] == b"font/woff2"
+        assert headers[b"content-security-policy"].startswith(b"default-src 'self'")
+
+
 def test_generated_form_preserves_model_layout_groups(secured):
     views = client(secured)("GET", "/api/ui")[1]["views"]
     form = next(view for view in views if view["name"] == "project.form")

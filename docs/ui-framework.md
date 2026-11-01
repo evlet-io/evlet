@@ -250,6 +250,14 @@ plain value is set once, a reactive one updates only the node bound to it. Impor
 `ui/styles.css` once per page: it carries the design tokens for both themes and the mockup's
 class names.
 
+The fonts are bundled, so pages load nothing from another host and the CSP stays
+`default-src 'self'`. `frontend/fonts` holds Inter 4.1 (`InterVariable.woff2`, weights 100 to 900)
+and JetBrains Mono 2.304 (`JetBrainsMono-Regular.woff2` and `-Medium.woff2`), taken from the
+official GitHub releases (`rsms/inter`, `JetBrains/JetBrainsMono`), with their SIL Open Font
+License 1.1 files beside them. The build copies them to `/assets` with a content hash (538,228
+bytes of woff2 in all); the server sends them as `font/woff2`. `font-display: swap` shows the
+system fonts (`system-ui`, `ui-monospace` and the rest of the stack) until they load.
+
 | Module | Components |
 |---|---|
 | `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, Stat, SummaryStrip, FilterChip, SearchInput, QuickAddInput |

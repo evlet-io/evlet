@@ -9,7 +9,7 @@ recursive-include frontend/src *.ts *.css *.json
 recursive-include frontend/scripts *.mjs
 recursive-include frontend/public *.svg
 include frontend/tsconfig.json
-recursive-include evlet/ui/static *.html *.js *.css *.svg
+recursive-include evlet/ui/static *.html *.js *.css *.svg *.woff2
 recursive-include evlet *.pyi py.typed
 include build_support.py
 recursive-include evlet/resources *.tpl
