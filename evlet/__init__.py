@@ -70,3 +70,6 @@ from .measures import Count, CountDistinct, Day, Max, Min, Month, Sum, Year
 __all__ += ["Count", "CountDistinct", "Day", "Max", "Min", "Month", "Sum", "Year"]
 from .meaning import Attachments, Related
 __all__ += ["Attachments", "Related"]
+from .controls import SCOPES
+
+__all__ += ["SCOPES"]

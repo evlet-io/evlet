@@ -44,8 +44,14 @@ def dispatch(application, scope):
         target = application.routes.redirect(host, path)
         if target:
             return 302, Download(b''), [(b'location', target.encode())]
+        if path == '/settings/accounts':
+            return 301, Download(b''), [(b'location', b'/controls/users')]
         found = application.routes.match(host, path)
-        served = found is not None and _serves(application, *found)
+        if found is not None and found[0] == 'evlet.controls' and application.business:
+            served = application.business.controls.page(scope, path)
+            if not isinstance(served, bool): return served
+        else:
+            served = found is not None and _serves(application, *found)
         if not served and path.startswith('/assets/'): raise HTTPError(404, 'Route not found')
         response = static_response(path if served else '/')
         # Unknown browser paths get the app's own not-found page, with a 404 status.
@@ -71,8 +77,6 @@ def _serves(application, frontend, base, rest):
         return path == '/login'
     if frontend == 'evlet.docs':
         return rest == '' or rest.startswith('/')
-    if frontend == 'evlet.settings':
-        return path == '/settings/accounts'
     if frontend == 'evlet.assets':
         return rest.startswith('/')
     if frontend == 'evlet.reports':

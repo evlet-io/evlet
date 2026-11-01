@@ -40,8 +40,17 @@ def child_operations(operations):
 
 
 class Policy:
-    def __init__(self, registry, *, rules=None):
+    def __init__(self, registry, *, rules=None, roles=None, overrides=None):
+        """rules are the app files' rules; overrides (Controls) replace a role's rule on a model.
+
+        roles maps each role to its base framework role; a custom role without its own rule on a
+        model inherits the base role's rule from the files.
+        """
         self.registry = registry
+        self.roles = MappingProxyType(dict(roles or {role: role for role in ROLES}))
+        if any(self.roles.get(role) != role for role in ROLES) or set(self.roles.values()) - set(ROLES) or 'admin' in [base for role, base in self.roles.items() if role != 'admin']:
+            raise ValueError('Roles must include the framework roles, and custom roles must be based on editor or viewer')
+        self.declared = MappingProxyType(dict(rules or {}))
         self.rules = dict(rules or {})
         # Declared permissions, build resources, tables and sources deny by default;
         # computed fields or actions alone keep legacy permission defaults.
@@ -60,18 +69,29 @@ class Policy:
                 if model in owners and not own:
                     # Editing a document's lines is an update of that document.
                     self.rules[role, model] = Rule(child_operations(default(role, owners[model]).operations))
+                elif role not in ROLES and role not in getattr(base, 'permissions', {}):
+                    self.rules[role, model] = default(self.roles.get(role, 'viewer'), model)
                 else:
                     self.rules[role, model] = getattr(base, 'permissions', {}).get(role, Rule(()))
             return self.rules[role, model]
         self.governed = frozenset(model for model in registry.models.values() if governed(model))
         for model in self.governed:
-            for role in ROLES:
+            for role in self.roles:
                 default(role, model)
+        for model in registry.models.values():
+            for role, base in self.roles.items():
+                if role != base and (role, model) not in self.rules and (base, model) in self.rules:
+                    self.rules[role, model] = self.rules[base, model]
+        self.file_rules = MappingProxyType(dict(self.rules))
+        for (role, model), rule in dict(overrides or {}).items():
+            if role == 'admin':
+                raise ValueError('Admin rules cannot be overridden')
+            self.rules[role, model] = rule
         # Rules are fixed per policy, so cached finite derivation checks cannot go stale.
         self.rules = MappingProxyType(self.rules)
         for (role, model), rule in self.rules.items():
             registry.name_for(model)
-            if role not in ROLES or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', *CORRECTIONS}:
+            if role not in self.roles or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', *CORRECTIONS}:
                 raise ValueError('Invalid permission rule')
             if 'revise' in rule.operations and 'create' not in rule.operations:
                 raise ValueError(f'{model.__name__}: Rule names \'revise\' without \'create\'; a revise creates a draft copy')
@@ -93,7 +113,7 @@ class Policy:
             for operation in CORRECTIONS:
                 if not corrects(model, operation):
                     continue
-                named = {role for role in ROLES if operation in self.rules.get((role, model), Rule(())).operations}
+                named = {role for role in self.roles if operation in self.rules.get((role, model), Rule(())).operations}
                 admin = set(self.rules.get(('admin', model), Rule(('read', 'create', 'update', 'delete'))).operations)
                 if {'read', 'update', *(('create',) if operation == 'revise' else ())} <= admin:
                     named.add('admin')
@@ -101,7 +121,11 @@ class Policy:
         self.corrections = MappingProxyType(corrections)
 
     def rule(self, user, model):
-        return self.rules.get((user.role, model), Rule(('read',) if user.role == 'viewer' else ('read', 'create', 'update', 'delete')))
+        found = self.rules.get((user.role, model))
+        if found is not None:
+            return found
+        base = self.roles.get(user.role)
+        return Rule(()) if base is None else Rule(('read',) if base == 'viewer' else ('read', 'create', 'update', 'delete'))
 
     def allows(self, user, model, operation):
         if operation in ('create', 'update', 'delete') and model in getattr(self.registry, 'effect_targets', ()):
