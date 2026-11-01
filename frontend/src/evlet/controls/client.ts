@@ -6,8 +6,9 @@ import { ApiClient, type ClientOptions } from '../api';
 export const OPS = ['read', 'create', 'update', 'delete'] as const;
 
 export interface PermValue { ops: string[]; read: string[] | null; write: string[] | null; scope: string | null }
+export type Kind = 'perm' | 'setting' | 'field' | 'layout' | 'list' | 'naming';
 export interface OverrideItem {
-  kind: 'perm' | 'setting'; key: string; file: any; value: any;
+  kind: Kind; key: string; file: any; value: any;
   changed_by: string | null; changed_at: number | null; source?: 'app' | 'framework';
 }
 export interface Problem { kind: string; key: string; error: string }
@@ -17,7 +18,33 @@ export interface RoleRow {
   description: string; users: number; app: string | null; declared: boolean;
 }
 export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number }
-export interface ModelInfo { name: string; label: string; app: string | null; fields: Array<{ name: string; label: string; read_only: boolean }>; scopes: Array<string | null> }
+/** A field as models.py declares it: the props Controls can override. */
+export interface FieldProps {
+  label: string; help_text: string; placeholder: string; hidden: boolean; required: boolean; read_only: boolean;
+  default: unknown; options: string[] | null;
+}
+export interface FieldOverride {
+  label?: string; help_text?: string; placeholder?: string; hidden?: boolean; required?: boolean; read_only?: boolean;
+  default?: unknown; options_add?: string[]; options_hidden?: string[];
+}
+export interface LayoutSection { title: string; fields: Array<{ name: string; width: 6 | 12 }> }
+export interface ListValue { columns: string[]; page_size: number; sort: string }
+export interface SeriesValue { id: string; label: string; format: string; when: string }
+export interface FieldInfo {
+  name: string; type: string; custom: boolean; editable: boolean; stored: boolean; unique: boolean; target: string | null; width: 6 | 12;
+}
+export interface ModelInfo {
+  name: string; label: string; app: string | null; fields: Array<{ name: string; label: string; read_only: boolean }>; scopes: Array<string | null>;
+  table: string; records: number; fields_detail: FieldInfo[]; naming: { field: string; date_field: string | null } | null;
+}
+export interface Counter {
+  prefix: string; value: number; last_name: string | null; how: 'issued' | 'set' | null; note: string | null;
+  changed_by: string | null; changed_at: number | null; series: string | null; next: string; issued: number | null;
+}
+export interface TryResult {
+  checks: Array<{ id: string; format?: string; when?: string; next?: string }>;
+  match: string | null; label?: string; name: string | null; errors?: Record<string, string>; error: string | null;
+}
 export interface AuditRow { id: number; at: number; actor: string; area: string; target: string; detail: string }
 export interface Attention { tone: string; icon: string; page: string; title: string; text: string }
 export interface ControlsState {
@@ -37,6 +64,9 @@ export interface ControlsState {
   links: boolean;
   /** The address this request came from, as the allowlist sees it. */
   client: string;
+  /** Why fields can't be removed on this server, or null. */
+  remove_fields: string | null;
+  instance_fields: boolean;
 }
 
 export class ControlsClient extends ApiClient {
@@ -60,6 +90,21 @@ export class ControlsClient extends ApiClient {
   }
   async changeRole(id: string, body: Record<string, unknown>) {
     return (await this.request<{ items: RoleRow[] }>('PATCH', `/api/_controls/roles/${encodeURIComponent(id)}`, { body })).data.items;
+  }
+  async addField(model: string, body: Record<string, unknown>) {
+    return (await this.request<{ name: string; backup: string | null; version: number }>('POST', `/api/_controls/fields/${model}`, { body })).data;
+  }
+  async removeField(model: string, name: string) {
+    return (await this.request<{ name: string; backup: string | null; version: number }>('DELETE', `/api/_controls/fields/${model}/${name}`)).data;
+  }
+  async counters(model: string) {
+    return (await this.request<{ field: string; items: Counter[] }>('GET', `/api/_controls/naming/${model}/counters`)).data;
+  }
+  async setCounter(model: string, body: { prefix: string; value: number; note: string }) {
+    return (await this.request<{ field: string; items: Counter[] }>('POST', `/api/_controls/naming/${model}/counters`, { body })).data;
+  }
+  async tryName(model: string, body: { values: Record<string, unknown>; series?: SeriesValue[] }) {
+    return (await this.request<TryResult>('POST', `/api/_controls/naming/${model}/try`, { body })).data;
   }
   async deleteRole(id: string) {
     return (await this.request<{ items: RoleRow[] }>('DELETE', `/api/_controls/roles/${encodeURIComponent(id)}`)).data.items;

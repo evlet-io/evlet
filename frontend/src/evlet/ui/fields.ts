@@ -270,7 +270,8 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
     const element = html`<select class="input" id=${id} disabled=${disabled} aria-invalid=${invalid} aria-required=${required}
       aria-describedby=${options.describedBy ?? null} aria-label=${options.label ?? null}
       on:change=${(event: Event) => { const raw = (event.target as HTMLSelectElement).value; if (writeValue(field, raw === '' ? null : raw)) done(); }}>
-      <option value="">Choose one</option>${choices.map(choice => html`<option value=${choice}>${humanize(choice)}</option>`)}</select>` as HTMLSelectElement;
+      <option value="">Choose one</option>${choices.map(choice => html`<option value=${choice}>${humanize(choice)}</option>`)}
+      ${(meta.retired_choices ?? []).map(choice => html`<option value=${choice} disabled>${humanize(choice)}</option>`)}</select>` as HTMLSelectElement;
     // Keep the selection in step with the cell (options exist before the value is applied).
     effect(() => { const value = field.value.get(); element.value = isEmpty(value) ? '' : String(value); });
     return { element, commit: () => true, focus: () => element.focus() };

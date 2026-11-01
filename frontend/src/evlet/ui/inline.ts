@@ -175,7 +175,7 @@ export function KeyValueList(items: Array<FieldLike | { label: string; field: Fi
 export function FormSection(props: { title: string; note?: string; fields: FieldLike[]; save?: Save; links?: LinkSource | null; extra?: Child }): HTMLElement {
   const cells = props.fields.map(field => {
     const id = uid('ff');
-    return html`<div class="ff" class:full=${field.meta.type === 'longtext'} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}>
+    return html`<div class="ff" class:full=${field.meta.wide ?? field.meta.type === 'longtext'} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}>
       <label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
       <div class="ff-v">${InlineValue({ field, save: props.save, labelledBy: id, links: props.links })}</div></div>`;
   });
