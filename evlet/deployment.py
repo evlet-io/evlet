@@ -2,6 +2,12 @@
 
 
 def render_deployment(catalog):
+    """Render reference files for the catalog's verified active hosts.
+
+    The units start the example tenant app (`examples.playground.tenants` and
+    `examples.playground.worker`) from a source checkout in /opt/evlet. An
+    installed project must adapt the ExecStart commands and paths before use.
+    """
     if catalog.development:
         raise ValueError('Deployment requires a production catalog')
     inventory = catalog.inventory()
@@ -13,6 +19,7 @@ def render_deployment(catalog):
 
 
 def deployment_files(hosts):
+    """Return a Caddyfile and systemd units for the example tenant app; review before use."""
     from .tenancy import hostname
     from .ui.serving import CSP
     hosts = sorted({hostname(host) for host in hosts})

@@ -166,7 +166,7 @@ available_qty = Decimal(
 ```
 
 The public `Query` declaration is internally `ReactiveQuery`; the existing
-`evlet.query.Query` SQL compiler is unchanged. Model sources must match zero or
+`evlet.query.SqlQuery` SQL compiler (formerly `evlet.query.Query`, still importable under that name) is unchanged. Model sources must match zero or
 one row; multiple matches are an error. Function sources use
 `Query(function, fields={"qty": Decimal(), ...})` and explicit `@depends(...)`.
 A single virtual field can instead use `Decimal(query=function, stored=False)`.
@@ -232,6 +232,9 @@ The operation uses the existing serialized write transaction, including the
 PostgreSQL advisory transaction lock.
 
 A `Report` defines title, roles, fields, typed `Column`s, `autorun` and `run()`.
+Set `roles = ('admin', 'editor')` to name the roles that may see and run it.
+`permissions` is an older alias for `roles` and still works. Use one of them.
+Unlike `Model.permissions`, it is a tuple of role names, not a role to `Rule` map.
 Its read-only context provides `limit`/`offset`. Return a bounded
 `{"rows": [...], "total": matching_count}` with declared column names/types.
 `Column(total=True, unit="AED")` adds explicitly labeled current-page totals.

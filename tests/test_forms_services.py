@@ -86,6 +86,37 @@ def test_report_evaluation_does_not_run_and_results_are_bounded(app, monkeypatch
     assert c('POST', '/api/_reports/Tickets', {'limit': 101})[0] == 422
 
 
+def test_report_roles_and_permissions_alias_grant_the_same_access(tmp_path):
+    class ByRoles(Tickets):
+        roles = ('admin',)
+    class ViewerOnly(Tickets):
+        roles = ('viewer',)
+    class ByAlias(Tickets):
+        permissions = ['admin']
+    assert Tickets.roles == ('admin',) and ByRoles.permissions == ('admin',) and ByAlias.roles == ('admin',)
+    with pytest.raises(ValueError, match='alias'):
+        type('Conflict', (Tickets,), {'roles': ('admin',), 'permissions': ('viewer',)})
+    db = Database(tmp_path / 'roles.sqlite3', Registry(Ticket))
+    auth = LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    app = Application(db, auth=auth, reports=(ByRoles, ViewerOnly, ByAlias))
+    app.initialize()
+    assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
+    c = client(app)
+    for name in ('ByRoles', 'ByAlias'):
+        assert c('POST', '/api/_reports/' + name, {'filters': {}, 'revision': 1})[0] == 200
+    assert c('POST', '/api/_reports/ViewerOnly', {'filters': {}, 'revision': 1})[0] == 403
+
+
+@pytest.mark.parametrize('playground', [False, True])
+def test_playground_mode_is_explicit_not_derived_from_the_name(tmp_path, playground):
+    db = Database(tmp_path / 'mode.sqlite3', Registry(Ticket))
+    auth = LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    options = {'playground': True} if playground else {}
+    app = Application(db, auth=auth, name='Evlet Playground', **options)
+    app.initialize()
+    assert http(app, 'GET', '/api/auth/session')[1]['application'] == {'name': 'Evlet Playground', 'playground': playground}
+
+
 def test_api_is_registered_typed_and_readonly(app):
     c = client(app)
     assert c('GET', '/api/_services/test.count')[1] == {'count': 0}

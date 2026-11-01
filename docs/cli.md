@@ -54,8 +54,10 @@ evlet docs --port 8001
 `sys.path` before loading apps, but modules Python imports at startup can still be
 shadowed by files there; run it with `python -P -m evlet` (or set
 `PYTHONSAFEPATH=1`) when working inside an app folder. Project commands that
-delegate to `.venv` already use `-P`. The original `new`, `login`,
-`logout`, `describe` and `mcp` commands retain their existing contracts.
+delegate to `.venv` already use `-P`. The original `new` command keeps its
+existing contract. `login`, `logout`, `describe` and `mcp` are the connector
+commands described in the [connector guide](connector.md). Each one shows its
+options with `--help`, for example `evlet login --help`.
 `evlet dev` selects the sole instance in a project. With several instances it
 asks in a terminal; automation must pass `--instance`. Development rebuilds/reloads
 Python, TS/JS and configuration changes, including file additions/deletions, and
@@ -210,8 +212,12 @@ SQLite databases and bound private-file directories.
 ```python
 from evlet import Instance
 
-instance = Instance(name="acme", database="sqlite", storage="local", domain=None, timezone="UTC")
+instance = Instance(name="acme", domain=None, timezone="UTC")
 ```
+
+`database` and `storage` are reserved and optional. They default to `"sqlite"` and
+`"local"`, the only values accepted today. New `config.py` files leave them out.
+Older files that set them to those values keep working.
 
 The CLI supports SQLite/local storage. Existing PostgreSQL, tenant routing, S3 and
 other framework APIs remain available through explicit Python configuration.
@@ -225,6 +231,59 @@ cookies and disables browser administrator setup. Terminate TLS with a reverse
 proxy and manage the process through normal infrastructure. A non-loopback bind
 requires a configured domain. The CLI does not configure DNS, TLS, system services,
 proxy trust or public deployment. This is not a production-readiness claim.
+
+### Serve an instance behind Caddy
+
+This is a minimal manual setup for one instance on one Linux server. It assumes
+a project at `/srv/evlet` made with `evlet setup`, an installed instance `acme`,
+and a system user `evlet` that owns the project. Create the administrator while
+`domain` is still `None`, then set `domain="app.example.com"` in
+`instances/acme/config.py`.
+
+Keep the server on loopback. Caddy is the only public listener. Save this as
+`/etc/systemd/system/evlet-acme.service`:
+
+```ini
+[Unit]
+Description=Evlet instance acme
+After=network.target
+
+[Service]
+User=evlet
+Group=evlet
+WorkingDirectory=/srv/evlet
+ExecStart=/srv/evlet/.venv/bin/python -P -m evlet serve acme --jobs --project /srv/evlet --host 127.0.0.1 --port 8000
+Restart=on-failure
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`--jobs` runs the short-task queue inside this one process. Run
+only one process per instance. Add this site to `/etc/caddy/Caddyfile`:
+
+```text
+app.example.com {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+Caddy obtains the certificate and passes the original Host header, which must
+match `domain`. Then run:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now evlet-acme
+sudo systemctl reload caddy
+```
+
+To apply app changes, stop the service, run `evlet migrate acme --trust` as the
+`evlet` user, then start it again. The server does not read forwarded headers,
+so every request appears to come from `127.0.0.1`. Login rate limits therefore
+count all clients together. Back up `instances/acme/` while the service is
+stopped. For several customers routed by Host, see
+[Tenants and single-server deployment](tenancy-deployment.md).
 
 ## Migrations, lockfiles and recovery
 

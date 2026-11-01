@@ -6,7 +6,7 @@ from types import MappingProxyType
 from .auth import AccessError, ROLES
 from .fields import Link
 from .models import Model, ValidationError, identifier
-from .query import Query, OPERATORS
+from .query import SqlQuery, OPERATORS
 
 
 @dataclass(frozen=True)
@@ -150,7 +150,7 @@ class Policy:
         filters = {} if rule.scope is None else rule.scope(user)
         if not isinstance(filters, dict):
             raise ValueError('Row scope must return a filter object')
-        return Query(self.registry, model).where(filters)
+        return SqlQuery(self.registry, model).where(filters)
 
     def record(self, tx, user, model, record_id, operation='read'):
         self.require(user, model, operation)

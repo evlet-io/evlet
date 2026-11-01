@@ -2,6 +2,17 @@
 
 Status: implemented foundation, not a production business application framework.
 
+## Which object do I use?
+
+| Object | What it is |
+| --- | --- |
+| `Application` | The ASGI app object you build in Python from a `Database`, usually with `LocalAuth`. |
+| `App` | A shortcut `Application` with local defaults for a quick start. It creates `.data/NAME.sqlite3` and loopback-only `LocalAuth` unless you pass your own. |
+| `Registry` | Your models. Pass it to `Database`; there is no global registry. |
+| `AppDefinition` | The registration object in `hooks.py` for the nested app layout (`evlet app NAME --legacy`). Flat apps are discovered without it. |
+| `Instance` | One customer's isolated data directory, set in `instances/NAME/config.py` and served by `evlet serve NAME`. |
+| `Tenant`, `TenantRegistry`, `TenantApplication` | Host-routed serving of several customers from Python. `TenantRegistry` is the catalog, `Tenant` is one customer in it, and `TenantApplication` picks the tenant from the Host header and builds its own `Application`. |
+
 ## Milestone 1 baseline (historical)
 
 This section records the original foundation. Later sections and [Evlet UI](ui.md)
@@ -197,8 +208,8 @@ replacing unsaved forms. The event log is a hint, not a record store or audit lo
 S3Storage adds private remote bytes with transactional local metadata, namespace
 binding, conditional writes, and explicit orphan collection. The boto3 extra is
 optional and has its own hash lock; core imports still require no external package.
-The LambdaHTTP adapter translates AWS payload-v2 requests to ASGI and buffers the
-response. It provides no persistence, lifespan, worker, or deployment. Durable
+The experimental LambdaHTTP adapter translates AWS payload-v2 requests to ASGI and
+buffers the response. It has no end-to-end test and its SSE route returns 501. It provides no persistence, lifespan, worker, or deployment. Durable
 serverless database support is a separate requirement.
 
 See [jobs, realtime, and adapters](jobs-realtime.md) for public contracts and limits.

@@ -56,7 +56,9 @@ A trusted development deployment can pass explicit Host header values, for examp
 `Application(database, hosts=('dev.example.test',))`; this does not enable
 authentication or make the API suitable for public access.
 Passing business features without authentication raises an error. The Playground
-always configures authentication. Direct Python database sessions are trusted and
+always configures authentication. It also passes `playground=True`, which only changes
+the sign-in and sidebar labels. `GET /api/auth/session` reports it as
+`application.playground`. Other applications leave it at the default `False`. Direct Python database sessions are trusted and
 do not apply HTTP permissions.
 
 ### HTTP access

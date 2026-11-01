@@ -55,18 +55,22 @@ def parser():
         command.add_argument('--port', type=int, default=port)
     for command in commands.choices.values():
         command.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
-    for name, help_text in (('new', 'Create the original standalone starter'), ('login', 'Save a private connector session'), ('logout', 'End a connector session'), ('describe', 'Inspect authenticated discovery'), ('mcp', 'Run the authenticated connector')):
-        commands.add_parser(name, help=help_text, add_help=False)
+    commands.add_parser('new', help='Create the original standalone starter', add_help=False)
+    from .connector import add_commands
+    add_commands(commands)
     return result
 
 
 def main(argv=None):
     values = list(sys.argv[1:] if argv is None else argv)
-    if values and values[0] in ('new', 'login', 'logout', 'describe', 'mcp'):
+    if values and values[0] == 'new':
         from .legacy import main as legacy
         return legacy(values)
     command_parser = parser()
     args = command_parser.parse_args(values)
+    if args.command in ('login', 'logout', 'describe', 'mcp'):
+        from .connector import run
+        return run(args)
     try:
         if hasattr(args, 'port') and not 1 <= args.port <= 65535:
             raise ValueError('Use a port between 1 and 65535')

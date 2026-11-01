@@ -1,13 +1,8 @@
-"""Local development and authenticated connector commands."""
+"""The original standalone starter created by `evlet new`."""
 
 import argparse
-import getpass
-import json
 from pathlib import Path
 import sys
-
-from ..connector import ConnectorError, HTTPClient
-from ..mcp import MCPServer
 
 
 STARTER_MODELS = '''from evlet import Boolean, Model, Registry, Text
@@ -98,53 +93,11 @@ def main(argv=None):
     commands = parser.add_subparsers(dest='command', required=True)
     create = commands.add_parser('new', help='Create a small authenticated application in a new directory')
     create.add_argument('directory')
-    login = commands.add_parser('login', help='Sign in and save a private session file')
-    login.add_argument('--url', required=True); login.add_argument('--username', required=True)
-    login.add_argument('--session', required=True)
-    for name in ('describe', 'mcp', 'logout'):
-        command = commands.add_parser(name)
-        command.add_argument('--session', required=True)
-        if name == 'describe':
-            command.add_argument('--model')
-        if name == 'mcp':
-            command.add_argument('--allow-writes', action='store_true')
     args = parser.parse_args(argv)
     try:
-        if args.command == 'new':
-            print(f'Application created in {scaffold(args.directory)}')
-            return
-        if args.command == 'login':
-            if Path(args.session).exists():
-                raise ValueError('Session file already exists; sign out or choose a new private file')
-            client = HTTPClient(args.url)
-            password = getpass.getpass('Application password: ')
-            signed_in = client.login(args.username, password)
-            try:
-                signed_in.save(args.session)
-            except Exception:
-                try:
-                    signed_in.request('POST', '/api/auth/logout', {})
-                except ConnectorError:
-                    pass
-                raise
-            print('Signed in. Session saved privately; password was not stored.')
-            return
-        client = HTTPClient.load(args.session)
-        if args.command == 'mcp':
-            MCPServer(client, allow_writes=args.allow_writes).serve()
-        elif args.command == 'describe':
-            result = MCPServer(client).call('describe_model', {'model': args.model}) if args.model else client.get('/api/_discovery')
-            print(json.dumps(result, ensure_ascii=True, allow_nan=False, separators=(',', ':')))
-        else:
-            try:
-                client.request('POST', '/api/auth/logout', {})
-            except ConnectorError as exc:
-                if exc.status != 401:
-                    raise
-            Path(args.session).unlink()
-            print('Session ended and its local file removed.')
+        print(f'Application created in {scaffold(args.directory)}')
     except (KeyboardInterrupt, BrokenPipeError):
         return
-    except (ConnectorError, ValueError, OSError) as exc:
+    except (ValueError, OSError) as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from None

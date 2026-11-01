@@ -5,7 +5,7 @@ from amendment.models.sales_order import SalesOrder
 
 class SalesRegister(Report):
     title = 'Sales Register'
-    permissions = ('admin', 'editor')
+    roles = ('admin', 'editor')
     company = Link(Company, required=True)
     warehouse = Link(Warehouse, filters={'company': Ref('company')})
     columns = (Column('id', type='integer'), Column('name'), Column('total', type='currency'))

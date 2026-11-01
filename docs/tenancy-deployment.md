@@ -158,6 +158,14 @@ server paths above, even when rendered from a local staging catalog. Review the
 paths, host list, release contents, DNS, firewall, backup, and restore procedure
 before applying them through the server's deployment process.
 
+The renderer (`evlet.deployment`) is written for the example tenant app in this
+repository. Its units run `examples.playground.tenants:create_app` and
+`examples.playground.worker` from a source checkout in `/opt/evlet`. If you
+installed Evlet as a package, these modules are not there. Change each
+`ExecStart` command to start your own tenant factory and worker, and adjust the
+paths. For a project made with `evlet setup`, see
+[Serve an instance behind Caddy](cli.md#serve-an-instance-behind-caddy) instead.
+
 Caddy serves only the built frontend and proxies `/api`, `/api/*`, and `/health`
 to loopback Uvicorn. The attachment directory is never a static root. The service
 uses one worker, a private umask, restricted filesystem writes, and restart on

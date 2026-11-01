@@ -132,6 +132,16 @@ def test_account_management_revokes_sessions_and_preserves_last_admin(secured):
     assert all('password' not in row for row in admin('GET', '/api/auth/users')[1]['items'])
 
 
+def test_deleting_a_project_removes_more_than_100_tasks(secured):
+    with secured.database.transaction() as tx:
+        project = tx.create(Project, name='Large')
+        for index in range(150):
+            tx.create(ProjectTask, project=project.id, title=f'Task {index}')
+    status, _, _ = client(secured)('DELETE', f'/api/project/{project.id}')
+    assert status == 204
+    assert secured.database.count(ProjectTask, filters={'project': project.id}) == 0
+
+
 def test_viewer_cannot_mutate_any_business_surface(secured):
     project = secured.database.create(Project, name='Private')
     c = client(secured, 'viewer')
