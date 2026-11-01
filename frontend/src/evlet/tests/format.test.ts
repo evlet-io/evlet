@@ -10,7 +10,7 @@ describe('formatting', () => {
     expect(formatMoney('99', { currency: 'USD', scale: 0 })).toBe('USD 99');
     expect(formatMoney(null)).toBe('');
     expect(formatNumber('5.5', 3)).toBe('5.500');
-    expect(formatNumber('not a number')).toBe('not a number');
+    expect(formatNumber('not a number')).toBe('Invalid amount');
   });
 
   it('shows dates as DD-MM-YYYY and reads them back', () => {
@@ -26,7 +26,7 @@ describe('formatting', () => {
 
   it('uses Gulf Standard Time for timestamps and today', () => {
     expect(formatDateTime('2026-11-01T20:30:00Z')).toBe('02-11-2026 00:30');
-    expect(formatDateTime('nonsense')).toBe('');
+    expect(formatDateTime('nonsense')).toBe('Invalid date');
     expect(todayGst(new Date('2026-10-31T19:59:00Z'))).toBe('2026-10-31');
     expect(todayGst(new Date('2026-10-31T20:00:00Z'))).toBe('2026-11-01');
   });
