@@ -5,7 +5,7 @@ The current scope is the native SolidJS UI and Python UI contracts. Preserve
 the completed backend milestones and the approved Projects demo. Keep login,
 Docs after sign-in, Demo Pages and generated model screens working. Read
 `docs/ui.md` for the public UI API and migration boundaries. Read
-`docs/business-capabilities.md`, `docs/tenancy-deployment.md`,
+`docs/business-capabilities.md`, `docs/finite-calculations.md`, `docs/tenancy-deployment.md`,
 `docs/jobs-realtime.md`, and `docs/connector.md` for public APIs and permission
 boundaries. Read `docs/postgresql.md`, `docs/performance.md`, and
 `docs/production-operations.md` for adapter limits and validation. Connector writes must use the existing

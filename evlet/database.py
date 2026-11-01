@@ -124,8 +124,26 @@ class Session:
     def __init__(self, connection, registry):
         self.connection = connection
         self.registry = registry
+        self._maintenance = False
+
+    @contextmanager
+    def maintenance(self):
+        """Audited repairs only: raw writes to finite-v1 documents skip settlement, so the
+        caller must restore calculated invariants (for example by resaving through Context)."""
+        previous, self._maintenance = self._maintenance, True
+        try:
+            yield self
+        finally:
+            self._maintenance = previous
+
+    def _guard(self, model):
+        plan_for = getattr(self.registry, 'plan_for', None)
+        if not self._maintenance and plan_for is not None and plan_for(model) is not None:
+            raise ValueError(f'{model.__name__} is a finite-v1 document; write it through Context.create/update '
+                             '(document settlement) or inside session.maintenance() for an audited repair')
 
     def create(self, model, /, **values):
+        self._guard(model)
         table = identifier(self.registry.name_for(model))
         record = model(**values)
         names = list(model.__fields__)
@@ -167,6 +185,7 @@ class Session:
         return [model._from_row(row) for row in rows]
 
     def update(self, model, record_id, /, **changes):
+        self._guard(model)
         current = self.get(model, record_id)
         record = model(**{**current._values, **changes})
         if changes:
@@ -179,6 +198,7 @@ class Session:
         return self.get(model, record_id)
 
     def delete(self, model, record_id):
+        self._guard(model)
         self.get(model, record_id)
         table = identifier(self.registry.name_for(model))
         self.connection.execute(f'DELETE FROM {table} WHERE "id" = ?', (record_id,))

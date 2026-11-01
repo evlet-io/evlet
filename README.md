@@ -30,6 +30,8 @@ need Node 24 when building their assets.
 
 The [declarative app guide](docs/amendment-v2.md) covers flat app packages,
 owned child tables, reactive fields, dialogs, reports, services and native additions.
+[Finite calculations](docs/finite-calculations.md) describe the finite-v1 formula
+language, nested owned tables and the shared Python/browser calculation engine.
 
 For virtual environment setup and each step explained, read
 [Your first site](docs/getting-started.md).

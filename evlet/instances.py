@@ -338,6 +338,8 @@ def register_schedules(app, schedules):
     with app.database.transaction() as tx:
         for row in tx.connection.execute('SELECT name FROM evlet_calendar_schedules').fetchall():
             if row['name'] not in calendar_names:
+                # Only an active schedule is retired, so an operator-disabled one stays disabled when restored.
+                tx.connection.execute('UPDATE evlet_calendar_schedules SET retired=1 WHERE name=? AND retired=0 AND EXISTS (SELECT 1 FROM evlet_schedules WHERE name=? AND enabled=1)', (row['name'], row['name']))
                 tx.connection.execute('UPDATE evlet_schedules SET enabled=0 WHERE name=?', (row['name'],))
     for schedule in schedules:
         if isinstance(schedule, CalendarSchedule):
@@ -353,9 +355,12 @@ def register_schedules(app, schedules):
             if old is None:
                 raise ValueError('Calendar schedule collides with an interval schedule')
             with app.database.transaction() as tx:
-                if (old['expression'], old['timezone']) != (schedule.expression, zone):
-                    tx.connection.execute('UPDATE evlet_calendar_schedules SET expression=?, timezone=? WHERE name=?', (schedule.expression, zone, schedule.name))
-                    tx.connection.execute('UPDATE evlet_schedules SET next_run=?, task=? WHERE name=?', (calendar.next(int(time.time())), schedule.task, schedule.name))
+                if old['retired']:
+                    tx.connection.execute('UPDATE evlet_schedules SET enabled=1 WHERE name=?', (schedule.name,))
+                if old['retired'] or (old['expression'], old['timezone']) != (schedule.expression, zone):
+                    tx.connection.execute('UPDATE evlet_calendar_schedules SET expression=?, timezone=?, retired=0 WHERE name=?', (schedule.expression, zone, schedule.name))
+                    tx.connection.execute('UPDATE evlet_schedules SET next_run=? WHERE name=?', (calendar.next(int(time.time())), schedule.name))
+                tx.connection.execute('UPDATE evlet_schedules SET task=? WHERE name=? AND task<>?', (schedule.task, schedule.name, schedule.task))
             continue
         if not isinstance(schedule, Schedule):
             raise ValueError('Register Schedule definitions')

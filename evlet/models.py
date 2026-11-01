@@ -14,7 +14,12 @@ def identifier(name):
 
 
 def storage_name(model):
-    return getattr(model, 'storage_name', model.__name__.lower())
+    # A field may itself be called storage_name, so only a str class attribute names the table.
+    for cls in model.__mro__:
+        value = vars(cls).get('storage_name')
+        if isinstance(value, str):
+            return value
+    return model.__name__.lower()
 
 
 class ValidationError(ValueError):
@@ -113,26 +118,50 @@ class Registry:
     def __init__(self, *models):
         from .fields import Integer
         from .business import ChildTable
+        from .calc import CalcError, LIMITS, is_finite, root_language
         self.children = []
         expanded = list(models)
-        for model in models:
+
+        def finite(model, seen=()):
+            # Finite-v1 roots own nested tables; legacy roots keep one level.
+            if model in seen:
+                raise CalcError('MODEL_CONTAINMENT_CYCLE', ' -> '.join(item.__name__ for item in seen + (model,)))
+            return any(is_finite(field) for field in model.__declared_fields__.values()) or any(
+                isinstance(table.child, type) and issubclass(table.child, Child) and finite(table.child, seen + (model,))
+                for table in model.__tables__.values())
+
+        def expand(model, owners, nested):
             for name, table in model.__tables__.items():
-                if not isinstance(table.child, type) or not issubclass(table.child, Child) or table.child.__tables__:
-                    raise ValueError('Tables require Child subclasses; nested tables are unsupported')
-                storage = table.storage_name or getattr(model, 'storage_name', model.__name__.lower()) + '_' + name
-                identifier(storage)
-                identifier(table.owner_field)
-                if table.owner_field in table.child.__declared_fields__ or 'evlet_position' in table.child.__declared_fields__:
-                    raise ValueError('Child owner and order fields are framework-managed')
-                child = type(table.child.__name__, (table.child,), {
-                    '__module__': model.__module__, 'storage_name': storage,
-                    '__resource_id__': getattr(model, '__resource_id__', model.__name__) + '.' + name,
-                    table.owner_field: Link(model, required=True, index=True, hidden=True, read_only=True),
-                    'evlet_position': Integer(required=True, default=0, hidden=True, read_only=True),
-                    '__internal_fields__': (table.owner_field, 'evlet_position'),
-                })
-                expanded.append(child)
-                self.children.append(ChildTable(model, name, child, table.owner_field, table.label or name.replace('_', ' ').title()))
+                if not isinstance(table.child, type) or not issubclass(table.child, Child):
+                    raise ValueError('Tables require Child subclasses')
+                if table.child in owners:
+                    raise CalcError('MODEL_CONTAINMENT_CYCLE', ' -> '.join(item.__name__ for item in owners + (table.child,)))
+                if table.child.__tables__ and not nested:
+                    raise ValueError('Nested tables require a finite-v1 root (Meta.calculation_language = "finite-v1")')
+                if len(owners) > LIMITS['table_depth']:
+                    raise CalcError('CALCULATION_LIMIT_EXCEEDED', f'Owned tables nest deeper than {LIMITS["table_depth"]}')
+                child = generate(model, name, table)
+                expand(child, owners + (table.child,), nested)
+
+        def generate(model, name, table):
+            storage = table.storage_name or storage_name(model) + '_' + name
+            identifier(storage)
+            identifier(table.owner_field)
+            if table.owner_field in table.child.__declared_fields__ or 'evlet_position' in table.child.__declared_fields__:
+                raise ValueError('Child owner and order fields are framework-managed')
+            child = type(table.child.__name__, (table.child,), {
+                '__module__': model.__module__, 'storage_name': storage,
+                '__resource_id__': getattr(model, '__resource_id__', model.__name__) + '.' + name,
+                table.owner_field: Link(model, required=True, index=True, hidden=True, read_only=True),
+                'evlet_position': Integer(required=True, default=0, hidden=True, read_only=True),
+                '__internal_fields__': (table.owner_field, 'evlet_position'),
+            })
+            expanded.append(child)
+            self.children.append(ChildTable(model, name, child, table.owner_field, table.label or name.replace('_', ' ').title()))
+            return child
+        for model in models:
+            if isinstance(model, type) and issubclass(model, Model) and getattr(model, '__tables__', None):
+                expand(model, (model,), finite(model) or root_language(model) is not None)
         models = tuple(expanded)
         registered = {}
         resources = {}
@@ -140,7 +169,7 @@ class Registry:
             if not isinstance(model, type) or not issubclass(model, Model) or model is Model:
                 raise ValueError("Register Model subclasses")
             if getattr(model, '__transient__', False): raise ValueError('Transient forms cannot be persistent models')
-            name = getattr(model, 'storage_name', model.__name__.lower())
+            name = storage_name(model)
             identifier(name)
             if not re.fullmatch('[a-z][a-z0-9_]*', name):
                 # Model names are also UI routes, which are lowercase.
@@ -172,12 +201,45 @@ class Registry:
             resolve_sources(self, model)
         from .reactivity import graph
         child_models = {child.model for child in self.children}
+        from .calc import compile_plan
+        plans = {}
         for model in models:
             if getattr(model, '__declaration_mode__', False) and model not in child_models:
                 graph(self, model)
+                plan = compile_plan(self, model)
+                if plan is not None:
+                    plans[model] = plan
+        self.plans = MappingProxyType(plans)
+        self.roots = MappingProxyType({child.model: root for root in plans for child in self.children if self.root_of(child.model) is root})
+
+    def root_of(self, model):
+        owners = {child.model: child.parent for child in self.children}
+        while model in owners:
+            model = owners[model]
+        return model
+
+    def finite_reads(self, model, name):
+        """(scope, model, field) inputs of a finite computed field, resolved to models."""
+        plan, path, owners = self.plan_for(model), [], {child.model: child for child in self.children}
+        item = model
+        while item in owners:
+            path.insert(0, owners[item].name)
+            item = owners[item].parent
+        field = next(entry for entry in plan['fields'] if entry['path'] == path and entry['field'] == name)
+        tables = {child.name: child.model for child in self.children if child.parent is model}
+        result = []
+        for scope, table, read in field['reads']:
+            if scope == 'self': result.append(('self', model, read))
+            elif scope == 'parent': result.append(('parent', owners[model].parent, read))
+            else: result.append((scope, tables[table], read))
+        return result
+
+    def plan_for(self, model):
+        """The finite plan governing a model's document, or None for legacy calculation."""
+        return self.plans.get(self.root_of(model))
 
     def name_for(self, model):
-        name = getattr(model, 'storage_name', model.__name__.lower())
+        name = storage_name(model)
         if self.models.get(name) is not model:
             raise ValueError("Model does not belong to this registry")
         return name

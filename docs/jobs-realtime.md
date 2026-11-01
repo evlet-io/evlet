@@ -121,9 +121,14 @@ The worker calls `tick()` before claiming work. Each tick processes at most 100 
 schedules. An occurrence and its next due time commit together. After downtime,
 missed intervals coalesce into one job and the next time advances to the next
 anchored interval. An unknown task disables its schedule and writes a private log
-entry. There is no cron expression, time-zone calendar, or separate scheduler
-service. Disable a schedule with `set_schedule_active(name, False)`; this does not
-cancel jobs already queued.
+entry. `CalendarSchedule` (or `@cron`) takes a five-field numeric cron expression
+(`*`, lists, ranges, and steps) evaluated in an IANA time zone, the instance zone by
+default; nonexistent local times are skipped and ambiguous ones run once. Each
+release reconciles declared calendar schedules: a changed expression, zone, or task
+is applied, a removed schedule is disabled, and declaring it again re-enables it
+with a fresh due time. There is no separate scheduler service. Disable a schedule
+with `set_schedule_active(name, False)`; this does not cancel jobs already queued,
+and reconciliation never re-enables a schedule an operator disabled.
 
 For the tenant Playground, replace the paths, tenant, record, and account IDs with
 values from that catalog:

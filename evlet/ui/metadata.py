@@ -12,10 +12,11 @@ def label_for(name):
 
 def view_for(model):
     meta = getattr(model, 'Meta', None)
-    allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout'}
+    allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
+               'calculation_language', 'numeric_profile'}
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
-            raise ValueError('Model.Meta supports label, plural, description, title_field, list_fields, search_fields, and layout')
+            raise ValueError('Model.Meta supports label, plural, description, title_field, list_fields, search_fields, layout, calculation_language and numeric_profile')
     visible = {name: field for name, field in model.__declared_fields__.items() if not field.hidden}
     texts = [name for name, field in visible.items() if isinstance(field, Text) and not isinstance(field, LongText)]
     label = getattr(meta, 'label', label_for(model.__name__))

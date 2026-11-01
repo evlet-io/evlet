@@ -95,6 +95,13 @@ def test_reference_app_full_public_flow(project):
     assert report[0] == 200, report
     assert report[1]['rows'][0]['total'] == '6.75'
     assert c('GET', f'/api/_services/amendment.services.integrations.warehouse.checks.balance_count?warehouse={warehouse}')[1] == {'count': 1}
+    quote = {'name': 'Q-1', 'inclusive': True, 'children': {'lines': [{'_key': 'a', 'qty': '1', 'rate': '105'},
+                                                                      {'_key': 'b', 'qty': '2', 'rate': '10', 'taxable': False}]}}
+    status, saved, _ = c('POST', '/api/quote', quote)
+    assert status == 201, saved
+    assert (saved['net_total'], saved['vat_total'], saved['taxable_net'], saved['grand_total']) == ('120.00', '5.00', '100.00', '125.00')
+    calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
+    assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest
     assert len(manifest['apis']) == len(manifest['schedules']) == len(manifest['native']['panels']) == 1
     schema = c('GET', '/api/schema')[1]
@@ -217,3 +224,13 @@ def test_delegated_commands_keep_the_working_directory_off_sys_path(tmp_path, mo
     monkeypatch.delenv('EVLET_DELEGATED_PROJECT', raising=False)
     setup.delegate(root, ['serve'])
     assert calls[0][1:] == ['-P', '-m', 'evlet', 'serve']
+
+
+def test_build_subprocess_ignores_modules_in_the_working_directory(project, monkeypatch, tmp_path):
+    create_app(project, 'notes')
+    cwd, marker = tmp_path / 'elsewhere', tmp_path / 'shadowed'
+    cwd.mkdir()
+    (cwd / 'decimal.py').write_text(f'open({str(marker)!r}, "w").close()\nraise SystemExit("shadow module imported")\n')
+    monkeypatch.chdir(cwd)
+    prepare(project, resolve_packages(project, ['notes']))
+    assert not marker.exists()

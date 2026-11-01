@@ -171,7 +171,8 @@ def prepare(root, packages):
                                'dependencies': [str(item) for item in package.dependencies]})
             request = stage / 'request.json'
             request.write_text(json.dumps(copied))
-            result = subprocess.run([sys.executable, '-m', 'evlet.builds', str(request), str(stage / 'manifest.json')],
+            # -P keeps the caller's working directory off sys.path so local files cannot shadow modules.
+            result = subprocess.run([sys.executable, '-P', '-m', 'evlet.builds', str(request), str(stage / 'manifest.json')],
                                     capture_output=True, text=True, timeout=120)
             if result.returncode:
                 raise ValueError('Application build failed:\n' + result.stderr.strip())

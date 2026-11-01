@@ -6,7 +6,8 @@ import re
 
 def model_key(model):
     """Schema and route name of a model, which honours storage_name."""
-    return getattr(model, "storage_name", model.__name__.lower())
+    from ..models import storage_name
+    return storage_name(model)
 
 
 SCOPES = ("component", "view", "record", "application")

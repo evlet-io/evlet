@@ -86,3 +86,15 @@ def test_empty_model_and_unregistered_model(tmp_path):
         db.create(Customer, name="No")
     with pytest.raises(ValueError, match="temporary file"):
         Database(":memory:", registry)
+
+
+def test_field_named_storage_name_is_data_not_the_table_name(tmp_path):
+    from evlet import Text
+    from evlet.ui.expressions import model_key
+    class Bin(Model):
+        storage_name = Text()
+    db = Database(tmp_path / "bin.sqlite3", Registry(Bin))
+    db.initialize()
+    assert model_key(Bin) == db.registry.name_for(Bin) == "bin"
+    created = db.create(Bin, storage_name="cold")
+    assert db.get(Bin, created.id).storage_name == "cold"
