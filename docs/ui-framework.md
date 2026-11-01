@@ -1,7 +1,8 @@
 # Evlet UI framework
 
-Status: core in place (phase `ui/01-core` of [handoff-plan.md](handoff-plan.md)). Components,
-screens and the switch away from SolidJS follow in later phases. The code lives in
+Status: core and component library in place (phases `ui/01-core` and `ui/02-components` of
+[handoff-plan.md](handoff-plan.md)). Screens and the switch away from SolidJS follow in later
+phases. The code lives in
 `frontend/src/evlet/` and imports nothing from SolidJS, the current views or
 `frontend/legacy`. It has no dependencies of its own.
 
@@ -16,6 +17,7 @@ screens and the switch away from SolidJS follow in later phases. The code lives 
 | `model/changes.ts` | Save bodies and Table change sets |
 | `model/format.ts` | AED money, DD-MM-YYYY dates, GST time |
 | `model/schema.ts` | Types for `GET /api/schema` |
+| `ui/` | Components, their stylesheet and the Library page (see Components) |
 
 There is no virtual DOM. A template builds DOM once, and each dynamic value in it is bound
 to one effect that updates one node, attribute or property.
@@ -239,6 +241,92 @@ await record.save();                       // the server's answer replaces the d
   zone: a timestamp with `Z` or an offset is converted, one without a zone is taken as GST
   already. `todayGst()` is the date `today()` uses.
 
+## Components
+
+`frontend/src/evlet/ui/` holds the component library of the approved design
+([ui-design/README.md](ui-design/README.md)). Every component is a plain function that returns
+DOM built with `html` and bound to cells. Properties are plain values, accessors or cells; a
+plain value is set once, a reactive one updates only the node bound to it. Import
+`ui/styles.css` once per page: it carries the design tokens for both themes and the mockup's
+class names.
+
+| Module | Components |
+|---|---|
+| `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, Stat, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
+| `tooltip.ts` | `tooltip(element, text)`: one page-wide tooltip on hover and focus, never on touch |
+| `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `openModal`, `openDrawer`, `toast` (with Undo), `copyText` |
+| `fields.ts`, `kinds.ts` | BaseField and one component per field type, `FieldControl`, `displayValue`, `localField`, Link search |
+| `inline.ts` | InlineValue, KeyValueList, FormSection |
+| `table.ts` | DataTable and the column, resize and virtual-window helpers |
+| `childtable.ts` | ChildTable over a record store `Table` |
+| `doc.ts` | DocFrame, DocHeader, MoveButton, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
+| `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
+| `library.ts` | The Library page; open `/evlet.html` on the dev server (`npm run dev`) |
+
+Fields bind to the record store's field cells: the value, `error`, the `applies`, `required`
+and `locked` rules, and `result` for calculated fields. A field explains the model in place:
+a lock hint says why ("Locked when Stage is won"), a calculated value shows its rule
+(`ƒ calculated`, "= round(qty * rate, 2)"), an initial value says where it came from
+("from product") until the user edits it. Typed text is parsed per type (DD-MM-YYYY dates,
+GST date-times, exact decimals, `1h 30m` durations) and a wrong value stays in the input with
+a message that says how to fix it. `localField()` makes the same cells for forms that are not
+records, such as action dialogs.
+
+A screen composed by hand from a record store:
+
+```ts
+import './evlet/ui/styles.css';
+import { mount } from './evlet/dom';
+import { ChildTable, DocFrame, DocHeader, FormSection, LockBanner, RecordMark, SideBlock,
+  KeyValueList, SummaryStrip, TabPanel, Tabs } from './evlet/ui';
+import { cell } from './evlet/reactive';
+import { formatMoney } from './evlet/model/format';
+import { RecordStore } from './evlet/model/record';
+
+const record = new RecordStore({ api, schema, model: 'order' });
+await record.open(42);
+const tab = cell('details');
+const tabs = Tabs({ tabs: [{ id: 'details', label: 'Details' }, { id: 'lines', label: 'Lines', count: () => record.table('lines').rows.get().length }],
+  active: tab, label: 'Order', doc: true });
+
+mount(document.querySelector('#app')!, () => DocFrame({
+  tint: 'blue',
+  main: [
+    DocHeader({ type: 'Order', icon: 'receipt', mark: RecordMark({ name: 'Big order', size: 'lg' }), title: record.field('title') }),
+    LockBanner({ lifecycle: () => record.field('stage').value.get() === 'won' ? 'locked' : 'draft', state: 'Won' }),
+    SummaryStrip([{ label: 'Total', value: () => formatMoney(record.field('total').value.get() as string) }]),
+    tabs,
+    TabPanel(tabs, 'details', tab, () => FormSection({ title: 'Details', fields: ['title', 'customer', 'stage', 'due', 'total'].map(name => record.field(name)) })),
+    TabPanel(tabs, 'lines', tab, () => ChildTable({ table: record.table('lines'), columns: ['product', 'qty', 'rate', 'amount'] })),
+  ],
+  side: SideBlock({ title: 'Key fields', body: KeyValueList([record.field('stage'), record.field('total')]) }),
+}));
+```
+
+- **InlineValue** reads first and edits in place: click or Enter opens the field's input,
+  Enter saves (one field, through `record.save()`, no Save button), Esc cancels, leaving the
+  field saves. A refused save keeps the input open with the server's message; a saved one
+  confirms with a toast that has Undo.
+- **ChildTable** binds to a record `Table`: click or Enter edits a cell, Tab and Shift Tab move
+  across editable cells and wrap rows, Enter moves down, Esc cancels, arrow keys move between
+  cells, typing starts editing, Alt and an arrow moves a row. Rows can be added, duplicated,
+  removed (with Undo), opened in place with every field, and the table can take over the
+  view (focus view). The footer and the totals under it come from the parent's calculated
+  sums over the table (`total = lines.sum("amount")`). Only rows in view are in the DOM.
+- **DataTable** sorts (exact for decimals), resizes (double click resets), reorders columns
+  (drag a header, or Alt and an arrow), pins the first column, selects rows, moves with the
+  arrow keys and opens with Enter. Widths, order and hidden columns live in a `TablePrefs`
+  cell the screen saves per user.
+- Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
+  first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
+  polite live region. Data is always text: nothing a record holds is parsed as markup.
+
+The Library page (`ui/library.ts`) lists all 114 components of the design catalog with their
+details and a live demo for each one built here; the rest are marked for the screens phase.
+The development entry (`frontend/evlet.html`, `src/evlet/dev.ts`) runs it against a sample
+order replayed from `api-fixture.json`, so record-bound components work without a server. It
+is not part of the production build.
+
 ## Tests and benchmarks
 
 The tests in `frontend/src/evlet/tests/` run in jsdom with `npm test`. API and record store
@@ -250,6 +338,9 @@ diff). The record store also replays the shared finite-v1 scenarios through its 
 
 ## Limits of this phase
 
-- No components yet. The screens still run on SolidJS.
+- The screens still run on SolidJS. Shell, palette, journal, home and report components come
+  with the screens (they show as "later" in the Library).
+- Date fields take typed DD-MM-YYYY text; there is no calendar picker yet. Reference fields
+  are read only until the schema lists the models they may point to.
 - State metadata (`record.state`) is read when the schema sends it.
 - Lookups that a role cannot read stay pending; their saved results keep showing.
