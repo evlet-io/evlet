@@ -7,29 +7,44 @@ import { createRouter, type Router } from '../router';
 import type { SchemaIndex } from '../model/schema';
 import type { LinkSource } from '../ui/fields';
 import type { AppClient } from './client';
+import { readConfig } from './config';
 import type { Prefs } from './prefs';
 
 /** The route table. These are the paths the Python server serves the app for (evlet/ui/routes.py).
- * /app/:model/new comes before /app/:model/:id so "new" is never taken for an id. /app/:model/:id/view
+ * The model screens live under the frontend's base from the config block (/app for the desk).
+ * <base>/:model/new comes before <base>/:model/:id so "new" is never taken for an id. <base>/:model/:id/view
  * is an older link to a record and opens the record. Accounts and reports are not part of this UI;
  * their addresses still open and say so. */
-export const ROUTES = {
+const FIXED = {
   home: '/',
   login: '/login',
   docs: '/docs',
   topic: '/docs/:topic',
-  create: '/app/:model/new',
-  record: '/app/:model/:id',
-  view: '/app/:model/:id/view',
-  list: '/app/:model',
   accounts: '/settings/accounts',
   report: '/reports/:report',
 } as const;
-export type Routes = typeof ROUTES;
+const MODELS = {
+  create: '/:model/new',
+  record: '/:model/:id',
+  view: '/:model/:id/view',
+  list: '/:model',
+} as const;
+export type Routes = typeof FIXED & typeof MODELS;
 export type AppRouter = Router<Routes>;
 
-export function appRouter(options: { base?: string; window?: Window } = {}): AppRouter {
-  return createRouter(ROUTES, options);
+/** The route table for a base (where the model screens are mounted) and a Docs path. */
+export function appRoutes(base: string, docs = '/docs'): Routes {
+  const prefix = base.replace(/\/$/, '');
+  return {
+    ...FIXED, docs, topic: `${docs}/:topic`,
+    ...Object.fromEntries(Object.entries(MODELS).map(([name, path]) => [name, prefix + path])),
+  } as unknown as Routes;
+}
+
+/** A router over the page's config block, unless base and docs are given. */
+export function appRouter(options: { base?: string; docs?: string; window?: Window } = {}): AppRouter {
+  const config = readConfig(options.window?.document);
+  return createRouter(appRoutes(options.base ?? config.base, options.docs ?? config.docs ?? '/docs'), { window: options.window });
 }
 
 export interface Crumb { label: string; href?: string }
