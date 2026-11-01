@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import fixtures from './finite-fixtures.json';
-import engineSource from '../runtime/FiniteEngine.ts?raw';
+import engineSource from '../model/finite.ts?raw';
 import fixtureSource from './finite-fixtures.json?raw';
-import { FiniteDocument, CalcError, parse, text, add, sub, mul, div, quantize, fingerprint, sha256, canonical, dayNumber, dayText } from '../runtime/FiniteEngine';
+import { FiniteDocument, CalcError, parse, text, add, sub, mul, div, quantize, fingerprint, sha256, canonical, dayNumber, dayText } from '../model/finite';
 
 const plans = fixtures.plans as Record<string, any>;
 
@@ -73,9 +73,9 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     expect(() => new FiniteDocument(plans.invoice, {children: {items: null}})).toThrow('DOCUMENT_STRUCTURE_ERROR');
   });
 
-  it('imports without SolidJS or the DOM', () => {
+  it('imports nothing and does not use the DOM', () => {
     expect(engineSource).not.toMatch(/^\s*import\b/m);
-    expect(engineSource).not.toMatch(/\b(window|globalThis)\.|solid-js|\bdocument\.(createElement|body|querySelector)/);
+    expect(engineSource).not.toMatch(/\b(window|globalThis)\.|\bdocument\.(createElement|body|querySelector)/);
   });
 
   it.each(fixtures.numeric as any[])('computes $op($a, $b) like Python', (item: any) => {

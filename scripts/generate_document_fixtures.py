@@ -31,7 +31,7 @@ def main():
         app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
         app.initialize()
         http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
-        path = Path(__file__).resolve().parents[1] / 'frontend/src/tests/document-contract.json'
+        path = Path(__file__).resolve().parents[1] / 'tests/fixtures/document-contract.json'
         path.write_text(json.dumps(collect(app), indent=2) + '\n')
 
 

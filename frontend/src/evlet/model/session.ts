@@ -5,7 +5,7 @@
 // rules. Its results flow into the field cells. It supplies today() and reads the Link
 // lookups it waits for (customer.credit_days) with GET /api/{model}/{id}.
 
-import { FiniteDocument, wire, type Result, type RuleState } from '../../runtime/FiniteEngine';
+import { FiniteDocument, wire, type Result, type RuleState } from './finite';
 import type { ApiClient } from '../api';
 import { batch } from '../reactive';
 import type { Row, Table } from './record';

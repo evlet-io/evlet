@@ -1,4 +1,8 @@
-"""Generate shared UI contracts through the Playground's real ASGI routes."""
+"""Record the Playground's Python page (/api/ui) and record contracts through real ASGI routes.
+
+Writes tests/fixtures/ui-fixture.json and record-fixture.json; tests/test_ui_contracts.py compares.
+Run from the repository root: .venv/bin/python -m scripts.generate_ui_fixtures
+"""
 
 import asyncio
 import json
@@ -69,7 +73,7 @@ def generate():
 
 
 def main():
-    destination = Path(__file__).resolve().parents[1] / 'frontend/src/tests'
+    destination = Path(__file__).resolve().parents[1] / 'tests/fixtures'
     for name, value in generate().items():
         (destination / name).write_text(json.dumps(value, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
         print('Updated', name)

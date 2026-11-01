@@ -2,7 +2,7 @@
 // Money is exact: values are decimal strings (as the API sends them) or safe integers, and use
 // the calculation engine's arithmetic. Anything else shows a placeholder instead of a guess.
 
-import { parse, quantize, text } from '../../runtime/FiniteEngine';
+import { parse, quantize, text } from './finite';
 
 /** Gulf Standard Time (Asia/Dubai) has no daylight saving, so a fixed offset is exact. */
 export const GST_OFFSET_MINUTES = 4 * 60;

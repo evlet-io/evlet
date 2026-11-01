@@ -1,5 +1,5 @@
 // Finite-v1 document evaluator. It mirrors evlet/calc.py over the same serialized plan.
-// Pure: no SolidJS, DOM, network or clock. The server remains the persistence authority.
+// Pure: no imports, DOM, network or clock. The server remains the persistence authority.
 export const LANGUAGE = 'finite-v1';
 export const PROFILE = 'finite40-hu18-v1';
 const MAX_DIGITS = 40, MAX_SCALE = 36, DIVISION_SCALE = 18, SAFE_INTEGER = 2n ** 53n - 1n, STORED_LIMIT = 2n ** 63n - 1n;

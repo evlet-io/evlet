@@ -5,7 +5,7 @@
 
 import { each, html, type Child } from '../dom';
 import { cell, derive, effect, onCleanup, untrack, type Cell, type Derive } from '../reactive';
-import { compare as compareNumbers, parse as parseNumber } from '../../runtime/FiniteEngine';
+import { compare as compareNumbers, parse as parseNumber } from '../model/finite';
 import { Checkbox, Icon } from './base';
 import { read, type Prop } from './core';
 

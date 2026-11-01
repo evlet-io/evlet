@@ -1,7 +1,7 @@
 // Opt-in measurements: FINITE_BENCH=1 FINITE_BENCH_OUT=bench.json npx vitest run src/tests/finite-benchmark.test.ts
 import { it } from 'vitest';
 import fixtures from './finite-fixtures.json';
-import { FiniteDocument } from '../runtime/FiniteEngine';
+import { FiniteDocument } from '../model/finite';
 
 const plans = fixtures.plans as Record<string, any>;
 const process: any = (globalThis as any).process;

@@ -1,5 +1,4 @@
-// The Docs landing page after sign-in: the developer guide that the SolidJS Docs view carries,
-// with its topics, examples and the models of this workspace. The Python page renderer and the
+// The Docs landing page after sign-in: the developer guide, with its topics, examples and the models of this workspace. The Python page renderer and the
 // Projects demo are not rendered by this interface (docs/handoff-plan.md, decision 3), so their
 // topics point to the Python APIs instead of live demos.
 

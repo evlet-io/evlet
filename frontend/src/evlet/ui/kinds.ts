@@ -4,7 +4,7 @@
 // Values keep the wire format the Python fields use: exact decimals as strings, dates as ISO
 // dates, date-times in UTC, times as HH:MM:SS, durations as ISO 8601 (PT1H30M), tags as lists.
 
-import { parse as parseNumber, quantize, text as numberText } from '../../runtime/FiniteEngine';
+import { parse as parseNumber, quantize, text as numberText } from '../model/finite';
 import { formatDate, formatDateTime, formatMoney, formatNumber, GST_OFFSET_MINUTES, parseDate } from '../model/format';
 import type { FieldSchema } from '../model/schema';
 
