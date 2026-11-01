@@ -241,6 +241,21 @@ line amount, the footer total, the summary total and the editor opening on the c
 DataTable also virtualizes; the benchmark gives it a viewport tall enough to render all
 100 rows.
 
+### Screens, 2 November 2026
+
+Same machine and settings, `npm run bench:ui`. Both cases are measured from building the page to
+its rows in the DOM, with the fetch answered at once by a stub: the time is the screen's own
+work, parsing included.
+
+| Case | Median | Budget |
+| --- | ---: | ---: |
+| List page of `order`, 100 rows: header, saved views, toolbar, DataTable, load and first render | 8.7 ms | 50 ms |
+| Record view of `order` opened on its 1,000-line table tab: read the detail, attach calculations, header, summary and ChildTable | 50.3 ms | 100 ms |
+
+The list page renders the rows in view (21 of 100 at its 640 px viewport); the record view
+renders 21 of 1,000 lines. Most of the record's time is opening it (parsing 1,000 rows and
+attaching the calculation session); the ChildTable itself renders in about 13 ms.
+
 jsdom is not a browser. Its DOM operations are slower than a browser's and it does no
 layout or paint, so these numbers bound the framework's own work, not frame times. Browser
 timings (first screen, 60 fps scrolling) are measured against testCRM in phase
