@@ -9,8 +9,8 @@ from urllib.parse import quote
 import pytest
 
 from evlet import (Boolean, Count, CountDistinct, Currency, Database, Date, Day, Decimal, Integer, Link, LongText, Max, Min,
-                   Model, Month, NotFoundError, PostgreSQLDatabase, Registry, Rule, Select, Sum, Tags, Text, ValidationError,
-                   Year)
+                   Model, Month, Move, NotFoundError, PostgreSQLDatabase, Registry, Rule, Select, Sequence, State, Sum, Tags, Text,
+                   ValidationError, Year)
 from evlet.auth import AccessError, User
 from evlet.calc import D, F, today, when
 from test_business import client, http
@@ -521,3 +521,72 @@ def test_schema_lists_readable_declared_measures(app):
     shown = next(model for model in viewer('GET', '/api/schema')[1]['models'] if model['name'] == 'invoice')
     assert [item['name'] for item in shown['measures']] == ['count']
     assert 'measures' not in next(model for model in admin('GET', '/api/schema')[1]['models'] if model['name'] == 'payment')
+
+
+# Measures beside void, revise, moves and Sequence numbers on one model
+
+class NumberedMeta:
+    calculation_language = 'finite-v1'
+    numeric_profile = 'finite40-hu18-v1'
+    revisable = True
+    measures = {
+        # Declared conditions decide whether void records count.
+        'live_total': Sum('total', where=(F('status') == 'draft') | (F('status') == 'issued')),
+        'void_total': Sum('total', where=F('status') == 'void'),
+        'quotes': Count(),
+        'numbered': CountDistinct('number'),
+    }
+
+
+class NumberedQuote(Model):
+    Meta = NumberedMeta
+    permissions = {'admin': ALL}
+    name = Text(default='')
+    total = Currency(default='0')
+    number = Sequence('NQ-{n:03}', assign_on='issued')
+    status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),),
+                   locked=('issued', 'void'), final=('void',), voidable=('issued',))
+
+
+@pytest.fixture(params=['sqlite', 'postgresql'])
+def numbered(request, tmp_path):
+    registry = Registry(NumberedQuote)
+    if request.param == 'sqlite':
+        database = Database(tmp_path / 'numbered.sqlite3', registry)
+    else:
+        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    return start(database)
+
+
+def test_measures_with_void_revise_moves_and_sequences(numbered):
+    c = client(numbered)
+    base = '/api/numberedquote'
+    tag = lambda url: {b'if-match': c('GET', url)[2][b'etag']}
+    urls = []
+    for name, total in (('A', '10.00'), ('B', '20.00'), ('C', '5.00')):
+        status, record, _ = c('POST', base, {'name': name, 'total': total})
+        assert status == 201, record
+        urls.append(f"{base}/{record['id']}")
+    # Each route on one model: moves, void, revise, measures, per-record measures and aggregate.
+    for url in urls[:2]:
+        status, moved, _ = c('POST', url + '/moves/issued', {}, headers=tag(url))
+        assert status == 200 and moved['number'] is not None, moved
+    status, voided, _ = c('POST', urls[0] + '/void', {'reason': 'Duplicate'}, headers=tag(urls[0]))
+    assert status == 200 and voided['status'] == 'void' and voided['number'] == 'NQ-001', voided
+    status, copy, _ = c('POST', urls[1] + '/revise', {'reason': 'New price'}, headers=tag(urls[1]))
+    assert status == 201 and copy['number'] is None and copy['status'] == 'draft', copy
+    assert c('GET', base + '/measures')[1] == {
+        'measures': {'live_total': '25.00', 'void_total': '30.00', 'quotes': 4, 'numbered': 2}}
+    by_status = c('GET', f'{base}/aggregate?measures=n:count,t:sum:total&group_by=status')[1]
+    assert by_status['items'] == [{'status': 'draft', 'n': 2, 't': '25.00'}, {'status': 'void', 'n': 2, 't': '30.00'}]
+    # The revision link is an ordinary field to filter and group on.
+    revised = c('GET', f"{base}/aggregate?measures=n:count&filters={quote(json.dumps({'revises': copy['revises']}))}")[1]
+    assert revised['items'] == [{'n': 1}]
+    assert c('GET', f"{urls[0]}/measures")[1] == {'measures': {}}
+    # Measure routes are GET only; void and revise stay POST only.
+    assert c('POST', base + '/measures', {})[0] in (404, 405) and c('POST', base + '/aggregate', {})[0] in (404, 405)
+    assert c('GET', urls[0] + '/void')[0] in (404, 405) and c('GET', urls[0] + '/revise')[0] in (404, 405)
+    # Numbering the revision is reflected in the next read.
+    copy_url = f"{base}/{copy['id']}"
+    assert c('POST', copy_url + '/moves/issued', {}, headers=tag(copy_url))[1]['number'] == 'NQ-003'
+    assert c('GET', base + '/measures')[1]['measures']['numbered'] == 3
