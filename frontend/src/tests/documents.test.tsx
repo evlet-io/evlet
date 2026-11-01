@@ -49,6 +49,14 @@ describe('shared exact document expressions', () => {
     if (vector.error) expect(run).toThrow();
     else expect(run()).toBe(vector.expected);
   });
+  it('treats ordering against a missing value as false like the server', () => {
+    const empty = () => null;
+    for (const op of ['lt', 'lte', 'gt', 'gte']) {
+      expect(evaluate({$expr: op, args: [{$expr: 'ref', args: ['discount']}, 10]}, empty)).toBe(false);
+      expect(evaluate({$expr: op, args: [{$expr: 'ref', args: ['discount']}, '0.5']}, empty)).toBe(false);
+    }
+    expect(evaluate({$expr: 'eq', args: [{$expr: 'ref', args: ['discount']}, null]}, empty)).toBe(true);
+  });
   it('keeps lazy zero guards and row identities', () => {
     expect(evaluate({$expr: 'and', args: [{$expr: 'ref', args: ['qty']}, {$expr: 'div', args: [1,0]}]}, () => DecimalValue.from(0))).toBe(false);
     const row: any = {name: 'item', fields: [{name: 'qty', type: 'decimal'}, {name: 'rate', type: 'currency'}, {name: 'amount', type: 'currency', scale: 2}], behavior: {amount: {compute: vectors[0].expression}}};

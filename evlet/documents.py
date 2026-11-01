@@ -550,6 +550,8 @@ def typed_arguments(function, values, *, skip=0):
         kind = annotations.get(parameter.name)
         if parameter.kind not in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY) or kind not in (str, int, bool, float):
             raise ValueError('Action/API inputs require explicit scalar type annotations')
+        if kind is float and type(value) is int and abs(value) <= 2**53:
+            value = float(value)  # JSON cannot tell 1 from 1.0
         if value is inspect.Parameter.empty or type(value) is not kind:
             raise ValidationError({parameter.name: 'Expected ' + kind.__name__})
         import math

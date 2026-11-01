@@ -2,6 +2,7 @@ import { SelectInput } from "../ui";
 import {
   createSignal,
   createResource,
+  createMemo,
   onCleanup,
   Show,
   Switch,
@@ -167,8 +168,10 @@ function LinkInput(props: FieldInputProps) {
   const [query, setQuery] = createSignal(""),
     [offset, setOffset] = createSignal(0);
   const target = () => app.models.find((m) => m.name === props.field.target);
+  // Compare filters by content so unrelated form edits do not refetch options.
+  const filterKey = createMemo(() => props.filters === null ? null : JSON.stringify(props.filters || {}));
   const [page, { refetch }] = createResource(
-    () => props.filters === null ? false : ({ target: props.field.target, q: query(), offset: offset(), filters: props.filters || {} }),
+    () => filterKey() === null ? false : ({ target: props.field.target, q: query(), offset: offset(), filters: JSON.parse(filterKey()!) }),
     (args) => listRecords(args.target!, 20, args.offset, args.filters, "-id", args.q),
   );
   const [selected, { refetch: reloadSelected }] = createResource(

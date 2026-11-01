@@ -859,7 +859,11 @@ export default function RecordForm(props: {
       </Modal>
       <Show when={argumentAction()} keyed>{current => <Modal title={current.label} open onClose={() => {if (!busy()) setArgumentAction(null);}}
         footer={<><Button disabled={busy()} onClick={() => setArgumentAction(null)}>Cancel</Button><Button variant="primary" disabled={busy() || current.arguments.some((item: any) => item.required && argumentValues()[item.name] === '')} onClick={() => {
-          const values = Object.fromEntries(current.arguments.map((item: any) => [item.name, ['int', 'float'].includes(item.type) ? Number(argumentValues()[item.name]) : argumentValues()[item.name]]));
+          const numeric = (item: any) => ['int', 'float'].includes(item.type);
+          // An empty optional number is omitted so the action default applies.
+          const values = Object.fromEntries(current.arguments
+            .filter((item: any) => !numeric(item) || ![undefined, null, ''].includes(argumentValues()[item.name]))
+            .map((item: any) => [item.name, numeric(item) ? Number(argumentValues()[item.name]) : argumentValues()[item.name]]));
           void action(current.name, values);
         }}>Run</Button></>}>
         <For each={current.arguments}>{(item: any) => <Field label={item.name.replaceAll('_', ' ')} required={item.required}>{control =>

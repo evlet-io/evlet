@@ -329,3 +329,15 @@ def test_legacy_action_still_runs_on_model_with_declared_actions(tmp_path):
     status, result, _ = c('POST', f"/api/ticket/{ticket['id']}/actions/reopen")
     assert status == 200, result
     assert result['name'] == 'open'
+
+
+def test_float_action_arguments_accept_whole_json_numbers():
+    from evlet.documents import typed_arguments
+    def apply(self, rate: float = 1.0, count: int = 0):
+        pass
+    assert typed_arguments(apply, {'rate': 1}, skip=1) == {'rate': 1.0, 'count': 0}
+    assert type(typed_arguments(apply, {'rate': 2}, skip=1)['rate']) is float
+    with pytest.raises(ValidationError):
+        typed_arguments(apply, {'count': 1.5}, skip=1)
+    with pytest.raises(ValidationError):
+        typed_arguments(apply, {'rate': True}, skip=1)

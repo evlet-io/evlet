@@ -27,6 +27,8 @@ export function evaluate(value: any, read: (path: string) => any): any {
     const comparison = DecimalValue.from(a).compare(b);
     return ({eq: comparison === 0, ne: comparison !== 0, lt: comparison < 0, lte: comparison <= 0, gt: comparison > 0, gte: comparison >= 0} as any)[value.$expr];
   }
+  // Match the server: ordering against a missing value is false, not a comparison with 0.
+  if (['lt', 'lte', 'gt', 'gte'].includes(value.$expr) && (a == null || b == null)) return false;
   switch (value.$expr) {
     case "eq":
       return a === b;

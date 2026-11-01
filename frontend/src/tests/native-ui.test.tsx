@@ -640,3 +640,23 @@ it("loads the shared Python record detail and children contract", async () => {
   expect(screen.getByDisplayValue("Review pages")).toBeInTheDocument();
   expect(screen.getAllByRole("checkbox").filter((input) => (input as HTMLInputElement).checked)).toHaveLength(1);
 });
+it("refetches link options only when filter values change", async () => {
+  const project = models.find((m) => m.name === "project")!;
+  const [filters, setFilters] = createSignal<Record<string, any>>({ active: true });
+  context("/app/project/new", () => (
+    <FieldInput
+      id="filtered-customer"
+      field={project.fields.find((f) => f.name === "customer")!}
+      value={null}
+      filters={filters()}
+      onChange={() => {}}
+    />
+  ));
+  await waitFor(() => expect(api.listRecords).toHaveBeenCalledTimes(1));
+  setFilters({ active: true });
+  await Promise.resolve();
+  expect(api.listRecords).toHaveBeenCalledTimes(1);
+  setFilters({ active: false });
+  await waitFor(() => expect(api.listRecords).toHaveBeenCalledTimes(2));
+  expect(api.listRecords).toHaveBeenLastCalledWith("customer", 20, 0, { active: false }, "-id", "");
+});
