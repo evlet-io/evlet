@@ -1,6 +1,6 @@
 // The record view of a transaction document over responses recorded from the engine as an editor:
-// State and moves, Sequence, void and revise, effects, measures, meaning metadata and files. Only
-// the journal (Phase 8) is provisional (see provisional/README.md).
+// State and moves, Sequence, void and revise, effects, measures, meaning metadata, files and the
+// journal.
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, invoice, lastToast, requests, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
 import { copy, type Recorded, type Sent } from './server';
@@ -11,14 +11,15 @@ afterEach(stopAll);
 const draft = invoice.invoice_draft.body.id, voided = invoice.invoice_void.body.id, revised = invoice.invoice_revise_before.body.id;
 const copyId = invoice.invoice_revision.body.id;
 const path = (id: number, rest = '$') => new RegExp(`/api/invoice/${id}${rest}`);
-const routes = (detail: Recorded = invoice.invoice_draft): Route[] => [
+// The draft's journal as it was when the draft was read; every other detail replays the issued invoice's.
+const routes = (detail: Recorded = invoice.invoice_draft, journal = detail === invoice.invoice_draft ? invoice.invoice_draft_journal : invoice.invoice_journal): Route[] => [
   ['GET', /\/api\/auth\/session$/, invoice.session],
   ['GET', /\/api\/schema$/, invoice.schema],
   ['GET', path(detail.body.id), detail],
   ['GET', /\/api\/invoice\/\d+\/measures$/, invoice.invoice_record_measures],
   ['GET', /\/api\/invoice\/\d+\/related\/payment\.invoice/, invoice.invoice_related_payments],
   ['GET', /\/api\/invoice\/\d+\/related\/invoice\.revises/, invoice.invoice_related_revisions],
-  ['GET', /\/api\/invoice\/\d+\/journal/, invoice.invoice_journal],
+  ['GET', /\/api\/invoice\/\d+\/journal/, journal],
   ['GET', /\/api\/invoice\/\d+\/attachments$/, invoice.invoice_attachments],
   ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ['GET', new RegExp(`/api/payment/${invoice.invoice_payment.body.id}$`), invoice.invoice_payment],
@@ -44,11 +45,16 @@ describe('transaction document (recorded fixtures)', () => {
     // Summary: key fields then per-record measures.
     await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => `${text(item.querySelector('span'))}=${text(item.querySelector('b'))}`))
       .toEqual(['Customer=Al Sahra Trading', 'Total=AED 2,680.00', 'Due on=01-12-2026', 'Payments=1']));
-    // Activity: the journal grouped by day, with field changes old and new.
+    // Activity: the journal grouped by day, newest first, actors named from the page's users, field
+    // changes old and new and Table rows counted.
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(3));
-    expect(text(host.querySelector('.tl-item'))).toContain('sara moved it from Draft to Issued');
-    expect(text(host.querySelectorAll('.tl-item')[1])).toContain('Remarks empty Net 30');
+    const items = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));
+    expect(items).toEqual(['sara attached signed-copy.pdf', 'sara changed it', 'sara created this record']);
+    const changed = host.querySelectorAll('.tl-item')[1];
+    expect([...changed.querySelectorAll('.ev-diff')].map(text)).toEqual(['Total AED 0.00 AED 2,680.00', 'Lines 2 added']);
+    expect(host.querySelector('.ev-partial')).toBeNull();
     expect(text(host.querySelector('.eff-note'))).toContain('Append-only history');
+    expect(host.querySelector('.composer textarea')).not.toBeNull();
     // Side panel: key fields, related counts, files and record info.
     await until(() => expect(text(byText(host, '.side-sec', /^Related/))).toContain('Payments1 record'));
     expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf');
@@ -175,5 +181,69 @@ describe('transaction document (recorded fixtures)', () => {
     await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf'));
     expect(host.querySelector('.ev-upload')).toBeNull();
     expect(invoice.invoice_attachment_locked.status).toBe(409);
+  });
+
+  it('shows the issued invoice journal as the engine records it: moves, postings, numbers, actions and people', async () => {
+    const { host } = start(routes(invoice.invoice_issued_detail), `/ui/m/invoice/${draft}`);
+    await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(invoice.invoice_journal.body.items.length));
+    const heads = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));
+    expect(heads).toEqual([
+      'The system logged a message to the customer',
+      'sara planned a follow-up',
+      'sara completed a follow-up',
+      'sara planned a follow-up',
+      'sara added a note',
+      'sara ran Record payment',
+      `sara assigned the number ${invoice.invoice_issued.body.number}`,
+      'sara posted 3 rows to Ledger entries',
+      'sara moved it from Draft to Issued',
+      'sara attached signed-copy.pdf',
+      'sara changed it',
+      'sara created this record',
+    ]);
+    const items = [...host.querySelectorAll('.tl-item')];
+    // A logged message keeps its subject; follow ups show the due date, the assignee and whether they are done.
+    expect(text(items[0].querySelector('.note'))).toBe('Balance duePayment reminder logged');
+    expect(text(items[1].querySelector('.ev-fu'))).toBe('Due 30-11-2026 · Open');
+    expect(text(items[3].querySelector('.ev-fu'))).toBe('Due 15-11-2026 for sara · Done');
+    expect(text(items[2].querySelector('.note'))).toBe('Balance due by the end of the month');
+    expect(text(items[5].querySelector('.ev-diff'))).toBe('Remarks empty Paid 500.00 on 2026-11-10');
+    // The posting and its balance check; the move lists what else it changed.
+    expect(text(items[7].querySelector('.note'))).toBe('Ledger entries balanced');
+    expect(text(items[8].querySelector('.ev-diff'))).toBe('Outstanding AED 0.00 AED 2,680.00');
+    expect(host.querySelector('.ev-partial')).toBeNull();
+  });
+
+  it('adds a note through the journal route and reloads the history', async () => {
+    let reloaded = false;
+    const { host, sent } = start([...routes(invoice.invoice_issued_detail),
+      ['POST', path(draft, '/journal$'), () => { reloaded = true; return copy(invoice.invoice_journal_note); }]], `/ui/m/invoice/${draft}`);
+    await until(() => expect(host.querySelector('.composer textarea')).not.toBeNull());
+    typeInto(host.querySelector<HTMLTextAreaElement>('.composer textarea')!, 'Customer asked for a copy by email');
+    click(byText(host, '.composer button', 'Save note'));
+    await until(() => expect(lastToast()).toBe('Note added'));
+    expect(reloaded).toBe(true);
+    expect(requests(sent, 'POST', /\/journal$/)[0].body).toEqual({ kind: 'note', text: 'Customer asked for a copy by email' });
+    await until(() => expect(requests(sent, 'GET', /\/journal/)).toHaveLength(2));
+    expect((host.querySelector('.composer textarea') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('shows a viewer the entries it may only partly see, with no note box', async () => {
+    const viewerRoutes: Route[] = [
+      ['GET', /\/api\/auth\/session$/, invoice.invoice_viewer_session],
+      ['GET', /\/api\/schema$/, invoice.invoice_viewer_schema],
+      ...routes(invoice.invoice_viewer_detail, invoice.invoice_viewer_journal).slice(2),
+    ];
+    const { host, sent } = start(viewerRoutes, `/ui/m/invoice/${draft}`);
+    await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(invoice.invoice_viewer_journal.body.items.length));
+    expect(host.querySelector('.composer')).toBeNull();
+    // The viewer cannot read ledger entries: the posting is a `changed` entry with nothing in it, marked partial.
+    const partial = [...host.querySelectorAll('.tl-item')].filter(item => item.querySelector('.ev-partial'));
+    expect(partial).toHaveLength(1);
+    expect(text(partial[0].querySelector('.hd')).replace(/\d\d:\d\d.*$/, '')).toBe('sara changed it');
+    expect(text(partial[0].querySelector('.ev-partial'))).toBe('Some details are hidden');
+    expect(partial[0].querySelector('.note')).toBeNull();
+    expect(requests(sent, 'POST', /\/journal$/)).toHaveLength(0);
+    expect(invoice.invoice_viewer_note_refused.status).toBe(403);
   });
 });

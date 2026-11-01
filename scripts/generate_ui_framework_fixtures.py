@@ -248,7 +248,8 @@ def main():
 def documents(out):
     """Responses of the document routes, recorded as an editor: a move refused by its condition, a move,
     an action, void, revise, per-record and model measures, related records, line pages and details
-    carrying _moves, _actions, _void, _revise and _effects, with the schema's state, key_fields and relations."""
+    carrying _moves, _actions, _void, _revise, _effects and _journal, with the schema's state, key_fields,
+    relations and journal, and the journal itself: engine and user entries, follow ups, and a viewer's partial view."""
     folder = Path(tempfile.mkdtemp())
     database = Database(folder / 'documents.sqlite3', Registry(Customer, LedgerEntry, Invoice, Payment))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
@@ -256,6 +257,7 @@ def documents(out):
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     auth.create_user(username='sara', password=PASSWORD, role='editor')
+    auth.create_user(username='omar', password=PASSWORD, role='viewer')
 
     def keep(name, response):
         status, payload, headers = response
@@ -270,7 +272,7 @@ def documents(out):
         cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
         return lambda method, path, body=None, **kwargs: http(app, method, path, body, cookie=cookie, csrf=csrf, **kwargs)
 
-    admin, editor = login('admin'), login('sara')
+    admin, editor, viewer = login('admin'), login('sara'), login('omar')
 
     def write(method, record, route='', body=None):
         # Every write on a saved document sends the ETag of its last read.
@@ -308,6 +310,8 @@ def documents(out):
     keep('invoice_related_revisions', editor('GET', f'{url}/related/invoice.revises?limit=10&offset=0'))
     keep('invoice_attachment_upload', editor('POST', f'{url}/attachments', {'name': 'signed-copy.pdf', 'content': 'JVBERi0='}))
     keep('invoice_attachments', editor('GET', f'{url}/attachments'))
+    # The draft's journal so far: created, its lines added, the file.
+    keep('invoice_draft_journal', editor('GET', f'{url}/journal?limit=50'))
     # The draft is issued and paid in part.
     keep('invoice_issued', write('POST', url, '/moves/issued', {}))
     keep('invoice_issued_detail', editor('GET', url))
@@ -320,6 +324,25 @@ def documents(out):
     keep('invoice_related_payments', editor('GET', f'{url}/related/payment.invoice?limit=5&offset=0'))
     # Files of a locked record cannot change.
     keep('invoice_attachment_locked', editor('POST', f'{url}/attachments', {'name': 'receipt.pdf', 'content': 'JVBERi0='}))
+    # People add to the journal of the locked invoice: a note, a follow up that is done, one that stays open.
+    keep('invoice_journal_note', editor('POST', f'{url}/journal', {'kind': 'note', 'text': 'Customer asked for a copy by email'}))
+    called = keep('invoice_journal_follow_up', editor('POST', f'{url}/journal', {'kind': 'follow_up', 'text': 'Call about the balance',
+                                                                                'due': '2026-11-15', 'assignee': 2}))
+    keep('invoice_journal_follow_up_done', editor('POST', f'{url}/journal', {'kind': 'follow_up_done', 'follow_up': called['id'],
+                                                                             'text': 'Balance due by the end of the month'}))
+    editor('POST', f'{url}/journal', {'kind': 'follow_up', 'text': 'Send the statement', 'due': '2026-11-30'})
+    # A scheduled job logs a reminder: an entry without a signed in user (actor null).
+    from evlet import journal
+    from evlet.auth import User
+    with app.business.context(User(0, 'schedule', 'admin')) as context:
+        journal.post(context, Invoice, int(url.rsplit('/', 1)[1]), 'message', text='Payment reminder logged', subject='Balance due')
+    keep('invoice_journal', editor('GET', f'{url}/journal?limit=50'))
+    # The viewer cannot read ledger entries, so the posting entry is a partial `changed` entry for it.
+    keep('invoice_viewer_session', viewer('GET', '/api/auth/session'))
+    keep('invoice_viewer_schema', viewer('GET', '/api/schema'))
+    keep('invoice_viewer_detail', viewer('GET', url))
+    keep('invoice_viewer_journal', viewer('GET', f'{url}/journal?limit=50'))
+    keep('invoice_viewer_note_refused', viewer('POST', f'{url}/journal', {'kind': 'note', 'text': 'Seen'}))
     # Revising voids the issued invoice and opens a draft copy.
     keep('invoice_revision', write('POST', revised, '/revise', {'reason': 'Wrong quantity on line 2'}))
     keep('invoice_revised_original', editor('GET', revised))

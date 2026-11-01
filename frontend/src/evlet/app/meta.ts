@@ -3,7 +3,7 @@
 // The keys of later engine phases (State and moves, void and revise, Sequence, measures, key
 // fields, relations, attachments, effects, journal) are optional here: a screen shows a section
 // only when the schema or the detail carries its key. Shapes follow docs/states-actions.md,
-// docs/sequences.md, docs/measures.md, docs/meaning.md and docs/effects.md.
+// docs/sequences.md, docs/measures.md, docs/meaning.md, docs/effects.md and docs/journal.md.
 
 import type { RecordData } from '../api';
 import type { FieldSchema, ModelSchema, SchemaIndex } from '../model/schema';
@@ -39,8 +39,8 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   attachment_limits?: { max_files: number; max_size: number };
   effects?: EffectSchema[];
   effect_target?: boolean;
-  /** Provisional: the record has a journal (Phase 8). */
-  journal?: boolean | Record<string, unknown>;
+  /** The record has a journal (Phase 8): whether entries are hash chained and the kinds this role may post. */
+  journal?: { tamper_evident: boolean; kinds: string[] };
 }
 
 /** Availability keys a detail may carry (outside the ETag). */

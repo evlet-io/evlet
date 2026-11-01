@@ -66,11 +66,12 @@ export class AppClient extends ApiClient {
     return (await this.request<Page<RecordData>>('GET', `/api/${model}/${id}/related/${relation}`, { query: page })).data;
   }
 
-  /** One page of the record's journal, newest first (Phase 8, provisional shape). */
+  /** One page of the record's journal, newest first (docs/journal.md), with the names of its actors and assignees. */
   async journal(model: string, id: number, page: { limit?: number; offset?: number } = {}) {
-    return (await this.request<Page<JournalEntry>>('GET', `/api/${model}/${id}/journal`, { query: page })).data;
+    return (await this.request<JournalPage>('GET', `/api/${model}/${id}/journal`, { query: page })).data;
   }
 
+  /** Add a note to the record's journal; answers the entry as the caller sees it. */
   async addNote(model: string, id: number, text: string) {
     return (await this.request<JournalEntry>('POST', `/api/${model}/${id}/journal`, { body: { kind: 'note', text } })).data;
   }
@@ -98,5 +99,8 @@ export class AppClient extends ApiClient {
   }
 }
 
-/** A journal entry (Phase 8, provisional: from docs/handoff-model.md). */
-export interface JournalEntry { id: number; kind: string; actor: string | null; at: string; data: Record<string, any> }
+/** A journal entry (docs/journal.md). `actor` is a user id, or null for the engine; `partial` marks an entry
+ * the caller sees only in part; `done` is set on follow ups (the completing entry's id, or null). */
+export interface JournalEntry { id: number; kind: string; actor: number | null; at: string; data: Record<string, any>; partial?: true; done?: number | null }
+/** A page of a journal: `users` names the actors and assignees on it by user id. */
+export interface JournalPage extends Page<JournalEntry> { users: Record<string, string> }

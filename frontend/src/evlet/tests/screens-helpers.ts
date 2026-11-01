@@ -1,6 +1,6 @@
 // Helpers for the screen tests: the whole app mounted on jsdom's location, its router under /ui,
 // and a fetch stub that replays responses recorded from the real ASGI routes (api-fixture.json,
-// screens-fixture.json) or, for the journal (Phase 8), the provisional fixture.
+// screens-fixture.json).
 import { vi } from 'vitest';
 import { mount } from '../dom';
 import { App } from '../app/app';
@@ -10,22 +10,17 @@ import { closeDialogs, closePopover } from '../ui/layers';
 import { hideTip } from '../ui/tooltip';
 import base from './api-fixture.json';
 import screens from './screens-fixture.json';
-import journal from './provisional/journal-fixture.json';
 import { copy, server, type Recorded, type Sent } from './server';
 
 export const recorded = base as Record<string, Recorded>;
 export const screen = screens as Record<string, Recorded>;
 
-// The invoice responses, recorded as the editor sara (invoice_* and invoices in api-fixture.json).
-// The journal (Phase 8) is not in the engine yet: its page is provisional, and the schema says
-// the invoice has one so the Activity tab shows.
-const documentSchema = copy(recorded.invoice_schema);
-documentSchema.body.models.find((model: any) => model.name === 'invoice').journal = true;
+// The invoice responses, recorded as the editor sara (invoice_* and invoices in api-fixture.json),
+// the journal included; invoice_viewer_* are recorded as the viewer omar.
 export const invoice: Record<string, Recorded> = {
   ...Object.fromEntries(Object.entries(recorded).filter(([key]) => key === 'invoices' || key.startsWith('invoice_'))),
-  ...(journal as Record<string, Recorded>),
   session: recorded.invoice_session,
-  schema: documentSchema,
+  schema: recorded.invoice_schema,
 };
 
 type Reply = Recorded | ((sent: Sent) => Recorded | Promise<Recorded>);

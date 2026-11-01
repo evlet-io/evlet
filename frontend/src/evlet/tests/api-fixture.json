@@ -4753,7 +4753,7 @@
     }
    ],
    "_journal": {
-    "count": 6,
+    "count": 7,
     "open_follow_ups": 0
    },
    "_locked": true,
@@ -4997,6 +4997,132 @@
   "etag": "\"574bed9d9b1e9f16c7ccc95f5b0492c19f88a7364a49ad23b9de8c5717121024\"",
   "status": 200
  },
+ "invoice_draft_journal": {
+  "body": {
+   "items": [
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.862Z",
+     "data": {
+      "action": "added",
+      "id": 1,
+      "name": "signed-copy.pdf",
+      "size": 5
+     },
+     "id": 13,
+     "kind": "file"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.853Z",
+     "data": {
+      "fields": {
+       "total": {
+        "new": "2680.00",
+        "old": "0.00"
+       }
+      },
+      "rows": {
+       "lines": {
+        "added": [
+         {
+          "fields": {
+           "amount": {
+            "new": "2500.00",
+            "old": null
+           },
+           "item": {
+            "new": "Support hours",
+            "old": null
+           },
+           "qty": {
+            "new": "10.0000",
+            "old": null
+           },
+           "rate": {
+            "new": "250.00",
+            "old": null
+           }
+          },
+          "id": 5
+         },
+         {
+          "fields": {
+           "amount": {
+            "new": "180.00",
+            "old": null
+           },
+           "item": {
+            "new": "Licence",
+            "old": null
+           },
+           "qty": {
+            "new": "2.0000",
+            "old": null
+           },
+           "rate": {
+            "new": "90.00",
+            "old": null
+           }
+          },
+          "id": 6
+         }
+        ]
+       }
+      }
+     },
+     "id": 12,
+     "kind": "changed"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.844Z",
+     "data": {
+      "fields": {
+       "customer": {
+        "new": 1,
+        "old": null
+       },
+       "due_on": {
+        "new": "2026-12-01",
+        "old": null
+       },
+       "outstanding": {
+        "new": "0.00",
+        "old": null
+       },
+       "posting_date": {
+        "new": "2026-11-01",
+        "old": null
+       },
+       "remarks": {
+        "new": "",
+        "old": null
+       },
+       "status": {
+        "new": "draft",
+        "old": null
+       },
+       "total": {
+        "new": "0.00",
+        "old": null
+       }
+      }
+     },
+     "id": 11,
+     "kind": "created"
+    }
+   ],
+   "limit": 50,
+   "offset": 0,
+   "total": 3,
+   "users": {
+    "2": "sara"
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
  "invoice_issued": {
   "body": {
    "_actions": [
@@ -5019,7 +5145,7 @@
     }
    ],
    "_journal": {
-    "count": 5,
+    "count": 6,
     "open_follow_ups": 0
    },
    "_locked": true,
@@ -5088,7 +5214,7 @@
     }
    ],
    "_journal": {
-    "count": 5,
+    "count": 6,
     "open_follow_ups": 0
    },
    "_locked": true,
@@ -5138,6 +5264,288 @@
   },
   "etag": "\"cc8058a888f81ac58b4a1dc56af36a2a9423b448c80233c9ac133f9446281a41\"",
   "status": 200
+ },
+ "invoice_journal": {
+  "body": {
+   "items": [
+    {
+     "actor": null,
+     "at": "2026-11-01T21:33:19.889Z",
+     "data": {
+      "direction": "out",
+      "party": null,
+      "subject": "Balance due",
+      "text": "Payment reminder logged"
+     },
+     "id": 22,
+     "kind": "message"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.888Z",
+     "data": {
+      "assignee": null,
+      "due": "2026-11-30",
+      "text": "Send the statement"
+     },
+     "done": null,
+     "id": 21,
+     "kind": "follow_up"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.887Z",
+     "data": {
+      "follow_up": 19,
+      "text": "Balance due by the end of the month"
+     },
+     "id": 20,
+     "kind": "follow_up_done"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.885Z",
+     "data": {
+      "assignee": 2,
+      "due": "2026-11-15",
+      "text": "Call about the balance"
+     },
+     "done": 20,
+     "id": 19,
+     "kind": "follow_up"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.884Z",
+     "data": {
+      "text": "Customer asked for a copy by email"
+     },
+     "id": 18,
+     "kind": "note"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.874Z",
+     "data": {
+      "action": "record_payment",
+      "fields": {
+       "remarks": {
+        "new": "Paid 500.00 on 2026-11-10",
+        "old": ""
+       }
+      }
+     },
+     "id": 17,
+     "kind": "changed"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.868Z",
+     "data": {
+      "field": "number",
+      "number": "INV-2026-00003"
+     },
+     "id": 16,
+     "kind": "number"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.868Z",
+     "data": {
+      "targets": [
+       {
+        "balanced": true,
+        "reversal": false,
+        "rows": 3,
+        "target": "ledgerentry"
+       }
+      ]
+     },
+     "id": 15,
+     "kind": "effects"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.868Z",
+     "data": {
+      "fields": {
+       "outstanding": {
+        "new": "2680.00",
+        "old": "0.00"
+       }
+      },
+      "from": "draft",
+      "move": "Issue",
+      "to": "issued"
+     },
+     "id": 14,
+     "kind": "moved"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.862Z",
+     "data": {
+      "action": "added",
+      "id": 1,
+      "name": "signed-copy.pdf",
+      "size": 5
+     },
+     "id": 13,
+     "kind": "file"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.853Z",
+     "data": {
+      "fields": {
+       "total": {
+        "new": "2680.00",
+        "old": "0.00"
+       }
+      },
+      "rows": {
+       "lines": {
+        "added": [
+         {
+          "fields": {
+           "amount": {
+            "new": "2500.00",
+            "old": null
+           },
+           "item": {
+            "new": "Support hours",
+            "old": null
+           },
+           "qty": {
+            "new": "10.0000",
+            "old": null
+           },
+           "rate": {
+            "new": "250.00",
+            "old": null
+           }
+          },
+          "id": 5
+         },
+         {
+          "fields": {
+           "amount": {
+            "new": "180.00",
+            "old": null
+           },
+           "item": {
+            "new": "Licence",
+            "old": null
+           },
+           "qty": {
+            "new": "2.0000",
+            "old": null
+           },
+           "rate": {
+            "new": "90.00",
+            "old": null
+           }
+          },
+          "id": 6
+         }
+        ]
+       }
+      }
+     },
+     "id": 12,
+     "kind": "changed"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.844Z",
+     "data": {
+      "fields": {
+       "customer": {
+        "new": 1,
+        "old": null
+       },
+       "due_on": {
+        "new": "2026-12-01",
+        "old": null
+       },
+       "outstanding": {
+        "new": "0.00",
+        "old": null
+       },
+       "posting_date": {
+        "new": "2026-11-01",
+        "old": null
+       },
+       "remarks": {
+        "new": "",
+        "old": null
+       },
+       "status": {
+        "new": "draft",
+        "old": null
+       },
+       "total": {
+        "new": "0.00",
+        "old": null
+       }
+      }
+     },
+     "id": 11,
+     "kind": "created"
+    }
+   ],
+   "limit": 50,
+   "offset": 0,
+   "total": 12,
+   "users": {
+    "2": "sara"
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
+ "invoice_journal_follow_up": {
+  "body": {
+   "actor": 2,
+   "at": "2026-11-01T21:33:19.885Z",
+   "data": {
+    "assignee": 2,
+    "due": "2026-11-15",
+    "text": "Call about the balance"
+   },
+   "done": null,
+   "id": 19,
+   "kind": "follow_up"
+  },
+  "etag": null,
+  "status": 201
+ },
+ "invoice_journal_follow_up_done": {
+  "body": {
+   "actor": 2,
+   "at": "2026-11-01T21:33:19.887Z",
+   "data": {
+    "follow_up": 19,
+    "text": "Balance due by the end of the month"
+   },
+   "id": 20,
+   "kind": "follow_up_done"
+  },
+  "etag": null,
+  "status": 201
+ },
+ "invoice_journal_note": {
+  "body": {
+   "actor": 2,
+   "at": "2026-11-01T21:33:19.884Z",
+   "data": {
+    "text": "Customer asked for a copy by email"
+   },
+   "id": 18,
+   "kind": "note"
+  },
+  "etag": null,
+  "status": 201
  },
  "invoice_lines_page": {
   "body": {
@@ -5248,6 +5656,10 @@
      "target": "ledgerentry"
     }
    ],
+   "_journal": {
+    "count": 4,
+    "open_follow_ups": 0
+   },
    "_locked": true,
    "_moves": [
     {
@@ -5315,7 +5727,7 @@
     }
    ],
    "_journal": {
-    "count": 9,
+    "count": 7,
     "open_follow_ups": 0
    },
    "_locked": true,
@@ -6901,6 +7313,1476 @@
   "etag": null,
   "status": 200
  },
+ "invoice_viewer_detail": {
+  "body": {
+   "_actions": [],
+   "_journal": {
+    "count": 12,
+    "open_follow_ups": 1
+   },
+   "_locked": true,
+   "_moves": [
+    {
+     "allowed": false,
+     "label": "Mark paid",
+     "reason": "Your role cannot use this move",
+     "to": "paid"
+    }
+   ],
+   "_revise": {
+    "allowed": false,
+    "reason": "Your role cannot revise this record"
+   },
+   "_void": {
+    "allowed": false,
+    "reason": "Your role cannot void this record"
+   },
+   "children": {
+    "lines": [
+     {
+      "amount": "2500.00",
+      "id": 5,
+      "item": "Support hours",
+      "qty": "10.0000",
+      "rate": "250.00"
+     },
+     {
+      "amount": "180.00",
+      "id": 6,
+      "item": "Licence",
+      "qty": "2.0000",
+      "rate": "90.00"
+     }
+    ]
+   },
+   "customer": 1,
+   "due_on": "2026-12-01",
+   "id": 3,
+   "number": "INV-2026-00003",
+   "outstanding": "2680.00",
+   "posting_date": "2026-11-01",
+   "remarks": "Paid 500.00 on 2026-11-10",
+   "revised_by": null,
+   "revises": null,
+   "status": "issued",
+   "total": "2680.00"
+  },
+  "etag": "\"e78be22ba00659bdfeeb56054faaa63a1ef93c56936fa17eb2dfd98e6679a35a\"",
+  "status": 200
+ },
+ "invoice_viewer_journal": {
+  "body": {
+   "items": [
+    {
+     "actor": null,
+     "at": "2026-11-01T21:33:19.889Z",
+     "data": {
+      "direction": "out",
+      "party": null,
+      "subject": "Balance due",
+      "text": "Payment reminder logged"
+     },
+     "id": 22,
+     "kind": "message"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.888Z",
+     "data": {
+      "assignee": null,
+      "due": "2026-11-30",
+      "text": "Send the statement"
+     },
+     "done": null,
+     "id": 21,
+     "kind": "follow_up"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.887Z",
+     "data": {
+      "follow_up": 19,
+      "text": "Balance due by the end of the month"
+     },
+     "id": 20,
+     "kind": "follow_up_done"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.885Z",
+     "data": {
+      "assignee": 2,
+      "due": "2026-11-15",
+      "text": "Call about the balance"
+     },
+     "done": 20,
+     "id": 19,
+     "kind": "follow_up"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.884Z",
+     "data": {
+      "text": "Customer asked for a copy by email"
+     },
+     "id": 18,
+     "kind": "note"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.874Z",
+     "data": {
+      "action": "record_payment",
+      "fields": {
+       "remarks": {
+        "new": "Paid 500.00 on 2026-11-10",
+        "old": ""
+       }
+      }
+     },
+     "id": 17,
+     "kind": "changed"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.868Z",
+     "data": {
+      "field": "number",
+      "number": "INV-2026-00003"
+     },
+     "id": 16,
+     "kind": "number"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.868Z",
+     "data": {},
+     "id": 15,
+     "kind": "changed",
+     "partial": true
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.868Z",
+     "data": {
+      "fields": {
+       "outstanding": {
+        "new": "2680.00",
+        "old": "0.00"
+       }
+      },
+      "from": "draft",
+      "move": "Issue",
+      "to": "issued"
+     },
+     "id": 14,
+     "kind": "moved"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.862Z",
+     "data": {
+      "action": "added",
+      "id": 1,
+      "name": "signed-copy.pdf",
+      "size": 5
+     },
+     "id": 13,
+     "kind": "file"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.853Z",
+     "data": {
+      "fields": {
+       "total": {
+        "new": "2680.00",
+        "old": "0.00"
+       }
+      },
+      "rows": {
+       "lines": {
+        "added": [
+         {
+          "fields": {
+           "amount": {
+            "new": "2500.00",
+            "old": null
+           },
+           "item": {
+            "new": "Support hours",
+            "old": null
+           },
+           "qty": {
+            "new": "10.0000",
+            "old": null
+           },
+           "rate": {
+            "new": "250.00",
+            "old": null
+           }
+          },
+          "id": 5
+         },
+         {
+          "fields": {
+           "amount": {
+            "new": "180.00",
+            "old": null
+           },
+           "item": {
+            "new": "Licence",
+            "old": null
+           },
+           "qty": {
+            "new": "2.0000",
+            "old": null
+           },
+           "rate": {
+            "new": "90.00",
+            "old": null
+           }
+          },
+          "id": 6
+         }
+        ]
+       }
+      }
+     },
+     "id": 12,
+     "kind": "changed"
+    },
+    {
+     "actor": 2,
+     "at": "2026-11-01T21:33:19.844Z",
+     "data": {
+      "fields": {
+       "customer": {
+        "new": 1,
+        "old": null
+       },
+       "due_on": {
+        "new": "2026-12-01",
+        "old": null
+       },
+       "outstanding": {
+        "new": "0.00",
+        "old": null
+       },
+       "posting_date": {
+        "new": "2026-11-01",
+        "old": null
+       },
+       "remarks": {
+        "new": "",
+        "old": null
+       },
+       "status": {
+        "new": "draft",
+        "old": null
+       },
+       "total": {
+        "new": "0.00",
+        "old": null
+       }
+      }
+     },
+     "id": 11,
+     "kind": "created"
+    }
+   ],
+   "limit": 50,
+   "offset": 0,
+   "total": 12,
+   "users": {
+    "2": "sara"
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
+ "invoice_viewer_note_refused": {
+  "body": {
+   "error": "Your role cannot write to this journal"
+  },
+  "etag": null,
+  "status": 403
+ },
+ "invoice_viewer_schema": {
+  "body": {
+   "models": [
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "credit_days": {},
+      "name": {},
+      "rate": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "customer",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "name",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Rate",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "rate",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": 30,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Credit days",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "credit_days",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "integer",
+       "unique": false
+      }
+     ],
+     "label": "Customer",
+     "layout": [
+      {
+       "fields": [
+        "name",
+        "rate",
+        "credit_days"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "name",
+      "rate",
+      "credit_days"
+     ],
+     "name": "customer",
+     "order": [
+      "name",
+      "rate",
+      "credit_days"
+     ],
+     "permissions": {
+      "create": false,
+      "delete": false,
+      "update": false
+     },
+     "plural": "Customers",
+     "relations": [
+      {
+       "label": "Invoices",
+       "limit": 10,
+       "link": "customer",
+       "model": "invoice",
+       "name": "invoice.customer",
+       "order": [
+        "-id"
+       ]
+      }
+     ],
+     "resource": "customer",
+     "search_fields": [
+      "name"
+     ],
+     "sources": {},
+     "title_field": "name"
+    },
+    {
+     "actions": [],
+     "attachment_limits": {
+      "max_files": 5,
+      "max_size": 262144
+     },
+     "attachments": true,
+     "behavior": {
+      "customer": {},
+      "due_on": {},
+      "number": {},
+      "outstanding": {},
+      "posting_date": {},
+      "remarks": {},
+      "revises": {},
+      "status": {},
+      "total": {
+       "finite": true
+      }
+     },
+     "calculation": {
+      "capabilities": {
+       "lines[*].amount": "local_universal",
+       "total": "local_universal"
+      },
+      "language": "finite-v1",
+      "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e",
+      "numeric_profile": "finite40-hu18-v1",
+      "plan": {
+       "compiler_version": "evlet-finite-1",
+       "expression_version": 1,
+       "fields": [
+        {
+         "expression": {
+          "$expr": "round",
+          "args": [
+           {
+            "$expr": "mul",
+            "args": [
+             {
+              "$expr": "ref",
+              "field": "qty",
+              "scope": "self"
+             },
+             {
+              "$expr": "ref",
+              "field": "rate",
+              "scope": "self"
+             }
+            ]
+           },
+           {
+            "$expr": "literal",
+            "type": "integer",
+            "value": 2
+           }
+          ]
+         },
+         "field": "amount",
+         "path": [
+          "lines"
+         ],
+         "reads": [
+          [
+           "self",
+           null,
+           "qty"
+          ],
+          [
+           "self",
+           null,
+           "rate"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 2,
+         "stored": true,
+         "target": "lines[*].amount",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "aggregate",
+          "field": "amount",
+          "kind": "sum",
+          "table": "lines",
+          "where": null
+         },
+         "field": "total",
+         "path": [],
+         "reads": [
+          [
+           "membership",
+           "lines",
+           null
+          ],
+          [
+           "member",
+           "lines",
+           "amount"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 2,
+         "stored": true,
+         "target": "total",
+         "target_type": "currency"
+        }
+       ],
+       "language": "finite-v1",
+       "limits": {
+        "collection_rows": 1000,
+        "decimal_text": 128,
+        "document_rows": 5000,
+        "evaluation_steps": 1000000,
+        "expression_depth": 32,
+        "expression_nodes": 128,
+        "graph_edges": 250000,
+        "graph_nodes": 50000,
+        "table_depth": 8
+       },
+       "model_schema_hash": "sha256:2cfaf132bdf3a7858ecc10cdb361633a18a5b7a3b00e8cf21af139579ebc129b",
+       "numeric_profile": "finite40-hu18-v1",
+       "plan_version": 1,
+       "root_resource": "invoice",
+       "source_plan_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e",
+       "tables": {
+        "$root": {
+         "fields": {
+          "customer": {
+           "computed": false,
+           "default": null,
+           "kind": "link",
+           "maximum": null,
+           "minimum": "1",
+           "required": true,
+           "scale": 0,
+           "stored": true,
+           "type": "link"
+          },
+          "due_on": {
+           "computed": false,
+           "default": null,
+           "kind": "date",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "date"
+          },
+          "number": {
+           "computed": false,
+           "default": {
+            "value": null
+           },
+           "kind": "sequence",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "outstanding": {
+           "computed": false,
+           "default": {
+            "value": "0"
+           },
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 2,
+           "stored": true,
+           "type": "decimal"
+          },
+          "posting_date": {
+           "computed": false,
+           "default": null,
+           "kind": "date",
+           "maximum": null,
+           "minimum": null,
+           "required": true,
+           "scale": null,
+           "stored": true,
+           "type": "date"
+          },
+          "remarks": {
+           "computed": false,
+           "default": {
+            "value": ""
+           },
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "revises": {
+           "computed": false,
+           "default": null,
+           "kind": "link",
+           "maximum": null,
+           "minimum": "1",
+           "required": false,
+           "scale": 0,
+           "stored": true,
+           "type": "link"
+          },
+          "status": {
+           "computed": false,
+           "default": {
+            "value": "draft"
+           },
+           "kind": "select",
+           "maximum": null,
+           "minimum": null,
+           "required": true,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "total": {
+           "computed": true,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 2,
+           "stored": true,
+           "type": "decimal"
+          }
+         },
+         "model": "invoice",
+         "path": [],
+         "tables": [
+          "lines"
+         ]
+        },
+        "lines[*]": {
+         "fields": {
+          "amount": {
+           "computed": true,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 2,
+           "stored": true,
+           "type": "decimal"
+          },
+          "item": {
+           "computed": false,
+           "default": {
+            "value": ""
+           },
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "qty": {
+           "computed": false,
+           "default": {
+            "value": "1"
+           },
+           "kind": "decimal",
+           "maximum": null,
+           "minimum": "0",
+           "required": false,
+           "scale": 4,
+           "stored": true,
+           "type": "decimal"
+          },
+          "rate": {
+           "computed": false,
+           "default": {
+            "value": "0"
+           },
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 2,
+           "stored": true,
+           "type": "decimal"
+          }
+         },
+         "max_rows": 1000,
+         "min_rows": 0,
+         "model": "invoice_lines",
+         "path": [
+          "lines"
+         ],
+         "tables": []
+        }
+       }
+      }
+     },
+     "child_only": false,
+     "children": [
+      {
+       "label": "Lines",
+       "link": "evlet_owner",
+       "max_rows": 1000,
+       "min_rows": 0,
+       "model": "invoice_lines",
+       "name": "lines"
+      }
+     ],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": null,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Number",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "number",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "scope": [],
+       "sequence": {
+        "assign_on": "issued",
+        "date": "posting_date",
+        "format": "INV-{year}-{n:05}",
+        "scope": []
+       },
+       "stored": true,
+       "type": "sequence",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Customer",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": 1,
+       "name": "customer",
+       "placeholder": "",
+       "read_only": false,
+       "required": true,
+       "required_when": null,
+       "stored": true,
+       "target": "customer",
+       "type": "link",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Posting date",
+       "locked_when": null,
+       "name": "posting_date",
+       "placeholder": "",
+       "read_only": false,
+       "required": true,
+       "required_when": null,
+       "stored": true,
+       "type": "date",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Due on",
+       "locked_when": null,
+       "name": "due_on",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "date",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "choices": [
+        "draft",
+        "issued",
+        "paid",
+        "void"
+       ],
+       "compute": null,
+       "default": "draft",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Status",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "status",
+       "placeholder": "",
+       "read_only": true,
+       "required": true,
+       "required_when": null,
+       "state": true,
+       "stored": true,
+       "type": "select",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "aggregate",
+        "field": "amount",
+        "kind": "sum",
+        "table": "lines",
+        "where": null
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Total",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "total",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Outstanding",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "outstanding",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "editable_when_locked": true,
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Remarks",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "remarks",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": true,
+       "initial": null,
+       "label": "Revises",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": 1,
+       "name": "revises",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "target": "invoice",
+       "type": "link",
+       "unique": false
+      }
+     ],
+     "journal": {
+      "kinds": [],
+      "tamper_evident": false
+     },
+     "key_fields": [
+      "customer",
+      "total",
+      "due_on"
+     ],
+     "label": "Invoice",
+     "layout": [
+      {
+       "fields": [
+        "number",
+        "customer",
+        "posting_date",
+        "due_on",
+        "status"
+       ],
+       "label": "Invoice"
+      },
+      {
+       "fields": [
+        "total",
+        "outstanding",
+        "remarks",
+        "revises"
+       ],
+       "label": "Amounts"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "number",
+      "customer",
+      "posting_date",
+      "status",
+      "total",
+      "outstanding"
+     ],
+     "measures": [
+      {
+       "field": "outstanding",
+       "function": "sum",
+       "link": null,
+       "model": null,
+       "name": "outstanding",
+       "per_record": false,
+       "where": {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "status",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "issued"
+         }
+        ]
+       }
+      },
+      {
+       "field": null,
+       "function": "count",
+       "link": null,
+       "model": null,
+       "name": "count",
+       "per_record": false,
+       "where": null
+      },
+      {
+       "field": null,
+       "function": "count",
+       "link": "invoice",
+       "model": "payment",
+       "name": "payments",
+       "per_record": true,
+       "where": null
+      },
+      {
+       "field": "amount",
+       "function": "sum",
+       "link": "invoice",
+       "model": "payment",
+       "name": "paid",
+       "per_record": true,
+       "where": null
+      }
+     ],
+     "name": "invoice",
+     "order": [
+      "number",
+      "customer",
+      "posting_date",
+      "due_on",
+      "status",
+      "total",
+      "outstanding",
+      "remarks",
+      "revises",
+      "lines.item",
+      "lines.qty",
+      "lines.rate",
+      "lines.amount"
+     ],
+     "permissions": {
+      "create": false,
+      "delete": false,
+      "revise": false,
+      "update": false,
+      "void": false
+     },
+     "plural": "Invoices",
+     "relations": [
+      {
+       "label": "Payments",
+       "limit": 5,
+       "link": "invoice",
+       "model": "payment",
+       "name": "payment.invoice",
+       "order": [
+        "-paid_on"
+       ]
+      },
+      {
+       "label": "Revisions",
+       "limit": 10,
+       "link": "revises",
+       "model": "invoice",
+       "name": "invoice.revises",
+       "order": [
+        "-id"
+       ]
+      }
+     ],
+     "resource": "invoice",
+     "revisable": true,
+     "search_fields": [
+      "number"
+     ],
+     "sources": {},
+     "state": {
+      "default": "draft",
+      "field": "status",
+      "final": [
+       "paid",
+       "void"
+      ],
+      "locked": [
+       "issued",
+       "paid",
+       "void"
+      ],
+      "moves": [
+       {
+        "from": [
+         "draft"
+        ],
+        "guarded": true,
+        "label": "Issue",
+        "roles": [
+         "admin",
+         "editor"
+        ],
+        "to": "issued",
+        "when": {
+         "$expr": "gt",
+         "args": [
+          {
+           "$expr": "ref",
+           "field": "total",
+           "scope": "self"
+          },
+          {
+           "$expr": "literal",
+           "type": "decimal",
+           "value": "0"
+          }
+         ]
+        }
+       },
+       {
+        "from": [
+         "issued"
+        ],
+        "guarded": false,
+        "label": "Mark paid",
+        "roles": [
+         "admin"
+        ],
+        "to": "paid",
+        "when": null
+       }
+      ],
+      "states": [
+       "draft",
+       "issued",
+       "paid",
+       "void"
+      ],
+      "voidable": [
+       "issued"
+      ]
+     },
+     "title_field": "number",
+     "voidable": true
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "amount": {},
+      "invoice": {},
+      "paid_on": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Invoice",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": 1,
+       "name": "invoice",
+       "placeholder": "",
+       "read_only": false,
+       "required": true,
+       "required_when": null,
+       "stored": true,
+       "target": "invoice",
+       "type": "link",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Amount",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "amount",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Paid on",
+       "locked_when": null,
+       "name": "paid_on",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "date",
+       "unique": false
+      }
+     ],
+     "label": "Payment",
+     "layout": [
+      {
+       "fields": [
+        "invoice",
+        "amount",
+        "paid_on"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "invoice",
+      "amount",
+      "paid_on"
+     ],
+     "name": "payment",
+     "order": [
+      "invoice",
+      "amount",
+      "paid_on"
+     ],
+     "permissions": {
+      "create": false,
+      "delete": false,
+      "update": false
+     },
+     "plural": "Payments",
+     "resource": "payment",
+     "search_fields": [],
+     "sources": {},
+     "title_field": "id"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "amount": {
+       "finite": true
+      },
+      "item": {},
+      "qty": {},
+      "rate": {}
+     },
+     "child_only": true,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Item",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "item",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "1.0000",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Qty",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": "0",
+       "name": "qty",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Rate",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "rate",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "round",
+        "args": [
+         {
+          "$expr": "mul",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "qty",
+            "scope": "self"
+           },
+           {
+            "$expr": "ref",
+            "field": "rate",
+            "scope": "self"
+           }
+          ]
+         },
+         {
+          "$expr": "literal",
+          "type": "integer",
+          "value": 2
+         }
+        ]
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Amount",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "amount",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      }
+     ],
+     "label": "Invoice line",
+     "layout": [
+      {
+       "fields": [
+        "item",
+        "qty",
+        "rate",
+        "amount"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "item",
+      "qty",
+      "rate",
+      "amount"
+     ],
+     "name": "invoice_lines",
+     "order": [],
+     "permissions": {
+      "create": false,
+      "delete": false,
+      "update": false
+     },
+     "plural": "Invoice lines",
+     "resource": "Invoice.lines",
+     "search_fields": [
+      "item"
+     ],
+     "sources": {},
+     "title_field": "item"
+    }
+   ],
+   "ui_version": 1,
+   "version": 1
+  },
+  "etag": null,
+  "status": 200
+ },
+ "invoice_viewer_session": {
+  "body": {
+   "application": {
+    "name": "Evlet",
+    "playground": false
+   },
+   "csrf": "fixture-csrf-token",
+   "user": {
+    "id": 3,
+    "role": "viewer",
+    "username": "omar"
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
  "invoice_void": {
   "body": {
    "_actions": [
@@ -6986,6 +8868,10 @@
      "target": "ledgerentry"
     }
    ],
+   "_journal": {
+    "count": 4,
+    "open_follow_ups": 0
+   },
    "_locked": true,
    "_moves": [
     {

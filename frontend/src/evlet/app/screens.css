@@ -74,6 +74,8 @@
 .ev-files{display:grid;gap:10px}
 .ev-upload{justify-self:start;cursor:pointer}
 .ev-diff{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ev-fu{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px}
+.ev-partial{display:inline-flex;align-items:center;gap:5px;margin-top:6px;font-size:12px}
 
 /* ---------- palette: the input row replaces the dialog header ---------- */
 .modal.palette>.modal-h{display:none}

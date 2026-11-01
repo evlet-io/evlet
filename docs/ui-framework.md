@@ -406,15 +406,15 @@ tab closes. Signing in keeps the address the user opened.
 | `Meta.relations` (Phase 10) | The Related tab and side block |
 | `attachments` | The Files side block, with upload for roles that can update while the record is not locked |
 | `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
-| Journal (Phase 8) | The Activity tab, first, with a note box |
+| Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system"), field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
 
 A section appears only when the schema or the detail carries its key. The screen tests replay
 these keys as the engine sends them, recorded from an invoice with a State, a Sequence, effects,
-measures, key fields, relations and files. A record that has posted nothing yet still lists each
+measures, key fields, relations, files and a journal (engine and user entries, follow ups, and a
+viewer who sees the posting entry only in part). A record that has posted nothing yet still lists each
 effect target with zero rows; the Postings tab treats that as nothing posted. The files of a
-locked record cannot change, so the upload control hides while `_locked` is true. Only the
-journal is provisional: it follows the outline in [handoff-model.md](handoff-model.md)
-(`frontend/src/evlet/tests/provisional/`).
+locked record cannot change, so the upload control hides while `_locked` is true. Every response
+is recorded by `scripts/generate_ui_framework_fixtures.py`; none is written by hand.
 
 Model icons and accents come from the model name (invoice: receipt, blue; contact: people,
 violet), since the schema has no presentation keys. Models with a State or a Table are listed as

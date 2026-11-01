@@ -17,9 +17,9 @@ import { FormSection, KeyValueList } from '../ui/inline';
 import { humanize } from '../ui/kinds';
 import { copyText, DialogFooter, MenuButton, openModal, toast, type MenuItem } from '../ui/layers';
 import { DataTable, emptyPrefs, type Column } from '../ui/table';
-import { formatDateTime } from '../model/format';
+import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
-import type { JournalEntry } from './client';
+import type { JournalEntry, JournalPage } from './client';
 import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, screenModel, sections, sequenceField,
   summaryFields, titleOf, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
 import { cellView } from './list-page';
@@ -563,20 +563,32 @@ function Postings(ctx: AppContext, effects: Readable<DetailExtras['_effects'] | 
 
 // ---------- activity (journal) ----------
 
+// Icon, tint and verb per entry kind (docs/journal.md). `changed` also stands for entries the
+// reader may only partly see (a move, void or posting about a State or target it cannot read).
 const KINDS: Record<string, [string, any, string]> = {
-  created: ['plus', 'green', 'created this record'], changed: ['pencil', 'blue', 'changed'], moved: ['arrow-right', 'violet', 'moved it'],
-  voided: ['circle-x', 'rose', 'voided it'], revised: ['copy', 'blue', 'revised it'], effects: ['layers', 'teal', 'posted rows'], file: ['paperclip', 'slate', 'attached a file'],
+  created: ['plus', 'green', 'created this record'], changed: ['pencil', 'blue', 'changed it'], moved: ['arrow-right', 'violet', 'moved it'],
+  voided: ['circle-x', 'rose', 'voided it'], revised: ['copy', 'blue', 'revised it'], number: ['hash', 'slate', 'assigned the number'],
+  effects: ['layers', 'teal', 'posted rows'], file: ['paperclip', 'slate', 'attached a file'], deleted: ['trash-2', 'rose', 'deleted it'],
   note: ['sticky-note', 'amber', 'added a note'], message: ['mail', 'blue', 'logged a message'], call: ['phone', 'green', 'logged a call'],
-  follow_up: ['circle-check', 'amber', 'planned a follow-up'], follow_up_done: ['check', 'green', 'completed a follow-up'],
+  follow_up: ['clock', 'amber', 'planned a follow-up'], follow_up_done: ['circle-check', 'green', 'completed a follow-up'],
 };
 
+interface Change { old: unknown; new: unknown }
+interface RowChanges { added?: Array<{ id: number }>; updated?: Array<{ id: number }>; removed?: Array<{ id: number }>; reordered?: boolean }
+
 function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
-  const entries = cell<JournalEntry[] | null>(null), problem = cell('');
-  const load = () => void ctx.api.journal(model.name, store.id!, { limit: 50 }).then(page => entries.set(page.items), error => problem.set(error instanceof ApiError ? error.message : 'The history could not be loaded.'));
+  const page = cell<JournalPage | null>(null), problem = cell('');
+  const load = () => void ctx.api.journal(model.name, store.id!, { limit: 50 }).then(result => page.set(result), error => problem.set(error instanceof ApiError ? error.message : 'The history could not be loaded.'));
   load();
   const text = cell('');
+  const canNote = Boolean(model.journal?.kinds?.includes('note'));
   const label = (field: string) => fieldOf(model, field)?.label ?? humanize(field);
   const value = (field: string, raw: unknown) => { const meta = fieldOf(model, field); return raw === null || raw === undefined || raw === '' ? 'empty' : meta ? formatOf(meta, raw) : String(raw); };
+  const table = (name: string) => model.children?.find(child => child.name === name)?.label ?? humanize(name);
+  const target = (name: string) => { try { return ctx.schema.model(name).plural; } catch { return humanize(name); } };
+  const action = (name: string) => model.actions?.find(item => item.name === name)?.label ?? humanize(name);
+  const state = (name: unknown) => humanize(String(name ?? ''));
+  const person = (id: unknown) => id === null || id === undefined ? null : page.peek()?.users[String(id)] ?? `User ${id}`;
   const addNote = async () => {
     const body = text.peek().trim();
     if (!body) return;
@@ -587,26 +599,65 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
     const date = formatDateTime(at).slice(0, 10);
     return date === formatDateTime(new Date()).slice(0, 10) ? 'Today' : date;
   };
-  const entry = (item: JournalEntry) => {
-    const [icon, tint, verb] = KINDS[item.kind] ?? ['activity', 'slate', humanize(item.kind).toLowerCase()];
+  // Field changes as old and new values; Table rows as counts per collection.
+  const changes = (data: Record<string, any>) => {
+    const fields = Object.entries((data.fields ?? {}) as Record<string, Change>).map(([field, change]) =>
+      html`<div class="ev-diff"><b>${label(field)}</b> <s class="muted">${value(field, change.old)}</s> ${Icon('arrow-right', { size: 'xs' })} ${value(field, change.new)}</div>`);
+    const rows = Object.entries((data.rows ?? {}) as Record<string, RowChanges>).map(([name, rows]) => {
+      const parts = (['added', 'updated', 'removed'] as const).filter(part => rows[part]?.length).map(part => `${rows[part]!.length} ${part}`);
+      if (rows.reordered) parts.push('reordered');
+      return html`<div class="ev-diff"><b>${table(name)}</b> ${parts.join(', ')}</div>`;
+    });
+    return [...fields, ...rows];
+  };
+  const sentence = (item: JournalEntry): string => {
     const data = item.data ?? {};
-    const detail = item.kind === 'moved' ? ` from ${humanize(String(data.from ?? ''))} to ${humanize(String(data.to ?? ''))}` : '';
-    const body = item.kind === 'changed' && Array.isArray(data.changes)
-      ? html`<div class="note">${data.changes.map((change: any) => html`<div class="ev-diff"><b>${label(change.field)}</b> <s class="muted">${value(change.field, change.old)}</s> ${Icon('arrow-right', { size: 'xs' })} ${value(change.field, change.new)}</div>`)}</div>`
-      : data.text || data.reason ? html`<div class="note">${String(data.text ?? data.reason)}</div>` : null;
+    switch (item.kind) {
+      case 'changed': return data.action ? `ran ${action(data.action)}` : 'changed it';
+      case 'moved': return `moved it from ${state(data.from)} to ${state(data.to)}`;
+      case 'number': return `assigned the number ${data.number}`;
+      case 'revised': return data.copy ? `revised it into #${data.copy}` : 'revised it';
+      case 'file': return `${data.action === 'removed' ? 'removed' : 'attached'} ${data.name}`;
+      case 'effects': return (data.targets ?? []).map((posted: any) =>
+        `${posted.reversal ? 'reversed' : 'posted'} ${posted.rows} ${posted.rows === 1 ? 'row' : 'rows'} ${posted.reversal ? 'in' : 'to'} ${target(posted.target)}`).join(' and ');
+      case 'call': return `logged ${data.direction === 'in' ? 'an incoming' : 'an outgoing'} call${data.party ? ` with ${data.party}` : ''}${data.minutes ? ` (${data.minutes} min)` : ''}`;
+      case 'message': return `logged ${data.direction === 'in' ? 'a message from' : 'a message to'} ${data.party ?? 'the customer'}`;
+      default: return (KINDS[item.kind] ?? ['', '', humanize(item.kind).toLowerCase()])[2];
+    }
+  };
+  const body = (item: JournalEntry): Child => {
+    const data = item.data ?? {};
+    switch (item.kind) {
+      case 'created': return null;
+      case 'changed': case 'moved': { const list = changes(data); return list.length ? html`<div class="note">${list}</div>` : null; }
+      case 'effects': return (data.targets ?? []).some((posted: any) => posted.balanced !== undefined)
+        ? html`<div class="note">${(data.targets ?? []).filter((posted: any) => posted.balanced !== undefined).map((posted: any) =>
+          Chip({ label: `${target(posted.target)} ${posted.balanced ? 'balanced' : 'not balanced'}`, tone: posted.balanced ? 'green' : 'rose', icon: posted.balanced ? 'check' : 'info' }))}</div>` : null;
+      case 'message': return html`<div class="note mail">${data.subject ? html`<div class="subj">${String(data.subject)}</div>` : null}${String(data.text ?? '')}</div>`;
+      case 'follow_up': {
+        const who = person(data.assignee);
+        const facts = [data.due ? `Due ${formatDate(data.due)}` : null, who ? `for ${who}` : null].filter(Boolean).join(' ');
+        return html`<div class="note">${String(data.text ?? '')}<div class="ev-fu muted">${facts}${facts ? ' · ' : ''}${item.done ? Chip({ label: 'Done', tone: 'green', icon: 'check' }) : Chip({ label: 'Open', tone: 'amber', icon: 'clock' })}</div></div>`;
+      }
+      default: return data.text || data.reason ? html`<div class="note">${String(data.text ?? data.reason)}</div>` : null;
+    }
+  };
+  const entry = (item: JournalEntry) => {
+    const [icon, tint] = KINDS[item.kind] ?? ['activity', 'slate'];
+    const hidden = item.partial ? html`<span class="muted ev-partial" title="Parts of this entry are hidden from your role">${Icon('eye-off', { size: 'xs' })} Some details are hidden</span>` : null;
     return html`<div class="tl-item"><span class=${`ic b-${tint}`}>${Icon(icon, { size: 'sm' })}</span><div class="bd">
-      <div class="hd"><b>${item.actor ?? 'The system'}</b> ${verb}${detail}<span class="tm">${formatDateTime(item.at).slice(11)}</span></div>${body}</div></div>`;
+      <div class="hd"><b>${person(item.actor) ?? 'The system'}</b> ${sentence(item)}<span class="tm">${formatDateTime(item.at).slice(11)}</span></div>${body(item)}${hidden}</div></div>`;
   };
   return [
-    model.state ? InfoNote('Append-only history. Entries are never edited or removed.', 'lock') : null,
-    html`<div class="composer"><textarea aria-label="Note" placeholder="Write a note" prop:value=${text} on:input=${(event: Event) => text.set((event.target as HTMLTextAreaElement).value)}
+    InfoNote(model.journal?.tamper_evident ? 'Append-only history, chained so tampering shows. Entries are never edited or removed.' : 'Append-only history. Entries are never edited or removed.', 'lock'),
+    canNote ? html`<div class="composer"><textarea aria-label="Note" placeholder="Write a note" prop:value=${text} on:input=${(event: Event) => text.set((event.target as HTMLTextAreaElement).value)}
       on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.stopPropagation(); void addNote(); } }}></textarea>
-      <div class="cf"><span class="grow"></span>${Button({ label: 'Save note', variant: 'primary', size: 'small', disabled: () => !text.get().trim(), onClick: () => void addNote() })}</div></div>`,
-    live(() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : entries.get() === null ? html`<p class="muted">Loading…</p>`
-      : !entries.get()!.length ? EmptyState({ icon: 'activity', tint: 'slate', title: 'No activity yet', text: 'Changes, moves and notes for this record land here.' })
+      <div class="cf"><span class="grow"></span>${Button({ label: 'Save note', variant: 'primary', size: 'small', disabled: () => !text.get().trim(), onClick: () => void addNote() })}</div></div>` : null,
+    live(() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : page.get() === null ? html`<p class="muted">Loading…</p>`
+      : !page.get()!.items.length ? EmptyState({ icon: 'activity', tint: 'slate', title: 'No activity yet', text: 'Changes, moves and notes for this record land here.' })
       : html`<div class="timeline">${(() => {
         let last = '';
-        return entries.get()!.flatMap(item => { const label = day(item.at); const head = label !== last ? html`<div class="tl-day">${label}</div>` : null; last = label; return [head, entry(item)]; });
+        return page.get()!.items.flatMap(item => { const label = day(item.at); const head = label !== last ? html`<div class="tl-day">${label}</div>` : null; last = label; return [head, entry(item)]; });
       })()}</div>`),
   ];
 }
