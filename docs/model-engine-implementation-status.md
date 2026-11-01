@@ -575,3 +575,47 @@ Connection with void and revise (01-11-2026):
   `tests/test_sequences.py` (with PostgreSQL variants) and `tests/test_builds.py` cover a
   revised copy's fresh number, numbers kept on void, a void before assignment, a revisable
   model numbered on create, and gapless numbers after a caught revise failure.
+
+## Phase 9: measures and the aggregate API (01-11-2026)
+
+Branch `model/09-measures`, stacked on `model/04-state` (built alongside Phases 5 and
+7); restacked on `model/07-stacked` as `model/09-stacked`. Guide: [measures.md](measures.md).
+
+* **Engine.** `evlet/measures.py`. `Count`, `CountDistinct`, `Sum`, `Min`, `Max`, and
+  `Day`, `Month`, `Year` for grouping, are top-level exports. One SQL statement per call.
+  Sums add stored scaled integers; SQLite's integer overflow and PostgreSQL results
+  outside the signed 64-bit range are a 422 field error, never a float. Groups are
+  fetched with `LIMIT 501` and sorted in Python (empty first) so both databases agree.
+* **where=.** Compiled with `compile_expression` (so the IR and type rules are finite-v1)
+  and then to parameterized SQL that yields 1, 0 or NULL. `&` is a product, `|` is
+  `(a + b + 1) / 2` and `~` is `1 - a`, so an undecided part keeps the whole condition
+  undecided, as finite-v1 does; only true rows count. Literals with more places than the
+  field are compared exactly (floor or ceiling). Arithmetic, Link paths, `today()` and
+  the other functions are rejected.
+* **Meta.measures.** Compiled in `Registry` (`registry.measures`). Model-level, or per
+  record with `model=` and `link=` (`Count(Payment, link="invoice")`,
+  `Sum("amount", model=Payment, link="invoice")`). `view_for` now accepts the
+  `measures` Meta key.
+* **APIs.** `Database.aggregate()`, `Database.measures()` (trusted), `Context.aggregate()`,
+  `Context.measures()` (permission-aware). HTTP: `GET /api/{model}/aggregate`,
+  `GET /api/{model}/measures` (with list `filters`) and `GET /api/{model}/{id}/measures`.
+  These GET routes sit beside `POST /api/{model}/{id}/void`, `/revise` and `/moves/{to}`
+  without overlap (tested on one model).
+  Row scopes apply to the model and to related models. Unreadable measure, `where`
+  and group fields are 403 with one generic message; declared measures a role cannot
+  read are left out. `/api/schema` adds `measures` only to models that declare them.
+* **Playground.** The amendment Quote declares `open_total`, `won_total` and `quotes`;
+  `tests/test_builds.py` reads them and groups quotes by stage.
+* **Tests.** `tests/test_measures.py` runs every case on SQLite and, with
+  `EVLET_TEST_POSTGRES_DSN`, on PostgreSQL: exact sums over 1,000 rows and at the 64-bit
+  edge, overflow, empty results, grouping by day, month and year across years and
+  process timezones, limits, filters, 28 `where` cases against finite-v1 semantics,
+  rejected expressions, registration errors, row scope and field rules through
+  `Context` and HTTP, per-record measures, malformed parameters and schema output.
+
+Known limitations:
+
+* Per-record measures run one statement per related model and link, for one record at a
+  time; there is no batched list form yet (Phase 10 relation counts may need one).
+* Text minimums and maximums and grouping `DateTime` fields by part are not offered.
+* The connector, the MCP server and the SolidJS screens do not use measures yet.

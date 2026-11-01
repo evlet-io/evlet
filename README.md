@@ -34,7 +34,8 @@ owned child tables, reactive fields, dialogs, reports, services and native addit
 language, nested owned tables and the shared Python/browser calculation engine.
 [States, moves and model actions](docs/states-actions.md) describe document states,
 locks and actions with validated inputs. [Document numbers](docs/sequences.md) describe
-`Sequence` fields.
+`Sequence` fields. [Measures](docs/measures.md) describe exact aggregates, declared model
+measures and their HTTP routes.
 
 For virtual environment setup and each step explained, read
 [Your first site](docs/getting-started.md).
