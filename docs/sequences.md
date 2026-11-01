@@ -199,6 +199,60 @@ format with a period but no `date=` field, pass `today="YYYY-MM-DD"`; otherwise 
 date field decides its period. Run it before the application takes new writes if the
 existing rows should get the lower numbers.
 
+## Naming series
+
+A naming series names a record when it is created, with rules an instance can change in
+Controls. It runs on the same counters as a Sequence.
+
+```python
+from evlet import Date, Decimal, Model, Naming, Select, Series, Text
+
+
+class Invoice(Model):
+    reference = Text(unique=True)
+    total = Decimal(scale=2)
+    status = Select(("draft", "sent"), default="draft")
+    posting_date = Date()
+
+    class Meta:
+        naming = Naming("reference",
+                        Series("LC-{YYYY}-{####}", when='total >= 250000 and status == "sent"', label="Large contracts"),
+                        Series("INV-{YYYY}-{####}", label="Invoices"),
+                        date_field="posting_date")
+```
+
+* The target field is a stored `Text` field with `unique=True` that is not required. The server
+  fills it on create; it is read only for every role in the API and forms.
+* Series are checked from the top; the first whose condition matches is used. The last series has
+  no condition, and only the last, so every record gets a name.
+* A trusted `Session.create` may pass a name (imports); it is kept. Without one the series names it.
+  A revision's copy gets a new name.
+
+**Format.** `{YYYY}`, `{YY}`, `{MM}`, `{DD}`, exactly one counter `{###}` to `{########}` (the `#`
+count is the zero padding) and `{field}`, the value of a short text field of the model with `/` and
+spaces replaced by `-`. 40 characters at most, before and after expansion. Date tokens use
+`date_field`, or the creation day in the instance timezone.
+
+**Conditions** are text, parsed by `evlet/expressions.py`: `field op value`, `field in (a, b)`,
+`and`, `or`, `not` and brackets, with `==`, `!=`, `>`, `>=`, `<`, `<=`. Values are quoted text,
+numbers, `true`, `false` or `empty` (matches null and ""). Numbers compare as decimals, dates as ISO
+text, a Link by its id. No functions, attributes, arithmetic or other names; 500 characters and 10
+levels of brackets and `not` at most. Errors read like `Use == to compare, not =.`,
+`totl isn't a field on this model. Did you mean total?`, `Put text values in quotes, like "export".`
+and `A quote is not closed.`
+
+**Counters.** One counter per model and resolved prefix, the expanded text before the counter
+token. A new year or month gives a new prefix, so it starts at 1. A counter is a row of
+`evlet_sequence` with `field` the target field, `scope_key` the prefix and an empty `period`; the
+table also keeps the last name, how it last changed (`issued` or `set`), the note, who and when.
+Issuing is one insert-or-increment statement in the create transaction, as for a Sequence, so
+writers never get the same name. A name that is already taken is skipped, up to 1000 times.
+Controls can set a counter with a reason, never below the number in the last issued name.
+
+How it differs from a Sequence: a Sequence is a field type, fixed in code, with scope fields and
+`assign_on`; a naming series is a `Meta` declaration on a plain unique field, assigned on create
+only, whose series and counters an instance can change in Controls.
+
 ## For later phases
 
 * `evlet.sequences.clear_for_copy(model, values)` returns a copy of `values` with every
