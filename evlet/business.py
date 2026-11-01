@@ -186,8 +186,11 @@ class Business:
                     available_behavior[name] = allowed
                 entry['behavior'] = available_behavior
                 from .reactivity import references
-                used_sources = {path.split('.')[0] for name in readable for path in references(plans(model)[name].get('compute'))}
-                entry['sources'] = {name: source for name, source in entry.get('sources', {}).items() if name in used_sources}
+                used_sources = {}
+                for path in (path for name in readable for path in references(plans(model)[name].get('compute'))):
+                    if path.count('.') == 1: used_sources.setdefault(path.split('.')[0], set()).add(path.split('.')[1])
+                entry['sources'] = {name: {key: value for key, value in outputs.items() if key in used_sources[name]}
+                                    for name, outputs in entry.get('sources', {}).items() if name in used_sources}
                 entry['order'] = [key for key in entry.get('order', []) if key.split('.')[0] in readable or key.split('.')[0] in model.__tables__]
             entry['fields'] = [{**field, 'read_only': field['name'] not in writable} for field in entry['fields'] if field['name'] in readable]
             entry['list_fields'] = [name for name in entry['list_fields'] if name == 'id' or name in readable]
