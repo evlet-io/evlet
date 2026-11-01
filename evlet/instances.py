@@ -85,7 +85,7 @@ class AppDefinition:
         from .auth import ROLE_ID, ROLES
         object.__setattr__(self, 'roles', dict(self.roles))
         for role, base in self.roles.items():
-            if not isinstance(role, str) or not ROLE_ID.fullmatch(role) or role in ROLES or role == 'controls' or base not in ('editor', 'viewer'):
+            if not isinstance(role, str) or not ROLE_ID.fullmatch(role) or role in ROLES or role in ('controls', 'portal', 'public') or base not in ('editor', 'viewer'):
                 raise ValueError(f'roles maps a new lowercase role id to its base, editor or viewer: {role!r}')
         object.__setattr__(self, 'scopes', dict(self.scopes))
         if any(not isinstance(key, str) or not ROLE_ID.fullmatch(key) or not callable(scope) for key, scope in self.scopes.items()):

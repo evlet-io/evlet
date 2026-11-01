@@ -30,6 +30,11 @@ class Rule:
     scope: object = None
 
 
+def default_rule(base):
+    """The framework default for a base role: admin and editor everything, viewer read, any other base nothing."""
+    return Rule(('read', 'create', 'update', 'delete') if base in ('admin', 'editor') else ('read',) if base == 'viewer' else ())
+
+
 def child_operations(operations):
     result = {'read'} & set(operations)
     if result and {'create', 'update'} & set(operations):
@@ -124,8 +129,7 @@ class Policy:
         found = self.rules.get((user.role, model))
         if found is not None:
             return found
-        base = self.roles.get(user.role)
-        return Rule(()) if base is None else Rule(('read',) if base == 'viewer' else ('read', 'create', 'update', 'delete'))
+        return default_rule(self.roles.get(user.role))
 
     def allows(self, user, model, operation):
         if operation in ('create', 'update', 'delete') and model in getattr(self.registry, 'effect_targets', ()):

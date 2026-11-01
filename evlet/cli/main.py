@@ -169,11 +169,17 @@ def main(argv=None):
         elif args.command == 'controls':
             from .project import child
             from ..controls import grant
-            from ..instances import read_instance
+            from ..instances import read_instance, read_routes
             path = child(root, 'instances', args.instance)
             read_instance(path)
             grant(path / 'data/database.sqlite3', args.username)
-            print(f'{args.username} is now an active admin and can open Controls.')
+            print(f'{args.username} is now an active admin. Allowed networks set in Controls were cleared.')
+            try:
+                limits = getattr((read_routes(path) or {}).get('controls'), 'allow_ips', ())
+            except Exception:
+                limits = ('the networks in its ControlsAccess, if any',)
+            if limits:
+                print(f'routes.py still limits Controls to {", ".join(limits)}. Edit instances/{args.instance}/routes.py to open it from elsewhere.')
         elif args.command == 'effects':
             from .effects import check_instance
             from ..effects import describe

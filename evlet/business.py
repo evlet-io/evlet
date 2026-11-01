@@ -734,9 +734,11 @@ class Business:
             raise AccessError(409, 'This record changed since you opened it. Reload it before saving.')
 
     def accounts(self, scope, body, user):
+        """The older account routes: the same access check, limits and audit rows as Controls Users."""
         path, method = scope['path'], scope['method']
-        if user.role != 'admin':
+        if not self.controls.allows(scope, user):
             raise AccessError(403, 'Administrator access required')
+        self.controls.check(scope, user)
         if path == '/api/auth/users':
             if method == 'GET':
                 try:
@@ -748,10 +750,12 @@ class Business:
                     raise ValidationError({'offset': 'Use a valid offset'})
                 return 200, self.auth.user_page(offset), []
             if method == 'POST':
-                return 201, self.auth.create_user(**body).public(), []
+                return 201, self.controls.add_user(user, body).public(), []
         match = re.fullmatch(r'/api/auth/users/([1-9][0-9]{0,18})', path)
         if match and method == 'PATCH' and int(match[1]) <= 2**63-1:
-            self.auth.update_user(int(match[1]), body)
+            if not isinstance(body, dict) or 'sessions' in body:
+                raise ValidationError({'_form': 'Use role, active, or password'})
+            self.controls.change_user(user, int(match[1]), body)
             return 204, None, []
         raise AccessError(405, 'Method not allowed')
 

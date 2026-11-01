@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, quote
 from .auth import ROLE_ID, ROLES, AccessError
 from .fields import Link
 from .models import ValidationError
-from .permissions import CORRECTIONS, Policy, Rule
+from .permissions import CORRECTIONS, Policy, Rule, default_rule
 
 OPERATIONS = ('read', 'create', 'update', 'delete', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
@@ -22,6 +22,8 @@ SETTINGS = MappingProxyType({
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
 })
 NOT_FOUND = 'Route not found'
+ADMIN_ONLY = 'Only an admin can do this: change admin accounts, give the admin role, manage roles or decide who opens Controls.'
+RESERVED_ROLES = ('controls', 'portal', 'public')
 TWO_STEP = 'Controls needs two-step sign-in, which this instance does not have yet. Remove require_two_step from routes.py for now.'
 LABELS = {None: 'All records', 'created_by': 'Records they created', 'owner': 'Records they own',
           'account_manager': 'Customers they manage', 'assignee': 'Tasks assigned to them', 'own_customer': 'Their own customer only'}
@@ -70,7 +72,7 @@ def bump(connection):
 
 
 def grant(database_path, username):
-    """Break glass from the server shell: make a user an active admin, audited as cli."""
+    """Break glass from the server shell: make a user an active admin and clear the Controls allowlist, audited as cli."""
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
     connection = sqlite3.connect(database_path, isolation_level=None)
@@ -86,6 +88,11 @@ def grant(database_path, username):
         connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (row[0],))
         audit(connection, 'cli', 'Users', username.lower(), 'Made an active admin from the server shell',
               {'role': row[1], 'active': bool(row[2])}, {'role': 'admin', 'active': True})
+        # An allowlist that shuts everyone out is cleared too; routes.py stays as it is.
+        ips = connection.execute("SELECT value FROM evlet_overrides WHERE kind='setting' AND key='security.controls_ips'").fetchone()
+        if ips is not None:
+            connection.execute("DELETE FROM evlet_overrides WHERE kind='setting' AND key='security.controls_ips'")
+            audit(connection, 'cli', 'Security', 'security.controls_ips', 'Allowed networks cleared from the server shell', json.loads(ips[0]), None)
         bump(connection)
         connection.execute('COMMIT')
     except BaseException:
@@ -96,16 +103,41 @@ def grant(database_path, username):
         connection.close()
 
 
-def _client_address(scope):
+def client_ip(scope, auth=None):
+    """The address the Controls allowlist checks: the auth's own reading when it has one, else the socket peer."""
+    reader = getattr(auth, 'client_address', None)
+    value = reader(scope) if reader is not None else (scope.get('client') or ('',))[0]
     try:
-        address = ipaddress.ip_address((scope.get('client') or ('',))[0])
+        address = ipaddress.ip_address(str(value))
     except ValueError:
         return None
-    return address.ipv4_mapped or address if address.version == 6 else address
+    return (address.ipv4_mapped or address) if address.version == 6 else address
 
 
 def _networks(values):
     return [ipaddress.ip_network(value, strict=False) for value in values]
+
+
+def strictest(key, value, roles):
+    """The strictest safe value of a stored setting that no longer validates."""
+    number = type(value) is int
+    if key == 'security.password_min':
+        return min(max(value, 15), 64) if number else 64
+    if key == 'security.session_hours':
+        return min(max(value, 1), SETTINGS[key]) if number else 1
+    if key == 'security.lockout':
+        return min(max(value, 3), SETTINGS[key]) if number else 3
+    if key == 'security.two_step_roles':
+        listed = [role for role in value if isinstance(role, str) and role in roles] if isinstance(value, list) else []
+        return ['admin', *dict.fromkeys(role for role in listed if role != 'admin')]
+    kept = []
+    for item in value if isinstance(value, list) else []:
+        try:
+            kept.append(str(ipaddress.ip_network(item, strict=False)))
+        except (TypeError, ValueError):
+            continue
+    # Nothing usable left: no address may open Controls until it is fixed or cleared from the shell.
+    return kept or ['0.0.0.0/32']
 
 
 class Controls:
@@ -166,12 +198,16 @@ class Controls:
             self.apply(version, roles, stored)
 
     def apply(self, version, roles, stored):
+        """Build the Policy and settings. An override that no longer validates fails closed and is reported."""
         problems, perms, settings = [], {}, dict(SETTINGS)
         self.roles = roles
         self.base = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles))
         for row in stored:
             try:
                 value = json.loads(row['value'])
+            except ValueError:
+                value = None
+            try:
                 if row['kind'] == 'perm':
                     role, model = self.perm_key(row['key'])
                     perms[role, model] = self.rule(role, model, self.check_perm(row['key'], value))
@@ -179,13 +215,21 @@ class Controls:
                     settings[row['key']] = self.check_setting(row['key'], value)
                 else:
                     raise ValueError('This kind of change is not available yet.')
-            except (ValueError, KeyError) as exc:
+            except (ValueError, KeyError, TypeError) as exc:
                 problems.append({'kind': row['kind'], 'key': row['key'], 'error': str(exc)})
+                if row['kind'] == 'perm':
+                    try:
+                        perms[self.perm_key(row['key'])] = Rule(())
+                    except ValueError:
+                        pass
+                elif row['kind'] == 'setting' and row['key'] in SETTINGS:
+                    settings[row['key']] = strictest(row['key'], value, roles)
         try:
             policy = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles), overrides=perms)
         except ValueError as exc:
-            problems.append({'kind': 'perm', 'key': 'all', 'error': str(exc)})
-            policy = self.base
+            problems.append({'kind': 'perm', 'key': 'all', 'error': f'{exc}. Every role except admin is denied until this is fixed.'})
+            policy = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles),
+                            overrides={(role, model): Rule(()) for role in roles if role != 'admin' for model in self.registry.models.values()})
         self.business.policy = policy
         if self.business.jobs is not None:
             self.business.jobs.policy = policy
@@ -210,7 +254,7 @@ class Controls:
             return False
         if user.role != 'admin' and not role['opens_controls']:
             return False
-        address = _client_address(scope)
+        address = client_ip(scope, self.business.auth)
         for allowed in (self.routes.controls.allow_ips, self.settings['security.controls_ips']):
             if allowed and (address is None or not any(address in network for network in _networks(allowed))):
                 return False
@@ -308,8 +352,7 @@ class Controls:
         found = self.base.file_rules.get((role, model))
         if found is not None:
             return found
-        base = self.role_bases(self.roles).get(role, 'viewer')
-        return Rule(('read',) if base == 'viewer' else ('read', 'create', 'update', 'delete'))
+        return default_rule(self.role_bases(self.roles).get(role))
 
     def value(self, model, rule):
         order = list(model.__declared_fields__)
@@ -323,6 +366,9 @@ class Controls:
             raise ValueError('Send ops, read, write and scope.')
         ops, read, write, scope = value['ops'], value['read'], value['write'], value['scope']
         fields = list(model.__declared_fields__)
+        strings = lambda items: isinstance(items, list) and all(isinstance(item, str) for item in items)
+        if not strings(ops) or any(names is not None and not strings(names) for names in (read, write)) or not (scope is None or isinstance(scope, str)):
+            raise ValueError('Use lists of names for ops, read and write, and a name or null for scope.')
         if not isinstance(ops, list) or any(op not in OPERATIONS for op in ops) or len(set(ops)) != len(ops):
             raise ValueError('Use read, create, update and delete, each once.')
         for names in (read, write):
@@ -445,14 +491,14 @@ class Controls:
         errors, checked, seen = {}, [], set()
         for index, change in enumerate(changes):
             try:
-                if not isinstance(change, dict) or set(change) != {'kind', 'key', 'value'} or not isinstance(change['key'], str):
+                if not isinstance(change, dict) or set(change) != {'kind', 'key', 'value'} or not isinstance(change['kind'], str) or not isinstance(change['key'], str):
                     raise ValueError('Send kind, key and value.')
                 if (change['kind'], change['key']) in seen:
                     raise ValueError('Change each item once.')
                 seen.add((change['kind'], change['key']))
                 checked.append((change['kind'], change['key'], self.check_change(change['kind'], change['key'], change['value'])))
-            except ValueError as exc:
-                errors[f'changes.{index}'] = str(exc)
+            except (ValueError, TypeError) as exc:
+                errors[f'changes.{index}'] = str(exc) if isinstance(exc, ValueError) else 'Send kind, key and value.'
         if errors:
             raise ValidationError(errors)
         now = int(time.time())
@@ -470,6 +516,11 @@ class Controls:
                                        (kind, key, json.dumps(value, sort_keys=True), user.id, now))
                 area, target = ('Permissions', key.replace('|', ' · ')) if kind == 'perm' else ('Security', key)
                 audit(connection, user.username, area, target, 'Reset to the file value' if value is None else 'Changed', before, value)
+                if key == 'security.session_hours':
+                    # Sessions keep their start: a shorter length ends the ones already older than it.
+                    shorter = self.settings[key] - (SETTINGS[key] if value is None else value)
+                    if shorter > 0:
+                        connection.execute('UPDATE evlet_sessions SET expires=expires-? WHERE expires>?', (shorter * 3600, now))
             version = self.publish(tx)
         self.refresh()
         return {'version': version, 'saved': len(checked)}
@@ -490,33 +541,47 @@ class Controls:
             item['active'], item['sessions'] = bool(item['active']), sessions.get(item['id'], 0)
         return page
 
+    def add_user(self, actor, body):
+        if not isinstance(body, dict) or set(body) - {'username', 'password', 'role'}:
+            raise ValidationError({'_form': 'Use username, password and role'})
+        if body.get('role') == 'admin' and actor.role != 'admin':
+            raise AccessError(403, ADMIN_ONLY)
+        return self.business.auth.add_user(dict(body), lambda connection, user: audit(
+            connection, actor.username, 'Users', user.username, f'Added as {user.role}', None, {'role': user.role}))
+
     def change_user(self, actor, user_id, body):
-        auth = self.business.auth
         if not isinstance(body, dict) or not body or set(body) - {'role', 'active', 'password', 'sessions'}:
             raise ValidationError({'_form': 'Use role, active, password or sessions'})
-        with self.database._connection() as connection:
-            row = connection.execute('SELECT username, role, active FROM evlet_users WHERE id=?', (user_id,)).fetchone()
-        if row is None:
-            raise AccessError(404, 'Account not found')
-        changes = {key: value for key, value in body.items() if key != 'sessions'}
         if 'sessions' in body and body['sessions'] != 'end':
             raise ValidationError({'sessions': 'Use "end" to sign out every session'})
-        if changes:
-            auth.update_user(user_id, changes)
-        details = []
-        if 'role' in changes and changes['role'] != row['role']:
-            details.append(f"Role: {row['role']} → {changes['role']}")
-        if 'active' in changes and changes['active'] != bool(row['active']):
-            details.append('Activated' if changes['active'] else 'Deactivated')
-        if 'password' in changes:
-            details.append('Password set')
-        with self.database.transaction() as tx:
+        changes = {key: value for key, value in body.items() if key != 'sessions'}
+
+        def check(connection, row, values):
+            if actor.role != 'admin' and (row['role'] == 'admin' or values.get('role') == 'admin'):
+                raise AccessError(403, ADMIN_ONLY)
+            details = []
+            if 'role' in values and values['role'] != row['role']:
+                details.append(f"Role: {row['role']} → {values['role']}")
+            if 'active' in values and values['active'] != bool(row['active']):
+                details.append('Activated' if values['active'] else 'Deactivated')
+            if 'password' in values:
+                details.append('Password set')
             if 'sessions' in body:
-                tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (user_id,))
                 details.append('Signed out everywhere')
-            if details:
-                audit(tx.connection, actor.username, 'Users', row['username'], ' · '.join(details),
-                      {'role': row['role'], 'active': bool(row['active'])}, {key: changes[key] for key in ('role', 'active') if key in changes})
+            before = {'role': row['role'], 'active': bool(row['active'])}
+            after = {key: values[key] for key in ('role', 'active') if key in values}
+            return lambda: audit(connection, actor.username, 'Users', row['username'], ' · '.join(details), before, after) if details else None
+
+        if changes:
+            self.business.auth.update_user(user_id, changes, check)
+            return
+        with self.database.transaction() as tx:
+            row = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            if row is None:
+                raise AccessError(404, 'Account not found')
+            after = check(tx.connection, row, {})
+            tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (user_id,))
+            after()
 
     def role_list(self):
         with self.database._connection() as connection:
@@ -526,6 +591,8 @@ class Controls:
                  'app': self.app_roles.get(row['id'], (None,))[0], 'declared': row['id'] in self.file.roles} for row in rows]
 
     def create_role(self, actor, body):
+        if actor.role != 'admin':
+            raise AccessError(403, ADMIN_ONLY)
         if not isinstance(body, dict) or set(body) - {'id', 'base', 'realm', 'description'}:
             raise ValidationError({'_form': 'Use id, base, realm and description'})
         role, base, realm, description = body.get('id'), body.get('base', 'editor'), body.get('realm', 'desk'), body.get('description', '')
@@ -538,7 +605,7 @@ class Controls:
         if not isinstance(description, str) or len(description) > 200:
             raise ValidationError({'description': 'Use at most 200 characters.'})
         with self.database.transaction() as tx:
-            if role == 'controls' or tx.connection.execute('SELECT 1 FROM evlet_roles WHERE id=?', (role,)).fetchone():
+            if role in RESERVED_ROLES or tx.connection.execute('SELECT 1 FROM evlet_roles WHERE id=?', (role,)).fetchone():
                 raise ValidationError({'id': 'That name is taken.'})
             tx.connection.execute("INSERT INTO evlet_roles(id,kind,base,realm,opens_controls,description) VALUES (?,'custom',?,?,0,?)",
                                   (role, base, realm, description.strip() or f'Starts from {base}.'))
@@ -557,6 +624,8 @@ class Controls:
             row = tx.connection.execute('SELECT * FROM evlet_roles WHERE id=?', (role,)).fetchone()
             if row is None:
                 raise AccessError(404, 'Role not found')
+            if actor.role != 'admin' and ('opens_controls' in body or row['kind'] == 'framework'):
+                raise AccessError(403, ADMIN_ONLY)
             details = []
             if 'opens_controls' in body and body['opens_controls'] != bool(row['opens_controls']):
                 if role == 'admin':
@@ -574,6 +643,8 @@ class Controls:
         self.refresh()
 
     def delete_role(self, actor, role):
+        if actor.role != 'admin':
+            raise AccessError(403, ADMIN_ONLY)
         with self.database.transaction() as tx:
             row = tx.connection.execute('SELECT * FROM evlet_roles WHERE id=?', (role,)).fetchone()
             if row is None:
@@ -601,7 +672,7 @@ class Controls:
 
     # ---------- state ----------
 
-    def state(self, user):
+    def state(self, user, scope):
         from importlib import metadata
         try:
             version = metadata.version('evlet')
@@ -630,7 +701,7 @@ class Controls:
             'settings': {key: {'file': SETTINGS[key], 'value': self.settings[key]} for key in SETTINGS},
             'controls': {'allow_ips': list(controls.allow_ips), 'require_two_step': controls.require_two_step},
             'attention': attention, 'overrides': overrides, 'users': {'active': active or 0, 'total': total},
-            'audit': recent, 'two_step': False, 'links': self.links_ready(),
+            'audit': recent, 'two_step': False, 'links': self.links_ready(), 'client': str(client_ip(scope, self.business.auth) or ''),
         }
 
     # ---------- HTTP ----------
@@ -639,7 +710,7 @@ class Controls:
         self.check(scope, user)
         path, method = scope['path'].removeprefix('/api/_controls'), scope['method']
         if path == '/state' and method == 'GET':
-            return 200, self.state(user), []
+            return 200, self.state(user, scope), []
         if path == '/overrides':
             if method == 'GET':
                 return 200, self.overrides(), []
@@ -656,10 +727,7 @@ class Controls:
                     raise ValidationError({'offset': 'Use a valid offset'})
                 return 200, self.users(offset), []
             if method == 'POST':
-                created = self.business.auth.create_user(**body)
-                with self.database.transaction() as tx:
-                    audit(tx.connection, user.username, 'Users', created.username, f'Added as {created.role}', None, {'role': created.role})
-                return 201, created.public(), []
+                return 201, self.add_user(user, body).public(), []
         match = re.fullmatch(r'/users/([1-9][0-9]{0,18})', path)
         if match and method == 'PATCH' and int(match[1]) <= 2**63 - 1:
             self.change_user(user, int(match[1]), body)
