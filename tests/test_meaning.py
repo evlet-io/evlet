@@ -339,3 +339,149 @@ def test_child_table_models_are_not_relations_and_cannot_hold_attachments(tmp_pa
     auth = LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
     with pytest.raises(ValueError, match='child table'):
         Application(db, auth=auth, children=(ChildTable(Binder, 'sheets', Sheet, 'binder', 'Sheets'),))
+
+
+def test_related_order_skips_links_to_row_scoped_models_in_route_and_schema(tmp_path):
+    class Owner(Model):
+        permissions = ALL
+        name = Text(default='')
+
+        class Meta:
+            relations = (Related('item', 'owner', order=('-secret', '-amount')),)
+
+    class Secret(Model):
+        # Editors see no secrets, so ordering by the Link would reveal which items point to one.
+        permissions = {**ALL, 'editor': Rule(('read',), scope=lambda user: {'owner': -1})}
+        owner = Integer(default=0)
+
+    class Item(Model):
+        permissions = {**ALL, 'viewer': Rule(('read',), read_fields=('owner', 'secret'))}
+        owner = Link(Owner)
+        secret = Link(Secret)
+        amount = Currency(default=0)
+
+    app = start(tmp_path, Owner, Secret, Item)
+    admin, editor, viewer = client(app), add_user(app, 'editor'), add_user(app, 'viewer')
+    owner = admin('POST', '/api/owner', {'name': 'a'})[1]['id']
+    secret = admin('POST', '/api/secret', {})[1]['id']
+    ids = [admin('POST', '/api/item', {'owner': owner, 'secret': value, 'amount': amount})[1]['id']
+           for value, amount in ((None, '1'), (secret, '2'), (None, '3'))]
+    assert editor('GET', '/api/item?order_by=-secret')[0] == 403
+    url = f'/api/owner/{owner}/related/item.owner'
+    # The editor may not order by the scoped Link, so only the amount applies.
+    assert [item['id'] for item in editor('GET', url)[1]['items']] == ids[::-1]
+    # The viewer cannot read amounts and may order by the Link (Secret has no scope for viewers).
+    assert [item['id'] for item in viewer('GET', url)[1]['items']][0] == ids[1]
+    orders = {name: entry(c, 'owner')['relations'][0]['order'] for name, c in (('admin', admin), ('editor', editor), ('viewer', viewer))}
+    assert orders == {'admin': ['-secret', '-amount'], 'editor': ['-amount'], 'viewer': ['-secret']}
+
+
+def test_related_schema_order_falls_back_to_id(tmp_path):
+    class Folder(Model):
+        permissions = ALL
+        name = Text(default='')
+
+        class Meta:
+            relations = (Related('sheet', 'folder', order=('-amount',)),)
+
+    class Sheet(Model):
+        permissions = {**ALL, 'viewer': Rule(('read',), read_fields=('folder',))}
+        folder = Link(Folder)
+        amount = Currency(default=0)
+
+    app = start(tmp_path, Folder, Sheet)
+    viewer = add_user(app, 'viewer')
+    assert entry(viewer, 'folder')['relations'][0]['order'] == ['-id']
+    assert entry(client(app), 'folder')['relations'][0]['order'] == ['-amount']
+
+
+@pytest.mark.parametrize('names', [(['name'],), ({'a': 1},), (None,), 'name', ['name', ['x']]])
+def test_key_fields_of_other_types_raise_value_error(names):
+    Owner = type('Owner', (Model,), {'name': Text(default=''), 'Meta': type('Meta', (), {'key_fields': names})})
+    with pytest.raises(ValueError, match='key_fields'):
+        Registry(Owner)
+
+
+def test_size_message_uses_singular_for_one_byte(tmp_path):
+    class Note(Model):
+        name = Text(default='')
+
+        class Meta:
+            attachments = Attachments(max_files=1, max_size=1)
+
+    app = start(tmp_path, Note)
+    admin = client(app)
+    note = admin('POST', '/api/note', {'name': 'x'})[1]['id']
+    status, body, _ = admin('POST', f'/api/note/{note}/attachments', {'name': 'a.txt', 'content': 'YWI='})
+    assert status == 422 and body['fields']['attachment'] == 'Use a nonempty file up to 1 byte'
+    assert admin('POST', f'/api/note/{note}/attachments', {'name': 'a.txt', 'content': 'YQ=='})[0] == 201
+    status, body, _ = admin('POST', f'/api/note/{note}/attachments', {'name': 'b.txt', 'content': 'YQ=='})
+    assert body['fields']['attachment'] == 'Use at most 1 attachment per record'
+
+
+@pytest.mark.parametrize('meta', [{'key_fields': ('title',)}, {'relations': (Related('leaf', 'page'),)}])
+def test_child_table_models_cannot_declare_key_fields_or_relations(tmp_path, meta):
+    class Folder(Model):
+        name = Text(default='')
+
+    Page = type('Page', (Model,), {'folder': Link(Folder, required=True), 'title': Text(default=''),
+                                   'Meta': type('Meta', (), meta)})
+
+    class Leaf(Model):
+        page = Link(Page)
+
+    db = Database(tmp_path / 'child.sqlite3', Registry(Folder, Page, Leaf))
+    auth = LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    with pytest.raises(ValueError, match='child table'):
+        Application(db, auth=auth, children=(ChildTable(Folder, 'pages', Page, 'folder', 'Pages'),))
+
+
+def test_application_attachments_on_a_child_table_model_keep_working(tmp_path):
+    class Folder(Model):
+        name = Text(default='')
+
+    class Page(Model):
+        folder = Link(Folder, required=True)
+
+    db = Database(tmp_path / 'child.sqlite3', Registry(Folder, Page))
+    auth = LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    # Unchanged from earlier releases: accepted, though child rows have no route of their own.
+    app = Application(db, auth=auth, attachments=(Page,), children=(ChildTable(Folder, 'pages', Page, 'folder', 'Pages'),))
+    assert Page in app.business.attachments
+
+
+def test_subclasses_apply_inherited_relations_that_point_to_them():
+    class Base(Model):
+        name = Text(default='')
+
+        class Meta:
+            key_fields = ('name',)
+            relations = (Related('entry', 'base', label='Entries'),)
+
+    class Special(Base):
+        pass
+
+    class Entry(Model):
+        base = Link(Base)
+        special = Link(Special)
+
+    meaning = Registry(Base, Special, Entry).meaning
+    assert [(item.name, item.label) for item in meaning[Base].relations] == [('entry.base', 'Entries')]
+    # The inherited Related names Entry.base, which points to Base, so Special keeps the defaults.
+    assert [(item.name, item.label) for item in meaning[Special].relations] == [('entry.special', 'Entrys')]
+    assert meaning[Special].key_fields == ('name',)
+
+
+def test_a_subclass_redeclaring_meta_is_checked_strictly():
+    class Base(Model):
+        name = Text(default='')
+
+    class Special(Base):
+        class Meta:
+            relations = (Related('entry', 'base'),)
+
+    class Entry(Model):
+        base = Link(Base)
+
+    with pytest.raises(ValueError, match='must be a Link to Special'):
+        Registry(Base, Special, Entry)

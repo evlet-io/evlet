@@ -53,6 +53,11 @@ model with `Meta.revisable = True` gets a relation named `Revisions` through its
   the parent's `children`.
 - Hidden Links. A `Related` cannot name one.
 
+Because every other Link is discovered, a model that many others point to (a
+customer, a company) gets many relations. Hide the ones readers do not need with
+`Related(model, link, hidden=True)`, and set a small `limit` on large ones. A role
+sees only the relations it can read (see Schema below).
+
 **Names and defaults.** A relation is named `{model}.{link}`, for example
 `payment.invoice`. Its default label is the other model's plural label. When that
 model has more than one Link to this model, the field label is added:
@@ -75,6 +80,10 @@ by name. Registration fails when a `Related` names something that is not a Link
 from a root model to this model, names a hidden Link, is declared twice, orders by
 an unknown field, or names a `ChildTable` model.
 
+**Subclasses.** A model that inherits its parent's `Meta` applies only the inherited
+`Related` entries whose Link points to the subclass itself; the others describe the
+parent and are skipped. A subclass that declares its own `Meta` is checked strictly.
+
 **Schema.** Each schema entry lists in `relations` the relations the caller can use:
 
 ```json
@@ -83,7 +92,9 @@ an unknown field, or names a `ChildTable` model.
 ```
 
 A relation is shown only when the caller may read the other model and its Link
-field. `relations` is left out when no relation is shown.
+field. `relations` is left out when no relation is shown. `order` is the order the
+related route applies for this caller (see below), so it never names a field the
+caller cannot read.
 
 **Listing related records.** `GET /api/{model}/{id}/related/{name}` returns one page:
 
@@ -93,9 +104,11 @@ field. `relations` is left out when no relation is shown.
 
 It accepts `limit` (1 to 100, default the relation's limit) and `offset`. The caller
 must be able to read the owning record (otherwise 404). The rows are those the caller
-may read under the other model's row scope, with only readable fields. If the caller
-cannot read a field in `order`, that part of the order is skipped, and the order
-falls back to `-id` when nothing is left. Unknown or hidden relations answer 404.
+may read under the other model's row scope, with only readable fields. Order fields
+follow the rule of the list route's `order_by`: a field the caller cannot read, or a
+Link to a model on which the caller has a row scope, is skipped, because ordering by
+it would reveal values the caller cannot see. The order falls back to `-id` when
+nothing is left. Unknown or hidden relations answer 404.
 
 The list route also works: `GET /api/payment?filters={"invoice": 7}` (URL encoded).
 It is refused with 403 when the caller has a row scope on the invoice model, because
@@ -114,7 +127,14 @@ attachments on a model's records. `max_files` is 1 to 10 and `max_size` is 1 to
 
 `Application(attachments=(Model,))` keeps working and enables the default limits.
 A model can appear in both places; then the limits from `Meta.attachments` apply.
-Table rows and `ChildTable` models cannot declare attachments.
+
+Table rows and `ChildTable` models cannot declare `Meta.attachments`,
+`Meta.key_fields` or `Meta.relations`; registration fails. Naming a `ChildTable`
+model in `Application(attachments=...)` is still accepted, as in earlier releases,
+but its rows have no route of their own, so no files can be added to them.
+
+A revision (see [states-actions.md](states-actions.md)) starts with no attachments:
+`revise` does not copy them. The original keeps its files.
 
 Uploads above the limits answer 422 with a plain message, for example
 `Use a nonempty file up to 256 KiB` or `Use at most 5 attachments per record`.

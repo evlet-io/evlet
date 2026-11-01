@@ -669,3 +669,16 @@ Known limitations:
   route returns `total` for the caller.
 * Related rows are listed without their owned Table rows, like the list route.
 * The connector, the MCP server and the SolidJS UI do not use these keys yet.
+
+Review fixes (01-11-2026):
+
+* The related route and the schema use one order rule, the same as the list route's
+  `order_by`: unreadable fields and Links to models row scoped for the caller are skipped,
+  falling back to `-id`. The schema no longer names fields the caller cannot read.
+* `key_fields` of the wrong types raise `ValueError`; the size message says `1 byte`.
+* `ChildTable` models cannot declare `Meta.key_fields` or `Meta.relations` either;
+  `Application(attachments=...)` on them is unchanged.
+* A subclass inheriting its parent's `Meta` applies only the inherited `Related` entries
+  that point to it, instead of failing the registry build.
+* The generated fixtures (`test-business-schema.json`, `ui-fixture.json`) will be
+  regenerated after the phase branches are stacked.

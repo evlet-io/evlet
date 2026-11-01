@@ -54,7 +54,7 @@ def size_text(size):
     for unit, scale in (('MiB', 1024 * 1024), ('KiB', 1024)):
         if size % scale == 0:
             return f'{size // scale} {unit}'
-    return f'{size} bytes'
+    return '1 byte' if size == 1 else f'{size} bytes'
 
 
 class Business:
@@ -120,8 +120,9 @@ class Business:
         # Rows of a ChildTable are listed as children of their parent, not as related records.
         self.relations = {}
         for model, meaning in self.registry.meaning.items():
-            if model in self.child_models and meaning.attachments is not None:
-                raise ValueError(f'{model.__name__} rows belong to a child table; declare attachments on the parent model')
+            if model in self.child_models and (meaning.attachments is not None or meaning.key_fields or getattr(model.Meta, 'relations', ())):
+                raise ValueError(f'{model.__name__} rows belong to a child table; declare Meta.key_fields, relations and '
+                                 'attachments on the parent model')
             declared = {(self.registry.resolve(item.model), item.link) for item in getattr(model.Meta, 'relations', ())}
             if any(source in self.child_models for source, _ in declared):
                 raise ValueError(f'{model.__name__}: Related names a child table model; its rows are listed as children')
@@ -289,7 +290,8 @@ class Business:
             meaning = self.registry.meaning[model]
             if meaning.key_fields:
                 entry['key_fields'] = [name for name in meaning.key_fields if name in readable]
-            relations = [relation.public(self.registry) for relation in self.visible_relations(user, model)]
+            relations = [relation.public(self.registry, self.relation_order(user, relation))
+                         for relation in self.visible_relations(user, model)]
             if relations:
                 entry['relations'] = relations
             plan = self.registry.plans.get(model)
@@ -902,6 +904,20 @@ class Business:
         return [relation for relation in self.relations.get(model, ())
                 if self.policy.allows(user, relation.source, 'read') and relation.link in self.policy.fields(user, relation.source)]
 
+    def relation_order(self, user, relation):
+        """The part of a relation's order this role may use, by the rule of the list route's order_by.
+
+        A field must be readable, and a Link must not point to a model with a row scope for the role,
+        since ordering by it would reveal which rows link to records the role cannot see.
+        """
+        source = relation.source
+        readable = self.policy.fields(user, source)
+        def allowed(name):
+            field = source.__fields__.get(name)
+            return name == 'id' or name in readable and not (
+                isinstance(field, Link) and self.policy.rule(user, field.target).scope is not None)
+        return [item for item in relation.order if allowed(item.lstrip('-'))] or ['-id']
+
     def related(self, scope, user, model, record_id, path):
         """GET /api/{model}/{id}/related/{name}: one page of the records whose Link points to a readable record."""
         relation = next((item for item in self.visible_relations(user, model) if len(path) == 1 and item.name == path[0]), None)
@@ -921,9 +937,7 @@ class Business:
         except (ValueError, UnicodeError):
             raise ValidationError({'query': f'Use a limit of 1 to {ROW_LIMIT} rows and a nonnegative offset'})
         source = relation.source
-        readable = {'id', *self.policy.fields(user, source)}
-        # Ordering by a field the role cannot read would reveal its values.
-        order = [item for item in relation.order if item.lstrip('-') in readable] or ['-id']
+        order = self.relation_order(user, relation)
         with self.database._connection() as connection:
             connection.execute('BEGIN')
             tx = Session(connection, self.registry)

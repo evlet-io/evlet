@@ -77,9 +77,9 @@ class Relation:
     limit: int
     order: tuple
 
-    def public(self, registry):
+    def public(self, registry, order=None):
         return {'name': self.name, 'label': self.label, 'model': registry.name_for(self.source),
-                'link': self.link, 'limit': self.limit, 'order': list(self.order)}
+                'link': self.link, 'limit': self.limit, 'order': list(self.order if order is None else order)}
 
 
 @dataclass(frozen=True)
@@ -108,21 +108,24 @@ def meaning_for(registry):
             result[model] = Meaning()
             continue
         result[model] = Meaning(key_fields(model, declared.get('key_fields', ())),
-                                relations(registry, model, declared.get('relations', ()), discovered.get(model, ())),
+                                relations(registry, model, declared.get('relations', ()), discovered.get(model, ()),
+                                          inherited='Meta' not in vars(model)),
                                 attachments(model, declared.get('attachments')))
     return MappingProxyType(result)
 
 
 def key_fields(model, names):
     visible = {name for name, field in model.__declared_fields__.items() if not field.hidden}
-    if (not isinstance(names, (tuple, list)) or len(names) > KEY_FIELDS or len(set(names)) != len(names)
-            or any(not isinstance(name, str) or name not in visible for name in names)):
+    if (not isinstance(names, (tuple, list)) or any(not isinstance(name, str) for name in names)
+            or len(names) > KEY_FIELDS or len(set(names)) != len(names) or any(name not in visible for name in names)):
         raise ValueError(f'{model.__name__}: Meta.key_fields are at most {KEY_FIELDS} distinct visible fields '
                          '(Tables are listed as children, not key fields)')
     return tuple(names)
 
 
-def relations(registry, model, declared, discovered):
+def relations(registry, model, declared, discovered, *, inherited=False):
+    """Relations of one concrete model. A subclass that inherits its parent's Meta applies only the
+    inherited Related entries whose Link points to the subclass itself; the others belong to the parent."""
     if not isinstance(declared, (tuple, list)) or any(not isinstance(item, Related) for item in declared):
         raise ValueError(f'{model.__name__}: Meta.relations is a tuple of Related(...)')
     counts = {}
@@ -133,6 +136,8 @@ def relations(registry, model, declared, discovered):
         source = registry.resolve(item.model)
         field = source.__declared_fields__.get(item.link)
         if (source, item.link) not in discovered:
+            if inherited:
+                continue
             raise ValueError(f'{model.__name__}: Related {source.__name__}.{item.link} must be a Link to {model.__name__} '
                              'on a root model')
         if field.hidden:
