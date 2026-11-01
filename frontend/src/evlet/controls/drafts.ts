@@ -1,0 +1,116 @@
+// Override drafts behind the change bar: what is saved, what changed since, and the save itself.
+// Saving sends every change in one request; the server applies all of them or none.
+
+import { ValidationError } from '../api';
+import { cell, derive } from '../reactive';
+import type { ControlsClient, OverrideItem, PermValue } from './client';
+
+export const idOf = (kind: string, key: string) => `${kind}:${key}`;
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+export interface Change { id: string; item: OverrideItem; from: unknown; to: unknown }
+
+export class Drafts {
+  readonly saved = cell(new Map<string, OverrideItem>(), { name: 'controls.saved' });
+  readonly draft = cell(new Map<string, unknown>(), { name: 'controls.draft' });
+  readonly errors = cell(new Map<string, string>(), { name: 'controls.errors' });
+  readonly saving = cell(false, { name: 'controls.saving' });
+  readonly changes = derive<Change[]>(() => {
+    const saved = this.saved.get();
+    return [...this.draft.get()].filter(([id]) => saved.has(id)).map(([id, to]) => ({ id, item: saved.get(id)!, from: saved.get(id)!.value, to }));
+  });
+
+  constructor(private readonly api: ControlsClient) {}
+
+  /** Saved overrides from the server. Drafts that still differ are kept. */
+  load(items: OverrideItem[]) {
+    const saved = new Map(items.map(item => [idOf(item.kind, item.key), item]));
+    this.saved.set(saved);
+    const draft = new Map([...this.draft.peek()].filter(([id, value]) => saved.has(id) && !same(value, saved.get(id)!.value)));
+    this.draft.set(draft);
+  }
+
+  item(id: string) { return this.saved.get().get(id); }
+  /** The override the page shows (draft first), or null for the file value. */
+  override(id: string): unknown {
+    const draft = this.draft.get();
+    return draft.has(id) ? draft.get(id) : this.saved.get().get(id)?.value ?? null;
+  }
+  value<T = unknown>(id: string): T { return (this.override(id) ?? this.item(id)?.file) as T; }
+  dirty(id: string) { return this.draft.get().has(id); }
+  overridden(id: string) { return this.override(id) !== null; }
+
+  set(id: string, value: unknown) {
+    const item = this.saved.peek().get(id);
+    if (!item) return;
+    const next = same(value, item.file) ? null : value;
+    const draft = new Map(this.draft.peek());
+    if (same(next, item.value)) draft.delete(id); else draft.set(id, next);
+    this.draft.set(draft);
+    if (this.errors.peek().has(id)) { const errors = new Map(this.errors.peek()); errors.delete(id); this.errors.set(errors); }
+  }
+  reset(id: string) { const item = this.saved.peek().get(id); if (item) this.set(id, item.file); }
+  discard() { this.draft.set(new Map()); this.errors.set(new Map()); }
+
+  /** Save every change at once. Per-item errors land in `errors`; nothing is saved then. */
+  async save(): Promise<boolean> {
+    const changes = this.changes.peek();
+    if (!changes.length || this.saving.peek()) return false;
+    this.saving.set(true);
+    try {
+      await this.api.saveOverrides(changes.map(change => ({ kind: change.item.kind, key: change.item.key, value: change.to })));
+      this.draft.set(new Map());
+      this.errors.set(new Map());
+      this.load((await this.api.overrides()).items);
+      return true;
+    } catch (failure) {
+      if (!(failure instanceof ValidationError)) throw failure;
+      this.errors.set(new Map(Object.entries(failure.fields).flatMap(([field, message]) => {
+        const index = /^changes\.(\d+)$/.exec(field);
+        return index && changes[Number(index[1])] ? [[changes[Number(index[1])].id, message] as [string, string]] : [];
+      })));
+      return false;
+    } finally {
+      this.saving.set(false);
+    }
+  }
+}
+
+// ---------- describing values ----------
+
+const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+export const SETTING_LABELS: Record<string, string> = {
+  'security.password_min': 'Minimum password length', 'security.session_hours': 'Session length',
+  'security.lockout': 'Failed sign-ins before lockout', 'security.two_step_roles': 'Two-step sign-in required for',
+  'security.controls_ips': 'Controls allowed from',
+};
+
+export function permSummary(value: PermValue | null | undefined, scopes: Record<string, string>) {
+  if (!value || !value.ops.length) return 'No access';
+  const parts = [value.ops.map(cap).join(', '), (scopes[value.scope ?? ''] ?? value.scope ?? '').toLowerCase()];
+  if (value.read) parts.push(`${value.read.length} field${value.read.length === 1 ? '' : 's'}`);
+  return parts.filter(Boolean).join(' · ');
+}
+
+export function settingText(key: string, value: unknown) {
+  if (Array.isArray(value)) return value.length ? value.join(', ') : key === 'security.controls_ips' ? 'any address' : 'none';
+  if (key === 'security.session_hours') return `${value} hours`;
+  if (key === 'security.password_min') return `${value} characters`;
+  if (key === 'security.lockout') return `${value} attempts`;
+  return String(value);
+}
+
+/** Area, target and the before and after text of one change, for Review. */
+export function describe(change: Change, scopes: Record<string, string>) {
+  const { item } = change;
+  const shown = (value: unknown) => value === null || value === undefined ? null : value;
+  if (item.kind === 'perm') {
+    const [role, model] = item.key.split('|');
+    return { area: 'Permissions', target: `${role} · ${model}`,
+      from: permSummary((shown(change.from) ?? item.file) as PermValue, scopes) + (shown(change.from) === null ? ' (file)' : ''),
+      to: permSummary((shown(change.to) ?? item.file) as PermValue, scopes) + (shown(change.to) === null ? ' (file)' : '') };
+  }
+  return { area: 'Security', target: SETTING_LABELS[item.key] ?? item.key,
+    from: settingText(item.key, shown(change.from) ?? item.file) + (shown(change.from) === null ? ' (file)' : ''),
+    to: settingText(item.key, shown(change.to) ?? item.file) + (shown(change.to) === null ? ' (file)' : '') };
+}
