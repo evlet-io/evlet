@@ -222,6 +222,25 @@ line amount and the total), measured with a MutationObserver; no row was re-rend
 Every dynamic value sits between two comment markers, which costs about 15 ms of the
 first render here; it keeps nested content correct when rows move or branches switch.
 
+### Components, 1 November 2026
+
+Same machine and settings, run while other work was using the CPU (load average about 4.5;
+the 1,000-row keyed list above took 77.7 ms in the same run, against 49.6 ms unloaded), so
+these medians are on the high side.
+
+| Case | Median | Budget |
+| --- | ---: | ---: |
+| ChildTable over the 1,000-line record, first render | 21.3 ms | 100 ms |
+| ChildTable, commit one quantity with Enter: engine, line amount, totals row, summary and the next cell's editor | 6.8 ms | 16 ms |
+| DataTable, 100 list rows with a selection column and a status pill per row, all rows in view | 45.0 ms | 50 ms |
+
+The ChildTable keeps only the rows in view in the DOM (21 of 1,000 at a 560 px viewport) and
+renders more as it scrolls, so its first render does not grow with the number of lines. A
+committed edit made 17 DOM changes (MutationObserver records): the quantity cell switching back from its editor, the
+line amount, the footer total, the summary total and the editor opening on the cell below.
+DataTable also virtualizes; the benchmark gives it a viewport tall enough to render all
+100 rows.
+
 jsdom is not a browser. Its DOM operations are slower than a browser's and it does no
 layout or paint, so these numbers bound the framework's own work, not frame times. Browser
 timings (first screen, 60 fps scrolling) are measured against testCRM in phase
