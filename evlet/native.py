@@ -19,6 +19,9 @@ def build_assets(packages, stage, resources):
             raise ValueError('Native panel modules use .ts/.js with the host panel contract; JSX source needs a compatible prebuilt .js module')
         destination = stage / 'assets' / package.name
         inputs = []
+        outputs = [path.relative_to(root).with_suffix('.mjs') for path in files]
+        if len(set(outputs)) != len(outputs):
+            raise ValueError('Native modules with the same name and different extensions would overwrite each other')
         for path in files:
             relative = path.relative_to(root).with_suffix('.mjs')
             target = destination / relative

@@ -6,6 +6,7 @@ import json
 from .compiler import SchemaCompiler, safe_path
 from .contracts import default_components
 from .definitions import View, ListView, FormView, DetailView, Column, FormLayout, Field
+from .expressions import model_key
 
 LAYERS = ("application", "site")
 
@@ -90,7 +91,7 @@ class ViewRegistry:
             raise ValueError(f"Duplicate view: {view.name}")
         if view.kind in ("list", "form", "detail") and (
             view.model is None
-            or view.name != view.model.__name__.lower() + "." + view.kind
+            or view.name != model_key(view.model) + "." + view.kind
             or view.route is not None
         ):
             raise ValueError(
@@ -189,20 +190,20 @@ class ViewRegistry:
                 continue
             if (
                 not set(
-                    model.__name__.lower() if isinstance(model, type) else model
+                    model_key(model) if isinstance(model, type) else model
                     for model in view.requires
                 )
                 <= readable
             ):
                 continue
-            if view.model and view.model.__name__.lower() not in readable:
+            if view.model and model_key(view.model) not in readable:
                 continue
             # Generated layouts never disclose restricted model fields.
             if view.model:
                 fields = {
                     field["name"]
                     for model in models
-                    if model["name"] == view.model.__name__.lower()
+                    if model["name"] == model_key(view.model)
                     for field in model["fields"]
                     if not field.get("hidden")
                 }
@@ -211,7 +212,7 @@ class ViewRegistry:
                     known = {
                         field["name"]
                         for model in models
-                        if model["name"] == view.model.__name__.lower()
+                        if model["name"] == model_key(view.model)
                         for field in model["fields"]
                     }
                     for node in view.layout.walk():
@@ -264,7 +265,7 @@ class ViewRegistry:
                 raise ValueError(f"Extension {name!r} targets unknown view {target!r}")
         for view in self.views.values():
             if view.model:
-                model_name = view.model.__name__.lower()
+                model_name = model_key(view.model)
                 metadata = next(
                     (
                         item

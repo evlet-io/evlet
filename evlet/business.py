@@ -346,6 +346,8 @@ class Business:
                 raise ValidationError({'_form': 'This action takes no arguments'})
             with self.database.transaction() as tx:
                 record = self.policy.record(tx, user, model, record_id, 'update')
+                if getattr(model, '__declaration_mode__', False) and b'if-match' not in dict(scope.get('headers', [])):
+                    raise AccessError(428, 'A current If-Match revision is required')
                 self.check_revision(scope, tx, user, record)
                 outcome = action.handler(tx, user, record)
                 self.changed(tx, model, record_id)

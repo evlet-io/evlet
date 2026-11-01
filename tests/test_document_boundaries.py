@@ -326,7 +326,9 @@ def test_legacy_action_still_runs_on_model_with_declared_actions(tmp_path):
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
     c = client(app)
     _, ticket, _ = c('POST', '/api/ticket', {'name': 'closed'})
-    status, result, _ = c('POST', f"/api/ticket/{ticket['id']}/actions/reopen")
+    assert c('POST', f"/api/ticket/{ticket['id']}/actions/reopen")[0] == 428
+    _, _, headers = c('GET', f"/api/ticket/{ticket['id']}")
+    status, result, _ = c('POST', f"/api/ticket/{ticket['id']}/actions/reopen", headers={b'if-match': headers[b'etag']})
     assert status == 200, result
     assert result['name'] == 'open'
 

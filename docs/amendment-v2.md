@@ -203,7 +203,9 @@ scalar arguments (`str/int/bool/float`); the native UI presents those inputs.
 Protect status fields with `read_only=True` when an ordinary PATCH must not
 bypass an action. Declaring `@action` makes a model a document: its PATCH,
 actions and deletion then require `If-Match`, and it gains draft evaluation.
-Legacy `Action` registrations on the same model keep their legacy route.
+Legacy `Action` registrations on a document model keep their legacy route and
+also require `If-Match`; their trusted handlers bypass document settlement and
+`validate()`.
 A legacy `ChildTable` under a document parent is saved through the document
 route, which sets the parent link itself and ignores a client-supplied one.
 

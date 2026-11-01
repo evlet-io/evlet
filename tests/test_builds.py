@@ -188,3 +188,32 @@ def test_concurrent_build_reuses_published_generation(project, monkeypatch, tmp_
         return real_rename(source, target)
     monkeypatch.setattr(builds.os, 'rename', racing_rename)
     assert prepare(project, packages)[1]['fingerprint'] == first['fingerprint']
+
+
+def test_native_modules_with_clashing_outputs_are_rejected(tmp_path):
+    from evlet.native import build_assets
+    from evlet.packages import Package
+    views = tmp_path / 'clash/views'
+    views.mkdir(parents=True)
+    (tmp_path / 'clash/pyproject.toml').write_text('[project]\nname = "clash"\n')
+    (views / 'panel.ts').write_text('export default {}')
+    (views / 'panel.js').write_text('export default {}')
+    package = Package(tmp_path / 'clash', 'clash', '1.0', 'Clash', (), layout='flat')
+    with pytest.raises(ValueError, match='overwrite each other'):
+        build_assets((package,), tmp_path / 'stage', set())
+
+
+def test_delegated_commands_keep_the_working_directory_off_sys_path(tmp_path, monkeypatch):
+    import json, os
+    from evlet.cli import setup
+    root = tmp_path / 'project'
+    (root / '.venv').mkdir(parents=True)
+    (root / '.venv/evlet-project.json').write_text(json.dumps({'version': 1}))
+    executable = setup.python_in(root)
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_text('')
+    calls = []
+    monkeypatch.setattr(os, 'execve', lambda path, argv, env: calls.append(argv))
+    monkeypatch.delenv('EVLET_DELEGATED_PROJECT', raising=False)
+    setup.delegate(root, ['serve'])
+    assert calls[0][1:] == ['-P', '-m', 'evlet', 'serve']

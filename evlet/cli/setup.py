@@ -46,7 +46,8 @@ def delegate(root, arguments):
     if env.get('EVLET_DELEGATED_PROJECT') == str(root):
         raise ValueError('Project environment delegation did not select its interpreter')
     env['EVLET_DELEGATED_PROJECT'] = str(root)
-    os.execve(str(executable), [str(executable), '-m', 'evlet', *arguments], env)
+    # -P keeps the working directory off sys.path so local files cannot shadow modules.
+    os.execve(str(executable), [str(executable), '-P', '-m', 'evlet', *arguments], env)
 
 
 def setup(directory, *, framework=None):
