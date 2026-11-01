@@ -300,7 +300,9 @@ class Business:
                 self.check_revision(scope, context._tx, user, record)
                 context.delete(model, record.id)
             return 204, None, []
-        if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH'):
+        # Legacy Action registrations keep their own route on document models.
+        legacy_action = len(parts) == 6 and parts[4] == 'actions' and not hasattr(getattr(model, parts[5], None), '__action__')
+        if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH') and not legacy_action:
             from .documents import Context
             record_id = None
             if len(parts) >= 4:

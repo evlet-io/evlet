@@ -35,11 +35,11 @@ class Policy:
         def declared(model):
             # Registry wraps each Table child in a generated subclass of the author's class.
             base = model.__bases__[0] if model in owners else model
-            return base, any('permissions' in vars(cls) for cls in base.__mro__ if issubclass(cls, Model) and cls.__module__ != Model.__module__)
+            return base, any('permissions' in vars(cls) for cls in base.__mro__ if cls.__module__ not in (Model.__module__, 'builtins'))
         def governed(model):
             if declared(model)[1]: return True
             if model in owners: return governed(owners[model])
-            return bool(vars(model).get('__resource_id__') or model.__tables__ or model.__sources__)
+            return bool(getattr(model, '__resource_id__', None) or model.__tables__ or model.__sources__)
         def default(role, model):
             if (role, model) not in self.rules:
                 base, own = declared(model)

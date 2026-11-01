@@ -294,3 +294,38 @@ def test_child_and_inherited_permissions_are_kept():
     assert policy.rule(editor, Invoice).operations == ('read',) and policy.rule(viewer, Invoice).operations == ()
     assert 'y' not in policy.fields(editor, Invoice)
     assert policy.rule(admin, Sheet).operations == () and policy.rule(admin, line).operations == ()
+
+
+def test_mixin_permissions_are_kept():
+    from evlet import Policy
+    class Restricted:
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read',))}
+    class Ledger(Restricted, Model):
+        amount = Currency()
+        secret = Text(hidden=True)
+        doubled = Currency(compute='amount * 2')
+    policy = Policy(Registry(Ledger))
+    editor = User(2, 'e', 'editor')
+    assert policy.rule(editor, Ledger).operations == ('read',)
+    assert 'secret' not in policy.fields(editor, Ledger)
+
+
+def test_legacy_action_still_runs_on_model_with_declared_actions(tmp_path):
+    from evlet import action, Action
+    class Ticket(Model):
+        name = Text()
+        @action
+        def close(self):
+            self.name = 'closed'
+    def reopen(tx, user, record):
+        tx.update(Ticket, record.id, name='open')
+    db = Database(tmp_path / 'db.sqlite3', Registry(Ticket))
+    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
+                      actions=(Action(Ticket, 'reopen', 'Reopen', reopen),))
+    app.initialize()
+    http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
+    c = client(app)
+    _, ticket, _ = c('POST', '/api/ticket', {'name': 'closed'})
+    status, result, _ = c('POST', f"/api/ticket/{ticket['id']}/actions/reopen")
+    assert status == 200, result
+    assert result['name'] == 'open'

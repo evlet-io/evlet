@@ -182,8 +182,10 @@ There is no global/user-shared result cache. This batches a document evaluation;
 it does not promise one SQL query for arbitrary functions or automatic external
 stock subscriptions. Volatile facts are checked again on complete operations.
 
-New declarations deny access without inline `permissions = {role: Rule(...)}`.
-Computed or virtual fields alone do not opt a legacy model into this default.
+Models with tables, sources, build resource IDs or `permissions` (declared on
+the class, a base class or a mixin) deny access to roles they do not name.
+Computed or virtual fields and `@action` alone do not opt a legacy model into
+this default, and only such governed models treat `hidden=True` as unreadable.
 Owned children without their own `permissions` follow their document: read
 with document read, create with document create or update, and update/delete
 with document update, because editing lines edits the document.
@@ -199,7 +201,11 @@ calls optional `changed(change)` before commit. `validate()` is the sole model
 validation convention. Actions use `@action`, explicit allowed roles and typed
 scalar arguments (`str/int/bool/float`); the native UI presents those inputs.
 Protect status fields with `read_only=True` when an ordinary PATCH must not
-bypass an action.
+bypass an action. Declaring `@action` makes a model a document: its PATCH,
+actions and deletion then require `If-Match`, and it gains draft evaluation.
+Legacy `Action` registrations on the same model keep their legacy route.
+A legacy `ChildTable` under a document parent is saved through the document
+route, which sets the parent link itself and ignores a client-supplied one.
 
 `Change` contains operation, actor, immutable before/after snapshots, changed
 stored fields and added/updated/removed/reordered child information. Deletion
