@@ -233,3 +233,27 @@ def test_router_stop_reaches_tenants_created_later(tenants):
     assert [app._stopping.is_set() for app in stopped] == [True]
     login(router, 'beta')
     assert all(app._stopping.is_set() for _, app in router._apps.values())
+
+
+def test_each_tenant_manages_its_own_users_through_controls_on_its_own_host(tenants):
+    _, router = tenants
+    alpha, beta = login(router, 'alpha'), login(router, 'beta')
+    for slug, auth in (('alpha', alpha), ('beta', beta)):
+        host = slug + '.localhost:8000'
+        status, state, _ = call(router, host, path='/api/_controls/state', **auth)
+        assert status == 200 and state['instance']['host'] == slug + '.localhost'
+        created = call(router, host, 'POST', '/api/_controls/users', {'username': slug + '-clerk', 'password': PASSWORD, 'role': 'editor'}, **auth)
+        assert created[0] == 201
+        assert call(router, host, 'POST', '/api/auth/users', {'username': slug + '-old', 'password': PASSWORD, 'role': 'viewer'}, **auth)[0] == 201
+        names = {item['username'] for item in call(router, host, path='/api/auth/users', **auth)[1]['items']}
+        assert names == {'admin', 'viewer', slug + '-clerk', slug + '-old'}
+        assert {item['username'] for item in call(router, host, path='/api/_controls/users', **auth)[1]['items']} == names
+    for slug, other in (('alpha', beta), ('beta', alpha)):
+        host = slug + '.localhost:8000'
+        for path in ('/api/_controls/state', '/api/_controls/users', '/api/auth/users'):
+            assert call(router, host, path=path, **other)[0] == 401
+        stranger = ('beta' if slug == 'alpha' else 'alpha') + '-clerk'
+        assert call(router, host, 'POST', '/api/auth/login', {'username': stranger, 'password': PASSWORD})[0] == 401
+    viewer = login(router, 'alpha', 'viewer')
+    assert call(router, 'alpha.localhost:8000', path='/api/_controls/state', **viewer)[0] == 404
+    assert call(router, 'alpha.localhost:8000', path='/api/auth/users', **viewer)[0] == 403
