@@ -54,10 +54,16 @@ How each kind is served:
   frontend's `connect-src` origins.
 - `server`: `handler(request)` returns a `Response(body, status=200,
   content_type="text/html; charset=utf-8")` or HTML text. It runs in the worker
-  thread pool, never on the event loop. `request` has `path` (under the base), `query`
-  (the raw query string), `host`, `user` (or `None`) and `params` (the query as a
-  dict). With `auth="desk"` a visitor who is not signed in is sent to `/login`; with
-  `roles=(...)` other roles get 404.
+  thread pool, never on the event loop. Server frontends answer GET only. `request` has
+  `path` (under the base), `query` (the raw query string), `host`, `user` (or `None`)
+  and `params` (the query as a dict; a repeated key keeps its last value).
+
+Sign-in for frontends: a signed-in user whose role belongs to another realm than the
+frontend's `auth` counts as signed out. A `server` frontend with `auth`, and a frontend
+of any kind with `roles=(...)`, needs a matching sign-in to load: visitors who are not
+signed in go to `/login` on the desk and get 401 on a portal, and other roles get 404.
+`roles=` needs `auth`. A `static` or `evlet` frontend without `roles=` loads for anyone,
+so it can show its own sign-in screen; its data still goes through the API checks.
 
 Every page the framework serves gets one non-executable block in `<head>`:
 
@@ -66,7 +72,9 @@ Every page the framework serves gets one non-executable block in `<head>`:
 ```
 
 The desk shell's router and API client read `base`, `docs` and `api` from it, so one
-build runs at `/customer-portal` on the primary host and at `/` on a sub-host.
+build runs at `/customer-portal` on the primary host and at `/` on a sub-host. `realm` is
+the host's realm, which decides the session cookie: a portal frontend also mounted on
+the primary host reports `desk` there.
 
 `evlet.controls` answers 404 for now, and `evlet.settings` serves only
 `/settings/accounts`. Flat-layout apps cannot register frontends yet.
@@ -98,10 +106,23 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
 - **Cookies** are host-only, with no `Domain`, and named per realm: `evlet_session`
   for the desk and `evlet_portal_session` for portals.
 - **API scope.** `/api` on a sub-host serves `/api/auth/session`, `login` and `logout`,
-  plus what its frontend's `api` scopes list: the scope's models (records, lines,
-  related records, files, drafts), the listed `(Model, "action")` pairs for actions
-  and moves, and the listed service endpoints. Everything else answers 404 there.
-  Permissions and row scopes still apply to every call.
+  plus exactly what its frontend's `api` scopes list. Everything else answers 404 there,
+  and permissions and row scopes still apply to every call:
+
+  | Route | Allowed when the scope lists |
+  | --- | --- |
+  | `GET/POST /api/<model>`, `GET/PATCH/DELETE /api/<model>/<id>` | the model in `models` |
+  | `POST /api/<model>/<id>/actions/<name>`, `.../moves/<name>` | `(Model, "<name>")` in `actions` |
+  | `POST /api/<model>/<id>/void`, `.../revise` | `(Model, "void")` or `(Model, "revise")` in `actions` |
+  | `/api/<model>/measures`, `/api/<model>/aggregate`, `/api/<model>/<id>/measures` | `"measures"` in `extras` |
+  | `/api/<model>/<id>/related/...` | `"related"` in `extras` |
+  | `/api/<model>/<id>/lines/...` | `"lines"` in `extras` |
+  | `/api/<model>/<id>/attachments...` | `"attachments"` in `extras` |
+  | `POST /api/_draft/<model>` | `"drafts"` in `extras` |
+  | `/api/_services/<name>` | the name in `endpoints` |
+
+  Every route except services also needs the model in `models`. Schema, UI, events,
+  jobs, discovery, accounts and setup are never served on a sub-host.
 - The `portal` role and the `public` role have no access to any model unless an app
   grants it in its permission rules.
 
@@ -123,16 +144,35 @@ auth.unlink_user(user.id, Customer, 42)
 auth.user_links(user.id)                   # (("customer", 42),)
 ```
 
-Links are read with the session on each request, so a change applies at once.
+Links are read with the session on each request, so a change applies at once. A list
+may filter a Link to a row-scoped model with an `eq` or `in` filter when every id is a
+record the user can read, for example `{"customer": 42}` for their own customer. Other
+filters and sorting on such a Link are refused with 403, since they could show which
+hidden record a row points to.
 
 ### Public endpoints
 
 Model endpoints are always private, and `auth=None` on a frontend makes nothing
 public. A service endpoint opts in with `@api(..., public=True)`. It runs as the
 `public` role, so its permission needs a rule such as `("public", Lead): Rule(("read",
-"create"))`, and each client address gets at most 30 calls a minute and 300 an hour.
-This limit is built in and can't be turned off. Behind a proxy the address is the
-proxy's unless the server trusts its forwarded headers.
+"create"))`. Each client address gets at most 30 calls a minute and 300 an hour on
+each public endpoint. This limit is built in and can't be turned off; a refused call
+gets 429 with `Retry-After`.
+
+### Client addresses behind a proxy
+
+Behind a reverse proxy every request comes from the proxy. Name it in `config.py`:
+
+```python
+instance = Instance(name="acme", domain="erp.acme.com", trusted_proxies=("127.0.0.1", "::1"))
+```
+
+When the connection comes from a trusted proxy, the client is the rightmost
+`X-Forwarded-For` address that is not itself a trusted proxy, so addresses a client
+adds on the left are ignored. Otherwise forwarded headers are ignored. It is empty by
+default, and `routes.py` can't set it. The public limit, sign-in throttling, first-run
+setup and `/_/tls-allowed` use this address. Python code reads it with
+`LocalAuth.client_address(scope)`, or `evlet.auth.client_address(scope, trusted_proxies)`.
 
 The Playground has a working example: `examples/playground/portal` is a static portal
 served at `http://portal.localhost:8000` (and `/portal`), limited to customers and
@@ -182,7 +222,8 @@ controls = ControlsAccess(allow_ips=("10.0.0.0/8",), require_two_step=True)
   `Docs(path="/help")` moves them to another free segment, and `Docs(roles=("admin",))`
   sends visitors who are not signed in to `/login` and answers 404 to other roles.
   Docs are never served on sub-hosts.
-  `GET /api/auth/session` reports Docs as `application.docs`: the path or `null`. With
+  `GET /api/auth/session` reports Docs as `application.docs`: the path, or `null` when
+  Docs are off, on a sub-host, or the user's role is outside `Docs(roles=...)`. With
   Docs off, the browser starts on the first list the role can open and shows no Docs
   links or shortcut.
 - `controls` can only tighten access to Controls. It is stored with the route table
@@ -242,15 +283,22 @@ loopback origins.
 ## `evlet proxy`
 
 `evlet proxy acme --caddy` (or `--nginx`) prints a reverse proxy configuration for
-the instance's primary host and sub-hosts, forwarding to `127.0.0.1:<port>`. On
-sub-hosts it answers 404 for `/controls*` and `/docs*` itself, as the instance does.
+the instance's primary host and sub-hosts, forwarding to `127.0.0.1:<port>`. It
+answers 404 for `/_/*` on every host, and for `/controls*` and `/docs*` on sub-hosts,
+as the instance does. Its first line reminds you to set `trusted_proxies`.
 
 ```text
+# Set Instance(trusted_proxies=("127.0.0.1", "::1")) in instances/acme/config.py so Evlet reads client addresses from X-Forwarded-For.
+
 erp.acme.com {
+	@internal path /_/*
+	respond @internal 404
 	reverse_proxy 127.0.0.1:8000
 }
 
 portal.acme.com {
+	@internal path /_/*
+	respond @internal 404
 	@primary_only path_regexp (?i)^/(controls|docs)(/|$)
 	respond @primary_only 404
 	reverse_proxy 127.0.0.1:8000
@@ -262,13 +310,17 @@ portal.acme.com {
 - `--check` resolves each host's A and AAAA records and reports whether they point at
   this server, found from its outgoing address. Behind NAT, pass `--ip` with the public
   address. It exits with status 1 when a host points elsewhere or has no record.
-- The nginx output expects certificates under `/etc/letsencrypt/live/<host>/`.
+- `--write` creates the file with mode 0644; it holds no secrets.
+- The nginx output expects certificates under `/etc/letsencrypt/live/<host>/`, and keeps
+  connections open for an hour so the event stream works.
 
 ### Many instances on one server
 
 Caddy can get certificates on demand instead of listing every host. Each instance
 answers `GET /_/tls-allowed?domain=<host>` from its route table: 200 for its own hosts,
-404 otherwise. It only answers loopback callers.
+404 otherwise. It answers only when the client address is on this machine, so Caddy
+asks it directly at `127.0.0.1:<port>`; the `evlet proxy` output also refuses `/_/*`
+from outside, because a proxied request arrives from the loopback address too.
 
 ```text
 {

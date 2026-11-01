@@ -185,7 +185,7 @@ def main(argv=None):
             from . import proxy
             app = load_runtime(root, args.instance, port=args.port)
             app.database.close()
-            text = (proxy.caddy if args.caddy else proxy.nginx)(app.routes, args.port)
+            text = (proxy.caddy if args.caddy else proxy.nginx)(app.routes, args.port, args.instance)
             if args.write:
                 print(f'Wrote {proxy.write(args.write, text)}. Reload the proxy yourself after reviewing it.')
             else:

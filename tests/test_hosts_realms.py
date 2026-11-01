@@ -66,6 +66,8 @@ def test_a_sub_host_serves_its_root_frontend_with_the_config_block(portal):
     assert status == 200 and headers[b'content-type'] == b'text/javascript; charset=utf-8' and b'evlet-config' in script
     status, page, _ = http(portal, 'GET', '/portal/invoices', headers={b'host': DESK})
     assert status == 200 and b'<base href="/portal/">' in page and config(page)['base'] == '/portal'
+    # The primary host is a desk host, so the portal page there reports the desk realm.
+    assert config(page)['realm'] == 'desk'
 
 
 @pytest.mark.parametrize('path', ['/controls', '/controls/users', '/CONTROLS', '/docs', '/docs/routes', '/app/customer', '/settings/accounts', '/_/mcp', '/reports/x'])
@@ -330,11 +332,17 @@ portal.acme.com   /           notes.portal           portal    routes.py
 portal.acme.com   /api/*      notes.items (scoped)   portal    routes.py
 '''
 
-CADDY = '''erp.acme.com {
+CADDY = '''# Set Instance(trusted_proxies=("127.0.0.1", "::1")) in instances/acme/config.py so Evlet reads client addresses from X-Forwarded-For.
+
+erp.acme.com {
+\t@internal path /_/*
+\trespond @internal 404
 \treverse_proxy 127.0.0.1:8000
 }
 
 portal.acme.com {
+\t@internal path /_/*
+\trespond @internal 404
 \t@primary_only path_regexp (?i)^/(controls|docs)(/|$)
 \trespond @primary_only 404
 \treverse_proxy 127.0.0.1:8000
@@ -369,9 +377,15 @@ def test_routes_proxy_and_link_user_commands(project, capsys, tmp_path, hashed):
     main(['proxy', 'acme', '--nginx', '--project', str(project)])
     nginx = capsys.readouterr().out
     assert nginx.count('location ~* ^/(controls|docs)(/|$) { return 404; }') == 1 and 'server_name erp.acme.com portal.acme.com;' in nginx
+    assert nginx.count('location ^~ /_/ { return 404; }') == 2 and 'proxy_http_version 1.1;' in nginx and 'proxy_read_timeout 3600s;' in nginx
+    assert 'trusted_proxies' in nginx
     target = tmp_path / 'Caddyfile'
     main(['proxy', 'acme', '--caddy', '--write', str(target), '--project', str(project)])
     assert target.read_text() == CADDY and 'Reload the proxy yourself' in capsys.readouterr().out
+    assert target.stat().st_mode & 0o777 == 0o644
+    with pytest.raises(SystemExit):
+        main(['proxy', 'acme', '--caddy', '--port', '70000', '--project', str(project)])
+    assert 'port between 1 and 65535' in capsys.readouterr().err
     application = runtime(project)
     try:
         report, ok = proxy.check(application.routes, ['203.0.113.5'], resolve=lambda host, port, proto: [(0, 0, 0, '', ('203.0.113.5' if host == 'erp.acme.com' else '198.51.100.7', 0))])
@@ -406,3 +420,157 @@ def test_routes_proxy_and_link_user_commands(project, capsys, tmp_path, hashed):
         application.database.close()
     main(['link-user', 'acme', 'buyer', 'notesitem', str(item.id), '--remove', '--project', str(project)])
     assert capsys.readouterr().out.startswith('Unlinked buyer')
+
+
+def ops_app(portal, *frontends, trusted_proxies=(), apis=(), policy=None, routes_module=None):
+    routes = resolve_routes([('ops', AppDefinition(frontends=frontends))], None, routes_module)
+    auth = LocalAuth(portal.database, origins=routes.origins(), realms=routes.realms(), secure_cookies=False, trusted_proxies=trusted_proxies)
+    app = Application(portal.database, auth=auth, routes=routes, apis=apis, policy=policy)
+    app.initialize()
+    return app
+
+
+def test_frontends_need_the_matching_realm_and_role(portal):
+    def render(request):
+        return f'<p>{request.user.username if request.user else "-"}</p>'
+    shop = Frontend('shop', kind='server', handler=render, path='/shop', auth='portal')
+    staff = Frontend('staff', kind='server', handler=render, path='/staff', roles=('admin',))
+    crm = Frontend('crm', path='/crm', roles=('admin',))
+    app = ops_app(portal, shop, staff, crm)
+    _, _, viewer = sign_in(app, 'viewer', DESK)
+    _, _, admin = sign_in(app, 'admin', DESK)
+    # A desk user counts as signed out on a portal frontend, whatever their role.
+    assert viewer('GET', '/shop/x')[0] == 401 and admin('GET', '/shop/x')[0] == 401
+    assert viewer('GET', '/staff/x')[0] == 404
+    status, page, _ = admin('GET', '/staff/x')
+    assert status == 200 and b'<p>admin</p>' in page
+    status, _, headers = http(app, 'GET', '/crm/customer')
+    assert status == 302 and headers[b'location'] == b'/login?next=/crm/customer'
+    assert viewer('GET', '/crm/customer')[0] == 404
+    if (STATIC / 'index.html').is_file():
+        assert admin('GET', '/crm/customer')[0] == 200
+    with pytest.raises(ValueError, match='roles need a sign-in realm'):
+        Frontend('site', kind='server', handler=render, path='/site', auth=None, roles=('admin',))
+
+
+def test_auth_realms_must_match_the_route_table(portal):
+    with pytest.raises(ValueError, match='LocalAuth realms must match the route table'):
+        Application(portal.database, auth=LocalAuth(portal.database, origins=portal.routes.origins(), secure_cookies=False), routes=portal.routes)
+
+
+def test_client_address_trusts_only_configured_proxies():
+    from evlet import Instance
+    from evlet.auth import client_address
+    def scope(peer, *forwarded):
+        return {'client': (peer, 1), 'headers': [(b'x-forwarded-for', value.encode()) for value in forwarded]}
+    trusted = ('127.0.0.1', '::1', '10.0.0.0/8')
+    assert client_address(scope('203.0.113.9', '198.51.100.7')) == '203.0.113.9'
+    assert client_address(scope('127.0.0.1', '198.51.100.7')) == '127.0.0.1'
+    assert client_address(scope('127.0.0.1', '198.51.100.7'), trusted) == '198.51.100.7'
+    assert client_address(scope('127.0.0.1', '6.6.6.6, 198.51.100.7'), trusted) == '198.51.100.7'
+    assert client_address(scope('127.0.0.1', '198.51.100.7, 10.1.2.3'), trusted) == '198.51.100.7'
+    assert client_address(scope('127.0.0.1', '6.6.6.6', '198.51.100.7'), trusted) == '198.51.100.7'
+    assert client_address(scope('127.0.0.1', '6.6.6.6, garbage'), trusted) == '127.0.0.1'
+    assert client_address(scope('::1'), trusted) == '::1'
+    assert client_address(scope('203.0.113.9', '127.0.0.1'), trusted) == '203.0.113.9'
+    assert Instance('acme', trusted_proxies=('127.0.0.1', '10.0.0.0/8')).trusted_proxies == ('127.0.0.1/32', '10.0.0.0/8')
+    with pytest.raises(ValueError, match='trusted_proxies'):
+        Instance('acme', trusted_proxies=('proxy.example',))
+
+
+def test_public_limit_counts_each_endpoint_and_client_behind_a_trusted_proxy(portal):
+    def count(context) -> dict:
+        return {'ok': True}
+    endpoints = (Endpoint('ops.one', count, 'GET', (Customer, 'read'), public=True), Endpoint('ops.two', count, 'GET', (Customer, 'read'), public=True))
+    policy = Policy(registry, rules={('public', Customer): Rule(('read',))})
+    app = ops_app(portal, trusted_proxies=('127.0.0.1',), apis=endpoints, policy=policy)
+    forwarded = {b'x-forwarded-for': b'198.51.100.7'}
+    for _ in range(30):
+        assert http(app, 'GET', '/api/_services/ops.one', headers=forwarded)[0] == 200
+    status, _, headers = http(app, 'GET', '/api/_services/ops.one', headers=forwarded)
+    assert status == 429 and 0 < int(headers[b'retry-after']) <= 60
+    # A spoofed address on the left is ignored; the proxy's own entry decides.
+    assert http(app, 'GET', '/api/_services/ops.one', headers={b'x-forwarded-for': b'6.6.6.6, 198.51.100.7'})[0] == 429
+    assert http(app, 'GET', '/api/_services/ops.two', headers=forwarded)[0] == 200
+    assert http(app, 'GET', '/api/_services/ops.one', headers={b'x-forwarded-for': b'198.51.100.8'})[0] == 200
+    direct = ops_app(portal, apis=endpoints, policy=policy)
+    with direct.database.transaction() as tx:
+        tx.connection.execute('DELETE FROM evlet_public_limits')
+    for index in range(30):
+        assert http(direct, 'GET', '/api/_services/ops.one', headers={b'x-forwarded-for': f'198.51.100.{index}'.encode()})[0] == 200
+    assert http(direct, 'GET', '/api/_services/ops.one', headers={b'x-forwarded-for': b'203.0.113.1'})[0] == 429
+
+
+def test_login_throttling_uses_the_forwarded_client(portal):
+    app = ops_app(portal, trusted_proxies=('127.0.0.1',))
+    def attempt(address):
+        return http(app, 'POST', '/api/auth/login', {'username': 'admin', 'password': 'wrong password for this account'},
+                    headers={b'x-forwarded-for': address.encode()})[0]
+    assert [attempt('198.51.100.7') for _ in range(10)] == [401] * 10
+    assert attempt('198.51.100.7') == 429
+    assert attempt('198.51.100.8') == 401
+
+
+def test_api_scope_lists_each_route_family(portal):
+    from evlet.app import HTTPError
+    def allowed(app, path, method='GET'):
+        try:
+            app._api_scope({'path': path, 'method': method, 'headers': [(b'host', PORTAL)]})
+            return True
+        except HTTPError:
+            return False
+    paths = ('/api/invoice', '/api/invoice/1', '/api/invoice/1/void', '/api/invoice/1/revise', '/api/invoice/1/actions/send',
+             '/api/invoice/1/moves/send', '/api/invoice/measures', '/api/invoice/aggregate', '/api/invoice/1/measures',
+             '/api/invoice/1/related/payment', '/api/invoice/1/lines/rows', '/api/invoice/1/attachments', '/api/_draft/invoice', '/api/invoice/1/other')
+    assert [path for path in paths if allowed(portal, path)] == ['/api/invoice', '/api/invoice/1']
+    shop = Frontend('shop', kind='static', dist='dist', path='/shop', auth='portal', api=('ops.full',))
+    scope = ApiScope('full', models=(Invoice,), actions=((Invoice, 'void'), (Invoice, 'send')),
+                     extras=('measures', 'related', 'lines', 'attachments', 'drafts'))
+    routes = resolve_routes([('ops', AppDefinition(frontends=(shop,), api_scopes=(scope,)))], None, {'hosts': (Host('portal.localhost', root=shop),)})
+    auth = LocalAuth(portal.database, origins=routes.origins(), realms=routes.realms(), secure_cookies=False)
+    app = Application(portal.database, auth=auth, routes=routes)
+    assert [path for path in paths if not allowed(app, path)] == ['/api/invoice/1/revise', '/api/invoice/1/other']
+    with pytest.raises(ValueError, match='extras'):
+        ApiScope('bad', models=(Invoice,), extras=('everything',))
+
+
+def test_session_reports_docs_only_to_docs_roles_and_never_on_sub_hosts(portal):
+    routes = resolve_routes([], None, {'docs': Docs(enabled=True, roles=('admin',))})
+    app = Application(portal.database, auth=LocalAuth(portal.database, origins=routes.origins(), secure_cookies=False), routes=routes)
+    assert http(app, 'GET', '/api/auth/session')[1]['application']['docs'] is None
+    assert sign_in(app, 'viewer', DESK)[2]('GET', '/api/auth/session')[1]['application']['docs'] is None
+    assert sign_in(app, 'admin', DESK)[2]('GET', '/api/auth/session')[1]['application']['docs'] == '/docs'
+    assert http(portal, 'GET', '/api/auth/session')[1]['application']['docs'] == '/docs'
+    assert http(portal, 'GET', '/api/auth/session', headers={b'host': PORTAL})[1]['application']['docs'] is None
+
+
+def test_old_sessions_gain_the_desk_realm(tmp_path):
+    database = Database(tmp_path / 'old.sqlite3', registry)
+    with database.transaction() as tx:
+        tx.connection.execute('CREATE TABLE evlet_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)')
+        tx.connection.execute('CREATE TABLE evlet_sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, csrf TEXT NOT NULL, expires INTEGER NOT NULL)')
+        tx.connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('a','x','admin')")
+        tx.connection.execute("INSERT INTO evlet_sessions VALUES ('t',1,'c',9999999999)")
+    LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False).initialize()
+    with database._connection() as connection:
+        assert [tuple(row) for row in connection.execute('SELECT token, realm FROM evlet_sessions')] == [('t', 'desk')]
+    database.close()
+
+
+def test_portal_users_filter_on_records_they_can_read(portal):
+    from urllib.parse import quote
+    acme = portal.database.create(Customer, name='Acme')
+    other = portal.database.create(Customer, name='Other')
+    portal.database.create(Invoice, customer=acme.id, reference='INV-1', total='10.00')
+    portal.database.create(Invoice, customer=other.id, reference='INV-2', total='20.00')
+    auth = portal.business.auth
+    auth.link_user(next(user['id'] for user in auth.users() if user['username'] == 'buyer'), Customer, acme.id)
+    _, _, buyer = sign_in(portal, 'buyer', PORTAL)
+    def listed(filters):
+        status, body, _ = buyer('GET', '/api/invoice?filters=' + quote(json.dumps(filters)))
+        return status, [item['reference'] for item in body['items']] if status == 200 else body
+    assert listed({'customer': acme.id}) == (200, ['INV-1'])
+    assert listed({'customer__in': [acme.id]}) == (200, ['INV-1'])
+    assert listed({'customer': other.id})[0] == 403
+    assert listed({'customer__in': [acme.id, other.id]})[0] == 403
+    assert listed({'customer__ne': other.id})[0] == 403

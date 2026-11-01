@@ -1,7 +1,7 @@
 """Backend model, field, and row rules. Python database sessions remain trusted."""
 
 from dataclasses import dataclass
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 
 from .auth import AccessError, PUBLIC, ROLES
 from .fields import Link, Reference
@@ -331,7 +331,19 @@ class Policy:
                         result[name] = None
         return results
 
-    def query_fields(self, user, model, filters, order_by):
+    def _readable_ids(self, database, user, target, key, value):
+        """Whether an eq or in filter on a row-scoped Link names only records this user can read."""
+        if database is None or not (key.endswith('__in') or '__' not in key or key.endswith('__eq')):
+            return False
+        ids = value if key.endswith('__in') else [value]
+        if not isinstance(ids, list) or not ids or len(ids) > 100 or any(type(item) is not int for item in ids):
+            return False
+        with database._connection() as connection:
+            return set(ids) <= self.visible(SimpleNamespace(connection=connection), user, target, ids)
+
+    def query_fields(self, user, model, filters, order_by, *, database=None):
+        """Refuse query fields that could disclose rows or fields. With database, eq and in filters on a
+        row-scoped Link are allowed when every id is a record the user can read, such as a portal user's customer."""
         readable = {'id', *self.fields(user, model)}
         keys = list(filters or {}) + list(order_by or ())
         for key in keys:
@@ -345,7 +357,8 @@ class Policy:
                 raise AccessError(403, 'Query field is unavailable')
             field = model.__fields__.get(parts[0])
             if isinstance(field, Link) and self.rule(user, field.target).scope is not None:
-                raise AccessError(403, 'Queries on this restricted relationship are unavailable')
+                if not (key in (filters or {}) and self._readable_ids(database, user, field.target, key, filters[key])):
+                    raise AccessError(403, 'Queries on this restricted relationship are unavailable')
             if isinstance(field, Reference):
                 # Matching a reference could reveal one this role cannot follow. Equality needs a target
                 # model readable without row scope; other filters need that for every model.

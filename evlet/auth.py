@@ -76,6 +76,44 @@ def password_hash(password, salt=None):
         return _scrypt(encoded, salt)
 
 
+def proxy_networks(values):
+    """Validate trusted proxy addresses and CIDR ranges; returns them as normalized network strings."""
+    if isinstance(values, (str, bytes)):
+        raise ValueError('trusted_proxies takes a tuple of IP addresses or CIDR ranges')
+    try:
+        return tuple(str(ipaddress.ip_network(value, strict=False)) for value in values)
+    except (TypeError, ValueError):
+        raise ValueError('trusted_proxies takes IP addresses or CIDR ranges, such as "127.0.0.1"') from None
+
+
+def client_address(scope, trusted_proxies=()):
+    """The client's IP address. X-Forwarded-For is read only when the peer is a trusted proxy: the rightmost
+    entry that is not itself a trusted proxy is the client. Without trusted proxies the peer is the client."""
+    networks = [ipaddress.ip_network(value, strict=False) for value in trusted_proxies]
+    def trusted(address):
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            return None
+        ip = ip.ipv4_mapped or ip if ip.version == 6 else ip
+        return any(ip in network for network in networks if network.version == ip.version)
+    current = (scope.get('client') or ('unknown',))[0]
+    if not networks or not trusted(current):
+        return current
+    forwarded = []
+    for key, value in scope.get('headers', []):
+        if key.lower() == b'x-forwarded-for':
+            forwarded.extend(part.strip() for part in value.decode('latin1').split(','))
+    for entry in reversed(forwarded):
+        state = trusted(entry)
+        if state is None:
+            break
+        current = entry
+        if not state:
+            break
+    return current
+
+
 def client_network(address):
     """Throttle key: IPv4 and non-routable IPv6 addresses exactly, routable IPv6 by /64 prefix."""
     try:
@@ -94,7 +132,8 @@ def client_network(address):
 
 
 class LocalAuth:
-    def __init__(self, database, *, origins, secure_cookies=True, allow_setup=False, cookie_name='evlet_session', realms=None):
+    def __init__(self, database, *, origins, secure_cookies=True, allow_setup=False, cookie_name='evlet_session', realms=None, trusted_proxies=()):
+        self.trusted_proxies = proxy_networks(trusted_proxies)
         if cookie_name not in ('evlet_session', '__Host-evlet_session') or (cookie_name.startswith('__Host-') and not secure_cookies):
             raise ValueError('Invalid session cookie configuration')
         self.cookie_name = cookie_name
@@ -117,6 +156,10 @@ class LocalAuth:
             self.realms[authority(origin).encode()] = realm
         self.secure_cookies = secure_cookies
         self.allow_setup = allow_setup
+
+    def client_address(self, scope):
+        """The request's client address, through the configured trusted proxies only."""
+        return client_address(scope, self.trusted_proxies)
 
     def initialize(self):
         with self.database.transaction() as tx:
@@ -212,7 +255,7 @@ class LocalAuth:
 
     def setup(self, scope, body):
         try:
-            loopback = ipaddress.ip_address((scope.get('client') or ('',))[0]).is_loopback
+            loopback = ipaddress.ip_address(self.client_address(scope)).is_loopback
         except ValueError:
             loopback = False
         if not self.allow_setup or not loopback or not self.setup_needed():
@@ -230,7 +273,7 @@ class LocalAuth:
         username = body['username'].lower()
         if not re.fullmatch(r'[a-z0-9_.-]{3,64}', username):
             raise AccessError(401, 'Invalid username or password')
-        address = client_network((scope.get('client') or ('unknown',))[0])
+        address = client_network(self.client_address(scope))
         client = hashlib.sha256(('network:' + address).encode()).hexdigest()
         pair = hashlib.sha256(('account:' + address + ':' + username).encode()).hexdigest()
         # Take the hashing slot first: a busy 503 is answered before any attempt is recorded.

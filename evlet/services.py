@@ -50,17 +50,19 @@ class Endpoint:
 PUBLIC_LIMITS = ((60, 30), (3600, 300))
 
 
-def public_limit(business, scope):
-    """Count a public call for the client address; refuse with 429 past either window."""
+def public_limit(business, scope, endpoint):
+    """Count a public call per endpoint and client address; refuse with 429 and Retry-After past either window."""
+    from .app import HTTPError
     from .auth import client_network
     now = int(time.time())
-    client = hashlib.sha256(('public:' + client_network((scope.get('client') or ('unknown',))[0])).encode()).hexdigest()
+    address = client_network(business.auth.client_address(scope))
+    client = hashlib.sha256(f'public:{endpoint.name}:{address}'.encode()).hexdigest()
     with business.database.transaction() as tx:
         tx.connection.execute('DELETE FROM evlet_public_limits WHERE resets<=?', (now,))
         for window, limit in PUBLIC_LIMITS:
-            row = tx.connection.execute('SELECT calls FROM evlet_public_limits WHERE client=? AND period=?', (client, window)).fetchone()
+            row = tx.connection.execute('SELECT calls, resets FROM evlet_public_limits WHERE client=? AND period=?', (client, window)).fetchone()
             if row and row['calls'] >= limit:
-                raise AccessError(429, 'Too many requests. Try again later.')
+                raise HTTPError(429, 'Too many requests. Try again later.', [(b'retry-after', str(max(1, row['resets'] - now)).encode())])
         for window, _ in PUBLIC_LIMITS:
             tx.connection.execute('INSERT INTO evlet_public_limits VALUES (?,?,1,?) ON CONFLICT(client, period) DO UPDATE SET calls=evlet_public_limits.calls+1',
                                   (client, window, now + window))
@@ -177,7 +179,7 @@ def dispatch(business, scope, body, user):
     if endpoint is None: raise AccessError(404, 'Endpoint is unavailable')
     if scope['method'] != endpoint.method: raise AccessError(405, 'Method not allowed')
     if endpoint.public:
-        public_limit(business, scope)
+        public_limit(business, scope, endpoint)
         from .auth import PUBLIC
         user = User(0, 'public', PUBLIC)
     permission_model, operation = endpoint.permission

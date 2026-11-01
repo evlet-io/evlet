@@ -59,7 +59,7 @@ def dispatch(application, scope):
         if not served and path.startswith('/assets/'): raise HTTPError(404, 'Route not found')
         if served and found[0] == 'evlet.docs' and application.routes.docs_roles:
             _docs_access(application, scope)
-        response = static_response(path if served else '/', _config(application, host, 'evlet.desk', '/app', 'desk'))
+        response = static_response(path if served else '/', _config(application, scope, host, 'evlet.desk', '/app'))
         # Unknown browser paths get the app's own not-found page, with a 404 status.
         if response is not None: return response if served else (404, *response[1:])
         if not served: raise HTTPError(404, 'Route not found')
@@ -93,12 +93,16 @@ def _serves(application, frontend, base, rest):
     return False
 
 
-def _config(application, host, frontend, base, realm):
+def _config(application, scope, host, frontend, base):
+    """The page config block. realm is the host's sign-in realm, which decides the session cookie."""
     from ..routing import host_name
     routes = application.routes
     name = host_name(host) or ''
-    return {'frontend': frontend, 'base': base, 'api': '/api', 'realm': realm, 'host': name,
-            'docs': routes.docs_path if routes.docs and name not in routes.sub_hosts() else None}
+    if application.business:
+        docs = application.business.docs_path(scope, _user(application, scope) if routes.docs_roles else None)
+    else:
+        docs = routes.docs_path if routes.docs and name not in routes.sub_hosts() else None
+    return {'frontend': frontend, 'base': base, 'api': '/api', 'realm': routes.realm(host), 'host': name, 'docs': docs}
 
 
 def _user(application, scope):
@@ -130,8 +134,8 @@ def _frontend(application, scope, host, identity, base, rest):
     from ..app import HTTPError
     from .serving import frontend_response, static_response
     definition = application.routes.frontend(identity)
-    realm = definition.auth or 'public'
-    config = _config(application, host, identity, base, realm)
+    user = _frontend_user(application, scope, definition)
+    config = _config(application, scope, host, identity, base)
     if definition.kind == 'evlet':
         match = MODEL_PATH.fullmatch(rest)
         if match is None or match[1] and match[1] not in application.registry.models:
@@ -140,24 +144,35 @@ def _frontend(application, scope, host, identity, base, rest):
     elif definition.kind == 'static':
         response = frontend_response(application.routes.dist(identity), rest, config, base, definition.csp.get('connect-src', ()))
     else:
-        return _server(application, scope, host, definition, rest, config)
+        return _server(application, scope, host, definition, rest, config, user)
     if response is None:
         raise HTTPError(404, 'Route not found')
     return response
 
 
-def _server(application, scope, host, definition, rest, config):
-    """Call a server frontend's handler. Application._dispatch already runs in a worker thread."""
+def _frontend_user(application, scope, definition):
+    """The signed-in user a frontend may see. A user from another realm counts as signed out. Server
+    frontends with a realm, and frontends of any kind with roles=, need a matching sign-in to load."""
+    from ..app import HTTPError
+    from ..auth import role_realm
+    user = _user(application, scope)
+    if user is not None and definition.auth is not None and role_realm(user.role) != definition.auth:
+        user = None
+    if definition.auth is not None and (definition.kind == 'server' or definition.roles):
+        if user is None:
+            if definition.auth == 'desk':
+                _sign_in(scope)
+            raise HTTPError(401, 'Sign in to continue')
+        if definition.roles and user.role not in definition.roles:
+            raise HTTPError(404, 'Route not found')
+    return user
+
+
+def _server(application, scope, host, definition, rest, config, user):
+    """Call a server frontend's handler (GET only). Application._dispatch already runs in a worker thread."""
     from ..app import HTTPError
     from ..routing import Request, Response, host_name
     from .serving import CSP, with_config
-    user = _user(application, scope)
-    if definition.auth is not None and user is None:
-        if definition.auth == 'desk':
-            _sign_in(scope)
-        raise HTTPError(401, 'Sign in to continue')
-    if definition.roles and (user is None or user.role not in definition.roles):
-        raise HTTPError(404, 'Route not found')
     try:
         raw = scope.get('query_string', b'').decode('ascii')
         params = dict(parse_qsl(raw, keep_blank_values=True, max_num_fields=100))
@@ -178,7 +193,8 @@ def _tls_allowed(application, scope):
     """Caddy on-demand TLS asks here before it requests a certificate: 200 only for this instance's hosts."""
     from ..app import HTTPError
     try:
-        loopback = ipaddress.ip_address((scope.get('client') or ('',))[0]).is_loopback
+        peer = application.business.auth.client_address(scope) if application.business else (scope.get('client') or ('',))[0]
+        loopback = ipaddress.ip_address(peer).is_loopback
         query = parse_qs(scope.get('query_string', b'').decode('ascii'), strict_parsing=True, max_num_fields=1)
     except (ValueError, UnicodeError):
         loopback, query = False, {}
