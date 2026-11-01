@@ -9,11 +9,11 @@ import { Callout, Head, plural, type ControlsContext } from './app';
 import type { RoleRow, UserRow } from './client';
 
 const ROLE_ID = /^[a-z][a-z0-9_]{1,30}$/;
-const TINTS: Record<string, string> = { admin: 'violet', editor: 'blue', viewer: 'slate' };
+const TINTS: Record<string, string> = { admin: 'violet', editor: 'blue', viewer: 'slate', portal: 'amber' };
 export const RoleChip = (role: string) => StatusPill({ label: role, tint: (TINTS[role] ?? 'teal') as any });
 /** Only admins change admin accounts, give the admin role, manage roles and decide who opens Controls. */
 export const isAdmin = (ctx: ControlsContext) => ctx.state.peek().me.role === 'admin';
-const assignable = (ctx: ControlsContext) => ctx.state.peek().roles.filter(item => item.realm === 'desk' && (isAdmin(ctx) || item.id !== 'admin'));
+const assignable = (ctx: ControlsContext) => ctx.state.peek().roles.filter(item => isAdmin(ctx) || item.id !== 'admin');
 const message = (failure: unknown) => failure instanceof ApiError ? failure.message : 'Something went wrong. Try again.';
 
 function Select(props: { id: string; value: () => string; options: () => Array<[string, string]>; onChange: (value: string) => void; label?: string; disabled?: boolean }) {
@@ -32,7 +32,6 @@ const field = (label: string, id: string, control: Node, hint: () => string | nu
 export function UsersPage(ctx: ControlsContext): HTMLElement {
   const users = cell<UserRow[]>([]), total = cell(0), loaded = cell(false);
   const tab = cell<'all' | 'active' | 'inactive'>('all'), query = cell(''), role = cell('');
-  const desk = () => ctx.state.get().roles.filter(item => item.realm === 'desk');
   const required = () => ctx.state.get().settings['security.two_step_roles'].value as string[];
   const load = async () => {
     try {
@@ -58,7 +57,7 @@ export function UsersPage(ctx: ControlsContext): HTMLElement {
       aria-selected=${() => String(tab.get() === id)} on:click=${() => tab.set(id)}>${label}<span class="tc">${count}</span></button>`)}</div>
     <div class="toolbar"><label class="ctl-search">${Icon('search', { size: 'sm' })}<input class="input" placeholder="Search users…" aria-label="Search users"
       prop:value=${query} on:input=${(event: Event) => query.set((event.target as HTMLInputElement).value)}></label>
-      ${Select({ id: 'ctl-user-role', label: 'Filter by role', value: () => role.get(), options: () => [['', 'All roles'], ...desk().map(item => [item.id, item.id] as [string, string])], onChange: value => role.set(value) })}</div>
+      ${Select({ id: 'ctl-user-role', label: 'Filter by role', value: () => role.get(), options: () => [['', 'All roles'], ...ctx.state.get().roles.map(item => [item.id, item.id] as [string, string])], onChange: value => role.set(value) })}</div>
     <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>User</th><th>Role</th><th>Two-step sign-in</th><th>Sessions</th><th>Status</th><th></th></tr></thead>
       <tbody>${() => shown.get().length ? shown.get().map(user => html`<tr class="ctl-click" tabindex="0" on:click=${() => openUser(ctx, user, refresh)}
         on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') openUser(ctx, user, refresh); }}>
@@ -198,15 +197,15 @@ function ask(title: string, body: Child, yes: string, run: (() => unknown) | nul
 }
 
 function newRole(ctx: ControlsContext) {
-  const id = cell(''), base = cell('editor'), description = cell(''), error = cell(''), busy = cell(false);
-  const taken = () => ctx.state.peek().roles.some(role => role.id === id.peek().trim()) || id.peek().trim() === 'controls';
+  const id = cell(''), base = cell('editor'), realm = cell<'desk' | 'portal'>('desk'), description = cell(''), error = cell(''), busy = cell(false);
+  const taken = () => ctx.state.peek().roles.some(role => role.id === id.peek().trim()) || ['controls', 'public'].includes(id.peek().trim());
   const create = async (close: () => void) => {
     const value = id.peek().trim();
     if (!ROLE_ID.test(value)) return error.set('Use 2 to 31 lowercase letters, digits or underscores, starting with a letter.');
     if (taken()) return error.set('That name is taken.');
     busy.set(true);
     try {
-      await ctx.api.createRole({ id: value, base: base.peek(), realm: 'desk', description: description.peek() });
+      await ctx.api.createRole({ id: value, base: base.peek(), realm: realm.peek(), description: description.peek() });
       close();
       await ctx.reload();
       toast(`Role ${value} created`);
@@ -218,9 +217,11 @@ function newRole(ctx: ControlsContext) {
     body: () => html`<div class="ctl-form">
       ${field('Name', 'ctl-r-id', html`<input class="input mono" id="ctl-r-id" placeholder="warehouse" autocomplete="off" prop:value=${id}
         on:input=${(event: Event) => { id.set((event.target as HTMLInputElement).value); error.set(''); }}>`, () => 'Lowercase letters, digits and underscores.', () => error.get() || null)}
-      ${field('Start from', 'ctl-r-base', Select({ id: 'ctl-r-base', value: () => base.get(), options: () => [['editor', 'editor'], ['viewer', 'viewer']], onChange: value => base.set(value) }))}
-      ${field('Signs in on', 'ctl-r-realm', Select({ id: 'ctl-r-realm', value: () => 'desk', options: () => [['desk', 'Desk']], onChange: () => {}, disabled: true }),
-        () => 'Portal roles arrive with portal hosts.')}
+      ${field('Signs in on', 'ctl-r-realm', Select({ id: 'ctl-r-realm', value: () => realm.get(), options: () => [['desk', 'Desk'], ['portal', 'Portal']],
+        onChange: value => { realm.set(value as 'desk' | 'portal'); base.set(value === 'portal' ? 'portal' : 'editor'); } }),
+        () => realm.get() === 'portal' ? 'Portal roles sign in on portal hosts and never open Controls.' : null)}
+      ${() => field('Start from', 'ctl-r-base', Select({ id: 'ctl-r-base', value: () => base.get(), disabled: realm.get() === 'portal',
+        options: () => realm.get() === 'portal' ? [['portal', 'portal']] : [['editor', 'editor'], ['viewer', 'viewer']], onChange: value => base.set(value) }))}
       ${field("What it's for", 'ctl-r-desc', html`<input class="input" id="ctl-r-desc" placeholder="Warehouse team. Stock moves only." prop:value=${description}
         on:input=${(event: Event) => description.set((event.target as HTMLInputElement).value)}>`)}
       <p class="muted ctl-small">${() => `The role gets ${base.get()}'s defaults on every model. Narrow it in Permissions.`}</p></div>`,

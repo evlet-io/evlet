@@ -116,13 +116,10 @@ function openRule(ctx: ControlsContext, role: string, model: ModelInfo) {
     drafts.set(id, normalize({ ...value(), read: ordered(read), write: ordered(write.filter(item => read.includes(item))) }, file));
   };
   const scopes = file.scope ? [file.scope] : model.scopes;
-  const scopeOption = (scope: string | null) => {
-    const unavailable = scope === 'own_customer' && !state.peek().links;
-    return html`<label class="ctl-radio" class:off=${unavailable}><input type="radio" name="ctl-scope" checked=${() => value().scope === scope}
-      disabled=${unavailable || Boolean(file.scope)} on:change=${() => drafts.set(id, normalize({ ...value(), scope }, file))}>
+  const scopeOption = (scope: string | null) => html`<label class="ctl-radio"><input type="radio" name="ctl-scope" checked=${() => value().scope === scope}
+      disabled=${Boolean(file.scope)} on:change=${() => drafts.set(id, normalize({ ...value(), scope }, file))}>
       <span><strong>${state.peek().scopes[scope ?? ''] ?? scope}</strong>${scope ? html`<small class="mono">${scope}</small>` : null}
-      ${unavailable ? html`<small>Needs portal customer links, which arrive with portal hosts.</small>` : null}</span></label>`;
-  };
+      ${scope === 'own_customer' ? html`<small>Records of the customers the user is linked to (evlet link-user).</small>` : null}</span></label>`;
   openDrawer({ title: `${model.name} for ${role}`, icon: 'list-checks', tint: 'blue', className: 'ctl-drawer',
     body: () => html`<div class="ctl-form">
       <section class="ctl-section"><h3>Can</h3><div class="ctl-chips">${OPS.map(op => html`<button type="button" class="ctl-chip" class:on=${() => value().ops.includes(op)}
