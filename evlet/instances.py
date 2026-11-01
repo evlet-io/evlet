@@ -347,13 +347,13 @@ def register_schedules(app, schedules):
                 old = tx.connection.execute('SELECT * FROM evlet_calendar_schedules WHERE name=?', (schedule.name,)).fetchone()
                 existing = tx.connection.execute('SELECT name FROM evlet_schedules WHERE name=?', (schedule.name,)).fetchone()
             if not existing:
-                app.business.jobs.schedule(schedule.name, schedule.task, {}, every=60, start_at=calendar.next(int(time.time())))
-            elif old is None:
+                app.business.jobs.schedule(schedule.name, schedule.task, {}, every=60, start_at=calendar.next(int(time.time())),
+                                           calendar=(schedule.expression, zone))
+                continue
+            if old is None:
                 raise ValueError('Calendar schedule collides with an interval schedule')
             with app.database.transaction() as tx:
-                if old is None:
-                    tx.connection.execute('INSERT INTO evlet_calendar_schedules(name,expression,timezone) VALUES (?,?,?)', (schedule.name, schedule.expression, zone))
-                elif (old['expression'], old['timezone']) != (schedule.expression, zone):
+                if (old['expression'], old['timezone']) != (schedule.expression, zone):
                     tx.connection.execute('UPDATE evlet_calendar_schedules SET expression=?, timezone=? WHERE name=?', (schedule.expression, zone, schedule.name))
                     tx.connection.execute('UPDATE evlet_schedules SET next_run=?, task=? WHERE name=?', (calendar.next(int(time.time())), schedule.task, schedule.name))
             continue

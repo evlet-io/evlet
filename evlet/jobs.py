@@ -129,7 +129,7 @@ class JobQueue:
         if system_role is not None: tx.connection.execute('INSERT INTO evlet_job_identities(job_id,role) VALUES (?,?)', (job_id, system_role))
         return JobReceipt(job_id, 'queued')
 
-    def schedule(self, schedule, task, payload, *, every, start_at=None, user=None, target=None):
+    def schedule(self, schedule, task, payload, *, every, start_at=None, user=None, target=None, calendar=None):
         name(schedule)
         if type(every) is not int or not 60 <= every <= 31536000:
             raise ValueError('Use an interval between 60 seconds and one year')
@@ -142,6 +142,10 @@ class JobQueue:
             tx.connection.execute('RELEASE validate_schedule')
             due = int(time.time()) + every if start_at is None else timestamp(start_at)
             tx.connection.execute('INSERT INTO evlet_schedules(name,task,payload,actor,model,record_id,interval,next_run) VALUES (?,?,?,?,?,?,?,?)', (schedule, task, row['payload'], row['actor'], row['model'], row['record_id'], every, due))
+            if calendar is not None:
+                # Same transaction, so a crash cannot leave a calendar schedule running as an interval.
+                tx.connection.execute('DELETE FROM evlet_calendar_schedules WHERE name=?', (schedule,))
+                tx.connection.execute('INSERT INTO evlet_calendar_schedules(name,expression,timezone) VALUES (?,?,?)', (schedule, *calendar))
 
     def set_schedule_active(self, schedule, active):
         if type(active) is not bool:

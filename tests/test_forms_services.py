@@ -149,3 +149,19 @@ def test_calendar_reconciliation_preserves_disabled_state_history_and_instance_s
     assert len(queue.recent()) == 1 and queue.recent()[0]['state'] == 'succeeded'
     with other.database._connection() as connection:
         assert connection.execute('SELECT count(*) FROM evlet_schedules').fetchone()[0] == 0
+
+
+def test_calendar_schedule_rows_are_written_together(tmp_path):
+    from evlet import JobQueue, Task
+    database = Database(tmp_path / 'db.sqlite3', Registry())
+    database.initialize()
+    queue = JobQueue(database, [Task('calendar_test', lambda tx, context, payload: None)])
+    queue.initialize()
+    # A failing calendar row (NOT NULL expression) must not leave an interval schedule behind.
+    with pytest.raises(Exception):
+        queue.schedule('nightly', 'calendar_test', {}, every=60, calendar=(None, 'UTC'))
+    with database._connection() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM evlet_schedules').fetchone()[0] == 0
+    queue.schedule('nightly', 'calendar_test', {}, every=60, calendar=('0 2 * * *', 'UTC'))
+    with database._connection() as connection:
+        assert connection.execute('SELECT expression FROM evlet_calendar_schedules WHERE name=?', ('nightly',)).fetchone()[0] == '0 2 * * *'
