@@ -11,15 +11,15 @@
 // dirty tracking, revert and saving only changes follow from comparing the two. Rows of a
 // Table are Row objects with a stable key, so a list keyed by row.key keeps its DOM.
 //
-// When the schema ships a calculation plan, a FiniteDocument session (the same evaluator
-// the server checks against) computes calculated fields, initial values and the
-// applies/required/locked rules. Its results flow into the field cells.
+// When the schema ships a calculation plan, a Session (session.ts) computes calculated
+// fields, initial values and the applies/required/locked rules into the field cells.
 
-import { compare, FiniteDocument, parse, wire, type Result, type RuleState } from '../../runtime/FiniteEngine';
+import { compare, parse, type FiniteDocument } from '../../runtime/FiniteEngine';
 import { ApiError, ConflictError, ValidationError, type ApiClient, type DraftResult, type FieldErrors, type RecordData } from '../api';
 import { batch, cell, derive, getOwner, runWithOwner, scope, type Cell, type Derive } from '../reactive';
 import { buildChanges, findField } from './changes';
 import { todayGst } from './format';
+import { Session } from './session';
 import { isCalculated, SchemaIndex, type AppSchema, type ChildSchema, type FieldSchema, type ModelSchema } from './schema';
 
 export type Rules = { applies: boolean; required: boolean; locked: boolean };
@@ -222,7 +222,7 @@ export class Table {
     const key = typeof _key === 'string' && KEY.test(_key) ? _key : record.nextKey();
     return batch(() => {
       const row = new Row(record, this.model, this.owner, this.name, key, null, true, fields);
-      record.engineAdd(this, row, fields);
+      record.session?.add(this, row, fields);
       this.rows.set([...this.rows.peek(), row]);
       return row;
     });
@@ -231,7 +231,7 @@ export class Table {
   remove(row: Row) {
     this.record.assertEditable();
     batch(() => {
-      this.record.engineRemove(row);
+      this.record.session?.remove(row);
       this.rows.set(this.rows.peek().filter(item => item !== row));
       if (row.isNew) row.dispose(); else this.removed.set([...this.removed.peek(), row]);
     });
@@ -244,7 +244,7 @@ export class Table {
     if (rows.length === this.rows.peek().length || to < 0 || to > rows.length) throw new Error('Use a row of this table and a valid position');
     rows.splice(to, 0, row);
     batch(() => {
-      this.record.engineReorder(this, rows);
+      this.record.session?.reorder(this, rows);
       this.rows.set(rows);
     });
   }
@@ -332,22 +332,18 @@ export class RecordStore {
   /** The draft differs from the saved record. */
   readonly dirty: Derive<boolean>;
   /** The calculation session, when the schema ships a plan. */
-  engine: FiniteDocument | null = null;
+  readonly session: Session | null;
   owner: unknown;
   private current = cell<Row | null>(null, { name: 'record.root' });
   private keys = 0;
-  private publish: Array<() => void> = [];
-  private lookups = new Map<string, Record<string, unknown>>();
-  private tried = new Set<string>();
-  private work = new Set<Promise<unknown>>();
-  private readonly today: () => string;
   private readonly stop: () => void;
 
   constructor(options: RecordOptions) {
     this.api = options.api;
     this.index = options.schema instanceof SchemaIndex ? options.schema : new SchemaIndex(options.schema);
     this.meta = this.index.model(options.model);
-    this.today = options.today ?? (() => todayGst());
+    const plan = this.meta.calculation?.plan;
+    this.session = plan ? new Session(this.api, plan, options.today ?? (() => todayGst())) : null;
     let dirty!: Derive<boolean>;
     this.stop = scope(() => {
       this.owner = getOwner();
@@ -363,6 +359,8 @@ export class RecordStore {
     return root;
   }
   get id() { return this.current.peek()?.id ?? null; }
+  /** The live FiniteDocument, for debugging (explain(), trace). */
+  get engine(): FiniteDocument | null { return this.session?.engine ?? null; }
   field(name: string) { return this.root.field(name); }
   table(name: string) { return this.root.table(name); }
   /** Actions the user may run, and the state machine when the model has one. */
@@ -510,7 +508,7 @@ export class RecordStore {
 
   /** Read the record again from the server, discarding the draft. */
   async reload() {
-    this.lookups.clear();
+    this.session?.forget();
     await this.open(this.root.id!);
   }
 
@@ -522,9 +520,7 @@ export class RecordStore {
   }
 
   /** Wait until lookups and other background reads settle. */
-  async idle() {
-    while (this.work.size) await Promise.allSettled([...this.work]);
-  }
+  async idle() { await this.session?.idle(); }
 
   dispose() {
     this.detach();
@@ -548,181 +544,21 @@ export class RecordStore {
     batch(() => {
       field.value.set(value);
       field.error.set(null);
-      const row = field.row;
-      if (this.engine && row.handle && this.inPlan(row, field.name)) this.run(doc => doc.set(row.handle!, field.name, value));
+      this.session?.set(field.row, field.name, value);
     });
-    this.fetchLookups();
-  }
-
-  engineAdd(table: Table, row: Row, values: Record<string, unknown>) {
-    if (!this.engine || !table.owner.handle || !this.planEntry(row.path)) return;
-    const known = { _key: row.key, ...Object.fromEntries(Object.entries(values).filter(([name]) => this.inPlan(row, name))) };
-    row.handle = this.run(doc => doc.addRow(table.owner.handle!, table.name, known));
-    this.attachRow(row);
-    this.fetchLookups();
-  }
-
-  engineRemove(row: Row) {
-    if (this.engine && row.handle) this.run(doc => doc.removeRow(row.handle!));
-  }
-
-  engineReorder(table: Table, rows: Row[]) {
-    if (this.engine && table.owner.handle && rows.every(row => row.handle)) this.run(doc => doc.reorder(table.owner.handle!, table.name, rows.map(row => row.handle!)));
-  }
-
-  // ---------- the calculation session ----------
-
-  private planEntry(path: string[]): any {
-    return this.engine?.schema.get(path.join('/')) ?? null;
-  }
-
-  private inPlan(row: Row, name: string) {
-    const entry = this.planEntry(row.path);
-    return Boolean(entry && Object.prototype.hasOwnProperty.call(entry.fields, name) && !entry.fields[name].computed);
-  }
-
-  // Run engine commands as one batch, then publish its results to the cells as one batch.
-  private run<T>(command: (doc: FiniteDocument) => T): T {
-    let result!: T;
-    try {
-      this.engine!.batch(doc => { result = command(doc); });
-    } finally {
-      const updates = this.publish.splice(0);
-      batch(() => updates.forEach(update => update()));
-    }
-    return result;
   }
 
   private detach() {
     this.ready.set(false);
-    this.engine?.dispose();
-    this.engine = null;
-    this.tried.clear();
-    this.publish = [];
+    this.session?.stop();
   }
 
-  // Build a session from the rows, supply today and known lookups, then bind every row's cells
-  // to it. Lookups still missing are read in the background; until they arrive, saved results
-  // keep their saved values (see attachRow).
+  // Bind the rows to a fresh calculation session; the record can then be edited.
   private attach() {
     this.detach();
-    const plan = this.meta.calculation?.plan;
-    if (!plan) { this.ready.set(true); return; }
-    const root = this.root;
-    const doc = new FiniteDocument(plan, this.engineData(root, plan));
-    this.engine = doc;
-    bindHandles(doc.root, root);
-    if (plan.fields.some((field: any) => field.reads.some((read: any[]) => read[0] === 'today'))) doc.setToday(this.today());
-    for (let known = this.cachedLookups(doc); known.length; known = this.cachedLookups(doc))
-      doc.batch(session => { for (const [model, id, values] of known) session.setLookups(model, id, values); });
     batch(() => {
-      const visit = (row: Row) => {
-        if (!row.handle) return;
-        this.attachRow(row, !row.isNew);
-        for (const table of row.tables.values()) table.rows.peek().forEach(visit);
-      };
-      visit(root);
+      this.session?.start(this.root);
       this.ready.set(true);
     });
-    this.fetchLookups();
-  }
-
-  // Lookups the session wants that an earlier session of this record already read.
-  private cachedLookups(doc: FiniteDocument): Array<[string, number, Record<string, unknown>]> {
-    return doc.lookupRequests().filter(([model, id]) => !this.tried.has(`${model}:${id}`) && this.lookups.has(`${model}:${id}`))
-      .map(([model, id, fields]) => {
-        this.tried.add(`${model}:${id}`);
-        const values = this.lookups.get(`${model}:${id}`)!;
-        return [model, id, Object.fromEntries(fields.filter(name => name in values).map(name => [name, values[name]]))];
-      });
-  }
-
-  private engineData(row: Row, plan: any): Record<string, unknown> {
-    const entry = Object.values<any>(plan.tables).find(item => item.path.join('/') === row.path.join('/'));
-    const data: Record<string, unknown> = {};
-    if (row.id !== null) data.id = row.id;
-    if (row.parent) data._key = row.key;
-    for (const [name, meta] of Object.entries<any>(entry.fields)) {
-      const value = row.fields.get(name)?.value.peek();
-      if (!meta.computed && (value !== null && value !== undefined || !row.isNew)) data[name] = value ?? null;
-    }
-    const children: Record<string, unknown> = {};
-    for (const name of entry.tables) {
-      const table = row.tables.get(name);
-      if (table) children[name] = table.rows.peek().map(item => this.engineData(item, plan));
-    }
-    if (entry.tables.length) data.children = children;
-    return data;
-  }
-
-  // Subscribe a row's cells to the session. On first attach of a saved row, a result that is
-  // not ready keeps the saved value (the server stored it); later results always replace it.
-  private attachRow(row: Row, keepSaved = false) {
-    const doc = this.engine!, handle = row.handle!, entry = this.planEntry(row.path);
-    const engineRow = doc.rows.get(handle)!;
-    for (const [name, meta] of Object.entries<any>(entry.fields)) {
-      const field = row.fields.get(name);
-      if (!field) continue;
-      if (meta.computed) {
-        const planned = doc.fields.get(row.path.join('/') + '\u0000' + name);
-        const scale = planned?.scale ?? null, integer = planned?.target_type === 'integer';
-        const apply = (result: Result, keep: boolean) => {
-          field.result.set(result.state === 'ready' ? READY : { state: result.state, code: result.code });
-          if (result.state === 'ready') {
-            const value = wire(result.value, scale);
-            // Integer fields arrive from the server as JSON numbers; keep them numbers.
-            field.value.set(integer && typeof value === 'string' && Number.isSafeInteger(Number(value)) ? Number(value) : value);
-          }
-          else if (!keep) field.value.set(null);
-        };
-        apply(doc.result(engineRow, name), keepSaved);
-        doc.observe(handle, name, result => this.publish.push(() => apply(result, false)));
-      } else {
-        const read = () => { const value = doc.rows.get(handle)?.values[name]; return value && typeof value === 'object' ? null : value ?? null; };
-        field.value.set(read());
-        doc.observe(handle, name, () => this.publish.push(() => field.value.set(read())));
-      }
-    }
-    const rules = (states: Record<string, RuleState>) => {
-      for (const [name, state] of Object.entries(states)) row.fields.get(name)?.rules.set({ ...state });
-    };
-    rules(doc.ruleStates(handle));
-    doc.observeRules(handle, states => this.publish.push(() => rules(states)));
-  }
-
-  // Read the Link targets the session is waiting for, then hand their values over. Repeats for
-  // multi-hop paths (customer.region.grace) until nothing new is wanted.
-  private async lookupsFor(doc: FiniteDocument) {
-    for (;;) {
-      const wanted = doc.lookupRequests().filter(([model, id]) => !this.tried.has(`${model}:${id}`));
-      if (!wanted.length || this.engine !== doc) return;
-      await Promise.all(wanted.map(async ([model, id, fields]) => {
-        const key = `${model}:${id}`;
-        this.tried.add(key);
-        let values: Record<string, unknown>;
-        try { values = (await this.api.get(model, id)).data; }
-        catch { return; } // Unreadable or missing: the results that need it stay pending.
-        this.lookups.set(key, values);
-        if (this.engine !== doc) return;
-        const known = Object.fromEntries(fields.filter(name => name in values).map(name => [name, values[name]]));
-        this.run(session => session.setLookups(model, id, known));
-      }));
-    }
-  }
-
-  private fetchLookups() {
-    const doc = this.engine;
-    if (!doc || !doc.lookupRequests().some(([model, id]) => !this.tried.has(`${model}:${id}`))) return;
-    const task = this.lookupsFor(doc).finally(() => this.work.delete(task));
-    this.work.add(task);
-  }
-}
-
-// Match the session's rows to the store's rows: same tables, same order.
-function bindHandles(engineRow: any, row: Row) {
-  row.handle = engineRow.handle;
-  for (const [name, items] of Object.entries<any[]>(engineRow.children)) {
-    const rows = row.tables.get(name)?.rows.peek() ?? [];
-    items.forEach((item, index) => { if (rows[index]) bindHandles(item, rows[index]); });
   }
 }
