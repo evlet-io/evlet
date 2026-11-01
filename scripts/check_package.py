@@ -93,6 +93,11 @@ def main():
         output = io.BytesIO()
         protocol.serve(io.BytesIO(b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n'), output)
         assert json.loads(output.getvalue())['result'] == {}
+        # cryptography is a dependency: connector secrets are encrypted with AES-GCM.
+        from evlet.connectors import SecretKey
+        key = SecretKey(Path(directory) / 'secret.key')
+        assert key.decrypt(key.encrypt(b'secret', b'check'), b'check') == b'secret'
+        assert (Path(directory) / 'secret.key').stat().st_mode & 0o777 == 0o600
         subprocess.run([sys.executable, '-I', '-m', 'evlet', 'new', str(Path(directory) / 'starter')], check=True, stdout=subprocess.DEVNULL)
         assert (Path(directory) / 'starter/models.py').is_file()
 

@@ -127,15 +127,26 @@ class Policy:
 
     def rule(self, user, model):
         found = self.rules.get((user.role, model))
-        if found is not None:
+        if found is None:
+            found = default_rule(self.roles.get(user.role))
+        access = getattr(user, 'access', None)
+        if access is None:
             return found
-        return default_rule(self.roles.get(user.role))
+        # An API key narrows its user's rule: its models only, and reads only unless it may write.
+        if access.models is not None and model not in access.models:
+            return Rule(())
+        if not access.write:
+            return Rule(tuple(op for op in found.operations if op == 'read'), found.read_fields, None, found.scope)
+        return found
 
     def allows(self, user, model, operation):
         if operation in ('create', 'update', 'delete') and model in getattr(self.registry, 'effect_targets', ()):
             # Effect rows are written only by the engine, so no role may change them.
             return False
         if operation in CORRECTIONS:
+            access = getattr(user, 'access', None)
+            if access is not None and (not access.write or access.models is not None and model not in access.models):
+                return False
             return user.role in self.corrections.get((model, operation), ())
         return operation in self.rule(user, model).operations
 
@@ -209,7 +220,7 @@ class Policy:
         Finite plans are acyclic and rules depend only on the role, so results are cached.
         """
         cache = self.__dict__.setdefault('_derived', {})
-        key = (user.role, model, name, kind)
+        key = (user.role, getattr(user, 'access', None), model, name, kind)
         if key not in cache:
             cache[key] = self.reads_allowed(user, self.registry.finite_reads(model, name, kind))
         return cache[key]

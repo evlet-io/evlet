@@ -653,3 +653,30 @@ def test_postgres_reference_index_migrations(pg_dsn):
 def test_postgres_effects_beside_numbers_measures_and_relations(pg_dsn, check):
     from tests import test_effects as effects
     getattr(effects, check)(effects.stacked_books(PostgreSQLDatabase(pg_dsn, Registry(*effects.STACKED))))
+
+
+def test_postgres_connectors_secrets_and_api_keys(secured, monkeypatch):
+    import base64, hashlib, json
+    monkeypatch.setenv('EVLET_SECRET_KEY', base64.urlsafe_b64encode(os.urandom(32)).decode())
+    admin = client(secured)
+    body = {'settings': {'address': 'noreply@example.test', 'host': '127.0.0.1', 'port': 2525, 'security': 'none'}, 'secrets': {'password': 'pg-secret-value'}}
+    status, saved, _ = admin('PUT', '/api/_controls/connectors/smtp:notifications', body)
+    assert status == 200 and saved['default'] and saved['secrets'] == {'password': {'saved': True}}
+    assert admin('PUT', '/api/_controls/connectors/smtp:accounts', body)[1]['default'] is False
+    assert admin('POST', '/api/_controls/connectors/smtp:accounts/default')[1]['default']
+    assert secured.business.connectors.values('smtp:notifications')['password'] == 'pg-secret-value'
+    listing = admin('GET', '/api/_controls/connectors')[1]
+    assert 'pg-secret-value' not in json.dumps(listing) and len(listing['items']) == 2
+    assert admin('DELETE', '/api/_controls/connectors/smtp:notifications')[0] == 204
+    status, created, _ = admin('POST', '/api/_controls/keys', {'name': 'Script', 'user': 'editor', 'scope': {'access': 'write', 'models': ['Project']}})
+    assert status == 201
+    token = created['token']
+    bearer = {b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b''}
+    assert http(secured, 'POST', '/api/project', {'name': 'By key'}, headers=bearer)[0] == 201
+    assert http(secured, 'GET', '/api/customer', headers=bearer)[0] in (403, 404)
+    with secured.database._connection() as connection:
+        assert connection.execute('SELECT hash FROM evlet_api_keys').fetchone()[0] == hashlib.sha256(token.encode()).hexdigest()
+        audit = json.dumps([list(row) for row in connection.execute('SELECT area, target, detail, after FROM evlet_audit ORDER BY id')])
+    assert admin('DELETE', f"/api/_controls/keys/{created['key']['id']}")[1] == {'items': []}
+    assert http(secured, 'GET', '/api/project', headers=bearer)[0] == 401
+    assert 'pg-secret-value' not in audit and token.split('_', 2)[2] not in audit and 'Created for editor' in audit

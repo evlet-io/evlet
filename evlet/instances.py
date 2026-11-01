@@ -75,9 +75,10 @@ class AppDefinition:
     frontends: tuple = ()
     roles: dict = field(default_factory=dict)
     scopes: dict = field(default_factory=dict)
+    connectors: tuple = ()
 
     def __post_init__(self):
-        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends'):
+        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'connectors'):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         if not callable(self.actions):
             object.__setattr__(self, 'actions', tuple(self.actions))
@@ -96,6 +97,9 @@ class AppDefinition:
         from .routing import Frontend
         if any(not isinstance(frontend, Frontend) for frontend in self.frontends):
             raise ValueError('Register Frontend definitions')
+        from .connectors import Connector
+        if any(not isinstance(connector, Connector) for connector in self.connectors):
+            raise ValueError('Register Connector definitions')
 
 
 def read_instance(path):
@@ -352,6 +356,12 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
                       apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
                       storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, **options)
     app.business.timezone = config.timezone
+    from .connectors import SecretKey
+    app.business.connectors.key = SecretKey(path / 'secret.key')
+    for name, definition in definitions:
+        for connector in definition.connectors:
+            app.business.connectors.register(name, connector)
+    services.connectors = app.business.connectors
     app.business.controls.load(definitions, pinned)
     app.business.build_manifest = manifest
     app._source_packages = pinned

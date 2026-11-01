@@ -2,7 +2,7 @@
 
 `/controls` is the locked admin page of an instance. It is the framework frontend
 `evlet.controls`, not a generated model. This release has Overview, Users, Roles,
-Permissions and Security.
+Permissions, Security, Connectors, Email and API keys.
 
 ## Access
 
@@ -82,10 +82,110 @@ and matches no records.
 | `security.two_step_roles` | `["admin"]` | Admin stays. Saved now, enforced once two-step sign-in exists. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
 
+## Connectors and secrets
+
+Connectors are connections to other services. Apps declare them; the framework declares
+SMTP (email sending) and IMAP (email receiving). Settings and secrets are instance data:
+they save at once, with an audit row, and are stored in
+`evlet_connectors(id, app, status, settings, secrets, changed_by, changed_at)`.
+
+```python
+from evlet import AppDefinition, ConnectionFailed, Connector, ConnectorField
+
+def check(values):
+    if not gateway_accepts(values["gateway"], values["api_key"]):
+        raise ConnectionFailed("The gateway rejected the API key.")
+
+app = AppDefinition(models=(Lead,), connectors=(
+    Connector("whatsapp", title="WhatsApp", category="Messaging", test=check, fields=(
+        ConnectorField("gateway", "Gateway URL"),
+        ConnectorField("api_key", "API key", "secret"),
+        ConnectorField("mode", "Mode", "select", options=("live", "test"), default="live"),
+        ConnectorField("lead", "Create a Lead for new numbers", "toggle", default=True, required=False),
+    )),
+))
+```
+
+Field types are `text`, `number`, `select`, `toggle`, `role` (a desk role other than admin)
+and `secret`. `Application(connectors=...)` registers them for an application built in code.
+Trusted server code reads a saved connector with `business.connectors.values("whatsapp")`
+(settings and decrypted secrets, or `None` when it isn't set up).
+
+- **Secrets are write only.** No API returns one, not even to admins: a secret field reads
+  `{"saved": true}`. Leaving a secret out keeps the saved value; replacing it needs the new
+  value, and an empty one is refused. Secrets never go into audit rows or log lines.
+- **Encryption.** Secrets are encrypted with AES-GCM (the `cryptography` package), bound to
+  their connector id, so a changed or moved value is detected and refused. The key lives
+  outside the database: `instances/<name>/secret.key`, created with mode 0600 the first time
+  a secret is saved, or `EVLET_SECRET_KEY` (32 bytes, URL-safe base64) for containers.
+  An application built in code keeps it next to its SQLite file unless it passes
+  `Application(secret_key=path)`; a PostgreSQL application needs `EVLET_SECRET_KEY`.
+  The instance refuses to start when the key file is a link, belongs to another user, or
+  can be read by anyone but its owner.
+- **Rotation.** `evlet secrets rotate <instance>` writes a new key and re-encrypts every
+  saved secret. The old key stays in the file until all rows are done, so an interruption
+  loses nothing. The key file is read on each use, so running processes pick it up. With
+  `EVLET_SECRET_KEY`, rotate the key outside Evlet: the variable can hold several keys
+  separated by commas; the first one encrypts and any of them decrypts.
+- **Testing.** `POST /api/_controls/connectors/<id>/test` runs the connector's `test` on the
+  saved values, or on draft values sent in the body, and answers within 10 seconds with
+  `{"ok": true, "message": ...}` or `{"ok": false, "error": ...}` in plain words. A test of
+  exactly the saved values sets the status Controls shows. A test still running at
+  10 seconds is abandoned.
+- **Not yet.** The handoff also lists local disk, S3, single sign-on (OIDC), webhooks and an
+  AI model provider as framework connectors. They are not declared yet: each needs code
+  that uses its settings, which arrives with the feature that needs it.
+
+## Email
+
+Email accounts are SMTP (outgoing) and IMAP (incoming) connectors with several named
+accounts each: ids `smtp:<name>` and `imap:<name>`, where the name is lowercase letters,
+digits, `-` or `_`. Each has an address, server, port, security (STARTTLS, SSL/TLS, or none
+for a server on this machine only), an optional username and a password. The first outgoing
+account becomes the default; Make default moves it. The default can't be removed while other
+outgoing accounts exist. Apps send through an account by name and fall back to the default:
+
+```python
+services.connectors.send_mail("customer@example.com", "Invoice INV-0142", text, account="accounts")
+```
+
+`send_mail(to, subject, text, *, account=None, html=None, reply_to=None)` takes one address
+or up to 50, returns the Message-ID and raises `ConnectionFailed` with a plain message when
+the server refuses. `services` is the namespace an app's `actions(services)` receives; in code,
+use `app.business.connectors`. Sending a test from the Email page posts `{"to": address}` to
+the account's test route. Reading mail from IMAP accounts arrives later; today the IMAP test
+signs in and opens the inbox read only.
+
+## API keys
+
+Keys let scripts call the API as a user: `Authorization: Bearer evk_...`. A key is shown
+once when it is created; only its prefix (`evk_` and 8 characters) and the SHA-256 of the
+whole key are stored in `evlet_api_keys`.
+
+- **Never more than the user.** A key acts as its user with that user's current role, row
+  scopes and field rules, narrowed by its scope:
+  `{"access": "read" | "write", "models": null | ["Customer", ...]}`. A read key refuses
+  every request that isn't GET. A key with models sees only those models and their child
+  rows. When the user loses access or is deactivated, so does the key. Creating a key for
+  a model the user can't read, or a write key for a user who can only read, is refused.
+- **Where keys work.** Every `/api` route that a session can use, without CSRF headers. Keys
+  never open Controls (404) and can't use `/api/auth/*` or `/api/_settings/*` (403).
+- **Limits.** 300 requests a minute per key, and 20 invalid keys a minute per network, per
+  process; then 429. At most 20 active keys per user. `last_used` is updated at most once a
+  minute.
+- **Controls** lists every key and creates keys that act as any active user; only admins
+  create or revoke keys that act as admins. **Personal keys** use
+  `GET/POST /api/_settings/me/keys` and `DELETE /api/_settings/me/keys/<id>`, for the person
+  signed in. Revoking is immediate: the key gets 401 from then on. Creating and revoking
+  write audit rows, without the key.
+
+The personal page is the `MyKeysPage` component (`frontend/src/evlet/settings/keys.ts`),
+ready for the Settings shell.
+
 ## Audit log
 
-`evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles and
-overrides all write to it.
+`evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles,
+overrides, connectors, email accounts and API keys all write to it.
 
 ## API
 
@@ -96,3 +196,7 @@ overrides all write to it.
 | `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end"}` |
 | `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules and audit rows; refused access is a 403 there |
 | `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls" and descriptions |
+| `GET /api/_controls/connectors` | Declared connectors with their fields, and every saved connector and email account |
+| `GET/PUT/DELETE /api/_controls/connectors/<id>` | One connector (`whatsapp`) or account (`smtp:accounts`): read, save `{"settings", "secrets"}`, disconnect |
+| `POST /api/_controls/connectors/<id>/test`, `POST .../default` | Test within 10 seconds; make an outgoing account the default |
+| `GET/POST /api/_controls/keys`, `DELETE /api/_controls/keys/<id>` | API keys: list, create `{"name", "user", "scope"}` (the key is in this reply only), revoke |

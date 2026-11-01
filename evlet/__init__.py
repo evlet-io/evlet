@@ -73,3 +73,6 @@ __all__ += ["Attachments", "Related"]
 from .controls import SCOPES
 
 __all__ += ["SCOPES"]
+from .connectors import ConnectionFailed, Connector, ConnectorField
+
+__all__ += ["ConnectionFailed", "Connector", "ConnectorField"]
