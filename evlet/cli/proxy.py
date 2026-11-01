@@ -16,18 +16,24 @@ def _hosts(routes):
     return routes.hosts()
 
 
-def caddy(routes, port=8000):
+def _note(instance):
+    return (f'# Set Instance(trusted_proxies=("127.0.0.1", "::1")) in instances/{instance}/config.py '
+            'so Evlet reads client addresses from X-Forwarded-For.\n\n')
+
+
+def caddy(routes, port=8000, instance='<name>'):
     sites = []
     for host in _hosts(routes):
-        lines = [f'{host} {{']
+        # /_/ holds framework internals, such as the on-demand TLS check, for local callers only.
+        lines = [f'{host} {{', '\t@internal path /_/*', '\trespond @internal 404']
         if host in routes.sub_hosts():
             lines += [f'\t@primary_only path_regexp (?i)^/({"|".join(PRIMARY_ONLY)})(/|$)', '\trespond @primary_only 404']
         lines += [f'\treverse_proxy 127.0.0.1:{port}', '}']
         sites.append('\n'.join(lines))
-    return '\n\n'.join(sites) + '\n'
+    return _note(instance) + '\n\n'.join(sites) + '\n'
 
 
-def nginx(routes, port=8000):
+def nginx(routes, port=8000, instance='<name>'):
     hosts = _hosts(routes)
     blocks = [f'''server {{
     listen 80;
@@ -42,6 +48,7 @@ def nginx(routes, port=8000):
     server_name {host};
     ssl_certificate /etc/letsencrypt/live/{host}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{host}/privkey.pem;
+    location ^~ /_/ {{ return 404; }}
 '''
         if host in routes.sub_hosts():
             block += f'    location ~* ^/({"|".join(PRIMARY_ONLY)})(/|$) {{ return 404; }}\n'
@@ -50,12 +57,15 @@ def nginx(routes, port=8000):
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_buffering off;
+        proxy_read_timeout 3600s;
         client_max_body_size 2m;
     }}
 }}'''
         blocks.append(block)
-    return '\n\n'.join(blocks) + '\n'
+    return _note(instance) + '\n\n'.join(blocks) + '\n'
 
 
 def server_addresses():
@@ -99,5 +109,6 @@ def write(path, text):
     target = Path(path).absolute()
     with tempfile.NamedTemporaryFile('w', dir=target.parent, prefix='.' + target.name, delete=False) as handle:
         handle.write(text)
+    os.chmod(handle.name, 0o644)
     os.replace(handle.name, target)
     return target

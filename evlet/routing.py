@@ -20,6 +20,8 @@ NAME = re.compile(r'[a-z][a-z0-9_]*')
 PATH = re.compile(r'/[a-z0-9][a-z0-9_-]*')
 HOSTNAME = re.compile(r'[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?')
 LOCAL = 'localhost'
+# Record routes an ApiScope opens only when it lists them in extras.
+SCOPE_EXTRAS = ('measures', 'related', 'lines', 'attachments', 'drafts')
 
 
 def reserved(path):
@@ -89,6 +91,8 @@ class Frontend:
         if self.auth not in REALMS:
             raise ValueError(f'Frontend {self.name} auth must be "desk", "portal" or None')
         object.__setattr__(self, 'roles', _strings(self.roles, 'roles'))
+        if self.roles and self.auth is None:
+            raise ValueError(f'Frontend {self.name}: roles need a sign-in realm; set auth="desk" or "portal"')
         object.__setattr__(self, 'api', _strings(self.api, 'api'))
         if (self.kind == 'static') != (self.dist is not None):
             raise ValueError(f'Frontend {self.name}: dist is required for static frontends and only allowed there')
@@ -134,11 +138,13 @@ class Docs:
 
 @dataclass(frozen=True)
 class ApiScope:
-    """The models, model actions and service endpoints a frontend may call from a sub-host."""
+    """What a frontend may call from a sub-host: records of models, the named (Model, action) pairs (also
+    moves, "void" and "revise"), service endpoints, and the extra record routes listed in extras."""
     name: str
     models: tuple = ()
     actions: tuple = ()
     endpoints: tuple = ()
+    extras: tuple = ()
 
     def __post_init__(self):
         if not isinstance(self.name, str) or not NAME.fullmatch(self.name):
@@ -146,6 +152,9 @@ class ApiScope:
         object.__setattr__(self, 'models', tuple(self.models))
         object.__setattr__(self, 'actions', tuple(self.actions))
         object.__setattr__(self, 'endpoints', _strings(self.endpoints, 'endpoints'))
+        object.__setattr__(self, 'extras', _strings(self.extras, 'extras'))
+        if set(self.extras) - set(SCOPE_EXTRAS):
+            raise ValueError(f'API scope {self.name} extras are some of: ' + ', '.join(SCOPE_EXTRAS))
         if any(not isinstance(model, type) for model in self.models):
             raise ValueError(f'API scope {self.name} models must be Model classes')
         if any(not isinstance(item, tuple) or len(item) != 2 or item[0] not in self.models or not isinstance(item[1], str) for item in self.actions):

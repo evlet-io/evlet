@@ -35,10 +35,14 @@ class Instance:
     storage: str = 'local'
     domain: str | None = None
     timezone: str = 'UTC'
+    # Reverse proxies whose X-Forwarded-For is believed, such as ("127.0.0.1", "::1"). Empty: none.
+    trusted_proxies: tuple = ()
 
     def __post_init__(self):
         from .cli.project import valid_name
+        from .auth import proxy_networks
         valid_name(self.name)
+        object.__setattr__(self, 'trusted_proxies', proxy_networks(self.trusted_proxies))
         ZoneInfo(self.timezone)
         if self.database != 'sqlite':
             raise ValueError('The instance CLI supports isolated SQLite databases; use the existing PostgreSQL API for separately configured databases')
@@ -302,7 +306,8 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     database = Database(database_path, registry, migrations=migrations)
     routes = resolve_routes(definitions, config, read_routes(path), port=port, roots={package.name: package.source_root for package in pinned})
     secure = routes.primary is not None
-    auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=secure, allow_setup=not secure)
+    auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=secure, allow_setup=not secure,
+                     trusted_proxies=config.trusted_proxies)
     rules, views, schedules = {}, ViewRegistry(), []
     for name, definition in definitions:
         if rules.keys() & definition.permissions.keys():

@@ -241,6 +241,9 @@ not a symbolic link. Without it every frontend mounts at its default path and th
 URLs are unchanged. Docs are on in development and off once a domain or primary host
 is set. See [routing.md](routing.md).
 
+Behind a reverse proxy, set `trusted_proxies=("127.0.0.1", "::1")` (addresses or
+CIDR ranges) so client addresses come from `X-Forwarded-For`. It is empty by default.
+
 `database` and `storage` are reserved and optional. They default to `"sqlite"` and
 `"local"`, the only values accepted today. New `config.py` files leave them out.
 Older files that set them to those values keep working.

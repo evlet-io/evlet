@@ -47,6 +47,10 @@ class Application:
             raise ValueError("Business features require authentication")
         self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
+            from .routing import authority
+            if auth.realms != {authority(origin).encode(): realm for origin, realm in self.routes.realms().items()}:
+                raise ValueError('LocalAuth realms must match the route table: pass realms=routes.realms()')
+            self.business.routes = self.routes
             self.business.application = {"name": name, "playground": bool(playground), "docs": self.routes.docs_path if self.routes.docs else None}
             from .forms import Forms
             self.business.forms = Forms(self.business, reports)
@@ -142,14 +146,29 @@ class Application:
         if path.startswith('/api/_services/'):
             if any(path.removeprefix('/api/_services/') in item.endpoints for item in scopes):
                 return
-        elif len(parts) >= 3:
-            draft = parts[2] == '_draft' and len(parts) == 4
-            model = self.registry.models.get(parts[3] if draft else parts[2])
-            if model is not None and any(model in item.models for item in scopes):
-                if draft or len(parts) < 6 or parts[4] not in ('actions', 'moves'):
-                    return
-                if any((model, parts[5]) in item.actions for item in scopes):
-                    return
+            raise HTTPError(404, 'Route not found')
+        draft = len(parts) == 4 and parts[2] == '_draft'
+        model = self.registry.models.get(parts[3] if draft else parts[2]) if len(parts) >= 3 else None
+        allowed = [item for item in scopes if model in item.models]
+        if model is None or not allowed:
+            raise HTTPError(404, 'Route not found')
+        # Each route family must be listed: records come with the model, the rest by action or extra.
+        if draft:
+            need = ('extra', 'drafts')
+        elif len(parts) == 3 or len(parts) == 4 and parts[3].isdigit():
+            return
+        elif len(parts) == 4 and parts[3] in ('measures', 'aggregate') or len(parts) == 5 and parts[4] == 'measures':
+            need = ('extra', 'measures')
+        elif len(parts) == 5 and parts[4] in ('void', 'revise'):
+            need = ('action', parts[4])
+        elif len(parts) == 6 and parts[4] in ('actions', 'moves'):
+            need = ('action', parts[5])
+        elif len(parts) >= 5 and parts[4] in ('related', 'lines', 'attachments'):
+            need = ('extra', parts[4])
+        else:
+            raise HTTPError(404, 'Route not found')
+        if any(need[1] in item.extras if need[0] == 'extra' else (model, need[1]) in item.actions for item in allowed):
+            return
         raise HTTPError(404, 'Route not found')
 
     def _guard_local(self, scope):
