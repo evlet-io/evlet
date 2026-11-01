@@ -71,8 +71,8 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 
 | Where | How | What |
 |---|---|---|
-| `tests/test_testcrm.py` | The installed app, real SQLite, authenticated ASGI requests | Sign in; schema per role; list sort, search, filter, paging and measures; field edits; line change sets (add from a product, edit, reorder, remove) and totals; 150 lines with paging; the lost reason rule; guarded moves and their reasons; win: task, customer, booking, revise and its reversal; actions; the row scope and hidden fields for sales and viewers; two sessions editing one deal |
-| `frontend/src/evlet/tests/testcrm-*.test.ts` | The real screens in jsdom over responses recorded from testCRM (`testcrm-fixture.json`) | Sign in and the sidebar; list search, saved views per stage, sorting; the board moved with the keyboard; the command palette; lines edited, added from a product, reordered, saved and removed with instant totals; moves to won with the lock, the posting and the created task; a blocked move; lost with the reason edited in place; 150 lines paged in and one edit saved as a change set; a conflict and Reload; another person's deal; a viewer and an admin |
+| `tests/test_testcrm.py` | The installed app, real SQLite, authenticated ASGI requests | Sign in; schema per role; list sort, search, filter, paging and measures; field edits; line change sets (add from a product, edit, reorder, remove) and totals; 150 lines with paging; the lost reason rule; guarded moves and their reasons; win: task, customer, booking, revise and its reversal; actions; the row scope and hidden fields for sales and viewers; two sessions editing one deal; the journal of a won deal, notes and follow ups |
+| `frontend/src/evlet/tests/testcrm-*.test.ts` | The real screens in jsdom over responses recorded from testCRM (`testcrm-fixture.json`) | Sign in and the sidebar; list search, saved views per stage, sorting; the board moved with the keyboard; the command palette; lines edited, added from a product, reordered, saved and removed with instant totals; moves to won with the lock, the posting and the created task; a blocked move; lost with the reason edited in place; 150 lines paged in and one edit saved as a change set; a conflict and Reload; another person's deal; a viewer and an admin; the Activity tab and a note |
 | `npm run bench:ui` | jsdom | The 100-deal list, the 1,000-line deal and one line edit ([performance.md](performance.md)) |
 
 Regenerate the recordings with `.venv/bin/python -m scripts.generate_testcrm_fixtures` and
@@ -85,8 +85,11 @@ The same flows were driven by hand in a real browser against `scripts/testcrm.sh
 sidebar, search, lines, product suggestions, reorder, save, moves, win, lost reason, lead
 conversion, board drag and keyboard, palette, 150 lines, scope, viewer, conflict).
 
-Journal (Activity tab) checks wait for phase 8: `test_activity_journal_records_moves_and_edits`
-and the matching screen test are skipped until the journal is stacked below this phase.
+The journal is checked on both sides. `test_activity_journal_records_moves_the_win_and_what_people_add`
+reads a won deal's history over HTTP: the moves, the win with the kick-off next step and its date,
+the Booking posting (`effects`), the earlier edits, the number and the create, then a note, a
+follow up and its completion, a viewer's partial view and another sales person's refusal. The
+screen test opens the same deal on its Activity tab and adds a note through the journal route.
 
 ## Gaps found
 

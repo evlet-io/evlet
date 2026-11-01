@@ -110,6 +110,8 @@ class Scenario:
                      f"/api/{model}/{record_id}/related/{relation['name']}?limit={relation['limit']}&offset=0")
         if schema.get('attachments'):
             self.get(f'/api/{model}/{record_id}/attachments')
+        if schema.get('journal'):
+            self.get(f'/api/{model}/{record_id}/journal?limit=50')
         return detail
 
     def links(self, model, records):
@@ -208,9 +210,18 @@ def record(app, out):
     sara.record_page('deal', deal)
     won = sara.write('POST', f'{url}/moves/won', {}, read=url)
     assert won['status'] == 200, won
+    # In another session sara plans a follow up on the won deal and completes it.
+    me = sara.call('GET', '/api/auth/session')['body']['user']['id']
+    planned = sara.call('POST', f'{url}/journal', {'kind': 'follow_up', 'text': 'Send the project plan', 'due': '2026-11-20', 'assignee': me})
+    assert planned['status'] == 201, planned
+    assert sara.call('POST', f'{url}/journal', {'kind': 'follow_up_done', 'follow_up': planned['body']['id'], 'text': 'Plan sent'})['status'] == 201
     sara.record_page('deal', deal)
     sara.get(f'/api/deal/{deal}/related/task.deal?limit=10&offset=0')
     sara.get(f"/api/organization/{detail['organization']}")
+    # A note from the Activity tab; the history is read again.
+    sara.phases[-1][key('POST', f'{url}/journal')] = sara.call('POST', f'{url}/journal', {'kind': 'note', 'text': 'Kick-off agreed for next week'})
+    sara.phases.append({})
+    sara.get(f'{url}/journal?limit=50')
     out['sara_win'] = sara.dump()
 
     # A qualified deal with no lines: Send proposal is blocked; then it is lost and given a reason.

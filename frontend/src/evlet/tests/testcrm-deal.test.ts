@@ -225,12 +225,41 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
 });
 
 describe('testCRM: activity', () => {
-  // The journal arrives with phase 8 (model/08). After the restack, record a journal page in
-  // scripts/generate_testcrm_fixtures.py and enable this test.
-  it.skip('shows the Activity tab first, with the moves and edits of the deal', async () => {
+  it('opens on the Activity tab with the moves, the win, its Booking posting and the follow up', async () => {
     const run = scenario('sara_win');
-    const { host } = run.start(`/ui/m/deal/${idOf('sara_win', 'deal', 'Production planning module')}`);
+    const id = idOf('sara_win', 'deal', 'Production planning module');
+    // After the line save, Negotiate and Mark won.
+    run.skip(3);
+    const { host } = run.start(`/ui/m/deal/${id}`);
     await until(() => expect(text(host.querySelector('.doc-tabs [role="tab"]'))).toBe('Activity'));
-    await until(() => expect(text(host.querySelector('.tl-item'))).toContain('moved it'));
+    await until(() => expect(host.querySelectorAll('.tl-item').length).toBeGreaterThan(6));
+    const heads = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));
+    expect(heads.slice(0, 5)).toEqual([
+      'sara completed a follow-up',
+      'sara planned a follow-up',
+      'sara posted 1 row to Bookings',
+      'sara moved it from Negotiation to Won',
+      'sara moved it from Proposal to Negotiation',
+    ]);
+    expect(heads.slice(-2)).toEqual([expect.stringMatching(/^sara assigned the number DL-\d{4}-\d{4}$/), 'sara created this record']);
+    expect(heads.filter(head => head.startsWith('sara moved it'))).toHaveLength(4);
+    const items = [...host.querySelectorAll('.tl-item')];
+    // The win set the kick-off as the next step and dated the deal.
+    const won = [...items[3].querySelectorAll('.ev-diff')].map(text);
+    expect(won).toContain('Next step empty Kick-off meeting');
+    expect(won.some(line => line.startsWith('Won on empty '))).toBe(true);
+    expect(text(items[1].querySelector('.ev-fu'))).toBe('Due 20-11-2026 for sara · Done');
+    expect(text(items[0].querySelector('.note'))).toBe('Plan sent');
+    // The line save is a change with its rows counted.
+    expect([...host.querySelectorAll('.ev-diff')].map(text)).toEqual(expect.arrayContaining(['Lines 1 added, 1 updated', 'Subtotal AED 83,400.00 AED 95,400.00']));
+    expect(host.querySelector('.ev-partial')).toBeNull();
+    // A note goes to the journal and the history is read again.
+    typeInto(host.querySelector<HTMLTextAreaElement>('.composer textarea')!, 'Kick-off agreed for next week');
+    click(byText(host, '.composer button', 'Save note'));
+    await until(() => expect(lastToast()).toBe('Note added'));
+    expect(run.writes.at(-1)!.body).toEqual({ kind: 'note', text: 'Kick-off agreed for next week' });
+    await until(() => expect(text(host.querySelector('.tl-item .hd')).replace(/\d\d:\d\d.*$/, '')).toBe('sara added a note'));
+    expect(text(host.querySelector('.tl-item .note'))).toBe('Kick-off agreed for next week');
+    expect(run.misses).toEqual([]);
   });
 });
