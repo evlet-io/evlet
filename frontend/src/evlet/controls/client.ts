@@ -34,7 +34,6 @@ export interface ControlsState {
   users: { active: number; total: number };
   audit: AuditRow[];
   two_step: boolean;
-  links: boolean;
   /** The address this request came from, as the allowlist sees it. */
   client: string;
 }

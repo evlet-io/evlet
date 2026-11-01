@@ -14,6 +14,7 @@ const roles = [
   { id: 'admin', kind: 'framework', base: null, realm: 'desk', opens_controls: true, description: 'Full access to every app. Opens Controls.', users: 1, app: null, declared: true },
   { id: 'editor', kind: 'framework', base: null, realm: 'desk', opens_controls: false, description: 'Reads and changes records.', users: 2, app: null, declared: true },
   { id: 'viewer', kind: 'framework', base: null, realm: 'desk', opens_controls: false, description: 'Reads records only.', users: 0, app: null, declared: true },
+  { id: 'portal', kind: 'framework', base: null, realm: 'portal', opens_controls: false, description: 'Signs in on portal hosts. Sees only what an app grants.', users: 0, app: null, declared: true },
 ];
 let me = { id: 1, username: 'owner', role: 'admin' };
 const state = () => ({
@@ -25,7 +26,7 @@ const state = () => ({
   scopes: { '': 'All records', owner: 'Records they own' },
   settings: { 'security.password_min': { file: 15, value: 15 }, 'security.session_hours': { file: 8, value: 8 }, 'security.lockout': { file: 10, value: 10 },
     'security.two_step_roles': { file: ['admin'], value: ['admin'] }, 'security.controls_ips': { file: [], value: [] } },
-  controls: { allow_ips: [], require_two_step: false }, attention: [], overrides: 0, users: { active: 3, total: 3 }, audit: [], two_step: false, links: false, client: '127.0.0.1',
+  controls: { allow_ips: [], require_two_step: false }, attention: [], overrides: 0, users: { active: 3, total: 3 }, audit: [], two_step: false, client: '127.0.0.1',
 });
 const item = (kind: 'perm' | 'setting', key: string, file: unknown, value: unknown = null): OverrideItem =>
   ({ kind, key, file, value, changed_by: value === null ? null : 'owner', changed_at: value === null ? null : 1790000000, source: 'framework' });
@@ -45,6 +46,7 @@ function open(path: string, save: (sent: Sent) => { status: number; body: any })
     ['GET', /\/api\/_controls\/overrides$/, () => ({ status: 200, body: overrides(saved), etag: null })],
     ['GET', /\/api\/_controls\/users/, () => ({ status: 200, etag: null, body: { offset: 0, limit: 100, total: 2, items: [
       { id: 1, username: 'owner', role: 'admin', active: true, sessions: 1 }, { id: 2, username: 'rahul', role: 'editor', active: true, sessions: 0 }] } })],
+    ['POST', /\/api\/_controls\/roles$/, () => ({ status: 201, body: { items: [] }, etag: null })],
     ['POST', /\/api\/_controls\/overrides$/, (sent: Sent) => {
       const reply = save(sent);
       if (reply.status === 200) for (const change of sent.body.changes) saved = { ...saved, [change.key]: change.value };
@@ -175,5 +177,22 @@ describe('Controls safety', () => {
     click(byText(host, 'tr', /owner/));
     await until(() => expect(text(document.querySelector('.drawer'))).toContain('Only an admin can change an admin account.'));
     expect(document.querySelector<HTMLSelectElement>('.drawer select')!.disabled).toBe(true);
+  });
+  it('creates a portal role that starts from portal and never opens Controls', async () => {
+    const { host, sent } = open('/controls/roles', () => ({ status: 200, body: {} }));
+    await until(() => expect(host.querySelector('[role="switch"][aria-label="Opens Controls for portal"]')).toBeTruthy());
+    expect(host.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Opens Controls for portal"]')!.disabled).toBe(true);
+    click(byText(host, 'button', 'New role'));
+    await until(() => expect(document.querySelector('#ctl-r-realm')).toBeTruthy());
+    const realm = document.querySelector<HTMLSelectElement>('#ctl-r-realm')!;
+    realm.value = 'portal';
+    realm.dispatchEvent(new Event('change'));
+    await until(() => expect(document.querySelector<HTMLSelectElement>('#ctl-r-base')!.disabled).toBe(true));
+    const id = document.querySelector<HTMLInputElement>('#ctl-r-id')!;
+    id.value = 'partner';
+    id.dispatchEvent(new Event('input'));
+    click(byText(document, 'button', 'Create role'));
+    await until(() => expect(sent.some(item => item.method === 'POST' && item.url.endsWith('/api/_controls/roles'))).toBe(true));
+    expect(sent.find(item => item.url.endsWith('/api/_controls/roles'))!.body).toEqual({ id: 'partner', base: 'portal', realm: 'portal', description: '' });
   });
 });
