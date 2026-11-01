@@ -50,6 +50,9 @@ def parser():
         command.add_argument('--debug', action='store_true', help='Show tracebacks for expected startup errors')
         command.add_argument('--host', default='127.0.0.1')
         command.add_argument('--port', type=int, default=8000)
+    routes = commands.add_parser('routes', help='Print the resolved hosts and paths of an instance')
+    routes.add_argument('instance')
+    routes.add_argument('--port', type=int, default=8000, help='Development port shown in loopback origins')
     effects = commands.add_parser('effects', help='Check the rows records post to other models')
     effects_commands = effects.add_subparsers(dest='effects_command', required=True)
     effects_check = effects_commands.add_parser('check', help='Recompute effect rows and report differences without writing')
@@ -150,6 +153,13 @@ def main(argv=None):
             print('Applied migrations: ' + (', '.join(result['migrations']) or 'none; schema is current'))
             if result['backup']:
                 print('Backup: ' + result['backup'])
+        elif args.command == 'routes':
+            from ..instances import load_runtime
+            app = load_runtime(root, args.instance, port=args.port)
+            try:
+                print(app.routes.text())
+            finally:
+                app.database.close()
         elif args.command == 'effects':
             from .effects import check_instance
             from ..effects import describe
