@@ -43,7 +43,7 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 | Contact | `Link` with an index, `Email`, a stored calculation through a Link path (`F("organization.emirate")`) |
 | Product | `unique` field, `Boolean`, read only for sales |
 | Booking | Effect target (`source = Reference()`, `reversal`), read only for every role, a measure |
-| Deal | `Sequence` (`DL-{year}-{n:04}`), `State` with guarded moves (`when=`), a role-limited move, locked, final and voidable states, `Meta.revisable`, `run=` on a move, `@action` with `inputs` and `available_when`, `applies_when` and `editable_when_locked`, `initial=` through a Link, a calculated `Percent` through nested `when()`, `round()`, `days()`, `coalesce()`, `today()` in a virtual result, a `Table` of up to 1,000 lines, `sum`, `count` and `where(row.recurring == True)` aggregates, an `Effect` with `Negate`, model and per-record measures, `key_fields`, `relations`, `Attachments`, a row scope with `default=CurrentUser` on the owner, and field lists per role |
+| Deal | `Sequence` (`DL-{year}-{n:04}`), `State` with guarded moves (`when=`), a role-limited move, locked, final and voidable states, `Meta.revisable`, `run=` on a move, `@action` with `inputs` and `available_when`, `applies_when` and `editable_when_locked`, `initial=` through a Link, a calculated `Percent` through nested `when()`, `round()`, `days()`, `coalesce()`, `today()` in a virtual result, a `Table` of up to 1,000 lines, `sum`, `count` and `where(row.recurring == True)` aggregates, an `Effect` with `Negate`, model and per-record measures (won this month through `month_start()`), `key_fields`, `relations`, `Attachments`, a row scope with `default=CurrentUser` on the owner, and field lists per role |
 | Deal line | `initial=` from the product (description, rate, taxable), a discount `Percent`, an auto-rounded amount, VAT through `when()` and `parent.vat_rate` |
 | Task | `Time`, `Duration` with `applies_when`, a virtual `Boolean` from `today()`, Links to Deal and Contact |
 | Lead | `State` with a guard on the score, `applies_when` with `required_when` on a reason that Mark lost asks for, an action that creates other records |
@@ -93,8 +93,6 @@ screen test opens the same deal on its Activity tab and adds a note through the 
 
 ## Gaps found
 
-- **"Won this month" is not a declared measure.** `where=` cannot compare dates with `today()`;
-  the list strip shows won value overall, and the month is an aggregate by `won_on:month`.
 - **Errors without names.** `A document field conflicts with its draft interface` does not name the
   field (here a field called `source`, which documents reserve). `Layout must include every visible
   field exactly once` does not name the missing fields, and [ui-framework.md](ui-framework.md) says

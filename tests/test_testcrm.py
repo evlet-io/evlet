@@ -18,6 +18,12 @@ from test_business import http
 PASSWORD = 'a long local test password'
 
 
+def dubai_today():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo('Asia/Dubai')).date()
+
+
 @pytest.fixture(scope='module')
 def crm(tmp_path_factory):
     app = testcrm.build(tmp_path_factory.mktemp('testcrm') / 'project', frontend_port=8000)
@@ -95,9 +101,11 @@ def test_list_sort_search_filter_and_paging(crm):
     by_stage = admin('GET', '/api/deal/aggregate?measures=value:sum:total,deals:count&group_by=stage')[1]['items']
     assert {row['stage'] for row in by_stage} >= {'lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'}
     assert sum(Decimal(row['value']) for row in by_stage if row['stage'] not in ('won', 'lost', 'void')) == Decimal(measures['pipeline'])
-    # Won this month: a declared measure cannot compare dates with today, so it is an aggregate by month.
+    # Won this month is a declared measure: won_on from the first of this month in Dubai, decided at query time.
+    month = dubai_today().strftime('%Y-%m')
     won = admin('GET', '/api/deal/aggregate?measures=won:sum:total&group_by=won_on:month&filters=' + quote(json.dumps({'stage': 'won'})))[1]['items']
     assert sum(Decimal(row['won']) for row in won) == Decimal(measures['won'])
+    assert Decimal(measures['won_this_month']) == sum(Decimal(row['won']) for row in won if row['won_on__month'] == month) > 0
 
 
 def test_open_a_deal_and_edit_fields(crm):

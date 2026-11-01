@@ -345,6 +345,15 @@ def today():
     return Expr('today')
 
 
+# month_start() compiles as today() minus this many days; measures read it as the first day of the month.
+MONTH_START = 10**12
+
+
+def month_start():
+    """The first day of the current month, for a measure's where= only (measures.md)."""
+    return today() - days(MONTH_START)
+
+
 def safe_divide(numerator, denominator, *, default):
     return Expr('safe_divide', (lift(numerator), lift(denominator), lift(default)))
 

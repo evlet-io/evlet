@@ -32,7 +32,7 @@ describe('testCRM: sign in and the deals list', () => {
     await until(() => expect(titles(host).length).toBe(8));
     expect(titles(host)).not.toContain('Fleet and warehouse ERP');
     expect([...host.querySelectorAll('thead th')].map(text).slice(1)).toEqual(['Number', 'Title', 'Organization', 'Owner', 'Stage', 'Total', 'Expected close']);
-    await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => text(item.querySelector('span')))).toEqual(['Pipeline', 'Won', 'Deals']));
+    await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => text(item.querySelector('span')))).toEqual(['Pipeline', 'Won', 'Won this month', 'Deals']));
     await until(() => expect(text(byText(host, '.ev-list [role="tab"]', /^All deals/))).toBe('All deals8'));
     expect(run.misses).toEqual([]);
   });

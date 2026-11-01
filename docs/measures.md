@@ -96,10 +96,24 @@ Supported:
   Ordered comparisons need two numbers or two dates.
 * A `Boolean` field on its own, and `&`, `|` and `~`.
 * Fields of the measured model that are stored.
+* A `Date` field compared with `today()`, `today() + days(n)`, `today() - days(n)` (a whole
+  number `n`) or `month_start()`, the first day of the current month. They are query
+  parameters decided when the measure runs, in the instance timezone for `Context` and HTTP
+  calls (UTC for `Database.aggregate` and `Database.measures`).
+
+```python
+from evlet.calc import F, days, month_start, today
+
+Sum("total", where=(F("stage") == "won") & (F("won_on") >= month_start()))
+Count(where=F("due_on") < today())
+Count(where=F("posting_date") >= today() - days(30))
+```
+
+`month_start()` belongs only in a measure's `where=`.
 
 Not supported, and rejected with a clear message when the measure is declared (or
 when an ad hoc call is made): arithmetic (`F("total") - F("paid") > 0`), Link paths
-(`F("customer.name")`), `today()`, `when()`, `coalesce()`, `round()`, table aggregates,
+(`F("customer.name")`), `today()` outside a Date comparison, `when()`, `coalesce()`, `round()`, table aggregates,
 comparisons with no field, and `Tags`, `Reference` and `Time` fields. Put a calculation
 in a stored field and compare that field instead.
 

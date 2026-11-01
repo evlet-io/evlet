@@ -8,6 +8,7 @@ in Python for the same reason.
 """
 
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 from fractions import Fraction
 import json
 import math
@@ -161,6 +162,23 @@ class Compiled:
 
 
 @dataclass(frozen=True)
+class Today:
+    """A where= parameter decided when the query runs: today in the zone, moved by `days`, or the first
+    day of its month."""
+    days: int = 0
+    month_start: bool = False
+
+    def value(self, zone):
+        day = current_date(zone)
+        return (day.replace(day=1) if self.month_start else day + timedelta(days=self.days)).isoformat()
+
+
+def current_date(zone):
+    from zoneinfo import ZoneInfo
+    return datetime.now(timezone.utc if zone in (None, 'UTC') else ZoneInfo(zone)).date()
+
+
+@dataclass(frozen=True)
 class Group:
     key: str
     field: str
@@ -251,11 +269,36 @@ def stored(model, node, reads):
     return f'"record".{identifier(name)}', field
 
 
+def today_value(node):
+    """A Today parameter for today(), today() + or - days(n) and month_start(); None for anything else."""
+    from .calc import MONTH_START, parse
+    if node['$expr'] == 'today':
+        return Today()
+    if node['$expr'] in ('date_add', 'date_sub') and node['args'][0]['$expr'] == 'today' and node['args'][1]['$expr'] == 'literal' \
+            and node['args'][1]['type'] == 'decimal':
+        number = parse(node['args'][1]['value'])
+        if number.scale == 0:
+            count = number.coef if node['$expr'] == 'date_add' else -number.coef
+            return Today(month_start=True) if count == -MONTH_START else Today(days=count)
+    return None
+
+
 def comparison(model, op, left, right, values, reads):
+    if left['$expr'] != 'ref' and right['$expr'] == 'ref':
+        left, right, op = right, left, FLIPPED[op]
     if left['$expr'] == 'literal' and right['$expr'] == 'literal':
         raise ValueError('where: compare a field with a value or another field')
-    if left['$expr'] == 'literal':
-        left, right, op = right, left, FLIPPED[op]
+    when = today_value(right)
+    if left['$expr'] == 'ref' and when is not None:
+        a, field = stored(model, left, reads)
+        if not isinstance(field, Date):
+            raise ValueError('where: compare a Date field with today()')
+        values.append(when)
+        if op == 'eq':
+            return f'(CASE WHEN {a} IS NULL THEN 0 WHEN {a} = ? THEN 1 ELSE 0 END)'
+        if op == 'ne':
+            return f'(CASE WHEN {a} IS NULL THEN 1 WHEN {a} = ? THEN 0 ELSE 1 END)'
+        return f'(CASE WHEN {a} IS NULL THEN NULL WHEN {a} {SYMBOLS[op]} ? THEN 1 ELSE 0 END)'
     if left['$expr'] != 'ref' or right['$expr'] not in ('ref', 'literal'):
         if 'hop' in (left['$expr'], right['$expr']):
             raise ValueError('where: Link paths are not supported in measures; compare fields of the measured model')
@@ -391,10 +434,11 @@ def combine(where, values, extra, extra_values):
     return where + (' AND ' if where else ' WHERE ') + extra.removeprefix(' WHERE '), [*values, *extra_values]
 
 
-def execute(connection, registry, model, compiled, groups, where, values):
-    """Run one aggregate statement and convert the results. Groups are sorted with empty keys first."""
+def execute(connection, registry, model, compiled, groups, where, values, zone='UTC'):
+    """Run one aggregate statement and convert the results. Groups are sorted with empty keys first.
+    today() in a where= is the date in `zone` when the statement runs."""
     columns = [group.sql for group in groups] + [column for item in compiled for column in item.sql]
-    parameters = [value for item in compiled for value in item.values]
+    parameters = [value.value(zone) if isinstance(value, Today) else value for item in compiled for value in item.values]
     sql = (f'SELECT {", ".join(f"{column} AS {identifier(f"c{index}")}" for index, column in enumerate(columns))} '
            f'FROM {identifier(registry.name_for(model))} AS "record"{where}')
     parameters += values
@@ -443,7 +487,7 @@ def aggregate(tx, model, measures, group_by=(), filters=None):
     return execute(tx.connection, tx.registry, model, compiled, groups, where, values)
 
 
-def values_for(tx, model, items, record_id=None, filters=None, scope_for=None):
+def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, zone='UTC'):
     """Declared measure values: model-level over the filtered records, or per record over related rows."""
     scope_for = scope_for or (lambda target: ('', ()))
     if record_id is None:
@@ -452,7 +496,7 @@ def values_for(tx, model, items, record_id=None, filters=None, scope_for=None):
         if not items:
             return {}
         where, values = combine(where, values, *scope_for(model))
-        return execute(tx.connection, tx.registry, model, items, [], where, values)[0]
+        return execute(tx.connection, tx.registry, model, items, [], where, values, zone)[0]
     if filters:
         raise ValidationError({'filters': 'Per-record measures take no filters'})
     result = {}
@@ -460,7 +504,7 @@ def values_for(tx, model, items, record_id=None, filters=None, scope_for=None):
         for link in dict.fromkeys(item.link for item in items if item.target is target):
             chosen = [item for item in items if item.target is target and item.link == link]
             where, values = combine(f' WHERE "record".{identifier(link)} = ?', [record_id], *scope_for(target))
-            result.update(execute(tx.connection, tx.registry, target, chosen, [], where, values)[0])
+            result.update(execute(tx.connection, tx.registry, target, chosen, [], where, values, zone)[0])
     return {item.name: result[item.name] for item in items}
 
 
@@ -536,7 +580,7 @@ def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=N
     policy.query_fields(user, model, filters, ())
     where, values = SqlQuery(registry, model).where(filters)
     where, values = combine(where, values, *policy.scope_sql(user, model))
-    return execute(tx.connection, registry, model, compiled, groups, where, values)
+    return execute(tx.connection, registry, model, compiled, groups, where, values, getattr(business, 'timezone', None) or 'UTC')
 
 
 def available(business, user, model, per_record):
@@ -553,7 +597,7 @@ def scoped_measures(business, tx, user, model, record_id=None, filters=None):
         policy.query_fields(user, model, filters, ())
     else:
         policy.record(tx, user, model, record_id)
-    return values_for(tx, model, items, record_id, filters, lambda target: policy.scope_sql(user, target))
+    return values_for(tx, model, items, record_id, filters, lambda target: policy.scope_sql(user, target), getattr(business, 'timezone', None) or 'UTC')
 
 
 def schema(business, user, model):

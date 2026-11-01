@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Effect, Email, Integer, Link,
                    LongText, Model, Move, Negate, Percent, Phone, Reference, Related, Rule, Select, Sequence, State, Sum,
                    Table, Tags, Text, Time, URL, action)
-from evlet.calc import D, F, coalesce, days, parent, round, row, today, when
+from evlet.calc import D, F, coalesce, days, month_start, parent, round, row, today, when
 
 EVERYTHING = Rule(('read', 'create', 'update', 'delete'))
 READ = Rule(('read',))
@@ -203,6 +203,7 @@ class Deal(Model):
         measures = {
             'pipeline': Sum('total', where=(F('stage') != 'won') & (F('stage') != 'lost') & (F('stage') != 'void')),
             'won': Sum('total', where=F('stage') == 'won'),
+            'won_this_month': Sum('total', where=(F('stage') == 'won') & (F('won_on') >= month_start())),
             'deals': Count(),
             'open_tasks': Count('task', link='deal', where=F('done') == False),  # noqa: E712
         }
