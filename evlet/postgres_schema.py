@@ -42,6 +42,11 @@ def index(db, table, field, unique=False):
     db.execute(f'CREATE {"UNIQUE " if unique else ""}INDEX {identifier(name)} ON {identifier(table)} ({identifier(field)})')
 
 
+def sequence_index(db, table, name, field):
+    from .sequences import index_sql
+    db.execute(index_sql(relation_name(db, 'idx', f'{table}:{name}:sequence'), table, name, field))
+
+
 def links(db, table, model):
     for name, field in model.__fields__.items():
         if isinstance(field, Link):
@@ -67,6 +72,8 @@ def create(db, table, model):
     for name, field in model.__fields__.items():
         if field.index or field.unique:
             index(db, table, name, field.unique)
+        if field.kind == 'sequence':
+            sequence_index(db, table, name, field)
 
 
 def tables(db):
@@ -104,6 +111,16 @@ def check(db, registry, rows=False):
         indexed = {tuple(r['fields']) for r in indexes}
         if any((name,) not in indexed for name, field in model.__fields__.items() if field.index):
             raise SchemaError(f'{table}: an explicit index migration is required')
+        if any(field.kind == 'sequence' for field in model.__fields__.values()):
+            partial = db.execute('''SELECT array_agg(a.attname ORDER BY k.ordinality) AS fields
+                FROM pg_index i JOIN pg_class t ON t.oid=i.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace
+                CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(num,ordinality)
+                JOIN pg_attribute a ON a.attrelid=t.oid AND a.attnum=k.num
+                WHERE n.nspname='public' AND t.relname=? AND i.indpred IS NOT NULL AND i.indisunique AND i.indisvalid
+                GROUP BY i.indexrelid''', (table,)).fetchall()
+            if any((*field.scope, name) not in {tuple(r['fields']) for r in partial}
+                   for name, field in model.__fields__.items() if field.kind == 'sequence'):
+                raise SchemaError(f'{table}: a Sequence field is missing its unique index')
         if rows:
             # Server cursor keeps migration validation memory bounded on large tables.
             with db.raw.cursor(name='evlet_schema_validation') as cursor:
@@ -168,6 +185,7 @@ def apply(db, op):
         if isinstance(op.field, Link):
             db.execute(f'ALTER TABLE {identifier(op.table)} ADD FOREIGN KEY ({identifier(op.name)}) REFERENCES {identifier(storage_name(op.field.target))}(id)')
         if op.field.index or op.field.unique: index(db, op.table, op.name, op.field.unique)
+        if op.field.kind == 'sequence': sequence_index(db, op.table, op.name, op.field)
 
 
 def migrate(database, migrations):

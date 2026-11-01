@@ -7,6 +7,7 @@ import sqlite3
 from .fields import Link, MISSING, Reference
 from .models import ValidationError, identifier
 from .query import SqlQuery
+from .sequences import raw_write
 
 # Most rows one list call returns, and most rows one child collection may hold in an editor.
 ROW_LIMIT = 100
@@ -169,6 +170,7 @@ class Session:
     def create(self, model, /, **values):
         self._guard(model)
         self._state(model, values.get(getattr(model, '__state__', None) or '', MISSING), None)
+        raw_write(self, model, values, None)
         table = identifier(self.registry.name_for(model))
         record = model(**values)
         self.check_references(model, record._values)
@@ -212,6 +214,7 @@ class Session:
         self._guard(model)
         current = self.get(model, record_id)
         self._state(model, changes.get(getattr(model, '__state__', None) or '', MISSING), current)
+        raw_write(self, model, changes, current)
         record = model(**{**current._values, **changes})
         if changes:
             self.check_references(model, {name: record._values[name] for name in changes})

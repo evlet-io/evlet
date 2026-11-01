@@ -7,13 +7,14 @@ from .fields import (Boolean, Currency, Date, DateTime, Decimal, Duration, Email
 from .migrations import AddField, AddIndex, CreateModel, Migration, Recompute, RenameField, SchemaError
 from .models import Model, Registry, ValidationError, Child
 from .declarations import Move, Ref, Table, Query, action, depends
+from .sequences import Sequence
 
 __all__ = [
     "AddField", "AddIndex", "Application", "Boolean", "ConflictError", "CreateModel",
     "Currency", "Database", "Date", "DateTime", "Decimal", "Email", "Integer", "Link",
     "LongText", "Migration", "Model", "NotFoundError", "Registry", "RenameField",
     "SchemaError", "Select", "Text", "URL", "ValidationError",
-    "Duration", "Percent", "Phone", "Recompute", "Reference", "State", "Tags", "Time",
+    "Duration", "Percent", "Phone", "Recompute", "Reference", "Sequence", "State", "Tags", "Time",
 ]
 
 from .auth import LocalAuth, User

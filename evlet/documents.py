@@ -73,6 +73,9 @@ class Draft:
                 raise ValidationError({name: 'COMPUTED_FIELD_WRITE: this value is calculated'})
             if name == self._definition.__state__:
                 raise ValidationError({name: 'This changes only through its moves'})
+            if self._definition.__declared_fields__[name].kind == 'sequence':
+                from .sequences import ASSIGNED_BY_ENGINE
+                raise ValidationError({name: ASSIGNED_BY_ENGINE})
             self._values[name] = value
         elif name in self._definition.__tables__:
             limit = self._definition.__tables__[name].max_rows
@@ -274,7 +277,9 @@ def load_draft(context, model, record_id, values, *, preview=False):
     current = business.policy.record(tx, user, model, record_id, 'read' if preview else operation) if record_id else None
     scalars, collections = business.split_body(values)
     from .states import state_write
+    from .sequences import sequence_write
     state_write(model, scalars, current)
+    sequence_write(model, scalars, current)
     computed_write(business, model, scalars, '')
     business.policy.check_values(tx, user, model, scalars)
     draft = Draft(model, {**(dict(current._values) if current else {}), **scalars}, context=context, record_id=record_id)
@@ -1218,6 +1223,9 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     settle(context, draft, complete=True, previous=before, kept=locked_write)
     if locked_write:
         states.keep_saved(draft, before)
+    # Document numbers are assigned on the settled draft, in this transaction.
+    from . import sequences
+    numbers = sequences.assign(context, model, draft, before, declared_move)
     prior = before.stored_values() if before else None
     after = draft.stored_values()
     if prior == after:
@@ -1245,6 +1253,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         reaction(draft, change)
     if declared_move is not None:
         states.moved(context, model, record.id, before._values.get(model.__state__), declared_move)
+    for name, number in numbers:
+        sequences.assigned(context, model, record.id, name, number)
     business.changed(tx, model, record.id)
     result = business.detail(tx, user, tx.get(model, record.id), row_limit=None)
     if keys: result['_row_ids'] = keys

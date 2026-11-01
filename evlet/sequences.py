@@ -1,0 +1,321 @@
+"""Human document numbers: the Sequence field, its counters and where the engine assigns them.
+
+A Sequence value is written only by the engine, inside the write transaction that assigns it.
+Counters live in `evlet_sequence(model, field, scope_key, period, last)`. Writers are serialized
+(SQLite `BEGIN IMMEDIATE`, a PostgreSQL transaction lock), the counter row is updated in the same
+transaction as the record, so committed records get gapless numbers and a rollback consumes none.
+"""
+
+from datetime import date
+import json
+import re
+from types import MappingProxyType
+
+from .fields import Boolean, Date, Integer, LongText, MISSING, Tags, Text
+from .models import ValidationError, identifier
+
+TOKEN = re.compile(r'\{([^{}]*)\}')
+PERIOD_TOKENS = ('year', 'yy', 'month')
+MAX_FORMAT = 120
+COUNTER_TABLE = ('CREATE TABLE IF NOT EXISTS evlet_sequence (model TEXT NOT NULL, field TEXT NOT NULL, '
+                 'scope_key TEXT NOT NULL, period TEXT NOT NULL, "last" INTEGER NOT NULL, '
+                 'PRIMARY KEY (model, field, scope_key, period))')
+NEXT = ('INSERT INTO evlet_sequence (model, field, scope_key, period, "last") VALUES (?, ?, ?, ?, 1) '
+        'ON CONFLICT (model, field, scope_key, period) DO UPDATE SET "last" = evlet_sequence."last" + 1 RETURNING "last"')
+ASSIGNED_BY_ENGINE = 'This number is assigned by the system'
+
+
+def parse_format(text):
+    """The parts of a number format: literal text and (token, width) pairs. Raises ValueError."""
+    if not isinstance(text, str) or not text or len(text) > MAX_FORMAT:
+        raise ValueError(f'A Sequence format is text of 1 to {MAX_FORMAT} characters, such as "INV-{{year}}-{{n:05}}"')
+    if any(not character.isprintable() for character in text):
+        raise ValueError('A Sequence format cannot contain control characters')
+    parts, seen, position = [], set(), 0
+    for match in TOKEN.finditer(text):
+        literal = text[position:match.start()]
+        if '{' in literal or '}' in literal:
+            raise ValueError('A Sequence format has an unmatched brace')
+        if literal:
+            parts.append(literal)
+        token = match.group(1)
+        padded = re.fullmatch(r'n:0([1-9][0-9]?)', token)
+        name, width = ('n', int(padded.group(1))) if padded else (token, 0)
+        if name not in ('n', *PERIOD_TOKENS):
+            raise ValueError(f'Unknown Sequence token {{{token}}}; use {{year}}, {{yy}}, {{month}}, {{n}} or {{n:05}}')
+        if width > 18:
+            raise ValueError('Pad {n} to at most 18 digits')
+        if name in seen:
+            raise ValueError(f'A Sequence format uses {{{name}}} once')
+        seen.add(name)
+        parts.append((name, width))
+        position = match.end()
+    rest = text[position:]
+    if '{' in rest or '}' in rest:
+        raise ValueError('A Sequence format has an unmatched brace')
+    if rest:
+        parts.append(rest)
+    if 'n' not in seen:
+        raise ValueError('A Sequence format needs the counter {n}')
+    if 'year' in seen and 'yy' in seen:
+        raise ValueError('Use {year} or {yy}, not both')
+    if 'month' in seen and not seen & {'year', 'yy'}:
+        raise ValueError('{month} needs {year} or {yy}, or numbers would repeat every year')
+    return tuple(parts)
+
+
+class Sequence(Text):
+    """A human document number such as INV-2026-00042, separate from the record id.
+
+    `scope` names plain fields whose values each have their own counter. With {year}, {yy} or {month}
+    the counter restarts each period, decided by the Date field named by `date=` (or, without it, the
+    day the number is assigned in the instance timezone). `assign_on` is "create" or a state of the
+    model's State; the value stays null until then and only the engine writes it.
+    """
+    kind = 'sequence'
+    OPTIONS = ('label', 'help_text', 'placeholder', 'hidden')
+
+    def __init__(self, format, *, scope=(), assign_on='create', date=None, **kwargs):
+        if set(kwargs) - set(self.OPTIONS):
+            raise ValueError('Sequence takes format, scope, assign_on, date and ' + ', '.join(self.OPTIONS))
+        super().__init__(max_length=255, default=None, read_only=True, **kwargs)
+        self.parts = parse_format(format)
+        self.format = format
+        if isinstance(scope, str) or not isinstance(scope, (list, tuple)) or len(set(scope)) != len(scope) \
+                or any(not isinstance(name, str) for name in scope):
+            raise ValueError('Sequence scope is a list of distinct field names, such as ("company",)')
+        for name in scope:
+            identifier(name)
+        self.scope = tuple(scope)
+        if not isinstance(assign_on, str) or not assign_on:
+            raise ValueError('Sequence assign_on is "create" or a state name')
+        self.assign_on = assign_on
+        tokens = {part[0] for part in self.parts if isinstance(part, tuple)}
+        self.period = 'month' if 'month' in tokens else 'year' if tokens & {'year', 'yy'} else None
+        if date is not None:
+            if not isinstance(date, str):
+                raise ValueError('Sequence date names a Date field')
+            identifier(date)
+            if self.period is None:
+                raise ValueError('Sequence date is used only by a format with {year}, {yy} or {month}')
+        self.date = date
+
+    def metadata(self):
+        # The storage schema: the scope shapes the unique index. The format, assign_on and date
+        # can change without a migration; numbers already assigned keep their values.
+        return {**super().metadata(), 'scope': list(self.scope)}
+
+    def schema(self):
+        return {'format': self.format, 'scope': list(self.scope), 'assign_on': self.assign_on, 'date': self.date}
+
+    def render(self, number, day):
+        values = {'year': f'{day.year:04d}', 'yy': f'{day.year % 100:02d}', 'month': f'{day.month:02d}'} if day else {}
+        return ''.join(part if isinstance(part, str) else str(number).zfill(part[1]) if part[0] == 'n' else values[part[0]]
+                       for part in self.parts)
+
+    def period_key(self, day):
+        if self.period is None:
+            return ''
+        return f'{day.year:04d}' if self.period == 'year' else f'{day.year:04d}-{day.month:02d}'
+
+
+def fields_of(model):
+    return {name: field for name, field in model.__declared_fields__.items() if isinstance(field, Sequence)}
+
+
+def compile_sequences(registry, models, plans, child_models):
+    """{model: {field name: Sequence}} after checking each declaration against its model."""
+    result = {}
+    for model in models:
+        declared = fields_of(model)
+        if not declared:
+            continue
+        if model in child_models:
+            raise ValueError(f'{model.__name__}: a Sequence belongs on a root document, not on Table rows')
+        fields = model.__declared_fields__
+        for name, sequence in declared.items():
+            where = f'{model.__name__}.{name}'
+            for scoped in sequence.scope:
+                field = fields.get(scoped)
+                plain = field is not None and field.stored and field.compute is None and field.query is None \
+                    and field.fetch is None and isinstance(field, (Text, Integer, Date, Boolean)) \
+                    and not isinstance(field, (LongText, Sequence, Tags))
+                if not plain:
+                    raise ValueError(f'{where}: scope field {scoped!r} must be a stored, not calculated, text, number, '
+                                     'Link, date or Boolean field of the model')
+                if not field.required:
+                    raise ValueError(f'{where}: scope field {scoped!r} must be required, so every number has a scope')
+            if sequence.date is not None:
+                field = fields.get(sequence.date)
+                if not isinstance(field, Date) or not field.stored:
+                    raise ValueError(f'{where}: date names {sequence.date!r}, which is not a stored Date field of the model')
+            if sequence.assign_on != 'create':
+                state = model.__state__
+                if state is None or sequence.assign_on not in fields[state].choices:
+                    raise ValueError(f'{where}: assign_on is "create" or a state of the model, not {sequence.assign_on!r}')
+            plan = plans.get(model)
+            for entry in (plan or {}).get('fields', ()):
+                for scope, _, read in entry['reads']:
+                    if read == name and (scope == 'self' and not entry['path'] or scope == 'parent' and len(entry['path']) == 1):
+                        raise ValueError(f'{where}: calculations and field rules cannot read a Sequence, because the engine '
+                                         'assigns it after the document settles; read it in a move guard or an action instead')
+        result[model] = MappingProxyType(declared)
+    return MappingProxyType(result)
+
+
+# Storage
+
+def index_sql(name, table, field_name, sequence):
+    """A unique index on the scope fields and the number, for assigned numbers only."""
+    columns = ', '.join(identifier(column) for column in (*sequence.scope, field_name))
+    return (f'CREATE UNIQUE INDEX {identifier(name)} ON {identifier(table)} ({columns}) '
+            f'WHERE {identifier(field_name)} IS NOT NULL')
+
+
+def ensure_counters(connection):
+    connection.execute(COUNTER_TABLE)
+
+
+def scope_key(model, sequence, values):
+    if not sequence.scope:
+        return ''
+    fields = model.__declared_fields__
+    return json.dumps([fields[name].serialize(values.get(name)) for name in sequence.scope], separators=(',', ':'))
+
+
+def number_day(sequence, values, today):
+    """The day that decides the period: the date field's value, or today in the instance timezone."""
+    if sequence.period is None:
+        return None
+    if sequence.date is None:
+        return date.fromisoformat(today)
+    day = values.get(sequence.date)
+    if day is None:
+        raise ValidationError({sequence.date: 'Fill in this date before the number is assigned'})
+    return day
+
+
+def next_number(connection, resource, name, model, sequence, values, today):
+    """Take the next counter value for this record's scope and period and render the number."""
+    day = number_day(sequence, values, today)
+    row = connection.execute(NEXT, (resource, name, scope_key(model, sequence, values), sequence.period_key(day))).fetchone()
+    return sequence.render(row[0], day)
+
+
+# The document pipeline
+
+def sequence_write(model, scalars, current):
+    """Ordinary writes never set a Sequence. Sending the saved value back is not a change."""
+    for name in fields_of(model):
+        if name not in scalars:
+            continue
+        if scalars[name] == (None if current is None else current._values.get(name)):
+            del scalars[name]
+        else:
+            raise ValidationError({name: ASSIGNED_BY_ENGINE})
+
+
+def assign(context, model, draft, before, move):
+    """Assign due numbers on the settled draft, in the write transaction. Returns [(field, number)].
+
+    A number is due on create (assign_on="create", or a new record starting in the assign_on state)
+    and when a move enters the assign_on state. Once assigned, the scope fields and the period of the
+    date field are fixed, because the number was counted in them.
+    """
+    business = context._business
+    declared = business.registry.sequences.get(model)
+    if not declared:
+        return []
+    from .documents import host_today
+    state = model.__state__
+    assigned = []
+    for name, sequence in declared.items():
+        if before is not None and before._values.get(name) is not None:
+            fixed(model, sequence, draft, before)
+            continue
+        if draft._values.get(name) is not None:
+            continue
+        if sequence.assign_on == 'create':
+            due = before is None
+        else:
+            due = (before is None and draft._values.get(state) == sequence.assign_on) or \
+                  (move is not None and move.to == sequence.assign_on)
+        if not due:
+            continue
+        number = next_number(context._tx.connection, business.registry.name_for(model), name, model, sequence,
+                             draft._values, host_today(business))
+        draft._values[name] = number
+        assigned.append((name, number))
+    return assigned
+
+
+def fixed(model, sequence, draft, before):
+    errors = {}
+    for name in sequence.scope:
+        if draft._values.get(name) != before._values.get(name):
+            errors[name] = 'This is fixed once the number is assigned'
+    if sequence.date is not None:
+        old, new = before._values.get(sequence.date), draft._values.get(sequence.date)
+        if new is None or old is not None and sequence.period_key(old) != sequence.period_key(new):
+            errors[sequence.date] = 'This stays in the period of the assigned number'
+    if errors:
+        raise ValidationError(errors)
+
+
+def assigned(context, model, record_id, name, number):
+    """Called once per assigned number after the record is saved, in its transaction.
+
+    The Journal (Phase 8) records the assignment here.
+    """
+
+
+def clear_for_copy(model, values):
+    """Values for a copy of a record (such as a revision): every Sequence is null, so the copy gets
+    its own number when it reaches assign_on. Returns a new dict; `values` is not changed."""
+    cleared = dict(values)
+    for name in fields_of(model):
+        if name in cleared:
+            cleared[name] = None
+    return cleared
+
+
+# Existing rows
+
+def backfill(session, model, name, *, filters=None, today=None):
+    """Number existing rows whose `name` is null, in id order, from the same counters.
+
+    For a Sequence added by a migration. Run it in one transaction; `filters` selects the rows (for
+    example only issued records) and `today` (YYYY-MM-DD) is the period day for formats without a date
+    field. Returns the number of rows numbered. This is trusted maintenance code: it writes the field
+    directly and does not run document settlement, which a Sequence never feeds.
+    """
+    sequence = model.__declared_fields__.get(name)
+    if not isinstance(sequence, Sequence):
+        raise ValueError(f'{model.__name__}.{name} is not a Sequence field')
+    if sequence.period is not None and sequence.date is None and today is None:
+        raise ValueError('Pass today="YYYY-MM-DD" to number rows by a format period without a date field')
+    resource = session.registry.name_for(model)
+    ensure_counters(session.connection)
+    count = 0
+    while True:
+        rows = session.list(model, filters={**(filters or {}), name: None}, order_by=('id',), limit=100)
+        if not rows:
+            return count
+        for record in rows:
+            for scoped in sequence.scope:
+                if record._values.get(scoped) is None:
+                    raise ValidationError({scoped: f'Record {record.id} has no value for this scope field'})
+            number = next_number(session.connection, resource, name, model, sequence, record._values, today)
+            session.connection.execute(f'UPDATE {identifier(resource)} SET {identifier(name)} = ? WHERE "id" = ?', (number, record.id))
+            count += 1
+
+
+def raw_write(session, model, values, current):
+    """Raw Session writes may not set a Sequence, except inside maintenance()."""
+    if session._maintenance:
+        return
+    for name in fields_of(model):
+        value = values.get(name, MISSING)
+        if value is not MISSING and value != (None if current is None else current._values.get(name)):
+            raise ValueError(f'{model.__name__}.{name} is assigned by the engine; use sequences.backfill() '
+                             'or session.maintenance() for an audited repair')

@@ -119,6 +119,11 @@ class Business:
                 for root, plan in self.registry.plans.items():
                     tx.connection.execute('UPDATE evlet_calculation_versions SET plan_hash=? WHERE plan_hash=?',
                                           (self.registry.formula_hashes[root], plan['model_schema_hash']))
+        if self.registry.sequences:
+            from .sequences import ensure_counters
+            with self.database.transaction() as tx:
+                # Document number counters, updated in each assigning write transaction.
+                ensure_counters(tx.connection)
         if getattr(self, 'forms', None) and (self.forms.dialogs or self.forms.reports):
             self.forms.initialize()
         if self.events:

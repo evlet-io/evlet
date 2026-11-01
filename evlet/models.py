@@ -116,7 +116,7 @@ class ModelType(type):
         if revisable:
             fields['revises'].target = cls
             unique_and_required(name, fields, tables)
-        if states or sources or tables or 'permissions' in namespace or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
+        if states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
         if getattr(cls, '__declaration_mode__', False) and (set(fields) | set(tables) | set(sources)) & {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}:
@@ -277,6 +277,9 @@ class Registry:
         self.guards, self.guard_plans, self.guard_root_plans = compile_guards(self, models, plans, child_models)
         # Ordinary writes on a locked record evaluate rules over the results it keeps.
         self.kept_plans = MappingProxyType({root: kept_plan(plan) for root, plan in plans.items() if root.__state__ is not None})
+        # Document numbers: {model: {field name: Sequence}}.
+        from .sequences import compile_sequences
+        self.sequences = compile_sequences(self, models, plans, child_models)
 
     def root_of(self, model):
         owners = {child.model: child.parent for child in self.children}
