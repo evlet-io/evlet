@@ -15,7 +15,7 @@ import { DialogFooter, mountToasts, openModal, toast } from '../ui/layers';
 import { formatDateTime } from '../model/format';
 import { ControlsClient, type ControlsState } from './client';
 import './controls.css';
-import { describe, Drafts } from './drafts';
+import { describe, Drafts, ipAllowed } from './drafts';
 import { RolesPage, UsersPage } from './people';
 import { PermissionsPage, SecurityPage } from './access';
 
@@ -113,8 +113,16 @@ export function Controls(options: { router: ControlsRouter; api?: ControlsClient
   });
 }
 
-async function saveDrafts(ctx: ControlsContext) {
+async function saveDrafts(ctx: ControlsContext, confirmed = false) {
   const count = ctx.drafts.changes.peek().length;
+  const ips = ctx.drafts.changes.peek().find(change => change.item.key === 'security.controls_ips');
+  const client = ctx.state.peek().client;
+  if (ips && !confirmed && !ipAllowed(client, (ips.to ?? ips.item.file) as string[])) {
+    openModal({ title: 'Lock yourself out of Controls?', icon: 'lock', tint: 'rose', narrow: true,
+      body: () => html`<p class="ctl-confirm">Your address, <code>${client || 'unknown'}</code>, is not in the allowed networks. After saving you can't open Controls from here. Someone on an allowed network, or <code>evlet controls grant</code> on the server, can open it again.</p>`,
+      footer: close => DialogFooter({ cancel: close, submit: { label: 'Save anyway', variant: 'danger', onClick: () => { close(); void saveDrafts(ctx, true); } } }) });
+    return;
+  }
   try {
     if (await ctx.drafts.save()) {
       toast(`${plural(count, 'change')} saved`);

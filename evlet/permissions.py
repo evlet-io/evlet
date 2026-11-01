@@ -13,8 +13,6 @@ from .query import SqlQuery, OPERATORS
 CHUNK = 500
 # Engine corrections: admin has them by default and a Rule may grant them to other roles too.
 CORRECTIONS = ('void', 'revise')
-# What a role may do on a model no rule names, by its base role. Portal, public and unknown roles get nothing.
-DEFAULTS = {'admin': ('read', 'create', 'update', 'delete'), 'editor': ('read', 'create', 'update', 'delete'), 'viewer': ('read',)}
 
 
 def corrects(model, operation):
@@ -40,6 +38,11 @@ def own_customer(field='customer', model='customer'):
     def scope(user):
         return {field + '__in': [record_id for name, record_id in user.links if name == model]}
     return scope
+
+
+def default_rule(base):
+    """The framework default for a base role: admin and editor everything, viewer read, any other base nothing."""
+    return Rule(('read', 'create', 'update', 'delete') if base in ('admin', 'editor') else ('read',) if base == 'viewer' else ())
 
 
 def child_operations(operations):
@@ -135,7 +138,9 @@ class Policy:
 
     def rule(self, user, model):
         found = self.rules.get((user.role, model))
-        return found if found is not None else Rule(DEFAULTS.get(self.roles.get(user.role), ()))
+        if found is not None:
+            return found
+        return default_rule(self.roles.get(user.role))
 
     def allows(self, user, model, operation):
         if operation in ('create', 'update', 'delete') and model in getattr(self.registry, 'effect_targets', ()):

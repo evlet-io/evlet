@@ -35,6 +35,8 @@ export interface ControlsState {
   audit: AuditRow[];
   two_step: boolean;
   links: boolean;
+  /** The address this request came from, as the allowlist sees it. */
+  client: string;
 }
 
 export class ControlsClient extends ApiClient {

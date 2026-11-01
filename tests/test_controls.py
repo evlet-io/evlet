@@ -1,14 +1,15 @@
 """Controls: access, break glass, overrides, roles, the audit log and the config version."""
 
+import json
 import sqlite3
 
 import pytest
 
-from evlet import Application, ControlsAccess, Database, LocalAuth, Policy, Rule
+from evlet import AppDefinition, Application, ControlsAccess, Database, LocalAuth, Policy, Rule
 from evlet.auth import LAST_ADMIN
 from evlet.cli.install import install
 from evlet.cli.main import main
-from evlet.controls import TWO_STEP
+from evlet.controls import ADMIN_ONLY, TWO_STEP, grant
 from evlet.routing import resolve_routes
 from examples.playground.app import create_app
 from examples.playground.models import Customer, Project, registry
@@ -266,3 +267,146 @@ def test_the_audit_log_is_append_only(secured):
             with pytest.raises(sqlite3.DatabaseError, match='append-only'):
                 db.execute(statement, values)
         assert tuple(db.execute('SELECT actor, detail FROM evlet_audit').fetchone()) == ('admin', 'Created from editor')
+
+
+def stale(app, key, value):
+    with app.database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_overrides SET value=? WHERE key=?', (json.dumps(value), key))
+        tx.connection.execute('UPDATE evlet_config SET version=version+1')
+
+
+def test_an_override_that_no_longer_validates_fails_closed_and_is_reported(secured):
+    admin, editor = client(secured), client(secured, 'editor')
+    assert save(admin, ('perm', 'editor|Customer', {'ops': [], 'read': None, 'write': None, 'scope': None}),
+                ('setting', 'security.lockout', 5), ('setting', 'security.password_min', 30))[0] == 200
+    stale(secured, 'editor|Customer', {'ops': ['read'], 'read': ['gone'], 'write': None, 'scope': None})
+    stale(secured, 'security.lockout', 99)
+    stale(secured, 'security.password_min', 'long')
+    assert editor('GET', '/api/customer')[0] == 403 and editor('POST', '/api/customer', {'name': 'x'})[0] == 403
+    assert editor('GET', '/api/project')[0] == 200
+    assert (secured.business.auth.lockout, secured.business.auth.password_min) == (10, 64)
+    attention = admin('GET', '/api/_controls/state')[1]['attention']
+    assert {item['title'] for item in attention} >= {'An override no longer applies: editor · Customer', 'An override no longer applies: security.lockout'}
+
+
+def test_a_policy_that_cannot_be_built_denies_everyone_but_admin(secured, monkeypatch):
+    from evlet import controls
+    admin, editor = client(secured), client(secured, 'editor')
+    real = controls.Policy
+
+    def policy(*args, **kwargs):
+        if kwargs.get('overrides') and not all(rule == Rule(()) for rule in kwargs['overrides'].values()):
+            raise ValueError('Broken rule')
+        return real(*args, **kwargs)
+    monkeypatch.setattr(controls, 'Policy', policy)
+    assert save(admin, ('perm', 'viewer|Customer', {'ops': ['read'], 'read': ['name'], 'write': None, 'scope': None}))[0] == 200
+    assert editor('GET', '/api/project')[0] == 403
+    assert admin('GET', '/api/project')[0] == 200
+    assert any(item['title'].endswith('all') for item in admin('GET', '/api/_controls/state')[1]['attention'])
+
+
+def ops_user(app):
+    admin = client(app)
+    assert admin('POST', '/api/_controls/roles', {'id': 'ops', 'base': 'viewer'})[0] == 201
+    assert admin('PATCH', '/api/_controls/roles/ops', {'opens_controls': True})[0] == 200
+    add_user(app, 'opsuser', 'ops')
+    return admin, client(app, 'opsuser')
+
+
+def user_id(c, name):
+    return next(user['id'] for user in c('GET', '/api/_controls/users')[1]['items'] if user['username'] == name)
+
+
+def test_only_admins_manage_admins_roles_and_who_opens_controls(secured):
+    admin, ops = ops_user(secured)
+    refused = (403, {'error': ADMIN_ONLY})
+    me, root, editor = user_id(admin, 'opsuser'), user_id(admin, 'admin'), user_id(admin, 'editor')
+    assert ops('PATCH', f'/api/_controls/users/{me}', {'role': 'admin'})[:2] == refused
+    assert ops('PATCH', f'/api/_controls/users/{root}', {'password': 'z' * 30})[:2] == refused
+    assert ops('PATCH', f'/api/_controls/users/{root}', {'sessions': 'end'})[:2] == refused
+    assert ops('POST', '/api/_controls/users', {'username': 'backdoor', 'password': PASSWORD, 'role': 'admin'})[:2] == refused
+    assert ops('PATCH', '/api/_controls/roles/editor', {'opens_controls': True})[:2] == refused
+    assert ops('PATCH', '/api/_controls/roles/ops', {'opens_controls': False})[:2] == refused
+    assert ops('PATCH', '/api/_controls/roles/editor', {'description': 'Mine'})[:2] == refused
+    assert ops('POST', '/api/_controls/roles', {'id': 'more', 'base': 'editor'})[:2] == refused
+    assert ops('DELETE', '/api/_controls/roles/ops')[:2] == refused
+    assert ops('POST', '/api/auth/users', {'username': 'backdoor', 'password': PASSWORD, 'role': 'admin'})[:2] == refused
+    with secured.database._connection() as db:
+        assert db.execute("SELECT role FROM evlet_users WHERE username='opsuser'").fetchone()[0] == 'ops'
+        assert not db.execute("SELECT 1 FROM evlet_users WHERE username='backdoor'").fetchone()
+    assert ops('PATCH', f'/api/_controls/users/{editor}', {'role': 'viewer'})[0] == 204
+    assert ops('POST', '/api/_controls/users', {'username': 'helper', 'password': PASSWORD, 'role': 'editor'})[0] == 201
+    assert ops('PATCH', '/api/_controls/roles/ops', {'description': 'Runs the instance'})[0] == 200
+    assert save(ops, ('setting', 'security.lockout', 5))[0] == 200
+
+
+def test_the_older_account_routes_use_controls_access_and_the_audit_log(secured):
+    admin = client(secured)
+    assert admin('POST', '/api/auth/users', {'username': 'fatima', 'password': PASSWORD, 'role': 'editor'})[0] == 201
+    assert admin('PATCH', f"/api/auth/users/{user_id(admin, 'fatima')}", {'role': 'viewer'})[0] == 204
+    with secured.database._connection() as db:
+        assert [row[0] for row in db.execute("SELECT detail FROM evlet_audit WHERE target='fatima'")] == ['Added as editor', 'Role: editor → viewer']
+    assert save(admin, ('setting', 'security.controls_ips', ['10.0.0.0/8']))[0] == 200
+    assert admin('GET', '/api/auth/users')[0] == 403
+    assert admin('GET', '/api/auth/users', client='10.0.0.9')[0] == 200
+
+
+def test_a_refused_user_change_writes_nothing(secured):
+    admin = client(secured)
+    root = user_id(admin, 'admin')
+    with secured.database._connection() as db:
+        before = db.execute('SELECT count(*) FROM evlet_audit').fetchone()[0]
+    assert admin('PATCH', f'/api/_controls/users/{root}', {'active': False, 'password': 'z' * 30})[0] == 409
+    with secured.database._connection() as db:
+        assert db.execute('SELECT count(*) FROM evlet_audit').fetchone()[0] == before
+
+
+def test_break_glass_clears_the_controls_allowlist(secured):
+    admin = client(secured)
+    assert save(admin, ('setting', 'security.controls_ips', ['10.0.0.0/8']))[0] == 200
+    assert admin('GET', '/api/_controls/state', headers={b'x-forwarded-for': b'10.1.1.1'})[0] == 404
+    grant(secured.database.path, 'admin')
+    assert client(secured)('GET', '/api/_controls/state')[0] == 200
+    with secured.database._connection() as db:
+        assert [tuple(row) for row in db.execute("SELECT actor, target FROM evlet_audit WHERE area='Security' ORDER BY id")][-1] == ('cli', 'security.controls_ips')
+
+
+def test_a_shorter_session_length_ends_sessions_older_than_it(secured):
+    admin, editor = client(secured), client(secured, 'editor')
+    with secured.database.transaction() as tx:
+        tx.connection.execute("UPDATE evlet_sessions SET expires=expires-7200 WHERE user_id=(SELECT id FROM evlet_users WHERE username='editor')")
+    assert save(admin, ('setting', 'security.session_hours', 4))[0] == 200
+    assert admin('GET', '/api/schema')[0] == 200 and editor('GET', '/api/schema')[0] == 200
+    assert save(admin, ('setting', 'security.session_hours', 1))[0] == 200
+    assert editor('GET', '/api/schema')[0] == 401 and admin('GET', '/api/schema')[0] == 200
+
+
+@pytest.mark.parametrize('change', [
+    {'kind': [], 'key': 'x', 'value': None}, {'kind': {}, 'key': 'x', 'value': None}, {'kind': 'perm', 'key': 5, 'value': None},
+    {'kind': 'perm', 'key': 'editor|Customer', 'value': {'ops': ['read'], 'read': None, 'write': None, 'scope': []}},
+    {'kind': 'perm', 'key': 'editor|Customer', 'value': {'ops': ['read'], 'read': None, 'write': None, 'scope': {}}},
+    {'kind': 'perm', 'key': 'editor|Customer', 'value': {'ops': [['read']], 'read': None, 'write': None, 'scope': None}},
+    {'kind': 'perm', 'key': 'editor|Customer', 'value': {'ops': ['read'], 'read': [['name']], 'write': None, 'scope': None}},
+    {'kind': 'setting', 'key': 'security.controls_ips', 'value': [['1.2.3.4']]},
+])
+def test_malformed_items_are_refused_not_crashing(secured, change):
+    status, payload, _ = client(secured)('POST', '/api/_controls/overrides', {'changes': [change]})
+    assert status == 422 and 'changes.0' in payload['fields']
+
+
+def test_unknown_user_fields_and_reserved_roles_are_refused(secured):
+    admin = client(secured)
+    for body in ({'username': 'abc', 'password': PASSWORD, 'self': 1}, {'username': 'abc', 'password': PASSWORD, 'check': 'x'},
+                 {'username': 'abc', 'password': PASSWORD, 'role': ['admin']}):
+        assert admin('POST', '/api/_controls/users', body)[0] == 422
+    for role in ('portal', 'public', 'controls'):
+        assert admin('POST', '/api/_controls/roles', {'id': role, 'base': 'editor'})[0] == 422
+    with pytest.raises(ValueError):
+        AppDefinition(roles={'portal': 'viewer'})
+
+
+def test_a_role_on_an_unknown_base_gets_nothing_by_default():
+    from evlet.auth import User
+    from evlet.permissions import default_rule
+    assert Policy(registry).rule(User(9, 'x', 'guest'), Customer).operations == ()
+    assert default_rule('portal').operations == () and default_rule('editor').operations == ('read', 'create', 'update', 'delete')
