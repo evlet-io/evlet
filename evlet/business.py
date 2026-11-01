@@ -211,6 +211,9 @@ class Business:
                                  **({'arguments': argument_schema(getattr(model, action.name), skip=1)} if hasattr(getattr(model, action.name, None), '__action__') else {})}
                                 for action in self.actions.values() if action.model is model and user.role in action.roles and self.policy.allows(user, model, 'update')]
             entry['attachments'] = model in self.attachments
+            plan = self.registry.plans.get(model)
+            if plan is not None:
+                entry['calculation'] = self.calculation_projection(user, model, plan)
             if getattr(self, 'forms', None):
                 for (owner, name), definition in self.forms.dialogs.items():
                     if owner is model and self.policy.allows(user, model, 'update'):
@@ -439,6 +442,33 @@ class Business:
                 self.changed(tx, model, record_id)
             result = self.detail(tx, user, record)
         return 200, result, [(b'etag', self.revision(result))]
+
+    def calculation_projection(self, user, model, plan):
+        """Which calculated results this user may evaluate locally; never ships hidden inputs.
+
+        A result is local only when it and its whole input closure are readable and every collection
+        it aggregates is complete for this user. Other results are withheld (no declassification policy).
+        The plan itself is shipped only when every calculated field is local for this user.
+        """
+        owners = {child.model: child for child in self.children.values()}
+        models = {}
+        for item in self.registry.models.values():
+            path, current = [], item
+            while current in owners:
+                path.insert(0, owners[current].name)
+                current = owners[current].parent
+            if current is model:
+                models[tuple(path)] = item
+        capabilities = {}
+        for field in plan['fields']:
+            target = models.get(tuple(field['path']))
+            readable = target is not None and self.policy.allows(user, target, 'read') and field['field'] in self.policy.fields(user, target)
+            capabilities[field['target']] = 'local_universal' if readable else 'unavailable'
+        result = {'language': plan['language'], 'numeric_profile': plan['numeric_profile'],
+                  'model_schema_hash': plan['model_schema_hash'], 'capabilities': capabilities}
+        if all(value == 'local_universal' for value in capabilities.values()):
+            result['plan'] = plan
+        return result
 
     def check_calculation(self, model, calculation):
         """A finite-v1 client names the plan it previewed; a different active plan is a conflict."""

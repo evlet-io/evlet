@@ -384,7 +384,7 @@ export class FiniteDocument {
       throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row keys use at most 64 letters, digits, hyphens or underscores');
     const row: Row = {handle, path, values: Object.create(null), parent: owner, children: Object.create(null), id, key: key || (id ? String(id) : handle), label: '', order: 0};
     this.rows.set(handle, row);
-    if (this.rows.size > this.plan.limits.document_rows) throw new CalcError('CALCULATION_LIMIT_EXCEEDED', 'The document has too many rows');
+    if (this.rows.size - 1 > this.plan.limits.document_rows) throw new CalcError('CALCULATION_LIMIT_EXCEEDED', 'The document has too many rows');
     const fresh = created === null ? id === null : created;
     for (const [name, value] of Object.entries(data)) {
       if (name === 'id' || name === '_key' || name === 'children' || name === '_handle') continue;

@@ -228,7 +228,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
     object.__setattr__(draft, '_submitted', frozenset(scalars))
     old = Draft(model, dict(current._values), context=context, record_id=record_id) if current else None
     load_rows(context, model, draft, old, record_id, collections, preview, '')
-    if business.registry.plan_for(model) is not None and sum(1 for _ in walk(draft)) > LIMITS['document_rows']:
+    if business.registry.plan_for(model) is not None and sum(1 for _ in walk(draft)) - 1 > LIMITS['document_rows']:
         raise ValidationError({'children': 'This document exceeds the owned row limit'})
     return draft, old
 

@@ -878,7 +878,7 @@ class Document:
             raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row keys use at most 64 letters, digits, hyphens or underscores')
         row = Row(handle, path, owner, record_id, key or (str(record_id) if record_id else handle))
         self.rows[handle] = row
-        if len(self.rows) > self.plan['limits']['document_rows']:
+        if len(self.rows) - 1 > self.plan['limits']['document_rows']:
             raise CalcError('CALCULATION_LIMIT_EXCEEDED', 'The document has too many rows')
         fresh = record_id is None if created is None else created
         for name, value in data.items():

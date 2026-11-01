@@ -184,3 +184,29 @@ def test_existing_invoice_fixture_saves_with_strict_values(tmp_path):
     assert (created['net_total'], created['vat_total'], created['grand_total'], created['line_count']) == ('100.00', '5.00', '105.00', 1)
     status, result, _ = c('POST', '/api/invoice', {'children': {'items': [{'_key': 'a', 'qty': '1', 'rate': '0.005'}]}})
     assert status == 422
+
+
+def test_schema_projects_calculation_capabilities_without_hidden_inputs(tmp_path):
+    from evlet import User
+    from evlet.auth import password_hash
+    class Line(Child):
+        cost = Currency(default=0)
+        price = Currency(default=0)
+        margin = Currency(compute=price - cost)
+
+    class Deal(Model):
+        Meta = FiniteMeta
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'viewer': Rule(('read',))}
+        lines = Table(Line)
+        revenue = Currency(compute=lines.sum('price'))
+        profit = Currency(compute=lines.sum('margin'))
+    app = application(tmp_path, Deal)
+    line = app.registry.children[0].model
+    app.business.policy = Policy(app.registry, rules={('viewer', line): Rule(('read',), read_fields=('price',))})
+    with app.database.transaction() as tx:
+        tx.connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('viewer',?,'viewer')", (password_hash(PASSWORD),))
+    admin = next(model for model in client(app)('GET', '/api/schema')[1]['models'] if model['name'] == 'deal')['calculation']
+    assert set(admin['capabilities'].values()) == {'local_universal'} and admin['plan']['model_schema_hash'] == admin['model_schema_hash']
+    viewer = next(model for model in client(app, 'viewer')('GET', '/api/schema')[1]['models'] if model['name'] == 'deal')['calculation']
+    assert viewer['capabilities'] == {'lines[*].margin': 'unavailable', 'revenue': 'local_universal', 'profit': 'unavailable'}
+    assert 'plan' not in viewer and 'cost' not in str(viewer)
