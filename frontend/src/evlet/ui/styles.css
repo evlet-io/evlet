@@ -1,3 +1,6 @@
+/* Evlet UI styles, ported from docs/ui-design/reference/styles.css (the approved design): the
+   tokens for both themes, then component styles with the mockup's class names. Additions for the
+   framework components are at the end. Import this file once per page. */
 /* Layout: fixed sidebar + topbar shell, one scrolling view region. White ground, cool slate neutrals, one blue accent, soft tinted icons. */
 :root{
   --bg:#ffffff; --bg-subtle:#f8f9fb; --bg-muted:#f2f4f7; --side-bg:#f4f5f8; --surface:#ffffff; --overlay:rgba(16,20,30,.32);
@@ -918,4 +921,71 @@ th:hover>.rz::after{background:var(--border-strong)}
   .pop.notif{width:calc(100vw - 32px)}
 }
 @media (max-width:760px){.modal-wrap:has(.palette){padding-top:max(16px,env(safe-area-inset-top,0px))}.palette{max-height:calc(100% - 32px)}.qa-ic{width:40px;height:40px}.pal-foot{display:none}}
+
+/* ---------- framework components (additions to the reference styles) ---------- */
+[hidden]{display:none!important}
+.divider{border:0;border-top:1px solid var(--divider);margin:8px 0;width:100%}
+.btn .chev{margin-right:-4px;opacity:.7}
+.btn[aria-disabled="true"]{cursor:help}
+.menu{display:flex;flex-direction:column}
+.pop .mi.on{background:var(--bg-muted)}
+.pop .mi.danger-soft{color:var(--t-rose)}
+.pop .mi kbd.hint{margin-left:auto}
+.quick-add{display:flex;align-items:center;gap:8px;color:var(--fg-3);width:100%}
+.quick-add .input{border-color:transparent;box-shadow:none;padding:0 4px}
+.quick-add .input:focus{border-color:transparent;box-shadow:none}
+.filters{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+/* fields */
+.iv{min-width:0}
+.fval .tx-wrap{display:inline-flex;align-items:center;gap:7px;min-width:0;overflow:hidden}
+.fval-edit{display:flex;flex-direction:column;gap:3px;min-width:0}
+.fval-edit[aria-busy="true"]{opacity:.6}
+.err-inline{font-size:12px;color:var(--t-rose)}
+.fld .ff-hint,.ff label .ff-hint{margin-left:6px}
+.fld[data-field] .fval.ro{margin-left:0;width:100%;border:1px solid transparent;background:var(--bg-subtle)}
+.ff-hint[tabindex]{cursor:help;border-radius:4px}
+.in-affix .icon-btn{height:auto;width:30px;border-radius:0;border-left:1px solid var(--border)}
+.input:disabled,.in-affix .input:disabled{background:var(--bg-muted);color:var(--fg-2);cursor:not-allowed}
+.in-link.input{display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer}
+.in-link.input>span:first-child{flex:1;min-width:0;display:flex;align-items:center;gap:8px;overflow:hidden;white-space:nowrap}
+.in-link.input:focus-visible{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring);outline:none}
+.in-tags:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring)}
+.in-tags[aria-invalid="true"],.fld.invalid .in-tags,.fld.invalid .in-link{border-color:var(--t-rose)}
+.chip-x{display:grid;place-items:center;width:14px;height:14px;border-radius:3px;margin-right:-2px;color:var(--fg-3)}
+.chip-x:hover{background:var(--border);color:var(--fg)}
+.cell-flex{display:flex;align-items:center;gap:7px;min-width:0}
+.link-pop{width:300px;padding:8px}
+.link-search{display:flex;flex-direction:column;gap:6px}
+.link-list{display:flex;flex-direction:column;max-height:260px;overflow-y:auto}
+.link-list .mi{gap:9px}
+.link-list .mi .muted{margin-left:auto;font-size:12px}
+.link-status{font-size:12px;padding:0 4px}
+.link-status:empty{display:none}
+.link-search hr{border:0;border-top:1px solid var(--divider);margin:2px 0}
+/* tables */
+.dt tr.spacer td,.g tr.spacer td{height:0;padding:0!important;border:0!important;background:none!important}
+.dt td.dt-empty{height:auto;padding:0;cursor:default}
+.dt tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.dt th:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.dt th[draggable="true"]{cursor:grab}
+.table-wrap.scrolled .dt .stk-last{box-shadow:inset -1px 0 0 var(--border),6px 0 10px -6px rgba(16,24,40,.18)}
+.g td:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.g td.invalid{box-shadow:inset 0 0 0 1px var(--t-rose)}
+.g td.editing .in-affix,.g td.editing .in-link,.g td.editing .in-tags,.g td.editing select.input{border:0;border-radius:0;box-shadow:none;height:36px;background:transparent}
+.g td.editing .in-affix>span{display:none}
+.g td.editing .sw-wrap{padding:0 9px;height:36px}
+.g-x-f>div{min-width:0}
+.g-x-f>div.wide{grid-column:span 2}
+.g-x-hid{font-size:11.5px}
+/* doc view */
+.doc-head h1.doc-title{padding:0;margin-left:0}
+.doc-head h1.doc-title .fval{font:inherit;letter-spacing:inherit;min-height:0;padding:1px 4px;margin-left:-4px}
+.doc-head h1.mono{font-family:var(--mono);font-size:19px}
+/* library */
+.lib-app .sidebar{background:var(--side-bg)}
+.lib-later{font-size:12.5px}
+.lib-bulk{width:100%;display:flex;justify-content:center}
+.lib-bulk .bulk{position:static;transform:none}
+.lib-bulk .bulk:not(.show){opacity:.5}
+@media (max-width:760px){.lib-app .sidebar{display:none}.g-x-f>div.wide{grid-column:1/-1}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}

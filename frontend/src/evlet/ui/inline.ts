@@ -70,7 +70,7 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
   };
   const stop = (focus = true) => {
     editing.set(false);
-    if (focus) queueMicrotask(() => wrapper.querySelector<HTMLElement>('.fval')?.focus());
+    if (focus) wrapper.querySelector<HTMLElement>('.fval')?.focus();
   };
   const cancel = () => {
     const now = untrack(() => field.value.get());
