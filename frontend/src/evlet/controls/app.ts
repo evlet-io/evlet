@@ -21,12 +21,15 @@ import { PermissionsPage, SecurityPage } from './access';
 import { ModelsPage } from './models';
 import { NamingPage } from './naming';
 import { AppsPage, AuditPage, AuditRows, JobsPage, OverridesPage, RoutingPage } from './system';
+import { ConnectorsPage, EmailPage } from './connections';
+import { ApiKeysPage } from './keys';
 
 export const ROUTES = {
   overview: '/controls', users: '/controls/users', roles: '/controls/roles',
   permissions: '/controls/permissions', security: '/controls/security',
   models: '/controls/models', naming: '/controls/naming', apps: '/controls/apps', routing: '/controls/routing',
   jobs: '/controls/jobs', overrides: '/controls/overrides', audit: '/controls/audit',
+  connectors: '/controls/connectors', email: '/controls/email', keys: '/controls/keys',
 } as const;
 export type ControlsRouter = Router<typeof ROUTES>;
 export const controlsRouter = (options: { window?: Window } = {}): ControlsRouter => createRouter(ROUTES, options);
@@ -45,6 +48,7 @@ const NAV: Array<[string, Array<[keyof typeof ROUTES, string, string]>]> = [
   ['', [['overview', 'Overview', 'layout-grid']]],
   ['People', [['users', 'Users', 'users'], ['roles', 'Roles', 'user-cog']]],
   ['Access', [['permissions', 'Permissions', 'list-checks'], ['security', 'Security', 'lock']]],
+  ['Connections', [['connectors', 'Connectors', 'link'], ['email', 'Email', 'mail'], ['keys', 'API keys', 'hash']]],
   ['Build', [['apps', 'Apps', 'package'], ['models', 'Models', 'layers'], ['naming', 'Naming', 'hash'], ['routing', 'Routing', 'globe']]],
   ['System', [['jobs', 'Jobs', 'clock'], ['overrides', 'Overrides', 'file-text'], ['audit', 'Audit log', 'activity']]],
 ];
@@ -185,6 +189,9 @@ function Shell(ctx: ControlsContext): HTMLElement {
       case 'jobs': return JobsPage(ctx);
       case 'overrides': return OverridesPage(ctx);
       case 'audit': return AuditPage(ctx);
+      case 'connectors': return ConnectorsPage(ctx);
+      case 'email': return EmailPage(ctx);
+      case 'keys': return ApiKeysPage(ctx);
       default: return Overview(ctx);
     }
   };
