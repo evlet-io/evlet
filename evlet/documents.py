@@ -278,10 +278,12 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             value = dict(value)
             row_id = value.pop('id', None)
             temporary = value.pop('_key', None)
-            if temporary is not None and (not isinstance(temporary, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', temporary) or temporary in keys or temporary in keys_seen):
-                raise ValidationError({prefix + child.name: 'Row keys must be distinct within the document and use at most 64 letters, digits, hyphens or underscores'})
+            # New rows' keys map to IDs in one flat _row_ids object, so they are unique document-wide.
+            fresh = row_id is None
+            if temporary is not None and (not isinstance(temporary, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', temporary) or temporary in keys or fresh and temporary in keys_seen):
+                raise ValidationError({prefix + child.name: 'Row keys must be distinct (new rows: within the document) and use at most 64 letters, digits, hyphens or underscores'})
             keys.add(temporary) if temporary is not None else None
-            keys_seen.add(temporary) if temporary is not None else None
+            keys_seen.add(temporary) if temporary is not None and fresh else None
             value, nested = business.split_body(value)
             computed_write(business, child.model, value, prefix + child.name + '.')
             business.policy.check_values(tx, user, child.model, value)

@@ -223,16 +223,26 @@ def test_nested_review_regressions(tmp_path):
     status, created, headers = c('POST', '/api/plan', {'children': {'stages': stages()}})
     assert status == 201
     status, result, _ = c('POST', '/api/plan', {'children': {'stages': [{'_key': 'x', 'children': {'tasks': [{'_key': 'x'}]}}]}})
-    assert status == 422 and 'distinct within the document' in str(result)
+    assert status == 422 and 'within the document' in str(result)
+    _, current, headers = c('GET', f"/api/plan/{created['id']}")
+    first = current['children']['stages'][0]
+    same_keys = {'children': {'stages': [{'id': first['id'], '_key': str(first['id']), 'children': {'tasks': [
+        {'id': task['id'], '_key': str(task['id'])} for task in first['children']['tasks']]}}]}}
+    assert str(first['id']) in {str(task['id']) for task in first['children']['tasks']}
+    status, result, headers = c('PATCH', f"/api/plan/{created['id']}", same_keys, headers={b'if-match': headers[b'etag']})
+    assert status == 200, result
+    status, created, headers = c('POST', '/api/plan', {'children': {'stages': stages()}})
 
     app.business.policy = Policy(app.registry, rules={('editor', stage): Rule(('read', 'create', 'update', 'delete')),
                                                       ('editor', task): Rule(('read',))})
     editor = client(app, 'editor')
     _, current, headers = editor('GET', f"/api/plan/{created['id']}")
+    with app.database.transaction() as tx:
+        before = tx.count(task)
     status, result, _ = editor('PATCH', f"/api/plan/{created['id']}", {'children': {'stages': []}}, headers={b'if-match': headers[b'etag']})
     assert status == 403
     with app.database.transaction() as tx:
-        assert tx.count(task) == 3
+        assert tx.count(task) == before
 
     hidden_task = created['_row_ids']['a1']
     app.business.policy = Policy(app.registry, rules={('editor', task): Rule(('read', 'create', 'update', 'delete'), scope=lambda user: {'id__ne': hidden_task})})

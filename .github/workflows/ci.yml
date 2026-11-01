@@ -41,6 +41,7 @@ jobs:
           /tmp/evlet-wheel-check/bin/python -m pip install dist/evlet-*.whl
           /tmp/evlet-wheel-check/bin/python -I scripts/check_package.py
           /tmp/evlet-wheel-check/bin/python -I scripts/smoke_cli.py
+          env -i HOME="$HOME" PATH=/usr/bin:/bin /tmp/evlet-wheel-check/bin/python -I scripts/smoke_finite.py
           python scripts/check_flat_package.py dist/evlet-*.whl
       - name: Live Playground smoke
         env:
