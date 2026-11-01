@@ -1,9 +1,33 @@
-"""Run from the checkout with uvicorn examples.playground.app:create_app --factory."""
+"""Run from the checkout with uvicorn examples.playground.app:create_app --factory.
 
-from evlet import Action, Application, ChildTable, EventStore, JobQueue, LocalAuth, Task, ValidationError
-from .models import Project, ProjectTask, registry
+The customer portal (portal/) is a static frontend served at http://portal.localhost:8000.
+Portal users sign in there only, and see the customer they are linked to and its invoices:
+
+    user = app.business.auth.create_user(username='acme-buyer', password=..., role='portal')
+    app.business.auth.link_user(user.id, Customer, customer_id)
+"""
+
+from pathlib import Path
+
+from evlet import (Action, ApiScope, AppDefinition, Application, ChildTable, EventStore, Frontend, Host, JobQueue, LocalAuth,
+                   Policy, Rule, Task, ValidationError, own_customer)
+from evlet.routing import resolve_routes
+from .models import Customer, Invoice, Project, ProjectTask, registry
 from .migrate import configured_database
 from .ui import playground_ui
+
+portal = Frontend('portal', kind='static', dist='portal', path='/portal', title='Customer portal', auth='portal', api=('playground.portal',))
+PORTAL_RULES = {
+    ('portal', Customer): Rule(('read',), read_fields=('name', 'email'), scope=own_customer('id')),
+    ('portal', Invoice): Rule(('read',), read_fields=('customer', 'reference', 'total', 'status', 'posting_date'), scope=own_customer()),
+}
+
+
+def playground_routes(port=8000):
+    """The portal on its own host, and at /portal on the main host too."""
+    definition = AppDefinition(frontends=(portal,), api_scopes=(ApiScope('portal', models=(Customer, Invoice)),))
+    return resolve_routes([('playground', definition)], None, {'hosts': (Host('portal.localhost', root=portal, also_on_primary=True),)},
+                          port=port, roots={'playground': Path(__file__).parent})
 
 
 def start_project(tx, user, project):
@@ -23,11 +47,11 @@ def complete_project(tx, user, project):
 
 def create_app():
     database = configured_database()
-    auth = LocalAuth(database, origins=('http://127.0.0.1:5173', 'http://localhost:5173',
-                                       'http://127.0.0.1:8000', 'http://localhost:8000',
+    routes = playground_routes(8000)
+    auth = LocalAuth(database, origins=(*routes.origins(), 'http://127.0.0.1:5173', 'http://localhost:5173',
                                        'http://127.0.0.1:4173', 'http://localhost:4173'),
-                     secure_cookies=False, allow_setup=True)
-    return build_app(database, auth)
+                     realms=routes.realms(), secure_cookies=False, allow_setup=True)
+    return build_app(database, auth, routes=routes)
 
 
 def refresh_progress(tx, job, payload):
@@ -37,12 +61,14 @@ def refresh_progress(tx, job, payload):
     tx.update(Project, project.id, progress=progress)
 
 
-def build_app(database, auth, *, storage=None, tenant='local'):
+def build_app(database, auth, *, storage=None, tenant='local', routes=None):
     events = EventStore(database)
-    jobs = JobQueue(database, (Task('project_progress', refresh_progress),), tenant=tenant, events=events)
+    policy = Policy(registry, rules=PORTAL_RULES)
+    jobs = JobQueue(database, (Task('project_progress', refresh_progress),), tenant=tenant, events=events, policy=policy)
     def queue_progress(tx, user, project):
         return jobs.enqueue(tx, 'project_progress', {'project_id': project.id}, user=user, target=(Project, project.id))
-    return Application(database, name="Evlet Playground", playground=True, ui=playground_ui(), auth=auth, storage=storage, jobs=jobs, events=events, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
+    return Application(database, name="Evlet Playground", playground=True, ui=playground_ui(), auth=auth, policy=policy, routes=routes,
+                       storage=storage, jobs=jobs, events=events, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
                        actions=(Action(Project, 'start', 'Start project', start_project),
                                 Action(Project, 'complete', 'Complete project', complete_project),
                                 Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress)),

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customer portal</title>
+<link rel="stylesheet" href="portal.css">
+<script type="module" src="portal.js"></script>
+</head>
+<body>
+<main>
+  <h1>Customer portal</h1>
+  <form id="sign-in" hidden>
+    <label>Username <input name="username" autocomplete="username" required></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+    <button>Sign in</button>
+    <p class="error" role="alert"></p>
+  </form>
+  <section id="account" hidden>
+    <p>Signed in as <strong id="who"></strong>. <button id="sign-out" type="button">Sign out</button></p>
+    <h2>Your company</h2>
+    <ul id="customers"></ul>
+    <h2>Your invoices</h2>
+    <table>
+      <thead><tr><th>Invoice</th><th>Status</th><th>Total</th></tr></thead>
+      <tbody id="invoices"></tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>
