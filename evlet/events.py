@@ -29,6 +29,13 @@ class EventStore:
         tx.connection.execute('DELETE FROM evlet_events WHERE id<=?', (event_id - self.retention,))
         return token
 
+    def publish_config(self, tx, version):
+        """Tell open browsers that Controls saved a change (config.changed), with the new config version."""
+        token = secrets.token_hex(24)
+        event_id = tx.connection.execute("INSERT INTO evlet_events(token,model,record_id,deleted) VALUES (?,'_config',?,0)", (token, version)).lastrowid
+        tx.connection.execute('DELETE FROM evlet_events WHERE id<=?', (event_id - self.retention,))
+        return token
+
     def page(self, user, policy, *, after=None):
         if after is not None and after != '0' and (not isinstance(after, str) or not re.fullmatch('[0-9a-f]{48}', after)):
             raise ValidationError({'cursor': 'Invalid event cursor'})
@@ -49,6 +56,9 @@ class EventStore:
             rows = db.execute('SELECT * FROM evlet_events WHERE id>? ORDER BY id LIMIT 100', (current,)).fetchall()
             items = []
             for row in rows:
+                if row['model'] == '_config':
+                    items.append({'type': 'config.changed', 'version': row['record_id']})
+                    continue
                 model = self.database.registry.models.get(row['model'])
                 if model is None or not policy.allows(user, model, 'read'):
                     continue

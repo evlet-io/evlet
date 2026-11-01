@@ -1,0 +1,268 @@
+"""Controls: access, break glass, overrides, roles, the audit log and the config version."""
+
+import sqlite3
+
+import pytest
+
+from evlet import Application, ControlsAccess, Database, LocalAuth, Policy, Rule
+from evlet.auth import LAST_ADMIN
+from evlet.cli.install import install
+from evlet.cli.main import main
+from evlet.controls import TWO_STEP
+from evlet.routing import resolve_routes
+from examples.playground.app import create_app
+from examples.playground.models import Customer, Project, registry
+from test_business import PASSWORD, client, hashed, http, secured
+from test_cli_lifecycle import environment_stub, project, runtime
+
+ENDPOINTS = (('GET', '/api/_controls/state'), ('GET', '/api/_controls/overrides'), ('POST', '/api/_controls/overrides'),
+             ('GET', '/api/_controls/users'), ('POST', '/api/_controls/users'), ('PATCH', '/api/_controls/users/1'),
+             ('GET', '/api/_controls/roles'), ('POST', '/api/_controls/roles'), ('PATCH', '/api/_controls/roles/editor'),
+             ('DELETE', '/api/_controls/roles/editor'), ('GET', '/api/_controls/missing'))
+
+
+@pytest.fixture(autouse=True)
+def password(hashed):
+    add_user.hashed = hashed
+
+
+def add_user(app, username, role):
+    with app.database.transaction() as tx:
+        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (username, add_user.hashed, role))
+
+
+def save(c, *changes):
+    return c('POST', '/api/_controls/overrides', {'changes': [{'kind': kind, 'key': key, 'value': value} for kind, key, value in changes]})
+
+
+def version(app):
+    with app.database._connection() as db:
+        return db.execute('SELECT version FROM evlet_config').fetchone()[0]
+
+
+def test_roles_without_controls_get_404_on_the_page_and_every_endpoint(secured):
+    for role in ('editor', 'viewer'):
+        c = client(secured, role)
+        assert c('GET', '/controls')[0] == 404
+        assert c('GET', '/controls/users')[0] == 404
+        for method, path in ENDPOINTS:
+            assert c(method, path, {})[:2] == (404, {'error': 'Route not found'}), (role, method, path)
+    status, _, headers = http(secured, 'GET', '/controls/users')
+    assert status == 302 and headers[b'location'] == b'/login?next=/controls/users'
+    admin = client(secured)
+    assert admin('GET', '/api/_controls/state')[0] == 200
+    assert admin('GET', '/controls/nothing')[0] == 404
+    status, _, headers = http(secured, 'GET', '/settings/accounts')
+    assert status == 301 and headers[b'location'] == b'/controls/users'
+
+
+def test_a_role_that_opens_controls_gets_in_and_admin_cannot_be_locked_out(secured):
+    admin = client(secured)
+    assert admin('POST', '/api/_controls/roles', {'id': 'ops', 'base': 'editor', 'description': 'Runs the instance'})[0] == 201
+    add_user(secured, 'opsuser', 'ops')
+    assert client(secured, 'opsuser')('GET', '/api/_controls/state')[0] == 404
+    assert admin('PATCH', '/api/_controls/roles/ops', {'opens_controls': True})[0] == 200
+    state = client(secured, 'opsuser')('GET', '/api/_controls/state')[1]
+    assert state['me']['role'] == 'ops' and next(role for role in state['roles'] if role['id'] == 'ops')['opens_controls']
+    status, payload, _ = admin('PATCH', '/api/_controls/roles/admin', {'opens_controls': False})
+    assert status == 422 and 'Admin always opens Controls' in payload['fields']['opens_controls']
+
+
+def test_controls_answer_only_on_the_primary_host(tmp_path, hashed):
+    database = Database(tmp_path / 'hosts.sqlite3', registry)
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000', 'http://portal.localhost:8000'), secure_cookies=False)
+    app = Application(database, auth=auth)
+    app.initialize()
+    add_user(app, 'admin', 'admin')
+    other = {b'host': b'portal.localhost:8000'}
+    status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'admin', 'password': PASSWORD}, headers=other)
+    cookie = headers[b'set-cookie'].decode().split(';')[0]
+    assert http(app, 'GET', '/api/_controls/state', cookie=cookie, csrf=data['csrf'], headers=other)[0] == 404
+    assert http(app, 'GET', '/controls', cookie=cookie, headers=other)[0] == 404
+    assert http(app, 'GET', '/api/customer', cookie=cookie, headers=other)[0] == 200
+
+
+def test_allowed_networks_and_two_step_requirement(secured, tmp_path):
+    admin = client(secured)
+    assert save(admin, ('setting', 'security.controls_ips', ['10.0.0.0/8', '192.168.1.5']))[0] == 200
+    assert admin('GET', '/api/_controls/state')[0] == 404
+    assert admin('GET', '/api/_controls/state', client='10.2.3.4')[0] == 200
+    assert admin('GET', '/api/_controls/state', client='::ffff:192.168.1.5')[0] == 200
+    database = Database(tmp_path / 'two.sqlite3', registry)
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False)
+    app = Application(database, auth=auth, routes=resolve_routes(routes_module={'controls': ControlsAccess(require_two_step=True)}))
+    app.initialize()
+    add_user(app, 'admin', 'admin')
+    assert client(app)('GET', '/api/_controls/state')[:2] == (403, {'error': TWO_STEP})
+
+
+def test_break_glass_grant_makes_an_active_admin_with_a_cli_audit_row(project):
+    install(project, 'acme', app_name='notes', trust=True)
+    app = runtime(project)
+    try:
+        mariam = app.business.auth.create_user(username='mariam', password=PASSWORD, role='viewer')
+        app.business.auth.update_user(mariam.id, {'active': False})
+    finally:
+        app.database.close()
+    with pytest.raises(SystemExit):
+        main(['controls', 'grant', 'acme', 'nobody', '--project', str(project)])
+    main(['controls', 'grant', 'acme', 'mariam', '--project', str(project)])
+    with sqlite3.connect(project / 'instances/acme/data/database.sqlite3') as db:
+        assert db.execute("SELECT role, active FROM evlet_users WHERE username='mariam'").fetchone() == ('admin', 1)
+        assert db.execute('SELECT actor, area, target FROM evlet_audit').fetchall() == [('cli', 'Users', 'mariam')]
+
+
+def test_an_override_set_is_atomic_and_reports_each_invalid_item(secured):
+    admin = client(secured)
+    before = version(secured)
+    status, payload, _ = save(admin, ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': None}),
+                              ('setting', 'security.password_min', 12), ('perm', 'admin|Customer', {'ops': [], 'read': None, 'write': None, 'scope': None}))
+    assert status == 422 and set(payload['fields']) == {'changes.1', 'changes.2'}
+    assert payload['fields']['changes.2'] == 'Admin always has full access. Its rules cannot be changed.'
+    assert version(secured) == before
+    assert all(item['value'] is None for item in admin('GET', '/api/_controls/overrides')[1]['items'])
+    assert client(secured, 'editor')('POST', '/api/customer', {'name': 'Still allowed'})[0] == 201
+
+
+@pytest.mark.parametrize('kind,key,value,message', [
+    ('perm', 'viewer|Customer', {'ops': ['read', 'create'], 'read': None, 'write': None, 'scope': None}, 'can only take access away'),
+    ('perm', 'clerk|Customer', {'ops': ['read'], 'read': ['name', 'email', 'notes'], 'write': None, 'scope': None}, 'can only hide more'),
+    ('perm', 'clerk|Customer', {'ops': ['read', 'update'], 'read': ['name'], 'write': ['name'], 'scope': None}, 'can only allow fewer'),
+    ('perm', 'clerk|Project', {'ops': ['read'], 'read': None, 'write': None, 'scope': None}, 'comes from the app'),
+    ('perm', 'editor|Customer', {'ops': ['create'], 'read': None, 'write': None, 'scope': None}, 'need read access'),
+    ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': ['name'], 'scope': None}, 'need create or update'),
+    ('perm', 'editor|Customer', {'ops': [], 'read': None, 'write': None, 'scope': 'owner'}, 'must be empty'),
+    ('perm', 'editor|Customer', {'ops': ['read', 'update'], 'read': ['name'], 'write': ['email'], 'scope': None}, 'must also be readable'),
+    ('perm', 'editor|Customer', {'ops': ['read'], 'read': [], 'write': None, 'scope': None}, 'at least one readable field'),
+    ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': 'owner'}, 'not available for Customer'),
+    ('perm', 'editor|Project', {'ops': ['read'], 'read': None, 'write': None, 'scope': 'own_customer'}, 'not set up on this instance'),
+    ('setting', 'security.password_min', 14, 'can only go up'),
+    ('setting', 'security.password_min', 65, 'to 64 at most'),
+    ('setting', 'security.session_hours', 9, 'can only go down'),
+    ('setting', 'security.lockout', 11, 'can only go down'),
+    ('setting', 'security.lockout', 2, 'to 3'),
+    ('setting', 'security.two_step_roles', ['editor'], 'Admin always needs two-step'),
+    ('setting', 'security.controls_ips', ['example.com'], "isn't an IP address or range"),
+])
+def test_stricter_only_rules_reject_the_looser_value(tmp_path, hashed, kind, key, value, message):
+    database = Database(tmp_path / 'strict.sqlite3', registry)
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False)
+    rules = {('clerk', Customer): Rule(('read', 'update'), read_fields=('name', 'email'), write_fields=('email',)),
+             ('clerk', Project): Rule(('read',), scope=lambda user: {'customer': user.id})}
+    app = Application(database, auth=auth, policy=Policy(registry, rules=rules, roles={'admin': 'admin', 'editor': 'editor', 'viewer': 'viewer', 'clerk': 'editor'}))
+    app.initialize()
+    add_user(app, 'admin', 'admin')
+    status, payload, _ = save(client(app), (kind, key, value))
+    assert status == 422 and message in payload['fields']['changes.0'], payload
+
+
+def test_saved_overrides_apply_and_an_equal_value_is_not_stored(secured):
+    admin = client(secured)
+    assert save(admin, ('perm', 'editor|Customer', {'ops': ['read'], 'read': ['name'], 'write': None, 'scope': None}),
+                ('setting', 'security.password_min', 20), ('setting', 'security.lockout', 10))[0] == 200
+    items = {(item['kind'], item['key']): item for item in admin('GET', '/api/_controls/overrides')[1]['items']}
+    assert items['perm', 'editor|Customer']['value']['read'] == ['name'] and items['perm', 'editor|Customer']['changed_by'] == 'admin'
+    assert items['setting', 'security.lockout']['value'] is None and items['setting', 'security.password_min']['value'] == 20
+    editor = client(secured, 'editor')
+    assert editor('POST', '/api/customer', {'name': 'Blocked'})[0] == 403
+    assert admin('POST', '/api/customer', {'name': 'Visible'})[0] == 201
+    assert set(editor('GET', '/api/customer')[1]['items'][0]) == {'id', 'name'}
+    status, payload, _ = admin('POST', '/api/_controls/users', {'username': 'short', 'password': 'x' * 19, 'role': 'viewer'})
+    assert status == 422 and payload['fields']['password'] == 'Use between 20 and 128 characters'
+    assert save(admin, ('perm', 'editor|Customer', None))[0] == 200
+    assert editor('POST', '/api/customer', {'name': 'Allowed again'})[0] == 201
+    with secured.database._connection() as db:
+        audit = db.execute('SELECT actor, area, target, detail FROM evlet_audit ORDER BY id').fetchall()
+    assert [tuple(row) for row in audit][-1] == ('admin', 'Permissions', 'editor · Customer', 'Reset to the file value')
+    events = admin('GET', '/api/_events?cursor=0')[1]['items']
+    assert {'type': 'config.changed', 'version': version(secured)} in events
+
+
+def test_a_second_application_on_the_same_database_picks_up_the_new_policy(secured, tmp_path, monkeypatch):
+    other = create_app()
+    other.database.initialize()
+    other.business.initialize()
+    editor = client(other, 'editor')
+    assert editor('POST', '/api/customer', {'name': 'Before'})[0] == 201
+    assert save(client(secured), ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': None}))[0] == 200
+    assert editor('POST', '/api/customer', {'name': 'After'})[0] == 403
+    assert other.business.controls.version == version(secured)
+
+
+def test_a_custom_role_falls_back_to_its_base(secured):
+    admin = client(secured)
+    assert admin('POST', '/api/_controls/roles', {'id': 'clerk', 'base': 'viewer'})[0] == 201
+    assert admin('POST', '/api/_controls/roles', {'id': 'sales', 'base': 'editor'})[0] == 201
+    add_user(secured, 'clerkuser', 'clerk')
+    add_user(secured, 'salesuser', 'sales')
+    clerk, sales = client(secured, 'clerkuser'), client(secured, 'salesuser')
+    assert clerk('GET', '/api/customer')[0] == 200 and clerk('POST', '/api/customer', {'name': 'No'})[0] == 403
+    assert sales('POST', '/api/customer', {'name': 'Yes'})[0] == 201
+    assert save(admin, ('perm', 'sales|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': None}))[0] == 200
+    assert sales('POST', '/api/customer', {'name': 'Not now'})[0] == 403
+    assert client(secured, 'editor')('POST', '/api/customer', {'name': 'Editor still can'})[0] == 201
+    for role_id, message in (('Sales', 'Use 2 to 31'), ('controls', 'That name is taken'), ('sales', 'That name is taken')):
+        status, payload, _ = admin('POST', '/api/_controls/roles', {'id': role_id, 'base': 'editor'})
+        assert status == 422 and message in payload['fields']['id']
+
+
+def test_an_app_rule_for_a_custom_role(tmp_path, hashed):
+    database = Database(tmp_path / 'app-rule.sqlite3', registry)
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False)
+    roles = {'admin': 'admin', 'editor': 'editor', 'viewer': 'viewer', 'sales': 'editor'}
+    app = Application(database, auth=auth, policy=Policy(registry, rules={('sales', Customer): Rule(('read',))}, roles=roles))
+    app.initialize()
+    add_user(app, 'admin', 'admin')
+    add_user(app, 'salesuser', 'sales')
+    sales = client(app, 'salesuser')
+    assert sales('POST', '/api/customer', {'name': 'Refused'})[0] == 403
+    assert sales('POST', '/api/project', {'name': 'From editor'})[0] == 201
+    roles = client(app)('GET', '/api/_controls/roles')[1]['items']
+    assert next(role for role in roles if role['id'] == 'sales')['base'] == 'editor'
+    status, payload, _ = client(app)('DELETE', '/api/_controls/roles/sales')
+    assert status == 409 and 'declares this role' in payload['error']
+
+
+def test_deleting_a_role_still_assigned_is_refused_and_removes_its_overrides(secured):
+    admin = client(secured)
+    admin('POST', '/api/_controls/roles', {'id': 'sales', 'base': 'editor'})
+    add_user(secured, 'salesuser', 'sales')
+    assert save(admin, ('perm', 'sales|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': None}),
+                ('setting', 'security.two_step_roles', ['admin', 'sales']))[0] == 200
+    assert admin('DELETE', '/api/_controls/roles/sales')[:2] == (409, {'error': '1 user has the sales role. Move them to another role first.'})
+    assert admin('DELETE', '/api/_controls/roles/editor')[:2] == (409, {'error': 'Framework roles cannot be deleted.'})
+    user_id = next(user['id'] for user in admin('GET', '/api/_controls/users')[1]['items'] if user['username'] == 'salesuser')
+    assert admin('PATCH', f'/api/_controls/users/{user_id}', {'role': 'viewer'})[0] == 204
+    assert admin('DELETE', '/api/_controls/roles/sales')[0] == 200
+    with secured.database._connection() as db:
+        assert db.execute('SELECT count(*) FROM evlet_overrides').fetchone()[0] == 0
+
+
+def test_users_wrap_local_auth_with_the_last_admin_guard(secured):
+    admin = client(secured)
+    users = admin('GET', '/api/_controls/users')[1]['items']
+    me = next(user for user in users if user['username'] == 'admin')
+    assert me['sessions'] == 1 and me['active'] is True
+    assert admin('PATCH', f"/api/_controls/users/{me['id']}", {'role': 'viewer'})[:2] == (409, {'error': LAST_ADMIN})
+    assert admin('PATCH', f"/api/_controls/users/{me['id']}", {'role': 'nobody'})[0] == 422
+    assert admin('POST', '/api/_controls/users', {'username': 'fatima', 'password': PASSWORD, 'role': 'editor'})[0] == 201
+    fatima = client(secured, 'fatima')
+    fatima_id = next(user['id'] for user in admin('GET', '/api/_controls/users')[1]['items'] if user['username'] == 'fatima')
+    assert admin('PATCH', f'/api/_controls/users/{fatima_id}', {'sessions': 'end'})[0] == 204
+    assert fatima('GET', '/api/schema')[0] == 401
+    with secured.database._connection() as db:
+        details = [row[0] for row in db.execute("SELECT detail FROM evlet_audit WHERE area='Users'")]
+    assert details == ['Added as editor', 'Signed out everywhere']
+
+
+def test_the_audit_log_is_append_only(secured):
+    admin = client(secured)
+    admin('POST', '/api/_controls/roles', {'id': 'sales', 'base': 'editor'})
+    with secured.database._connection() as db:
+        row_id = db.execute('SELECT id FROM evlet_audit').fetchone()[0]
+        for statement in ('UPDATE evlet_audit SET detail=? WHERE id=?', 'DELETE FROM evlet_audit WHERE id=? OR detail=?',
+                          "INSERT OR REPLACE INTO evlet_audit(id,at,actor,area,target,detail) VALUES (?,0,'x','x','x',?)"):
+            values = ('changed', row_id) if statement.startswith('UPDATE') else (row_id, 'x')
+            with pytest.raises(sqlite3.DatabaseError, match='append-only'):
+                db.execute(statement, values)
+        assert tuple(db.execute('SELECT actor, detail FROM evlet_audit').fetchone()) == ('admin', 'Created from editor')
