@@ -153,7 +153,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     if (control) {
       control.focus();
       const input = control.element.matches('input') ? control.element as HTMLInputElement : control.element.querySelector('input');
-      if (typed !== undefined && input) { input.value = typed; input.setSelectionRange?.(typed.length, typed.length); }
+      if (typed !== undefined && control.type) control.type(typed);
+      else if (typed !== undefined && input) { input.value = typed; input.setSelectionRange?.(typed.length, typed.length); }
     }
     return true;
   };
@@ -442,7 +443,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     if ((event.key === 'Delete' || event.key === 'Backspace') && editable(row, spot.col)) { event.preventDefault(); writeValue(row.field(spot.col), null); return; }
     if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey && event.key !== ' ') {
       const kind = kindOf(row.field(spot.col).meta.type);
-      if (!kind.control || kind.control === 'textarea') { event.preventDefault(); startEdit(spot, event.key); }
+      if (!kind.control || kind.control === 'textarea' || kind.control === 'link') { event.preventDefault(); startEdit(spot, event.key); }
     }
   });
   grid.addEventListener('click', event => {

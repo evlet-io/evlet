@@ -250,6 +250,8 @@ export interface Control {
   /** Parse the typed text and write it. False when it is not valid (the field shows why). */
   commit(): boolean;
   focus(): void;
+  /** Start editing with typed text (a Link control opens its search with it). */
+  type?(text: string): void;
 }
 
 // Two date-times that name the same moment (the server keeps microseconds, typed text has minutes).
@@ -375,13 +377,21 @@ function LinkControl(field: FieldLike, id: string, options: ControlOptions): Con
     if (option && meta.target) links?.remember?.(meta.target, option.id, option.title);
     if (writeValue(field, option ? option.id : null)) options.onCommit?.();
   };
-  button.addEventListener('click', () => openPopover(button, close => LinkSearch(field, links, option => { close(); choose(option); }), { role: 'dialog', label: `Choose ${meta.label}`, className: 'link-pop', align: 'left' }));
-  button.addEventListener('keydown', event => { if (event.key === 'ArrowDown') { event.preventDefault(); button.click(); } });
-  return { element: button, commit: () => true, focus: () => button.focus() };
+  const open = (typed = '') => openPopover(button, close => LinkSearch(field, links, option => { close(); choose(option); }, typed),
+    { role: 'dialog', label: `Choose ${meta.label}`, className: 'link-pop', align: 'left' });
+  button.addEventListener('click', () => open());
+  button.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown') { event.preventDefault(); open(); }
+    // Typing a letter or digit starts the search with it.
+    else if (event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey && field.editable.peek()) {
+      event.preventDefault(); event.stopPropagation(); open(event.key);
+    }
+  });
+  return { element: button, commit: () => true, focus: () => button.focus(), type: text => { if (field.editable.peek()) open(text); } };
 }
 
-function LinkSearch(field: FieldLike, links: LinkSource | null, choose: (option: LinkOption | null) => void): Node {
-  const meta = field.meta, query = cell(''), results = cell<LinkOption[]>([]), active = cell(0), state = cell<'loading' | 'ready' | 'error'>('loading');
+function LinkSearch(field: FieldLike, links: LinkSource | null, choose: (option: LinkOption | null) => void, typed = ''): Node {
+  const meta = field.meta, query = cell(typed), results = cell<LinkOption[]>([]), active = cell(0), state = cell<'loading' | 'ready' | 'error'>('loading');
   const listId = uid('lb');
   let asked = 0;
   const search = async (text: string) => {
@@ -408,8 +418,9 @@ function LinkSearch(field: FieldLike, links: LinkSource | null, choose: (option:
     class="mi" class:on=${() => active.get() === index} role="option" id=${optionId(index)} aria-selected=${() => String(active.get() === index)}
     on:click=${() => choose(option)} on:mouseenter=${() => active.set(index)}>${RecordMark({ name: option.title })}<span>${option.title}</span>${option.subtitle ? html`<span class="muted">${option.subtitle}</span>` : null}</button>`)}</div>`;
   const status = () => state.get() === 'loading' ? 'Searching' : state.get() === 'error' ? 'Could not search. Try again.' : results.get().length ? '' : 'No matches. Try another name.';
-  search('');
-  queueMicrotask(() => input.focus());
+  input.value = typed;
+  search(typed);
+  queueMicrotask(() => { input.focus(); input.setSelectionRange?.(typed.length, typed.length); });
   return html`<div class="link-search">${input}<div class="muted link-status" role="status">${status}</div>${list}${!field.rules.peek().required
     ? html`<hr><button type="button" class="mi" on:click=${() => choose(null)}>${Icon('x', { size: 'sm' })}<span>Clear</span></button>` : null}</div>`;
 }

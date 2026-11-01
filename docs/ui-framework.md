@@ -313,7 +313,8 @@ mount(document.querySelector('#app')!, () => DocFrame({
   confirms with a toast that has Undo.
 - **ChildTable** binds to a record `Table`: click or Enter edits a cell, Tab and Shift Tab move
   across editable cells and wrap rows, Enter moves down, Esc cancels, arrow keys move between
-  cells, typing starts editing, Alt and an arrow moves a row. Rows can be added, duplicated
+  cells, typing starts editing (on a Link cell it opens the search with what was typed), Alt and an
+  arrow moves a row. Rows can be added, duplicated
   (with their rows of rows, as new rows), removed with Undo (`Table.restore()` brings back
   the same rows with their ids and rows of rows; Undo is refused with a message while the
   record saves or the lines are locked), opened in place with every field and their nested
