@@ -130,8 +130,8 @@ describe('records', () => {
     await expect(api.lines('order', 1, ['lines', 1])).rejects.toThrow('nested rows');
   });
 
-  it('posts drafts, actions and moves with the right paths', async () => {
-    const { fetch, sent } = server([['POST', /_draft\/order$/, 'draft'], ['POST', /actions\/close$/, 'action'], ['POST', /moves\/won$/, 'action']]);
+  it('posts drafts and actions with the right paths', async () => {
+    const { fetch, sent } = server([['POST', /_draft\/order$/, 'draft'], ['POST', /actions\/close$/, 'action']]);
     const api = createClient({ fetch });
     const draft = await api.draft('order', { id: 1, values: { stage: 'lost' }, revision: 3 });
     expect(draft.states).toEqual({ reason: 'required-input' });
@@ -139,9 +139,56 @@ describe('records', () => {
     const done = await api.action('order', 1, 'close', { note: 'done' }, responses.update.etag);
     expect((done.data as any).stage).toBe('won');
     expect(sent[1].headers['if-match']).toBe(responses.update.etag);
-    await api.move('order', 1, 'won', 'etag');
-    expect(sent[2].url).toBe('/api/order/1/moves/won');
-    await expect(api.move('order', 1, '../x', null)).rejects.toThrow('Unknown state');
+  });
+
+  it('moves a record through the move route and reads what is available next', async () => {
+    const draft = responses.invoice_draft, issued = responses.invoice_issued;
+    const id = draft.body.id;
+    const { fetch, sent } = server([['GET', new RegExp(`/api/invoice/${id}$`), 'invoice_draft'], ['POST', /moves\/issued$/, 'invoice_issued']]);
+    const api = createClient({ fetch });
+    const before = await api.get('invoice', id);
+    expect(before.etag).toBe(draft.etag);
+    // Availability travels beside the values, outside the ETag.
+    expect(before.data._moves).toEqual([{ to: 'issued', label: 'Issue', allowed: true }]);
+    expect(before.data._void).toEqual({ allowed: false, reason: 'This record cannot be voided in its current state' });
+    const moved = await api.move('invoice', id, 'issued', before.etag);
+    expect(sent[1]).toMatchObject({ method: 'POST', url: `/api/invoice/${id}/moves/issued`, body: {} });
+    expect(sent[1].headers['if-match']).toBe(draft.etag);
+    expect(moved.etag).toBe(issued.etag);
+    expect(moved.data).toMatchObject({ status: 'issued', number: issued.body.number, _locked: true, _void: { allowed: true }, _revise: { allowed: true } });
+    expect(moved.data._moves).toEqual([{ to: 'paid', label: 'Mark paid', allowed: false, reason: 'Your role cannot use this move' }]);
+    expect(moved.data._effects).toEqual([{ target: 'ledgerentry', rows: 3, reversals: 0, balanced: true }]);
+    await expect(api.move('invoice', id, '../x', null)).rejects.toThrow('Unknown state');
+  });
+
+  it('reports a move the record does not allow as a conflict with the reason', async () => {
+    const { fetch } = server([['POST', /moves\/issued$/, 'invoice_move_refused']]);
+    await expect(createClient({ fetch }).move('invoice', 1, 'issued', '"x"')).rejects.toMatchObject({
+      kind: 'conflict', status: 409, message: 'Issue is not available: the condition for this move is not met' });
+  });
+
+  it('pages owned rows of a document and keeps the detail extras of later phases', async () => {
+    const { fetch, sent } = server([['GET', /\/lines\/lines\?/, 'invoice_lines_page'], ['GET', /\/api\/invoice\/\d+$/, 'invoice_revised_original']]);
+    const api = createClient({ fetch });
+    const page = await api.lines('invoice', 1, ['lines'], { limit: 1, offset: 1 });
+    expect(sent[0].url).toBe('/api/invoice/1/lines/lines?limit=1&offset=1');
+    expect(page).toMatchObject({ total: 2, limit: 1, offset: 1 });
+    expect(page.items.map(item => item.item)).toEqual(['Licence']);
+    const { data } = await api.get('invoice', 1);
+    expect(data).toMatchObject({ status: 'void', revised_by: responses.invoice_revision.body.id, _moves: [],
+      _revise: { allowed: false, reason: 'This record already has a revision' } });
+    expect(data._effects).toEqual([{ target: 'ledgerentry', rows: 3, reversals: 3, balanced: true }]);
+  });
+
+  it('reads the document schema: state, effects, measures, key fields and relations', () => {
+    const invoice = responses.invoice_schema.body.models.find((model: any) => model.name === 'invoice');
+    expect(invoice.state).toMatchObject({ field: 'status', states: ['draft', 'issued', 'paid', 'void'], locked: ['issued', 'paid', 'void'], voidable: ['issued'] });
+    expect(invoice.state.moves.map((move: any) => [move.from, move.to, move.guarded])).toEqual([[['draft'], 'issued', true], [['issued'], 'paid', false]]);
+    expect(invoice).toMatchObject({ voidable: true, revisable: true, key_fields: ['customer', 'total', 'due_on'], permissions: { void: true, revise: true } });
+    expect(invoice.relations.map((relation: any) => relation.name)).toEqual(['payment.invoice', 'invoice.revises']);
+    expect(invoice.measures.map((measure: any) => [measure.name, measure.per_record])).toEqual([['outstanding', false], ['count', false], ['payments', true], ['paid', true]]);
+    expect(invoice.effects).toEqual([{ target: 'ledgerentry', on: 'issued', reverse: { swap: ['debit', 'credit'] }, balanced: ['debit', 'credit'] }]);
+    expect(invoice.fields.find((field: any) => field.name === 'number').sequence).toMatchObject({ assign_on: 'issued', format: 'INV-{year}-{n:05}' });
   });
 
   it('checks ids and names before sending', async () => {

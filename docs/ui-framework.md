@@ -173,10 +173,12 @@ await api.update('order', 1, { children: { lines: { update: [{ id: 2, qty: '3' }
   `remove`, `lines` (`GET /api/{model}/{id}/lines/{table}[/{row id}/{table}...]`),
   `draft` (`POST /api/_draft/{model}`), `action` and `move`
   (`POST /api/{model}/{id}/moves/{to}`).
-- Availability of `move`: the moves route exists only from engine phase 4 (`model/04-state`)
-  on. Until this branch sits on that phase, the server refuses `move()` requests (405 or
-  404), and its test replays an action response shaped like the detail Phase 4 returns. A
-  recorded moves response replaces it once the stack includes Phase 4.
+- `move()` sends no values (the server refuses a move with a body) and the record's ETag.
+  It answers with the record, its new `_moves`, `_actions`, `_void`, `_revise` and
+  `_effects`, and a new ETag. A move the record does not allow now is a 409
+  `ConflictError` whose message gives the reason. Its tests replay responses recorded from
+  the real routes, including void, revise, measures, related records and line pages
+  (`scripts/generate_ui_framework_fixtures.py`).
 - A request's own signal and the page signal are combined with `AbortSignal.any`, or with
   listeners that are removed when the request ends.
 
@@ -249,6 +251,5 @@ diff). The record store also replays the shared finite-v1 scenarios through its 
 ## Limits of this phase
 
 - No components yet. The screens still run on SolidJS.
-- `move()` needs engine phase 4 (see the API client). State metadata (`record.state`) is
-  read when the schema sends it.
+- State metadata (`record.state`) is read when the schema sends it.
 - Lookups that a role cannot read stay pending; their saved results keep showing.
