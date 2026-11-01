@@ -38,10 +38,28 @@ export function scenario(name: string, { signedIn = true } = {}) {
   const misses: string[] = [];
   const writes: Sent[] = [];
   const answer = (recorded: Recorded | { schema: string }): Recorded => structuredClone('schema' in recorded ? data.schemas[recorded.schema] : recorded);
+  // Link titles are read in batches (?filters={"id__in":[...]}); a batch is answered from the records
+  // the recording read one by one, as the server would list them.
+  const batch = (url: string): Recorded | null => {
+    const parsed = new URL(url, 'http://testcrm.local');
+    const ids = (JSON.parse(parsed.searchParams.get('filters') ?? '{}') as { id__in?: number[] }).id__in;
+    if (!ids || [...parsed.searchParams.keys()].some(name => !['filters', 'limit', 'offset'].includes(name))) return null;
+    const items: unknown[] = [];
+    for (const id of ids) {
+      const key = `GET ${parsed.pathname}/${id}`;
+      let found: Recorded | undefined;
+      for (let at = phase; at >= 0 && !found; at--) found = phases[at][key] as Recorded | undefined;
+      if (!found) return null;
+      if (found.status === 200) items.push(structuredClone(found.body));
+    }
+    return { status: 200, body: { items, total: items.length, limit: ids.length, offset: 0 }, etag: null };
+  };
   const reply = (sent: Sent): Recorded => {
     const key = keyOf(sent.method, sent.url);
     if (sent.method === 'GET') {
       for (let at = phase; at >= 0; at--) if (phases[at][key]) return answer(phases[at][key]);
+      const listed = batch(sent.url);
+      if (listed) return listed;
       misses.push(key);
       return notRecorded(key);
     }

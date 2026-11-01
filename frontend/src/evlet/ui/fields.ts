@@ -8,7 +8,7 @@
 
 import { html, when, type Child } from '../dom';
 import { cell, derive, effect, untrack, type Cell, type Readable } from '../reactive';
-import type { ApiClient } from '../api';
+import type { ApiClient, RecordData } from '../api';
 import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '../model/record';
 import type { FieldSchema, SchemaIndex } from '../model/schema';
 import { Chip, Icon, IconButton, RecordMark, StatusPill, Switch } from './base';
@@ -85,13 +85,20 @@ export interface LinkSource {
   clear?(): void;
 }
 
+/** What apiLinks may use beyond the list route: a record read already in flight, or its last detail. */
+type LinkApi = ApiClient & { reading?(model: string, id: number): Promise<{ data: RecordData }> | undefined; detail?(model: string, id: number): Readable<RecordData | null> };
+
 /**
- * A LinkSource over the API: list search with ?q= and titles from GET /api/{model}/{id}.
+ * A LinkSource over the API: list search with ?q=, and titles read in batches: the titles a page asks
+ * for in one turn are read with one list request per target model (`id__in`), unless the record is
+ * already being read or was read.
  * Titles are kept for the signed-in session and forgotten when it ends.
  */
-export function apiLinks(api: ApiClient, schema: SchemaIndex): LinkSource {
+export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
   let titles = new Map<string, Cell<string | null>>();
-  const clear = () => { titles = new Map(); };
+  let wanted = new Map<string, Set<number>>();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const clear = () => { titles = new Map(); wanted = new Map(); };
   if (typeof window !== 'undefined') window.addEventListener('evlet-session-ended', clear);
   const titleOf = (model: string, data: Record<string, unknown>) => {
     const field = schema.model(model).title_field;
@@ -100,6 +107,29 @@ export function apiLinks(api: ApiClient, schema: SchemaIndex): LinkSource {
   const remember = (model: string, id: number, title: string) => {
     const key = `${model}:${id}`;
     if (titles.has(key)) titles.get(key)!.set(title); else titles.set(key, cell<string | null>(title));
+  };
+  const flush = () => {
+    timer = null;
+    const batch = wanted;
+    wanted = new Map();
+    for (const [model, ids] of batch) {
+      const rest: number[] = [];
+      for (const id of ids) {
+        const known = api.detail?.(model, id).peek(), reading = api.reading?.(model, id);
+        if (known) remember(model, id, titleOf(model, known));
+        else if (reading) reading.then(response => remember(model, id, titleOf(model, response.data)), () => remember(model, id, `#${id}`));
+        else rest.push(id);
+      }
+      rest.sort((a, b) => a - b);
+      for (let start = 0; start < rest.length; start += 100) {
+        const part = rest.slice(start, start + 100);
+        // Records this user cannot read are left out of the answer and show their number.
+        api.list(model, { filters: { id__in: part }, limit: part.length }).then(page => {
+          const found = new Map(page.items.map(item => [item.id as number, titleOf(model, item)]));
+          for (const id of part) remember(model, id, found.get(id) ?? `#${id}`);
+        }, () => { for (const id of part) remember(model, id, `#${id}`); });
+      }
+    }
   };
   return {
     async search(meta, query) {
@@ -110,8 +140,14 @@ export function apiLinks(api: ApiClient, schema: SchemaIndex): LinkSource {
       const key = `${model}:${id}`;
       let title = titles.get(key);
       if (!title) {
-        titles.set(key, title = cell<string | null>(null));
-        api.get(model, id).then(response => title!.set(titleOf(model, response.data)), () => title!.set(`#${id}`));
+        const known = api.detail?.(model, id).peek();
+        titles.set(key, title = cell<string | null>(known ? titleOf(model, known) : null));
+        if (!known) {
+          if (!wanted.has(model)) wanted.set(model, new Set());
+          wanted.get(model)!.add(id);
+          // Everything asked for in this turn goes in one request per model.
+          timer ??= setTimeout(flush, 0);
+        }
       }
       return title;
     },

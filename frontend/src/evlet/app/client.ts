@@ -12,6 +12,7 @@ export interface Attachment { id: number; name: string; size: number }
 
 export class AppClient extends ApiClient {
   private readonly details = new Map<string, Cell<RecordData | null>>();
+  private readonly inflight = new Map<string, Promise<ApiResponse<RecordData>>>();
 
   constructor(options: ClientOptions = {}) { super(options); }
 
@@ -23,7 +24,21 @@ export class AppClient extends ApiClient {
     return found;
   }
 
+  /** A read of a record that is in flight now (GET /api/{model}/{id}), to share instead of asking again. */
+  reading(model: string, id: number): Promise<ApiResponse<RecordData>> | undefined {
+    return this.inflight.get(`/api/${model}/${id}`);
+  }
+
   async request<T>(method: string, path: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
+    if (method !== 'GET' || !/^\/api\/[A-Za-z][A-Za-z0-9_]*\/\d+$/.test(path) || options.query) return this.withDetail<T>(method, path, options);
+    const pending = this.withDetail<T>(method, path, options);
+    this.inflight.set(path, pending as Promise<ApiResponse<any>>);
+    const done = () => { if (this.inflight.get(path) === pending) this.inflight.delete(path); };
+    pending.then(done, done);
+    return pending;
+  }
+
+  private async withDetail<T>(method: string, path: string, options: RequestOptions): Promise<ApiResponse<T>> {
     const response = await super.request<T>(method, path, options);
     const found = DETAIL.exec(path);
     const data = response.data as any;

@@ -13,6 +13,22 @@ export const copy = <T>(value: T): T => structuredClone(value);
 
 export function server(routes: Route[]) {
   const sent: Sent[] = [];
+  const answer = async (reply: Reply, request: Sent) => typeof reply === 'function' ? await reply(request) : typeof reply === 'string' ? responses[reply] : reply;
+  // Link titles are read in batches (?filters={"id__in":[...]}); without a route of its own, a batch is
+  // answered from the routes of the single records, as the server would list them.
+  const titles = async (url: string): Promise<Recorded | null> => {
+    const parsed = new URL(url, 'http://127.0.0.1');
+    const ids = (JSON.parse(parsed.searchParams.get('filters') ?? '{}') as { id__in?: number[] }).id__in;
+    if (!ids) return null;
+    const items: unknown[] = [];
+    for (const id of ids) {
+      const single = `${parsed.origin}${parsed.pathname}/${id}`;
+      const route = routes.find(([verb, path]) => verb === 'GET' && path.test(single));
+      const found = route ? await answer(route[2], { method: 'GET', url: single, headers: {}, body: undefined }) : null;
+      if (found?.status === 200) items.push(copy(found.body));
+    }
+    return { status: 200, body: { items, total: items.length, limit: ids.length, offset: 0 }, etag: null };
+  };
   const fetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = String(input), method = init.method ?? 'GET';
     const headers = Object.fromEntries(Object.entries(init.headers ?? {}).map(([key, value]) => [key.toLowerCase(), String(value)]));
@@ -20,9 +36,8 @@ export function server(routes: Route[]) {
     sent.push(request);
     if (init.signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
     const route = routes.find(([verb, path]) => verb === method && path.test(url));
-    if (!route) return new Response(JSON.stringify({ error: 'Route not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
-    const reply = route[2];
-    const recorded = typeof reply === 'function' ? await reply(request) : typeof reply === 'string' ? responses[reply] : reply;
+    const recorded = route ? await answer(route[2], request) : method === 'GET' ? await titles(url) : null;
+    if (!recorded) return new Response(JSON.stringify({ error: 'Route not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
     const responseHeaders: Record<string, string> = { 'content-type': 'application/json' };
     if (recorded.etag) responseHeaders.etag = recorded.etag;
     return new Response(recorded.status === 204 ? null : JSON.stringify(recorded.body), { status: recorded.status, headers: responseHeaders });

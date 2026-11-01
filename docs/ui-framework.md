@@ -327,8 +327,10 @@ mount(document.querySelector('#app')!, () => DocFrame({
 - Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
   first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
   polite live region that the app creates at mount with `mountToasts()`. A popover stays open
-  when a phone keyboard resizes the window while the user types in it. `apiLinks()` forgets
-  record titles when the session ends; `recordOf(field)` gives a field's record store. Data is always text: nothing a record holds is parsed as markup.
+  when a phone keyboard resizes the window while the user types in it. `apiLinks()` reads
+  link titles in batches (one list request per target model with `id__in` for the titles a page
+  asks for in one turn, none for a record already read or being read), keeps them for the session
+  and forgets them when it ends; `recordOf(field)` gives a field's record store. Data is always text: nothing a record holds is parsed as markup.
 
 The Library page (`ui/library.ts`) lists all 114 components of the design catalog with their
 details and a live demo for each one built here; the rest are marked for the screens phase.
