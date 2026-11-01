@@ -140,6 +140,7 @@ def main():
     change = {'title': 'Renamed', 'children': {'lines': {'create': [{'_key': 'n1', 'qty': '2', 'rate': '1'}],
                                                          'update': [{'id': ids['l1'], 'qty': '3'}], 'delete': [ids['l2']]}}}
     keep('update', c('PATCH', url, change, headers={b'if-match': etag}))
+    keep('lines_page_after_update', c('GET', f'{url}/lines/lines?limit=100&offset=100'))
     etag = c('GET', url)[2][b'etag']
     keep('validation', c('PATCH', url, {'children': {'lines': {'update': [{'id': ids['l3'], 'qty': '13'}]}}}, headers={b'if-match': etag}))
     keep('draft', c('POST', '/api/_draft/order', {'id': created['id'], 'values': {'title': 'Draft', 'stage': 'lost'}, 'revision': 3}))
