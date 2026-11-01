@@ -29,7 +29,8 @@ sent quotes. A won quote's discount rate is locked even for actions. An
 administrator may void a sent quote with a reason, or revise it: the sent quote
 becomes void and keeps its quote number, and a new draft copy with the same lines links
 back to it. The copy has no number until it is sent. Companies
-have a phone number and quotes have free tags.
+have a phone number and quotes have free tags. The quote list declares measures:
+the total of open (sent) quotes, the total of won quotes and the number of quotes.
 
 Sales Register is manual. Live Sales Register runs after valid filter changes.
 The nested warehouse service demonstrates a read-only custom API and daily

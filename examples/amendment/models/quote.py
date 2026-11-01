@@ -1,5 +1,6 @@
 """A finite-v1 document: one formula definition for browser previews and server saves."""
-from evlet import Model, Child, Table, Decimal, Currency, Boolean, Text, Rule, Link, Date, Integer, Percent, Tags, State, Move, Sequence, action
+from evlet import (Model, Child, Table, Decimal, Currency, Boolean, Text, Rule, Link, Date, Integer, Percent, Tags, State, Move,
+                   Sequence, action, Count, Sum)
 from evlet.calc import F, days, parent, round, when
 from amendment.models.masters import Company
 
@@ -10,6 +11,12 @@ class Quote(Model):
         numeric_profile = 'finite40-hu18-v1'
         # A sent quote is corrected by revising it: it is voided and a new draft copy links back to it.
         revisable = True
+        # Totals a quote list can show: GET /api/quote/measures, or /api/quote/aggregate to group them.
+        measures = {
+            'open_total': Sum('grand_total', where=F('stage') == 'sent'),
+            'won_total': Sum('grand_total', where=F('stage') == 'won'),
+            'quotes': Count(),
+        }
 
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
