@@ -189,6 +189,8 @@ export class Table {
   saved: Row[] = [];
   // Rows a partial response left out, kept by id so the page that brings them back reuses them.
   private parked = new Map<number, Row>();
+  // New rows removed in the draft, kept so restore() can bring them back until the next save.
+  private dropped: Row[] = [];
   private touched?: Derive<boolean>;
 
   constructor(readonly owner: Row, readonly meta: ChildSchema, readonly model: ModelSchema) {
@@ -226,12 +228,16 @@ export class Table {
     record.assertEditable();
     const { _key, ...fields } = values;
     const key = record.claimKey(_key);
-    return batch(() => {
+    const nested = typeof fields.children === 'object' && fields.children !== null;
+    const row = batch(() => {
       const row = new Row(record, this.model, this.owner, this.name, key, null, true, fields);
-      record.session?.add(this, row, fields);
+      if (!nested) record.session?.add(this, row, fields);
       this.rows.set([...this.rows.peek(), row]);
       return row;
     });
+    // Rows of rows ({children: {parts: [...]}}) join the calculations with a fresh session.
+    if (nested) record.recalculate();
+    return row;
   }
 
   remove(row: Row) {
@@ -239,8 +245,31 @@ export class Table {
     batch(() => {
       this.record.session?.remove(row);
       this.rows.set(this.rows.peek().filter(item => item !== row));
-      if (row.isNew) row.dispose(); else this.removed.set([...this.removed.peek(), row]);
+      if (row.isNew) this.dropped.push(row); else this.removed.set([...this.removed.peek(), row]);
     });
+  }
+
+  /**
+   * Bring back a row removed in this draft, with its id and its rows of rows, at a position.
+   * A saved row restored to its old place leaves no change to save.
+   */
+  restore(row: Row, at: number) {
+    this.record.assertEditable();
+    const removed = this.removed.peek().includes(row), dropped = this.dropped.includes(row);
+    if (!removed && !dropped) throw new Error('Only a row removed from this table since the last save can be restored');
+    batch(() => {
+      if (removed) this.removed.set(this.removed.peek().filter(item => item !== row));
+      else this.dropped = this.dropped.filter(item => item !== row);
+      const rows = this.rows.peek().slice();
+      rows.splice(Math.max(0, Math.min(at, rows.length)), 0, row);
+      this.rows.set(rows);
+    });
+    this.record.recalculate();
+  }
+
+  private forgetDropped() {
+    for (const row of this.dropped) row.dispose();
+    this.dropped = [];
   }
 
   /** Move a row to a position in the current order. */
@@ -259,6 +288,7 @@ export class Table {
   replace(items: RecordData[], page: { total: number; partial: boolean } | undefined, rowIds: Record<string, number>) {
     const byId = new Map<number, Row>(), current = [...this.rows.peek(), ...this.removed.peek(), ...this.parked.values()];
     this.parked = new Map();
+    this.forgetDropped();
     for (const row of current) {
       const id = row.isNew ? rowIds[row.key] : row.id;
       if (id !== undefined && id !== null) byId.set(id, row);
@@ -302,6 +332,7 @@ export class Table {
   }
 
   revert() {
+    this.forgetDropped();
     for (const row of this.rows.peek()) if (row.isNew) row.dispose();
     for (const row of this.saved) row.revert();
     this.rows.set(this.saved.slice());
@@ -593,6 +624,11 @@ export class RecordStore {
       field.error.set(null);
       this.session?.set(field.row, field.name, value);
     });
+  }
+
+  /** Rebuild the calculation session from the current rows (after rows of rows join or return). */
+  recalculate() {
+    if (this.ready.peek()) this.attach();
   }
 
   private detach() {
