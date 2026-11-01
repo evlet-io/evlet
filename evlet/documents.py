@@ -444,12 +444,19 @@ def freeze_draft(draft):
 
 def source_values(draft, allowed=None):
     from .reactivity import references
-    used = set(draft._definition.__sources__)
+    sources = draft._definition.__sources__
+    used = {name: set(source.fields) for name, source in sources.items()}
     if allowed is not None:
-        used = {path.split('.')[0] for name in allowed for path in references(plans(draft._definition)[name].get('compute'))}
-    return {name: {key: field.serialize(getattr(draft._sources[name], key, None)) for key, field in source.fields.items()}
+        # Return only the outputs that readable fields use; others may feed hidden fields.
+        used = {}
+        for name in allowed:
+            for path in references(plans(draft._definition)[name].get('compute')):
+                parts = path.split('.')
+                if len(parts) == 2 and parts[0] in sources and parts[1] in sources[parts[0]].fields:
+                    used.setdefault(parts[0], set()).add(parts[1])
+    return {name: {key: field.serialize(getattr(draft._sources[name], key, None)) for key, field in source.fields.items() if key in used[name]}
             if draft._sources.get(name) is not None else None
-            for name, source in draft._definition.__sources__.items() if name in used}
+            for name, source in sources.items() if name in used}
 
 
 def write_snapshot(tx, draft):

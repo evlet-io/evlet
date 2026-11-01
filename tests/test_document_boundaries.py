@@ -202,3 +202,21 @@ def test_children_follow_their_document_permissions():
         assert policy.rule(editor, child).operations == ('read', 'create', 'update', 'delete')
         assert policy.rule(viewer, child).operations == ()
     assert policy.rule(editor, Order).operations == ('read', 'create', 'update')
+
+
+def test_draft_returns_only_source_outputs_used_by_readable_fields(tmp_path):
+    @depends('item')
+    def stock_of(doc):
+        return {'qty': D(5), 'cost': D('12.34')}
+    class Order(Model):
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete'), read_fields=('item', 'rate', 'available'))}
+        item = Text()
+        rate = Currency()
+        stock = Query(stock_of, fields={'qty': Decimal(), 'cost': Currency()})
+        available = Decimal(compute='stock.qty', stored=False)
+        margin = Currency(compute='rate - stock.cost', stored=False)
+    app = application(tmp_path, Order)
+    status, result, _ = client(app)('POST', '/api/_draft/order', {'values': {'item': 'A', 'rate': '20'}})
+    assert status == 200, result
+    assert result['values']['_sources'] == {'stock': {'qty': '5.0000'}}
+    assert 'margin' not in result['values'] and '12.34' not in str(result)
