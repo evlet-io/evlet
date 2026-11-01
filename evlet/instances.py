@@ -25,7 +25,7 @@ from .migrations import Migration
 from .permissions import Policy
 from .models import Registry
 from .ui import ViewRegistry
-from .routing import resolve_routes
+from .routing import require_served, resolve_routes
 
 
 @dataclass(frozen=True)
@@ -298,6 +298,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     migrations = migration_plan(definitions, database_path)
     database = Database(database_path, registry, migrations=migrations)
     routes = resolve_routes(definitions, config, read_routes(path), port=port)
+    require_served(routes, f'instances/{config.name}/routes.py')
     secure = routes.primary is not None
     auth = LocalAuth(database, origins=routes.origins(), secure_cookies=secure, allow_setup=not secure)
     rules, views, schedules = {}, ViewRegistry(), []

@@ -114,7 +114,7 @@ def test_playground_mode_is_explicit_not_derived_from_the_name(tmp_path, playgro
     options = {'playground': True} if playground else {}
     app = Application(db, auth=auth, name='Evlet Playground', **options)
     app.initialize()
-    assert http(app, 'GET', '/api/auth/session')[1]['application'] == {'name': 'Evlet Playground', 'playground': playground}
+    assert http(app, 'GET', '/api/auth/session')[1]['application'] == {'name': 'Evlet Playground', 'playground': playground, 'docs': '/docs'}
 
 
 def test_api_is_registered_typed_and_readonly(app):

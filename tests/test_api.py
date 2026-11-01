@@ -46,7 +46,7 @@ def test_complete_customer_invoice_payment_api(application):
 
 
 @pytest.mark.parametrize("method,path,data,status", [
-    ("GET", "/missing", None, 404),
+    ("GET", "/assets/missing.js", None, 404),
     ("GET", "/api/missing", None, 404),
     ("GET", "/api/customer/99", None, 404),
     ("GET", "/api/customer/no", None, 404),

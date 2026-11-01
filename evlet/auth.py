@@ -99,7 +99,8 @@ class LocalAuth:
                 raise ValueError('Use exact HTTP origins without paths')
             if not secure_cookies and url.hostname not in ('localhost', '127.0.0.1', '::1') and not (url.hostname or '').endswith('.localhost'):
                 raise ValueError('Insecure cookies are limited to loopback development origins')
-        self.hosts = {urlsplit(origin).netloc.encode() for origin in self.origins}
+        from .routing import authority
+        self.hosts = {authority(origin).encode() for origin in self.origins}
         self.secure_cookies = secure_cookies
         self.allow_setup = allow_setup
 

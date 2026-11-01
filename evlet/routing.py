@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 import ipaddress
 import re
-from types import MappingProxyType
+from types import BuiltinFunctionType, FunctionType, MappingProxyType, ModuleType
 from urllib.parse import urlsplit
 
 LOCKED, FRAMEWORK, PLANNED = 'locked', 'framework', 'reserved'
@@ -25,6 +25,36 @@ def reserved(path):
     """Return the RESERVED status of a path's first segment, ignoring case."""
     segment = path.split('/')[1].lower() if path.startswith('/') else ''
     return LOCKED if segment.startswith('_') else RESERVED.get(segment)
+
+
+def host_name(value):
+    """The hostname of a Host header (host or host:port), or None unless it is plain, lowercase and valid."""
+    if isinstance(value, bytes):
+        value = value.decode('latin1')
+    if not isinstance(value, str) or not value or value != value.lower() or any(not 32 < ord(char) < 127 for char in value):
+        return None
+    if value.startswith('['):
+        name, bracket, rest = value[1:].partition(']')
+        if not bracket or (rest and not rest.startswith(':')):
+            return None
+        port = rest[1:] if rest else None
+        try:
+            ipaddress.IPv6Address(name)
+        except ValueError:
+            return None
+    else:
+        name, colon, port = value.partition(':')
+        port = port if colon else None
+        if not HOSTNAME.fullmatch(name) or '..' in name:
+            return None
+    if port is not None and not (port.isdigit() and len(port) <= 5 and 0 < int(port) < 65536):
+        return None
+    return name
+
+
+def authority(origin):
+    """The Host header value an exact browser origin is served under."""
+    return urlsplit(origin).netloc
 
 
 def _strings(value, label):
@@ -164,6 +194,10 @@ class RouteTable:
             return ('https://' + self.primary,)
         return tuple(f'http://{host}:{self.port}' for host in self.hosts())
 
+    def authorities(self):
+        """The exact Host header values of the origins; LocalAuth accepts the same set."""
+        return tuple(authority(origin) for origin in self.origins())
+
     def redirect(self, host, path):
         """The root redirect target for a host, or None when the host root serves the desk shell."""
         return self._root if path == '/' and self._known(host) else None
@@ -180,12 +214,14 @@ class RouteTable:
         return serves, segment, path[len(segment):]
 
     def _known(self, host):
-        if self.primary is None:
-            return True
-        try:
-            return urlsplit('//' + (host.decode('latin1') if isinstance(host, bytes) else host or '')).hostname == self.primary
-        except ValueError:
+        if host_name(host) is None:
             return False
+        # Without a primary host the table serves any valid host the application's guard accepts.
+        return self.primary is None or (host.decode('latin1') if isinstance(host, bytes) else host) in self.authorities()
+
+    def pending(self):
+        """Rows declared now but served only from the next release: app frontends and a root redirect."""
+        return tuple(row for row in self._rows if not row.serves.startswith('evlet.'))
 
     def text(self):
         header = ('HOST', 'PATH', 'SERVES', 'SIGN-IN', 'SOURCE')
@@ -201,15 +237,45 @@ def _views(definition):
     return [view for view in views if getattr(view, 'route', None)]
 
 
+ROUTES_NAMES = {'primary': (Host, 'Host("erp.example.com")'), 'hosts': (tuple, 'a tuple of Host(...)'),
+                'paths': (dict, 'a dict of {frontend: "/path"}'), 'docs': (Docs, 'Docs(...)'),
+                'controls': (ControlsAccess, 'ControlsAccess(...)')}
+
+
+def _routes_names(namespace, where):
+    """The known routes.py names, type-checked. Imports and _private names are skipped; anything else fails."""
+    found = {}
+    for name, value in dict(namespace).items():
+        if name.startswith('_') or isinstance(value, (ModuleType, type, Frontend, FunctionType, BuiltinFunctionType)):
+            continue
+        if name not in ROUTES_NAMES:
+            raise ValueError(f'{where}: unknown name {name!r}. Use primary, hosts, paths, docs or controls.')
+        kind, shape = ROUTES_NAMES[name]
+        if not isinstance(value, kind):
+            raise ValueError(f'{where}: {name} must be {shape}')
+        found[name] = value
+    if any(not isinstance(host, Host) for host in found.get('hosts', ())):
+        raise ValueError(f'{where}: hosts must be {ROUTES_NAMES["hosts"][1]}')
+    return found
+
+
+def require_served(table, where='routes.py'):
+    """Refuse declarations dispatch cannot serve yet, so they fail at boot instead of answering 404."""
+    if any(row.serves.startswith('-> ') for row in table.pending()):
+        raise ValueError(f'{where}: root= on the primary host is not available yet. Remove it; / keeps serving the desk.')
+    for row in table.pending():
+        app = row.serves.split('.')[0]
+        raise ValueError(f'Frontend {row.serves} in app {app} is not available yet; app frontends are not served by this release. '
+                         'Remove it from the app frontends.')
+
+
 def resolve_routes(definitions=(), instance_config=None, routes_module=None, *, port=8000):
     """Resolve framework, app and routes.py entries into one frozen RouteTable; fail on any clash."""
-    routes = dict(routes_module or {})
     where = f'instances/{instance_config.name}/routes.py' if instance_config else 'routes.py'
-    primary, sub_hosts = routes.get('primary'), tuple(routes.get('hosts', ()))
-    if primary is not None and (not isinstance(primary, Host) or primary.also_on_primary):
-        raise ValueError(f'{where}: primary must be Host("name", root=...) without also_on_primary')
-    if any(not isinstance(host, Host) for host in sub_hosts):
-        raise ValueError(f'{where}: hosts must be Host definitions')
+    routes = _routes_names(routes_module or {}, where)
+    primary, sub_hosts = routes.get('primary'), routes.get('hosts', ())
+    if primary is not None and primary.also_on_primary:
+        raise ValueError(f'{where}: primary is the primary host; also_on_primary is for sub-hosts')
     if sub_hosts:
         raise ValueError(f'{where}: sub-hosts are not available yet; remove hosts and serve one primary host')
     domain = getattr(instance_config, 'domain', None)
@@ -218,12 +284,8 @@ def resolve_routes(definitions=(), instance_config=None, routes_module=None, *, 
     host = primary.name if primary else domain
     label = host or LOCAL
     docs = routes.get('docs')
-    if docs is not None and not isinstance(docs, Docs):
-        raise ValueError(f'{where}: docs must be Docs(...)')
     docs_on = docs.enabled if docs else host is None
-    controls = routes.get('controls') or ControlsAccess()
-    if not isinstance(controls, ControlsAccess):
-        raise ValueError(f'{where}: controls must be ControlsAccess(...)')
+    controls = routes.get('controls', ControlsAccess())
 
     # 1. Framework rows.
     rows, owners, segments = [], {}, {}

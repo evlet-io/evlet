@@ -14,7 +14,7 @@ import { Button, EmptyState } from '../ui/base';
 import { apiLinks, setLinkSource } from '../ui/fields';
 import { closeDialogs, closePopover, DialogFooter, openModal } from '../ui/layers';
 import { AppClient } from './client';
-import { newPageState, type AppContext, type AppRouter } from './context';
+import { docsOn, newPageState, type AppContext, type AppRouter } from './context';
 import { DocsPage } from './docs';
 import { ListPage } from './list-page';
 import { Connecting, LoginScreen } from './login';
@@ -66,7 +66,8 @@ export function App(options: AppOptions): Node {
     error.set('');
     phase.set('ready');
     const now = router.route.peek();
-    if (!now || now.name === 'login' || now.name === 'home') await router.go('docs', {}, {}, { replace: true });
+    // Python page routes match no route here; they, sign-in and the root open the start page.
+    if (!now || now.name === 'login' || now.name === 'home') await goStart(ctx, true);
   };
 
   const connect = async () => {
@@ -104,7 +105,7 @@ export function App(options: AppOptions): Node {
 
   async function signOut() {
     // Leaving the page first lets an unsaved record ask.
-    if (!(await router.go('docs', {}))) return;
+    if (!(await router.go(docsOn(session.peek()) ? 'docs' : 'home', {}))) return;
     try { await api.logout(); }
     catch (failure) {
       // 401: the server already ended the session. Anything else: the session may still be
@@ -171,8 +172,9 @@ function page(ctx: AppContext): Child {
   const route = ctx.router.route.peek();
   const known = (name: string) => rootModels(ctx.schema).find(model => model.name === name);
   switch (route?.name) {
-    case 'home': case 'login': case 'docs': return DocsPage(ctx);
-    case 'topic': return DocsPage(ctx, route.params.topic);
+    case 'home': case 'login': return docsOn(ctx.session) ? DocsPage(ctx) : nothingToOpen(ctx);
+    case 'docs': return docsOn(ctx.session) ? DocsPage(ctx) : unavailable(ctx);
+    case 'topic': return docsOn(ctx.session) ? DocsPage(ctx, route.params.topic) : unavailable(ctx);
     case 'list': return known(route.params.model) ? ListPage(ctx, route.params.model) : unavailable(ctx);
     case 'record': case 'view': return known(route.params.model) ? RecordPage(ctx, route.params.model, route.params.id) : unavailable(ctx);
     case 'create': {
@@ -190,13 +192,32 @@ function page(ctx: AppContext): Child {
 /** An address the server still serves for a screen this interface does not have. */
 function notHere(ctx: AppContext, crumb: string, title: string, text: string): HTMLElement {
   ctx.crumbs.set([{ label: crumb }]);
-  return html`<div class="page">${EmptyState({ icon: 'info', tint: 'slate', title, text,
-    action: Button({ label: 'Open Docs', onClick: () => void ctx.router.go('docs', {}) }) })}</div>` as HTMLElement;
+  return html`<div class="page">${EmptyState({ icon: 'info', tint: 'slate', title, text, action: startButton(ctx) })}</div>` as HTMLElement;
 }
 
 function unavailable(ctx: AppContext): HTMLElement {
   ctx.crumbs.set([{ label: 'Not available' }]);
   return html`<div class="page">${EmptyState({ icon: 'search', tint: 'slate', title: 'This page is not available',
-    text: 'The address may be wrong, or your role cannot open it.', action: Button({ label: 'Open Docs', onClick: () => void ctx.router.go('docs', {}) }) })}</div>` as HTMLElement;
+    text: 'The address may be wrong, or your role cannot open it.', action: startButton(ctx) })}</div>` as HTMLElement;
+}
+
+/** The start page when Docs are off and the role can open no list. */
+function nothingToOpen(ctx: AppContext): HTMLElement {
+  ctx.crumbs.set([]);
+  return html`<div class="page">${EmptyState({ icon: 'layers', tint: 'slate', title: 'Nothing to open yet',
+    text: 'Your role cannot open any list here. Ask an administrator for access.' })}</div>` as HTMLElement;
+}
+
+/** Where a signed-in user starts: Docs, or the first list they can open when Docs are off. */
+function goStart(ctx: AppContext, replace = false) {
+  if (docsOn(ctx.session)) return ctx.router.go('docs', {}, {}, { replace });
+  const first = rootModels(ctx.schema)[0];
+  return first ? ctx.router.go('list', { model: first.name }, {}, { replace }) : ctx.router.go('home', {}, {}, { replace });
+}
+
+function startButton(ctx: AppContext): Node | undefined {
+  if (docsOn(ctx.session)) return Button({ label: 'Open Docs', onClick: () => void ctx.router.go('docs', {}) });
+  const first = rootModels(ctx.schema)[0];
+  return first ? Button({ label: `Open ${first.plural}`, onClick: () => void goStart(ctx) }) : undefined;
 }
 

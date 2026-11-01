@@ -57,4 +57,7 @@ export interface AppContext {
   signOut(): Promise<void>;
 }
 
-export const newPageState = () => ({ crumbs: cell<Crumb[]>([]), createHere: cell<(() => void) | null>(null), pageSearch: cell<HTMLInputElement | null>(null) });
+/** Docs are on unless the server's session says they are off (application.docs is null). */
+export const docsOn = (session: Session | null | undefined) => session?.application?.docs !== null;
+
+export const newPageState =() => ({ crumbs: cell<Crumb[]>([]), createHere: cell<(() => void) | null>(null), pageSearch: cell<HTMLInputElement | null>(null) });

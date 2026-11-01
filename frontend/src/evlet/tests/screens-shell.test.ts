@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { adminRoutes, byText, click, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until } from './screens-helpers';
+import { adminRoutes, byText, click, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
+import { copy } from './server';
+import { closeDialogs } from '../ui/layers';
 
 afterEach(stopAll);
 
@@ -138,5 +140,45 @@ describe('app shell', () => {
     expect(text(document.querySelector('.modal h2'))).toBe('Keyboard shortcuts');
     expect(text(document.querySelector('.ev-keys'))).toContain('Search and commands');
     expect(lastToast()).toBe('');
+  });
+});
+
+describe('Docs turned off by the instance', () => {
+  // A domain instance answers application.docs: null in its session.
+  const off = () => { const session = copy(recorded.session); (session.body as any).application.docs = null; return session; };
+  const routes = (): Route[] => [['GET', /\/api\/auth\/session$/, off()], ['GET', /\/api\/schema$/, screen.schema], ['GET', /\/api\/customer\?/, screen.customers_page1]];
+
+  it('starts on the first list and offers no Docs link, tile or shortcut', async () => {
+    const { host, router } = start(routes(), '/');
+    await until(() => expect(location.pathname).toBe('/app/customer'));
+    await until(() => expect(host.querySelector('.sidebar')).not.toBeNull());
+    expect(byText(host, '.nav-item', 'Docs')).toBeFalsy();
+    press(document.body, 'g');
+    press(document.body, 'd');
+    expect(location.pathname).toBe('/app/customer');
+    press(document.body, '?');
+    expect(text(document.querySelector('.ev-keys'))).not.toContain('Go to Docs');
+    closeDialogs();
+    await router.go('docs', {});
+    await until(() => expect(text(host.querySelector('.empty h3'))).toBe('This page is not available'));
+    expect(byText(host, '.empty button', 'Open Docs')).toBeFalsy();
+    click(byText(host, '.empty button', 'Open Customers'));
+    await until(() => expect(location.pathname).toBe('/app/customer'));
+  });
+
+  it('opens the first list for a Python page route and after signing in at /login', async () => {
+    start(routes(), '/demo/projects');
+    await until(() => expect(location.pathname).toBe('/app/customer'));
+    stopAll();
+    start(routes(), '/login');
+    await until(() => expect(location.pathname).toBe('/app/customer'));
+  });
+
+  it('keeps Docs when an older server sends no docs field', async () => {
+    const session = copy(recorded.session);
+    delete (session.body as any).application.docs;
+    const { host } = start([['GET', /\/api\/auth\/session$/, session], ['GET', /\/api\/schema$/, screen.schema]], '/');
+    await until(() => expect(location.pathname).toBe('/docs'));
+    await until(() => expect(byText(host, '.nav-item', 'Docs')).toBeTruthy());
   });
 });
