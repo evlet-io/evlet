@@ -93,6 +93,11 @@ screen test opens the same deal on its Activity tab and adds a note through the 
 
 ## Gaps found
 
+Fixed in `ui-final/06-testcrm-findings`: a move now carries the values its target state needs
+(`asks` in `_moves`, a dialog on the record), `default=CurrentUser` fills the owner, a measure's
+`where=` compares dates with `today()`, `days()` and `month_start()`, and declaration errors name
+the field (a layout leaves the rest for Other).
+
 - **A Child at module level.** Discovery registers every `Model` subclass in `models.py`. A `Child`
   there is now refused with `Line is a Child row model. Declare row models inside their document
   with Table(...)`, instead of becoming a root model.
