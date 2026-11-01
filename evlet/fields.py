@@ -111,6 +111,11 @@ class Text(Field):
             raise ValueError(f"Use at most {self.max_length} characters")
         return value
 
+    def from_storage(self, value):
+        if value is not None and type(value) is not str:
+            raise ValueError("Stored text has the wrong type")
+        return value
+
     def metadata(self):
         return {**super().metadata(), "max_length": self.max_length}
 
@@ -138,6 +143,11 @@ class Integer(Field):
             raise ValueError(f"Must be at least {self.minimum}")
         if self.maximum is not None and value > self.maximum:
             raise ValueError(f"Must be at most {self.maximum}")
+        return value
+
+    def from_storage(self, value):
+        if value is not None and type(value) is not int:
+            raise ValueError("Stored integer has the wrong type")
         return value
 
     def metadata(self):
@@ -188,6 +198,8 @@ class Decimal(Field):
             return None if value is None else int(value.scaleb(self.scale))
 
     def from_storage(self, value):
+        if value is not None and type(value) is not int:
+            raise ValueError("Stored decimal has the wrong type")
         with localcontext(Context(prec=40)) as context:
             context.prec = 40
             return None if value is None else DecimalValue(value).scaleb(-self.scale)
