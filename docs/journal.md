@@ -295,5 +295,5 @@ What it does not do:
   1,000-row document gives an entry of that size. A PATCH of a 1,000-row document costs at
   most four more statements with a hashed journal than without one (the previous hash, the
   entry, the SQLite insert guard trigger and the `_journal` summary).
-* The connector, the MCP server and the SolidJS screens do not show the journal yet; the
-  new UI will.
+* The connector and the MCP server do not show the journal yet. The UI shows it in the
+  record view's Activity tab.
