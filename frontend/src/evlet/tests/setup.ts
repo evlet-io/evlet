@@ -1,7 +1,5 @@
-import '@testing-library/jest-dom/vitest';
-import { afterEach, vi } from 'vitest';
-import { cleanup } from '@solidjs/testing-library';
-afterEach(cleanup);
+// Browser APIs jsdom does not provide, for every test file.
+import { vi } from 'vitest';
 Object.defineProperty(window, 'matchMedia', {
   value: vi.fn((query: string) => ({
     matches: false,

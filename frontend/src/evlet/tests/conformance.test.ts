@@ -2,7 +2,7 @@
 // through its public API: field.set, table.add, table.remove and lookups read over HTTP.
 // After every step its cells must hold the values and rules Python recorded.
 import { describe, expect, it } from 'vitest';
-import fixtures from '../../tests/finite-fixtures.json';
+import fixtures from './finite-fixtures.json';
 import { createClient } from '../api';
 import { RecordStore, type Row } from '../model/record';
 import type { AppSchema, ModelSchema } from '../model/schema';

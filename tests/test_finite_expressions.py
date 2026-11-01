@@ -708,7 +708,7 @@ def test_browser_fixtures_match_python_plans_and_results():
     import json
     from pathlib import Path
     from finite_fixtures import collect, NUMERIC
-    path = Path(__file__).resolve().parents[1] / 'frontend/src/tests/finite-fixtures.json'
+    path = Path(__file__).resolve().parents[1] / 'frontend/src/evlet/tests/finite-fixtures.json'
     assert json.loads(path.read_text()) == json.loads(json.dumps(collect())), 'Run scripts/generate_finite_fixtures.py'
     for op, a, b in NUMERIC:
         if not op.startswith('round'):

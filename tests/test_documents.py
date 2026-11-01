@@ -106,7 +106,7 @@ def test_cross_parent_row_cycle_rejected():
 
 def test_browser_server_shared_vectors():
     from evlet.reactivity import serialized, round_field
-    vectors = json.loads((Path(__file__).resolve().parents[1] / 'frontend/src/tests/document-vectors.json').read_text())
+    vectors = json.loads((Path(__file__).resolve().parents[1] / 'tests/fixtures/document-vectors.json').read_text())
     for vector in vectors:
         expression = compile_expression(vector['source'])
         assert serialized(expression) == vector['expression']
@@ -139,5 +139,5 @@ def test_negation_keeps_full_precision_before_currency_rounding(tmp_path):
 
 def test_document_contract_fixture(application):
     from scripts.generate_document_fixtures import collect
-    fixture = json.loads((Path(__file__).resolve().parents[1] / 'frontend/src/tests/document-contract.json').read_text())
+    fixture = json.loads((Path(__file__).resolve().parents[1] / 'tests/fixtures/document-contract.json').read_text())
     assert collect(application) == fixture

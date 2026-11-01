@@ -320,8 +320,8 @@ def test_child_and_attachment_limits_are_enforced(secured):
 def test_schema_fixtures_match_python_metadata():
     from pathlib import Path
     from evlet import User
-    assert json.loads(Path('frontend/src/test-schema.json').read_text()) == registry.ui_schema()
-    assert json.loads(Path('frontend/src/test-business-schema.json').read_text()) == create_app().business.schema(User(1, 'editor', 'editor'))
+    assert json.loads(Path('tests/fixtures/test-schema.json').read_text()) == registry.ui_schema()
+    assert json.loads(Path('tests/fixtures/test-business-schema.json').read_text()) == create_app().business.schema(User(1, 'editor', 'editor'))
 
 
 def test_malformed_csrf_token_is_rejected_without_server_error(secured):
