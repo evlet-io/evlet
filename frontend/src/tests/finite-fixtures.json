@@ -946,6 +946,103 @@
   }
  ],
  "plans": {
+  "capped": {
+   "compiler_version": "evlet-finite-1",
+   "expression_version": 1,
+   "fields": [
+    {
+     "expression": {
+      "$expr": "aggregate",
+      "field": "qty",
+      "kind": "sum",
+      "table": "lines",
+      "where": null
+     },
+     "field": "total",
+     "path": [],
+     "reads": [
+      [
+       "membership",
+       "lines",
+       null
+      ],
+      [
+       "member",
+       "lines",
+       "qty"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 4,
+     "stored": true,
+     "target": "total",
+     "target_type": "decimal"
+    }
+   ],
+   "language": "finite-v1",
+   "limits": {
+    "collection_rows": 1000,
+    "decimal_text": 128,
+    "document_rows": 5000,
+    "evaluation_steps": 1000000,
+    "expression_depth": 32,
+    "expression_nodes": 128,
+    "graph_edges": 250000,
+    "graph_nodes": 50000,
+    "table_depth": 8
+   },
+   "model_schema_hash": "sha256:6d4f1841c6203c22294c9953614775386c0b6c9eec91491f5d347b58675a4e5f",
+   "numeric_profile": "finite40-hu18-v1",
+   "plan_version": 1,
+   "root_resource": "capped",
+   "tables": {
+    "$root": {
+     "fields": {
+      "total": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      }
+     },
+     "model": "capped",
+     "path": [],
+     "tables": [
+      "lines"
+     ]
+    },
+    "lines[*]": {
+     "fields": {
+      "qty": {
+       "computed": false,
+       "default": {
+        "value": "1"
+       },
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      }
+     },
+     "max_rows": 2,
+     "min_rows": 1,
+     "model": "capped_lines",
+     "path": [
+      "lines"
+     ],
+     "tables": []
+    }
+   }
+  },
   "choice": {
    "compiler_version": "evlet-finite-1",
    "expression_version": 1,
@@ -1159,9 +1256,9 @@
    ],
    "language": "finite-v1",
    "limits": {
-    "collection_rows": 100,
+    "collection_rows": 1000,
     "decimal_text": 128,
-    "document_rows": 1000,
+    "document_rows": 5000,
     "evaluation_steps": 1000000,
     "expression_depth": 32,
     "expression_nodes": 128,
@@ -1169,7 +1266,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:9c5e2f383a443b919ef2736748acf426c337e5be35885f950c3001a832fa43be",
+   "model_schema_hash": "sha256:25032952548b803e10142f7f67a0737212038ea4fb396943d88a5711715251ed",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "choice",
@@ -1647,9 +1744,9 @@
    ],
    "language": "finite-v1",
    "limits": {
-    "collection_rows": 100,
+    "collection_rows": 1000,
     "decimal_text": 128,
-    "document_rows": 1000,
+    "document_rows": 5000,
     "evaluation_steps": 1000000,
     "expression_depth": 32,
     "expression_nodes": 128,
@@ -1657,7 +1754,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:0eee71156a57620783524e3efff7c0eaea38f7189280124ff01995c80ceb7178",
+   "model_schema_hash": "sha256:86596e9c0e13c39c73a9a72e1868653484c02d99b84f24c7458b6ceba1e7941a",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "costsheet",
@@ -1825,6 +1922,8 @@
        "type": "decimal"
       }
      },
+     "max_rows": 100,
+     "min_rows": 0,
      "model": "costsheet_lines",
      "path": [
       "lines"
@@ -2383,9 +2482,9 @@
    ],
    "language": "finite-v1",
    "limits": {
-    "collection_rows": 100,
+    "collection_rows": 1000,
     "decimal_text": 128,
-    "document_rows": 1000,
+    "document_rows": 5000,
     "evaluation_steps": 1000000,
     "expression_depth": 32,
     "expression_nodes": 128,
@@ -2393,7 +2492,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:fbf04e32cba1762036421bc5c9b68a1db7769b4f45fc55434bab43e1a18fbc69",
+   "model_schema_hash": "sha256:68b49a890eaffa69bfba7f99f508ce6c6130f027357a2d6d57af4b6006d918d1",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "invoice",
@@ -2596,6 +2695,8 @@
        "type": "decimal"
       }
      },
+     "max_rows": 100,
+     "min_rows": 0,
      "model": "invoice_items",
      "path": [
       "items"
@@ -2717,9 +2818,9 @@
    ],
    "language": "finite-v1",
    "limits": {
-    "collection_rows": 100,
+    "collection_rows": 1000,
     "decimal_text": 128,
-    "document_rows": 1000,
+    "document_rows": 5000,
     "evaluation_steps": 1000000,
     "expression_depth": 32,
     "expression_nodes": 128,
@@ -2727,7 +2828,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:406e8c7d61ee81676803ef533ea6e147397f848b593deba4a1de9fe523b680da",
+   "model_schema_hash": "sha256:5e10103ff0464c5ec41aa5e3edb6f69fbd48a62bda1b277ce7254041df60f0ea",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "moments",
@@ -3277,9 +3378,9 @@
    ],
    "language": "finite-v1",
    "limits": {
-    "collection_rows": 100,
+    "collection_rows": 1000,
     "decimal_text": 128,
-    "document_rows": 1000,
+    "document_rows": 5000,
     "evaluation_steps": 1000000,
     "expression_depth": 32,
     "expression_nodes": 128,
@@ -3287,7 +3388,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:e8d7539d1ab1a2157d4a039c4c20d16ba73226f0994cbcf2d1955cf3fbec042c",
+   "model_schema_hash": "sha256:5fc66d807f4903f0e980fdf6bec580292b068c30941a25142d0b368be41ae962",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "offer",
@@ -3486,6 +3587,8 @@
        "type": "decimal"
       }
      },
+     "max_rows": 100,
+     "min_rows": 0,
      "model": "offer_lines",
      "path": [
       "lines"
@@ -3695,9 +3798,9 @@
    ],
    "language": "finite-v1",
    "limits": {
-    "collection_rows": 100,
+    "collection_rows": 1000,
     "decimal_text": 128,
-    "document_rows": 1000,
+    "document_rows": 5000,
     "evaluation_steps": 1000000,
     "expression_depth": 32,
     "expression_nodes": 128,
@@ -3705,7 +3808,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:ca01c8c6b3864d0650ee359d109a88c571e1614ee08fa68d2ed91a146c766eac",
+   "model_schema_hash": "sha256:5f21ca9537f2a473f88fd403db46d2c4f8a9172f4475d1f450db25f4011ca488",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "project",
@@ -3803,6 +3906,8 @@
        "type": "decimal"
       }
      },
+     "max_rows": 100,
+     "min_rows": 0,
      "model": "project_phases",
      "path": [
       "phases"
@@ -3838,6 +3943,8 @@
        "type": "decimal"
       }
      },
+     "max_rows": 100,
+     "min_rows": 0,
      "model": "project_phases_tasks",
      "path": [
       "phases",
@@ -4104,9 +4211,9 @@
    ],
    "language": "finite-v1",
    "limits": {
-    "collection_rows": 100,
+    "collection_rows": 1000,
     "decimal_text": 128,
-    "document_rows": 1000,
+    "document_rows": 5000,
     "evaluation_steps": 1000000,
     "expression_depth": 32,
     "expression_nodes": 128,
@@ -4114,7 +4221,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:5d9700d2734fdf3994d715694f65eddc352d67ada8518fe652718b64132f0a2b",
+   "model_schema_hash": "sha256:e1eacd9fdac9e77673611fffda870171874ef0d30a0c79ffe7486d19754370d0",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "rounding",
@@ -4673,9 +4780,9 @@
    ],
    "language": "finite-v1",
    "limits": {
-    "collection_rows": 100,
+    "collection_rows": 1000,
     "decimal_text": 128,
-    "document_rows": 1000,
+    "document_rows": 5000,
     "evaluation_steps": 1000000,
     "expression_depth": 32,
     "expression_nodes": 128,
@@ -4683,7 +4790,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:d34c2333aa8f0d96ded7293351dc7077fd7a669cb2058c54fb0af3afeef09d6f",
+   "model_schema_hash": "sha256:3671ad6d3d3e65dfca1d5cc1263de592e39ef412fb33af38d9eba2c31e512ceb",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "sale",
@@ -4873,6 +4980,8 @@
        "model": "customer"
       }
      ],
+     "max_rows": 100,
+     "min_rows": 0,
      "model": "sale_lines",
      "path": [
       "lines"
@@ -5215,9 +5324,9 @@
    ],
    "language": "finite-v1",
    "limits": {
-    "collection_rows": 100,
+    "collection_rows": 1000,
     "decimal_text": 128,
-    "document_rows": 1000,
+    "document_rows": 5000,
     "evaluation_steps": 1000000,
     "expression_depth": 32,
     "expression_nodes": 128,
@@ -5225,7 +5334,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:6a5469b4f18b0dea4d83b0f602943f951209b419cd505283badae3c28510cf0a",
+   "model_schema_hash": "sha256:cdd180fbe08bd89ae5fc4ccd733c8c08afb0721f4edffde1af29d654455197c9",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "schedule",
@@ -5943,9 +6052,9 @@
    ],
    "language": "finite-v1",
    "limits": {
-    "collection_rows": 100,
+    "collection_rows": 1000,
     "decimal_text": 128,
-    "document_rows": 1000,
+    "document_rows": 5000,
     "evaluation_steps": 1000000,
     "expression_depth": 32,
     "expression_nodes": 128,
@@ -5953,7 +6062,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:e3bb68f4d5583f1f8c77c90ae64f8e5b7cf2b6011c9a3cf004f3ad5cb6e7208e",
+   "model_schema_hash": "sha256:4e8977d44e39b269fc2aff231613253852387d97b7344602a75f0aedf16530b9",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "states",
@@ -16319,6 +16428,281 @@
       "evaluated": 6,
       "skipped": 11,
       "steps": 18
+     }
+    }
+   ]
+  },
+  {
+   "data": {
+    "children": {
+     "lines": [
+      {
+       "_key": "r0",
+       "qty": "1"
+      }
+     ]
+    }
+   },
+   "model": "capped",
+   "name": "table-limits",
+   "steps": [
+    {
+     "requests": [],
+     "revision": 1,
+     "snapshot": {
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "qty": "1"
+        }
+       ]
+      },
+      "total": "1.0000"
+     },
+     "trace": {
+      "changed": [
+       "total"
+      ],
+      "evaluated": 1,
+      "skipped": 0,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "add",
+      "",
+      "lines",
+      {
+       "_key": "n1",
+       "qty": "2"
+      }
+     ],
+     "requests": [],
+     "revision": 2,
+     "snapshot": {
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "qty": "1"
+        },
+        {
+         "_key": "n1",
+         "qty": "2"
+        }
+       ]
+      },
+      "total": "3.0000"
+     },
+     "trace": {
+      "changed": [
+       "total"
+      ],
+      "evaluated": 1,
+      "skipped": 0,
+      "steps": 3
+     }
+    },
+    {
+     "command": [
+      "add",
+      "",
+      "lines",
+      {
+       "_key": "n2",
+       "qty": "4"
+      }
+     ],
+     "error": "CALCULATION_LIMIT_EXCEEDED",
+     "requests": [],
+     "revision": 2,
+     "snapshot": {
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "qty": "1"
+        },
+        {
+         "_key": "n1",
+         "qty": "2"
+        }
+       ]
+      },
+      "total": "3.0000"
+     }
+    },
+    {
+     "command": [
+      "replace",
+      "",
+      "lines",
+      [
+       {
+        "_key": "a"
+       },
+       {
+        "_key": "b"
+       },
+       {
+        "_key": "c"
+       }
+      ]
+     ],
+     "error": "CALCULATION_LIMIT_EXCEEDED",
+     "requests": [],
+     "revision": 2,
+     "snapshot": {
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "qty": "1"
+        },
+        {
+         "_key": "n1",
+         "qty": "2"
+        }
+       ]
+      },
+      "total": "3.0000"
+     }
+    },
+    {
+     "command": [
+      "remove",
+      "lines.r0"
+     ],
+     "requests": [],
+     "revision": 3,
+     "snapshot": {
+      "children": {
+       "lines": [
+        {
+         "_key": "n1",
+         "qty": "2"
+        }
+       ]
+      },
+      "total": "2.0000"
+     },
+     "trace": {
+      "changed": [
+       "total"
+      ],
+      "evaluated": 1,
+      "skipped": 0,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "add",
+      "",
+      "lines",
+      {
+       "_key": "n3",
+       "qty": "5"
+      }
+     ],
+     "requests": [],
+     "revision": 4,
+     "snapshot": {
+      "children": {
+       "lines": [
+        {
+         "_key": "n1",
+         "qty": "2"
+        },
+        {
+         "_key": "n3",
+         "qty": "5"
+        }
+       ]
+      },
+      "total": "7.0000"
+     },
+     "trace": {
+      "changed": [
+       "total"
+      ],
+      "evaluated": 1,
+      "skipped": 0,
+      "steps": 3
+     }
+    },
+    {
+     "command": [
+      "batch",
+      [
+       [
+        "remove",
+        "lines.n1"
+       ],
+       [
+        "add",
+        "",
+        "lines",
+        {
+         "_key": "n4"
+        }
+       ]
+      ]
+     ],
+     "requests": [],
+     "revision": 5,
+     "snapshot": {
+      "children": {
+       "lines": [
+        {
+         "_key": "n3",
+         "qty": "5"
+        },
+        {
+         "_key": "n4",
+         "qty": "1"
+        }
+       ]
+      },
+      "total": "6.0000"
+     },
+     "trace": {
+      "changed": [
+       "total"
+      ],
+      "evaluated": 1,
+      "skipped": 0,
+      "steps": 3
+     }
+    },
+    {
+     "command": [
+      "add",
+      "",
+      "lines",
+      {
+       "_key": "n5"
+      }
+     ],
+     "error": "CALCULATION_LIMIT_EXCEEDED",
+     "requests": [],
+     "revision": 5,
+     "snapshot": {
+      "children": {
+       "lines": [
+        {
+         "_key": "n3",
+         "qty": "5"
+        },
+        {
+         "_key": "n4",
+         "qty": "1"
+        }
+       ]
+      },
+      "total": "6.0000"
      }
     }
    ]

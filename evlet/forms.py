@@ -226,7 +226,7 @@ class Forms:
                         return 200, json.loads(old['result']), []
                 if b'if-match' not in dict(scope.get('headers', [])): raise AccessError(428, 'A source revision is required')
                 self.business.check_revision(scope, context._tx, user, record)
-                context.source_revision = self.business.revision(self.business.detail(context._tx, user, record)).decode()
+                context.source_revision = self.business.record_revision(context._tx, user, record).decode()
                 context.idempotency_key = key
                 draft = Draft(definition, context=context.read_context(), source=source)
                 draft.load(source)

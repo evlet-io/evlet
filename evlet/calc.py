@@ -19,8 +19,9 @@ LEGACY_PROFILE = 'legacy-document-v2'
 PLAN_VERSION = 1
 EXPRESSION_VERSION = 1
 COMPILER_VERSION = 'evlet-finite-1'
-LIMITS = {'expression_nodes': 128, 'expression_depth': 32, 'table_depth': 8, 'collection_rows': 100,
-          'document_rows': 1000, 'graph_nodes': 50000, 'graph_edges': 250000,
+# collection_rows is the most any owned table may declare (Table max_rows); each plan table carries its own.
+LIMITS = {'expression_nodes': 128, 'expression_depth': 32, 'table_depth': 8, 'collection_rows': 1000,
+          'document_rows': 5000, 'graph_nodes': 50000, 'graph_edges': 250000,
           'evaluation_steps': 1000000, 'decimal_text': 128}
 MAX_DIGITS, MAX_SCALE, DIVISION_SCALE = 40, 36, 18
 SAFE_INTEGER = 2**53 - 1
@@ -655,6 +656,9 @@ def compile_plan(registry, root):
                            'default': creation_default(field)}
         schema[address(path, '').rstrip('.') or '$root'] = {'path': list(path), 'model': registry.name_for(model), 'fields': entry,
                                                                'tables': sorted(children)}
+        if path:
+            declared = parent_model.__tables__[path[-1]]
+            schema[address(path, '').rstrip('.')].update(min_rows=declared.min_rows, max_rows=declared.max_rows)
         for name, field in model.__declared_fields__.items():
             for option, source in options(field):
                 if option == 'compute' and (field.default is not MISSING or field.fetch is not None or field.query is not None):
@@ -1221,12 +1225,12 @@ class Document:
             items = children.get(table, [])
             if not isinstance(items, list):
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'{table} must be a list of rows')
-            if len(items) > self.plan['limits']['collection_rows']:
+            if len(items) > self.max_rows(path, table):
                 raise CalcError('CALCULATION_LIMIT_EXCEEDED', f'{table} exceeds the collection row limit')
-            row.children[table] = []
+            row.children[table], seen = [], (set(), set())
             for item in items:
                 child = self._build(item, path + (table,), row, created=created)
-                self._place(row, table, child, len(row.children[table]))
+                self._place(row, table, child, len(row.children[table]), seen)
         return row
 
     def _defaults(self, row, entry):
@@ -1246,16 +1250,25 @@ class Document:
     def _touch(self, handle, field):
         (self._batch['touched'] if self._batch is not None else self.touched).add((handle, field))
 
-    def _place(self, owner, table, row, at):
+    def max_rows(self, path, table):
+        """The table's declared max_rows (plans without one use the engine limit)."""
+        entry = self.schema.get(tuple(path) + (table,)) or {}
+        return min(entry.get('max_rows', self.plan['limits']['collection_rows']), self.plan['limits']['collection_rows'])
+
+    def _place(self, owner, table, row, at, seen=None):
+        """Insert a row; `seen` ({keys}, {ids}) of the rows already in the list makes bulk loads linear."""
         items = owner.children[table]
-        if any(item.key == row.key for item in items if item is not row):
+        if row.key in seen[0] if seen else any(item.key == row.key for item in items if item is not row):
             raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'Repeated row key {row.key} in {table}')
-        if row.id is not None and any(item.id == row.id for item in items if item is not row):
+        if row.id is not None and (row.id in seen[1] if seen else any(item.id == row.id for item in items if item is not row)):
             raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'Repeated row ID {row.id} in {table}')
-        if len(items) >= self.plan['limits']['collection_rows']:
+        if len(items) >= self.max_rows(owner.path, table):
             raise CalcError('CALCULATION_LIMIT_EXCEEDED', f'{table} exceeds the collection row limit')
         items.insert(at, row)
         row.parent = owner
+        if seen:
+            seen[0].add(row.key)
+            seen[1].add(row.id)
 
     def _labels(self, row, label):
         row.label = label
@@ -1501,7 +1514,7 @@ class Document:
             existing = {row.id: row for row in parent_row.children[table] if row.id is not None}
             old = list(parent_row.children[table])
             parent_row.children[table] = []
-            seen = set()
+            seen, placed = set(), (set(), set())
             for data in items:
                 record_id = data.get('id') if isinstance(data, dict) else None
                 if record_id is not None and integer(record_id) is None:
@@ -1524,9 +1537,10 @@ class Document:
                             self._batch['sources'].add((row.handle, name))
                 else:
                     row = self._build(data, parent_row.path + (table,), parent_row, created=True)
-                self._place(parent_row, table, row, len(parent_row.children[table]))
+                self._place(parent_row, table, row, len(parent_row.children[table]), placed)
+            kept = {id(row) for row in parent_row.children[table]}
             for row in old:
-                if row not in parent_row.children[table]:
+                if id(row) not in kept:
                     self._drop(row)
             self._structure(owner, table)
         self._command(run)
@@ -1826,6 +1840,11 @@ def check_plan(plan):
             raise CalcError('UNSUPPORTED_EXPRESSION', 'Invalid plan entry kind')
         check_node(field['expression'], 0, [0])
     for table in plan['tables'].values():
+        for key in ('min_rows', 'max_rows'):
+            if key in table and (type(table[key]) is not int or not 0 <= table[key] <= LIMITS['collection_rows']):
+                raise CalcError('SCHEMA_VERSION_MISMATCH', 'Invalid table row limits')
+        if table.get('min_rows', 0) > table.get('max_rows', LIMITS['collection_rows']):
+            raise CalcError('SCHEMA_VERSION_MISMATCH', 'Invalid table row limits')
         for meta in table['fields'].values():
             for bound in (meta.get('minimum'), meta.get('maximum')):
                 if bound is not None:

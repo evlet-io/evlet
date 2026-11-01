@@ -111,6 +111,10 @@ def test_reference_app_full_public_flow(project):
     assert edit({'stage': 'lost'})[1]['fields'] == {'lost_reason': 'This field is required'}
     assert edit({'stage': 'won', 'lost_reason': 'Ignored', 'labels': ['gold']})[1]['lost_reason'] is None
     assert edit({'discount_rate': '5'})[1]['fields'] == {'discount_rate': 'This field is locked and cannot be changed now'}
+    # Row changes: add one line at the top without resending the others.
+    kept = [row['id'] for row in c('GET', url)[1]['children']['lines']]
+    added = edit({'children': {'lines': {'create': [{'_key': 'c', 'qty': '1', 'rate': '10', 'taxable': False}], 'order': ['c', *kept]}}})[1]
+    assert added['grand_total'] == '135.00' and [row['id'] for row in added['children']['lines']] == [added['_row_ids']['c'], *kept]
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest

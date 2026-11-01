@@ -142,3 +142,58 @@ and its exact 12,345 minor-unit value (123.45). This checks a simple local recov
 round trip, not complete application/storage recovery, PITR, or a production RTO.
 CI additionally runs the PostgreSQL integration suite on versions 14 and 18. Check
 the PR's current results before accepting cross-version support.
+
+## Owned tables
+
+Documents with owned tables (`Table(Child)`) load, save and page with a bounded number
+of SQL statements. Rows load one table level at a time: one statement per chunk of 500
+owner IDs, using window functions to keep the first rows per owner and count the rest.
+Row scopes are applied in the same statement for reads, and with one statement per level
+when a write needs the hidden rows. Link and Reference targets are checked once per target
+model and chunk, not per row. Reads, title-only saves and saves that change a few rows use
+a statement count that does not grow with the number of rows. Writes still cost one
+statement per row they create or change: one INSERT per created row and one UPDATE per row
+whose values change (a change set updating 100 rows with a new nested row each runs about
+330 statements). Deletes and position-only changes are batched.
+
+Reproduce from the checkout (a temporary SQLite file, authenticated ASGI requests, no
+socket):
+
+```sh
+.venv/bin/python scripts/benchmark_lines.py
+```
+
+`tests/test_lines.py` counts statements with `sqlite3` trace callbacks and asserts upper
+bounds: 10 for a detail of 1,000 rows or of 100 rows with 9 nested rows each, 32 for a
+title-only PATCH, and 35 for a one-row change set.
+
+### Local results, 1 November 2026
+
+Apple M3, 8 CPU cores, 16 GiB RAM, macOS 27.0.1, Python 3.12.16, SQLite 3.54.1. Counts
+include the session and CSRF checks of each request. Timings are wall time per request;
+20 runs (4 for creates), median and p95. PATCH timings exclude reading the ETag.
+
+| Case | Statements | Median | p95 |
+| --- | ---: | ---: | ---: |
+| Create, 1,000 rows | 1,018 | 82.5 ms | 83.6 ms |
+| GET detail, 1,000 rows (100 embedded, ETag over all) | 9 | 7.9 ms | 11.4 ms |
+| GET one page of 100 lines, 1,000 rows | 8 | 1.9 ms | 2.0 ms |
+| PATCH title, 1,000 rows | 30 | 76.3 ms | 77.8 ms |
+| PATCH one row (change set), 1,000 rows | 32 | 76.0 ms | 77.2 ms |
+| Create, 100 rows x 9 nested | 1,116 | 37.7 ms | 38.0 ms |
+| GET detail, 100 rows x 9 nested | 8 | 5.2 ms | 5.3 ms |
+| GET one page of 100 lines, 100 x 9 nested | 8 | 5.5 ms | 8.9 ms |
+| PATCH title, 100 rows x 9 nested | 29 | 38.5 ms | 39.3 ms |
+| PATCH one row (change set), 100 x 9 nested | 31 | 33.7 ms | 39.5 ms |
+
+Before batching, on the same machine and the same kind of document (counts are exact;
+times are single runs): a detail of 100 linked rows took 607 statements, a title-only
+PATCH 2,021 and a one-row change 2,227. With 100 rows of 9 nested rows, a detail took
+2,407 statements (18 ms) and a title-only PATCH 9,221 (80 ms). Collections above 100 rows
+could not be loaded at all.
+
+A save still settles the whole document in Python (building the calculation session,
+validating every row and comparing the saved tree), so its time grows with the rows even
+though its statement count does not. At 1,000 rows that is about 75 ms on this machine.
+A detail reads every readable row to compute its ETag, then embeds the first 100.
+These are local measurements of one workload, not capacity guarantees.

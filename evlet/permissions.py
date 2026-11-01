@@ -9,6 +9,10 @@ from .models import Model, ValidationError, identifier
 from .query import SqlQuery, OPERATORS
 
 
+# IDs per batched permission or row statement; well under SQLite's bound-parameter limit.
+CHUNK = 500
+
+
 @dataclass(frozen=True)
 class Rule:
     operations: tuple = ('read',)
@@ -169,7 +173,34 @@ class Policy:
             raise AccessError(404, 'Record not found')
         return tx.get(model, record_id)
 
-    def check_values(self, tx, user, model, values):
+    def records(self, tx, user, model, record_ids, operation='read'):
+        """Batched record(): {id: record} for the IDs this user may access, one statement per chunk.
+
+        Same rules as record() (operation permission and row scope); IDs that fail are left out
+        instead of raising, and an operation the role lacks returns nothing.
+        """
+        return self._scoped(tx, user, model, record_ids, operation, 'record.*')
+
+    def visible(self, tx, user, model, record_ids, operation='read'):
+        """The subset of record_ids that record() would accept; one statement per chunk."""
+        return set(self._scoped(tx, user, model, record_ids, operation, 'record.id'))
+
+    def _scoped(self, tx, user, model, record_ids, operation, columns):
+        if not self.allows(user, model, operation):
+            return {}
+        ids = list(dict.fromkeys(record_ids))
+        where, values = self.scope_sql(user, model)
+        table = identifier(self.registry.name_for(model))
+        found = {}
+        for start in range(0, len(ids), CHUNK):
+            part = ids[start:start + CHUNK]
+            sql = f'SELECT {columns} FROM {table} AS record{where} {"AND" if where else "WHERE"} record.id IN ({", ".join("?" for _ in part)})'
+            for row in tx.connection.execute(sql, [*values, *part]).fetchall():
+                if columns == 'record.id': found[row[0]] = None
+                else: found[row['id']] = model._from_row(row)
+        return found
+
+    def check_values(self, tx, user, model, values, *, targets=None):
         if set(values) - self.fields(user, model, write=True):
             raise AccessError(403, 'One or more fields cannot be written')
         for name, value in values.items():
@@ -179,7 +210,8 @@ class Policy:
                     record_id = field.clean(value)
                 except ValueError as exc:
                     raise ValidationError({name: str(exc)}) from exc
-                self.record(tx, user, field.target, record_id)
+                # targets: a batched reader with the same checks as record() (documents.LinkTargets).
+                targets.get(field.target, record_id) if targets is not None else self.record(tx, user, field.target, record_id)
             elif isinstance(field, Reference) and value is not None:
                 # The referenced record must exist and be readable by this user.
                 try:
@@ -190,25 +222,41 @@ class Policy:
                 self.record(tx, user, target, record_id)
 
     def serialize(self, tx, user, record):
-        model = type(record)
+        return self.serialize_many(tx, user, [record])[0]
+
+    def serialize_many(self, tx, user, records):
+        """Readable fields of records of one model; Links and References the user cannot follow show as empty.
+
+        Linked records are checked in batches (one statement per target model and chunk), not per row.
+        """
+        if not records:
+            return []
+        model = type(records[0])
+        if any(type(record) is not model for record in records):
+            raise ValueError('Serialize records of one model at a time')
         readable = self.fields(user, model)
-        result = {key: value for key, value in record.to_dict().items() if key == 'id' or key in readable}
+        results = [{key: value for key, value in record.to_dict().items() if key == 'id' or key in readable} for record in records]
         for name, field in model.__fields__.items():
-            if isinstance(field, Link) and result.get(name) is not None:
-                try:
-                    self.record(tx, user, field.target, result[name])
-                except AccessError:
-                    result[name] = None
-            elif isinstance(field, Reference) and result.get(name) is not None:
+            if isinstance(field, Link):
+                wanted = [result[name] for result in results if result.get(name) is not None]
+                if not wanted:
+                    continue
+                shown = self.visible(tx, user, field.target, wanted)
+                for result in results:
+                    if result.get(name) is not None and result[name] not in shown:
+                        result[name] = None
+            elif isinstance(field, Reference):
                 # A reference this user cannot follow is shown as empty, including the model it names.
-                target = self.registry.models.get(result[name]['model'])
-                try:
-                    if target is None:
-                        raise AccessError(404, 'Record not found')
-                    self.record(tx, user, target, result[name]['id'])
-                except AccessError:
-                    result[name] = None
-        return result
+                wanted = {}
+                for result in results:
+                    if result.get(name) is not None:
+                        wanted.setdefault(result[name]['model'], []).append(result[name]['id'])
+                shown = {target: self.visible(tx, user, self.registry.models[target], ids) if target in self.registry.models else set()
+                         for target, ids in wanted.items()}
+                for result in results:
+                    if result.get(name) is not None and result[name]['id'] not in shown[result[name]['model']]:
+                        result[name] = None
+        return results
 
     def query_fields(self, user, model, filters, order_by):
         readable = {'id', *self.fields(user, model)}

@@ -147,7 +147,9 @@ are deleted. An existing row containing only its ID is retained with read access
 updated. This lets create-only or delete-only users preserve other rows in the
 collection. Sending changes to an existing row still requires update access.
 Clients cannot set the parent Link, move rows between parents, or repeat a row ID. A collection contains at most 100 rows. Nested child collections
-are not supported. The form checks create permission for new-row inputs, update
+are not supported. Declarative document models also accept change sets
+(`create`, `update`, `delete`) for these collections; see
+[owned tables](finite-calculations.md#owned-tables). The form checks create permission for new-row inputs, update
 permission for existing-row inputs, and delete permission for removing saved rows.
 An unsaved row can be discarded without delete permission.
 

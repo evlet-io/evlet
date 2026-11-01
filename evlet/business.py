@@ -40,6 +40,8 @@ class ChildTable:
 
 
 RULES = ('applies_when', 'required_when', 'locked_when')
+# Rows a detail response embeds per owned collection; larger collections are paged through lines().
+EMBEDDED_ROWS = ROW_LIMIT
 EMPTY_EXPRESSIONS = {'compute': None, 'initial': None, 'applies_when': None, 'required_when': None, 'locked_when': None}
 
 
@@ -236,7 +238,10 @@ class Business:
                 entry['title_field'] = 'id'
             entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
             entry['child_only'] = model in self.child_models
-            entry['children'] = [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label} for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
+            from .documents import row_bounds
+            entry['children'] = [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label,
+                                  **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child)))}
+                                 for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
             from .documents import argument_schema
             entry['actions'] = [{'name': action.name, 'label': action.label,
                                  **({'arguments': argument_schema(getattr(model, action.name), skip=1)} if hasattr(getattr(model, action.name, None), '__action__') else {})}
@@ -279,7 +284,7 @@ class Business:
         if getattr(self, 'forms', None) and path.startswith(('/api/_reports/', '/api/_dialogs/')):
             return self.forms.dispatch(scope, body, user)
         if path.startswith('/api/_draft/') and method == 'POST':
-            from .documents import load_draft, settle, source_values
+            from .documents import load_draft, settle, source_values, walk
             model = self.registry.resolve(path.removeprefix('/api/_draft/'))
             if not getattr(model, '__declaration_mode__', False) or model in self.child_models:
                 raise AccessError(404, 'Draft evaluation is unavailable')
@@ -302,6 +307,12 @@ class Business:
                     return {'id': item.id, '_key': item.key, '_sources': source_values(item, allowed), **{name: shown(field, item._values.get(name))
                             for name, field in item._definition.__declared_fields__.items() if name in allowed and not name.startswith('evlet_')}}
                 allowed_errors = set()
+                saved_rows = {}
+                for _, item in walk(draft):
+                    if item is not draft and item.id:
+                        saved_rows.setdefault(item._definition, []).append(item.id)
+                shown = {(definition, row_id) for definition, ids in saved_rows.items()
+                         for row_id in self.policy.visible(context._tx, user, definition, ids)}
 
                 def tree(item, prefix):
                     result = values(item)
@@ -314,9 +325,8 @@ class Business:
                             continue
                         rows = []
                         for row in item._rows.get(child.name, []):
-                            if row.id:
-                                try: self.policy.record(context._tx, user, child.model, row.id)
-                                except AccessError: continue
+                            if row.id and (child.model, row.id) not in shown:
+                                continue
                             rows.append(tree(row, prefix + child.name + '.' + row.key + '.'))
                         result['children'][child.name] = rows
                     return result
@@ -424,7 +434,9 @@ class Business:
                         raise AccessError(428, 'A current If-Match revision is required')
                     self.check_revision(scope, context._tx, user, record)
                 result = context._write(model, record_id, {} if action else body, action=action, arguments=body if action else None)
+            # The write returns every readable row; the ETag covers them all and the body embeds the first page.
             etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome')})
+            result = self.embedded(result)
             if plan is not None:
                 result['_calculation'] = {'language': plan['language'], 'model_schema_hash': plan['model_schema_hash']}
             return (201 if record_id is None else 200), result, [(b'etag', etag)]
@@ -444,6 +456,10 @@ class Business:
         if len(parts) < 4 or not re.fullmatch(r'[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1:
             raise AccessError(404, 'Record not found')
         record_id = int(parts[3])
+        if len(parts) >= 6 and parts[4] == 'lines':
+            if method != 'GET':
+                raise AccessError(405, 'Method not allowed')
+            return self.lines(scope, user, model, record_id, parts[5:])
         if len(parts) >= 5 and parts[4] == 'attachments':
             return self.files(user, model, record_id, parts[5:], method, body)
         if len(parts) == 6 and parts[4] == 'actions' and method == 'POST':
@@ -488,8 +504,8 @@ class Business:
                 self.policy.record(tx, user, model, record_id, 'update')
                 self.save_children(tx, user, record, children)
                 self.changed(tx, model, record_id)
-            result = self.detail(tx, user, record)
-        return 200, result, [(b'etag', self.revision(result))]
+            result = self.detail(tx, user, record, row_limit=None)
+        return 200, self.embedded(result), [(b'etag', self.revision(result))]
 
     def field_expressions(self, user, model):
         """Serialized finite expressions per readable field: compute, initial and the three rules.
@@ -600,9 +616,29 @@ class Business:
         encoded = json.dumps(detail, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
         return ('"' + hashlib.sha256(encoded).hexdigest() + '"').encode()
 
+    def record_revision(self, tx, user, record):
+        """The ETag of a record as this user sees it: every readable row of every collection, not the first page."""
+        return self.revision(self.detail(tx, user, record, row_limit=None))
+
+    @staticmethod
+    def embedded(detail, limit=EMBEDDED_ROWS):
+        """A full detail cut to the first `limit` rows per collection, with `children_pages` for longer ones.
+
+        Gives the same result as detail(row_limit=limit), so a response and its ETag come from one read.
+        """
+        if not isinstance(detail.get('children'), dict):
+            return detail
+        result, children = dict(detail), {}
+        for name, rows in detail['children'].items():
+            children[name] = [Business.embedded(row, limit) for row in rows[:limit]]
+            if len(rows) > limit:
+                result['children_pages'] = {**result.get('children_pages', {}), name: {'total': len(rows), 'limit': limit, 'partial': True}}
+        result['children'] = children
+        return result
+
     def check_revision(self, scope, tx, user, record):
         expected = dict(scope.get('headers', [])).get(b'if-match')
-        if expected is not None and expected != self.revision(self.detail(tx, user, record)):
+        if expected is not None and expected != self.record_revision(tx, user, record):
             raise AccessError(409, 'This record changed since you opened it. Reload it before saving.')
 
     def accounts(self, scope, body, user):
@@ -686,28 +722,87 @@ class Business:
                 self.policy.record(tx, user, child.model, row_id, 'delete')
                 tx.delete(child.model, row_id)
 
-    def detail(self, tx, user, record):
+    def detail(self, tx, user, record, *, row_limit=EMBEDDED_ROWS):
+        """A record with its readable owned rows at every depth, in position order.
+
+        Each collection embeds at most `row_limit` rows (None embeds all). A collection with more
+        readable rows is listed under `children_pages` with its total so a client can page it.
+        Rows load one table level at a time, so the statement count does not grow with the rows.
+        """
         result = self.policy.serialize(tx, user, record)
-        children = {}
+        self.embed(tx, user, type(record), {record.id: result}, row_limit)
+        return result
+
+    def embed(self, tx, user, model, results, row_limit=EMBEDDED_ROWS):
+        """Add readable owned rows to serialized records of one model ({id: result}), level by level."""
+        from .documents import owned_rows
         for child in self.children.values():
-            if child.parent is not type(record) or not self.policy.allows(user, child.model, 'read'):
+            if child.parent is not model or not self.policy.allows(user, child.model, 'read'):
                 continue
-            if tx.count(child.model, filters={child.link: record.id}) > ROW_LIMIT:
-                raise ValidationError({'children': f'This collection exceeds the {ROW_LIMIT}-row editor limit'})
-            rows = tx.list(child.model, filters={child.link: record.id}, limit=ROW_LIMIT, order_by=('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',))
-            children[child.name] = []
-            for row in rows:
-                try:
-                    self.policy.record(tx, user, child.model, row.id)
-                except AccessError:
-                    continue
-                value = self.detail(tx, user, row) if any(item.parent is child.model for item in self.children.values()) else self.policy.serialize(tx, user, row)
+            found = owned_rows(tx, child, list(results), scope=self.policy.scope_sql(user, child.model), limit=row_limit)
+            records = [record for owner in results for record in found.get(owner, ((), 0))[0]]
+            values = dict(zip((record.id for record in records), self.policy.serialize_many(tx, user, records)))
+            for value in values.values():
                 value.pop(child.link, None)
                 value.pop('evlet_position', None)
-                children[child.name].append(value)
-        if children:
-            result['children'] = children
-        return result
+            for owner, result in results.items():
+                rows, total = found.get(owner, ((), 0))
+                result.setdefault('children', {})[child.name] = [values[record.id] for record in rows]
+                if total > len(rows):
+                    result.setdefault('children_pages', {})[child.name] = {'total': total, 'limit': row_limit, 'partial': True}
+            if values:
+                self.embed(tx, user, child.model, values, row_limit)
+
+    def lines(self, scope, user, model, record_id, path):
+        """GET /api/{model}/{id}/lines/{name}[/{row id}/{name}...]: one page of a readable owned collection."""
+        from .documents import owned_rows
+        try:
+            raw = scope.get('query_string', b'')
+            query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=2) if len(raw) <= 256 else None
+            if query is None or set(query) - {'limit', 'offset'} or any(len(values) != 1 for values in query.values()):
+                raise ValueError()
+            limit, offset = query.get('limit', [str(EMBEDDED_ROWS)])[0], query.get('offset', ['0'])[0]
+            if not re.fullmatch('[0-9]{1,19}', limit) or not re.fullmatch('[0-9]{1,19}', offset):
+                raise ValueError()
+            limit, offset = int(limit), int(offset)
+            if not 1 <= limit <= ROW_LIMIT or offset > 2**63-1:
+                raise ValueError()
+        except (ValueError, UnicodeError):
+            raise ValidationError({'query': f'Use a limit of 1 to {ROW_LIMIT} rows and a nonnegative offset'})
+        if len(path) % 2 != 1:
+            raise AccessError(404, 'Route not found')
+        with self.database._connection() as connection:
+            connection.execute('BEGIN')
+            tx = Session(connection, self.registry)
+            self.policy.record(tx, user, model, record_id)
+            owner, owner_id = model, record_id
+            for index in range(0, len(path), 2):
+                child = self.children.get((owner, path[index]))
+                if child is None or not self.policy.allows(user, child.model, 'read'):
+                    raise AccessError(404, 'Collection not found')
+                if index + 1 == len(path):
+                    break
+                if not re.fullmatch('[1-9][0-9]{0,18}', path[index + 1]) or int(path[index + 1]) > 2**63-1:
+                    raise AccessError(404, 'Record not found')
+                row = self.policy.record(tx, user, child.model, int(path[index + 1]))
+                if getattr(row, child.link) != owner_id:
+                    raise AccessError(404, 'Record not found')
+                owner, owner_id = child.model, row.id
+            where, values = self.policy.scope_sql(user, child.model)
+            where += (' AND ' if where else ' WHERE ') + f'record.{identifier(child.link)} = ?'
+            values = [*values, owner_id]
+            table = identifier(self.registry.name_for(child.model))
+            order = ' ORDER BY record."evlet_position", record.id' if 'evlet_position' in child.model.__fields__ else ' ORDER BY record.id'
+            rows = [child.model._from_row(row) for row in connection.execute(
+                f'SELECT record.* FROM {table} AS record{where}{order} LIMIT ? OFFSET ?', [*values, limit, offset]).fetchall()]
+            total = connection.execute(f'SELECT count(*) FROM {table} AS record{where}', values).fetchone()[0]
+            items = dict(zip((row.id for row in rows), self.policy.serialize_many(tx, user, rows)))
+            for item in items.values():
+                item.pop(child.link, None)
+                item.pop('evlet_position', None)
+            if items:
+                self.embed(tx, user, child.model, items)
+        return 200, {'items': list(items.values()), 'total': total, 'limit': limit, 'offset': offset}, []
 
     def page(self, scope, user, model):
         self.policy.require(user, model, 'read')
