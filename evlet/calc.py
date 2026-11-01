@@ -396,6 +396,31 @@ def is_finite(field):
     return isinstance(field.compute, Expr)
 
 
+KINDS = ('initial', 'applies_when', 'required_when', 'locked_when')
+# Field kinds that finite expressions cannot read or produce.
+OPAQUE = ('tags', 'reference', 'time')
+
+
+def options(field):
+    """(kind, expression) finite options a field declares: compute, then initial and the rules."""
+    result = [('compute', field.compute)] if is_finite(field) else []
+    for kind in KINDS:
+        value = getattr(field, kind, None)
+        if value is not None:
+            result.append((kind, value if isinstance(value, Expr) else lift(value)))
+    return result
+
+
+def uses_finite(field):
+    """Whether a field makes its document a finite-v1 document (finite compute, initial or a rule)."""
+    return bool(options(field))
+
+
+def node_name(entry):
+    """Document node name of a plan entry: the field for a calculation, field:kind for initial and rules."""
+    return entry['field'] if entry.get('kind') is None else entry['field'] + ':' + entry['kind']
+
+
 def root_language(model):
     meta = getattr(model, 'Meta', None)
     language = getattr(meta, 'calculation_language', None)
@@ -443,7 +468,10 @@ def compile_expression(expr, context, target):
         if name not in owner.__declared_fields__ or name in getattr(owner, '__internal_fields__', ()):
             code = 'PARENT_FIELD_INCOMPATIBLE' if scope == 'parent' else 'UNSUPPORTED_EXPRESSION'
             fail(code, f'{scope}.{name} is not a declared field' if scope != 'self' else f'unknown field {name}')
-        return name, field_type(owner.__declared_fields__[name])
+        kind = field_type(owner.__declared_fields__[name])
+        if kind in OPAQUE:
+            fail('UNSUPPORTED_EXPRESSION', f'{name} is a {kind} field; calculations cannot read it')
+        return name, kind
 
     def link_path(path):
         """A dotted path through Link fields; every step after the first reads a host-supplied lookup."""
@@ -466,8 +494,10 @@ def compile_expression(expr, context, target):
             kind = field_type(field)
             if kind == 'datetime':
                 fail('COMPUTE_TYPE_ERROR', f'{path}: {name} is a DateTime; Link paths support Date fields only')
+            if kind not in HOP_TYPES:
+                fail('UNSUPPORTED_EXPRESSION', f'{path}: {name} is a {kind} field; calculations cannot read it')
             model_name = context.registry.name_for(target)
-            steps.append([model_name, name, kind])
+            steps.append([model_name, name, 'duration' if field.kind == 'duration' else kind])
             reads.append(('lookup', model_name, name))
             link = field if isinstance(field, Link) else None
         return {'$expr': 'hop', 'field': first, 'steps': steps}, kind, False
@@ -605,7 +635,7 @@ def compile_plan(registry, root):
         for name, child in children.items():
             walk(child, path + (name,), owners, model)
     walk(root, (), (), None)
-    finite = any(is_finite(field) for model, _, _ in tables.values() for field in model.__declared_fields__.values())
+    finite = any(uses_finite(field) for model, _, _ in tables.values() for field in model.__declared_fields__.values())
     if not finite and language is None:
         return None
     fields, schema = [], {}
@@ -626,19 +656,30 @@ def compile_plan(registry, root):
         schema[address(path, '').rstrip('.') or '$root'] = {'path': list(path), 'model': registry.name_for(model), 'fields': entry,
                                                                'tables': sorted(children)}
         for name, field in model.__declared_fields__.items():
-            if not is_finite(field):
-                continue
-            if field.default is not MISSING or field.fetch is not None or field.query is not None:
-                raise CalcError('UNSUPPORTED_EXPRESSION', f'{address(path, name)}: a computed field has one writer; remove its default/fetch/query')
-            target = field_type(field)
-            context = _Context(model, path, parent_model, children, registry=registry)
-            ir, kind, reads = compile_expression(field.compute, context, name)
-            if target != kind:
-                raise CalcError('COMPUTE_TYPE_ERROR', f'{address(path, name)}: expression type {kind} does not match {target}')
-            fields.append({'target': address(path, name), 'path': list(path), 'field': name, 'result_type': kind,
-                           'target_type': field.kind, 'scale': entry[name]['scale'], 'stored': field.stored,
-                           'rounding': getattr(field, 'rounding', None) if kind == 'decimal' else None,
-                           'expression': ir, 'reads': [list(read) for read in reads]})
+            for option, source in options(field):
+                if option == 'compute' and (field.default is not MISSING or field.fetch is not None or field.query is not None):
+                    raise CalcError('UNSUPPORTED_EXPRESSION', f'{address(path, name)}: a computed field has one writer; remove its default/fetch/query')
+                if name in getattr(model, '__internal_fields__', ()):
+                    raise CalcError('UNSUPPORTED_EXPRESSION', f'{address(path, name)}: framework fields take no expressions')
+                target = field_type(field)
+                context = _Context(model, path, parent_model, children, registry=registry)
+                label = name if option == 'compute' else name + ':' + option
+                ir, kind, reads = compile_expression(source, context, label)
+                item = {'target': address(path, label), 'path': list(path), 'field': name}
+                if option in ('compute', 'initial'):
+                    if target in OPAQUE:
+                        raise CalcError('UNSUPPORTED_EXPRESSION', f'{address(path, label)}: a {target} field cannot be calculated')
+                    if target != kind:
+                        raise CalcError('COMPUTE_TYPE_ERROR', f'{address(path, label)}: expression type {kind} does not match {target}')
+                elif kind != 'boolean':
+                    raise CalcError('COMPUTE_TYPE_ERROR', f'{address(path, label)}: {option} must be a Boolean expression, not {kind}')
+                if option != 'compute':
+                    item['kind'] = option
+                item.update({'result_type': kind, 'target_type': field.kind,
+                             'scale': entry[name]['scale'] if option in ('compute', 'initial') else None, 'stored': field.stored,
+                             'rounding': getattr(field, 'rounding', None) if kind == 'decimal' and option in ('compute', 'initial') else None,
+                             'expression': ir, 'reads': [list(read) for read in reads]})
+                fields.append(item)
         lookups = {}
         for item in fields:
             for scope, model_name, name in item['reads']:
@@ -683,9 +724,29 @@ def template_reads(field):
 
 
 def template_order(fields):
-    """Deterministic topological order; any value cycle fails with a closed path."""
+    """Deterministic topological order; any value cycle fails with a closed path.
+
+    A field's value is written by its calculation, or by its initial and then its applies_when
+    (which may clear it). Readers follow the last writer. An initial waits for its own field's
+    lock, so a locked field is not overwritten.
+    """
     index = {field['target']: position for position, field in enumerate(fields)}
-    edges = {field['target']: sorted(read for read in template_reads(field) if read in index) for field in fields}
+    writers, own = {}, {}
+    for kind in (None, 'initial', 'applies_when'):
+        for field in fields:
+            if field.get('kind') == kind:
+                writers[address(tuple(field['path']), field['field'])] = field['target']
+    for field in fields:
+        own.setdefault(address(tuple(field['path']), field['field']), {})[field.get('kind')] = field['target']
+    edges = {}
+    for field in fields:
+        reads = {writers[read] for read in template_reads(field) if read in writers}
+        mine = own[address(tuple(field['path']), field['field'])]
+        if field.get('kind') == 'applies_when' and 'initial' in mine:
+            reads.add(mine['initial'])
+        if field.get('kind') == 'initial' and 'locked_when' in mine:
+            reads.add(mine['locked_when'])
+        edges[field['target']] = sorted(reads)
     cycle = find_cycle(edges)
     if cycle:
         raise CalcError('MODEL_DEPENDENCY_CYCLE', ' -> '.join(cycle), cycle)
@@ -764,10 +825,13 @@ def formula_hash(plan):
     """Hash of only what decides calculated results: the formulas and the fields they read or write.
 
     Saved documents record this hash, so unrelated model edits (a new text field, a changed
-    default or label) do not force every saved document to be recalculated.
+    default or label) do not force every saved document to be recalculated. Initial suggestions
+    and required or locked rules never change a saved result, so they are left out; applies_when
+    can clear a value calculations read, so it counts.
     """
-    used = {(tuple(field['path']), field['field']) for field in plan['fields']}
-    for field in plan['fields']:
+    deciding = [field for field in plan['fields'] if field.get('kind') in (None, 'applies_when')]
+    used = {(tuple(field['path']), field['field']) for field in deciding}
+    for field in deciding:
         for scope, table, name in field['reads']:
             if scope == 'self':
                 used.add((tuple(field['path']), name))
@@ -784,7 +848,7 @@ def formula_hash(plan):
     body = {key: plan[key] for key in ('plan_version', 'language', 'numeric_profile', 'expression_version', 'compiler_version')}
     # A field's rounding counts only when it differs from its type default, so plans that predate it keep their hash.
     formulas = [{key: value for key, value in field.items() if key != 'rounding' or value not in (None, default_rounding(field['target_type']))}
-                for field in plan['fields']]
+                for field in deciding]
     body.update(formulas=formulas, fields=fields)
     return 'sha256:' + hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
@@ -993,6 +1057,8 @@ def source_value(meta, raw, at):
     if raw is None or raw == '' and meta['type'] != 'text':
         return ready(None)
     try:
+        if meta['type'] == 'duration' or meta.get('kind') == 'duration':
+            return ready(duration(raw))
         if meta['type'] == 'decimal':
             return ready(parse(raw))
         if meta['type'] == 'date':
@@ -1004,6 +1070,20 @@ def source_value(meta, raw, at):
         return error(exc.code, [at])
 
 
+def duration(raw):
+    """Whole seconds from an ISO 8601 duration (PT1H30M) or a whole number of seconds."""
+    from .fields import duration_seconds
+    if isinstance(raw, str) and raw.startswith('P'):
+        seconds = duration_seconds(raw)
+        if seconds is None:
+            raise CalcError('COMPUTE_TYPE_ERROR', 'Use an ISO 8601 duration such as PT1H30M')
+        return normalize(seconds, 0)
+    value = parse(raw)
+    if value.scale:
+        raise CalcError('COMPUTE_TYPE_ERROR', 'A duration is a whole number of seconds')
+    return value
+
+
 def check_async(value):
     if inspect.isawaitable(value):
         if hasattr(value, 'close'): value.close()
@@ -1012,13 +1092,21 @@ def check_async(value):
 
 # Document sessions: one bound graph per root, synchronous batches, one publication.
 
+MISSING_VALUE = object()
+
+
+def same_value(values, field, value):
+    """Whether setting a source leaves it unchanged; objects and lists always count as a change."""
+    return field in values and not isinstance(value, (dict, list)) and type(values[field]) is type(value) and values[field] == value
+RULES = ('applies_when', 'required_when', 'locked_when')
+
 class Row:
-    __slots__ = ('handle', 'path', 'values', 'parent', 'children', 'id', 'key', 'label', 'order')
+    __slots__ = ('handle', 'path', 'values', 'parent', 'children', 'id', 'key', 'label', 'order', 'created')
 
     def __init__(self, handle, path, parent, record_id, key):
         self.handle, self.path, self.parent = handle, path, parent
         self.values, self.children, self.id, self.key = {}, {}, record_id, key
-        self.label, self.order = '', 0
+        self.label, self.order, self.created = '', 0, False
 
 
 class Scope:
@@ -1053,9 +1141,10 @@ class Document:
             check_plan(plan)
         self.plan, self.hash = plan, plan['model_schema_hash']
         self.schema = {tuple(entry['path']): entry for entry in plan['tables'].values()}
-        self.templates = {}
+        self.templates, self.entries = {}, {}
         for position, field in enumerate(plan['fields']):
             self.templates.setdefault(tuple(field['path']), []).append((position, field))
+            self.entries[tuple(field['path']), node_name(field)] = field
         self.budget_limit = plan['limits']['evaluation_steps'] if budget is None else budget
         self.rows, self.results, self.counts = {}, {}, {}
         # Host inputs: today's date and Link lookups {model: {id: {field: value}}}; misses are lookups still wanted.
@@ -1065,14 +1154,22 @@ class Document:
             for scope, model, name in field['reads']:
                 if scope == 'lookup':
                     self.lookup_fields.setdefault(model, set()).add(name)
-        self.observers, self.table_observers = {}, {}
+        self.observers, self.table_observers, self.rule_observers = {}, {}, {}
         self.revision, self.structure_revision, self._next = 0, 0, 0
         self._batch = None
         self._publishing = self._disposed = False
         self.trace, self.deps = {}, {}
+        # Initial suggestions waiting to be written, and fields the host set in the current write (touched).
+        self.armed, self.touched = set(), set()
+        # Lock results of the document as loaded (handle -> field -> True, False or None when undecided).
+        # Saved rows keep them until rebase(); host inputs such as lookups refine them until the first edit.
+        self.locks, self._pristine = {}, True
         self.root = self._build(data or {}, (), None)
         self._bind()
-        self._settle(set(), set(self.deps))
+        created = {node for node in self.deps if self.rows[node[0]].created and node[1].endswith(':initial')}
+        self._settle(set(), set(self.deps), self.touched, created)
+        self.touched = set()
+        self._take_locks(saved=True)
         self.revision = 1
 
     # Structure
@@ -1101,6 +1198,7 @@ class Document:
         if len(self.rows) - 1 > self.plan['limits']['document_rows']:
             raise CalcError('CALCULATION_LIMIT_EXCEEDED', 'The document has too many rows')
         fresh = record_id is None if created is None else created
+        row.created = fresh
         for name, value in data.items():
             if name in ('id', '_key', 'children', '_handle'):
                 continue
@@ -1111,6 +1209,9 @@ class Document:
                 raise CalcError('COMPUTED_FIELD_WRITE', f'{name} is calculated')
             if not meta['computed']:
                 row.values[name] = value
+                if fresh:
+                    # A value supplied with a new row is the host's choice: its initial does not replace it.
+                    self._touch(handle, name)
         if fresh:
             self._defaults(row, entry)
         children = data.get('children') or {}
@@ -1142,6 +1243,9 @@ class Document:
             else:
                 row.values[name] = default['value']
 
+    def _touch(self, handle, field):
+        (self._batch['touched'] if self._batch is not None else self.touched).add((handle, field))
+
     def _place(self, owner, table, row, at):
         items = owner.children[table]
         if any(item.key == row.key for item in items if item is not row):
@@ -1166,8 +1270,9 @@ class Document:
         deps, order, edges = {}, [], 0
         for handle, row in self.rows.items():
             for position, field in self.templates.get(row.path, ()):
-                node = (handle, field['field'])
-                inputs = set()
+                node = (handle, node_name(field))
+                # applies_when also runs when its own field changes, so a value set while it does not apply is cleared.
+                inputs = {(handle, field['field'])} if field.get('kind') == 'applies_when' else set()
                 for scope, table, name in field['reads']:
                     if scope == 'self':
                         inputs.add((handle, name))
@@ -1215,20 +1320,34 @@ class Document:
             return pending('COMPUTE_INPUT_MISSING', ['@today'])
         return source_value({'type': 'date'}, self.today, '@today')
 
-    def _settle(self, changed, fresh):
-        """Visit the global order once; evaluate a node only if an input changed."""
+    def _settle(self, changed, fresh, touched=frozenset(), arm=frozenset()):
+        """Visit the global order once; evaluate a node only if an input changed.
+
+        An initial is armed when its row is new or a document input it reads changed (host inputs such
+        as lookups and today() do not arm it). A field touched in this write disarms it. An armed
+        initial writes its first ready result unless the field is locked. applies_when clears its field.
+        """
         budget = Budget(self.budget_limit)
         changed, updated, evaluated, skipped = set(changed), set(), 0, 0
-        templates = {(field['field'], tuple(field['path'])): field for field in self.plan['fields']}
         for node in self.order:
+            row = self.rows[node[0]]
+            field = self.entries[row.path, node[1]]
+            kind = field.get('kind')
+            if kind == 'initial':
+                if node in arm or any(item in changed and not item[0].startswith('@') for item in self.deps[node]):
+                    self.armed.add(node)
+                if (node[0], field['field']) in touched:
+                    self.armed.discard(node)
             if node not in fresh and not (self.deps[node] & changed):
                 skipped += 1
                 continue
-            row = self.rows[node[0]]
-            field = templates[node[1], row.path]
             at = row.label + node[1]
             scope = Scope(self, row, at=at)
-            outcome = convert(evaluate(field['expression'], scope, budget), field, at, self.schema[row.path]['fields'][node[1]])
+            outcome = evaluate(field['expression'], scope, budget)
+            if kind is None:
+                outcome = convert(outcome, field, at, self.schema[row.path]['fields'][node[1]])
+            elif kind == 'initial':
+                outcome = convert(outcome, field, at)
             if scope.misses:
                 self.misses[node] = scope.misses
             else:
@@ -1239,6 +1358,20 @@ class Document:
                 self.results[node] = outcome
                 changed.add(node)
                 updated.add(node)
+            target, value = (node[0], field['field']), MISSING_VALUE
+            if kind == 'initial' and node in self.armed and outcome.state != 'pending':
+                self.armed.discard(node)
+                if outcome.state == 'ready' and not self.locked(row, field['field']):
+                    value = wire(outcome.value, field['scale'])
+            elif kind == 'applies_when' and outcome.state == 'ready' and outcome.value is False and row.values.get(target[1]) is not None \
+                    and self.locks.get(row.handle, {}).get(field['field'], False) is False:
+                # A field locked on the saved row keeps its value; the server refuses the write instead.
+                value = None
+            if value is not MISSING_VALUE and (target[1] not in row.values or row.values[target[1]] != value
+                                               or type(row.values[target[1]]) is not type(value)):
+                row.values[target[1]] = value
+                changed.add(target)
+                updated.add(target)
         self.trace = {'evaluated': evaluated, 'skipped': skipped, 'steps': budget.steps, 'changed': sorted(row_address(self, node) for node in updated)}
         return updated
 
@@ -1248,7 +1381,7 @@ class Document:
         self._usable()
         outer = self._batch is None
         if outer:
-            self._batch = {'snapshot': self._capture(), 'bound': set(self.deps), 'sources': set(), 'membership': set(), 'moved': set(), 'structure': False, 'order': set()}
+            self._batch = {'snapshot': self._capture(), 'bound': set(self.deps), 'sources': set(), 'membership': set(), 'moved': set(), 'structure': False, 'order': set(), 'touched': set()}
         if not outer:
             # A nested batch is one command: if its error is caught, its changes are undone.
             return self._command(lambda: check_async(run(self)))
@@ -1299,8 +1432,10 @@ class Document:
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'Unknown field {field}')
             if meta['computed']:
                 raise CalcError('COMPUTED_FIELD_WRITE', f'{row.label}{field} is calculated')
-            row.values[field] = value
-            self._batch['sources'].add((handle, field))
+            self._batch['touched'].add((handle, field))
+            if not same_value(row.values, field, value):
+                row.values[field] = value
+                self._batch['sources'].add((handle, field))
         self._command(run)
 
     def set_today(self, value):
@@ -1383,8 +1518,10 @@ class Document:
                         meta = self.schema[row.path]['fields'].get(name)
                         if meta is None or meta['computed']:
                             raise CalcError('COMPUTED_FIELD_WRITE' if meta else 'DOCUMENT_STRUCTURE_ERROR', f'{name} cannot be written')
-                        row.values[name] = value
-                        self._batch['sources'].add((row.handle, name))
+                        self._batch['touched'].add((row.handle, name))
+                        if not same_value(row.values, name, value):
+                            row.values[name] = value
+                            self._batch['sources'].add((row.handle, name))
                 else:
                     row = self._build(data, parent_row.path + (table,), parent_row, created=True)
                 self._place(parent_row, table, row, len(parent_row.children[table]))
@@ -1452,10 +1589,10 @@ class Document:
                  for handle, row in self.rows.items()}, dict(self.results), self._next, dict(self.counts),
                 {key: list(items) for key, items in self.observers.items()},
                 {key: list(items) for key, items in self.table_observers.items()}, dict(self.trace),
-                (self.today, self.lookups, dict(self.misses)))
+                (self.today, self.lookups, dict(self.misses)), (set(self.armed), {key: list(items) for key, items in self.rule_observers.items()}))
 
     def _restore(self, snapshot):
-        rows, results, counter, counts, observers, tables, trace, (self.today, self.lookups, self.misses) = snapshot
+        rows, results, counter, counts, observers, tables, trace, (self.today, self.lookups, self.misses), (self.armed, self.rule_observers) = snapshot
         for handle, (row, values, children, owner) in rows.items():
             row.values, row.children, row.parent = values, children, owner
         self.rows = {handle: state[0] for handle, state in rows.items()}
@@ -1474,9 +1611,14 @@ class Document:
             self.counts.pop(node, None)
             self.misses.pop(node, None)
         fresh = (live - old) | {node for node in live if node[0] in batch['moved']}
-        updated = self._settle(batch['sources'] | batch['membership'], fresh)
+        updated = self._settle(batch['sources'] | batch['membership'], fresh, batch['touched'],
+                               {node for node in fresh if node[1].endswith(':initial')})
         if not (updated or batch['sources'] or batch['structure']):
             return [], []
+        if batch['structure'] or any(not key[0].startswith('@') for key in batch['sources']):
+            self._pristine = False
+        elif self._pristine:
+            self._take_locks(saved=True)
         self.revision += 1
         if batch['structure']:
             self.structure_revision += 1
@@ -1484,9 +1626,13 @@ class Document:
             self.observers.pop(node)
         for key in [key for key in self.table_observers if key[0] not in self.rows]:
             self.table_observers.pop(key)
+        for key in [key for key in self.rule_observers if key not in self.rows]:
+            self.rule_observers.pop(key)
         notify = [(node, listeners) for node, listeners in self.observers.items() if node in updated or node in batch['sources']]
         tables = [(key, listeners) for key, listeners in self.table_observers.items()
                   if (key[0], '#' + key[1]) in batch['membership'] or key in batch['order']]
+        rules = {node[0] for node in updated if node[1].rpartition(':')[2] in RULES}
+        tables += [((handle, None), listeners) for handle, listeners in self.rule_observers.items() if handle in rules]
         return notify, tables
 
     def _publish(self, notify, tables):
@@ -1498,9 +1644,9 @@ class Document:
                     try: listener(outcome)
                     except Exception as exc: failures.append(exc)
             for (handle, table), listeners in tables:
-                handles = [row.handle for row in self.rows[handle].children[table]]
+                payload = self.rule_states(handle) if table is None else [row.handle for row in self.rows[handle].children[table]]
                 for listener in list(listeners):
-                    try: listener(handles)
+                    try: listener(payload)
                     except Exception as exc: failures.append(exc)
         finally:
             self._publishing = False
@@ -1532,8 +1678,64 @@ class Document:
                 self.table_observers[handle, table].remove(listener)
         return unsubscribe
 
+    def observe_rules(self, handle, listener):
+        """Call listener(rule_states(handle)) after each batch that changes one of this row's rule results."""
+        self._usable()
+        self._row(handle)
+        listeners = self.rule_observers.setdefault(handle, [])
+        listeners.append(listener)
+
+        def unsubscribe():
+            if listener in self.rule_observers.get(handle, []):
+                self.rule_observers[handle].remove(listener)
+        return unsubscribe
+
+    def decided(self, row, field, kind, undecided):
+        """A rule's Boolean result, or `undecided` when it has no ready true/false value."""
+        result = self.results.get((row.handle, field + ':' + kind))
+        if (row.handle, field + ':' + kind) not in self.deps:
+            return None
+        return result.value if result is not None and result.state == 'ready' and result.value is not None else undecided
+
+    def _take_locks(self, saved):
+        """Record lock results as the saved state: rows loaded with an ID, or every row on rebase()."""
+        self.locks = {handle: {entry['field']: self.decided(row, entry['field'], 'locked_when', None)
+                               for _, entry in self.templates.get(row.path, ()) if entry.get('kind') == 'locked_when'}
+                      for handle, row in self.rows.items() if not (saved and row.created)}
+
+    def rebase(self):
+        """After the host saves this document: its current locks become the saved state."""
+        self._usable()
+        self._take_locks(saved=False)
+        for row in self.rows.values():
+            row.created = False
+        self._pristine = True
+
+    def locked(self, row, field):
+        """A field's lock as the server enforces it: decided on the saved row, or now for a new row."""
+        saved = self.locks.get(row.handle, {})
+        value = saved[field] if field in saved else self.decided(row, field, 'locked_when', None)
+        return value is not False and (field in saved or (row.handle, field + ':locked_when') in self.deps)
+
+    def rule_states(self, handle):
+        """{field: {applies, required, locked}} for fields of this row that declare rules.
+
+        Undecided rules (pending, error or null) fail closed: the field applies, is required and is locked.
+        A saved row's lock is decided on the row as loaded, so one write cannot unlock and change a field.
+        """
+        row = self._row(handle)
+        states = {}
+        for _, entry in self.templates.get(row.path, ()):
+            if entry.get('kind') in RULES and entry['field'] not in states:
+                name = entry['field']
+                applies = self.decided(row, name, 'applies_when', True) is not False
+                required = bool(self.schema[row.path]['fields'][name]['required'] or self.decided(row, name, 'required_when', True))
+                states[name] = {'applies': applies, 'required': applies and required, 'locked': self.locked(row, name)}
+        return dict(sorted(states.items()))
+
     def subscriptions(self):
-        return sum(len(items) for items in self.observers.values()) + sum(len(items) for items in self.table_observers.values())
+        return (sum(len(items) for items in self.observers.values()) + sum(len(items) for items in self.table_observers.values())
+                + sum(len(items) for items in self.rule_observers.values()))
 
     def explain(self, handle, field):
         row = self._row(handle)
@@ -1562,7 +1764,7 @@ class Document:
         result.update(row.values)
         states = {}
         for field in self.plan['fields']:
-            if tuple(field['path']) != row.path:
+            if tuple(field['path']) != row.path or field.get('kind'):
                 continue
             outcome = self.results.get((row.handle, field['field']))
             result[field['field']] = wire(outcome.value, field['scale']) if outcome and outcome.state == 'ready' else None
@@ -1591,6 +1793,8 @@ class Document:
             raise CalcError('REACTIVE_REENTRANCY', 'Observers cannot dispose the document during publication')
         self.observers.clear()
         self.table_observers.clear()
+        self.rule_observers.clear()
+        self.armed.clear()
         self.rows.clear()
         self.results.clear()
         self.misses.clear()
@@ -1618,6 +1822,8 @@ def check_plan(plan):
             raise CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target scale')
         if field.get('rounding') not in (None, *ROUNDING):
             raise CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target rounding')
+        if field.get('kind', None) not in (None, *KINDS) or 'kind' in field and field['kind'] is None:
+            raise CalcError('UNSUPPORTED_EXPRESSION', 'Invalid plan entry kind')
         check_node(field['expression'], 0, [0])
     for table in plan['tables'].values():
         for meta in table['fields'].values():
@@ -1633,7 +1839,7 @@ ARITY = {'add': 2, 'sub': 2, 'mul': 2, 'div': 2, 'neg': 1, 'eq': 2, 'ne': 2, 'lt
 LITERALS = {'decimal': str, 'boolean': bool, 'text': str}
 NAME = r'[A-Za-z][A-Za-z0-9_]*'
 MODEL_NAME = r'[a-z0-9_]{1,64}'
-HOP_TYPES = {'decimal', 'boolean', 'date', 'text', 'link'}
+HOP_TYPES = {'decimal', 'boolean', 'date', 'text', 'link', 'duration'}
 
 
 def hop_steps(steps):

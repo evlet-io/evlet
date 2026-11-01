@@ -36,6 +36,9 @@ records the owner's decision and wins.
 | `applies_when` / `required_when` / `locked_when` | legacy strings `visible_if` / `required_if` / `read_only_if` | Add typed rules; legacy strings stay for legacy roots |
 | `Lines(...)` | `Table(Child)` with nesting, `evlet_position`, the `children` envelope | Keep `Table`; add `min_rows`, `max_rows` (to 1,000), row changes, paging, batched loading |
 | `State`, `Move`, model `@action` | `Select`, `@action(label, roles)` | Add `State`, `Move`, action `inputs` and `available_when` |
+| `Ref()` field (Phases 2, 5, 6: `revises = Ref()`, `source = Ref()`) | `Ref("parent.x")` already means a path | The field type is `Reference()`; `Ref(path)` keeps its meaning |
+| `locked_when` | none | Decided on the record as saved before the write, so one write cannot unlock and change a field |
+| `ChildTable` on finite models | legacy child rows skip finite rules | A `ChildTable` whose child uses finite features is rejected; use `Table(Child)` |
 | Void, revise, Effects, Sequence, Journal, Measures, meaning metadata | none | New |
 
 ## Phases and branches

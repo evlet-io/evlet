@@ -20,6 +20,14 @@ def value_schema(field, *, read=False):
         value.update({key: field[key] for key in ('minimum', 'maximum') if field.get(key) is not None})
     elif kind == 'boolean':
         value = {'type': 'boolean'}
+    elif kind == 'tags':
+        value = {'type': 'array', 'items': {'type': 'string', 'minLength': 1, 'maxLength': 40}, 'maxItems': 20, 'uniqueItems': True}
+    elif kind == 'reference':
+        value = {'type': 'object', 'properties': {'model': {'type': 'string'}, 'id': ID}, 'required': ['model', 'id'], 'additionalProperties': False}
+    elif kind == 'duration':
+        value = {'anyOf': [{'type': 'string', 'pattern': r'^P(?:[0-9]+D)?(?:T(?:[0-9]+H)?(?:[0-9]+M)?(?:[0-9]+S)?)?$'},
+                           {'type': 'integer', 'minimum': 0, 'maximum': 2**63 - 1}],
+                 'description': 'An ISO 8601 duration such as PT1H30M, or whole seconds.'}
     else:
         value = {'type': 'string'}
         if field.get('max_length'):
@@ -28,7 +36,9 @@ def value_schema(field, *, read=False):
             value['enum'] = field['choices']
         if kind in ('date', 'datetime', 'email', 'url'):
             value['format'] = {'date': 'date', 'datetime': 'date-time', 'email': 'email', 'url': 'uri'}[kind]
-        if kind in ('currency', 'decimal'):
+        if kind == 'time':
+            value['pattern'] = r'^[0-9]{2}:[0-9]{2}(:[0-9]{2})?$'
+        if kind in ('currency', 'decimal', 'percent'):
             scale = field['scale']
             value['pattern'] = r'^-?[0-9]+$' if not scale else rf'^-?[0-9]+(?:\.[0-9]{{1,{scale}}})?$'
             value['description'] = 'Use an exact decimal string. Bounds and business validation apply on the server.'

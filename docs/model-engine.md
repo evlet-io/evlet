@@ -42,6 +42,47 @@ class Contact(Model):
   `ValidationError({"field": "message"})`. Both creation and updates run validation.
   Records remain immutable snapshots; change them through the database API.
 
+### More field types
+
+```python
+from evlet import Currency, Duration, Model, Percent, Phone, Reference, Tags, Text, Time
+
+class Visit(Model):
+    phone = Phone()                       # "+971 50 123 4567" is stored as "+971501234567"
+    discount = Percent(default="0")       # two places, 0 to 100 unless minimum/maximum are given
+    starts = Time()                       # "09:30" or "09:30:00", no timezone
+    length = Duration(default=0)          # "PT1H30M" or 5400; returned as "PT1H30M"
+    labels = Tags()                       # ["vip", "north"]
+    about = Reference()                   # {"model": "customer", "id": 4}, any registered model
+    fee = Currency(currency="AED")        # or currency="code_field" naming a text field
+    code_field = Text(default="AED")
+```
+
+| Type | Storage | Rules | Filters |
+| --- | --- | --- | --- |
+| `Phone` | TEXT, 32 characters | digits, spaces, `+`, `-` and parentheses, 3 to 15 digits; a number starting with `+` is stored in E.164 form | text filters |
+| `Percent` | scaled INTEGER like `Decimal` | scale 2, default bounds 0 to 100 | number filters |
+| `Time` | TEXT `HH:MM:SS` | no timezone, whole seconds | equality and order |
+| `Duration` | INTEGER seconds | ISO 8601 days, hours, minutes and seconds (`P1DT2H`, `PT90M`) or whole seconds, 0 or more | number filters; values in either form |
+| `Tags` | TEXT JSON array | at most 20 distinct tags (ignoring case) of 1 to 40 characters, without quotes, backslashes, commas or control characters; a text value is split on commas | `contains` matches one whole tag exactly, including case (duplicates are detected ignoring case); equality matches the whole list |
+| `Reference` | two columns `<name>_model`, `<name>_id`, no SQL foreign key | a registered model and a record that exists, checked when the value changes | equality with `{"model", "id"}` and `isnull` |
+
+`Reference` is the field type; `Ref("parent.warehouse")` keeps meaning a declared path for
+defaults and filters. A reference cannot be unique, indexed,
+ordered or followed in a filter path, and its columns must not collide with other fields.
+Reading a reference needs read access to its target record: otherwise the value is shown
+as null, including the model it names. HTTP filters on a reference need read access without
+row scope to the model named in the filter value (`{"about": {...}}` or `about__eq`), and to
+every model for any other form such as `isnull`. Renaming a reference with `RenameField`
+renames both columns. `Database.related()` does not
+follow references; read the target with `get`.
+
+`currency=` on `Currency` is display metadata in `/api/schema` (`"currency"`): an ISO 4217
+code or the name of a text or select field on the same model. Evlet never converts amounts.
+
+`Percent` and `Duration` work as numbers in finite expressions; `Phone` works as text.
+`Time`, `Tags` and references cannot be used in calculations.
+
 ## Updates, deletes, and relationships
 
 ```python
@@ -162,11 +203,35 @@ A legacy database without schema metadata must first be initialized with its
 original models, then explicitly upgraded.
 
 Supported operations are deliberately bounded: add a model, add a field, rename
-a field, and add an index. Fixed backfills are validated; required added fields
+a field, add an index, and recalculate stored values. Fixed backfills are validated; required added fields
 need a value. Callable or NUL-containing backfills, non-null Link backfills, removals, arbitrary
 type changes, decimal scale changes, and reverse migrations are not supported.
 They fail instead of rebuilding tables or guessing how to transform existing data.
 Changes to runtime defaults alone do not require a database migration.
+
+### Recalculating stored values
+
+```python
+from evlet import Migration, Recompute
+
+Migration("0004_vat_rounding",
+          Recompute("invoice_items", ("net", "vat")),
+          Recompute("invoice", ("net_total", "grand_total")))
+```
+
+`Recompute(model, fields)` recalculates stored calculated fields of every existing row with
+the current formulas. The model is a storage name, including an owned table such as
+`invoice_items`; each whole document is loaded and settled, so totals see the new row
+values, Link paths are read in the same transaction and results round with each field's
+`rounding`. `today()` is the UTC date. Recompute runs inside the migration transaction after
+the batch's structural changes, in declaration order. A result that is pending, an error or
+outside the field's bounds fails the migration and rolls back the whole batch. It is part of
+the migration checksum like any operation. When the batch recalculates every stored result
+of a finite-v1 document, its saved documents are marked as calculated with the active
+formulas, so they save without a recalculation request. On the recalculated rows, values of
+fields whose `applies_when` is false are stored as null, matching the results. String formulas are supported on
+models without tables or query sources. Like other operations, Recompute is not replayed
+when a database adopts its baseline (a fresh database, or one initialized without history).
 
 Back up existing databases before migrating. A backup is not a rollback command:
 restoring it after later writes would discard those newer writes.

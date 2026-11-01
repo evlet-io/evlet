@@ -151,7 +151,7 @@ class Budget {
 
 export interface Row {
   handle: string; path: string[]; values: Record<string, any>; parent: Row | null;
-  children: Record<string, Row[]>; id: number | null; key: string; label: string; order: number;
+  children: Record<string, Row[]>; id: number | null; key: string; label: string; order: number; created: boolean;
 }
 
 class Scope {
@@ -290,10 +290,26 @@ function convert(result: Result, field: any, at: string, meta?: any): Result {
   return result;
 }
 
+// Whole seconds from an ISO 8601 duration (PT1H30M, P2DT4H) or a whole number of seconds.
+const DURATION = /^P(?:([0-9]{1,9})D)?(?:T(?:([0-9]{1,9})H)?(?:([0-9]{1,9})M)?(?:([0-9]{1,9})S)?)?$/;
+function duration(raw: unknown): Num {
+  if (typeof raw === 'string' && raw.startsWith('P')) {
+    const match = DURATION.exec(raw);
+    if (!match || !match.slice(1).some(part => part !== undefined) || raw.endsWith('T'))
+      throw new CalcError('COMPUTE_TYPE_ERROR', 'Use an ISO 8601 duration such as PT1H30M');
+    const [days, hours, minutes, seconds] = match.slice(1).map(part => BigInt(part ?? 0));
+    return normalize(((days * 24n + hours) * 60n + minutes) * 60n + seconds, 0);
+  }
+  const value = parse(raw);
+  if (value.scale) throw new CalcError('COMPUTE_TYPE_ERROR', 'A duration is a whole number of seconds');
+  return value;
+}
+
 function sourceValue(meta: any, raw: any, at: string): Result {
   if (raw && typeof raw === 'object' && raw.$state === 'pending') return pending('COMPUTE_INPUT_MISSING', [at]);
   if (raw === undefined || raw === null || (raw === '' && meta.type !== 'text')) return ready(null);
   try {
+    if (meta.type === 'duration' || meta.kind === 'duration') return ready(duration(raw));
     if (meta.type === 'decimal') return ready(parse(raw));
     if (meta.type === 'date') return ready(dayText(dayNumber(raw)));
     if (meta.type === 'boolean' && typeof raw !== 'boolean') throw new CalcError('COMPUTE_TYPE_ERROR', 'Expected a Boolean');
@@ -305,6 +321,12 @@ function sourceValue(meta: any, raw: any, at: string): Result {
 }
 
 const address = (path: string[], field: string) => path.map(name => name + '[*].').join('') + field;
+// Plan entries: a calculation (no kind) or a field's initial and rules (applies_when, required_when, locked_when).
+const KINDS = ['initial', 'applies_when', 'required_when', 'locked_when'], RULES = ['applies_when', 'required_when', 'locked_when'];
+const nodeName = (entry: any) => entry.kind ? entry.field + ':' + entry.kind : entry.field;
+export type RuleState = {applies: boolean; required: boolean; locked: boolean};
+// Whether setting a source leaves it unchanged; objects and arrays always count as a change.
+const sameValue = (values: any, field: string, value: unknown) => own(values, field) && (value === null || typeof value !== 'object') && values[field] === value;
 const KEY = /^[A-Za-z0-9_-]{1,64}$/;
 type Node = string;
 const nodeKey = (handle: string, field: string): Node => handle + '\u0000' + field;
@@ -323,6 +345,7 @@ export function checkPlan(plan: any) {
     if (field.scale !== null && (integer(field.scale) === null || field.scale < 0 || field.scale > MAX_SCALE))
       throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target scale');
     if (![undefined, null, 'half_up', 'half_even'].includes(field.rounding)) throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target rounding');
+    if (own(field, 'kind') && !KINDS.includes(field.kind)) throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid plan entry kind');
     checkNode(field.expression, 0, {count: 0});
   }
   for (const table of Object.values<any>(plan.tables))
@@ -334,7 +357,7 @@ const SCOPES = new Set(['self', 'parent', 'row']);
 const LITERALS: Record<string, string> = {decimal: 'string', boolean: 'boolean', text: 'string'};
 const ARITY: Record<string, number> = {add: 2, sub: 2, mul: 2, div: 2, neg: 1, eq: 2, ne: 2, lt: 2, lte: 2, gt: 2, gte: 2,
   and: 2, or: 2, not: 1, round: 2, coalesce: 2, safe_divide: 3, bool_to_decimal: 1, when: 3, date_add: 2, date_sub: 2, date_diff: 2};
-const FIELD = /^[A-Za-z][A-Za-z0-9_]*$/, MODEL = /^[a-z0-9_]{1,64}$/, HOP_TYPES = ['decimal', 'boolean', 'date', 'text', 'link'];
+const FIELD = /^[A-Za-z][A-Za-z0-9_]*$/, MODEL = /^[a-z0-9_]{1,64}$/, HOP_TYPES = ['decimal', 'boolean', 'date', 'text', 'link', 'duration'];
 // One to three [model, field, type] lookups; every step but the last follows a Link.
 const hopSteps = (steps: any) => Array.isArray(steps) && steps.length >= 1 && steps.length <= MAX_HOPS && steps.every((step: any, index: number) =>
   Array.isArray(step) && step.length === 3 && typeof step[0] === 'string' && MODEL.test(step[0]) && typeof step[1] === 'string' && FIELD.test(step[1])
@@ -436,6 +459,14 @@ export class FiniteDocument {
   order: Node[] = [];
   observers = new Map<Node, Array<(result: Result) => void>>();
   tableObservers = new Map<Node, Array<(handles: string[]) => void>>();
+  ruleObservers = new Map<string, Array<(states: Record<string, RuleState>) => void>>();
+  // Initial suggestions waiting to be written, and fields the host set in the current write (touched).
+  armed = new Set<Node>();
+  touched = new Set<Node>();
+  // Lock results of the document as loaded (handle -> field -> true, false or null when undecided).
+  // Saved rows keep them until rebase(); host inputs such as lookups refine them until the first edit.
+  locks = new Map<string, Record<string, boolean | null>>();
+  private pristine = true;
   revision = 0; structureRevision = 0; trace: any = {};
   // Host inputs: today's date and Link lookups (model -> id -> field values); misses are lookups still wanted.
   today: unknown = null;
@@ -455,7 +486,7 @@ export class FiniteDocument {
       const path = field.path.join('/');
       if (!this.templates.has(path)) this.templates.set(path, []);
       this.templates.get(path)!.push([position, field]);
-      this.fields.set(path + '\u0000' + field.field, field);
+      this.fields.set(path + '\u0000' + nodeName(field), field);
       for (const [scope, model, name] of field.reads) if (scope === 'lookup') {
         if (!this.lookupFields.has(model)) this.lookupFields.set(model, new Set());
         this.lookupFields.get(model)!.add(name);
@@ -463,7 +494,10 @@ export class FiniteDocument {
     });
     this.root = this.build(data || {}, [], null, null);
     this.bind();
-    this.settle(new Set(), new Set(this.deps.keys()));
+    const created = new Set([...this.deps.keys()].filter(node => this.rows.get(nodeParts(node)[0])!.created && node.endsWith(':initial')));
+    this.settle(new Set(), new Set(this.deps.keys()), this.touched, created);
+    this.touched = new Set();
+    this.takeLocks(true);
     this.revision = 1;
   }
 
@@ -479,16 +513,20 @@ export class FiniteDocument {
     const key = ownValue(data, '_key') ?? null;
     if (key !== null && (typeof key !== 'string' || !KEY.test(key)))
       throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row keys use at most 64 letters, digits, hyphens or underscores');
-    const row: Row = {handle, path, values: Object.create(null), parent: owner, children: Object.create(null), id, key: key || (id ? String(id) : handle), label: '', order: 0};
+    const fresh = created === null ? id === null : created;
+    const row: Row = {handle, path, values: Object.create(null), parent: owner, children: Object.create(null), id, key: key || (id ? String(id) : handle), label: '', order: 0, created: fresh};
     this.rows.set(handle, row);
     if (this.rows.size - 1 > this.plan.limits.document_rows) throw new CalcError('CALCULATION_LIMIT_EXCEEDED', 'The document has too many rows');
-    const fresh = created === null ? id === null : created;
     for (const [name, value] of Object.entries(data)) {
       if (name === 'id' || name === '_key' || name === 'children' || name === '_handle') continue;
       const meta = ownValue(entry.fields, name);
       if (!meta) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown field ' + name);
       if (meta.computed && created) throw new CalcError('COMPUTED_FIELD_WRITE', name + ' is calculated');
-      if (!meta.computed) row.values[name] = value;
+      if (!meta.computed) {
+        row.values[name] = value;
+        // A value supplied with a new row is the host's choice: its initial does not replace it.
+        if (fresh) (this.current ? this.current.touched : this.touched).add(nodeKey(handle, name));
+      }
     }
     if (fresh) this.defaults(row, entry);
     const children = ownValue(data, 'children') || {};
@@ -545,7 +583,8 @@ export class FiniteDocument {
     let edges = 0;
     for (const [handle, row] of this.rows) {
       for (const [position, field] of this.templates.get(row.path.join('/')) || []) {
-        const node = nodeKey(handle, field.field), inputs = new Set<Node>();
+        // applies_when also runs when its own field changes, so a value set while it does not apply is cleared.
+        const node = nodeKey(handle, nodeName(field)), inputs = new Set<Node>(field.kind === 'applies_when' ? [nodeKey(handle, field.field)] : []);
         for (const [scope, table, name] of field.reads) {
           if (scope === 'self') inputs.add(nodeKey(handle, name));
           else if (scope === 'parent' && row.parent) inputs.add(nodeKey(row.parent.handle, name));
@@ -582,20 +621,44 @@ export class FiniteDocument {
     return this.today === null || this.today === undefined ? pending('COMPUTE_INPUT_MISSING', ['@today']) : sourceValue({type: 'date'}, this.today, '@today');
   }
 
-  private settle(changed: Set<Node>, fresh: Set<Node>) {
+  // An initial is armed when its row is new or a document input it reads changed (host inputs such as
+  // lookups and today() do not arm it). A field touched in this write disarms it. An armed initial writes
+  // its first ready result unless the field is locked. applies_when clears its field.
+  private settle(changed: Set<Node>, fresh: Set<Node>, touched: Set<Node> = new Set(), arm: Set<Node> = new Set()) {
     const budget = new Budget(this.budget), updated = new Set<Node>();
     let evaluated = 0, skipped = 0;
     for (const node of this.order) {
       const inputs = this.deps.get(node)!;
-      if (!fresh.has(node) && ![...inputs].some(input => changed.has(input))) { skipped++; continue; }
       const [handle, name] = nodeParts(node);
       const row = this.rows.get(handle)!, field = this.fields.get(row.path.join('/') + '\u0000' + name);
+      if (field.kind === 'initial') {
+        if (arm.has(node) || [...inputs].some(input => changed.has(input) && !input.startsWith('@'))) this.armed.add(node);
+        if (touched.has(nodeKey(handle, field.field))) this.armed.delete(node);
+      }
+      if (!fresh.has(node) && ![...inputs].some(input => changed.has(input))) { skipped++; continue; }
       const at = row.label + name, scope = new Scope(this, row, null, at);
-      const outcome = convert(evaluate(field.expression, scope, budget), field, at, ownValue(this.schema.get(row.path.join('/')).fields, field.field));
+      let outcome = evaluate(field.expression, scope, budget);
+      if (!field.kind) outcome = convert(outcome, field, at, ownValue(this.schema.get(row.path.join('/')).fields, field.field));
+      else if (field.kind === 'initial') outcome = convert(outcome, field, at);
       if (scope.misses.size) this.misses.set(node, scope.misses); else this.misses.delete(node);
       evaluated++;
       this.counts.set(node, (this.counts.get(node) || 0) + 1);
       if (!same(outcome, this.results.get(node))) { this.results.set(node, outcome); changed.add(node); updated.add(node); }
+      const target = nodeKey(handle, field.field);
+      let value: unknown = undefined, write = false;
+      if (field.kind === 'initial' && this.armed.has(node) && outcome.state !== 'pending') {
+        this.armed.delete(node);
+        if (outcome.state === 'ready' && !this.locked(row, field.field)) { value = wire(outcome.value, field.scale); write = true; }
+      } else if (field.kind === 'applies_when' && outcome.state === 'ready' && outcome.value === false && (ownValue(row.values, field.field) ?? null) !== null
+        // A field locked on the saved row keeps its value; the server refuses the write instead.
+        && (ownValue(this.locks.get(handle) || {}, field.field) ?? false) === false) {
+        value = null; write = true;
+      }
+      if (write && (!own(row.values, field.field) || row.values[field.field] !== value)) {
+        row.values[field.field] = value;
+        changed.add(target);
+        updated.add(target);
+      }
     }
     this.trace = {evaluated, skipped, steps: budget.steps, changed: [...updated].map(node => this.address(node)).sort()};
     return updated;
@@ -614,7 +677,7 @@ export class FiniteDocument {
     const outer = this.current === null;
     // A nested batch is one command: if its error is caught, its changes are undone.
     if (!outer) { this.command(() => { if ((run(this) as any)?.then instanceof Function) throw new CalcError('ASYNC_BATCH_UNSUPPORTED', 'A calculation batch cannot await; apply network results as a later batch'); }); return; }
-    if (outer) this.current = {snapshot: this.capture(), bound: new Set(this.deps.keys()), sources: new Set<Node>(), membership: new Set<Node>(), moved: new Set<string>(), structure: false, order: new Set<Node>()};
+    if (outer) this.current = {snapshot: this.capture(), bound: new Set(this.deps.keys()), sources: new Set<Node>(), membership: new Set<Node>(), moved: new Set<string>(), structure: false, order: new Set<Node>(), touched: new Set<Node>()};
     try {
       const value: any = run(this);
       if (value && typeof value.then === 'function')
@@ -642,7 +705,7 @@ export class FiniteDocument {
     this.usable();
     // A command whose error the batch catches must not leave the document half changed.
     const snapshot = this.capture(), state = {...this.current, sources: new Set(this.current.sources), membership: new Set(this.current.membership),
-      moved: new Set(this.current.moved), order: new Set(this.current.order)};
+      moved: new Set(this.current.moved), order: new Set(this.current.order), touched: new Set(this.current.touched)};
     try { return run(); }
     catch (exc) { this.restore(snapshot); this.current = state; throw exc; }
   }
@@ -663,8 +726,8 @@ export class FiniteDocument {
       const row = this.row(handle), meta = ownValue(this.schema.get(row.path.join('/')).fields, field);
       if (!meta) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown field ' + field);
       if (meta.computed) throw new CalcError('COMPUTED_FIELD_WRITE', row.label + field + ' is calculated');
-      row.values[field] = value;
-      this.current.sources.add(nodeKey(handle, field));
+      this.current.touched.add(nodeKey(handle, field));
+      if (!sameValue(row.values, field, value)) { row.values[field] = value; this.current.sources.add(nodeKey(handle, field)); }
     });
   }
 
@@ -744,8 +807,8 @@ export class FiniteDocument {
             if (name === 'id' || name === '_key' || name === 'children') continue;
             const meta = ownValue(this.schema.get(row.path.join('/')).fields, name);
             if (!meta || meta.computed) throw new CalcError(meta ? 'COMPUTED_FIELD_WRITE' : 'DOCUMENT_STRUCTURE_ERROR', name + ' cannot be written');
-            row.values[name] = value;
-            this.current.sources.add(nodeKey(row.handle, name));
+            this.current.touched.add(nodeKey(row.handle, name));
+            if (!sameValue(row.values, name, value)) { row.values[name] = value; this.current.sources.add(nodeKey(row.handle, name)); }
           }
         } else row = this.build(data, [...parent.path, table], parent, true);
         this.place(parent, table, row, parent.children[table].length);
@@ -800,7 +863,8 @@ export class FiniteDocument {
     return {rows: new Map([...this.rows].map(([handle, row]) => [handle, {row, values: {...row.values},
       children: Object.fromEntries(Object.entries(row.children).map(([table, items]) => [table, [...items]])), parent: row.parent}])),
       results: new Map(this.results), next: this.next, counts: new Map(this.counts), trace: this.trace,
-      today: this.today, lookups: this.lookups, misses: new Map(this.misses),
+      today: this.today, lookups: this.lookups, misses: new Map(this.misses), armed: new Set(this.armed),
+      rules: new Map([...this.ruleObservers].map(([handle, items]) => [handle, [...items]])),
       observers: new Map([...this.observers].map(([node, items]) => [node, [...items]])),
       tables: new Map([...this.tableObservers].map(([node, items]) => [node, [...items]]))};
   }
@@ -815,6 +879,8 @@ export class FiniteDocument {
     this.today = snapshot.today;
     this.lookups = snapshot.lookups;
     this.misses = snapshot.misses;
+    this.armed = snapshot.armed;
+    this.ruleObservers = snapshot.rules;
     this.observers = snapshot.observers;
     this.tableObservers = snapshot.tables;
     this.bind();
@@ -827,12 +893,16 @@ export class FiniteDocument {
     const live = new Set(this.deps.keys());
     for (const node of old) if (!live.has(node)) { this.results.delete(node); this.counts.delete(node); this.misses.delete(node); }
     const fresh = new Set([...live].filter(node => !old.has(node) || batch.moved.has(nodeParts(node)[0])));
-    const updated = this.settle(new Set([...batch.sources, ...batch.membership]), fresh);
+    const updated = this.settle(new Set([...batch.sources, ...batch.membership]), fresh, batch.touched,
+      new Set([...fresh].filter(node => node.endsWith(':initial'))));
     if (!updated.size && !batch.sources.size && !batch.structure) return [];
+    if (batch.structure || [...batch.sources].some((key: string) => !key.startsWith('@'))) this.pristine = false;
+    else if (this.pristine) this.takeLocks(true);
     this.revision++;
     if (batch.structure) this.structureRevision++;
     for (const node of [...this.observers.keys()]) if (!this.rows.has(nodeParts(node)[0])) this.observers.delete(node);
     for (const node of [...this.tableObservers.keys()]) if (!this.rows.has(nodeParts(node)[0])) this.tableObservers.delete(node);
+    for (const handle of [...this.ruleObservers.keys()]) if (!this.rows.has(handle)) this.ruleObservers.delete(handle);
     const notify: Array<() => void> = [];
     for (const [node, listeners] of [...this.observers]) {
       if (!updated.has(node) && !batch.sources.has(node)) continue;
@@ -844,6 +914,12 @@ export class FiniteDocument {
       if (!batch.membership.has(nodeKey(handle, '#' + table)) && !batch.order.has(node)) continue;
       const handles = this.rows.get(handle)!.children[table].map(row => row.handle);
       for (const listener of [...listeners]) notify.push(() => listener(handles));
+    }
+    const ruled = new Set([...updated].filter(node => RULES.includes(nodeParts(node)[1].split(':')[1])).map(node => nodeParts(node)[0]));
+    for (const [handle, listeners] of [...this.ruleObservers]) {
+      if (!ruled.has(handle)) continue;
+      const states = this.ruleStates(handle);
+      for (const listener of [...listeners]) notify.push(() => listener(states));
     }
     return notify;
   }
@@ -866,8 +942,64 @@ export class FiniteDocument {
     return () => { const items = this.tableObservers.get(node); if (items?.includes(listener)) items.splice(items.indexOf(listener), 1); };
   }
 
+  // Call listener(ruleStates(handle)) after each batch that changes one of this row's rule results.
+  observeRules(handle: string, listener: (states: Record<string, RuleState>) => void) {
+    this.usable();
+    this.row(handle);
+    if (!this.ruleObservers.has(handle)) this.ruleObservers.set(handle, []);
+    this.ruleObservers.get(handle)!.push(listener);
+    return () => { const items = this.ruleObservers.get(handle); if (items?.includes(listener)) items.splice(items.indexOf(listener), 1); };
+  }
+
+  // A rule's Boolean result, or `undecided` when it has no ready true/false value; null when the field has no such rule.
+  decided(row: Row, field: string, kind: string, undecided: boolean | null): boolean | null {
+    const node = nodeKey(row.handle, field + ':' + kind);
+    if (!this.deps.has(node)) return null;
+    const result = this.results.get(node);
+    return result && result.state === 'ready' && result.value !== null ? result.value as boolean : undecided;
+  }
+
+  // Record lock results as the saved state: rows loaded with an ID, or every row on rebase().
+  private takeLocks(saved: boolean) {
+    this.locks = new Map();
+    for (const [handle, row] of this.rows) {
+      if (saved && row.created) continue;
+      const locks: Record<string, boolean | null> = {};
+      for (const [, entry] of this.templates.get(row.path.join('/')) || []) if (entry.kind === 'locked_when') locks[entry.field] = this.decided(row, entry.field, 'locked_when', null);
+      this.locks.set(handle, locks);
+    }
+  }
+
+  // After the host saves this document: its current locks become the saved state.
+  rebase() {
+    this.usable();
+    this.takeLocks(false);
+    for (const row of this.rows.values()) row.created = false;
+    this.pristine = true;
+  }
+
+  // A field's lock as the server enforces it: decided on the saved row, or now for a new row.
+  locked(row: Row, field: string): boolean {
+    const saved = this.locks.get(row.handle) || {};
+    const value = own(saved, field) ? saved[field] : this.decided(row, field, 'locked_when', null);
+    return value !== false && (own(saved, field) || this.deps.has(nodeKey(row.handle, field + ':locked_when')));
+  }
+
+  // {field: {applies, required, locked}} for fields of this row that declare rules.
+  // Undecided rules (pending, error or null) fail closed: the field applies, is required and is locked.
+  ruleStates(handle: string): Record<string, RuleState> {
+    const row = this.row(handle), states: Record<string, RuleState> = {};
+    for (const [, entry] of this.templates.get(row.path.join('/')) || []) {
+      if (!RULES.includes(entry.kind) || own(states, entry.field)) continue;
+      const name = entry.field, applies = this.decided(row, name, 'applies_when', true) !== false;
+      const required = Boolean(this.schema.get(row.path.join('/')).fields[name].required || this.decided(row, name, 'required_when', true));
+      states[name] = {applies, required: applies && required, locked: this.locked(row, name)};
+    }
+    return Object.fromEntries(Object.keys(states).sort().map(name => [name, states[name]]));
+  }
+
   subscriptions() {
-    return [...this.observers.values(), ...this.tableObservers.values()].reduce((sum, items) => sum + items.length, 0);
+    return [...this.observers.values(), ...this.tableObservers.values(), ...this.ruleObservers.values()].reduce((sum, items) => sum + items.length, 0);
   }
 
   explain(handle: string, field: string) {
@@ -888,6 +1020,7 @@ export class FiniteDocument {
     const result: any = {_handle: row.handle, ...(row.id !== null ? {id: row.id} : {}), ...(row.parent ? {_key: row.key} : {}), ...row.values};
     const states: any = {};
     for (const [, field] of this.templates.get(row.path.join('/')) || []) {
+      if (field.kind) continue;
       const outcome = this.results.get(nodeKey(row.handle, field.field));
       result[field.field] = outcome?.state === 'ready' ? wire(outcome.value, field.scale) : null;
       if (outcome && outcome.state !== 'ready') states[field.field] = publicResult(outcome);
@@ -909,7 +1042,7 @@ export class FiniteDocument {
   dispose() {
     if (this.disposed) return;
     if (this.publishing) throw new CalcError('REACTIVE_REENTRANCY', 'Observers cannot dispose the document during publication');
-    this.observers.clear(); this.tableObservers.clear(); this.rows.clear(); this.results.clear(); this.misses.clear();
+    this.observers.clear(); this.tableObservers.clear(); this.ruleObservers.clear(); this.armed.clear(); this.rows.clear(); this.results.clear(); this.misses.clear();
     this.deps = new Map(); this.dependents = new Map(); this.order = [];
     this.disposed = true;
   }

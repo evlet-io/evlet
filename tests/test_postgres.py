@@ -405,3 +405,46 @@ def test_migration_has_its_own_timeout_and_pool_restores_request_limit(pg_dsn, m
     assert db.get(Item, 1).title == 'Keep'
     with db._connection() as connection:
         assert connection.execute("SELECT current_setting('statement_timeout')").fetchone()[0] == '1s'
+
+
+def test_postgres_new_field_types_store_filter_and_migrate(pg_dsn):
+    from tests.test_rules_types import Contact, check_types_storage_and_filters
+    db = PostgreSQLDatabase(pg_dsn, Registry(Contact))
+    db.initialize()
+    check_types_storage_and_filters(db)
+    with db._connection() as connection:
+        assert {'about_model', 'about_id'} <= db.columns(connection, 'contact')
+
+
+def test_postgres_new_field_types_can_be_added_by_migration(pg_dsn):
+    from tests.test_rules_types import add_types
+
+    def make(registry, migrations, migrate=False):
+        database = PostgreSQLDatabase(pg_dsn, registry, migrations=migrations)
+        database.migrate(migrations) if migrate else database.initialize()
+        return database
+    add_types(make)
+
+
+def test_postgres_initial_suggestions_rules_and_locks_over_http(pg_dsn):
+    from tests import test_rules_types as rules
+    app = rules.start(PostgreSQLDatabase(pg_dsn, Registry(rules.Client, rules.Product, rules.Deal)))
+    rules.test_initial_suggestions_follow_their_inputs_and_keep_user_edits(rules.seed_deals(app))
+    rules.test_applies_when_clears_and_skips_validation_and_required_when_is_enforced(rules.seed_deals(app))
+    rules.test_locked_fields_reject_changes_over_http_actions_and_context(rules.seed_deals(app))
+
+
+def test_postgres_recompute_updates_and_rolls_back(pg_dsn):
+    from tests.test_rules_types import BASE, bill_models, check_recompute, start
+    check_recompute(start(PostgreSQLDatabase(pg_dsn, Registry(bill_models('1')), migrations=[BASE])),
+                    lambda registry, migrations: PostgreSQLDatabase(pg_dsn, registry, migrations=migrations))
+
+
+def test_postgres_recompute_clears_values_that_do_not_apply(pg_dsn):
+    from tests.test_rules_types import check_recompute_clears
+    check_recompute_clears(lambda registry, migrations: PostgreSQLDatabase(pg_dsn, registry, migrations=migrations))
+
+
+def test_postgres_renaming_a_reference_renames_both_columns(pg_dsn):
+    from tests.test_rules_types import check_reference_rename
+    check_reference_rename(lambda registry, migrations: PostgreSQLDatabase(pg_dsn, registry, migrations=migrations))

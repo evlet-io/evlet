@@ -39,6 +39,10 @@ class ChildTable:
     label: str
 
 
+RULES = ('applies_when', 'required_when', 'locked_when')
+EMPTY_EXPRESSIONS = {'compute': None, 'initial': None, 'applies_when': None, 'required_when': None, 'locked_when': None}
+
+
 @dataclass(frozen=True)
 class Download:
     content: bytes
@@ -90,6 +94,10 @@ class Business:
         registered = set(self.registry.children)
         if any(child.parent in self.child_models and child not in registered for child in children):
             raise ValueError('Nested child tables are only supported for finite-v1 Table declarations')
+        for child in self.children.values():
+            if child not in registered and self.registry.plan_for(child.model) is not None:
+                raise ValueError(f'Rows of {child.parent.__name__}.{child.name} use finite calculations, initial values or field rules, '
+                                 'which ChildTable rows do not run; declare the rows with Table(Child) on the parent instead')
         for action in self.actions.values():
             if self.registry.plan_for(action.model) is not None and not hasattr(getattr(action.model, action.name, None), '__action__'):
                 raise ValueError(f'Legacy Action {action.name!r} would bypass finite-v1 settlement on '
@@ -205,8 +213,22 @@ class Business:
                     if path.count('.') == 1: used_sources.setdefault(path.split('.')[0], set()).add(path.split('.')[1])
                 entry['sources'] = {name: {key: value for key, value in outputs.items() if key in used_sources[name]}
                                     for name, outputs in entry.get('sources', {}).items() if name in used_sources}
-                entry['order'] = [key for key in entry.get('order', []) if key.split('.')[0] in readable or key.split('.')[0] in model.__tables__]
-            entry['fields'] = [{**field, 'read_only': field['name'] not in writable} for field in entry['fields'] if field['name'] in readable]
+                def ordered(key):
+                    head, _, rest = key.partition('.')
+                    if not rest:
+                        return head in readable or head in model.__tables__ and owned_readable(head) is not None
+                    fields = owned_readable(head)
+                    return fields is not None and rest in fields
+
+                def owned_readable(name):
+                    """Readable fields of an owned table's rows, or None when the rows are hidden."""
+                    child = next((item.model for item in self.children.values() if item.parent is model and item.name == name), None)
+                    return self.policy.fields(user, child) if child is not None and self.policy.allows(user, child, 'read') else None
+                entry['order'] = [key for key in entry.get('order', []) if ordered(key)]
+            expressions = self.field_expressions(user, model)
+            entry['fields'] = [{**field, 'read_only': field['name'] not in writable, 'stored': model.__declared_fields__[field['name']].stored,
+                                **expressions.get(field['name'], EMPTY_EXPRESSIONS)}
+                               for field in entry['fields'] if field['name'] in readable]
             entry['list_fields'] = [name for name in entry['list_fields'] if name == 'id' or name in readable]
             entry['search_fields'] = [name for name in entry['search_fields'] if name in readable]
             entry['layout'] = [{**group, 'fields': [name for name in group['fields'] if name in readable]} for group in entry.get('layout', [])]
@@ -469,6 +491,29 @@ class Business:
             result = self.detail(tx, user, record)
         return 200, result, [(b'etag', self.revision(result))]
 
+    def field_expressions(self, user, model):
+        """Serialized finite expressions per readable field: compute, initial and the three rules.
+
+        A calculation or initial is shown with its field, which is readable only when its inputs are.
+        A rule is shown only when this role can read every input it reads; it is still enforced.
+        """
+        plan = self.registry.plan_for(model)
+        if plan is None:
+            return {}
+        owners, path, item = {child.model: child for child in self.children.values()}, [], model
+        while item in owners:
+            path.insert(0, owners[item].name)
+            item = owners[item].parent
+        result = {}
+        for entry in plan['fields']:
+            if entry['path'] != path:
+                continue
+            kind = entry.get('kind') or 'compute'
+            if kind in RULES and not self.policy.expression_allowed(user, model, entry['field'], kind):
+                continue
+            result.setdefault(entry['field'], dict(EMPTY_EXPRESSIONS))[kind] = entry['expression']
+        return result
+
     def calculation_projection(self, user, model, plan):
         """Which calculated results this user may evaluate locally; never ships hidden inputs.
 
@@ -487,9 +532,18 @@ class Business:
                 models[tuple(path)] = item
         def readable(target):
             return self.policy.fields(user, target) if target is not None and self.policy.allows(user, target, 'read') else set()
-        capabilities, local = {}, True
+        capabilities, local, withheld = {}, True, set()
         for field in plan['fields']:
             target = models.get(tuple(field['path']))
+            if field.get('kind'):
+                # Rules and initial suggestions over inputs this role cannot read are left out of the shipped
+                # plan (the server still applies them). Leaving out one that writes a value would make the
+                # preview disagree with the save, so then no plan is shipped.
+                readable_field = field['field'] in readable(target)
+                if not readable_field or not self.policy.expression_allowed(user, target, field['field'], field['kind']):
+                    withheld.add(field['target'])
+                    local = local and (not readable_field or field['kind'] not in ('initial', 'applies_when'))
+                continue
             # Link lookups are local only when the browser can read their records through the record routes.
             fetchable = all(self.registry.models[name] not in self.child_models for scope, name, _ in field['reads'] if scope == 'lookup')
             if field['field'] in readable(target) and fetchable:
@@ -506,10 +560,27 @@ class Business:
             from copy import deepcopy
             from .calc import fingerprint
             projected = deepcopy(dict(plan))
+            projected['fields'] = [field for field in projected['fields'] if field['target'] not in withheld]
+            # Owned tables this role cannot read are left out with everything below them.
+            hidden_paths = [tuple(entry['path']) for key, entry in projected['tables'].items() if key != '$root'
+                            and (models.get(tuple(entry['path'])) is None or not self.policy.allows(user, models[tuple(entry['path'])], 'read'))]
+            for key in list(projected['tables']):
+                path = tuple(projected['tables'][key]['path'])
+                if any(path[:len(item)] == item for item in hidden_paths):
+                    del projected['tables'][key]
+            for entry in projected['tables'].values():
+                entry['tables'] = [name for name in entry['tables'] if tuple(entry['path']) + (name,) not in hidden_paths]
             for entry in projected['tables'].values():
                 target = models.get(tuple(entry['path']))
                 visible = readable(target)
                 entry['fields'] = {name: meta for name, meta in entry['fields'].items() if name in visible}
+                # Looked-up fields are named only when this role can read them; withheld rules may read others.
+                if 'lookups' in entry:
+                    lookups = [{**lookup, 'fields': [name for name in lookup['fields'] if name in readable(self.registry.models[lookup['model']])]}
+                               for lookup in entry['lookups']]
+                    entry['lookups'] = [lookup for lookup in lookups if lookup['fields']]
+                    if not entry['lookups']:
+                        del entry['lookups']
             projected['source_plan_hash'] = plan['model_schema_hash']
             projected['model_schema_hash'] = fingerprint(projected)
             result['plan'] = projected

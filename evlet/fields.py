@@ -1,13 +1,17 @@
 """Field definitions, validation, and storage conversion."""
 
 from datetime import date, datetime, timezone
+from datetime import time as TimeValue
 from decimal import Context, Decimal as DecimalValue, InvalidOperation, localcontext
+import json
 import re
 from urllib.parse import urlsplit
 
 MISSING = object()
 MAX_INTEGER = 2**63 - 1
 ROUNDING = ("half_up", "half_even")
+# Finite-v1 expression options a field may declare, besides compute=.
+RULES = ("applies_when", "required_when", "locked_when")
 
 
 def rounding_mode(value, default):
@@ -34,6 +38,14 @@ def _expr(op, left, *right):
     return operand(op, left, *right)
 
 
+def _finite_option(value, name):
+    """initial= and rule options take a finite expression or a field, never text or a callable."""
+    from .calc import Expr
+    if value is None or isinstance(value, (Expr, Field)):
+        return value
+    raise ValueError(f"{name} takes a finite expression such as F('stage') == 'lost'")
+
+
 class Field:
     kind = "field"
     sql_type = "TEXT"
@@ -41,7 +53,8 @@ class Field:
     def __init__(self, *, required=False, default=MISSING, unique=False, index=False, validator=None,
                  label=None, help_text="", placeholder="", hidden=False, read_only=False,
                  compute=None, stored=True, query=None, fetch=None, filters=None,
-                 visible_if=None, required_if=None, read_only_if=None):
+                 visible_if=None, required_if=None, read_only_if=None,
+                 initial=None, applies_when=None, required_when=None, locked_when=None):
         self.required = required
         self.default = default
         self.unique = unique
@@ -67,6 +80,17 @@ class Field:
             raise ValueError('Fetch uses link_field.target_field and cannot also compute/query')
         if query is not None and (not callable(query) or not hasattr(query, '__depends__') or stored):
             raise ValueError('Queries require @depends and stored=False')
+        self.initial, self.applies_when = _finite_option(initial, "initial"), _finite_option(applies_when, "applies_when")
+        self.required_when = _finite_option(required_when, "required_when")
+        self.locked_when = _finite_option(locked_when, "locked_when")
+        if initial is not None and (compute is not None or query is not None or fetch is not None or default is not MISSING):
+            raise ValueError("initial= suggests a value; it cannot be combined with compute, default, fetch or query")
+        if (compute is not None or query is not None) and any(getattr(self, key) is not None for key in RULES):
+            raise ValueError("Calculated fields are read only; applies_when, required_when and locked_when apply to editable fields")
+        if applies_when is not None and required:
+            raise ValueError("A field that may not apply cannot be required; use required_when instead")
+        if required_when is not None and required_if is not None or locked_when is not None and read_only_if is not None:
+            raise ValueError("Use required_when or required_if, and locked_when or read_only_if, not both")
         if compute is not None or query is not None:
             self.read_only = True
 
@@ -140,6 +164,16 @@ class Field:
 
     def serialize(self, value):
         return value
+
+    # A field normally occupies one column named after it; Reference uses two.
+    def columns(self, name):
+        return ((name, self.sql_type),)
+
+    def to_columns(self, value):
+        return (self.to_storage(value),)
+
+    def from_columns(self, row, name):
+        return self.from_storage(row[name])
 
     def metadata(self):
         return {"name": self.name, "type": self.kind, "required": self.required,
@@ -290,8 +324,20 @@ class Currency(Decimal):
     kind = "currency"
     default_rounding = "half_up"
 
-    def __init__(self, **kwargs):
+    def __init__(self, *, currency=None, **kwargs):
         super().__init__(scale=2, **kwargs)
+        # Display metadata only: an ISO 4217 code or the name of a field holding the code. No conversion.
+        if currency is not None and (not isinstance(currency, str) or not re.fullmatch(r"[A-Z]{3}|[A-Za-z][A-Za-z0-9_]*", currency)):
+            raise ValueError("currency takes an ISO 4217 code such as 'AED' or the name of a field holding the code")
+        self.currency = currency
+
+
+class Percent(Decimal):
+    """A percentage with two decimal places, 0 to 100 unless other bounds are given."""
+    kind = "percent"
+
+    def __init__(self, *, minimum="0", maximum="100", **kwargs):
+        super().__init__(scale=2, minimum=minimum, maximum=maximum, **kwargs)
 
 
 class Boolean(Field):
@@ -433,3 +479,189 @@ class Link(Integer):
     def metadata(self):
         target = self.target if isinstance(self.target, str) else storage_name(self.target)
         return {**super().metadata(), "target": target}
+
+
+class Phone(Text):
+    """Digits, spaces, +, - and parentheses; a number starting with + is stored in E.164 form."""
+    kind = "phone"
+
+    def __init__(self, *, max_length=32, **kwargs):
+        super().__init__(max_length=max_length, **kwargs)
+
+    def validate(self, value):
+        value = super().validate(value).strip()
+        if not re.fullmatch(r"\+?[0-9 ()-]+", value) or "+" in value[1:]:
+            raise ValueError("Use digits, spaces, +, - and parentheses only")
+        digits = re.sub(r"[^0-9]", "", value)
+        if not 3 <= len(digits) <= 15:
+            raise ValueError("A phone number has 3 to 15 digits")
+        return "+" + digits if value.startswith("+") else value
+
+
+class Time(Field):
+    """A time of day, HH:MM:SS, without a timezone."""
+    kind = "time"
+
+    def validate(self, value):
+        if isinstance(value, str) and re.fullmatch(r"[0-9]{2}:[0-9]{2}(:[0-9]{2})?", value):
+            try:
+                value = TimeValue.fromisoformat(value)
+            except ValueError:
+                pass
+        if type(value) is not TimeValue or value.tzinfo is not None:
+            raise ValueError("Expected a time in HH:MM:SS format without a timezone")
+        if value.microsecond:
+            raise ValueError("Use whole seconds")
+        return value
+
+    def to_storage(self, value):
+        return None if value is None else value.isoformat(timespec="seconds")
+
+    serialize = to_storage
+
+    def from_storage(self, value):
+        return None if value is None else self.validate(value)
+
+
+DURATION = re.compile(r"P(?:([0-9]{1,9})D)?(?:T(?:([0-9]{1,9})H)?(?:([0-9]{1,9})M)?(?:([0-9]{1,9})S)?)?")
+
+
+def duration_seconds(value):
+    """Whole seconds from an ISO 8601 duration such as PT1H30M or P2DT4H, or None."""
+    match = DURATION.fullmatch(value) if isinstance(value, str) else None
+    if match is None or not any(match.groups()) or value.endswith("T"):
+        return None
+    days, hours, minutes, seconds = (int(part or 0) for part in match.groups())
+    return ((days * 24 + hours) * 60 + minutes) * 60 + seconds
+
+
+def duration_text(seconds):
+    days, rest = divmod(seconds, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, seconds = divmod(rest, 60)
+    clock = "".join(f"{amount}{unit}" for amount, unit in ((hours, "H"), (minutes, "M"), (seconds, "S")) if amount)
+    return ("P" + (f"{days}D" if days else "") + ("T" + clock if clock else "")) if days or clock else "PT0S"
+
+
+class Duration(Integer):
+    """Whole seconds stored as an integer; serialized as ISO 8601 (PT1H30M). Accepts that format or seconds."""
+    kind = "duration"
+
+    def __init__(self, *, minimum=0, **kwargs):
+        super().__init__(minimum=minimum, **kwargs)
+
+    def validate(self, value):
+        if isinstance(value, str):
+            seconds = duration_seconds(value)
+            if seconds is None:
+                raise ValueError("Use an ISO 8601 duration such as PT1H30M, or whole seconds")
+            value = seconds
+        return super().validate(value)
+
+    def serialize(self, value):
+        return None if value is None else duration_text(value) if value >= 0 else "-" + duration_text(-value)
+
+
+TAG_LIMIT, TAG_LENGTH = 20, 40
+
+
+class Tags(Field):
+    """Up to 20 distinct short labels stored as a JSON array; the contains filter matches one tag.
+
+    A text value is split on commas, so a plain text input can edit the list.
+    """
+    kind = "tags"
+
+    def validate(self, value):
+        if isinstance(value, str):
+            value = [part for part in value.split(",") if part.strip()]
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("Expected a list of tags")
+        if len(value) > TAG_LIMIT:
+            raise ValueError(f"Use at most {TAG_LIMIT} tags")
+        tags, seen = [], set()
+        for tag in value:
+            tag = Tags.tag(tag)
+            if tag.casefold() in seen:
+                raise ValueError(f"Remove the repeated tag {tag}")
+            seen.add(tag.casefold())
+            tags.append(tag)
+        if self.required and not tags:
+            raise ValueError("This field is required")
+        return tuple(tags)
+
+    @staticmethod
+    def tag(value):
+        if not isinstance(value, str):
+            raise ValueError("Each tag must be text")
+        value = value.strip()
+        # Quotes, backslashes, commas and control characters are refused so a stored array can be matched exactly.
+        if not value or len(value) > TAG_LENGTH or re.search(r'["\\,\x00-\x1f\x7f]', value):
+            raise ValueError(f"Each tag has 1 to {TAG_LENGTH} characters and no quotes, backslashes or commas")
+        return value
+
+    @staticmethod
+    def encode(tag):
+        return json.dumps(tag, ensure_ascii=False)
+
+    def to_storage(self, value):
+        return None if value is None else "[" + ",".join(Tags.encode(tag) for tag in value) + "]"
+
+    def from_storage(self, value):
+        if value is None:
+            return None
+        if type(value) is not str:
+            raise ValueError("Stored tags have the wrong type")
+        try:
+            tags = json.loads(value)
+        except ValueError as exc:
+            raise ValueError("Stored tags are not a JSON array") from exc
+        return tuple(tags) if isinstance(tags, list) and all(isinstance(tag, str) for tag in tags) else self.validate(tags)
+
+    def serialize(self, value):
+        return None if value is None else list(value)
+
+
+class Reference(Field):
+    """A link to a record of any registered model, stored as <name>_model and <name>_id; no SQL foreign key.
+
+    The value is {"model": "<storage name>", "id": <id>}. Writes check that the record exists.
+    """
+    kind = "reference"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.unique or self.index:
+            raise ValueError("Reference fields cannot be unique or indexed")
+
+    def validate(self, value):
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            value = {"model": value[0], "id": value[1]}
+        if not isinstance(value, dict) or set(value) != {"model", "id"}:
+            raise ValueError('Expected {"model": "<name>", "id": <id>}')
+        model, record_id = value["model"], value["id"]
+        if not isinstance(model, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", model):
+            raise ValueError("Use a registered model name")
+        if type(record_id) is not int or not 1 <= record_id <= MAX_INTEGER:
+            raise ValueError("Use a positive record ID")
+        return (model, record_id)
+
+    def columns(self, name):
+        return ((name + "_model", "TEXT"), (name + "_id", "INTEGER"))
+
+    def to_columns(self, value):
+        return (None, None) if value is None else value
+
+    def from_columns(self, row, name):
+        model, record_id = row[name + "_model"], row[name + "_id"]
+        if model is None and record_id is None:
+            return None
+        if type(model) is not str or type(record_id) is not int:
+            raise ValueError("Stored reference has the wrong type")
+        return (model, record_id)
+
+    def to_storage(self, value):
+        raise ValueError("Reference fields use two columns")
+
+    def serialize(self, value):
+        return None if value is None else {"model": value[0], "id": value[1]}

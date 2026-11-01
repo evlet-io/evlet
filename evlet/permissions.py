@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from .auth import AccessError, ROLES
-from .fields import Link
+from .fields import Link, Reference
 from .models import Model, ValidationError, identifier
 from .query import SqlQuery, OPERATORS
 
@@ -102,19 +102,11 @@ class Policy:
         from .reactivity import plans, references
         from .calc import is_finite
         field = model.__declared_fields__[name]
-        if is_finite(field):
-            # A finite result is readable only when every input and whole collection it reads is, and
-            # every field on a Link path is readable on every record (no row scope on a looked-up model).
-            # Finite plans are acyclic and rules depend only on the role, so results are cached.
-            cache = self.__dict__.setdefault('_derived', {})
-            key = (user.role, model, name)
-            if key not in cache:
-                cache[key] = all(
-                    self.allows(user, target, 'read')
-                    and not (scope in ('member', 'membership', 'lookup') and self.rule(user, target).scope is not None)
-                    and (read is None or read in self.presented(user, target) and self.derivation_allowed(user, target, read))
-                    for scope, target, read in self.registry.finite_reads(model, name))
-            return cache[key]
+        if is_finite(field) or getattr(field, 'initial', None) is not None:
+            # A finite result (or initial suggestion) is readable only when every input and whole collection
+            # it reads is, and every field on a Link path is readable on every record (no row scope on a
+            # looked-up model). Otherwise the value would reveal what the role cannot read.
+            return self.expression_allowed(user, model, name, None if is_finite(field) else 'initial')
         paths = set(getattr(field.query, '__depends__', ()))
         paths |= references(plans(model)[name].get('compute'))
         if not paths: return True
@@ -146,6 +138,21 @@ class Policy:
                 return False
         return True
 
+    def expression_allowed(self, user, model, name, kind=None):
+        """Whether this role may read every input of a field's finite calculation, initial or rule.
+
+        Finite plans are acyclic and rules depend only on the role, so results are cached.
+        """
+        cache = self.__dict__.setdefault('_derived', {})
+        key = (user.role, model, name, kind)
+        if key not in cache:
+            cache[key] = all(
+                self.allows(user, target, 'read')
+                and not (scope in ('member', 'membership', 'lookup') and self.rule(user, target).scope is not None)
+                and (read is None or read in self.presented(user, target) and self.derivation_allowed(user, target, read))
+                for scope, target, read in self.registry.finite_reads(model, name, kind))
+        return cache[key]
+
     def scope_sql(self, user, model):
         rule = self.rule(user, model)
         filters = {} if rule.scope is None else rule.scope(user)
@@ -173,6 +180,14 @@ class Policy:
                 except ValueError as exc:
                     raise ValidationError({name: str(exc)}) from exc
                 self.record(tx, user, field.target, record_id)
+            elif isinstance(field, Reference) and value is not None:
+                # The referenced record must exist and be readable by this user.
+                try:
+                    target, record_id = field.clean(value)
+                    target = self.registry.resolve(target)
+                except ValueError as exc:
+                    raise ValidationError({name: str(exc)}) from exc
+                self.record(tx, user, target, record_id)
 
     def serialize(self, tx, user, record):
         model = type(record)
@@ -182,6 +197,15 @@ class Policy:
             if isinstance(field, Link) and result.get(name) is not None:
                 try:
                     self.record(tx, user, field.target, result[name])
+                except AccessError:
+                    result[name] = None
+            elif isinstance(field, Reference) and result.get(name) is not None:
+                # A reference this user cannot follow is shown as empty, including the model it names.
+                target = self.registry.models.get(result[name]['model'])
+                try:
+                    if target is None:
+                        raise AccessError(404, 'Record not found')
+                    self.record(tx, user, target, result[name]['id'])
                 except AccessError:
                     result[name] = None
         return result
@@ -201,3 +225,11 @@ class Policy:
             field = model.__fields__.get(parts[0])
             if isinstance(field, Link) and self.rule(user, field.target).scope is not None:
                 raise AccessError(403, 'Queries on this restricted relationship are unavailable')
+            if isinstance(field, Reference):
+                # Matching a reference could reveal one this role cannot follow. Equality needs a target
+                # model readable without row scope; other filters need that for every model.
+                value = (filters or {}).get(key) if key in (parts[0], parts[0] + '__eq') else None
+                named = value.get('model') if isinstance(value, dict) else None
+                targets = [self.registry.models[named]] if named in self.registry.models else self.registry.models.values()
+                if any(not self.allows(user, target, 'read') or self.rule(user, target).scope is not None for target in targets):
+                    raise AccessError(403, 'Queries on this restricted relationship are unavailable')

@@ -6,7 +6,8 @@ checks that the checked-in JSON still matches. Both runtimes consume the same se
 
 import random
 
-from evlet import Model, Child, Table, Decimal, Currency, Boolean, Integer, Text, Date, DateTime, Link, Registry
+from evlet import Model, Child, Table, Decimal, Currency, Boolean, Integer, Text, Date, DateTime, Link, Registry, Select
+from evlet.fields import Duration, Percent
 from evlet.calc import (D, F, parent, row, round, coalesce, safe_divide, when, days, today, Document, CalcError,
                         parse, text, add, sub, mul, div, quantize)
 
@@ -189,8 +190,33 @@ class Moments(Model):
     first = DateTime(compute=coalesce(F('at'), F('at2')))
 
 
+class OfferLine(Child):
+    qty = Decimal(default=1)
+    rate = Currency(initial=parent.price)
+    amount = Currency(compute=F('qty') * F('rate'))
+    share = Percent(initial=when(F('qty') > 10, D(5), D(0)))
+
+
+class Offer(Model):
+    """Initial suggestions and field rules (applies_when, required_when, locked_when)."""
+    Meta = FiniteMeta
+    customer = Link(Customer)
+    stage = Select(('open', 'won', 'lost'), default='open')
+    discount = Decimal(scale=2, initial=F('customer.rate'))
+    terms = Integer(initial=F('customer.credit_days'), locked_when=F('stage') == 'won')
+    reason = Text(applies_when=F('stage') == 'lost', required_when=F('stage') == 'lost')
+    price = Currency(default=0, locked_when=F('stage') == 'won')
+    note = Text(required_when=F('price') > 100)
+    hours = Duration(default=0)
+    remark = Text(applies_when=F('stage') != 'lost', locked_when=F('stage') == 'won')
+    billable = Decimal(scale=2, compute=F('hours') / 3600)
+    lines = Table(OfferLine)
+    total = Currency(compute=lines.sum('amount'))
+
+
 MODELS = {'invoice': Invoice, 'project': Project, 'cost': CostSheet, 'states': States,
-          'rounding': Rounding, 'schedule': Schedule, 'sale': Sale, 'choice': Choice, 'moments': Moments}
+          'rounding': Rounding, 'schedule': Schedule, 'sale': Sale, 'choice': Choice, 'moments': Moments,
+          'offer': Offer}
 LOOKUP_MODELS = (Region, Customer)
 
 
@@ -240,6 +266,24 @@ SCENARIOS = [
       ['set', 'lines.r2', 'customer', 9], ['set', '', 'customer', '7']]),
     ('datetime', 'moments', {'at2': '2026-11-01T08:00:00.000000Z'},
      [['set', '', 'at', '2026-11-01T08:00:00.000000Z'], ['set', '', 'at2', None], ['set', '', 'at', None]]),
+    ('initial-and-rules', 'offer', {'customer': 7, 'hours': 'PT1H30M', 'children': {'lines': items({'qty': '2'}, {'qty': '12', 'rate': '1.50'})}},
+     [['lookup', 'customer', 7, {'credit_days': 30, 'rate': '2.50'}], ['set', '', 'discount', '9'],
+      ['lookup', 'customer', 8, {'credit_days': 10, 'rate': '1.25'}], ['set', '', 'customer', 8], ['set', '', 'customer', 7],
+      ['batch', [['set', '', 'customer', 8], ['set', '', 'discount', '4.5']]], ['set', '', 'customer', None],
+      ['set', '', 'price', '120'], ['set', 'lines.r0', 'rate', '3'], ['add', '', 'lines', {'_key': 'n', 'qty': '11'}],
+      ['set', '', 'note', 'big'], ['set', '', 'stage', 'lost'], ['set', '', 'reason', 'Too dear'], ['set', '', 'stage', 'open'],
+      ['set', '', 'reason', 'Ignored'], ['set', '', 'stage', 'won'], ['set', '', 'customer', 7], ['set', '', 'price', None],
+      ['set', '', 'hours', 5400], ['set', '', 'hours', 'P1D'], ['set', '', 'hours', 'PT'], ['set', 'lines.n', 'qty', '1']]),
+    ('loaded-offer', 'offer', {'id': 4, 'customer': 7, 'discount': '1', 'terms': 3, 'stage': 'lost', 'reason': 'Kept',
+                               'children': {'lines': [{'id': 9, 'qty': '20', 'rate': '7', 'share': '1'}]}},
+     [['lookup', 'customer', 7, {'credit_days': 30, 'rate': '2.50'}], ['set', '', 'price', '5'], ['set', 'lines.9', 'qty', '3'],
+      ['lookup', 'customer', 8, {'credit_days': 10, 'rate': '1.25'}], ['set', '', 'customer', 8], ['set', '', 'stage', None]]),
+    ('saved-locks-and-resends', 'offer', {'id': 5, 'customer': 7, 'stage': 'won', 'price': '150', 'terms': 45, 'remark': 'kept',
+                                          'children': {'lines': [{'id': 2, 'qty': '1', 'rate': '3'}]}},
+     [['lookup', 'customer', 7, {'credit_days': 30, 'rate': '2.50'}], ['set', '', 'stage', 'lost'], ['set', '', 'customer', 7], ['set', '', 'stage', 'open'],
+      ['set', '', 'customer', 8], ['lookup', 'customer', 8, {'credit_days': 10, 'rate': '1.25'}], ['rebase'],
+      ['set', '', 'terms', 60], ['set', '', 'customer', 8], ['set', '', 'stage', 'won'], ['set', '', 'customer', 7],
+      ['add', '', 'lines', {'_key': 'n', 'qty': '1'}], ['set', 'lines.2', 'qty', '1'], ['set', '', 'stage', 'lost']]),
     ('when', 'choice', {'a': '6'},
      [['set', '', 'flag', True], ['set', '', 'a', None], ['set', '', 'flag', False], ['set', '', 'a', '6'],
       ['set', '', 'zero', '4'], ['today', '2026-11-01'], ['set', '', 'flag', True], ['set', '', 'a', '0.5'], ['set', '', 'flag', None]]),
@@ -283,6 +327,18 @@ def apply(document, command):
     elif kind == 'replace': document.replace_rows(handle(document, args[0]), args[1], args[2])
     elif kind == 'today': document.set_today(args[0])
     elif kind == 'lookup': document.set_lookups(args[0], args[1], args[2])
+    elif kind == 'batch': document.batch(lambda _: [apply(document, item) for item in args[0]])
+    elif kind == 'rebase': document.rebase()
+
+
+def rule_map(document):
+    """Rule states of every row that declares rules, by row label."""
+    result = {}
+    for handle, row in document.rows.items():
+        states = document.rule_states(handle)
+        if states:
+            result[row.label.rstrip('.') or '$root'] = states
+    return dict(sorted(result.items()))
 
 
 def strip(snapshot):
@@ -321,16 +377,18 @@ def collect():
     scenarios = []
     for name, model, data, commands in SCENARIOS + [random_scenario(seed) for seed in (1, 2, 3)]:
         document = Document(plans[model], data)
+        ruled = any(field.get('kind') for field in plans[model]['fields'])
+        extra = (lambda: {'rules': rule_map(document)}) if ruled else dict
         steps = [{'snapshot': strip(document.snapshot()), 'revision': document.revision, 'trace': document.trace,
-                  'requests': document.lookup_requests()}]
+                  'requests': document.lookup_requests(), **extra()}]
         for command in commands:
             try:
                 apply(document, command)
                 steps.append({'command': command, 'snapshot': strip(document.snapshot()), 'revision': document.revision,
-                              'trace': document.trace, 'requests': document.lookup_requests()})
+                              'trace': document.trace, 'requests': document.lookup_requests(), **extra()})
             except CalcError as exc:
                 steps.append({'command': command, 'error': exc.code, 'snapshot': strip(document.snapshot()), 'revision': document.revision,
-                              'requests': document.lookup_requests()})
+                              'requests': document.lookup_requests(), **extra()})
         scenarios.append({'name': name, 'model': model, 'data': data, 'steps': steps})
     return {'plans': plans, 'scenarios': scenarios, 'numeric': numeric_cases(),
             'invalid_plans': [{'name': 'unknown-op', 'expression': {'$expr': 'eval', 'args': []}},

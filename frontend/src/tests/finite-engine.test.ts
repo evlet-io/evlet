@@ -18,6 +18,18 @@ function apply(document: FiniteDocument, command: any[]) {
   else if (kind === 'replace') document.replaceRows(handle(document, args[0]), args[1], args[2]);
   else if (kind === 'today') document.setToday(args[0]);
   else if (kind === 'lookup') document.setLookups(args[0], args[1], args[2]);
+  else if (kind === 'batch') document.batch(() => { for (const item of args[0]) apply(document, item); });
+  else if (kind === 'rebase') document.rebase();
+}
+
+// Rule states of every row that declares rules, by row label.
+function ruleMap(document: FiniteDocument) {
+  const result: Record<string, any> = {};
+  for (const [handle, row] of document.rows) {
+    const states = document.ruleStates(handle);
+    if (Object.keys(states).length) result[row.label.replace(/\.$/, '') || '$root'] = states;
+  }
+  return Object.fromEntries(Object.keys(result).sort().map(key => [key, result[key]]));
 }
 
 // A rebuilt session receives the same host inputs (today and lookups) as the original.
@@ -80,6 +92,7 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
       expect(strip(document.snapshot())).toEqual(initial.snapshot);
       expect(document.trace).toEqual(initial.trace);
       expect(document.lookupRequests()).toEqual(initial.requests);
+      if (initial.rules) expect(ruleMap(document)).toEqual(initial.rules);
       for (const step of steps) {
         if (step.error) {
           let code = '';
@@ -92,10 +105,34 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
         expect(strip(document.snapshot())).toEqual(step.snapshot);
         expect(document.revision).toBe(step.revision);
         expect(document.lookupRequests()).toEqual(step.requests);
-        expect(strip(rebuild(document, plans[scenario.model]).snapshot())).toEqual(step.snapshot);
+        if (step.rules) expect(ruleMap(document)).toEqual(step.rules);
+        // A rebuilt session would treat unsaved edits as saved, which changes what saved locks keep.
+        if (scenario.name !== 'saved-locks-and-resends') expect(strip(rebuild(document, plans[scenario.model]).snapshot())).toEqual(step.snapshot);
       }
     });
   }
+
+  it('publishes rule states once per batch and keeps a touched value over its initial', () => {
+    const document = new FiniteDocument(plans.offer, {customer: 7});
+    const root = document.root.handle, seen: any[] = [];
+    const stop = document.observeRules(root, states => seen.push(states));
+    document.batch(commands => { commands.set(root, 'stage', 'lost'); commands.set(root, 'price', '200'); });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].reason).toEqual({applies: true, required: true, locked: false});
+    expect(seen[0].note.required).toBe(true);
+    document.set(root, 'hours', 60);
+    expect(seen).toHaveLength(1);
+    document.batch(commands => { commands.set(root, 'customer', 8); commands.set(root, 'discount', '3'); });
+    document.setLookups('customer', 8, {credit_days: 10, rate: '1.25'});
+    expect([document.snapshot().discount, document.snapshot().terms]).toEqual(['3', '10']);
+    stop();
+    document.set(root, 'stage', 'won');
+    expect(seen).toHaveLength(1);
+    const broken = structuredClone(plans.offer);
+    broken.fields[0].kind = 'compute';
+    broken.model_schema_hash = fingerprint(broken);
+    expect(() => new FiniteDocument(broken)).toThrow('UNSUPPORTED_EXPRESSION');
+  });
 
   it('rejects unknown plans, operations and async batches', () => {
     const plan = plans.invoice;

@@ -2796,6 +2796,704 @@
     }
    }
   },
+  "offer": {
+   "compiler_version": "evlet-finite-1",
+   "expression_version": 1,
+   "fields": [
+    {
+     "expression": {
+      "$expr": "hop",
+      "field": "customer",
+      "steps": [
+       [
+        "customer",
+        "rate",
+        "decimal"
+       ]
+      ]
+     },
+     "field": "discount",
+     "kind": "initial",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "rate"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 2,
+     "stored": true,
+     "target": "discount:initial",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "eq",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "stage",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "won"
+       }
+      ]
+     },
+     "field": "terms",
+     "kind": "locked_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "stage"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "terms:locked_when",
+     "target_type": "integer"
+    },
+    {
+     "expression": {
+      "$expr": "hop",
+      "field": "customer",
+      "steps": [
+       [
+        "customer",
+        "credit_days",
+        "decimal"
+       ]
+      ]
+     },
+     "field": "terms",
+     "kind": "initial",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "credit_days"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 0,
+     "stored": true,
+     "target": "terms:initial",
+     "target_type": "integer"
+    },
+    {
+     "expression": {
+      "$expr": "eq",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "stage",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "lost"
+       }
+      ]
+     },
+     "field": "reason",
+     "kind": "applies_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "stage"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "reason:applies_when",
+     "target_type": "text"
+    },
+    {
+     "expression": {
+      "$expr": "eq",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "stage",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "lost"
+       }
+      ]
+     },
+     "field": "reason",
+     "kind": "required_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "stage"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "reason:required_when",
+     "target_type": "text"
+    },
+    {
+     "expression": {
+      "$expr": "eq",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "stage",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "won"
+       }
+      ]
+     },
+     "field": "price",
+     "kind": "locked_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "stage"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "price:locked_when",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "gt",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "price",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "100"
+       }
+      ]
+     },
+     "field": "note",
+     "kind": "required_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "price"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "note:required_when",
+     "target_type": "text"
+    },
+    {
+     "expression": {
+      "$expr": "ne",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "stage",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "lost"
+       }
+      ]
+     },
+     "field": "remark",
+     "kind": "applies_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "stage"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "remark:applies_when",
+     "target_type": "text"
+    },
+    {
+     "expression": {
+      "$expr": "eq",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "stage",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "won"
+       }
+      ]
+     },
+     "field": "remark",
+     "kind": "locked_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "stage"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "remark:locked_when",
+     "target_type": "text"
+    },
+    {
+     "expression": {
+      "$expr": "div",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "hours",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "3600"
+       }
+      ]
+     },
+     "field": "billable",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "hours"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 2,
+     "stored": true,
+     "target": "billable",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "ref",
+      "field": "price",
+      "scope": "parent"
+     },
+     "field": "rate",
+     "kind": "initial",
+     "path": [
+      "lines"
+     ],
+     "reads": [
+      [
+       "parent",
+       null,
+       "price"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 2,
+     "stored": true,
+     "target": "lines[*].rate:initial",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "mul",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "qty",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "rate",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "amount",
+     "path": [
+      "lines"
+     ],
+     "reads": [
+      [
+       "self",
+       null,
+       "qty"
+      ],
+      [
+       "self",
+       null,
+       "rate"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 2,
+     "stored": true,
+     "target": "lines[*].amount",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "aggregate",
+      "field": "amount",
+      "kind": "sum",
+      "table": "lines",
+      "where": null
+     },
+     "field": "total",
+     "path": [],
+     "reads": [
+      [
+       "membership",
+       "lines",
+       null
+      ],
+      [
+       "member",
+       "lines",
+       "amount"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 2,
+     "stored": true,
+     "target": "total",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "when",
+      "args": [
+       {
+        "$expr": "gt",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "qty",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "decimal",
+          "value": "10"
+         }
+        ]
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "5"
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "0"
+       }
+      ]
+     },
+     "field": "share",
+     "kind": "initial",
+     "path": [
+      "lines"
+     ],
+     "reads": [
+      [
+       "self",
+       null,
+       "qty"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 2,
+     "stored": true,
+     "target": "lines[*].share:initial",
+     "target_type": "percent"
+    }
+   ],
+   "language": "finite-v1",
+   "limits": {
+    "collection_rows": 100,
+    "decimal_text": 128,
+    "document_rows": 1000,
+    "evaluation_steps": 1000000,
+    "expression_depth": 32,
+    "expression_nodes": 128,
+    "graph_edges": 250000,
+    "graph_nodes": 50000,
+    "table_depth": 8
+   },
+   "model_schema_hash": "sha256:e8d7539d1ab1a2157d4a039c4c20d16ba73226f0994cbcf2d1955cf3fbec042c",
+   "numeric_profile": "finite40-hu18-v1",
+   "plan_version": 1,
+   "root_resource": "offer",
+   "tables": {
+    "$root": {
+     "fields": {
+      "billable": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "customer": {
+       "computed": false,
+       "default": null,
+       "kind": "link",
+       "maximum": null,
+       "minimum": "1",
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "link"
+      },
+      "discount": {
+       "computed": false,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "hours": {
+       "computed": false,
+       "default": {
+        "value": "0"
+       },
+       "kind": "duration",
+       "maximum": null,
+       "minimum": "0",
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "decimal"
+      },
+      "note": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "price": {
+       "computed": false,
+       "default": {
+        "value": "0"
+       },
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "reason": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "remark": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "stage": {
+       "computed": false,
+       "default": {
+        "value": "open"
+       },
+       "kind": "select",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "terms": {
+       "computed": false,
+       "default": null,
+       "kind": "integer",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "decimal"
+      },
+      "total": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      }
+     },
+     "lookups": [
+      {
+       "fields": [
+        "credit_days",
+        "rate"
+       ],
+       "model": "customer"
+      }
+     ],
+     "model": "offer",
+     "path": [],
+     "tables": [
+      "lines"
+     ]
+    },
+    "lines[*]": {
+     "fields": {
+      "amount": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "qty": {
+       "computed": false,
+       "default": {
+        "value": "1"
+       },
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      },
+      "rate": {
+       "computed": false,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "share": {
+       "computed": false,
+       "default": null,
+       "kind": "percent",
+       "maximum": "100",
+       "minimum": "0",
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      }
+     },
+     "model": "offer_lines",
+     "path": [
+      "lines"
+     ],
+     "tables": []
+    }
+   }
+  },
   "project": {
    "compiler_version": "evlet-finite-1",
    "expression_version": 1,
@@ -11616,6 +12314,4017 @@
   },
   {
    "data": {
+    "children": {
+     "lines": [
+      {
+       "_key": "r0",
+       "qty": "2"
+      },
+      {
+       "_key": "r1",
+       "qty": "12",
+       "rate": "1.50"
+      }
+     ]
+    },
+    "customer": 7,
+    "hours": "PT1H30M"
+   },
+   "model": "offer",
+   "name": "initial-and-rules",
+   "steps": [
+    {
+     "requests": [
+      [
+       "customer",
+       7,
+       [
+        "credit_days",
+        "rate"
+       ]
+      ]
+     ],
+     "revision": 1,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "0.00",
+         "qty": "2",
+         "rate": "0.00",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "18.00",
+         "qty": "12",
+         "rate": "1.50",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "hours": "PT1H30M",
+      "price": "0",
+      "stage": "open",
+      "total": "18.00"
+     },
+     "trace": {
+      "changed": [
+       "billable",
+       "discount:initial",
+       "lines.r0.amount",
+       "lines.r0.rate",
+       "lines.r0.rate:initial",
+       "lines.r0.share",
+       "lines.r0.share:initial",
+       "lines.r1.amount",
+       "lines.r1.rate:initial",
+       "lines.r1.share",
+       "lines.r1.share:initial",
+       "note:required_when",
+       "price:locked_when",
+       "reason:applies_when",
+       "reason:required_when",
+       "remark:applies_when",
+       "remark:locked_when",
+       "terms:initial",
+       "terms:locked_when",
+       "total"
+      ],
+      "evaluated": 17,
+      "skipped": 0,
+      "steps": 47
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      7,
+      {
+       "credit_days": 30,
+       "rate": "2.50"
+      }
+     ],
+     "requests": [],
+     "revision": 2,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "0.00",
+         "qty": "2",
+         "rate": "0.00",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "18.00",
+         "qty": "12",
+         "rate": "1.50",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "hours": "PT1H30M",
+      "price": "0",
+      "stage": "open",
+      "terms": "30",
+      "total": "18.00"
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "discount:initial",
+       "terms",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 15,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "discount",
+      "9"
+     ],
+     "requests": [],
+     "revision": 3,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "0.00",
+         "qty": "2",
+         "rate": "0.00",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "18.00",
+         "qty": "12",
+         "rate": "1.50",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "9",
+      "hours": "PT1H30M",
+      "price": "0",
+      "stage": "open",
+      "terms": "30",
+      "total": "18.00"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 0,
+      "skipped": 17,
+      "steps": 0
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      8,
+      {
+       "credit_days": 10,
+       "rate": "1.25"
+      }
+     ],
+     "requests": [],
+     "revision": 4,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "0.00",
+         "qty": "2",
+         "rate": "0.00",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "18.00",
+         "qty": "12",
+         "rate": "1.50",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "9",
+      "hours": "PT1H30M",
+      "price": "0",
+      "stage": "open",
+      "terms": "30",
+      "total": "18.00"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 2,
+      "skipped": 15,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      8
+     ],
+     "requests": [],
+     "revision": 5,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "0.00",
+         "qty": "2",
+         "rate": "0.00",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "18.00",
+         "qty": "12",
+         "rate": "1.50",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 8,
+      "discount": "1.25",
+      "hours": "PT1H30M",
+      "price": "0",
+      "stage": "open",
+      "terms": "10",
+      "total": "18.00"
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "discount:initial",
+       "terms",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 15,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      7
+     ],
+     "requests": [],
+     "revision": 6,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "0.00",
+         "qty": "2",
+         "rate": "0.00",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "18.00",
+         "qty": "12",
+         "rate": "1.50",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "hours": "PT1H30M",
+      "price": "0",
+      "stage": "open",
+      "terms": "30",
+      "total": "18.00"
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "discount:initial",
+       "terms",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 15,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "batch",
+      [
+       [
+        "set",
+        "",
+        "customer",
+        8
+       ],
+       [
+        "set",
+        "",
+        "discount",
+        "4.5"
+       ]
+      ]
+     ],
+     "requests": [],
+     "revision": 7,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "0.00",
+         "qty": "2",
+         "rate": "0.00",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "18.00",
+         "qty": "12",
+         "rate": "1.50",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 8,
+      "discount": "4.5",
+      "hours": "PT1H30M",
+      "price": "0",
+      "stage": "open",
+      "terms": "10",
+      "total": "18.00"
+     },
+     "trace": {
+      "changed": [
+       "discount:initial",
+       "terms",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 15,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      null
+     ],
+     "requests": [],
+     "revision": 8,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "0.00",
+         "qty": "2",
+         "rate": "0.00",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "18.00",
+         "qty": "12",
+         "rate": "1.50",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": null,
+      "discount": null,
+      "hours": "PT1H30M",
+      "price": "0",
+      "stage": "open",
+      "terms": null,
+      "total": "18.00"
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "discount:initial",
+       "terms",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 15,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "price",
+      "120"
+     ],
+     "requests": [],
+     "revision": 9,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "240.00",
+         "qty": "2",
+         "rate": "120.00",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "1440.00",
+         "qty": "12",
+         "rate": "120.00",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": null,
+      "discount": null,
+      "hours": "PT1H30M",
+      "price": "120",
+      "stage": "open",
+      "terms": null,
+      "total": "1680.00"
+     },
+     "trace": {
+      "changed": [
+       "lines.r0.amount",
+       "lines.r0.rate",
+       "lines.r0.rate:initial",
+       "lines.r1.amount",
+       "lines.r1.rate",
+       "lines.r1.rate:initial",
+       "note:required_when",
+       "total"
+      ],
+      "evaluated": 6,
+      "skipped": 11,
+      "steps": 14
+     }
+    },
+    {
+     "command": [
+      "set",
+      "lines.r0",
+      "rate",
+      "3"
+     ],
+     "requests": [],
+     "revision": 10,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "6.00",
+         "qty": "2",
+         "rate": "3",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "1440.00",
+         "qty": "12",
+         "rate": "120.00",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": null,
+      "discount": null,
+      "hours": "PT1H30M",
+      "price": "120",
+      "stage": "open",
+      "terms": null,
+      "total": "1446.00"
+     },
+     "trace": {
+      "changed": [
+       "lines.r0.amount",
+       "total"
+      ],
+      "evaluated": 2,
+      "skipped": 15,
+      "steps": 6
+     }
+    },
+    {
+     "command": [
+      "add",
+      "",
+      "lines",
+      {
+       "_key": "n",
+       "qty": "11"
+      }
+     ],
+     "requests": [],
+     "revision": 11,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "6.00",
+         "qty": "2",
+         "rate": "3",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "1440.00",
+         "qty": "12",
+         "rate": "120.00",
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "amount": "1320.00",
+         "qty": "11",
+         "rate": "120.00",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": null,
+      "discount": null,
+      "hours": "PT1H30M",
+      "price": "120",
+      "stage": "open",
+      "terms": null,
+      "total": "2766.00"
+     },
+     "trace": {
+      "changed": [
+       "lines.n.amount",
+       "lines.n.rate",
+       "lines.n.rate:initial",
+       "lines.n.share",
+       "lines.n.share:initial",
+       "total"
+      ],
+      "evaluated": 4,
+      "skipped": 16,
+      "steps": 13
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "note",
+      "big"
+     ],
+     "requests": [],
+     "revision": 12,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "6.00",
+         "qty": "2",
+         "rate": "3",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "1440.00",
+         "qty": "12",
+         "rate": "120.00",
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "amount": "1320.00",
+         "qty": "11",
+         "rate": "120.00",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": null,
+      "discount": null,
+      "hours": "PT1H30M",
+      "note": "big",
+      "price": "120",
+      "stage": "open",
+      "terms": null,
+      "total": "2766.00"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 0,
+      "skipped": 20,
+      "steps": 0
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "stage",
+      "lost"
+     ],
+     "requests": [],
+     "revision": 13,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "remark": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "6.00",
+         "qty": "2",
+         "rate": "3",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "1440.00",
+         "qty": "12",
+         "rate": "120.00",
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "amount": "1320.00",
+         "qty": "11",
+         "rate": "120.00",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": null,
+      "discount": null,
+      "hours": "PT1H30M",
+      "note": "big",
+      "price": "120",
+      "stage": "lost",
+      "terms": null,
+      "total": "2766.00"
+     },
+     "trace": {
+      "changed": [
+       "reason:applies_when",
+       "reason:required_when",
+       "remark:applies_when"
+      ],
+      "evaluated": 6,
+      "skipped": 14,
+      "steps": 18
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "reason",
+      "Too dear"
+     ],
+     "requests": [],
+     "revision": 14,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "remark": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "6.00",
+         "qty": "2",
+         "rate": "3",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "1440.00",
+         "qty": "12",
+         "rate": "120.00",
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "amount": "1320.00",
+         "qty": "11",
+         "rate": "120.00",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": null,
+      "discount": null,
+      "hours": "PT1H30M",
+      "note": "big",
+      "price": "120",
+      "reason": "Too dear",
+      "stage": "lost",
+      "terms": null,
+      "total": "2766.00"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 1,
+      "skipped": 19,
+      "steps": 3
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "stage",
+      "open"
+     ],
+     "requests": [],
+     "revision": 15,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "6.00",
+         "qty": "2",
+         "rate": "3",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "1440.00",
+         "qty": "12",
+         "rate": "120.00",
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "amount": "1320.00",
+         "qty": "11",
+         "rate": "120.00",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": null,
+      "discount": null,
+      "hours": "PT1H30M",
+      "note": "big",
+      "price": "120",
+      "reason": null,
+      "stage": "open",
+      "terms": null,
+      "total": "2766.00"
+     },
+     "trace": {
+      "changed": [
+       "reason",
+       "reason:applies_when",
+       "reason:required_when",
+       "remark:applies_when"
+      ],
+      "evaluated": 6,
+      "skipped": 14,
+      "steps": 18
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "reason",
+      "Ignored"
+     ],
+     "requests": [],
+     "revision": 16,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "6.00",
+         "qty": "2",
+         "rate": "3",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "1440.00",
+         "qty": "12",
+         "rate": "120.00",
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "amount": "1320.00",
+         "qty": "11",
+         "rate": "120.00",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": null,
+      "discount": null,
+      "hours": "PT1H30M",
+      "note": "big",
+      "price": "120",
+      "reason": null,
+      "stage": "open",
+      "terms": null,
+      "total": "2766.00"
+     },
+     "trace": {
+      "changed": [
+       "reason"
+      ],
+      "evaluated": 1,
+      "skipped": 19,
+      "steps": 3
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "stage",
+      "won"
+     ],
+     "requests": [],
+     "revision": 17,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "6.00",
+         "qty": "2",
+         "rate": "3",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "1440.00",
+         "qty": "12",
+         "rate": "120.00",
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "amount": "1320.00",
+         "qty": "11",
+         "rate": "120.00",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": null,
+      "discount": null,
+      "hours": "PT1H30M",
+      "note": "big",
+      "price": "120",
+      "reason": null,
+      "stage": "won",
+      "terms": null,
+      "total": "2766.00"
+     },
+     "trace": {
+      "changed": [
+       "price:locked_when",
+       "remark:locked_when",
+       "terms:locked_when"
+      ],
+      "evaluated": 6,
+      "skipped": 14,
+      "steps": 18
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      7
+     ],
+     "requests": [],
+     "revision": 18,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "6.00",
+         "qty": "2",
+         "rate": "3",
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "amount": "1440.00",
+         "qty": "12",
+         "rate": "120.00",
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "amount": "1320.00",
+         "qty": "11",
+         "rate": "120.00",
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "hours": "PT1H30M",
+      "note": "big",
+      "price": "120",
+      "reason": null,
+      "stage": "won",
+      "terms": null,
+      "total": "2766.00"
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "discount:initial",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 18,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "price",
+      null
+     ],
+     "requests": [],
+     "revision": 19,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "total": {
+        "causes": [
+         "lines.n.amount",
+         "lines.r0.amount",
+         "lines.r1.amount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.r0.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "2",
+         "rate": null,
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.r1.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "12",
+         "rate": null,
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.n.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "11",
+         "rate": null,
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "hours": "PT1H30M",
+      "note": "big",
+      "price": null,
+      "reason": null,
+      "stage": "won",
+      "terms": null,
+      "total": null
+     },
+     "trace": {
+      "changed": [
+       "lines.n.amount",
+       "lines.n.rate",
+       "lines.n.rate:initial",
+       "lines.r0.amount",
+       "lines.r0.rate",
+       "lines.r0.rate:initial",
+       "lines.r1.amount",
+       "lines.r1.rate",
+       "lines.r1.rate:initial",
+       "note:required_when",
+       "total"
+      ],
+      "evaluated": 8,
+      "skipped": 12,
+      "steps": 19
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "hours",
+      5400
+     ],
+     "requests": [],
+     "revision": 20,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "total": {
+        "causes": [
+         "lines.n.amount",
+         "lines.r0.amount",
+         "lines.r1.amount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": "1.50",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.r0.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "2",
+         "rate": null,
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.r1.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "12",
+         "rate": null,
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.n.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "11",
+         "rate": null,
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "hours": 5400,
+      "note": "big",
+      "price": null,
+      "reason": null,
+      "stage": "won",
+      "terms": null,
+      "total": null
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 1,
+      "skipped": 19,
+      "steps": 3
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "hours",
+      "P1D"
+     ],
+     "requests": [],
+     "revision": 21,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "total": {
+        "causes": [
+         "lines.n.amount",
+         "lines.r0.amount",
+         "lines.r1.amount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": "24.00",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.r0.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "2",
+         "rate": null,
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.r1.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "12",
+         "rate": null,
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.n.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "11",
+         "rate": null,
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "hours": "P1D",
+      "note": "big",
+      "price": null,
+      "reason": null,
+      "stage": "won",
+      "terms": null,
+      "total": null
+     },
+     "trace": {
+      "changed": [
+       "billable"
+      ],
+      "evaluated": 1,
+      "skipped": 19,
+      "steps": 3
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "hours",
+      "PT"
+     ],
+     "requests": [],
+     "revision": 22,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "hours"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "total": {
+        "causes": [
+         "lines.n.amount",
+         "lines.r0.amount",
+         "lines.r1.amount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.r0.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "2",
+         "rate": null,
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.r1.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "12",
+         "rate": null,
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.n.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "11",
+         "rate": null,
+         "share": "5.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "hours": "PT",
+      "note": "big",
+      "price": null,
+      "reason": null,
+      "stage": "won",
+      "terms": null,
+      "total": null
+     },
+     "trace": {
+      "changed": [
+       "billable"
+      ],
+      "evaluated": 1,
+      "skipped": 19,
+      "steps": 3
+     }
+    },
+    {
+     "command": [
+      "set",
+      "lines.n",
+      "qty",
+      "1"
+     ],
+     "requests": [],
+     "revision": 23,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "hours"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "total": {
+        "causes": [
+         "lines.n.amount",
+         "lines.r0.amount",
+         "lines.r1.amount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.r0.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "2",
+         "rate": null,
+         "share": "0.00"
+        },
+        {
+         "_key": "r1",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.r1.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "12",
+         "rate": null,
+         "share": "5.00"
+        },
+        {
+         "_key": "n",
+         "_states": {
+          "amount": {
+           "causes": [
+            "lines.n.amount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": null,
+         "qty": "1",
+         "rate": null,
+         "share": "0.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "hours": "PT",
+      "note": "big",
+      "price": null,
+      "reason": null,
+      "stage": "won",
+      "terms": null,
+      "total": null
+     },
+     "trace": {
+      "changed": [
+       "lines.n.share",
+       "lines.n.share:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 18,
+      "steps": 8
+     }
+    }
+   ]
+  },
+  {
+   "data": {
+    "children": {
+     "lines": [
+      {
+       "id": 9,
+       "qty": "20",
+       "rate": "7",
+       "share": "1"
+      }
+     ]
+    },
+    "customer": 7,
+    "discount": "1",
+    "id": 4,
+    "reason": "Kept",
+    "stage": "lost",
+    "terms": 3
+   },
+   "model": "offer",
+   "name": "loaded-offer",
+   "steps": [
+    {
+     "requests": [
+      [
+       "customer",
+       7,
+       [
+        "credit_days",
+        "rate"
+       ]
+      ]
+     ],
+     "revision": 1,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "remark": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "9",
+         "amount": "140.00",
+         "id": 9,
+         "qty": "20",
+         "rate": "7",
+         "share": "1"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "1",
+      "id": 4,
+      "reason": "Kept",
+      "stage": "lost",
+      "terms": 3,
+      "total": "140.00"
+     },
+     "trace": {
+      "changed": [
+       "billable",
+       "discount:initial",
+       "lines.9.amount",
+       "lines.9.rate:initial",
+       "lines.9.share:initial",
+       "note:required_when",
+       "price:locked_when",
+       "reason:applies_when",
+       "reason:required_when",
+       "remark:applies_when",
+       "remark:locked_when",
+       "terms:initial",
+       "terms:locked_when",
+       "total"
+      ],
+      "evaluated": 14,
+      "skipped": 0,
+      "steps": 37
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      7,
+      {
+       "credit_days": 30,
+       "rate": "2.50"
+      }
+     ],
+     "requests": [],
+     "revision": 2,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "remark": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "9",
+         "amount": "140.00",
+         "id": 9,
+         "qty": "20",
+         "rate": "7",
+         "share": "1"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "1",
+      "id": 4,
+      "reason": "Kept",
+      "stage": "lost",
+      "terms": 3,
+      "total": "140.00"
+     },
+     "trace": {
+      "changed": [
+       "discount:initial",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 12,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "price",
+      "5"
+     ],
+     "requests": [],
+     "revision": 3,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "remark": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "9",
+         "amount": "100.00",
+         "id": 9,
+         "qty": "20",
+         "rate": "5.00",
+         "share": "1"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "1",
+      "id": 4,
+      "price": "5",
+      "reason": "Kept",
+      "stage": "lost",
+      "terms": 3,
+      "total": "100.00"
+     },
+     "trace": {
+      "changed": [
+       "lines.9.amount",
+       "lines.9.rate",
+       "lines.9.rate:initial",
+       "note:required_when",
+       "total"
+      ],
+      "evaluated": 4,
+      "skipped": 10,
+      "steps": 9
+     }
+    },
+    {
+     "command": [
+      "set",
+      "lines.9",
+      "qty",
+      "3"
+     ],
+     "requests": [],
+     "revision": 4,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "remark": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "9",
+         "amount": "15.00",
+         "id": 9,
+         "qty": "3",
+         "rate": "5.00",
+         "share": "0.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "1",
+      "id": 4,
+      "price": "5",
+      "reason": "Kept",
+      "stage": "lost",
+      "terms": 3,
+      "total": "15.00"
+     },
+     "trace": {
+      "changed": [
+       "lines.9.amount",
+       "lines.9.share",
+       "lines.9.share:initial",
+       "total"
+      ],
+      "evaluated": 3,
+      "skipped": 11,
+      "steps": 10
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      8,
+      {
+       "credit_days": 10,
+       "rate": "1.25"
+      }
+     ],
+     "requests": [],
+     "revision": 5,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "remark": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "9",
+         "amount": "15.00",
+         "id": 9,
+         "qty": "3",
+         "rate": "5.00",
+         "share": "0.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "1",
+      "id": 4,
+      "price": "5",
+      "reason": "Kept",
+      "stage": "lost",
+      "terms": 3,
+      "total": "15.00"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 2,
+      "skipped": 12,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      8
+     ],
+     "requests": [],
+     "revision": 6,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "remark": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "9",
+         "amount": "15.00",
+         "id": 9,
+         "qty": "3",
+         "rate": "5.00",
+         "share": "0.00"
+        }
+       ]
+      },
+      "customer": 8,
+      "discount": "1.25",
+      "id": 4,
+      "price": "5",
+      "reason": "Kept",
+      "stage": "lost",
+      "terms": "10",
+      "total": "15.00"
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "discount:initial",
+       "terms",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 12,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "stage",
+      null
+     ],
+     "requests": [],
+     "revision": 7,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "9",
+         "amount": "15.00",
+         "id": 9,
+         "qty": "3",
+         "rate": "5.00",
+         "share": "0.00"
+        }
+       ]
+      },
+      "customer": 8,
+      "discount": "1.25",
+      "id": 4,
+      "price": "5",
+      "reason": null,
+      "stage": null,
+      "terms": "10",
+      "total": "15.00"
+     },
+     "trace": {
+      "changed": [
+       "reason",
+       "reason:applies_when",
+       "reason:required_when",
+       "remark:applies_when"
+      ],
+      "evaluated": 6,
+      "skipped": 8,
+      "steps": 18
+     }
+    }
+   ]
+  },
+  {
+   "data": {
+    "children": {
+     "lines": [
+      {
+       "id": 2,
+       "qty": "1",
+       "rate": "3"
+      }
+     ]
+    },
+    "customer": 7,
+    "id": 5,
+    "price": "150",
+    "remark": "kept",
+    "stage": "won",
+    "terms": 45
+   },
+   "model": "offer",
+   "name": "saved-locks-and-resends",
+   "steps": [
+    {
+     "requests": [
+      [
+       "customer",
+       7,
+       [
+        "credit_days",
+        "rate"
+       ]
+      ]
+     ],
+     "revision": 1,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 7,
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "won",
+      "terms": 45,
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [
+       "billable",
+       "discount:initial",
+       "lines.2.amount",
+       "lines.2.rate:initial",
+       "lines.2.share:initial",
+       "note:required_when",
+       "price:locked_when",
+       "reason:applies_when",
+       "reason:required_when",
+       "remark:applies_when",
+       "remark:locked_when",
+       "terms:initial",
+       "terms:locked_when",
+       "total"
+      ],
+      "evaluated": 14,
+      "skipped": 0,
+      "steps": 37
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      7,
+      {
+       "credit_days": 30,
+       "rate": "2.50"
+      }
+     ],
+     "requests": [],
+     "revision": 2,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 7,
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "won",
+      "terms": 45,
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [
+       "discount:initial",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 12,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "stage",
+      "lost"
+     ],
+     "requests": [],
+     "revision": 3,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "remark": {
+        "applies": false,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 7,
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "lost",
+      "terms": 45,
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [
+       "price:locked_when",
+       "reason:applies_when",
+       "reason:required_when",
+       "remark:applies_when",
+       "remark:locked_when",
+       "terms:locked_when"
+      ],
+      "evaluated": 6,
+      "skipped": 8,
+      "steps": 18
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      7
+     ],
+     "requests": [],
+     "revision": 3,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "remark": {
+        "applies": false,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 7,
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "lost",
+      "terms": 45,
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 0,
+      "skipped": 14,
+      "steps": 0
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "stage",
+      "open"
+     ],
+     "requests": [],
+     "revision": 4,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 7,
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "open",
+      "terms": 45,
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [
+       "reason:applies_when",
+       "reason:required_when",
+       "remark:applies_when"
+      ],
+      "evaluated": 6,
+      "skipped": 8,
+      "steps": 18
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      8
+     ],
+     "requests": [
+      [
+       "customer",
+       8,
+       [
+        "credit_days",
+        "rate"
+       ]
+      ]
+     ],
+     "revision": 5,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 8,
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "open",
+      "terms": 45,
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [
+       "discount:initial",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 12,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      8,
+      {
+       "credit_days": 10,
+       "rate": "1.25"
+      }
+     ],
+     "requests": [],
+     "revision": 6,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": true,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 8,
+      "discount": "1.25",
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "open",
+      "terms": 45,
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "discount:initial",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 12,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "rebase"
+     ],
+     "requests": [],
+     "revision": 6,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 8,
+      "discount": "1.25",
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "open",
+      "terms": 45,
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "discount:initial",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 12,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "terms",
+      60
+     ],
+     "requests": [],
+     "revision": 7,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 8,
+      "discount": "1.25",
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "open",
+      "terms": 60,
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 0,
+      "skipped": 14,
+      "steps": 0
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      8
+     ],
+     "requests": [],
+     "revision": 7,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 8,
+      "discount": "1.25",
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "open",
+      "terms": 60,
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 0,
+      "skipped": 14,
+      "steps": 0
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "stage",
+      "won"
+     ],
+     "requests": [],
+     "revision": 8,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 8,
+      "discount": "1.25",
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "won",
+      "terms": 60,
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [
+       "price:locked_when",
+       "remark:locked_when",
+       "terms:locked_when"
+      ],
+      "evaluated": 6,
+      "skipped": 8,
+      "steps": 18
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      7
+     ],
+     "requests": [],
+     "revision": 9,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "won",
+      "terms": "30",
+      "total": "3.00"
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "discount:initial",
+       "terms",
+       "terms:initial"
+      ],
+      "evaluated": 2,
+      "skipped": 12,
+      "steps": 2
+     }
+    },
+    {
+     "command": [
+      "add",
+      "",
+      "lines",
+      {
+       "_key": "n",
+       "qty": "1"
+      }
+     ],
+     "requests": [],
+     "revision": 10,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        },
+        {
+         "_key": "n",
+         "amount": "150.00",
+         "qty": "1",
+         "rate": "150.00",
+         "share": "0.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "won",
+      "terms": "30",
+      "total": "153.00"
+     },
+     "trace": {
+      "changed": [
+       "lines.n.amount",
+       "lines.n.rate",
+       "lines.n.rate:initial",
+       "lines.n.share",
+       "lines.n.share:initial",
+       "total"
+      ],
+      "evaluated": 4,
+      "skipped": 13,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "lines.2",
+      "qty",
+      "1"
+     ],
+     "requests": [],
+     "revision": 10,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "remark": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        },
+        {
+         "_key": "n",
+         "amount": "150.00",
+         "qty": "1",
+         "rate": "150.00",
+         "share": "0.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "id": 5,
+      "price": "150",
+      "remark": "kept",
+      "stage": "won",
+      "terms": "30",
+      "total": "153.00"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 0,
+      "skipped": 17,
+      "steps": 0
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "stage",
+      "lost"
+     ],
+     "requests": [],
+     "revision": 11,
+     "rules": {
+      "$root": {
+       "note": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "price": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       },
+       "reason": {
+        "applies": true,
+        "locked": false,
+        "required": true
+       },
+       "remark": {
+        "applies": false,
+        "locked": false,
+        "required": false
+       },
+       "terms": {
+        "applies": true,
+        "locked": false,
+        "required": false
+       }
+      }
+     },
+     "snapshot": {
+      "_states": {
+       "billable": {
+        "causes": [
+         "billable"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "billable": null,
+      "children": {
+       "lines": [
+        {
+         "_key": "2",
+         "amount": "3.00",
+         "id": 2,
+         "qty": "1",
+         "rate": "3"
+        },
+        {
+         "_key": "n",
+         "amount": "150.00",
+         "qty": "1",
+         "rate": "150.00",
+         "share": "0.00"
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "id": 5,
+      "price": "150",
+      "remark": null,
+      "stage": "lost",
+      "terms": "30",
+      "total": "153.00"
+     },
+     "trace": {
+      "changed": [
+       "price:locked_when",
+       "reason:applies_when",
+       "reason:required_when",
+       "remark",
+       "remark:applies_when",
+       "remark:locked_when",
+       "terms:locked_when"
+      ],
+      "evaluated": 6,
+      "skipped": 11,
+      "steps": 18
+     }
+    }
+   ]
+  },
+  {
+   "data": {
     "a": "6"
    },
    "model": "choice",
@@ -12870,7 +17579,7 @@
       true
      ],
      "requests": [],
-     "revision": 9,
+     "revision": 8,
      "snapshot": {
       "children": {
        "items": [
@@ -12976,9 +17685,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 14,
-      "skipped": 33,
-      "steps": 203
+      "evaluated": 0,
+      "skipped": 47,
+      "steps": 0
      }
     },
     {
@@ -12989,7 +17698,7 @@
       "6.65"
      ],
      "requests": [],
-     "revision": 10,
+     "revision": 9,
      "snapshot": {
       "children": {
        "items": [
@@ -13118,7 +17827,7 @@
       false
      ],
      "requests": [],
-     "revision": 11,
+     "revision": 10,
      "snapshot": {
       "children": {
        "items": [
@@ -13270,7 +17979,7 @@
       "7.43"
      ],
      "requests": [],
-     "revision": 12,
+     "revision": 11,
      "snapshot": {
       "children": {
        "items": [
@@ -13399,7 +18108,7 @@
       "5.07"
      ],
      "requests": [],
-     "revision": 13,
+     "revision": 12,
      "snapshot": {
       "children": {
        "items": [
@@ -13528,7 +18237,7 @@
       true
      ],
      "requests": [],
-     "revision": 14,
+     "revision": 13,
      "snapshot": {
       "children": {
        "items": [
@@ -13684,7 +18393,7 @@
       }
      ],
      "requests": [],
-     "revision": 15,
+     "revision": 14,
      "snapshot": {
       "children": {
        "items": [
@@ -13826,7 +18535,7 @@
       "items.r0"
      ],
      "requests": [],
-     "revision": 16,
+     "revision": 15,
      "snapshot": {
       "children": {
        "items": [
@@ -13951,7 +18660,7 @@
       "1.02"
      ],
      "requests": [],
-     "revision": 17,
+     "revision": 16,
      "snapshot": {
       "children": {
        "items": [
@@ -14078,7 +18787,7 @@
       "1.23"
      ],
      "requests": [],
-     "revision": 18,
+     "revision": 17,
      "snapshot": {
       "children": {
        "items": [
@@ -14211,7 +18920,7 @@
       }
      ],
      "requests": [],
-     "revision": 19,
+     "revision": 18,
      "snapshot": {
       "children": {
        "items": [
@@ -14353,7 +19062,7 @@
       "items.x4"
      ],
      "requests": [],
-     "revision": 20,
+     "revision": 19,
      "snapshot": {
       "children": {
        "items": [
@@ -14478,7 +19187,7 @@
       false
      ],
      "requests": [],
-     "revision": 21,
+     "revision": 20,
      "snapshot": {
       "children": {
        "items": [
@@ -14628,7 +19337,7 @@
       "5.11"
      ],
      "requests": [],
-     "revision": 22,
+     "revision": 21,
      "snapshot": {
       "children": {
        "items": [
@@ -14753,7 +19462,7 @@
       true
      ],
      "requests": [],
-     "revision": 23,
+     "revision": 21,
      "snapshot": {
       "children": {
        "items": [
@@ -14859,9 +19568,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 2,
-      "skipped": 45,
-      "steps": 33
+      "evaluated": 0,
+      "skipped": 47,
+      "steps": 0
      }
     },
     {
@@ -14872,7 +19581,7 @@
       true
      ],
      "requests": [],
-     "revision": 24,
+     "revision": 21,
      "snapshot": {
       "children": {
        "items": [
@@ -14978,9 +19687,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 2,
-      "skipped": 45,
-      "steps": 33
+      "evaluated": 0,
+      "skipped": 47,
+      "steps": 0
      }
     },
     {
@@ -14995,7 +19704,7 @@
       }
      ],
      "requests": [],
-     "revision": 25,
+     "revision": 22,
      "snapshot": {
       "children": {
        "items": [
@@ -15143,7 +19852,7 @@
       }
      ],
      "requests": [],
-     "revision": 26,
+     "revision": 23,
      "snapshot": {
       "children": {
        "items": [
@@ -15300,7 +20009,7 @@
       false
      ],
      "requests": [],
-     "revision": 27,
+     "revision": 23,
      "snapshot": {
       "children": {
        "items": [
@@ -15432,9 +20141,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 18,
-      "skipped": 41,
-      "steps": 261
+      "evaluated": 0,
+      "skipped": 59,
+      "steps": 0
      }
     },
     {
@@ -15449,7 +20158,7 @@
       }
      ],
      "requests": [],
-     "revision": 28,
+     "revision": 24,
      "snapshot": {
       "children": {
        "items": [
@@ -15619,7 +20328,7 @@
       "7.97"
      ],
      "requests": [],
-     "revision": 29,
+     "revision": 25,
      "snapshot": {
       "children": {
        "items": [
@@ -15787,7 +20496,7 @@
       "5.01"
      ],
      "requests": [],
-     "revision": 30,
+     "revision": 26,
      "snapshot": {
       "children": {
        "items": [
@@ -15959,7 +20668,7 @@
       }
      ],
      "requests": [],
-     "revision": 31,
+     "revision": 27,
      "snapshot": {
       "children": {
        "items": [
@@ -16142,7 +20851,7 @@
       "5.92"
      ],
      "requests": [],
-     "revision": 32,
+     "revision": 28,
      "snapshot": {
       "children": {
        "items": [
@@ -16319,7 +21028,7 @@
       "5.14"
      ],
      "requests": [],
-     "revision": 33,
+     "revision": 29,
      "snapshot": {
       "children": {
        "items": [
@@ -16500,7 +21209,7 @@
       "5.52"
      ],
      "requests": [],
-     "revision": 34,
+     "revision": 30,
      "snapshot": {
       "children": {
        "items": [
@@ -16679,7 +21388,7 @@
       "items.x7"
      ],
      "requests": [],
-     "revision": 35,
+     "revision": 31,
      "snapshot": {
       "children": {
        "items": [
@@ -16843,7 +21552,7 @@
       "8.67"
      ],
      "requests": [],
-     "revision": 36,
+     "revision": 32,
      "snapshot": {
       "children": {
        "items": [
@@ -17011,7 +21720,7 @@
       true
      ],
      "requests": [],
-     "revision": 37,
+     "revision": 33,
      "snapshot": {
       "children": {
        "items": [
@@ -17212,7 +21921,7 @@
       "7.46"
      ],
      "requests": [],
-     "revision": 38,
+     "revision": 34,
      "snapshot": {
       "children": {
        "items": [
@@ -17378,7 +22087,7 @@
       "5.31"
      ],
      "requests": [],
-     "revision": 39,
+     "revision": 35,
      "snapshot": {
       "children": {
        "items": [
@@ -17550,7 +22259,7 @@
       }
      ],
      "requests": [],
-     "revision": 40,
+     "revision": 36,
      "snapshot": {
       "children": {
        "items": [
@@ -17733,7 +22442,7 @@
       "8.9"
      ],
      "requests": [],
-     "revision": 41,
+     "revision": 37,
      "snapshot": {
       "children": {
        "items": [
@@ -18199,7 +22908,7 @@
       true
      ],
      "requests": [],
-     "revision": 4,
+     "revision": 3,
      "snapshot": {
       "children": {
        "items": [
@@ -18253,9 +22962,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 2,
-      "skipped": 21,
-      "steps": 17
+      "evaluated": 0,
+      "skipped": 23,
+      "steps": 0
      }
     },
     {
@@ -18266,7 +22975,7 @@
       "6.97"
      ],
      "requests": [],
-     "revision": 5,
+     "revision": 4,
      "snapshot": {
       "children": {
        "items": [
@@ -18341,7 +23050,7 @@
       "4.02"
      ],
      "requests": [],
-     "revision": 6,
+     "revision": 5,
      "snapshot": {
       "children": {
        "items": [
@@ -18416,7 +23125,7 @@
       false
      ],
      "requests": [],
-     "revision": 7,
+     "revision": 6,
      "snapshot": {
       "children": {
        "items": [
@@ -18491,7 +23200,7 @@
       true
      ],
      "requests": [],
-     "revision": 8,
+     "revision": 6,
      "snapshot": {
       "children": {
        "items": [
@@ -18545,9 +23254,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 6,
-      "skipped": 17,
-      "steps": 87
+      "evaluated": 0,
+      "skipped": 23,
+      "steps": 0
      }
     },
     {
@@ -18558,7 +23267,7 @@
       "3.72"
      ],
      "requests": [],
-     "revision": 9,
+     "revision": 7,
      "snapshot": {
       "children": {
        "items": [
@@ -18635,7 +23344,7 @@
       "4.33"
      ],
      "requests": [],
-     "revision": 10,
+     "revision": 8,
      "snapshot": {
       "children": {
        "items": [
@@ -18712,7 +23421,7 @@
       true
      ],
      "requests": [],
-     "revision": 11,
+     "revision": 9,
      "snapshot": {
       "children": {
        "items": [
@@ -18787,7 +23496,7 @@
       "1.8"
      ],
      "requests": [],
-     "revision": 12,
+     "revision": 10,
      "snapshot": {
       "children": {
        "items": [
@@ -18864,7 +23573,7 @@
       "5.22"
      ],
      "requests": [],
-     "revision": 13,
+     "revision": 11,
      "snapshot": {
       "children": {
        "items": [
@@ -18939,7 +23648,7 @@
       "5.73"
      ],
      "requests": [],
-     "revision": 14,
+     "revision": 12,
      "snapshot": {
       "children": {
        "items": [
@@ -19014,7 +23723,7 @@
       "7.52"
      ],
      "requests": [],
-     "revision": 15,
+     "revision": 13,
      "snapshot": {
       "children": {
        "items": [
@@ -19091,7 +23800,7 @@
       false
      ],
      "requests": [],
-     "revision": 16,
+     "revision": 14,
      "snapshot": {
       "children": {
        "items": [
@@ -19174,7 +23883,7 @@
       "3.7"
      ],
      "requests": [],
-     "revision": 17,
+     "revision": 15,
      "snapshot": {
       "children": {
        "items": [
@@ -19249,7 +23958,7 @@
       "items.r2"
      ],
      "requests": [],
-     "revision": 18,
+     "revision": 16,
      "snapshot": {
       "children": {
        "items": [
@@ -19309,7 +24018,7 @@
       "7.56"
      ],
      "requests": [],
-     "revision": 19,
+     "revision": 17,
      "snapshot": {
       "children": {
        "items": [
@@ -19369,7 +24078,7 @@
       "2.85"
      ],
      "requests": [],
-     "revision": 20,
+     "revision": 18,
      "snapshot": {
       "children": {
        "items": [
@@ -19431,7 +24140,7 @@
       "items.r3"
      ],
      "requests": [],
-     "revision": 21,
+     "revision": 19,
      "snapshot": {
       "children": {
        "items": [
@@ -19482,7 +24191,7 @@
       }
      ],
      "requests": [],
-     "revision": 22,
+     "revision": 20,
      "snapshot": {
       "children": {
        "items": [
@@ -19548,7 +24257,7 @@
       true
      ],
      "requests": [],
-     "revision": 23,
+     "revision": 20,
      "snapshot": {
       "children": {
        "items": [
@@ -19589,9 +24298,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 2,
-      "skipped": 15,
-      "steps": 13
+      "evaluated": 0,
+      "skipped": 17,
+      "steps": 0
      }
     },
     {
@@ -19606,7 +24315,7 @@
       }
      ],
      "requests": [],
-     "revision": 24,
+     "revision": 21,
      "snapshot": {
       "children": {
        "items": [
@@ -19689,7 +24398,7 @@
       }
      ],
      "requests": [],
-     "revision": 25,
+     "revision": 22,
      "snapshot": {
       "children": {
        "items": [
@@ -19785,7 +24494,7 @@
       }
      ],
      "requests": [],
-     "revision": 26,
+     "revision": 23,
      "snapshot": {
       "children": {
        "items": [
@@ -19890,7 +24599,7 @@
       false
      ],
      "requests": [],
-     "revision": 27,
+     "revision": 24,
      "snapshot": {
       "children": {
        "items": [
@@ -19990,7 +24699,7 @@
       false
      ],
      "requests": [],
-     "revision": 28,
+     "revision": 24,
      "snapshot": {
       "children": {
        "items": [
@@ -20070,9 +24779,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 10,
-      "skipped": 25,
-      "steps": 145
+      "evaluated": 0,
+      "skipped": 35,
+      "steps": 0
      }
     },
     {
@@ -20083,7 +24792,7 @@
       "8.51"
      ],
      "requests": [],
-     "revision": 29,
+     "revision": 25,
      "snapshot": {
       "children": {
        "items": [
@@ -20182,7 +24891,7 @@
       false
      ],
      "requests": [],
-     "revision": 30,
+     "revision": 25,
      "snapshot": {
       "children": {
        "items": [
@@ -20262,9 +24971,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 10,
-      "skipped": 25,
-      "steps": 145
+      "evaluated": 0,
+      "skipped": 35,
+      "steps": 0
      }
     },
     {
@@ -20279,7 +24988,7 @@
       }
      ],
      "requests": [],
-     "revision": 31,
+     "revision": 26,
      "snapshot": {
       "children": {
        "items": [
@@ -20397,7 +25106,7 @@
       "5.0"
      ],
      "requests": [],
-     "revision": 32,
+     "revision": 27,
      "snapshot": {
       "children": {
        "items": [
@@ -20503,7 +25212,7 @@
       false
      ],
      "requests": [],
-     "revision": 33,
+     "revision": 27,
      "snapshot": {
       "children": {
        "items": [
@@ -20596,9 +25305,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 12,
-      "skipped": 29,
-      "steps": 174
+      "evaluated": 0,
+      "skipped": 41,
+      "steps": 0
      }
     },
     {
@@ -20613,7 +25322,7 @@
       }
      ],
      "requests": [],
-     "revision": 34,
+     "revision": 28,
      "snapshot": {
       "children": {
        "items": [
@@ -20748,7 +25457,7 @@
       }
      ],
      "requests": [],
-     "revision": 35,
+     "revision": 29,
      "snapshot": {
       "children": {
        "items": [
@@ -20896,7 +25605,7 @@
       }
      ],
      "requests": [],
-     "revision": 36,
+     "revision": 30,
      "snapshot": {
       "children": {
        "items": [
@@ -21051,7 +25760,7 @@
       "items.x1"
      ],
      "requests": [],
-     "revision": 37,
+     "revision": 31,
      "snapshot": {
       "children": {
        "items": [
@@ -21187,7 +25896,7 @@
       "6.05"
      ],
      "requests": [],
-     "revision": 38,
+     "revision": 32,
      "snapshot": {
       "children": {
        "items": [
@@ -21329,7 +26038,7 @@
       "1.39"
      ],
      "requests": [],
-     "revision": 39,
+     "revision": 33,
      "snapshot": {
       "children": {
        "items": [
@@ -21467,7 +26176,7 @@
       false
      ],
      "requests": [],
-     "revision": 40,
+     "revision": 34,
      "snapshot": {
       "children": {
        "items": [
@@ -21604,7 +26313,7 @@
       "items.r1"
      ],
      "requests": [],
-     "revision": 41,
+     "revision": 35,
      "snapshot": {
       "children": {
        "items": [
@@ -23275,7 +27984,7 @@
       true
      ],
      "requests": [],
-     "revision": 16,
+     "revision": 15,
      "snapshot": {
       "children": {
        "items": [
@@ -23368,9 +28077,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 2,
-      "skipped": 39,
-      "steps": 29
+      "evaluated": 0,
+      "skipped": 41,
+      "steps": 0
      }
     },
     {
@@ -23381,7 +28090,7 @@
       "4.46"
      ],
      "requests": [],
-     "revision": 17,
+     "revision": 16,
      "snapshot": {
       "children": {
        "items": [
@@ -23499,7 +28208,7 @@
       }
      ],
      "requests": [],
-     "revision": 18,
+     "revision": 17,
      "snapshot": {
       "children": {
        "items": [
@@ -23630,7 +28339,7 @@
       "5.87"
      ],
      "requests": [],
-     "revision": 19,
+     "revision": 18,
      "snapshot": {
       "children": {
        "items": [
@@ -23759,7 +28468,7 @@
       "5.98"
      ],
      "requests": [],
-     "revision": 20,
+     "revision": 19,
      "snapshot": {
       "children": {
        "items": [
@@ -23888,7 +28597,7 @@
       "0.29"
      ],
      "requests": [],
-     "revision": 21,
+     "revision": 20,
      "snapshot": {
       "children": {
        "items": [
@@ -24015,7 +28724,7 @@
       false
      ],
      "requests": [],
-     "revision": 22,
+     "revision": 21,
      "snapshot": {
       "children": {
        "items": [
@@ -24142,7 +28851,7 @@
       "5.54"
      ],
      "requests": [],
-     "revision": 23,
+     "revision": 22,
      "snapshot": {
       "children": {
        "items": [
@@ -24269,7 +28978,7 @@
       "items.x3"
      ],
      "requests": [],
-     "revision": 24,
+     "revision": 23,
      "snapshot": {
       "children": {
        "items": [
@@ -24379,7 +29088,7 @@
       "6.48"
      ],
      "requests": [],
-     "revision": 25,
+     "revision": 24,
      "snapshot": {
       "children": {
        "items": [
@@ -24495,7 +29204,7 @@
       true
      ],
      "requests": [],
-     "revision": 26,
+     "revision": 24,
      "snapshot": {
       "children": {
        "items": [
@@ -24588,9 +29297,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 2,
-      "skipped": 39,
-      "steps": 29
+      "evaluated": 0,
+      "skipped": 41,
+      "steps": 0
      }
     },
     {
@@ -24601,7 +29310,7 @@
       "4.95"
      ],
      "requests": [],
-     "revision": 27,
+     "revision": 25,
      "snapshot": {
       "children": {
        "items": [
@@ -24715,7 +29424,7 @@
       "1.54"
      ],
      "requests": [],
-     "revision": 28,
+     "revision": 26,
      "snapshot": {
       "children": {
        "items": [
@@ -24829,7 +29538,7 @@
       "8.93"
      ],
      "requests": [],
-     "revision": 29,
+     "revision": 27,
      "snapshot": {
       "children": {
        "items": [
@@ -24945,7 +29654,7 @@
       "7.79"
      ],
      "requests": [],
-     "revision": 30,
+     "revision": 28,
      "snapshot": {
       "children": {
        "items": [
@@ -25059,7 +29768,7 @@
       "3.38"
      ],
      "requests": [],
-     "revision": 31,
+     "revision": 29,
      "snapshot": {
       "children": {
        "items": [
@@ -25173,7 +29882,7 @@
       false
      ],
      "requests": [],
-     "revision": 32,
+     "revision": 30,
      "snapshot": {
       "children": {
        "items": [
@@ -25306,7 +30015,7 @@
       "3.17"
      ],
      "requests": [],
-     "revision": 33,
+     "revision": 31,
      "snapshot": {
       "children": {
        "items": [
@@ -25422,7 +30131,7 @@
       "5.48"
      ],
      "requests": [],
-     "revision": 34,
+     "revision": 32,
      "snapshot": {
       "children": {
        "items": [
@@ -25534,7 +30243,7 @@
       "2.98"
      ],
      "requests": [],
-     "revision": 35,
+     "revision": 33,
      "snapshot": {
       "children": {
        "items": [
@@ -25650,7 +30359,7 @@
       true
      ],
      "requests": [],
-     "revision": 36,
+     "revision": 34,
      "snapshot": {
       "children": {
        "items": [
@@ -25784,7 +30493,7 @@
       "3.68"
      ],
      "requests": [],
-     "revision": 37,
+     "revision": 35,
      "snapshot": {
       "children": {
        "items": [
@@ -25898,7 +30607,7 @@
       "items.x2"
      ],
      "requests": [],
-     "revision": 38,
+     "revision": 36,
      "snapshot": {
       "children": {
        "items": [
@@ -25997,7 +30706,7 @@
       "6.59"
      ],
      "requests": [],
-     "revision": 39,
+     "revision": 37,
      "snapshot": {
       "children": {
        "items": [
@@ -26100,7 +30809,7 @@
       true
      ],
      "requests": [],
-     "revision": 40,
+     "revision": 37,
      "snapshot": {
       "children": {
        "items": [
@@ -26180,9 +30889,9 @@
      },
      "trace": {
       "changed": [],
-      "evaluated": 2,
-      "skipped": 33,
-      "steps": 25
+      "evaluated": 0,
+      "skipped": 35,
+      "steps": 0
      }
     },
     {
@@ -26191,7 +30900,7 @@
       "items.x5"
      ],
      "requests": [],
-     "revision": 41,
+     "revision": 38,
      "snapshot": {
       "children": {
        "items": [
