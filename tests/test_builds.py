@@ -132,6 +132,13 @@ def test_reference_app_full_public_flow(project):
     sent = move(url, 'sent')[1]
     assert sent['stage'] == 'sent' and [item['to'] for item in sent['_moves']] == ['won', 'lost', 'draft']
     assert re.fullmatch(r'Q-[0-9]{4}-0001', sent['number'])
+    # The quote's journal: the move and its number, then a note added on the locked quote.
+    number_entry, moved = c('GET', url + '/journal')[1]['items'][:2]
+    assert moved['kind'] == 'moved' and moved['data']['from'] == 'draft' and moved['data']['to'] == 'sent' and moved['data']['move'] == 'Send'
+    assert number_entry['data'] == {'field': 'number', 'number': sent['number']}
+    status, note, _ = c('POST', url + '/journal', {'kind': 'note', 'text': 'Customer asked for the PDF'})
+    assert status == 201 and note['kind'] == 'note' and c('GET', url + '/journal')[1]['items'][0]['id'] == note['id']
+    assert sent['_journal']['open_follow_ups'] == 0 and c('GET', url)[1]['_journal']['count'] == sent['_journal']['count'] + 1
     assert edit({'discount_rate': '5'})[1]['fields'] == {'discount_rate': 'This record is sent, so it is locked'}
     assert act({'extra_days': 0})[1]['fields'] == {'extra_days': 'Must be at least 1'}
     extended = act({'extra_days': 5})[1]
