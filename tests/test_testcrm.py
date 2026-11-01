@@ -280,6 +280,10 @@ def test_sales_see_only_their_deals_and_no_hidden_fields(crm):
     assert admin('GET', deal_url(admin, 'ERP rollout'))[1]['internal_notes'].startswith('Partner sign-off')
     # Measures follow the row scope.
     assert sara('GET', '/api/deal/measures')[1]['measures']['deals'] == len(mine)
+    # A new deal or lead belongs to whoever creates it, without typing a username.
+    created = sara('POST', '/api/deal', {'title': 'Mine without typing', 'organization': 1})
+    assert created[0] == 201 and created[1]['owner'] == 'sara'
+    assert sara('POST', '/api/lead', {'name': 'Hamad', 'company': 'Hamad Trading'})[1]['owner'] == 'sara'
 
 
 def test_two_sessions_editing_the_same_deal_conflict(crm):

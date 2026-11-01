@@ -2,7 +2,7 @@
 
 import re
 
-from ..fields import LongText, MISSING, Text
+from ..fields import CurrentUser, LongText, MISSING, Text
 from ..declarations import Ref
 
 
@@ -67,7 +67,8 @@ def field_schema(field):
               **({'currency': field.currency} if getattr(field, 'currency', None) is not None else {}),
               **({'editable_when_locked': True} if getattr(field, 'editable_when_locked', False) else {}),
               **({'sequence': field.schema()} if field.kind == 'sequence' else {}),
-              'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'callable' if callable(field.default) else 'static'}
+              'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'user' if field.default is CurrentUser
+              else 'callable' if callable(field.default) else 'static'}
     if result['default_kind'] == 'static':
         value = None if field.default is None else field.validate(field.default)
         result['default'] = field.serialize(value)

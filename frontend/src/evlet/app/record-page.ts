@@ -74,7 +74,7 @@ export function RecordPage(ctx: AppContext, name: string, idText: string): HTMLE
   const isNew = idText === 'new';
   const id = isNew ? null : Number(idText);
   if (!isNew && !(Number.isSafeInteger(id) && id! > 0)) return missing(ctx, model);
-  const store = new RecordStore({ api, schema: ctx.schema, model: name });
+  const store = new RecordStore({ api, schema: ctx.schema, model: name, user: ctx.user });
   onCleanup(() => store.dispose());
   const status = cell<'loading' | 'ready' | 'missing' | 'error'>('loading', { name: `${name} page` });
   const failure = cell<string>('');

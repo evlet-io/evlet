@@ -121,6 +121,18 @@ or fields. Python queries retain relationship traversal. Direct Link filters are
 also rejected when the target has a row scope. These restrictions are deliberate;
 a permission-aware join planner is future work.
 
+A scope on the signed-in user pairs with `default=CurrentUser`, which fills a field from that
+user when a record is created without a value: the username in a `Text` field, the account id
+in an `Integer` field. Other field types refuse it. A value the caller sends wins and still has
+to fit the scope. Updates never change it. The schema marks the field `default_kind: "user"`
+and the record view fills it in on a new record.
+
+```python
+class Deal(Model):
+    permissions = {'editor': Rule(('read', 'create', 'update'), scope=lambda user: {'owner': user.username})}
+    owner = Text(required=True, default=CurrentUser)
+```
+
 Schema permissions guide the UI. Backend checks remain authoritative. Hidden fields
 and grouped layouts are presentation options, not access controls. A stale screen
 cannot bypass a changed role; the next request ends the revoked session.

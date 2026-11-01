@@ -12,7 +12,7 @@ import sqlite3
 from .auth import AccessError
 from .database import ConflictError, ROW_LIMIT
 from .declarations import Ref
-from .fields import MISSING, Link
+from .fields import CurrentUser, MISSING, Link
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
@@ -787,6 +787,17 @@ def settle(context, draft, *, complete, previous=None, kept=False):
     return errors, states
 
 
+def current_user(item, field):
+    """The signed-in user's username (Text) or account id (Integer), from the root draft's context."""
+    root = item
+    while root.parent is not None:
+        root = root.parent
+    user = root.context.user if root.context is not None else None
+    if user is None:
+        return None
+    return user.username if field.kind == 'text' else user.id
+
+
 def apply_inputs(item, prefix, internal, errors):
     """Creation defaults, then type validation of every source (non-calculated) field."""
     for name, field in item._definition.__declared_fields__.items():
@@ -794,6 +805,7 @@ def apply_inputs(item, prefix, internal, errors):
         value = item._values.get(name, MISSING)
         if value is MISSING and item.id is None:
             if isinstance(field.default, Ref): value = item.read(field.default.path)
+            elif field.default is CurrentUser: value = current_user(item, field)
             elif field.default is not MISSING: value = field.default() if callable(field.default) else field.default
         if field.compute is not None or field.query is not None: continue
         try:

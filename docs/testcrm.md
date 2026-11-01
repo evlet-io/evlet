@@ -43,7 +43,7 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 | Contact | `Link` with an index, `Email`, a stored calculation through a Link path (`F("organization.emirate")`) |
 | Product | `unique` field, `Boolean`, read only for sales |
 | Booking | Effect target (`source = Reference()`, `reversal`), read only for every role, a measure |
-| Deal | `Sequence` (`DL-{year}-{n:04}`), `State` with guarded moves (`when=`), a role-limited move, locked, final and voidable states, `Meta.revisable`, `run=` on a move, `@action` with `inputs` and `available_when`, `applies_when` and `editable_when_locked`, `initial=` through a Link, a calculated `Percent` through nested `when()`, `round()`, `days()`, `coalesce()`, `today()` in a virtual result, a `Table` of up to 1,000 lines, `sum`, `count` and `where(row.recurring == True)` aggregates, an `Effect` with `Negate`, model and per-record measures, `key_fields`, `relations`, `Attachments`, a row scope and field lists per role |
+| Deal | `Sequence` (`DL-{year}-{n:04}`), `State` with guarded moves (`when=`), a role-limited move, locked, final and voidable states, `Meta.revisable`, `run=` on a move, `@action` with `inputs` and `available_when`, `applies_when` and `editable_when_locked`, `initial=` through a Link, a calculated `Percent` through nested `when()`, `round()`, `days()`, `coalesce()`, `today()` in a virtual result, a `Table` of up to 1,000 lines, `sum`, `count` and `where(row.recurring == True)` aggregates, an `Effect` with `Negate`, model and per-record measures, `key_fields`, `relations`, `Attachments`, a row scope with `default=CurrentUser` on the owner, and field lists per role |
 | Deal line | `initial=` from the product (description, rate, taxable), a discount `Percent`, an auto-rounded amount, VAT through `when()` and `parent.vat_rate` |
 | Task | `Time`, `Duration` with `applies_when`, a virtual `Boolean` from `today()`, Links to Deal and Contact |
 | Lead | `State` with a guard on the score, `applies_when` with `required_when` on a reason that Mark lost asks for, an action that creates other records |
@@ -53,7 +53,7 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 - admin: everything, plus void and revise on deals.
 - Sales people (editor): read and write organizations, contacts, leads and tasks; read products
   and bookings; on deals a row scope (`owner` is their username) and field lists without
-  `internal_notes`. A deal they create must name them as owner.
+  `internal_notes`. A deal they create is theirs: the owner fills in with their username.
 - Viewer: reads everything except a deal's internal notes and the fields only sales use.
 
 ### Interconnected work
@@ -93,9 +93,6 @@ screen test opens the same deal on its Activity tab and adds a note through the 
 
 ## Gaps found
 
-- **Owner is typed.** A row scope can compare a field with the user (`{'owner': user.username}`),
-  but nothing fills it with the current user, so a sales person types their own username on a new
-  deal. A default from the signed-in user is missing.
 - **"Won this month" is not a declared measure.** `where=` cannot compare dates with `today()`;
   the list strip shows won value overall, and the month is an aggregate by `won_on:month`.
 - **Errors without names.** `A document field conflicts with its draft interface` does not name the

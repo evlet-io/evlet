@@ -15,7 +15,7 @@
 // fields, initial values and the applies/required/locked rules into the field cells.
 
 import { compare, parse, type FiniteDocument } from './finite';
-import { ApiError, ConflictError, ValidationError, type ApiClient, type DraftResult, type FieldErrors, type RecordData } from '../api';
+import { ApiError, ConflictError, ValidationError, type ApiClient, type DraftResult, type FieldErrors, type RecordData, type User } from '../api';
 import { batch, cell, derive, getOwner, runWithOwner, scope, type Cell, type Derive } from '../reactive';
 import { buildChanges, findField } from './changes';
 import { todayGst } from './format';
@@ -115,7 +115,8 @@ export class Row {
     this.dispose = runWithOwner(parent?.owner ?? record.owner, () => scope(() => { this.owner = getOwner(); }));
     for (const meta of model.fields) {
       const value = Object.prototype.hasOwnProperty.call(data, meta.name) ? data[meta.name]
-        : isNew && meta.default_kind === 'static' ? meta.default ?? null : null;
+        : isNew && meta.default_kind === 'static' ? meta.default ?? null
+        : isNew && meta.default_kind === 'user' && record.user ? (meta.type === 'integer' ? record.user.id : record.user.username) : null;
       this.fields.set(meta.name, new Field(this, meta, value));
     }
     for (const child of model.children ?? []) {
@@ -349,6 +350,8 @@ export interface RecordOptions {
   model: string;
   /** Today's date for today() in calculations; defaults to the date in GST. */
   today?: () => string;
+  /** The signed-in user: fills `default=CurrentUser` fields (default_kind "user") on a new record. */
+  user?: User | null;
 }
 
 const PAGE = 100;
@@ -357,6 +360,7 @@ export class RecordStore {
   readonly index: SchemaIndex;
   readonly meta: ModelSchema;
   readonly api: ApiClient;
+  readonly user: User | null;
   /** The ETag of the saved version the draft is based on. */
   readonly etag = cell<string | null>(null, { name: 'record.etag' });
   /** Set when a save found the record changed on the server (409, 412, 428). Reload to continue. */
@@ -381,6 +385,7 @@ export class RecordStore {
 
   constructor(options: RecordOptions) {
     this.api = options.api;
+    this.user = options.user ?? null;
     this.index = options.schema instanceof SchemaIndex ? options.schema : new SchemaIndex(options.schema);
     this.meta = this.index.model(options.model);
     const plan = this.meta.calculation?.plan;

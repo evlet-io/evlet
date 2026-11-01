@@ -9,7 +9,7 @@ the deals they own and never see a deal's internal notes. Viewers read, without 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from evlet import (Attachments, Boolean, Child, Count, Currency, Date, Decimal, Duration, Effect, Email, Integer, Link,
+from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Effect, Email, Integer, Link,
                    LongText, Model, Move, Negate, Percent, Phone, Reference, Related, Rule, Select, Sequence, State, Sum,
                    Table, Tags, Text, Time, URL, action)
 from evlet.calc import D, F, coalesce, days, parent, round, row, today, when
@@ -127,8 +127,8 @@ class Deal(Model):
     title = Text(required=True, max_length=160)
     organization = Link(Organization, required=True)
     contact = Link(Contact)
-    # The username of the sales person who owns the deal.
-    owner = Text(required=True, max_length=60)
+    # The username of the sales person who owns the deal; whoever creates it, unless they name someone.
+    owner = Text(required=True, default=CurrentUser, max_length=60)
     lead_source = Select(SOURCES, label='Source')
     expected_close = Date()
     stage = State(('lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost', 'void'), moves=(
@@ -265,7 +265,7 @@ class Lead(Model):
     phone = Phone()
     lead_source = Select(SOURCES, label='Source')
     score = Integer(default=50, minimum=0, maximum=100)
-    owner = Text(max_length=60)
+    owner = Text(default=CurrentUser, max_length=60)
     status = State(('new', 'qualified', 'lost'), moves=(
         Move('new', 'qualified', 'Qualify', when=F('score') >= 40),
         Move(('new', 'qualified'), 'lost', 'Mark lost'),

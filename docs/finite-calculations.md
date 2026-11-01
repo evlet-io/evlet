@@ -289,6 +289,8 @@ at one. Rules can be declared on them; the rule reads other fields.
 * Legacy string formulas keep their own rules and do not use `rounding`.
 * `stored=False` fields are calculated but are not SQL columns.
 * `default=Ref("parent.warehouse")` copies the value once on creation; it is not live.
+  `default=CurrentUser` copies the signed-in user (see the Permissions section of
+  [business-capabilities.md](business-capabilities.md)).
   Use `compute=parent.warehouse` for a live relay.
 
 ## Results and states
