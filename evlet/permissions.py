@@ -11,6 +11,15 @@ from .query import SqlQuery, OPERATORS
 
 # IDs per batched permission or row statement; well under SQLite's bound-parameter limit.
 CHUNK = 500
+# Engine corrections: admin has them by default and a Rule may grant them to other roles too.
+CORRECTIONS = ('void', 'revise')
+
+
+def corrects(model, operation):
+    """Whether a model supports a correction: void needs voidable states, revise also Meta.revisable."""
+    state = getattr(model, '__state__', None)
+    voidable = state is not None and bool(model.__declared_fields__[state].voidable)
+    return voidable and (operation == 'void' or getattr(model, '__revisable__', False))
 
 
 @dataclass(frozen=True)
@@ -62,8 +71,14 @@ class Policy:
         self.rules = MappingProxyType(self.rules)
         for (role, model), rule in self.rules.items():
             registry.name_for(model)
-            if role not in ROLES or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete'}:
+            if role not in ROLES or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', *CORRECTIONS}:
                 raise ValueError('Invalid permission rule')
+            if 'revise' in rule.operations and 'create' not in rule.operations:
+                raise ValueError(f'{model.__name__}: Rule names \'revise\' without \'create\'; a revise creates a draft copy')
+            for operation in CORRECTIONS:
+                if operation in rule.operations and not corrects(model, operation):
+                    raise ValueError(f'{model.__name__}: Rule names {operation!r}, but the model cannot be '
+                                     + ('voided (declare voidable states on its State)' if operation == 'void' else 'revised (set Meta.revisable = True)'))
             if rule.operations and 'read' not in rule.operations:
                 raise ValueError('Write permissions require read access')
             for fields in (rule.read_fields, rule.write_fields):
@@ -71,11 +86,26 @@ class Policy:
                     raise ValueError('Permission fields must name model fields')
             if rule.scope is not None and not callable(rule.scope):
                 raise ValueError('Row scope must be a callable returning query filters')
+        # Void and revise: admin, when its Rule allows reading and updating the model (and creating, for
+        # revise), plus every role whose Rule names the operation. The rules table itself is not changed.
+        corrections = {}
+        for model in registry.models.values():
+            for operation in CORRECTIONS:
+                if not corrects(model, operation):
+                    continue
+                named = {role for role in ROLES if operation in self.rules.get((role, model), Rule(())).operations}
+                admin = set(self.rules.get(('admin', model), Rule(('read', 'create', 'update', 'delete'))).operations)
+                if {'read', 'update', *(('create',) if operation == 'revise' else ())} <= admin:
+                    named.add('admin')
+                corrections[model, operation] = frozenset(named)
+        self.corrections = MappingProxyType(corrections)
 
     def rule(self, user, model):
         return self.rules.get((user.role, model), Rule(('read',) if user.role == 'viewer' else ('read', 'create', 'update', 'delete')))
 
     def allows(self, user, model, operation):
+        if operation in CORRECTIONS:
+            return user.role in self.corrections.get((model, operation), ())
         return operation in self.rule(user, model).operations
 
     def require(self, user, model, operation):

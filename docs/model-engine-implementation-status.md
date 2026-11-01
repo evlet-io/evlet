@@ -386,7 +386,7 @@ Known limitations:
   scope); otherwise it reuses the rows the detail read. Other guards read only the root.
 * Draft previews do not report the State lock. The connector, the MCP server and the
   SolidJS form do not offer moves.
-* Void and revise (Phase 5) are not implemented; `voidable` is stored metadata only.
+* Void and revise were added in Phase 5 (below).
 
 Review fixes (01-11-2026):
 
@@ -426,3 +426,64 @@ Lock and leak fixes (01-11-2026):
 * Guards that read rows reuse the rows the GET detail loaded when the caller reads every
   row without a row scope. A 1,000-row document with such a guard now costs 8 statements
   against 7 without a State (it was 13).
+
+## Phase 5: void and revise (01-11-2026)
+
+Branch `model/05-void-revise`, stacked on `model/04-state`. Guide: the "Void and revise"
+section of [states-actions.md](states-actions.md).
+
+* **Declarations.** A State with `voidable` states must have a `void` state that is locked
+  and final, and no declared Move may go to `void`. `Meta.revisable = True` needs such a
+  State; the engine then adds a read-only, indexed `revises = Link(<the model>, index=True)`
+  field (each subclass gets its own), and `revises` and `revised_by` are reserved on that
+  model. A unique and required field on a revisable model or its rows is rejected. `Meta`
+  accepts `revisable`.
+* **Void.** `POST /api/{model}/{id}/void` with `{"reason": "..."}` and `Context.void()`.
+  Checks: model supports it (404), `void` permission and row scope (403 or 404), `If-Match`
+  (428 or 409), body and reason (required, trimmed, up to 1,000 characters; 422), voidable saved state
+  (409, without the state name for roles that cannot read it). One UPDATE writes the `void`
+  state; nothing is recalculated and the plan version row is not touched. `changed()`
+  receives `"void"`.
+* **Revise.** `POST /api/{model}/{id}/revise` and `Context.revise()`, same checks with the
+  `revise` permission plus create permission, reason required. Starts from a voidable state,
+  or from `void` when the record has no revision (409 `This record already has a revision`
+  otherwise). Predicts whether the caller's copy can be created (every row visible, create
+  permission for rows, every Link readable) and answers 403 with a plain reason if not. Voids
+  the original (unless already void), then builds a draft copy of every stored source value and Table row at every depth (rows read
+  with full access, one statement per table level and chunk, positions kept), sets the
+  default state and `revises`, clears unique fields, settles it through the normal pipeline and writes it with the
+  usual create checks for the record and its rows. Answers 201 with the copy's detail,
+  `Location` and `_original`. The original's detail gains `revised_by`, found through the
+  index on `revises` (an index search on SQLite and PostgreSQL, tested). Attachments are not
+  copied; the copy includes fields the caller cannot read or write.
+* **Permissions.** `Rule.operations` accepts `void` and `revise` on models that support them.
+  Per model and operation: admin (when its Rule allows read and update, plus create for
+  revise) and every role whose Rule names it; naming a role never removes admin. A Rule
+  naming `revise` without `create` fails at startup. `Policy.corrections` holds the result; `Policy.rules`
+  is unchanged, and a test pins a hash of every create, read, update, delete and field
+  permission of the Playground and Phase 4 test models to the value recorded before this
+  phase.
+* **Details and schema.** `_void` and `_revise` (allowed, reason) outside the ETag, for roles
+  that can read the State. For those roles only, entries of voidable models gain `voidable`,
+  `revisable`, and `void` (and `revise`) in `permissions`; other entries are unchanged, so the shared frontend
+  fixtures did not change.
+* **Hooks** in `evlet/corrections.py`, all empty and called inside the transaction:
+  `reverse_effects(context, model, record_id, previous)` after the void state is written
+  (Phase 6), `prepare_copy(context, model, original, copy)` before the copy settles (Phase 7
+  clears Sequence numbers here), `voided(context, model, record_id, previous, reason)` and
+  `revised(context, model, original_id, copy_id, reason)` once each operation is saved
+  (Phase 8 Journal; `voided` is skipped when a void record is revised again). A failure in any of them rolls the whole operation back (tested).
+* **Playground.** The amendment Quote has a `void` state (locked and final), `sent` is
+  voidable and the Quote is revisable; administrators may void or revise a sent quote.
+* **Changed tests.** `tests/test_builds.py`: the Quote's final states are now `won` and
+  `void`, and the flow revises a sent quote. `tests/test_states.py`: the Phase 4 Invoice keeps
+  its declared move to `void` and so no longer declares voidable states. New tests in `tests/test_corrections.py` and
+  PostgreSQL variants in `tests/test_postgres.py`.
+
+Known limitations:
+
+* The void reason is passed to the Journal hook but not stored until Phase 8.
+* Other reasons a copy can fail (a row scope on the root that the copy's values leave, a
+  fetched field the caller cannot read) are not predicted; they roll back with 403, 404 or 422.
+* Revising a document copies its rows one statement per row, like creating one.
+* The connector, the MCP server and the SolidJS form do not offer void or revise.

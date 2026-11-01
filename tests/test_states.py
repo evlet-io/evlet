@@ -49,7 +49,7 @@ class Invoice(Model):
         Move('draft', 'issued', 'Issue', when=(F('total') > 0) & (F('customer.limit') >= 0) & (F('secret') < 1000), run='on_issue'),
         Move('issued', 'paid', 'Mark paid', roles=('admin',), when=F('approved'), run='on_paid'),
         Move(('draft', 'issued'), 'void', 'Void', roles=('admin',)),
-    ), locked=('issued', 'paid', 'void'), final=('paid', 'void'), voidable=('issued',))
+    ), locked=('issued', 'paid', 'void'), final=('paid', 'void'))
 
     def on_issue(self):
         if self.name == 'fail':
@@ -387,7 +387,7 @@ def test_schema_describes_states_and_actions_per_role(invoices):
     state = admin['state']
     assert {key: state[key] for key in ('field', 'states', 'default', 'locked', 'final', 'voidable')} == {
         'field': 'status', 'states': ['draft', 'issued', 'paid', 'void'], 'default': 'draft',
-        'locked': ['issued', 'paid', 'void'], 'final': ['paid', 'void'], 'voidable': ['issued']}
+        'locked': ['issued', 'paid', 'void'], 'final': ['paid', 'void'], 'voidable': []}
     issue = state['moves'][0]
     assert (issue['from'], issue['to'], issue['label'], issue['roles'], issue['guarded']) == (['draft'], 'issued', 'Issue', ['admin', 'editor'], True)
     assert issue['when']['$expr'] == 'and' and state['moves'][2]['when'] is None and state['moves'][2]['guarded'] is False

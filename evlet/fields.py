@@ -441,7 +441,8 @@ class State(Select):
 
     Ordinary writes may create a record in the default state and never set the value. `locked`
     states refuse ordinary writes to the record and its Table rows, `final` states have no moves
-    out and `voidable` names the states a later void may start from.
+    out and `voidable` names the states a void (and a revise) may start from. A State with voidable
+    states must have a "void" state that is locked and final.
     """
     OPTIONS = ("label", "help_text", "placeholder", "hidden", "index", "max_length")
 
@@ -464,6 +465,9 @@ class State(Select):
         self.locked, self.final, self.voidable = groups["locked"], groups["final"], groups["voidable"]
         if set(self.voidable) - set(self.locked) or set(self.voidable) & set(self.final):
             raise ValueError("Voidable states must be locked and not final")
+        # A void moves the record to the state named "void", which keeps it locked and ends its life.
+        if self.voidable and ("void" not in self.choices or "void" not in self.locked or "void" not in self.final):
+            raise ValueError('A State with voidable states needs a "void" state that is locked and final')
         if not isinstance(moves, (list, tuple)) or any(not isinstance(move, Move) for move in moves):
             raise ValueError("State moves must be a list of Move declarations")
         self.moves, pairs = tuple(moves), set()
@@ -473,6 +477,9 @@ class State(Select):
                 raise ValueError(f"Move {move.label!r} names an unknown state: " + ", ".join(sorted(unknown)))
             if set(move.sources) & set(self.final):
                 raise ValueError(f"Move {move.label!r} leaves a final state; final states have no moves out")
+            if self.voidable and move.to == "void":
+                raise ValueError(f'Move {move.label!r} goes to "void"; with voidable states a record is voided only '
+                                 'through void() with a reason, so the engine can reverse its effects and record it')
             for source in move.sources:
                 if (source, move.to) in pairs:
                     raise ValueError(f"Declare one move from {source} to {move.to}")

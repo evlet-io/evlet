@@ -237,6 +237,10 @@ class Business:
             if entry['title_field'] not in readable:
                 entry['title_field'] = 'id'
             entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
+            from .corrections import model_schema
+            flags, corrections = model_schema(self, user, model)
+            entry.update(flags)
+            entry['permissions'].update(corrections)
             entry['child_only'] = model in self.child_models
             from .documents import row_bounds
             entry['children'] = [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label,
@@ -402,6 +406,12 @@ class Business:
 
     def model_dispatch(self, scope, body, user, model, parts):
         path, method = scope['path'], scope['method']
+        if len(parts) == 5 and parts[4] in ('void', 'revise'):
+            if method != 'POST':
+                raise AccessError(405, 'Method not allowed')
+            if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
+            from .corrections import dispatch
+            return dispatch(self, scope, body, user, model, int(parts[3]), parts[4])
         if getattr(model, '__declaration_mode__', False) and method == 'DELETE' and len(parts) == 4:
             if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
             with self.context(user) as context:
@@ -528,7 +538,9 @@ class Business:
         if model.__state__ is None and model not in self.registry.guards:
             return {}
         from .states import availability
-        return availability(self, context.read_context(), model, record, loaded)
+        from . import corrections
+        reader = context.read_context()
+        return {**availability(self, reader, model, record, loaded), **corrections.availability(self, reader, model, record)}
 
     def field_expressions(self, user, model):
         """Serialized finite expressions per readable field: compute, initial and the three rules.
@@ -756,6 +768,10 @@ class Business:
         """
         result = self.policy.serialize(tx, user, record)
         self.embed(tx, user, type(record), {record.id: result}, row_limit, loaded)
+        if getattr(type(record), '__revisable__', False) and 'revises' in self.policy.fields(user, type(record)):
+            # The other direction of `revises`, found by a lookup; there is no column for it.
+            from .corrections import revised_by
+            result['revised_by'] = revised_by(self, tx, user, type(record), record.id)
         return result
 
     def embed(self, tx, user, model, results, row_limit=EMBEDDED_ROWS, loaded=None):
