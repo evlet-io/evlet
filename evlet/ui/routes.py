@@ -51,11 +51,17 @@ def dispatch(application, scope):
         target = application.routes.redirect(host, path)
         if target:
             return 302, Download(b''), [(b'location', target.encode())]
+        if path == '/settings/accounts':
+            return 301, Download(b''), [(b'location', b'/controls/users')]
         found = application.routes.match(host, path)
         if found is None: raise HTTPError(404, 'Route not found')
         if not found[0].startswith('evlet.'):
             return _frontend(application, scope, host, *found)
-        served = _serves(application, *found)
+        if found[0] == 'evlet.controls' and application.business:
+            served = application.business.controls.page(scope, path)
+            if not isinstance(served, bool): return served
+        else:
+            served = _serves(application, *found)
         if not served and path.startswith('/assets/'): raise HTTPError(404, 'Route not found')
         if served and found[0] == 'evlet.docs' and application.routes.docs_roles:
             _docs_access(application, scope)
@@ -84,8 +90,6 @@ def _serves(application, frontend, base, rest):
         return path == '/login'
     if frontend == 'evlet.docs':
         return rest == '' or rest.startswith('/')
-    if frontend == 'evlet.settings':
-        return path == '/settings/accounts'
     if frontend == 'evlet.assets':
         return rest.startswith('/')
     if frontend == 'evlet.reports':

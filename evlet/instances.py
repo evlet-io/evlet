@@ -78,6 +78,8 @@ class AppDefinition:
     apis: tuple = ()
     frontends: tuple = ()
     api_scopes: tuple = ()
+    roles: dict = field(default_factory=dict)
+    scopes: dict = field(default_factory=dict)
 
     def __post_init__(self):
         for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes'):
@@ -85,6 +87,14 @@ class AppDefinition:
         if not callable(self.actions):
             object.__setattr__(self, 'actions', tuple(self.actions))
         object.__setattr__(self, 'permissions', dict(self.permissions))
+        from .auth import ROLE_ID, ROLES
+        object.__setattr__(self, 'roles', dict(self.roles))
+        for role, base in self.roles.items():
+            if not isinstance(role, str) or not ROLE_ID.fullmatch(role) or role in ROLES or role == 'controls' or base not in ('editor', 'viewer'):
+                raise ValueError(f'roles maps a new lowercase role id to its base, editor or viewer: {role!r}')
+        object.__setattr__(self, 'scopes', dict(self.scopes))
+        if any(not isinstance(key, str) or not ROLE_ID.fullmatch(key) or not callable(scope) for key, scope in self.scopes.items()):
+            raise ValueError('scopes maps lowercase names to callables returning query filters')
         from .services import CalendarSchedule
         if any(not isinstance(schedule, (Schedule, CalendarSchedule)) for schedule in self.schedules):
             raise ValueError('Register Schedule definitions')
@@ -308,8 +318,11 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     secure = routes.primary is not None
     auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=secure, allow_setup=not secure,
                      trusted_proxies=config.trusted_proxies)
-    rules, views, schedules = {}, ViewRegistry(), []
+    rules, views, schedules, roles = {}, ViewRegistry(), [], {role: role for role in ('admin', 'editor', 'viewer')}
     for name, definition in definitions:
+        for role, base in definition.roles.items():
+            if roles.setdefault(role, base) != base:
+                raise ValueError(f'Two apps declare role {role} with different bases')
         if rules.keys() & definition.permissions.keys():
             raise ValueError('Two apps registered the same permission rule')
         rules.update(definition.permissions)
@@ -330,7 +343,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
         for view in definition.views:
             views.register(view)
         schedules.extend(definition.schedules)
-    policy = Policy(registry, rules=rules)
+    policy = Policy(registry, rules=rules, roles=roles)
     events = EventStore(database)
     jobs = JobQueue(database, [task for _, definition in definitions for task in definition.tasks], tenant=config.name.replace('_', '-'), events=events, policy=policy)
     if len({schedule.name for schedule in schedules}) != len(schedules):
@@ -346,6 +359,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
                       apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
                       storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, **options)
     app.business.timezone = config.timezone
+    app.business.controls.load(definitions, pinned)
     app.business.build_manifest = manifest
     app._source_packages = pinned
     app.business.build_directory = path.parent.parent / '.evlet' / 'builds' / manifest['fingerprint']
