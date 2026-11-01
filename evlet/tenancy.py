@@ -205,6 +205,7 @@ class TenantApplication:
         self.catalog, self.factory = catalog, factory
         self._apps = {}
         self._lock = threading.Lock()
+        self._stopping = False
 
     def stop(self):
         """End every tenant's live streams; hosts call this when their shutdown drain begins."""
@@ -240,7 +241,7 @@ class TenantApplication:
             app.business.tenant = tenant.public()
             if previous:
                 previous[1].stop()
-            if getattr(self, '_stopping', False):
+            if self._stopping:
                 app.stop()
             self._apps[tenant.slug] = (tenant, app)
             return app

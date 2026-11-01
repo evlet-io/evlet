@@ -160,6 +160,7 @@ class Application:
             while (await receive())['type'] != 'http.disconnect':
                 pass
         disconnect = asyncio.create_task(disconnected())
+        self._loop = asyncio.get_running_loop()
         stopping = asyncio.create_task(self._stopping.wait())
         try:
             for iteration in range(25):
@@ -265,8 +266,16 @@ class Application:
             self.business.initialize()
 
     def stop(self):
-        """End live streams before an ASGI server waits for open connections."""
-        self._stopping.set()
+        """End live streams before an ASGI server waits for open connections. Safe from any thread."""
+        loop = getattr(self, '_loop', None)
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if loop is not None and loop is not running and not loop.is_closed():
+            loop.call_soon_threadsafe(self._stopping.set)
+        else:
+            self._stopping.set()
 
     async def _lifespan(self, receive, send):
         generation = None
