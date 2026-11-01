@@ -128,8 +128,12 @@ class ModelType(type):
         if isinstance(fields.get('source'), Reference) and not tables:
             # Effect targets declare source = Reference(); a flat record has no dialog source to shadow.
             reserved.discard('source')
-        if getattr(cls, '__declaration_mode__', False) and (set(fields) | set(tables) | set(sources)) & reserved:
-            raise ValueError('A document field conflicts with its draft interface')
+        clashes = sorted((set(fields) | set(tables) | set(sources)) & reserved) if getattr(cls, '__declaration_mode__', False) else ()
+        if clashes:
+            owned = ', '.join(f'{name}.{field}' for field in clashes)
+            quoted = ', '.join(f'"{field}"' for field in clashes)
+            raise ValueError(f'{owned}: {quoted} {"is" if len(clashes) == 1 else "are"} reserved on documents '
+                             f'({", ".join(sorted(reserved))}); rename the field')
         return cls
 
 

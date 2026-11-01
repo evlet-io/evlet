@@ -93,10 +93,6 @@ screen test opens the same deal on its Activity tab and adds a note through the 
 
 ## Gaps found
 
-- **Errors without names.** `A document field conflicts with its draft interface` does not name the
-  field (here a field called `source`, which documents reserve). `Layout must include every visible
-  field exactly once` does not name the missing fields, and [ui-framework.md](ui-framework.md) says
-  fields left out of a layout go under Other.
 - **A Child at module level is a root model.** Discovery registers every `Model` subclass in
   `models.py`, so a `Child` used by `Table(...)` must be nested in its document class.
 - **Screens.** Fixed here: the child table footer took a filtered sum (`recurring_total`) for the

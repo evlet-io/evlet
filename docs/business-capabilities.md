@@ -246,7 +246,9 @@ class Meta:
     )
 ```
 
-Use at most eight groups and include each visible field exactly once. The default
+Use at most eight groups and list each visible field at most once. Visible fields a
+layout leaves out follow in an Other group, in declaration order. A field listed twice,
+or an unknown or hidden name, fails registration with a message naming it. The default
 is one Details group. The UI schema retains version 1 with additive layout,
 permissions, actions, children, child_only, and attachments metadata. Presentation
 changes do not alter migration checksums.
