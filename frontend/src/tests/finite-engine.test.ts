@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fixtures from './finite-fixtures.json';
 import engineSource from '../runtime/FiniteEngine.ts?raw';
 import fixtureSource from './finite-fixtures.json?raw';
-import { FiniteDocument, CalcError, parse, text, add, sub, mul, div, quantize, fingerprint, sha256, canonical } from '../runtime/FiniteEngine';
+import { FiniteDocument, CalcError, parse, text, add, sub, mul, div, quantize, fingerprint, sha256, canonical, dayNumber, dayText } from '../runtime/FiniteEngine';
 
 const plans = fixtures.plans as Record<string, any>;
 
@@ -16,6 +16,18 @@ function apply(document: FiniteDocument, command: any[]) {
   else if (kind === 'move') document.moveRow(handle(document, args[0]), handle(document, args[1]), args[2], args[3]);
   else if (kind === 'reorder') document.reorder(handle(document, args[0]), args[1], args[2].map((label: string) => handle(document, label)));
   else if (kind === 'replace') document.replaceRows(handle(document, args[0]), args[1], args[2]);
+  else if (kind === 'today') document.setToday(args[0]);
+  else if (kind === 'lookup') document.setLookups(args[0], args[1], args[2]);
+}
+
+// A rebuilt session receives the same host inputs (today and lookups) as the original.
+function rebuild(document: FiniteDocument, plan: any) {
+  const fresh = new FiniteDocument(plan, document.sources());
+  fresh.batch(commands => {
+    if (document.today !== null) commands.setToday(document.today);
+    for (const [model, records] of document.lookups) for (const [id, values] of records) commands.setLookups(model, id, {...values});
+  });
+  return fresh;
 }
 
 function strip(value: any): any {
@@ -55,7 +67,7 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
   });
 
   it.each(fixtures.numeric as any[])('computes $op($a, $b) like Python', (item: any) => {
-    const run = () => item.op === 'round' ? text(quantize(parse(item.a), item.b))
+    const run = () => item.op.startsWith('round') ? text(quantize(parse(item.a), item.b, item.op === 'round_even' ? 'half_even' : 'half_up'))
       : text(({add, sub, mul, div} as any)[item.op](parse(item.a), parse(item.b)));
     if (item.error) expect(run).toThrow(item.error);
     else expect(run()).toBe(item.expected);
@@ -67,6 +79,7 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
       const [initial, ...steps] = scenario.steps;
       expect(strip(document.snapshot())).toEqual(initial.snapshot);
       expect(document.trace).toEqual(initial.trace);
+      expect(document.lookupRequests()).toEqual(initial.requests);
       for (const step of steps) {
         if (step.error) {
           let code = '';
@@ -78,8 +91,8 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
         }
         expect(strip(document.snapshot())).toEqual(step.snapshot);
         expect(document.revision).toBe(step.revision);
-        const fresh = new FiniteDocument(plans[scenario.model], document.sources());
-        expect(strip(fresh.snapshot())).toEqual(step.snapshot);
+        expect(document.lookupRequests()).toEqual(step.requests);
+        expect(strip(rebuild(document, plans[scenario.model]).snapshot())).toEqual(step.snapshot);
       }
     });
   }
@@ -161,5 +174,43 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     document.dispose();
     expect(document.subscriptions()).toBe(0);
     expect(() => document.set('h1', 'inclusive', true)).toThrow('DOCUMENT_STRUCTURE_ERROR');
+  });
+
+  it('supplies today and Link lookups through the host API and recomputes only their dependents', () => {
+    const document = new FiniteDocument(plans.sale, {customer: 7, issued: '2026-10-28', amount: '100.05'});
+    expect(document.lookupRequests()).toEqual([['customer', 7, ['credit_days', 'rate', 'region', 'since', 'vip']]]);
+    document.setLookups('customer', 7, {credit_days: 30, rate: '2.50', vip: true, region: null, since: '2026-10-01'});
+    expect(document.lookupRequests()).toEqual([]);
+    const snap = document.snapshot();
+    expect([snap.due, snap.discount, snap.net, snap.loyal]).toEqual(['2026-11-27', '2.50', '97.55', '27']);
+    expect(snap._states.grace_due.state).toBe('pending');
+    const evaluations = document.explain(document.root.handle, 'due').evaluations;
+    document.setLookups('customer', 7, {rate: '5'});
+    expect(document.explain(document.root.handle, 'due').evaluations).toBe(evaluations);
+    expect(document.snapshot().discount).toBe('5.00');
+    expect(document.explain(document.root.handle, 'discount').inputs).toContain('@customer.rate');
+    // Rejected lookups and a failed batch leave the session unchanged.
+    expect(() => document.setLookups('customer', 7, {secret: 1})).toThrow('DOCUMENT_STRUCTURE_ERROR');
+    expect(() => document.setLookups('customer', -1, {rate: '1'})).toThrow('DOCUMENT_STRUCTURE_ERROR');
+    expect(() => document.batch(commands => { commands.setLookups('customer', 7, {rate: '9'}); throw new Error('stop'); })).toThrow('stop');
+    expect(document.snapshot().discount).toBe('5.00');
+    const schedule = new FiniteDocument(plans.schedule, {start: '2024-02-28'});
+    expect(schedule.snapshot()._states.age.causes).toEqual(['@today']);
+    schedule.setToday('2024-03-01');
+    expect(schedule.snapshot().age).toBe('2');
+  });
+
+  it('validates rounding in plans and matches Python ordinals for dates', () => {
+    const broken = structuredClone(plans.rounding);
+    broken.fields[0].rounding = 'down';
+    broken.model_schema_hash = fingerprint(broken);
+    expect(() => new FiniteDocument(broken, {})).toThrow('UNSUPPORTED_EXPRESSION');
+    expect([dayNumber('0001-01-01'), dayNumber('1970-01-01'), dayNumber('2024-02-29'), dayNumber('9999-12-31')]).toEqual([1, 719163, 738945, 3652059]);
+    for (let day = 1; day <= 3652059; day += 997) expect(dayNumber(dayText(day))).toBe(day);
+    for (const bad of ['0000-01-01', '2023-02-29', '2024-13-01', '2024-1-01', '20240101', ' 2024-01-01'])
+      expect(() => dayNumber(bad)).toThrow('COMPUTE_TYPE_ERROR');
+    expect(() => dayText(3652060)).toThrow('COMPUTE_RANGE_ERROR');
+    expect(text(quantize(parse('0.125'), 2, 'half_even'))).toBe('0.12');
+    expect(text(quantize(parse('-0.135'), 2, 'half_even'))).toBe('-0.14');
   });
 });

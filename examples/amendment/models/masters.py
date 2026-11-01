@@ -1,9 +1,10 @@
-from evlet import Model, Text, Link, Decimal, Boolean, Select, Rule, Date
+from evlet import Model, Text, Link, Decimal, Boolean, Select, Rule, Date, Integer
 
 
 class Company(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read',)), 'viewer': Rule(('read',))}
     name = Text(required=True)
+    payment_days = Integer(default=30, minimum=0)
 
 
 class Warehouse(Model):

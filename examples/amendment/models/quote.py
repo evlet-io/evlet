@@ -1,6 +1,7 @@
 """A finite-v1 document: one formula definition for browser previews and server saves."""
-from evlet import Model, Child, Table, Decimal, Currency, Boolean, Text, Rule
-from evlet.calc import parent, round
+from evlet import Model, Child, Table, Decimal, Currency, Boolean, Text, Rule, Link, Date
+from evlet.calc import F, days, parent, round, when
+from amendment.models.masters import Company
 
 
 class Quote(Model):
@@ -12,6 +13,13 @@ class Quote(Model):
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
     name = Text(required=True)
     inclusive = Boolean(default=False)
+    company = Link(Company)
+    issued_on = Date()
+    # A Link path to the company's payment terms. when() leaves it empty until both inputs are set,
+    # because date arithmetic with an empty value stays pending and would block the save.
+    valid_until = Date(compute=when((F('company') == None) | (F('issued_on') == None), None,  # noqa: E711
+                                    F('issued_on') + days(F('company.payment_days'))))
+    discount_rate = Decimal(scale=2, default='0', minimum='0', maximum='100')
 
     class Line(Child):
         description = Text(default='')
@@ -29,3 +37,6 @@ class Quote(Model):
     vat_total = Currency(compute=lines.sum('vat'))
     taxable_net = Currency(compute=lines.where(taxable=True).sum('net'))
     grand_total = Currency(compute=net_total + vat_total)
+    # Quantized to 2 places with Currency's default half-up rounding; no round() needed.
+    discount = Currency(compute=net_total * discount_rate / 100)
+    payable = Currency(compute=grand_total - discount)

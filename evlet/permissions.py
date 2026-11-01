@@ -103,14 +103,15 @@ class Policy:
         from .calc import is_finite
         field = model.__declared_fields__[name]
         if is_finite(field):
-            # A finite result is readable only when every input and whole collection it reads is.
+            # A finite result is readable only when every input and whole collection it reads is, and
+            # every field on a Link path is readable on every record (no row scope on a looked-up model).
             # Finite plans are acyclic and rules depend only on the role, so results are cached.
             cache = self.__dict__.setdefault('_derived', {})
             key = (user.role, model, name)
             if key not in cache:
                 cache[key] = all(
                     self.allows(user, target, 'read')
-                    and not (scope in ('member', 'membership') and self.rule(user, target).scope is not None)
+                    and not (scope in ('member', 'membership', 'lookup') and self.rule(user, target).scope is not None)
                     and (read is None or read in self.presented(user, target) and self.derivation_allowed(user, target, read))
                     for scope, target, read in self.registry.finite_reads(model, name))
             return cache[key]

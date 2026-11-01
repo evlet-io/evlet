@@ -148,3 +148,47 @@ limits, which plans refuse by design; it was not run.
   (UI), A37/A51/A52 (browser save-mapping and async-reply flows), and partial T10, T24,
   T27, T28, A03, A06, A13, A30, A55, A56, A60.
 * No native UI integration (W7-W9).
+
+## Phase 1: expression extensions (01-11-2026)
+
+Branch `model/01-expressions`. All additions are new operations in finite-v1; no plan,
+expression or compiler version changed.
+
+* **Auto-rounding.** `Decimal`, `Currency` and `Integer` take `rounding="half_up"` or
+  `"half_even"` (defaults: Currency and Integer half up, Decimal half even). A finite result
+  is quantized to the target scale instead of failing with `COMPUTE_SCALE_ERROR`; range and
+  bounds errors stay errors. Each plan field carries `rounding`. `round(x, n)` still rounds
+  half up. Changed test: `test_bool_casts_and_scale_targets` now expects rounded values where
+  it expected `COMPUTE_SCALE_ERROR`; the shared `states` fixture changed the same way.
+* **Dates.** `days(n)`, `today()`, `date +/- days(n)`, `date - date` and date comparisons.
+  IR operations `date_add`, `date_sub`, `date_diff` and `today`. DateTime references keep
+  their earlier rules (equality and `coalesce` only); a Link path cannot end at a DateTime.
+* **Link paths.** `F("customer.region.grace")`, at most three Links, validated at registry
+  build. IR operation `hop`; plan tables list their `lookups`. Hosts supply values through
+  `set_lookups` / `setLookups`; the server reads them in the save transaction with one
+  query per looked-up model per Link step (chunks of 100 IDs); each record is queried at
+  most once per settle, found or not. `derivation_allowed` now
+  requires every path field to be readable and no row scope on looked-up models.
+* **`when(cond, a, b)`.** Only the chosen branch is evaluated; a null or pending condition
+  is pending.
+* **Hashes.** Formula hashes of existing models are unchanged: `rounding` enters the
+  formula hash only when it differs from the type default. A test pins the hashes of the
+  shared fixture models. Plan fingerprints (`model_schema_hash`) do change, because plan
+  fields now carry `rounding`; browsers reload the plan as with any deploy.
+* **Fixtures.** New shared scenarios for rounding ties and negatives, dates (leap days,
+  range limits, invalid dates, `today`), Link paths (null link, a withheld lookup supplied
+  as pending, rejected lookups) and `when` (pending condition, error in the unchosen branch).
+  Every step also records `lookupRequests()`.
+
+Known limitations of this phase:
+
+* `parent.customer.x` paths are not supported; relay the Link first.
+* A stored result that uses `today()` is fixed at its last save.
+* Arithmetic with a null path value stays pending, so stored results over an optional Link
+  need `coalesce` or `when`.
+* The browser form still previews through `/api/_draft`; no browser screen calls
+  `setLookups` yet.
+* A stored result that reads a Link path keeps the value from its last save; it is updated
+  on the next write of the document when the linked record changes.
+* Child rows load with about one SELECT per row (about 1,000 statements for 90 linked
+  rows); batched loading is planned for Phase 3.

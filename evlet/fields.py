@@ -7,6 +7,16 @@ from urllib.parse import urlsplit
 
 MISSING = object()
 MAX_INTEGER = 2**63 - 1
+ROUNDING = ("half_up", "half_even")
+
+
+def rounding_mode(value, default):
+    """How a finite calculation quantizes a result to this field's scale."""
+    if value is None:
+        return default
+    if value not in ROUNDING:
+        raise ValueError("rounding must be 'half_up' or 'half_even'")
+    return value
 
 
 def storage_name(model):
@@ -172,9 +182,11 @@ class Text(Field):
 class Integer(Field):
     kind = "integer"
     sql_type = "INTEGER"
+    default_rounding = "half_up"
 
-    def __init__(self, *, minimum=None, maximum=None, **kwargs):
+    def __init__(self, *, minimum=None, maximum=None, rounding=None, **kwargs):
         super().__init__(**kwargs)
+        self.rounding = rounding_mode(rounding, self.default_rounding)
         for bound in (minimum, maximum):
             if bound is not None and type(bound) is not int:
                 raise ValueError("Integer bounds must be integers")
@@ -208,9 +220,11 @@ class Decimal(Field):
 
     kind = "decimal"
     sql_type = "INTEGER"
+    default_rounding = "half_even"
 
-    def __init__(self, *, scale=4, minimum=None, maximum=None, **kwargs):
+    def __init__(self, *, scale=4, minimum=None, maximum=None, rounding=None, **kwargs):
         super().__init__(**kwargs)
+        self.rounding = rounding_mode(rounding, self.default_rounding)
         from .calc import Expr
         if scale is None and (self.stored or not isinstance(self.compute, Expr)):
             raise ValueError("scale=None is only for virtual finite calculations: stored=False with compute=")
@@ -274,6 +288,7 @@ class Decimal(Field):
 
 class Currency(Decimal):
     kind = "currency"
+    default_rounding = "half_up"
 
     def __init__(self, **kwargs):
         super().__init__(scale=2, **kwargs)

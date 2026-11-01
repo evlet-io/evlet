@@ -3,6 +3,7 @@
 export const LANGUAGE = 'finite-v1';
 export const PROFILE = 'finite40-hu18-v1';
 const MAX_DIGITS = 40, MAX_SCALE = 36, DIVISION_SCALE = 18, SAFE_INTEGER = 2n ** 53n - 1n, STORED_LIMIT = 2n ** 63n - 1n;
+const MAX_HOPS = 3, MIN_DAY = 1, MAX_DAY = 3652059;  // 0001-01-01 and 9999-12-31 as proleptic Gregorian ordinals
 
 export class CalcError extends Error {
   constructor(public code: string, message: string, public causes: string[] = []) { super(code + ': ' + message); }
@@ -66,13 +67,50 @@ export function div(a: Num, b: Num) {
   const power = DIVISION_SCALE + b.scale - a.scale;
   return normalize(halfUp(a.coef * 10n ** BigInt(Math.max(power, 0)), b.coef * 10n ** BigInt(Math.max(-power, 0))), DIVISION_SCALE);
 }
-export function quantize(value: Num, scale: number) {
-  return value.scale <= scale ? value : normalize(halfUp(value.coef, 10n ** BigInt(value.scale - scale)), scale);
+// Nearest integer to numerator/denominator with exact ties to the even neighbour (HALF_EVEN).
+function halfEven(numerator: bigint, denominator: bigint) {
+  const negative = (numerator < 0n) !== (denominator < 0n);
+  const n = numerator < 0n ? -numerator : numerator, d = denominator < 0n ? -denominator : denominator;
+  let quotient = n / d;
+  const twice = 2n * (n % d);
+  if (twice > d || (twice === d && quotient % 2n === 1n)) quotient++;
+  return negative ? -quotient : quotient;
+}
+export function quantize(value: Num, scale: number, rounding = 'half_up') {
+  return value.scale <= scale ? value : normalize((rounding === 'half_even' ? halfEven : halfUp)(value.coef, 10n ** BigInt(value.scale - scale)), scale);
 }
 export function total(values: Num[]) {
   if (!values.length) return new Num(0n, 0);
   const scale = Math.max(...values.map(value => value.scale));
   return normalize(values.reduce((sum, value) => sum + value.coef * 10n ** BigInt(scale - value.scale), 0n), scale);
+}
+
+// Dates are ISO YYYY-MM-DD text; arithmetic uses proleptic Gregorian ordinals like Python's date.toordinal().
+const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+const monthDays = (year: number, month: number) => month === 2 ? (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28) : [4, 6, 9, 11].includes(month) ? 30 : 31;
+export function dayNumber(value: unknown): number {
+  if (typeof value === 'string' && DATE.test(value)) {
+    const year = Number(value.slice(0, 4)), month = Number(value.slice(5, 7)), day = Number(value.slice(8, 10));
+    if (year >= 1 && month >= 1 && month <= 12 && day >= 1 && day <= monthDays(year, month)) {
+      const y = month <= 2 ? year - 1 : year, era = Math.floor(y / 400), yoe = y - era * 400;
+      const doy = Math.floor((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5) + day - 1;
+      return era * 146097 + yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy - 305;
+    }
+  }
+  throw new CalcError('COMPUTE_TYPE_ERROR', 'Use a date in YYYY-MM-DD format');
+}
+export function dayText(number: number): string {
+  if (number < MIN_DAY || number > MAX_DAY) throw new CalcError('COMPUTE_RANGE_ERROR', 'The date is outside 0001-01-01 to 9999-12-31');
+  const z = number + 305, era = Math.floor(z / 146097), doe = z - era * 146097;
+  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100)), mp = Math.floor((5 * doy + 2) / 153);
+  const day = doy - Math.floor((153 * mp + 2) / 5) + 1, month = mp < 10 ? mp + 3 : mp - 9, year = yoe + era * 400 + (month <= 2 ? 1 : 0);
+  return String(year).padStart(4, '0') + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+}
+function shift(day: string, count: Num, sign: number) {
+  if (count.scale) throw new CalcError('COMPUTE_TYPE_ERROR', 'days() needs a whole number');
+  if ((count.coef < 0n ? -count.coef : count.coef) > BigInt(MAX_DAY)) throw new CalcError('COMPUTE_RANGE_ERROR', 'The date is outside 0001-01-01 to 9999-12-31');
+  return dayText(dayNumber(day) + sign * Number(count.coef));
 }
 
 export type Value = Num | boolean | string | null;
@@ -117,19 +155,20 @@ export interface Row {
 }
 
 class Scope {
-  constructor(readonly document: FiniteDocument, readonly row: Row, readonly member: Row | null = null, readonly at = '') {}
+  constructor(readonly document: FiniteDocument, readonly row: Row, readonly member: Row | null = null, readonly at = '',
+    readonly misses: Set<string> = new Set()) {}
   read(scope: string, field: string): Result {
     const target = scope === 'row' ? this.member : scope === 'parent' ? this.row.parent : this.row;
     return target ? this.document.result(target, field) : pending('PARENT_CONTEXT_REQUIRED', [this.at]);
   }
-  members(table: string) { return (this.row.children[table] || []).map(member => new Scope(this.document, this.row, member, this.at)); }
+  members(table: string) { return (this.row.children[table] || []).map(member => new Scope(this.document, this.row, member, this.at, this.misses)); }
   address(field: string) { return (this.member || this.row).label + field; }
 }
 
 const OPERATIONS = new Set(['literal', 'ref', 'aggregate', 'add', 'sub', 'mul', 'div', 'neg', 'eq', 'ne', 'lt', 'lte', 'gt', 'gte',
-  'and', 'or', 'not', 'round', 'coalesce', 'safe_divide', 'bool_to_decimal']);
+  'and', 'or', 'not', 'round', 'coalesce', 'safe_divide', 'bool_to_decimal', 'when', 'today', 'hop', 'date_add', 'date_sub', 'date_diff']);
 
-function guarded(operation: () => Num, scope: Scope): Result {
+function guarded(operation: () => Value, scope: Scope): Result {
   try { return ready(operation()); }
   catch (exc) { if (exc instanceof CalcError) return failed(exc.code, [scope.at]); throw exc; }
 }
@@ -144,6 +183,14 @@ export function evaluate(node: any, scope: Scope, budget: Budget): Result {
   if (op === 'literal') return ready(node.type === 'decimal' ? parse(node.value) : node.value);
   if (op === 'ref') return scope.read(node.scope, node.field);
   if (op === 'aggregate') return aggregate(node, scope, budget);
+  if (op === 'today') return scope.document.todayResult();
+  if (op === 'hop') return hop(node, scope);
+  if (op === 'when') {
+    const condition = evaluate(node.args[0], scope, budget);
+    if (condition.state !== 'ready') return condition;
+    if (condition.value === null) return pending('COMPUTE_INPUT_MISSING', [scope.at]);
+    return evaluate(condition.value ? node.args[1] : node.args[2], scope, budget);
+  }
   if (op === 'coalesce') {
     const first = evaluate(node.args[0], scope, budget);
     return first.state === 'ready' && first.value === null ? evaluate(node.args[1], scope, budget) : first;
@@ -178,13 +225,30 @@ export function evaluate(node: any, scope: Scope, budget: Budget): Result {
   if (op === 'not') return ready(!values[0]);
   if (op === 'bool_to_decimal') return ready(new Num(values[0] ? 1n : 0n, 0));
   if (op === 'lt' || op === 'lte' || op === 'gt' || op === 'gte') {
-    const order = compare(values[0], values[1]);
+    const [a, b] = values;
+    const order = a instanceof Num ? compare(a, b) : a === b ? 0 : a < b ? -1 : 1;
     return ready({lt: order < 0, lte: order <= 0, gt: order > 0, gte: order >= 0}[op as 'lt']);
   }
   if (op === 'neg') { const value = values[0] as Num; return ready(new Num(-value.coef, value.scale)); }
   if (op === 'round') return guarded(() => quantize(values[0], values[1] as number), scope);
+  if (op === 'date_add' || op === 'date_sub') return guarded(() => shift(values[0], values[1], op === 'date_add' ? 1 : -1), scope);
+  if (op === 'date_diff') return guarded(() => normalize(BigInt(dayNumber(values[0]) - dayNumber(values[1])), 0), scope);
   const operation = {add, sub, mul, div}[op as 'add'];
   return guarded(() => operation(values[0], values[1]), scope);
+}
+
+// Follow a Link path through host-supplied lookups. A null link is a ready null at that step.
+function hop(node: any, scope: Scope): Result {
+  let current = scope.read('self', node.field);
+  for (const [model, name, kind] of node.steps) {
+    if (current.state !== 'ready' || current.value === null) return current;
+    const id = integer(current.value);
+    if (id === null || id < 1) return failed('COMPUTE_TYPE_ERROR', [scope.at]);
+    const values = scope.document.lookups.get(model)?.get(id), label = '@' + model + '.' + id + '.' + name;
+    if (!values || !own(values, name)) { scope.misses.add(model + '\u0000' + id); return pending('COMPUTE_INPUT_MISSING', [label]); }
+    current = sourceValue({type: kind}, values[name], label);
+  }
+  return current;
 }
 
 function aggregate(node: any, scope: Scope, budget: Budget): Result {
@@ -212,13 +276,12 @@ function aggregate(node: any, scope: Scope, budget: Budget): Result {
   return ready(selected.reduce((best, value) => (compare(value, best) < 0) === (node.kind === 'min') ? value : best));
 }
 
+// Target assignment: quantize to the field's scale with its rounding; the declared bounds hold.
 function convert(result: Result, field: any, at: string, meta?: any): Result {
   if (result.state !== 'ready' || result.value === null || field.result_type !== 'decimal') return result;
-  const value = result.value as Num, scale = field.scale;
-  if (scale !== null) {
-    const exact = quantize(value, scale);
-    if (exact.coef !== value.coef || exact.scale !== value.scale) return failed('COMPUTE_SCALE_ERROR', [at]);
-  }
+  let value = result.value as Num;
+  const scale = field.scale;
+  if (scale !== null && value.scale > scale) { value = quantize(value, scale, field.rounding || 'half_up'); result = ready(value); }
   const magnitude = value.coef < 0n ? -value.coef : value.coef;
   if (field.target_type === 'integer' && magnitude > SAFE_INTEGER) return failed('COMPUTE_RANGE_ERROR', [at]);
   if (scale !== null && magnitude * 10n ** BigInt(scale - value.scale) > STORED_LIMIT) return failed('COMPUTE_RANGE_ERROR', [at]);
@@ -232,6 +295,7 @@ function sourceValue(meta: any, raw: any, at: string): Result {
   if (raw === undefined || raw === null || (raw === '' && meta.type !== 'text')) return ready(null);
   try {
     if (meta.type === 'decimal') return ready(parse(raw));
+    if (meta.type === 'date') return ready(dayText(dayNumber(raw)));
     if (meta.type === 'boolean' && typeof raw !== 'boolean') throw new CalcError('COMPUTE_TYPE_ERROR', 'Expected a Boolean');
     return ready(raw);
   } catch (exc) {
@@ -258,6 +322,7 @@ export function checkPlan(plan: any) {
   for (const field of plan.fields) {
     if (field.scale !== null && (integer(field.scale) === null || field.scale < 0 || field.scale > MAX_SCALE))
       throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target scale');
+    if (![undefined, null, 'half_up', 'half_even'].includes(field.rounding)) throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target rounding');
     checkNode(field.expression, 0, {count: 0});
   }
   for (const table of Object.values<any>(plan.tables))
@@ -268,8 +333,12 @@ export function checkPlan(plan: any) {
 const SCOPES = new Set(['self', 'parent', 'row']);
 const LITERALS: Record<string, string> = {decimal: 'string', boolean: 'boolean', text: 'string'};
 const ARITY: Record<string, number> = {add: 2, sub: 2, mul: 2, div: 2, neg: 1, eq: 2, ne: 2, lt: 2, lte: 2, gt: 2, gte: 2,
-  and: 2, or: 2, not: 1, round: 2, coalesce: 2, safe_divide: 3, bool_to_decimal: 1};
-const FIELD = /^[A-Za-z][A-Za-z0-9_]*$/;
+  and: 2, or: 2, not: 1, round: 2, coalesce: 2, safe_divide: 3, bool_to_decimal: 1, when: 3, date_add: 2, date_sub: 2, date_diff: 2};
+const FIELD = /^[A-Za-z][A-Za-z0-9_]*$/, MODEL = /^[a-z0-9_]{1,64}$/, HOP_TYPES = ['decimal', 'boolean', 'date', 'text', 'link'];
+// One to three [model, field, type] lookups; every step but the last follows a Link.
+const hopSteps = (steps: any) => Array.isArray(steps) && steps.length >= 1 && steps.length <= MAX_HOPS && steps.every((step: any, index: number) =>
+  Array.isArray(step) && step.length === 3 && typeof step[0] === 'string' && MODEL.test(step[0]) && typeof step[1] === 'string' && FIELD.test(step[1])
+  && HOP_TYPES.includes(step[2]) && (step[2] === 'link' || index === steps.length - 1));
 // Closed, bounded IR: unknown operations, arities, scopes or shapes fail before evaluation.
 // An integer literal is only valid as round()'s scale, and nothing else is valid there.
 function checkNode(node: any, depth: number, counter: {count: number}, scale = false) {
@@ -286,6 +355,8 @@ function checkNode(node: any, depth: number, counter: {count: number}, scale = f
       if (ok && kind === 'decimal') parse(value);
     }
   } else if (op === 'ref') ok = !scale && SCOPES.has(node.scope) && typeof node.field === 'string' && FIELD.test(node.field);
+  else if (op === 'today') ok = !scale;
+  else if (op === 'hop') ok = !scale && typeof node.field === 'string' && FIELD.test(node.field) && hopSteps(node.steps);
   else if (op === 'aggregate') {
     const field = own(node, 'field') ? node.field : 0;
     ok = !scale && ['sum', 'min', 'max', 'count'].includes(node.kind) && typeof node.table === 'string' && own(node, 'where')
@@ -366,6 +437,11 @@ export class FiniteDocument {
   observers = new Map<Node, Array<(result: Result) => void>>();
   tableObservers = new Map<Node, Array<(handles: string[]) => void>>();
   revision = 0; structureRevision = 0; trace: any = {};
+  // Host inputs: today's date and Link lookups (model -> id -> field values); misses are lookups still wanted.
+  today: unknown = null;
+  lookups = new Map<string, Map<number, Record<string, unknown>>>();
+  misses = new Map<Node, Set<string>>();
+  readonly lookupFields = new Map<string, Set<string>>();
   root: Row;
   private next = 0;
   private current: any = null;
@@ -380,6 +456,10 @@ export class FiniteDocument {
       if (!this.templates.has(path)) this.templates.set(path, []);
       this.templates.get(path)!.push([position, field]);
       this.fields.set(path + '\u0000' + field.field, field);
+      for (const [scope, model, name] of field.reads) if (scope === 'lookup') {
+        if (!this.lookupFields.has(model)) this.lookupFields.set(model, new Set());
+        this.lookupFields.get(model)!.add(name);
+      }
     });
     this.root = this.build(data || {}, [], null, null);
     this.bind();
@@ -471,6 +551,8 @@ export class FiniteDocument {
           else if (scope === 'parent' && row.parent) inputs.add(nodeKey(row.parent.handle, name));
           else if (scope === 'membership') inputs.add(nodeKey(handle, '#' + table));
           else if (scope === 'member') for (const member of row.children[table] || []) inputs.add(nodeKey(member.handle, name));
+          else if (scope === 'today') inputs.add(nodeKey('@', 'today'));
+          else if (scope === 'lookup') inputs.add(nodeKey('@' + table, name));
         }
         deps.set(node, inputs);
         edges += inputs.size;
@@ -496,6 +578,10 @@ export class FiniteDocument {
     return meta ? sourceValue(meta, ownValue(row.values, field), row.label + field) : failed('UNSUPPORTED_EXPRESSION', [row.label + field]);
   }
 
+  todayResult(): Result {
+    return this.today === null || this.today === undefined ? pending('COMPUTE_INPUT_MISSING', ['@today']) : sourceValue({type: 'date'}, this.today, '@today');
+  }
+
   private settle(changed: Set<Node>, fresh: Set<Node>) {
     const budget = new Budget(this.budget), updated = new Set<Node>();
     let evaluated = 0, skipped = 0;
@@ -504,8 +590,9 @@ export class FiniteDocument {
       if (!fresh.has(node) && ![...inputs].some(input => changed.has(input))) { skipped++; continue; }
       const [handle, name] = nodeParts(node);
       const row = this.rows.get(handle)!, field = this.fields.get(row.path.join('/') + '\u0000' + name);
-      const at = row.label + name;
-      const outcome = convert(evaluate(field.expression, new Scope(this, row, null, at), budget), field, at, ownValue(this.schema.get(row.path.join('/')).fields, field.field));
+      const at = row.label + name, scope = new Scope(this, row, null, at);
+      const outcome = convert(evaluate(field.expression, scope, budget), field, at, ownValue(this.schema.get(row.path.join('/')).fields, field.field));
+      if (scope.misses.size) this.misses.set(node, scope.misses); else this.misses.delete(node);
       evaluated++;
       this.counts.set(node, (this.counts.get(node) || 0) + 1);
       if (!same(outcome, this.results.get(node))) { this.results.set(node, outcome); changed.add(node); updated.add(node); }
@@ -579,6 +666,40 @@ export class FiniteDocument {
       row.values[field] = value;
       this.current.sources.add(nodeKey(handle, field));
     });
+  }
+
+  // The host's current date (YYYY-MM-DD) for today().
+  setToday(value: unknown) {
+    this.command(() => { this.today = value; this.current.sources.add(nodeKey('@', 'today')); });
+  }
+
+  // Field values of one linked record, as the host read them, for Link path expressions.
+  setLookups(model: string, id: number, values: Record<string, unknown>) {
+    this.command(() => {
+      const fields = this.lookupFields.get(model), key = integer(id);
+      if (!fields || key === null || key < 1 || !values || typeof values !== 'object' || Array.isArray(values) || Object.keys(values).some(name => !fields.has(name)))
+        throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'This plan does not look up ' + model);
+      // Copy on write so a rolled-back command restores the previous record.
+      const records = new Map(this.lookups.get(model) || []);
+      records.set(key, Object.assign(Object.create(null), records.get(key), values));
+      this.lookups = new Map(this.lookups).set(model, records);
+      for (const name of Object.keys(values)) this.current.sources.add(nodeKey('@' + model, name));
+    });
+  }
+
+  // [model, id, fields] the current results still wait for, sorted; the host reads and supplies them.
+  lookupRequests(): Array<[string, number, string[]]> {
+    const wanted = new Map<string, Set<number>>();
+    for (const [node, misses] of this.misses) {
+      if (!this.deps.has(node)) continue;
+      for (const miss of misses) {
+        const [model, id] = miss.split('\u0000');
+        if (!wanted.has(model)) wanted.set(model, new Set());
+        wanted.get(model)!.add(Number(id));
+      }
+    }
+    return [...wanted.keys()].sort().flatMap(model => [...wanted.get(model)!].sort((a, b) => a - b)
+      .map(id => [model, id, [...this.lookupFields.get(model)!].sort()] as [string, number, string[]]));
   }
 
   addRow(owner: string, table: string, values: any = {}) {
@@ -679,6 +800,7 @@ export class FiniteDocument {
     return {rows: new Map([...this.rows].map(([handle, row]) => [handle, {row, values: {...row.values},
       children: Object.fromEntries(Object.entries(row.children).map(([table, items]) => [table, [...items]])), parent: row.parent}])),
       results: new Map(this.results), next: this.next, counts: new Map(this.counts), trace: this.trace,
+      today: this.today, lookups: this.lookups, misses: new Map(this.misses),
       observers: new Map([...this.observers].map(([node, items]) => [node, [...items]])),
       tables: new Map([...this.tableObservers].map(([node, items]) => [node, [...items]]))};
   }
@@ -690,6 +812,9 @@ export class FiniteDocument {
     this.next = snapshot.next;
     this.counts = snapshot.counts;
     this.trace = snapshot.trace;
+    this.today = snapshot.today;
+    this.lookups = snapshot.lookups;
+    this.misses = snapshot.misses;
     this.observers = snapshot.observers;
     this.tableObservers = snapshot.tables;
     this.bind();
@@ -700,7 +825,7 @@ export class FiniteDocument {
     const old: Set<Node> = batch.bound;
     if (batch.structure) this.bind();
     const live = new Set(this.deps.keys());
-    for (const node of old) if (!live.has(node)) { this.results.delete(node); this.counts.delete(node); }
+    for (const node of old) if (!live.has(node)) { this.results.delete(node); this.counts.delete(node); this.misses.delete(node); }
     const fresh = new Set([...live].filter(node => !old.has(node) || batch.moved.has(nodeParts(node)[0])));
     const updated = this.settle(new Set([...batch.sources, ...batch.membership]), fresh);
     if (!updated.size && !batch.sources.size && !batch.structure) return [];
@@ -784,7 +909,7 @@ export class FiniteDocument {
   dispose() {
     if (this.disposed) return;
     if (this.publishing) throw new CalcError('REACTIVE_REENTRANCY', 'Observers cannot dispose the document during publication');
-    this.observers.clear(); this.tableObservers.clear(); this.rows.clear(); this.results.clear();
+    this.observers.clear(); this.tableObservers.clear(); this.rows.clear(); this.results.clear(); this.misses.clear();
     this.deps = new Map(); this.dependents = new Map(); this.order = [];
     this.disposed = true;
   }

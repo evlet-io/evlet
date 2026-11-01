@@ -15,7 +15,7 @@ from .fields import MISSING, Link
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
-from .calc import CalcError, Document, LIMITS, is_finite, to_decimal
+from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal
 
 
 class Snapshot:
@@ -380,7 +380,7 @@ def settle(context, draft, *, complete, previous=None):
         apply_fetches(context, item, prefix, prior(item), errors)
     plan = registry.plan_for(draft._definition)
     if plan is not None:
-        finite_settle(plan, draft, errors, states, complete)
+        finite_settle(context, plan, draft, errors, states, complete)
     else:
         compute_legacy(context, draft, all_drafts, errors, states, complete)
     if complete:
@@ -547,7 +547,44 @@ MESSAGES = {'COMPUTE_INPUT_MISSING': 'A required calculation input is missing',
             'COMPUTE_TYPE_ERROR': 'An input has the wrong type', 'PARENT_CONTEXT_REQUIRED': 'The owning document is unavailable'}
 
 
-def finite_settle(plan, draft, errors, states, complete):
+def host_today(business):
+    """Today's date in the instance timezone (UTC when none is configured)."""
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    zone = getattr(business, 'timezone', None) or 'UTC'
+    return datetime.now(timezone.utc if zone == 'UTC' else ZoneInfo(zone)).date().isoformat()
+
+
+def resolve_lookups(context, document):
+    """Supply Link path values: one query per looked-up model per hop, at most MAX_HOPS rounds.
+
+    The server reads stored values with full access, like hidden child rows, so stored results do not
+    depend on who saves. Readability is enforced on output: derivation_allowed withholds any result
+    whose path the user cannot read.
+    """
+    from .database import ROW_LIMIT
+    registry, tx = context._business.registry, context._tx
+    asked = set()  # Each record is queried at most once per settle, found or not.
+    for _ in range(MAX_HOPS):
+        wanted = {}
+        for model, record_id, fields in document.lookup_requests():
+            if (model, record_id) not in asked:
+                asked.add((model, record_id))
+                wanted.setdefault(model, (fields, []))[1].append(record_id)
+        if not wanted:
+            return
+        found = []
+        for name, (fields, ids) in wanted.items():
+            model = registry.models[name]
+            for start in range(0, len(ids), ROW_LIMIT):
+                for record in tx.list(model, filters={'id__in': ids[start:start + ROW_LIMIT]}, limit=ROW_LIMIT):
+                    found.append((name, record.id, {field: model.__declared_fields__[field].serialize(getattr(record, field)) for field in fields}))
+        if not found:
+            return
+        document.batch(lambda session: [session.set_lookups(*item) for item in found])
+
+
+def finite_settle(context, plan, draft, errors, states, complete):
     """Authoritative finite-v1 evaluation over the whole draft tree in this transaction."""
     def data(item):
         values = {name: item._values.get(name) for name, field in item._definition.__declared_fields__.items()
@@ -558,6 +595,9 @@ def finite_settle(plan, draft, errors, states, complete):
         return values
     try:
         document = Document(plan, data(draft), checked=True)
+        if any(read[0] == 'today' for field in plan['fields'] for read in field['reads']):
+            document.set_today(host_today(context._business))
+        resolve_lookups(context, document)
     except CalcError as exc:
         raise ValidationError({'_form': f'{exc.code}: {exc.message}'}) from None
     fields = {}

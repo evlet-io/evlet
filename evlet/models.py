@@ -232,7 +232,8 @@ class Registry:
         for scope, table, read in field['reads']:
             if scope == 'self': result.append(('self', model, read))
             elif scope == 'parent': result.append(('parent', owners[model].parent, read))
-            else: result.append((scope, tables[table], read))
+            elif scope == 'lookup': result.append(('lookup', self.models[table], read))
+            elif scope != 'today': result.append((scope, tables[table], read))
         return result
 
     def plan_for(self, model):
