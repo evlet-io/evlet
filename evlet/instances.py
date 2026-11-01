@@ -25,6 +25,7 @@ from .migrations import Migration
 from .permissions import Policy
 from .models import Registry
 from .ui import ViewRegistry
+from .routing import resolve_routes
 
 
 @dataclass(frozen=True)
@@ -71,9 +72,10 @@ class AppDefinition:
     ui: object = None
     reports: tuple = ()
     apis: tuple = ()
+    frontends: tuple = ()
 
     def __post_init__(self):
-        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis'):
+        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends'):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         if not callable(self.actions):
             object.__setattr__(self, 'actions', tuple(self.actions))
@@ -81,12 +83,15 @@ class AppDefinition:
         from .services import CalendarSchedule
         if any(not isinstance(schedule, (Schedule, CalendarSchedule)) for schedule in self.schedules):
             raise ValueError('Register Schedule definitions')
+        from .routing import Frontend
+        if any(not isinstance(frontend, Frontend) for frontend in self.frontends):
+            raise ValueError('Register Frontend definitions')
 
 
 def read_instance(path):
     if not path.is_dir() or not (path / 'config.py').is_file() or (path / 'config.py').is_symlink():
         raise ValueError(f'Instance does not exist or has invalid configuration: {path.name}')
-    for relative in ('data', 'data/database.sqlite3', 'data/backups', 'files', 'files/private', 'apps.lock', '.evlet.lock'):
+    for relative in ('data', 'data/database.sqlite3', 'data/backups', 'files', 'files/private', 'apps.lock', '.evlet.lock', 'routes.py'):
         target = path / relative
         if target.is_symlink() or not target.resolve().is_relative_to(path.resolve()):
             raise ValueError(f'Instance path cannot escape through a symbolic link: {relative}')
@@ -94,6 +99,16 @@ def read_instance(path):
     if not isinstance(value, Instance) or value.name != path.name:
         raise ValueError('config.py must define instance = Instance(name=the_directory_name, ...)')
     return value
+
+
+def read_routes(path):
+    """Run the optional trusted instances/<name>/routes.py under the same checks as config.py."""
+    target = path / 'routes.py'
+    if not target.exists() and not target.is_symlink():
+        return None
+    if target.is_symlink() or not target.is_file() or not target.resolve().is_relative_to(path.resolve()):
+        raise ValueError(f'Instance routes must be a regular file: {path.name}/routes.py')
+    return runpy.run_path(str(target))
 
 
 def read_lock(path):
@@ -282,11 +297,9 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     database_path = database_path or path / 'data/database.sqlite3'
     migrations = migration_plan(definitions, database_path)
     database = Database(database_path, registry, migrations=migrations)
-    if config.domain:
-        origins, secure = ('https://' + config.domain,), True
-    else:
-        origins, secure = (f'http://127.0.0.1:{port}', f'http://localhost:{port}'), False
-    auth = LocalAuth(database, origins=origins, secure_cookies=secure, allow_setup=not secure)
+    routes = resolve_routes(definitions, config, read_routes(path), port=port)
+    secure = routes.primary is not None
+    auth = LocalAuth(database, origins=routes.origins(), secure_cookies=secure, allow_setup=not secure)
     rules, views, schedules = {}, ViewRegistry(), []
     for name, definition in definitions:
         if rules.keys() & definition.permissions.keys():
@@ -323,7 +336,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     app = Application(database, auth=auth, policy=policy, ui=views, events=events, jobs=jobs,
                       reports=tuple(report for _, definition in definitions for report in definition.reports),
                       apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
-                      storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, **options)
+                      storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, **options)
     app.business.timezone = config.timezone
     app.business.build_manifest = manifest
     app._source_packages = pinned
@@ -373,7 +386,7 @@ def register_schedules(app, schedules):
             app.business.jobs.schedule(schedule.name, schedule.task, schedule.payload, every=schedule.every)
 
 
-def load_runtime(root, name, *, port=8000, development=False):
+def load_runtime(root, name, *, port=8000, development=False, public=False):
     from .cli.project import child
     from .packages import resolve_packages, portable_lock_entry
     path = child(root, 'instances', name)
@@ -390,5 +403,9 @@ def load_runtime(root, name, *, port=8000, development=False):
         if current != expected and (not development or any(current[key] != expected[key] for key in ('version', 'source', 'commit'))):
             raise ValueError(f'{package.name} differs from apps.lock; stop serving and run evlet migrate {name}')
     app, _ = build_instance(config, path, packages, port=port)
+    if development and app.routes.primary:
+        raise ValueError('Development serving requires a local instance and loopback host')
+    if public and not app.routes.primary:
+        raise ValueError('Configure an HTTPS domain before binding an instance beyond loopback')
     # Startup verifies schema and history; it never silently applies app migrations.
     return app

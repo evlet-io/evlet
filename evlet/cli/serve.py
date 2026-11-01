@@ -147,7 +147,8 @@ def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=Fa
     config = read_instance(path)
     if development and (host not in ('127.0.0.1', 'localhost') or config.domain):
         raise ValueError('Development serving requires a local instance and loopback host')
-    if host not in ('127.0.0.1', 'localhost') and not config.domain:
+    public = host not in ('127.0.0.1', 'localhost')
+    if public and not config.domain and not (path / 'routes.py').is_file():
         raise ValueError('Configure an HTTPS domain before binding an instance beyond loopback')
     if development:
         values = {'EVLET_CLI_PROJECT': str(root), 'EVLET_CLI_INSTANCE': name, 'EVLET_CLI_PORT': str(port), 'EVLET_CLI_DEBUG': '1' if debug else '0'}
@@ -163,6 +164,6 @@ def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=Fa
                 else:
                     os.environ[key] = value
     else:
-        application = ManagedRuntime(lambda: load_runtime(root, name, port=port),
+        application = ManagedRuntime(lambda: load_runtime(root, name, port=port, public=public),
                                      lambda: instance_guard(path, serving=True), jobs=jobs, debug=debug)
         run_server(application, host=host, port=port, lifespan='on', proxy_headers=False)
