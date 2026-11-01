@@ -1,6 +1,6 @@
 // Helpers for the component tests: mount into the page, count DOM changes, press keys, and a
 // record store over the recorded backend responses (api-fixture.json).
-import { mount } from '../dom';
+import { mount, type Child } from '../dom';
 import { createClient } from '../api';
 import { RecordStore } from '../model/record';
 import type { AppSchema } from '../model/schema';
@@ -11,7 +11,7 @@ import { responses, server } from './server';
 const disposers: Array<() => void> = [];
 const stores: RecordStore[] = [];
 
-export function render(view: () => Node): HTMLElement {
+export function render(view: () => Child): HTMLElement {
   const host = document.createElement('div');
   document.body.append(host);
   disposers.push(mount(host, view));

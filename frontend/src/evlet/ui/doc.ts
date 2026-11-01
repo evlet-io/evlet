@@ -115,13 +115,13 @@ export function Tabs(props: { tabs: TabItem[]; active: Cell<string>; label: stri
     props.active.set(props.tabs[index].id);
     buttons[index].focus();
   });
-  (list as any).prefix = prefix;
+  list.dataset.prefix = prefix;
   return list;
 }
 
 /** The panel of one tab; rendered only while its tab is active. */
 export function TabPanel(tabs: HTMLElement, id: string, active: Cell<string>, render: () => Child): Node {
-  const prefix = (tabs as any).prefix as string;
+  const prefix = tabs.dataset.prefix!;
   return when(() => active.get() === id, () => html`<div role="tabpanel" id=${`${prefix}-${id}-panel`} aria-labelledby=${`${prefix}-${id}`} tabindex="0">${render()}</div>`);
 }
 
