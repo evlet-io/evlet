@@ -470,7 +470,7 @@ section of [states-actions.md](states-actions.md).
 * **Hooks** in `evlet/corrections.py`, all empty and called inside the transaction:
   `reverse_effects(context, model, record_id, previous)` after the void state is written
   (Phase 6), `prepare_copy(context, model, original, copy)` before the copy settles (Phase 7
-  clears Sequence numbers here), `voided(context, model, record_id, previous, reason)` and
+  clears Sequence numbers here; no longer empty once Phase 7 is stacked), `voided(context, model, record_id, previous, reason)` and
   `revised(context, model, original_id, copy_id, reason)` once each operation is saved
   (Phase 8 Journal; `voided` is skipped when a void record is revised again). A failure in any of them rolls the whole operation back (tested).
 * **Playground.** The amendment Quote has a `void` state (locked and final), `sent` is
@@ -490,7 +490,8 @@ Known limitations:
 
 ## Phase 7: document numbers (01-11-2026)
 
-Branch `model/07-sequences`, stacked on `model/04-state`. Guide: [sequences.md](sequences.md).
+Branch `model/07-sequences`, stacked on `model/04-state`; restacked on `model/05-void-revise`
+as `model/07-stacked`. Guide: [sequences.md](sequences.md).
 
 * **Sequence.** `Sequence(format, scope=(), assign_on="create", date=None)` in
   `evlet/sequences.py`, exported from `evlet`. A read-only, nullable short text field with
@@ -555,3 +556,22 @@ Review fixes (01-11-2026):
 * Raw `Session.update` refuses scope and period changes of an assigned number outside
   `maintenance()`, and raw `Session.create` assigns numbers due on create (period day in
   UTC).
+
+Connection with void and revise (01-11-2026):
+
+* `corrections.prepare_copy()` calls `sequences.clear_for_copy()`, so a revision starts
+  without the original's number. `corrections.revise()` then runs `sequences.assign()` on
+  the settled copy like a create: a number due on create (or on the copy's starting state)
+  is assigned before the copy is written, and `sequences.assigned()` is called after it.
+  Other copies are numbered by the move into `assign_on`.
+* Void writes only the State, so the number stays, and a record voided before its number
+  was due stays null. Neither operation goes through raw `Session` writes, so the Session
+  guards on scope, period and State do not apply to them.
+* `Context.void()` and `Context.revise()` run in the same per-operation savepoint as the
+  other operations; a revise that fails after its copy was numbered and is caught by
+  trusted code gives the number back.
+* The Phase 7 test Invoice now reaches `void` through `void()` only, because Phase 5
+  rejects a declared move into `void` when voidable states exist. New tests in
+  `tests/test_sequences.py` (with PostgreSQL variants) and `tests/test_builds.py` cover a
+  revised copy's fresh number, numbers kept on void, a void before assignment, a revisable
+  model numbered on create, and gapless numbers after a caught revise failure.

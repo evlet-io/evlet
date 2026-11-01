@@ -18,11 +18,11 @@ class Invoice(Model):
     number = Sequence("INV-{year}-{n:05}", scope=("company",), assign_on="issued", date="posting_date")
     status = State(("draft", "issued", "void"), moves=(
         Move("draft", "issued", "Issue"),
-        Move("issued", "void", "Void"),
     ), locked=("issued", "void"), final=("void",), voidable=("issued",))
 
     class Meta:
         title_field = "number"
+        revisable = True
 ```
 
 `Sequence(format, scope=(), assign_on="create", date=None)` also takes `label`,
@@ -84,7 +84,13 @@ because it changes after the number is assigned. Two companies can both have
 * With a state, the record gets its number when a move enters that state. A new record
   whose default state is `assign_on` gets it on create.
 * A record keeps its number for life. Moving back to draft and issuing again keeps the same
-  number. A voided record keeps its number.
+  number. A voided record keeps its number, and a record voided before its number was due
+  stays without one. Voiding never assigns a number.
+* A revision (`revise`) is a new record: its copy starts with every Sequence null. With
+  `assign_on="create"`, or when the copy's starting state is `assign_on`, the engine gives
+  the copy a fresh number as it creates it; otherwise the copy gets one when a move enters
+  `assign_on`. The original is void and keeps its number. Until the copy is numbered its
+  scope fields and date may change like those of any draft.
 * Once a number is assigned, the scope fields cannot change (`This is fixed once the number
   is assigned`) and the date field cannot move to another period (`This stays in the period
   of the assigned number`). It may change within the same period. A role that cannot read
@@ -127,7 +133,7 @@ or a database constraint, the whole transaction rolls back, including the counte
 number is given to the next committed record. Deleting a record does not give its number
 back.
 
-Each document operation (create, update, move, action, delete) runs inside a savepoint. If
+Each document operation (create, update, move, action, delete, void, revise) runs inside a savepoint. If
 trusted code catches a failed operation inside one `Context` and the transaction still
 commits, the failed operation leaves nothing behind: no counter step, no state change, no
 number. A unique or foreign key violation inside an operation is raised as `ConflictError`.
@@ -196,9 +202,7 @@ existing rows should get the lower numbers.
 ## For later phases
 
 * `evlet.sequences.clear_for_copy(model, values)` returns a copy of `values` with every
-  Sequence set to null. Revise (Phase 5) calls it when it prepares a revised copy, so the
-  revision gets its own number when it reaches `assign_on`.
-* Void (Phase 5) leaves the number unchanged.
+  Sequence set to null. `evlet.corrections.prepare_copy()` calls it on a revision's copy.
 * `evlet.sequences.assigned(context, model, record_id, field, number)` is called once per
   assigned number after the record is saved, in its transaction. The Journal (Phase 8)
   records the assignment there.

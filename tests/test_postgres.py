@@ -497,7 +497,8 @@ def test_postgres_revisable_needs_an_add_field_migration(pg_dsn):
                                    'check_failures_do_not_consume_numbers', 'check_only_the_engine_writes_a_sequence',
                                    'check_assigned_numbers_are_unique_per_scope', 'check_a_planted_number_is_skipped',
                                    'check_roles_that_cannot_read_the_number_learn_nothing',
-                                   'check_raw_session_writes_number_and_keep_scope'])
+                                   'check_raw_session_writes_number_and_keep_scope', 'check_void_and_revise_keep_and_renew_numbers',
+                                   'check_a_caught_revise_failure_leaves_no_number'])
 def test_postgres_sequences_assign_scope_reset_and_stay_engine_written(pg_dsn, check):
     from tests import test_sequences as sequences
     from tests.test_rules_types import start

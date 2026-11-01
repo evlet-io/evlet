@@ -5,8 +5,8 @@ neither an ordinary write nor a declared Move: every other value, saved results 
 is. A revise voids the record and creates a new draft copy whose `revises` Link points at the original.
 
 Later phases plug in here: Effects reversal (`reverse_effects`), Sequence numbers on the copy
-(`prepare_copy`) and the Journal (`voided`, `revised`). Each hook runs in the operation's transaction,
-so a failure in any of them rolls the whole operation back.
+(`prepare_copy`, which clears them) and the Journal (`voided`, `revised`). Each hook runs in the
+operation's transaction and savepoint, so a failure in any of them rolls the whole operation back.
 """
 
 from .auth import AccessError
@@ -24,8 +24,10 @@ def reverse_effects(context, model, record_id, previous):
 
 
 def prepare_copy(context, model, original, copy):
-    """Called with a revision's draft copy before it settles. Sequences (Phase 7) clear engine-assigned
-    numbers on the copy here, so it gets a fresh number when it reaches its assignment state."""
+    """Called with a revision's draft copy before it settles. Every Sequence number is cleared, so the
+    copy gets a fresh number when it reaches its assignment state (on create for assign_on="create")."""
+    from .sequences import clear_for_copy
+    copy._values.update(clear_for_copy(model, copy._values))
 
 
 def voided(context, model, record_id, previous, reason):
@@ -139,6 +141,7 @@ def void(context, model, record_id, reason):
 
 def revise(context, model, record_id, reason):
     """Void a saved record (unless it is void already) and create its draft copy; returns the copy's detail."""
+    from . import sequences
     from .documents import Change, freeze, freeze_draft, persist_rows, record_plan, settle, write_snapshot
     business, tx, user = context._business, context._tx, context.user
     record, reason = check(context, model, record_id, 'revise', reason)
@@ -147,6 +150,8 @@ def revise(context, model, record_id, reason):
     copy = copy_draft(context, model, record)
     prepare_copy(context, model, record, copy)
     settle(context, copy, complete=True)
+    # A number due on create is assigned to the copy as it would be to any new record.
+    numbers = sequences.assign(context, model, copy, None, None)
     saved = write_snapshot(tx, copy)
     plan = business.registry.plan_for(model)
     if plan is not None:
@@ -157,13 +162,16 @@ def revise(context, model, record_id, reason):
     if reaction is not None:
         freeze_draft(copy)
         reaction(copy, Change('revise', user, None, freeze(copy.stored_values()), tuple(model.__fields__), freeze(children)))
+    for name, number in numbers:
+        sequences.assigned(context, model, saved.id, name, number)
     revised(context, model, record.id, saved.id, reason)
     business.changed(tx, model, saved.id)
     return business.detail(tx, user, tx.get(model, saved.id), row_limit=None)
 
 
 def void_record(context, model, record, reason):
-    """Write the void state and nothing else: no settlement, so saved results and locked values stay."""
+    """Write the void state and nothing else: no settlement, so saved results, locked values and any
+    Sequence number stay (a record voided before its number was due keeps null)."""
     from .documents import Change, freeze, freeze_draft, load_draft
     business, tx, user = context._business, context._tx, context.user
     name, previous = model.__state__, record._values.get(model.__state__)

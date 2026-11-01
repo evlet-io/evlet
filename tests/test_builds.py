@@ -148,16 +148,20 @@ def test_reference_app_full_public_flow(project):
     assert quote_schema['revisable'] and quote_schema['permissions']['revise']
     sent_quote = c('POST', '/api/quote', {'name': 'Q-4', 'children': {'lines': [{'qty': '2', 'rate': '10'}, {'qty': '1', 'rate': '4'}]}})[1]
     sent_url = f"/api/quote/{sent_quote['id']}"
-    assert move(sent_url, 'sent')[1]['_revise'] == {'allowed': True}
+    sent_body = move(sent_url, 'sent')[1]
+    sent_number = sent_body['number']
+    assert sent_body['_revise'] == {'allowed': True} and sent_number == sent['number'][:-1] + '3'
     revise = lambda body: c('POST', sent_url + '/revise', body, headers={b'if-match': c('GET', sent_url)[2][b'etag']})
     assert revise({})[1]['fields'] == {'reason': 'Give a reason'}
     status, copy, _ = revise({'reason': 'New prices'})
-    assert status == 201 and copy['stage'] == 'draft' and copy['revises'] == sent_quote['id']
+    assert status == 201 and copy['stage'] == 'draft' and copy['revises'] == sent_quote['id'] and copy['number'] is None
     assert [row['amount'] for row in copy['children']['lines']] == ['20.00', '4.00'] and copy['grand_total'] == sent_quote['grand_total']
     original = c('GET', sent_url)[1]
-    assert original['stage'] == 'void' and original['revised_by'] == copy['id']
+    # The void original keeps its number; the revision is numbered when it is sent.
+    assert original['stage'] == 'void' and original['revised_by'] == copy['id'] and original['number'] == sent_number
     copy_url = f"/api/quote/{copy['id']}"
     assert c('PATCH', copy_url, {'name': 'Q-4 rev'}, headers={b'if-match': c('GET', copy_url)[2][b'etag']})[1]['name'] == 'Q-4 rev'
+    assert move(copy_url, 'sent')[1]['number'] == sent['number'][:-1] + '4'
     number = next(field for field in quote_schema['fields'] if field['name'] == 'number')
     assert (number['type'], number['read_only'], number['sequence']) == (
         'sequence', True, {'format': 'Q-{year}-{n:04}', 'scope': [], 'assign_on': 'sent', 'date': None})

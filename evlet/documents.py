@@ -198,7 +198,8 @@ class Context:
             raise ValidationError({'_form': 'Recursive document change detected'})
         self._active.append(key)
         try:
-            return getattr(corrections, operation)(self, model, record_id, reason)
+            with self._savepoint():
+                return getattr(corrections, operation)(self, model, record_id, reason)
         except ValidationError as exc:
             raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
         finally:

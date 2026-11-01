@@ -23,6 +23,9 @@ class Company(Model):
 
 
 class Invoice(Model):
+    class Meta:
+        # A revision is a new draft without a number; it gets its own when it is issued.
+        revisable = True
     permissions = {**ALL, 'viewer': Rule(('read',), read_fields=('name', 'number', 'status'))}
     company = Link(Company, required=True)
     posting_date = Date(required=True)
@@ -31,7 +34,6 @@ class Invoice(Model):
     status = State(('draft', 'issued', 'void'), moves=(
         Move('draft', 'issued', 'Issue', run='on_issue'),
         Move('issued', 'draft', 'Reopen'),
-        Move('issued', 'void', 'Void'),
     ), locked=('issued', 'void'), final=('void',), voidable=('issued',))
 
     def on_issue(self):
@@ -80,7 +82,30 @@ class Visit(Model):
     code = Sequence('V{year}-{n}', date='day')
 
 
-MODELS = (Company, Invoice, Receipt, Ticket, Pass, Visit)
+class Slip(Model):
+    # Numbered on create and revisable, so a revision is numbered when the engine creates it.
+    class Meta:
+        revisable = True
+    permissions = ALL
+    note = Text(default='')
+    code = Sequence('S{n}')
+    status = State(('open', 'closed', 'void'), moves=(Move('open', 'closed', 'Close'),),
+                   locked=('closed', 'void'), final=('void',), voidable=('closed',))
+
+    def changed(self, change):
+        if change.operation == 'revise' and self.note == 'boom':
+            raise ValidationError({'note': 'Rejected after numbering'})
+
+
+class Permit(Model):
+    # Held permits can be voided before they are granted, so before they have a number.
+    permissions = ALL
+    code = Sequence('PM{n}', assign_on='granted')
+    status = State(('draft', 'held', 'granted', 'void'), moves=(Move('draft', 'held', 'Hold'), Move('held', 'granted', 'Grant')),
+                   locked=('held', 'granted', 'void'), final=('void',), voidable=('held', 'granted'))
+
+
+MODELS = (Company, Invoice, Receipt, Ticket, Pass, Visit, Slip, Permit)
 
 
 @pytest.fixture
@@ -101,6 +126,14 @@ def etag(c, url):
 
 def move(c, url, to):
     return c('POST', f'{url}/moves/{to}', {}, headers=etag(c, url))
+
+
+def void(c, url, reason='Wrong'):
+    return c('POST', f'{url}/void', {'reason': reason}, headers=etag(c, url))
+
+
+def revise(c, url, reason='Wrong'):
+    return c('POST', f'{url}/revise', {'reason': reason}, headers=etag(c, url))
 
 
 def invoice(c, company, day='2026-03-10', **values):
@@ -176,7 +209,7 @@ def check_numbers_follow_moves_scopes_and_periods(numbered):
     # Reopening and issuing again keeps the number; a voided record keeps it too.
     reopened = move(c, url, 'draft')[1]
     assert reopened['number'] == 'INV-2026-00001' and move(c, url, 'issued')[1]['number'] == 'INV-2026-00001'
-    assert move(c, url, 'void')[1]['number'] == 'INV-2026-00001'
+    assert void(c, url)[1]['number'] == 'INV-2026-00001'
     # The month resets monthly; the date field decides the period.
     receipts = [c('POST', '/api/receipt', {'received_on': day})[1]['number']
                 for day in ('2026-01-31', '2026-02-01', '2026-02-28', '2027-02-01')]
@@ -229,6 +262,72 @@ def check_failures_do_not_consume_numbers(numbered):
 
 def test_failures_do_not_consume_numbers(numbered):
     check_failures_do_not_consume_numbers(numbered)
+
+
+# Void and revise
+
+def check_void_and_revise_keep_and_renew_numbers(numbered):
+    app, c, one, two = numbered
+    record, url = invoice(c, one)
+    assert move(c, url, 'issued')[1]['number'] == 'INV-2026-00001'
+    # The revision starts as a draft without a number; the original is void and keeps its own.
+    status, copy, _ = revise(c, url)
+    assert status == 201 and copy['number'] is None and copy['status'] == 'draft' and copy['revises'] == record['id']
+    original = c('GET', url)[1]
+    assert (original['status'], original['number'], original['revised_by']) == ('void', 'INV-2026-00001', copy['id'])
+    # The copy is a new record, so its scope is free until it is numbered; issuing it takes the next number.
+    copy_url = f"/api/invoice/{copy['id']}"
+    assert c('PATCH', copy_url, {'company': two}, headers=etag(c, copy_url))[1]['company'] == two
+    assert move(c, copy_url, 'issued')[1]['number'] == 'INV-2026-00001'
+    assert issue(c, one) == 'INV-2026-00002'
+    # Voiding before the number is due assigns nothing; voiding after it keeps the number.
+    permits = []
+    for _ in range(2):
+        permit = c('POST', '/api/permit', {})[1]
+        permits.append(f"/api/permit/{permit['id']}")
+        move(c, permits[-1], 'held')
+    assert move(c, permits[1], 'granted')[1]['code'] == 'PM1'
+    assert [(body['status'], body['code']) for body in (void(c, url)[1] for url in permits)] == [('void', None), ('void', 'PM1')]
+    third = f"/api/permit/{c('POST', '/api/permit', {})[1]['id']}"
+    move(c, third, 'held')
+    assert move(c, third, 'granted')[1]['code'] == 'PM2'
+    # A number due on create is assigned to the copy when the engine creates it.
+    slip = c('POST', '/api/slip', {})[1]
+    slip_url = f"/api/slip/{slip['id']}"
+    move(c, slip_url, 'closed')
+    status, slip_copy, _ = revise(c, slip_url)
+    assert status == 201 and (slip['code'], slip_copy['code'], slip_copy['status']) == ('S1', 'S2', 'open')
+    assert c('GET', slip_url)[1]['code'] == 'S1'
+
+
+def test_void_and_revise_keep_and_renew_numbers(numbered):
+    check_void_and_revise_keep_and_renew_numbers(numbered)
+
+
+def check_a_caught_revise_failure_leaves_no_number(numbered):
+    app, c, one, two = numbered
+    with app.business.context(ADMIN) as context:
+        failing = context.create(Slip, note='boom')
+        context.move(Slip, failing['id'], 'closed')
+        kept = context.create(Slip)
+        context.move(Slip, kept['id'], 'closed')
+    assert (failing['code'], kept['code']) == ('S1', 'S2')
+    with app.business.context(ADMIN) as context:
+        # The copy took S3 before its reaction failed; the savepoint gives the number back.
+        with pytest.raises(ValidationError):
+            context.revise(Slip, failing['id'], 'Wrong')
+        assert context.create(Slip)['code'] == 'S3'
+        assert context.revise(Slip, kept['id'], 'Wrong')['code'] == 'S4'
+    assert c('GET', f"/api/slip/{failing['id']}")[1]['status'] == 'closed'
+    assert c('GET', f"/api/slip/{kept['id']}")[1]['status'] == 'void'
+    with app.database.transaction() as tx:
+        codes = [row[0] for row in tx.connection.execute('SELECT code FROM slip ORDER BY id').fetchall()]
+        assert tx.connection.execute('SELECT count(*) FROM slip WHERE revises=?', (failing['id'],)).fetchone()[0] == 0
+    assert codes == ['S1', 'S2', 'S3', 'S4']
+
+
+def test_a_caught_revise_failure_leaves_no_number(numbered):
+    check_a_caught_revise_failure_leaves_no_number(numbered)
 
 
 def check_only_the_engine_writes_a_sequence(numbered):
