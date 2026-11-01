@@ -30,6 +30,7 @@ export class ValidationError extends ApiError {}
 /**
  * The record changed or the write had no current revision: 409 (changed since read, or a
  * newer calculation plan), 412 (precondition failed) or 428 (If-Match required). Reload first.
+ * A move or action the record does not allow now is also a 409; its message says why.
  */
 export class ConflictError extends ApiError {}
 
@@ -239,10 +240,13 @@ export class ApiClient {
     return this.request<RecordData | { job: unknown; record: RecordData }>('POST', `${recordPath(model, id)}/actions/${name}`, { body: args, ifMatch: etag });
   }
 
-  /** Move a record to another state (POST /api/{model}/{id}/moves/{to}). */
-  async move(model: string, id: number, to: string, etag: string | null, body: Record<string, unknown> = {}) {
+  /**
+   * Move a record to another state (POST /api/{model}/{id}/moves/{to}). A move takes no values;
+   * the server answers with the record and its new `_moves`, or 409 when the move is not available.
+   */
+  async move(model: string, id: number, to: string, etag: string | null) {
     if (!SEGMENT.test(to)) throw new ApiError(`Unknown state ${to}`, 0, 'response');
-    return this.request<RecordData>('POST', `${recordPath(model, id)}/moves/${to}`, { body, ifMatch: etag });
+    return this.request<RecordData>('POST', `${recordPath(model, id)}/moves/${to}`, { body: {}, ifMatch: etag });
   }
 }
 
