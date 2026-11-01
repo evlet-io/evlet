@@ -7,9 +7,10 @@ from contextlib import contextmanager
 import inspect
 import json
 import re
+import sqlite3
 
 from .auth import AccessError
-from .database import ROW_LIMIT
+from .database import ConflictError, ROW_LIMIT
 from .declarations import Ref
 from .fields import MISSING, Link
 from .models import ValidationError, identifier
@@ -211,37 +212,41 @@ class Context:
             raise ValidationError({'_form': 'Recursive document change detected'})
         self._active.append(key)
         try:
-            business, tx, user = self._business, self._tx, self.user
-            record = business.policy.record(tx, user, model, record_id, 'delete')
-            from .states import check_delete
-            check_delete(self, model, record)
-            before, _ = load_draft(self, model, record_id, {}, preview=True)
-            child_changes = {}
-            subtree = {}
-            for prefix, item in walk(before):
-                if item is not before:
-                    business.policy.require(user, item._definition, 'delete')
-                    subtree.setdefault(item._definition, []).append(item.id)
-            for definition, ids in subtree.items():
-                if set(ids) - business.policy.visible(tx, user, definition, ids, 'delete'):
-                    raise AccessError(404, 'Record not found')
-            for child in business.children.values():
-                if child.parent is not model: continue
-                rows = before._rows.get(child.name, [])
-                child_changes[child.name] = {'added': [], 'updated': [], 'removed': [row.id for row in rows], 'reordered': False}
-                delete_rows(business, tx, child.model, [row.id for row in rows])
-            with tx.maintenance():
-                tx.delete(model, record.id)
-            if business.registry.plan_for(model) is not None:
-                tx.connection.execute('DELETE FROM evlet_calculation_versions WHERE resource=? AND record_id=?', (business.registry.name_for(model), record.id))
-            tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (business.registry.name_for(model), record_id))
-            reaction = getattr(model, 'changed', None)
-            if reaction:
-                freeze_draft(before)
-                reaction(before, Change('delete', user, freeze(before.stored_values()), None, (), freeze(child_changes)))
-            business.changed(tx, model, record_id, deleted=True)
+            with self._savepoint():
+                self._delete(model, record_id)
         finally:
             self._active.pop()
+
+    def _delete(self, model, record_id):
+        business, tx, user = self._business, self._tx, self.user
+        record = business.policy.record(tx, user, model, record_id, 'delete')
+        from .states import check_delete
+        check_delete(self, model, record)
+        before, _ = load_draft(self, model, record_id, {}, preview=True)
+        child_changes = {}
+        subtree = {}
+        for prefix, item in walk(before):
+            if item is not before:
+                business.policy.require(user, item._definition, 'delete')
+                subtree.setdefault(item._definition, []).append(item.id)
+        for definition, ids in subtree.items():
+            if set(ids) - business.policy.visible(tx, user, definition, ids, 'delete'):
+                raise AccessError(404, 'Record not found')
+        for child in business.children.values():
+            if child.parent is not model: continue
+            rows = before._rows.get(child.name, [])
+            child_changes[child.name] = {'added': [], 'updated': [], 'removed': [row.id for row in rows], 'reordered': False}
+            delete_rows(business, tx, child.model, [row.id for row in rows])
+        with tx.maintenance():
+            tx.delete(model, record.id)
+        if business.registry.plan_for(model) is not None:
+            tx.connection.execute('DELETE FROM evlet_calculation_versions WHERE resource=? AND record_id=?', (business.registry.name_for(model), record.id))
+        tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (business.registry.name_for(model), record_id))
+        reaction = getattr(model, 'changed', None)
+        if reaction:
+            freeze_draft(before)
+            reaction(before, Change('delete', user, freeze(before.stored_values()), None, (), freeze(child_changes)))
+        business.changed(tx, model, record_id, deleted=True)
 
     def _write(self, model, record_id, values, *, action=None, arguments=None, move=None):
         if self.readonly:
@@ -254,11 +259,34 @@ class Context:
             raise ValidationError({'_form': 'Recursive document change detected'})
         self._active.append(key)
         try:
-            return operate(self, model, record_id, values, action=action, arguments=arguments, move=move)
+            with self._savepoint():
+                return operate(self, model, record_id, values, action=action, arguments=arguments, move=move)
         except ValidationError as exc:
             raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
         finally:
             self._active.pop()
+
+    @contextmanager
+    def _savepoint(self):
+        """One document operation is all or nothing even when trusted code catches its failure and the
+        outer transaction commits: any exception rolls back to a savepoint taken before it. A unique or
+        foreign key violation surfaces as ConflictError."""
+        connection, name = self._tx.connection, f'evlet_operation_{len(self._active)}'
+        connection.execute(f'SAVEPOINT {name}')
+        try:
+            yield
+        except BaseException as exc:
+            try:
+                connection.execute(f'ROLLBACK TO SAVEPOINT {name}')
+                connection.execute(f'RELEASE SAVEPOINT {name}')
+            except Exception:
+                # The connection itself failed; the enclosing transaction rolls back.
+                raise exc from None
+            driver = getattr(self._business.database, 'driver', None)
+            if isinstance(exc, sqlite3.IntegrityError) or driver is not None and isinstance(exc, driver.IntegrityError):
+                raise ConflictError('A unique value or linked record constraint was violated') from exc
+            raise
+        connection.execute(f'RELEASE SAVEPOINT {name}')
 
     def enqueue(self, task, payload, *, key=None, target=None):
         if self.readonly:
@@ -279,7 +307,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
     from .states import state_write
     from .sequences import sequence_write
     state_write(model, scalars, current)
-    sequence_write(model, scalars, current)
+    sequence_write(model, scalars, current, business.policy.fields(user, model))
     computed_write(business, model, scalars, '')
     business.policy.check_values(tx, user, model, scalars)
     draft = Draft(model, {**(dict(current._values) if current else {}), **scalars}, context=context, record_id=record_id)

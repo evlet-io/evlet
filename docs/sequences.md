@@ -47,6 +47,10 @@ leading zero), an unmatched `{` or `}`, control characters and formats longer th
 characters are errors. `{month}` needs `{year}` or `{yy}`, otherwise March numbers would
 repeat every year.
 
+`{yy}` repeats every hundred years: `S26-1` of 2026 and of 2126 look the same. When a number
+is already taken in its scope, the counter moves past it (see "Clashes" below), so the later
+century continues the series instead of failing. Use `{year}` when that matters.
+
 ### Periods
 
 A format with `{year}` or `{yy}` restarts the counter each year. A format with `{month}`
@@ -67,7 +71,8 @@ restarts it each month. The period comes from:
 
 `scope` names fields whose values each get their own counter, for example one series per
 company. Scope fields must be stored, required and not calculated, and be text, number,
-Link, date or Boolean fields of the same model. Two companies can both have
+Link, date or Boolean fields of the same model. The model's `State` cannot be a scope field,
+because it changes after the number is assigned. Two companies can both have
 `INV-2026-00001`.
 
 ### When a number is assigned
@@ -82,7 +87,10 @@ Link, date or Boolean fields of the same model. Two companies can both have
   number. A voided record keeps its number.
 * Once a number is assigned, the scope fields cannot change (`This is fixed once the number
   is assigned`) and the date field cannot move to another period (`This stays in the period
-  of the assigned number`). It may change within the same period.
+  of the assigned number`). It may change within the same period. A role that cannot read
+  the number gets `This cannot change now` instead, so the message does not reveal that a
+  number exists. Raw `Session.update` (and legacy `Action` handlers) get the same check
+  unless they run inside `tx.maintenance()`.
 * The number is assigned after the `run` method, calculations, rules and validation, and
   before the record is written. Calculations, `initial` values and field rules of the same
   document cannot read a Sequence (registration fails), because they would see null on the
@@ -94,11 +102,14 @@ Link, date or Boolean fields of the same model. Two companies can both have
 
 * HTTP create and update, `Context.create` and `Context.update`, dialogs and services:
   sending a value is a field error, `This number is assigned by the system`. Sending null on
-  create, or the saved value on update, is not a change and is accepted.
+  create, or the saved value on update, is not a change and is accepted. A role that cannot
+  read the field gets 403 for any value, so it cannot test guesses.
 * Python code in actions and `run` methods cannot assign it on the draft (the same error).
 * Raw `Session.create` and `Session.update` (including legacy `Action` handlers) raise an
   error unless they send the saved value or run inside `tx.maintenance()` for an audited
   repair.
+* A raw `Session.create` numbers a Sequence that is due on create, like `Context.create`.
+  Without `date=`, its period is today in UTC, because a session has no instance timezone.
 * Its schema entry is `read_only: true`.
 
 ## Counters
@@ -116,15 +127,35 @@ or a database constraint, the whole transaction rolls back, including the counte
 number is given to the next committed record. Deleting a record does not give its number
 back.
 
+Each document operation (create, update, move, action, delete) runs inside a savepoint. If
+trusted code catches a failed operation inside one `Context` and the transaction still
+commits, the failed operation leaves nothing behind: no counter step, no state change, no
+number. A unique or foreign key violation inside an operation is raised as `ConflictError`.
+
+### Clashes
+
+A number can already be taken in its scope, for example after a repair inside
+`tx.maintenance()`, after the format is changed back to an older one, or when `{yy}` wraps.
+The engine then moves the counter past every number that a record of the same scope holds,
+in the same transaction, and assigns the first free one. The skipped values are not used
+later. In normal operation nothing is skipped and numbers stay gapless.
+
+Changing the format does not reset counters. Counters are keyed by model, field, scope and
+period, so a new format continues the old count. If a new format renders values the old
+one produced, those values are skipped as above.
+
 Each Sequence also has a unique index on its scope fields and the number, for non-null
 numbers only (`CREATE UNIQUE INDEX ... WHERE number IS NOT NULL`). Startup and migrations
 check that the index exists.
 
-Renaming a Sequence field with `RenameField` keeps the column and its index but not its
-counters, which are keyed by field name. Rename the counter rows in the same maintenance
-window (`UPDATE evlet_sequence SET field = 'new' WHERE model = 'invoice' AND field =
-'old'`); otherwise numbering restarts and the unique index refuses the first repeated
-number.
+Renaming a scope field with `RenameField` is supported: the stored scope follows the new
+name, and counters keep working because they store scope values, not names.
+
+Renaming the Sequence field itself keeps the column and its index but not its counters,
+which are keyed by field name. Rename the counter rows in the same maintenance window
+(`UPDATE evlet_sequence SET field = 'new' WHERE model = 'invoice' AND field = 'old'`).
+Otherwise a new counter starts and skips every number already held, which costs one query
+per skipped number on the first assignment.
 
 ## Schema metadata
 

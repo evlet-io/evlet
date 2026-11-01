@@ -441,6 +441,10 @@ def _planned_definition(saved, pending):
                 fields = {operation.new_name if key == operation.old_name else key:
                           {**field, 'name': operation.new_name} if key == operation.old_name else field
                           for key, field in fields.items()}
+                # A Sequence's scope names fields; its counters key the scope by values, not names.
+                for field in fields.values():
+                    if 'scope' in field:
+                        field['scope'] = [operation.new_name if name == operation.old_name else name for name in field['scope']]
             elif isinstance(operation, AddIndex):
                 if operation.field not in fields:
                     raise SchemaError('Index field does not exist')

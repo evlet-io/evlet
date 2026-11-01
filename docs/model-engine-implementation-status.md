@@ -540,3 +540,18 @@ Known limitations:
 * `{yy}` repeats every century and the unique index would then refuse a repeated number.
 * The connector, the MCP server and the SolidJS form show the number but do not explain
   when it will be assigned.
+
+Review fixes (01-11-2026):
+
+* Every document operation (create, update, move, action, delete) runs in a savepoint on
+  SQLite and PostgreSQL. A failure caught by trusted code inside one `Context` rolls back
+  that operation only, so it leaves no counter step, state change or number. Integrity
+  errors inside an operation are raised as `ConflictError`.
+* A Sequence value sent by a role that cannot read the field is refused with 403 whatever
+  it is; the scope and period errors are generic for such roles.
+* `RenameField` of a scope field updates the stored scope. The State cannot be a scope.
+* `next_number` skips numbers already held in the scope, so a planted number, a format
+  change or a `{yy}` wrap no longer blocks the series.
+* Raw `Session.update` refuses scope and period changes of an assigned number outside
+  `maintenance()`, and raw `Session.create` assigns numbers due on create (period day in
+  UTC).

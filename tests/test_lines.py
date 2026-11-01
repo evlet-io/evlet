@@ -185,7 +185,8 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
     (status, saved, _), statements = counted(c, 'PATCH', url, {'title': 'renamed'}, headers={b'if-match': headers[b'etag']})
     assert status == 200 and saved['title'] == 'renamed' and saved['total'] == '2500.00'
     if make_app.backend == 'sqlite':
-        assert statements <= 32, statements  # 2,021 for 100 rows before batching.
+        # 2,021 for 100 rows before batching; two of these open and release the operation savepoint.
+        assert statements <= 34, statements
 
     last = order['_row_ids']['l999']
     headers = {b'if-match': c('GET', url)[2][b'etag']}

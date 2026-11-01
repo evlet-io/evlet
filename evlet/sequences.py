@@ -11,7 +11,7 @@ import json
 import re
 from types import MappingProxyType
 
-from .fields import Boolean, Date, Integer, LongText, MISSING, Tags, Text
+from .fields import Boolean, Date, Integer, LongText, MISSING, State, Tags, Text
 from .models import ValidationError, identifier
 
 TOKEN = re.compile(r'\{([^{}]*)\}')
@@ -23,6 +23,8 @@ COUNTER_TABLE = ('CREATE TABLE IF NOT EXISTS evlet_sequence (model TEXT NOT NULL
 NEXT = ('INSERT INTO evlet_sequence (model, field, scope_key, period, "last") VALUES (?, ?, ?, ?, 1) '
         'ON CONFLICT (model, field, scope_key, period) DO UPDATE SET "last" = evlet_sequence."last" + 1 RETURNING "last"')
 ASSIGNED_BY_ENGINE = 'This number is assigned by the system'
+# Numbers already taken in a scope (planted by a repair, or an older format) are skipped, at most this many in a row.
+MAX_SKIPPED = 10000
 
 
 def parse_format(text):
@@ -139,10 +141,10 @@ def compile_sequences(registry, models, plans, child_models):
                 field = fields.get(scoped)
                 plain = field is not None and field.stored and field.compute is None and field.query is None \
                     and field.fetch is None and isinstance(field, (Text, Integer, Date, Boolean)) \
-                    and not isinstance(field, (LongText, Sequence, Tags))
+                    and not isinstance(field, (LongText, Sequence, Tags, State))
                 if not plain:
                     raise ValueError(f'{where}: scope field {scoped!r} must be a stored, not calculated, text, number, '
-                                     'Link, date or Boolean field of the model')
+                                     'Link, date or Boolean field of the model, and not its State')
                 if not field.required:
                     raise ValueError(f'{where}: scope field {scoped!r} must be required, so every number has a scope')
             if sequence.date is not None:
@@ -196,18 +198,34 @@ def number_day(sequence, values, today):
 
 
 def next_number(connection, resource, name, model, sequence, values, today):
-    """Take the next counter value for this record's scope and period and render the number."""
+    """Take the next counter value for this record's scope and period and render the number.
+
+    A number that a record of the same scope already holds is skipped (the counter moves past it), so a
+    clash planted by a repair, a format changed back or a {yy} century wrap does not block the series.
+    In normal operation nothing is skipped and numbers stay gapless.
+    """
     day = number_day(sequence, values, today)
-    row = connection.execute(NEXT, (resource, name, scope_key(model, sequence, values), sequence.period_key(day))).fetchone()
-    return sequence.render(row[0], day)
+    fields = model.__declared_fields__
+    key = (resource, name, scope_key(model, sequence, values), sequence.period_key(day))
+    columns = ' AND '.join(f'{identifier(column)} = ?' for column in (*sequence.scope, name))
+    scope = [fields[column].to_storage(values.get(column)) for column in sequence.scope]
+    for _ in range(MAX_SKIPPED):
+        number = sequence.render(connection.execute(NEXT, key).fetchone()[0], day)
+        if connection.execute(f'SELECT 1 FROM {identifier(resource)} WHERE {columns}', [*scope, number]).fetchone() is None:
+            return number
+    raise ValidationError({name: 'No free number was found in this series; check the stored numbers and the format'})
 
 
 # The document pipeline
 
-def sequence_write(model, scalars, current):
-    """Ordinary writes never set a Sequence. Sending the saved value back is not a change."""
+def sequence_write(model, scalars, current, readable):
+    """Ordinary writes never set a Sequence. Sending the saved value back is not a change.
+
+    `readable` are the fields this role may read. A value for a Sequence the role cannot read is left
+    for the permission check, which refuses it whatever it is, so the answer reveals nothing.
+    """
     for name in fields_of(model):
-        if name not in scalars:
+        if name not in scalars or name not in readable:
             continue
         if scalars[name] == (None if current is None else current._values.get(name)):
             del scalars[name]
@@ -227,11 +245,12 @@ def assign(context, model, draft, before, move):
     if not declared:
         return []
     from .documents import host_today
+    readable = business.policy.fields(context.user, model)
     state = model.__state__
     assigned = []
     for name, sequence in declared.items():
         if before is not None and before._values.get(name) is not None:
-            fixed(model, sequence, draft, before)
+            fixed(sequence, draft._values, before._values, name in readable)
             continue
         if draft._values.get(name) is not None:
             continue
@@ -249,15 +268,20 @@ def assign(context, model, draft, before, move):
     return assigned
 
 
-def fixed(model, sequence, draft, before):
+def fixed(sequence, values, saved, shown=True):
+    """Refuse a change of the scope fields, or of the date field's period, of an assigned number.
+
+    `shown` is whether the caller may read the number; otherwise the message does not reveal one exists.
+    """
     errors = {}
+    generic = 'This cannot change now'
     for name in sequence.scope:
-        if draft._values.get(name) != before._values.get(name):
-            errors[name] = 'This is fixed once the number is assigned'
+        if values.get(name) != saved.get(name):
+            errors[name] = 'This is fixed once the number is assigned' if shown else generic
     if sequence.date is not None:
-        old, new = before._values.get(sequence.date), draft._values.get(sequence.date)
+        old, new = saved.get(sequence.date), values.get(sequence.date)
         if new is None or old is not None and sequence.period_key(old) != sequence.period_key(new):
-            errors[sequence.date] = 'This stays in the period of the assigned number'
+            errors[sequence.date] = 'This stays in the period of the assigned number' if shown else generic
     if errors:
         raise ValidationError(errors)
 
@@ -310,12 +334,34 @@ def backfill(session, model, name, *, filters=None, today=None):
             count += 1
 
 
-def raw_write(session, model, values, current):
-    """Raw Session writes may not set a Sequence, except inside maintenance()."""
-    if session._maintenance:
-        return
-    for name in fields_of(model):
-        value = values.get(name, MISSING)
-        if value is not MISSING and value != (None if current is None else current._values.get(name)):
-            raise ValueError(f'{model.__name__}.{name} is assigned by the engine; use sequences.backfill() '
-                             'or session.maintenance() for an audited repair')
+def raw_write(session, model, values, current, cleaned):
+    """Raw Session writes: refuse setting a Sequence or moving an assigned number's scope or period,
+    except inside maintenance(). Returns the numbers a raw create assigns, {field: number}.
+
+    `cleaned` are the record's validated values after the write. A raw create numbers a Sequence that is
+    due on create (assign_on="create", or the default state is assign_on); without a date field its
+    period is today in UTC, because a Session has no instance timezone.
+    """
+    declared = fields_of(model)
+    if not declared:
+        return {}
+    if not session._maintenance:
+        for name, sequence in declared.items():
+            value = values.get(name, MISSING)
+            saved = None if current is None else current._values.get(name)
+            if value is not MISSING and value != saved:
+                raise ValueError(f'{model.__name__}.{name} is assigned by the engine; use sequences.backfill() '
+                                 'or session.maintenance() for an audited repair')
+            if saved is not None:
+                fixed(sequence, cleaned, current._values)
+    if current is not None:
+        return {}
+    from datetime import datetime, timezone
+    numbers = {}
+    for name, sequence in declared.items():
+        due = sequence.assign_on == 'create' or cleaned.get(model.__state__) == sequence.assign_on
+        if due and cleaned.get(name) is None:
+            ensure_counters(session.connection)
+            numbers[name] = next_number(session.connection, session.registry.name_for(model), name, model, sequence,
+                                        cleaned, datetime.now(timezone.utc).date().isoformat())
+    return numbers

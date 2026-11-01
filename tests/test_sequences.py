@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from evlet import (AddField, ConflictError, Database, Date, Link, Migration, Model, Move, Registry, Rule, SchemaError,
+from evlet import (AddField, ConflictError, Database, Date, Link, Migration, Model, Move, Registry, RenameField, Rule, SchemaError,
                    Sequence, State, Text, ValidationError, action)
 from evlet.auth import User
 from evlet.calc import F
@@ -66,7 +66,21 @@ class Ticket(Model):
     title = Text(default='')
 
 
-MODELS = (Company, Invoice, Receipt, Ticket)
+class Pass(Model):
+    permissions = ALL
+    holder = Text(required=True, unique=True)
+    code = Sequence('P{n}')
+
+
+class Visit(Model):
+    # The clerk may edit the visit but cannot read its number.
+    permissions = {**ALL, 'editor': Rule(('read', 'create', 'update'), read_fields=('day', 'note'), write_fields=('day', 'note'))}
+    day = Date(required=True)
+    note = Text(default='')
+    code = Sequence('V{year}-{n}', date='day')
+
+
+MODELS = (Company, Invoice, Receipt, Ticket, Pass, Visit)
 
 
 @pytest.fixture
@@ -135,6 +149,8 @@ def test_declarations_are_checked_against_the_model():
         register(code=Sequence('N{n}', assign_on='issued'))
     with pytest.raises(ValueError, match='assign_on'):
         register(status=State(('draft', 'sent')), code=Sequence('N{n}', assign_on='issued'))
+    with pytest.raises(ValueError, match='not its State'):
+        register(status=State(('draft', 'sent')), code=Sequence('N{n}', scope=('status',)))
     with pytest.raises(ValueError, match='cannot read a Sequence'):
         register(code=Sequence('N{n}'), copy=Text(compute=F('code')))
     from evlet import Child, Table
@@ -383,3 +399,118 @@ def test_a_missing_sequence_index_is_reported(tmp_path):
     connection.close()
     with pytest.raises(SchemaError, match='missing its unique index'):
         Database(path, Registry(*MODELS), migrations=[]).migrate([])
+
+
+# Review findings
+
+def check_a_caught_failure_leaves_no_trace(app):
+    c = client(app)
+    one = c('POST', '/api/company', {'name': 'One'})[1]['id']
+    with app.business.context(ADMIN) as context:
+        assert context.create(Pass, holder='Ann')['code'] == 'P1'
+        # The unique holder fails after the number is taken; trusted code catches it and commits.
+        with pytest.raises(ConflictError):
+            context.create(Pass, holder='Ann')
+        assert context.create(Pass, holder='Bob')['code'] == 'P2'
+    draft = c('POST', '/api/invoice', {'company': one, 'posting_date': '2026-03-10'})[1]
+    with app.database.transaction() as tx, tx.maintenance():
+        tx.update(Invoice, draft['id'], name='boom')
+    with app.business.context(ADMIN) as context:
+        with pytest.raises(ValidationError):
+            context.move(Invoice, draft['id'], 'issued')
+        context.create(Ticket, title='after')
+    saved = c('GET', f"/api/invoice/{draft['id']}")[1]
+    assert (saved['status'], saved['number']) == ('draft', None)
+    assert issue(c, one) == 'INV-2026-00001'
+    assert sorted((record['code'], record['holder']) for record in c('GET', '/api/pass')[1]['items']) == [('P1', 'Ann'), ('P2', 'Bob')]
+
+
+def test_a_caught_failure_leaves_no_trace(tmp_path):
+    check_a_caught_failure_leaves_no_trace(start(Database(tmp_path / 'caught.sqlite3', Registry(*MODELS))))
+
+
+def check_a_planted_number_is_skipped(numbered):
+    app, c, one, two = numbered
+    ids = [invoice(c, one)[0]['id'] for _ in range(3)]
+    with app.database.transaction() as tx, tx.maintenance():
+        tx.update(Invoice, ids[0], number='INV-2026-00001')
+        tx.update(Invoice, ids[1], number='INV-2026-00002')
+    # Another scope is not affected; this one moves past the numbers already held.
+    assert issue(c, two) == 'INV-2026-00001'
+    url = f'/api/invoice/{ids[2]}'
+    assert move(c, url, 'issued')[1]['number'] == 'INV-2026-00003'
+    assert issue(c, one) == 'INV-2026-00004'
+
+
+def test_a_planted_number_is_skipped(numbered):
+    check_a_planted_number_is_skipped(numbered)
+
+
+def check_roles_that_cannot_read_the_number_learn_nothing(numbered):
+    app, c, one, two = numbered
+    visit = c('POST', '/api/visit', {'day': '2026-05-05'})[1]
+    url = f"/api/visit/{visit['id']}"
+    assert visit['code'] == 'V2026-1'
+    editor = add_user(app, 'editor')
+    right = editor('PATCH', url, {'code': 'V2026-1'}, headers=etag(editor, url))
+    wrong = editor('PATCH', url, {'code': 'V2026-9'}, headers=etag(editor, url))
+    assert right[:2] == wrong[:2] and right[0] == 403
+    status, body, _ = editor('PATCH', url, {'day': '2027-01-01'}, headers=etag(editor, url))
+    assert status == 422 and body['fields'] == {'day': 'This cannot change now'}
+    assert c('PATCH', url, {'day': '2027-01-01'}, headers=etag(c, url))[1]['fields'] == {'day': 'This stays in the period of the assigned number'}
+
+
+def test_roles_that_cannot_read_the_number_learn_nothing(numbered):
+    check_roles_that_cannot_read_the_number_learn_nothing(numbered)
+
+
+def check_raw_session_writes_number_and_keep_scope(numbered):
+    app, c, one, two = numbered
+    issue(c, one)
+    record = c('GET', '/api/invoice')[1]['items'][0]
+    with pytest.raises(ValidationError, match='fixed once the number is assigned'):
+        with app.database.transaction() as tx:
+            tx.update(Invoice, record['id'], company=two)
+    with pytest.raises(ValidationError, match='period'):
+        with app.database.transaction() as tx:
+            tx.update(Invoice, record['id'], posting_date='2027-01-01')
+    with app.database.transaction() as tx:
+        assert tx.update(Invoice, record['id'], posting_date='2026-12-01').posting_date.month == 12
+        # Raw creates number a Sequence that is due on create.
+        assert tx.create(Ticket, title='raw').code == 'T1'
+        assert tx.create(Invoice, company=one, posting_date='2026-01-01').number is None
+        with tx.maintenance():
+            assert tx.update(Invoice, record['id'], company=two).company == two
+    assert c('POST', '/api/ticket', {})[1]['code'] == 'T2'
+
+
+def test_raw_session_writes_number_and_keep_scope(numbered):
+    check_raw_session_writes_number_and_keep_scope(numbered)
+
+
+def check_a_scope_field_can_be_renamed(make):
+    class Bill(Model):
+        permissions = ALL
+        branch = Text(required=True)
+        code = Sequence('B{n}', scope=('branch',))
+    database = make(Registry(Bill), [])
+    app = start(database)
+    assert client(app)('POST', '/api/bill', {'branch': 'North'})[1]['code'] == 'B1'
+
+    class Bill(Model):  # noqa: F811 - the upgraded definition
+        permissions = ALL
+        site = Text(required=True)
+        code = Sequence('B{n}', scope=('site',))
+    migration = Migration('0001_site', RenameField('bill', 'branch', 'site'))
+    upgraded = make(Registry(Bill), [migration], migrate=True)
+    c = client(start(upgraded))
+    assert c('POST', '/api/bill', {'site': 'North'})[1]['code'] == 'B2'
+    assert c('POST', '/api/bill', {'site': 'South'})[1]['code'] == 'B1'
+
+
+def test_a_scope_field_can_be_renamed(tmp_path):
+    def make(registry, migrations, migrate=False):
+        database = Database(tmp_path / 'rename.sqlite3', registry, migrations=migrations)
+        database.migrate(migrations) if migrate else database.initialize()
+        return database
+    check_a_scope_field_can_be_renamed(make)
