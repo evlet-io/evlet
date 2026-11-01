@@ -133,3 +133,53 @@ def test_active_generation_pins_late_imports_and_rejects_replacement(project):
     definitions = load_definitions(pinned, modules=manifest['modules'])
     assert import_module('notes.support').value == 'changed'
     assert load_definitions(pinned, modules=manifest['modules'])[0][1].models[0] is definitions[0][1].models[0]
+
+
+def test_flat_sources_skip_dotfiles_and_virtual_environments(project):
+    create_app(project, 'notes')
+    root = project / 'apps/notes'
+    (root / '.env').write_text('SECRET=1')
+    venv = root / 'venv'
+    (venv / 'lib').mkdir(parents=True)
+    (venv / 'pyvenv.cfg').write_text('home = /usr/bin')
+    (venv / 'lib64').symlink_to(venv / 'lib')
+    files = {str(path.relative_to(root)) for path in read_package(root).source_files()}
+    assert '.env' not in files and not any(name.startswith('venv') for name in files)
+    assert 'models/item.py' in files
+
+
+def test_legacy_lock_digest_keeps_original_file_selection(tmp_path):
+    import hashlib
+    from evlet.packages import Package
+    root = tmp_path / 'legy'
+    (root / 'legy/build').mkdir(parents=True)
+    (root / 'pyproject.toml').write_text('[project]\nname = "legy"\n')
+    (root / 'legy/__init__.py').write_text('')
+    (root / 'legy/build/__init__.py').write_text('')
+    (root / 'legy/.DS_Store').write_bytes(b'x')
+    digest = hashlib.sha256()
+    for path in [root / 'pyproject.toml', *sorted((root / 'legy').rglob('*'))]:
+        if path.is_file():
+            digest.update(str(path.relative_to(root)).encode() + b'\0')
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
+    package = Package(root, 'legy', '1.0', 'Legy', ())
+    assert package.locked()['sha256'] == digest.hexdigest()
+
+
+def test_concurrent_build_reuses_published_generation(project, monkeypatch, tmp_path):
+    import os
+    from evlet import builds
+    create_app(project, 'notes')
+    monkeypatch.chdir(tmp_path)
+    packages = resolve_packages(project, ['notes'])
+    _, first = prepare(project, packages)
+    published = project / '.evlet/builds' / first['fingerprint']
+    hidden = published.with_name('hidden')
+    published.rename(hidden)
+    real_rename = os.rename
+    def racing_rename(source, target):
+        # The other process publishes just before this one renames its stage.
+        real_rename(hidden, target)
+        return real_rename(source, target)
+    monkeypatch.setattr(builds.os, 'rename', racing_rename)
+    assert prepare(project, packages)[1]['fingerprint'] == first['fingerprint']

@@ -503,7 +503,7 @@ app = AppDefinition(models=models, migrations=migrations,
             state = tx.connection.execute('SELECT state,error FROM evlet_jobs WHERE id=?', (receipt.id,)).fetchone()
         assert state['state'] == ('failed' if helper_kind == 'sourceless' else 'succeeded')
         if helper_kind == 'sourceless':
-            assert state['error'] == 'ImportError'
+            assert state['error'] == 'ModuleNotFoundError'
     assert app.database.get(model, record.id).title == ('Original' if helper_kind == 'sourceless' else 'After!')
 
 

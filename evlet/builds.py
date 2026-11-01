@@ -188,7 +188,8 @@ def prepare(root, packages):
                 raise ValueError('App sources changed during build; retry with stable sources')
             try:
                 os.rename(stage, target)
-            except FileExistsError:
+            except OSError:
+                # Another process published the same generation first (EEXIST or ENOTEMPTY).
                 if not (target / 'manifest.json').is_file():
                     raise
     manifest = json.loads((target / 'manifest.json').read_text())

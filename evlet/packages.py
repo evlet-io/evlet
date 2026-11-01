@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from importlib import metadata
 from pathlib import Path, PureWindowsPath
 import re
@@ -33,19 +34,39 @@ class Package:
 
     def source_files(self):
         if self.layout == 'legacy':
-            candidates = [self.path / 'pyproject.toml', *sorted(self.source_root.rglob('*'))]
-        else:
-            candidates = sorted(self.path.rglob('*'))
-        excluded = {'.git', '.venv', '.evlet', '__pycache__', 'node_modules', 'dist', 'build',
-                    '.pytest_cache', '.mypy_cache', '.ruff_cache', 'tests'}
-        for path in candidates:
-            parts = path.relative_to(self.path).parts
-            if any(part in excluded or part.endswith('.egg-info') for part in parts) or path.suffix in ('.pyc', '.pyo') or path.name == '.DS_Store':
+            # Keep the original selection so existing apps.lock digests stay valid.
+            for path in [self.path / 'pyproject.toml', *sorted(self.source_root.rglob('*'))]:
+                if '__pycache__' in path.parts or path.suffix == '.pyc':
+                    continue
+                if path.is_symlink():
+                    raise ValueError(f'App source cannot contain symbolic links: {path}')
+                if path.is_file():
+                    yield path
+            return
+        # Flat apps live at the project root: skip tooling, dotfiles (such as .env) and virtual environments.
+        excluded = {'__pycache__', 'node_modules', 'dist', 'build', 'tests'}
+        found = []
+        for directory, folders, files in os.walk(self.path):
+            here = Path(directory)
+            if here != self.path and 'pyvenv.cfg' in files:
+                folders[:] = []
                 continue
-            if path.is_symlink():
-                raise ValueError(f'App source cannot contain symbolic links: {path}')
-            if path.is_file():
-                yield path
+            kept = []
+            for name in sorted(folders):
+                if name in excluded or name.startswith('.') or name.endswith('.egg-info'):
+                    continue
+                if (here / name).is_symlink():
+                    raise ValueError(f'App source cannot contain symbolic links: {here / name}')
+                kept.append(name)
+            folders[:] = kept
+            for name in files:
+                path = here / name
+                if name.startswith('.') or path.suffix in ('.pyc', '.pyo'):
+                    continue
+                if path.is_symlink():
+                    raise ValueError(f'App source cannot contain symbolic links: {path}')
+                found.append(path)
+        yield from sorted(found)
 
     def locked(self):
         digest = hashlib.sha256()

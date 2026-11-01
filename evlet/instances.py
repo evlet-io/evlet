@@ -161,7 +161,7 @@ class _AppImports(MetaPathFinder):
         else:
             spec = PathFinder.find_spec(fullname, path)
         if spec is None:
-            raise ImportError('Application imports require Python source files: ' + fullname)
+            raise ModuleNotFoundError('Application imports require Python source files: ' + fullname, name=fullname)
         if spec and spec.origin and not Path(spec.origin).resolve().is_relative_to(root.resolve()):
             raise ImportError('Application imports cannot escape their package root')
         if spec and isinstance(spec.loader, SourceFileLoader):
