@@ -2,7 +2,8 @@
 
 The installed Python package contains the CLI, browser UI, Playground, templates
 and documentation. Python 3.12 or later is required. Ordinary app development and
-serving need no Node.js, Vite, separate frontend server or framework checkout.
+serving of Python-only apps need no Node.js, Vite, separate frontend server or
+framework checkout. Native app extensions require Node 24 at build time.
 
 For a step-by-step walkthrough, read [Your first site](getting-started.md).
 See [What you can customize](customizing.md) and [App upgrades](app-upgrades.md) next.
@@ -25,8 +26,9 @@ that confirmation. Open http://127.0.0.1:8000 and create your administrator.
 There is no default password. The existing Docs, generated models, forms,
 permissions, actions and private-file interfaces use the bundled browser UI.
 
-`setup` creates only `apps/` and `instances/`. It does not create a database,
-copy the framework, download dependencies or start a service. Existing directories
+`setup` creates `apps/`, `instances/` and a real isolated `.venv`, installs Evlet
+there and verifies it. It does not create a database or start a service. Use
+`--framework /reviewed/evlet.whl` for an offline/development artifact. Existing directories
 are never overwritten. Commands discover the project from the current directory
 or its parents. `--project /path/to/myproject` works before or after a command.
 
@@ -37,6 +39,7 @@ evlet setup myproject
 evlet app notes
 evlet app --get https://github.com/company/notes.git
 evlet app --list
+evlet build --trust
 evlet instance acme
 evlet instance --list
 evlet install notes --instance acme --trust
@@ -50,8 +53,9 @@ evlet docs --port 8001
 `python -m evlet` accepts the same commands. The original `new`, `login`,
 `logout`, `describe` and `mcp` commands retain their existing contracts.
 `evlet dev` selects the sole instance in a project. With several instances it
-asks in a terminal; automation must pass `--instance`. Development reloads Python
-changes and runs the existing short-task queue. It never applies model migrations
+asks in a terminal; automation must pass `--instance`. Development rebuilds/reloads
+Python, TS/JS and configuration changes, including file additions/deletions, and
+runs the existing queue. It never applies model migrations
 implicitly. Stop the server and run `migrate` after adding a migration. Normal
 `serve` checks locked source versions and content; run `migrate` to record an
 intentional source change. Use `serve --jobs` to enable the short-task queue in
@@ -64,6 +68,24 @@ The Projects demo retains its separate browser-local storage behavior.
 `docs` serves this installed version's guides locally without a login or database.
 
 ## App package
+
+The default scaffold is a single package root:
+
+```text
+apps/notes/
+  __init__.py
+  pyproject.toml
+  setup.py
+  models/__init__.py
+  models/item.py
+```
+
+Models, reports and nested services are discovered automatically. Permissions are
+declared on resources, with default denial. See the
+[declarative guide](amendment-v2.md) for the complete contract and optional
+`reports/`, `services/`, `migrations/` and `views/` directories.
+
+The following nested layout remains available with `evlet app notes --legacy`:
 
 ```text
 apps/notes/
@@ -98,7 +120,7 @@ title = "Notes"
 
 Use a lowercase Python package name, at most 48 characters, with letters, digits
 and underscores. Framework, standard-library and installed-library names are reserved. The current
-layout is a package directly below the app directory, with a static name/version
+legacy layout is a package directly below the app directory, with a static name/version
 and an explicit `hooks.py`; `src` layouts and dynamic metadata are not supported.
 Keep customer data and secrets in instances, outside the app repository.
 
@@ -124,11 +146,10 @@ app = AppDefinition(
 The contract composes the existing APIs. It also accepts `children`, `attachments`,
 `tasks`, `schedules`, and a `ui=ViewRegistry(...)` for view extensions and component
 contracts. `views` and UI registries supply the existing routes and navigation.
-Custom renderer code still needs a framework frontend build; registering a Python
-component contract does not install JavaScript. App-specific assets can remain
-Python package resources; this CLI does not expose arbitrary app directories over
-HTTP. Hooks, integration helpers and event-producing action handlers are ordinary
-trusted Python code. No source code is sent to the browser for execution.
+Registering a Python component contract alone does not install JavaScript. The
+new `views/` native extension contract packages explicit TS/JS client modules
+under generation-specific authenticated URLs; arbitrary app directories and
+Python source remain private. Hooks, helpers and action handlers are trusted code.
 
 Models, actions, routes, permission rules and task names must not conflict across
 apps. The generated starter preserves the complete app name, including underscores,
@@ -148,21 +169,20 @@ Ordinary action tuples need no factory.
 
 ## Dependencies and Git
 
-Fetching validates metadata, Python/Evlet compatibility, requirement syntax,
-package paths and the resolved commit. It never imports the app, runs a build,
-installs dependencies, initializes submodules or runs repository hooks. Sources
+The static fetch phase validates metadata, Python/Evlet compatibility, requirement
+syntax, package paths and the resolved commit without executing app code. Sources
 are staged and moved into `apps/` only after validation. HTTPS and `ssh://` URLs
 are supported. Passwords must stay in your Git credential setup, outside URLs.
 Credential helpers are not inherited by the isolated fetch command; private
 repositories can use SSH with an existing agent. Local paths, submodules, direct
 URL requirements and app-dependency extras are not supported in this first CLI.
 
-Fetching reports declared dependencies. Installation resolves app dependencies
-from the project's `apps/` directories in dependency order, checks Python
-packages already installed in the current environment, and rejects missing,
-incompatible or circular dependencies. It does not run pip implicitly. Fetch
-missing app sources or install the required Python dependency explicitly, then
-retry. Merely passing validation does not make downloaded code trustworthy.
+After static fetch, `app --get` requires trust before preparing dependencies and
+building immediately. Refusal leaves a clearly unbuilt source checkout. Build
+and install resolve local apps in dependency order and prepare external Python
+dependencies/editable app packages only in the managed project `.venv`.
+Legacy projects retain explicit environment management. Circular or incompatible
+dependencies fail. Merely passing static validation does not establish trust.
 
 ## Instance configuration and isolation
 
@@ -186,7 +206,7 @@ SQLite databases and bound private-file directories.
 ```python
 from evlet import Instance
 
-instance = Instance(name="acme", database="sqlite", storage="local", domain=None)
+instance = Instance(name="acme", database="sqlite", storage="local", domain=None, timezone="UTC")
 ```
 
 The CLI supports SQLite/local storage. Existing PostgreSQL, tenant routing, S3 and
@@ -207,7 +227,7 @@ proxy trust or public deployment. This is not a production-readiness claim.
 Each app supplies its complete ordered history of existing `Migration` objects.
 Use `CreateModel` for new app models and the existing explicit operations for
 schema changes. Keep published migration schemas frozen. The generated initial
-migration contains a frozen copy of its starter model, separate from the live
+legacy migration contains a frozen copy of its starter model, separate from the live
 model definition. The installer prefixes migration
 names with the app identity and preserves the combined database's applied order.
 A later release of one app can append migrations after another app's history.
@@ -222,7 +242,9 @@ under `data/backups/`; unchanged migrations validate without another backup; ret
 of your backup policy. SQL backups alone do not include uploaded file bytes.
 
 The lock records each app's version, source, full Git commit when available, and
-SHA-256 of `pyproject.toml` and files inside the named app package, excluding bytecode caches. Root-level files outside that package are not included or made importable by the loader. The database stores the actual installed
+SHA-256 of included source files. Flat apps include their package root; legacy apps
+include `pyproject.toml` and the nested package. Generated caches/VCS/build files
+are excluded. The database stores the actual installed
 manifest separately. Git revisions identify repository sources; the content hash
 also detects uncommitted changes. Reproducing an uncommitted/local app requires
 preserving those exact source files. The lock is not a source-code archive. Local sources use project-relative paths.
@@ -252,7 +274,9 @@ and require restoring the matching database, files, lock and app source together
 
 There are no automatic app update/removal, source checkout, rollback or backup/
 restore commands. Use [App upgrades](app-upgrades.md) for the supported workflow.
-Do not remove app source used by an instance. Changing a schedule's task, payload or interval needs a later explicit
+Do not remove app source used by an instance. Calendar `@cron` schedules reconcile
+changes while preserving operator-disabled state and history. Changing a legacy
+interval schedule's task, payload or interval needs a later explicit
 schedule-update API; unchanged schedules retain their due time and activation.
 
 ## Schedules

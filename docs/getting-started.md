@@ -22,7 +22,7 @@ active interpreter. Keep this environment active when running Evlet commands.
 ```sh
 evlet setup myproject
 cd myproject
-evlet app notes
+evlet app notes --legacy
 ```
 
 The project has two folders: `apps/` for reusable app code and `instances/` for
