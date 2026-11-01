@@ -11,8 +11,8 @@ import type { Prefs } from './prefs';
 
 /** The route table. These are the paths the Python server serves the app for (evlet/ui/routes.py).
  * /app/:model/new comes before /app/:model/:id so "new" is never taken for an id. /app/:model/:id/view
- * is an older link to a record and opens the record. Accounts and reports are not part of this UI;
- * their addresses still open and say so. */
+ * is an older link to a record and opens the record. Reports are not part of this UI; their
+ * addresses still open and say so. Accounts moved to Controls (/controls/users), a separate page. */
 export const ROUTES = {
   home: '/',
   login: '/login',
@@ -22,7 +22,6 @@ export const ROUTES = {
   record: '/app/:model/:id',
   view: '/app/:model/:id/view',
   list: '/app/:model',
-  accounts: '/settings/accounts',
   report: '/reports/:report',
 } as const;
 export type Routes = typeof ROUTES;
