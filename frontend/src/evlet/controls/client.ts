@@ -39,7 +39,34 @@ export interface ControlsState {
   client: string;
 }
 
-export class ControlsClient extends ApiClient {
+export interface ConnectorField {
+  name: string; label: string; type: 'text' | 'number' | 'select' | 'toggle' | 'role' | 'secret';
+  options: Array<[string, string]>; default: any; required: boolean; help: string;
+}
+export interface ConnectorInfo {
+  id: string; title: string; app: string; category: string; description: string; accounts: boolean; testable: boolean; fields: ConnectorField[];
+}
+/** A saved connector or email account. Secrets only ever say whether they are saved. */
+export interface ConnectorRow {
+  id: string; connector: string; account: string | null; status: 'connected' | 'error'; default: boolean;
+  settings: Record<string, any>; secrets: Record<string, { saved: boolean }>; changed_by: string | null; changed_at: number | null;
+}
+export interface ConnectorBody { settings: Record<string, unknown>; secrets: Record<string, string> }
+export interface TestResult { ok: boolean; message?: string; error?: string }
+export interface KeyScope { access: 'read' | 'write'; models: string[] | null }
+export interface ApiKeyRow {
+  id: number; user_id: number; username: string; role: string; name: string; prefix: string;
+  scope: KeyScope; created_at: number; last_used: number | null;
+}
+export interface CreatedKey { key: ApiKeyRow; token: string }
+/** The key routes a keys page needs: Controls (every user) or a person's own. */
+export interface KeysApi {
+  keys(): Promise<{ items: ApiKeyRow[]; models?: Array<{ name: string; label: string }> }>;
+  createKey(body: { name: string; scope: KeyScope; user?: string }): Promise<CreatedKey>;
+  revokeKey(id: number): Promise<unknown>;
+}
+
+export class ControlsClient extends ApiClient implements KeysApi {
   constructor(options: ClientOptions = {}) { super(options); }
 
   async state() { return (await this.request<ControlsState>('GET', '/api/_controls/state')).data; }
@@ -61,6 +88,18 @@ export class ControlsClient extends ApiClient {
   async changeRole(id: string, body: Record<string, unknown>) {
     return (await this.request<{ items: RoleRow[] }>('PATCH', `/api/_controls/roles/${encodeURIComponent(id)}`, { body })).data.items;
   }
+  async connectors() { return (await this.request<{ connectors: ConnectorInfo[]; items: ConnectorRow[] }>('GET', '/api/_controls/connectors')).data; }
+  async saveConnector(id: string, body: ConnectorBody) {
+    return (await this.request<ConnectorRow>('PUT', `/api/_controls/connectors/${encodeURIComponent(id)}`, { body })).data;
+  }
+  async removeConnector(id: string) { await this.request('DELETE', `/api/_controls/connectors/${encodeURIComponent(id)}`); }
+  async testConnector(id: string, body: Partial<ConnectorBody> & { to?: string }) {
+    return (await this.request<TestResult>('POST', `/api/_controls/connectors/${encodeURIComponent(id)}/test`, { body })).data;
+  }
+  async makeDefault(id: string) { return (await this.request<ConnectorRow>('POST', `/api/_controls/connectors/${encodeURIComponent(id)}/default`, { body: {} })).data; }
+  async keys() { return (await this.request<{ items: ApiKeyRow[] }>('GET', '/api/_controls/keys')).data; }
+  async createKey(body: { name: string; scope: KeyScope; user?: string }) { return (await this.request<CreatedKey>('POST', '/api/_controls/keys', { body })).data; }
+  async revokeKey(id: number) { return (await this.request<{ items: ApiKeyRow[] }>('DELETE', `/api/_controls/keys/${id}`)).data; }
   async deleteRole(id: string) {
     return (await this.request<{ items: RoleRow[] }>('DELETE', `/api/_controls/roles/${encodeURIComponent(id)}`)).data.items;
   }
