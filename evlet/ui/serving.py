@@ -1,6 +1,9 @@
-"""Serve the bundled browser runtime; all record APIs keep their own guards."""
+"""Serve the bundled browser runtime and app frontends; all record APIs keep their own guards."""
 
-from pathlib import Path
+from functools import cache
+import json
+from pathlib import Path, PurePosixPath
+import re
 from ..business import Download
 
 CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
@@ -11,9 +14,53 @@ TYPES = {
     ".css": "text/css; charset=utf-8",
     ".svg": "image/svg+xml",
 }
+# What a static frontend may serve; anything else answers 404.
+FRONTEND_TYPES = {
+    **TYPES,
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+    ".json": "application/json",
+    ".map": "application/json",
+}
+HEAD = re.compile(rb"<head(?:\s[^>]*)?>", re.IGNORECASE)
+EXISTING = re.compile(rb'<script id="evlet-config" type="application/json">.*?</script>', re.DOTALL)
 
 
-def static_response(path):
+@cache
+def version():
+    from importlib import metadata
+    try:
+        return metadata.version("evlet")
+    except metadata.PackageNotFoundError:
+        return ""
+
+
+def config_block(values):
+    """The inline, non-executable runtime config every served page carries."""
+    text = json.dumps({**values, "version": version()}, separators=(",", ":"))
+    text = text.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    return b'<script id="evlet-config" type="application/json">' + text.encode() + b"</script>"
+
+
+def with_config(html, values, base=None):
+    """Put the config block (and a base element for relative asset paths) at the top of <head>."""
+    html = EXISTING.sub(b"", html)
+    block = config_block(values)
+    if base is not None and b"<base" not in html.lower():
+        block = b'<base href="' + base.encode() + b'">' + block
+    found = HEAD.search(html)
+    return html[: found.end()] + block + html[found.end():] if found else block + html
+
+
+def page(content, content_type, csp=CSP):
+    return 200, Download(content), [(b"content-type", content_type.encode()), (b"content-security-policy", csp.encode())]
+
+
+def static_response(path, config=None):
     if path.startswith("/assets/"):
         relative = path.lstrip("/")
         if ".." in Path(relative).parts or "\\" in relative:
@@ -25,14 +72,32 @@ def static_response(path):
         target = STATIC / "index.html"
         if not target.is_file():
             return None
-    return (
-        200,
-        Download(target.read_bytes()),
-        [
-            (b"content-type", TYPES[target.suffix].encode()),
-            (
-                b"content-security-policy",
-                CSP.encode(),
-            ),
-        ],
-    )
+    content = target.read_bytes()
+    if config is not None and target.suffix == ".html":
+        content = with_config(content, config)
+    return page(content, TYPES[target.suffix])
+
+
+def frontend_response(folder, rest, config, base, connect=()):
+    """A file from a static frontend's dist folder, or its index.html for any path without a file type."""
+    if folder is None or not folder.is_dir():
+        return None
+    relative = rest.lstrip("/")
+    parts = PurePosixPath(relative).parts
+    if "\\" in relative or "\x00" in relative or any(part == ".." or part.startswith(".") for part in parts):
+        return None
+    suffix = PurePosixPath(relative).suffix.lower() if relative else ""
+    if suffix:
+        target = (folder / relative).resolve()
+        if suffix not in FRONTEND_TYPES or not target.is_relative_to(folder) or not target.is_file():
+            return None
+    else:
+        target = (folder / "index.html").resolve()
+        suffix = ".html"
+        if not target.is_relative_to(folder) or not target.is_file():
+            return None
+    content = target.read_bytes()
+    if suffix == ".html":
+        content = with_config(content, config, base.rstrip("/") + "/")
+    csp = CSP.replace("connect-src 'self'", " ".join(("connect-src 'self'", *connect)))
+    return page(content, FRONTEND_TYPES[suffix], csp)

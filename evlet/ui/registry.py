@@ -284,15 +284,19 @@ class ViewRegistry:
             SchemaCompiler(self.components).compile(self._extended(view))
         self.compile(model_schema, validate_fields=True)
 
-    def resolve(self, path, model_schema, user=None):
+    def resolve(self, path, model_schema, user=None, *, frontend="evlet.desk", base="/app"):
+        """The view for a browser path. Generated model routes live under the frontend's base;
+        Python page routes belong to the desk (evlet.desk)."""
         document = self.compile(model_schema, user)
-        for view in document["views"]:
-            if view["route"]:
-                match = route_pattern(view["route"]).fullmatch(path)
-                if match:
-                    return {"view": view, "params": match.groupdict()}
+        if frontend == "evlet.desk":
+            base = "/app"
+            for view in document["views"]:
+                if view["route"]:
+                    match = route_pattern(view["route"]).fullmatch(path)
+                    if match:
+                        return {"view": view, "params": match.groupdict()}
         match = re.fullmatch(
-            r"/app/([a-z][a-z0-9_]*)(?:/(new|[1-9][0-9]{0,15})(/view)?)?", path
+            re.escape(base.rstrip("/")) + r"/([a-z][a-z0-9_]*)(?:/(new|[1-9][0-9]{0,15})(/view)?)?", path
         )
         if match:
             model, record_id, detail = match.groups()
