@@ -114,7 +114,7 @@ const TOPICS: Topic[] = [
     ${section('Change a screen through the model', table([['Meta.list_fields', 'List columns, up to eight.'], ['Meta.layout', 'Sections of the Details tab.'],
       ['Meta.title_field', 'The record title and the pinned list column.'], ['Meta.search_fields', 'What search looks at.'],
       ['Meta.key_fields', 'The Key fields block and the summary strip.'], ['Meta.relations', 'The Related tab.'], ['Meta.measures', 'Totals in lists, boards and records.']]))}
-    ${section('Per user', p('Column widths and order, density, the sidebar, the theme, recent searches and quick access are saved for each user.'))}
+    ${section('Per user', p('Column widths and order, density, the sidebar, the theme and quick access are saved for each user. Recent records and searches last until you sign out.'))}
   </article>` },
   { id: 'reference', title: 'API reference', render: () => html`<article class="ev-doc-article">
     ${section('The public surface', table([['evlet', 'App, Application, Model, Registry, Database, fields, migrations, LocalAuth, Policy, Rule, Action and ChildTable.'],

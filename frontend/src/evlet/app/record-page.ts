@@ -53,11 +53,16 @@ export function confirmDiscard(): Promise<boolean> {
   });
 }
 
+/**
+ * Values a create link may set: only fields the form shows and the role can write. The schema
+ * marks fields the role cannot write as read_only; hidden, calculated, State and Sequence fields
+ * are skipped too, so a link cannot set what the person cannot see or change.
+ */
 function initialValues(model: ScreenModel, query: Record<string, string>) {
   const values: Record<string, unknown> = {};
   for (const [name, text] of Object.entries(query)) {
     const meta = fieldOf(model, name);
-    if (RESERVED.has(name) || !meta || meta.read_only || meta.compute || isStateField(model, meta)) continue;
+    if (RESERVED.has(name) || !meta || meta.hidden || meta.read_only || meta.compute || meta.type === 'sequence' || isStateField(model, meta)) continue;
     values[name] = meta.type === 'link' || meta.type === 'integer' ? (Number.isSafeInteger(Number(text)) ? Number(text) : null) : meta.type === 'boolean' ? text === 'true' : text;
   }
   return values;
@@ -188,7 +193,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const declared = model.actions ?? [];
     const allowed = extras.get()._actions;
     // A detail lists the actions this role may run; without it, the schema's actions are the ones.
-    return allowed ? allowed.map(item => ({ ...declared.find(action => action.name === item.name), name: item.name, label: item.label })) : declared;
+    const list: ActionMeta[] = allowed ? allowed.map(item => ({ ...declared.find(action => action.name === item.name), name: item.name, label: item.label })) : declared;
+    // Dialog actions (Python forms) have no screen here yet, so they are not offered.
+    return list.filter(action => !action.dialog);
   };
   const actionBlocked = (action: ActionMeta): string | null => {
     if (isNew) return 'Save the record first';
@@ -341,8 +348,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     label: meta.label, value: () => {
       const value = view(meta.name).value.get();
       if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, Number(value)).get() ?? '…';
-      return formatOf(meta, value) || '—';
+      return formatOf(meta, value);
     },
+    empty: 'Not set',
     note: view(meta.name).calculated ? 'Calculated' : undefined,
   }));
   for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureText(ctx.schema, model, measure, recordMeasures.get()![measure.name]) : '…' });

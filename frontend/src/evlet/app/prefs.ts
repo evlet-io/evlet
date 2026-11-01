@@ -1,9 +1,11 @@
 // Per-user preferences (docs/ui-design/README.md section 10): theme, sidebar, density, list or
-// board, column widths, recent searches, quick access and recent records.
+// board, column widths and quick access. Recent records and recent searches belong to the
+// signed-in session: they stay in memory and go when the user signs out.
 //
-// The design keeps them in server-side user settings; this base has no such route yet, so they
-// live in browser storage under `evlet.<username>.`. Every read and write is guarded: private
-// windows and blocked storage fall back to the defaults.
+// The design keeps preferences in server-side user settings; this base has no such route yet, so
+// they live in browser storage under `evlet.<username>.`. Preferences never hold record data
+// (titles, values or searches). Every read and write is guarded: private windows and blocked
+// storage fall back to the defaults.
 
 import { cell, effect, getOwner, runWithOwner, scope, untrack, type Cell } from '../reactive';
 
@@ -18,6 +20,8 @@ export class Prefs {
   constructor(readonly user: string, private readonly storage: Storage | null = safeStorage()) {
     // Saving effects belong to the preferences, not to the page that first asked for a cell.
     this.stop = runWithOwner(null, () => scope(() => { this.root = getOwner(); }, { name: 'prefs' }));
+    // Earlier builds stored recent record titles and searches; they are not kept any more.
+    for (const name of ['recents', 'recentQ']) try { this.storage?.removeItem(this.key(name)); } catch { /* blocked */ }
   }
 
   private key(name: string) { return `evlet.${this.user}.${name}`; }
@@ -35,6 +39,18 @@ export class Prefs {
     if (found) return found;
     const value = cell<T>(this.read(name, fallback), { name: `prefs.${name}` });
     this.cells.set(name, value);
+    this.watch(name, value);
+    return value;
+  }
+
+  /** A cell kept for this session only, never written to storage. */
+  private memory<T>(name: string, fallback: T): Cell<T> {
+    let found = this.cells.get(name);
+    if (!found) this.cells.set(name, found = cell<T>(fallback, { name: `session.${name}` }));
+    return found;
+  }
+
+  private watch<T>(name: string, value: Cell<T>) {
     runWithOwner(this.root, () => {
       let first = true;
       effect(() => {
@@ -43,14 +59,15 @@ export class Prefs {
         untrack(() => { try { this.storage?.setItem(this.key(name), JSON.stringify(next)); } catch { /* storage full or blocked */ } });
       });
     });
-    return value;
   }
 
   get theme() { return this.cell<Theme>('theme', 'system'); }
   get collapsed() { return this.cell('collapsed', false); }
   get density() { return this.cell<Density>('density', 'comfortable'); }
-  get recentSearches() { return this.cell<string[]>('recentQ', []); }
-  get recentRecords() { return this.cell<Array<{ model: string; id: number; title: string }>>('recents', []); }
+  /** This session's recent searches (memory only). */
+  get recentSearches() { return this.memory<string[]>('recentQ', []); }
+  /** This session's recent records (memory only). */
+  get recentRecords() { return this.memory<Array<{ model: string; id: number; title: string }>>('recents', []); }
   get quickRows() { return this.cell<1 | 2>('qaRows', 1); }
   get quickIds() { return this.cell<string[] | null>('qaIds', null); }
 

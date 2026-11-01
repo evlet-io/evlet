@@ -396,12 +396,12 @@ tab closes. Signing in keeps the address the user opened.
 | `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other |
 | `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
-| `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first |
-| `State` with moves (Phase 4) | Saved view tabs per state, a board, the status flow, move buttons; blocked moves stay visible and say why (`_moves`) |
+| `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. Form dialog actions (`dialog: true`) are not shown: these screens cannot open them yet |
+| `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board, the status flow, move buttons; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column |
 | Locked states, `editable_when_locked` | Lock banner; only the declared fields stay editable; lines lock |
 | Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |
 | `Sequence` (Phase 7) | The number in mono as the title; "Number assigned on ..." until then |
-| `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters), board column totals, state counts on the saved views; per-record measures in the record's summary strip |
+| `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.key_fields` (Phase 10) | Header facts, the summary strip and the Key fields side block (without it: the first fields) |
 | `Meta.relations` (Phase 10) | The Related tab and side block |
 | `attachments` | The Files side block, with upload for roles that can update while the record is not locked |
@@ -420,9 +420,23 @@ Model icons and accents come from the model name (invoice: receipt, blue; contac
 violet), since the schema has no presentation keys. Models with a State or a Table are listed as
 Documents in the sidebar, the others as Records.
 
-Per-user preferences (theme, sidebar, density, list column widths, child table columns, recent
-searches, quick access, recent records) are kept in browser storage under `evlet.<username>.`
-until the backend has user settings.
+Per-user preferences (theme, sidebar, density, list column widths, child table columns, quick
+access) are kept in browser storage under `evlet.<username>.` until the backend has user
+settings. They never hold record data: recent records and recent searches stay in memory for the
+signed-in session and go on sign-out. The sign-in screen uses the default theme.
+
+Signing out ends the local session only after the server confirms it (or answers that the
+session had already ended). If the request fails, the user stays signed in and a dialog says so,
+with Try again.
+
+A create link (`/m/{model}/new?field=value`) fills only fields the form shows and the role can
+write: hidden, read-only (including fields the role cannot write), calculated, State and
+Sequence fields are ignored.
+
+Bulk moves and deletes read each record first and act only when the values the list showed
+(its columns and State) are unchanged; records that changed since the list loaded are left as
+they are and counted in the result. They send four requests at a time, show progress, and stop
+when the user leaves the page.
 
 ## Tests and benchmarks
 
@@ -438,8 +452,10 @@ diff). The record store also replays the shared finite-v1 scenarios through its 
 
 - The installed UI still runs on SolidJS; the generated screens run from `/ui` in development.
   Home, reports, the notification panel, the layout control and Doc layout page are not built.
-- Bulk moves and deletes read each record for its revision first, one request per record.
-- The board loads the first 100 records of the filter; column totals are over those cards.
+- Bulk moves and deletes read each record first, one request per record.
+- The board loads the first 100 records of the filter. Column counts and totals come from the
+  server; the aggregate route has no search, so while searching columns count the loaded cards
+  and show no totals.
 - Postings show what each target received (rows, reversals, balance); listing the posted rows
   waits for a filter by source on the target's list route.
 - Date fields take typed DD-MM-YYYY text; there is no calendar picker yet. Reference fields

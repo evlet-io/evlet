@@ -21,6 +21,8 @@ export interface ActionMeta {
   inputs?: FieldSchema[];
   /** Scalar arguments of actions without declared inputs. */
   arguments?: Array<{ name: string; type: string; required: boolean; default?: unknown }>;
+  /** A Python form dialog action: the generated screens do not offer it. */
+  dialog?: boolean;
 }
 
 /** A model entry with the optional keys of later phases. */

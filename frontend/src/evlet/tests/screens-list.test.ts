@@ -84,7 +84,9 @@ describe('generated list page', () => {
     let deleted: number[] = [];
     const { host, sent } = start([...adminRoutes(),
       ['GET', /\/api\/customer\?/, customers],
-      ['GET', /\/api\/customer\/\d+$/, sent => ({ status: 200, etag: `"rev-${sent.url.split('/').pop()}"`, body: { id: Number(sent.url.split('/').pop()) } })],
+      // The current detail still shows what the list showed, so each record is deleted.
+      ['GET', /\/api\/customer\/\d+$/, sent => ({ status: 200, etag: `"rev-${sent.url.split('/').pop()}"`,
+        body: screen.customers_page1.body.items.find((row: { id: number }) => row.id === Number(sent.url.split('/').pop())) })],
       ['DELETE', /\/api\/customer\/\d+$/, sent => { deleted.push(Number(sent.url.split('/').pop())); return { status: 204, etag: null, body: null }; }],
     ], '/ui/m/customer');
     await until(() => expect(rowTitles(host).length).toBeGreaterThan(0));
@@ -96,8 +98,8 @@ describe('generated list page', () => {
     click(byText(bulk, 'button', 'Delete'));
     expect(text(document.querySelector('.modal h2'))).toBe('Delete 2 customers?');
     click(byText(document.body, '.modal-f button', 'Delete'));
-    await until(() => expect(deleted).toEqual([1, 2]));
-    expect(requests(sent, 'DELETE', /customer/).map(item => item.headers['if-match'])).toEqual(['"rev-1"', '"rev-2"']);
+    await until(() => expect(deleted.sort()).toEqual([1, 2]));
+    expect(requests(sent, 'DELETE', /customer/).map(item => item.headers['if-match']).sort()).toEqual(['"rev-1"', '"rev-2"']);
     await until(() => expect(document.querySelector('.toast')?.textContent).toContain('Deleted 2 customers'));
   });
 });
@@ -117,7 +119,7 @@ describe('board and saved views (recorded State fixtures)', () => {
     const { host, sent } = start(routes(), '/ui/m/invoice');
     await until(() => expect([...host.querySelectorAll('.ev-list [role="tab"]')].map(text)).toEqual(['All invoices3', 'Draft1', 'Issued1', 'Paid0', 'Void1']));
     await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => text(item.querySelector('span')) + '=' + text(item.querySelector('b')))).toEqual(['Outstanding=AED 2,680.00', 'Count=3']));
-    expect(query(requests(sent, 'GET', /aggregate/)[0])).toMatchObject({ measures: 'n:count', group_by: 'status' });
+    expect(query(requests(sent, 'GET', /aggregate/)[0])).toMatchObject({ measures: 'n:count,outstanding', group_by: 'status' });
     click(byText(host, '.ev-list [role="tab"]', /^Issued/));
     await until(() => expect(JSON.parse(listCalls(sent, 'invoice').pop()!.filters)).toEqual({ status: 'issued' }));
     expect(JSON.parse(query(requests(sent, 'GET', /invoice\/measures/).pop()!).filters)).toEqual({ status: 'issued' });

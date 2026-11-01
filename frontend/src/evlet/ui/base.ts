@@ -237,10 +237,12 @@ export function StateBanner(props: { tone: Prop<BannerTone>; title?: Prop<string
 
 // ---------- stats ----------
 
-export interface StatProps { label: Prop<string>; value: Prop<string>; note?: Prop<string> }
+export interface StatProps { label: Prop<string>; value: Prop<string>; note?: Prop<string>; /** Shown muted when the value is empty. */ empty?: string }
 /** Label, value and a short note. The unit of the summary strip. */
 export function Stat(props: StatProps): HTMLElement {
-  return html`<div class="sum-t"><span>${props.label}</span><b class="num">${props.value}</b>${props.note === undefined ? null : html`<em>${props.note}</em>`}</div>` as HTMLElement;
+  const value = props.empty === undefined ? props.value
+    : () => { const current = read(props.value); return current === '' || current === null || current === undefined ? html`<span class="muted ev-unset">${props.empty}</span>` : current; };
+  return html`<div class="sum-t"><span>${props.label}</span><b class="num">${value}</b>${props.note === undefined ? null : html`<em>${props.note}</em>`}</div>` as HTMLElement;
 }
 
 /** Up to four stats in one bordered row. */
