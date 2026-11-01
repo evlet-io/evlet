@@ -121,9 +121,9 @@ def guard_expression(value, name):
 
 
 def check_roles(roles):
-    from .auth import ROLES
-    if isinstance(roles, str) or not isinstance(roles, (list, tuple)) or not roles or set(roles) - set(ROLES):
-        raise ValueError('roles must name at least one of: ' + ', '.join(ROLES))
+    from .auth import PORTAL, ROLES
+    if isinstance(roles, str) or not isinstance(roles, (list, tuple)) or not roles or set(roles) - {*ROLES, PORTAL}:
+        raise ValueError('roles must name at least one of: ' + ', '.join((*ROLES, PORTAL)))
     return tuple(roles)
 
 

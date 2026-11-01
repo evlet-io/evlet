@@ -6,16 +6,18 @@ import sqlite3
 import pytest
 
 from evlet import AppDefinition, Application, ControlsAccess, Database, LocalAuth, Policy, Rule
-from evlet.auth import LAST_ADMIN
+from evlet.auth import LAST_ADMIN, User
 from evlet.cli.install import install
 from evlet.cli.main import main
 from evlet.controls import ADMIN_ONLY, TWO_STEP, grant
 from evlet.routing import resolve_routes
-from examples.playground.app import create_app
+from examples.playground.app import build_app, create_app, playground_routes
+from examples.playground.migrate import configured_database
 from examples.playground.models import Customer, Project, registry
 from test_business import PASSWORD, client, hashed, http, secured
 from test_cli_lifecycle import environment_stub, project, runtime
 
+DESK, PORTAL_HOST = b'127.0.0.1:8000', b'portal.localhost:8000'
 ENDPOINTS = (('GET', '/api/_controls/state'), ('GET', '/api/_controls/overrides'), ('POST', '/api/_controls/overrides'),
              ('GET', '/api/_controls/users'), ('POST', '/api/_controls/users'), ('PATCH', '/api/_controls/users/1'),
              ('GET', '/api/_controls/roles'), ('POST', '/api/_controls/roles'), ('PATCH', '/api/_controls/roles/editor'),
@@ -69,18 +71,122 @@ def test_a_role_that_opens_controls_gets_in_and_admin_cannot_be_locked_out(secur
     assert status == 422 and 'Admin always opens Controls' in payload['fields']['opens_controls']
 
 
-def test_controls_answer_only_on_the_primary_host(tmp_path, hashed):
-    database = Database(tmp_path / 'hosts.sqlite3', registry)
-    auth = LocalAuth(database, origins=('http://127.0.0.1:8000', 'http://portal.localhost:8000'), secure_cookies=False)
-    app = Application(database, auth=auth)
+@pytest.fixture
+def hosts(tmp_path, monkeypatch):
+    """The Playground with its portal sub-host, from the real route table."""
+    monkeypatch.setenv('EVLET_DATABASE', str(tmp_path / 'hosts.sqlite3'))
+    routes = playground_routes(8000)
+    database = configured_database()
+    app = build_app(database, LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=False), routes=routes)
     app.initialize()
-    add_user(app, 'admin', 'admin')
-    other = {b'host': b'portal.localhost:8000'}
-    status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'admin', 'password': PASSWORD}, headers=other)
+    for name, role in (('admin', 'admin'), ('buyer', 'portal')):
+        add_user(app, name, role)
+    yield app
+    app.database.close()
+
+
+def on_host(app, username, host):
+    status, data, headers = http(app, 'POST', '/api/auth/login', {'username': username, 'password': PASSWORD}, headers={b'host': host})
+    assert status == 200, data
     cookie = headers[b'set-cookie'].decode().split(';')[0]
-    assert http(app, 'GET', '/api/_controls/state', cookie=cookie, csrf=data['csrf'], headers=other)[0] == 404
-    assert http(app, 'GET', '/controls', cookie=cookie, headers=other)[0] == 404
-    assert http(app, 'GET', '/api/customer', cookie=cookie, headers=other)[0] == 200
+    def call(method, path, body=None, **kwargs):
+        return http(app, method, path, body, cookie=cookie, csrf=data['csrf'], headers={b'host': host, **kwargs.pop('headers', {})}, **kwargs)
+    call.cookie = headers[b'set-cookie'].decode()
+    return call
+
+
+def test_controls_and_account_routes_answer_404_on_a_sub_host(hosts):
+    admin, buyer = on_host(hosts, 'admin', DESK), on_host(hosts, 'buyer', PORTAL_HOST)
+    assert admin('GET', '/api/_controls/state')[0] == 200 and admin('GET', '/api/auth/users')[0] == 200
+    desk_cookie = admin.cookie.split(';')[0]
+    for method, path in (*ENDPOINTS, ('GET', '/api/auth/users'), ('POST', '/api/auth/users'), ('PATCH', '/api/auth/users/1')):
+        assert buyer(method, path, {})[0] == 404, (method, path)
+        assert http(hosts, method, path, {}, cookie=desk_cookie, headers={b'host': PORTAL_HOST})[0] == 404, (method, path)
+    for path in ('/controls', '/controls/users', '/settings/accounts'):
+        assert buyer('GET', path)[0] == 404 and http(hosts, 'GET', path, cookie=desk_cookie, headers={b'host': PORTAL_HOST})[0] == 404
+    scope = {'headers': [(b'host', PORTAL_HOST)], 'client': ('127.0.0.1', 1)}
+    assert not hosts.business.controls.host_allowed(scope)
+
+
+def test_portal_is_a_framework_role_and_portal_custom_roles_never_open_controls(hosts):
+    admin = on_host(hosts, 'admin', DESK)
+    roles = {role['id']: role for role in admin('GET', '/api/_controls/roles')[1]['items']}
+    assert roles['portal'] | {'users': 0} == {**roles['portal'], 'kind': 'framework', 'base': None, 'realm': 'portal', 'opens_controls': False, 'users': 0}
+    assert 'public' not in roles
+    assert admin('POST', '/api/_controls/roles', {'id': 'partner', 'base': 'editor', 'realm': 'portal'})[0] == 422
+    assert admin('POST', '/api/_controls/roles', {'id': 'partner', 'realm': 'portal', 'description': 'Resellers'})[0] == 201
+    partner = next(role for role in admin('GET', '/api/_controls/roles')[1]['items'] if role['id'] == 'partner')
+    assert (partner['base'], partner['realm'], partner['opens_controls']) == ('portal', 'portal', False)
+    status, payload, _ = admin('PATCH', '/api/_controls/roles/partner', {'opens_controls': True})
+    assert status == 422 and 'Portal roles can never open Controls' in payload['fields']['opens_controls']
+    for role in ('public', 'portal'):
+        assert admin('POST', '/api/_controls/users', {'username': 'x' + role, 'password': PASSWORD, 'role': role})[0] == (422 if role == 'public' else 201)
+    assert admin('POST', '/api/_controls/users', {'username': 'reseller', 'password': PASSWORD, 'role': 'partner'})[0] == 201
+    assert http(hosts, 'POST', '/api/auth/login', {'username': 'reseller', 'password': PASSWORD})[0] == 401
+    reseller = on_host(hosts, 'reseller', PORTAL_HOST)
+    # A role based on portal gets portal's app rules, here its own customer only, and nothing else.
+    assert reseller('GET', '/api/customer')[:2] == (200, {**reseller('GET', '/api/customer')[1], 'items': []})
+    policy = hosts.business.policy
+    assert policy.rule(User(0, 'r', 'partner'), Customer) == policy.rule(User(0, 'b', 'portal'), Customer)
+    assert policy.rule(User(0, 'r', 'partner'), Project).operations == ()
+
+
+def test_own_customer_preset_uses_the_links_the_session_preloads(hosts):
+    admin = on_host(hosts, 'admin', DESK)
+    add_user(hosts, 'rep', 'editor')
+    ids = [admin('POST', '/api/customer', {'name': name, 'email': f'{name}@example.com'})[1]['id'] for name in ('Mine', 'Theirs')]
+    for customer_id in ids:
+        assert admin('POST', '/api/project', {'name': f'Project {customer_id}', 'customer': customer_id})[0] == 201
+    rep = on_host(hosts, 'rep', DESK)
+    assert len(rep('GET', '/api/project')[1]['items']) == 2
+    value = {'ops': ['read', 'create', 'update', 'delete'], 'read': None, 'write': None, 'scope': 'own_customer'}
+    assert save(admin, ('perm', 'editor|Project', value), ('perm', 'editor|Customer', value))[0] == 200
+    assert rep('GET', '/api/project')[1]['items'] == [] and rep('GET', '/api/customer')[1]['items'] == []
+    rep_id = user_id(admin, 'rep')
+    hosts.business.auth.link_user(rep_id, Customer, ids[0])
+    assert [row['customer'] for row in rep('GET', '/api/project')[1]['items']] == [ids[0]]
+    assert [row['id'] for row in rep('GET', '/api/customer')[1]['items']] == [ids[0]]
+    item = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['key'] == 'editor|Project')
+    assert item['value']['scope'] == 'own_customer'
+
+
+def test_session_length_applies_to_every_realm(hosts):
+    admin = on_host(hosts, 'admin', DESK)
+    assert save(admin, ('setting', 'security.session_hours', 2))[0] == 200
+    buyer = on_host(hosts, 'buyer', PORTAL_HOST)
+    assert 'Max-Age=7200' in buyer.cookie and buyer.cookie.startswith('evlet_portal_session=')
+    assert 'Max-Age=7200' in on_host(hosts, 'admin', DESK).cookie
+    with hosts.database._connection() as db:
+        assert db.execute("SELECT max(expires) - strftime('%s','now') FROM evlet_sessions WHERE realm='portal'").fetchone()[0] <= 7200
+    with hosts.database.transaction() as tx:
+        tx.connection.execute("UPDATE evlet_sessions SET expires=expires-5400 WHERE realm='portal'")
+    assert buyer('GET', '/api/auth/session')[1]['user']['username'] == 'buyer'
+    assert save(admin, ('setting', 'security.session_hours', 1))[0] == 200
+    assert buyer('GET', '/api/auth/session')[1]['user'] is None
+    assert admin('GET', '/api/auth/session')[1]['user']['username'] == 'admin'
+
+
+def test_controls_reads_the_client_address_through_trusted_proxies_only(tmp_path, hashed):
+    def instance(name, proxies):
+        database = Database(tmp_path / f'{name}.sqlite3', registry)
+        app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, trusted_proxies=proxies))
+        app.initialize()
+        add_user(app, 'admin', 'admin')
+        admin = client(app)
+        assert save(admin, ('setting', 'security.controls_ips', ['10.0.0.0/8']))[0] == 200
+        return app, admin
+    forwarded = lambda value: {b'x-forwarded-for': value}
+    _, admin = instance('proxied', ('127.0.0.1',))
+    assert admin('GET', '/api/_controls/state', headers=forwarded(b'10.1.1.1'))[0] == 200
+    assert admin('GET', '/api/_controls/state', headers=forwarded(b'10.1.1.1'))[1]['client'] == '10.1.1.1'
+    # A client adds its own entry on the left; the proxy appends the real address, which is not allowed.
+    assert admin('GET', '/api/_controls/state', headers=forwarded(b'10.1.1.1, 203.0.113.5'))[0] == 404
+    assert admin('GET', '/api/auth/users', headers=forwarded(b'203.0.113.5'))[0] == 403
+    # From a peer that is not a trusted proxy, the header is ignored.
+    assert admin('GET', '/api/_controls/state', client='203.0.113.9', headers=forwarded(b'10.1.1.1'))[0] == 404
+    _, direct = instance('direct', ())
+    assert direct('GET', '/api/_controls/state', headers=forwarded(b'10.1.1.1'))[0] == 404
+    assert direct('GET', '/api/_controls/state', client='10.1.1.1')[0] == 200
 
 
 def test_allowed_networks_and_two_step_requirement(secured, tmp_path):
@@ -136,7 +242,6 @@ def test_an_override_set_is_atomic_and_reports_each_invalid_item(secured):
     ('perm', 'editor|Customer', {'ops': ['read', 'update'], 'read': ['name'], 'write': ['email'], 'scope': None}, 'must also be readable'),
     ('perm', 'editor|Customer', {'ops': ['read'], 'read': [], 'write': None, 'scope': None}, 'at least one readable field'),
     ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': 'owner'}, 'not available for Customer'),
-    ('perm', 'editor|Project', {'ops': ['read'], 'read': None, 'write': None, 'scope': 'own_customer'}, 'not set up on this instance'),
     ('setting', 'security.password_min', 14, 'can only go up'),
     ('setting', 'security.password_min', 65, 'to 64 at most'),
     ('setting', 'security.session_hours', 9, 'can only go down'),

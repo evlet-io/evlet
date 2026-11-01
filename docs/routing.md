@@ -100,12 +100,15 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
 - In development, sub-hosts are `.localhost` names, such as `portal.localhost`, served
   over the development port. With a primary host they are public names on HTTPS.
 - **Realms.** A host's realm is `desk` on the primary host and the root frontend's
-  `auth` on a sub-host: `portal`, or `public` when `auth=None`. The built-in `portal`
-  role signs in on portal hosts only, and the desk roles on desk hosts only. A
+  `auth` on a sub-host: `portal`, or `public` when `auth=None`. Each role has a realm in
+  `evlet_roles` ([controls.md](controls.md#roles)): the framework `portal` role and custom
+  portal roles sign in on portal hosts only, and desk roles on desk hosts only. A
   mismatch gets the same "Invalid username or password" as a wrong password. Public
-  hosts have no sign-in. Sessions record their realm in `evlet_sessions.realm`.
+  hosts have no sign-in. Sessions record their realm in `evlet_sessions.realm`, and a
+  session holds only while the user's role is still of that realm.
 - **Cookies** are host-only, with no `Domain`, and named per realm: `evlet_session`
-  for the desk and `evlet_portal_session` for portals.
+  for the desk and `evlet_portal_session` for portals. Sessions and cookies in every
+  realm last `security.session_hours` from Controls (8 hours unless lowered).
 - **API scope.** `/api` on a sub-host serves `/api/auth/session`, `login` and `logout`,
   plus exactly what its frontend's `api` scopes list. Everything else answers 404 there,
   and permissions and row scopes still apply to every call:
@@ -124,8 +127,9 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
 
   Every route except services also needs the model in `models`. Schema, UI, events,
   jobs, discovery, accounts and setup are never served on a sub-host.
-- The `portal` role and the `public` role have no access to any model unless an app
-  grants it in its permission rules.
+- The `portal` role, roles based on it and the `public` role have no access to any model
+  unless an app grants it in its permission rules. Controls, `/api/_controls/*` and
+  `/api/auth/users` answer 404 on every sub-host.
 
 ### Portal users and their customer
 
@@ -145,7 +149,8 @@ auth.unlink_user(user.id, Customer, 42)
 auth.user_links(user.id)                   # (("customer", 42),)
 ```
 
-Links are read with the session on each request, so a change applies at once. A list
+Links are read with the session on each request, so a change applies at once. The
+Controls row scope preset `own_customer` is this same scope. A list
 may filter a Link to a row-scoped model with an `eq` or `in` filter when every id is a
 record the user can read, for example `{"customer": 42}` for their own customer. Other
 filters and sorting on such a Link are refused with 403, since they could show which
@@ -172,7 +177,7 @@ When the connection comes from a trusted proxy, the client is the rightmost
 `X-Forwarded-For` address that is not itself a trusted proxy, so addresses a client
 adds on the left are ignored. Otherwise forwarded headers are ignored. It is empty by
 default, and `routes.py` can't set it. The public limit, sign-in throttling, first-run
-setup and `/_/tls-allowed` use this address. Python code reads it with
+setup, the Controls allowlist and `/_/tls-allowed` use this address. Python code reads it with
 `LocalAuth.client_address(scope)`, or `evlet.auth.client_address(scope, trusted_proxies)`.
 
 The Playground has a working example: `examples/playground/portal` is a static portal

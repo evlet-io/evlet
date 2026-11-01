@@ -62,7 +62,7 @@ class Policy:
         model inherits the base role's rule from the files.
         """
         self.registry = registry
-        self.roles = MappingProxyType(dict(roles or {role: role for role in (*ROLES, PORTAL)}))
+        self.roles = MappingProxyType({**{role: role for role in (*ROLES, PORTAL)}, **dict(roles or {})})
         if any(self.roles.get(role) != role for role in (*ROLES, PORTAL)) or set(self.roles.values()) - {*ROLES, PORTAL} or PUBLIC in self.roles \
                 or 'admin' in [base for role, base in self.roles.items() if role != 'admin']:
             raise ValueError('Roles must include the framework roles, and custom roles must be based on editor, viewer or portal')
