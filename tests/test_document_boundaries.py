@@ -358,3 +358,26 @@ def test_validation_errors_do_not_name_hidden_fields(tmp_path):
     assert status == 422
     assert result['fields'] == {'name': 'Check the name', '_form': 'One or more values are invalid'}
     assert 'bonus' not in str(result) and 'band' not in str(result)
+
+
+def test_child_validation_errors_hide_restricted_fields_but_keep_row_messages(tmp_path):
+    class Quote(Model):
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+        class Line(Child):
+            permissions = {'admin': Rule(('read', 'create', 'update', 'delete'), read_fields=('qty',), write_fields=('qty',))}
+            qty = Decimal(default='1')
+            cost = Currency(default='4.25')
+            def validate(self):
+                if self.qty > 5:
+                    raise ValidationError({'cost': 'Cost 4.25 is above margin', '_form': 'Reduce the quantity'})
+        lines = Table(Line)
+    app = application(tmp_path, Quote)
+    c = client(app)
+    status, result, _ = c('POST', '/api/quote', {'children': {'lines': [{'_key': 'a.b', 'qty': '9'}]}})
+    assert status == 422 and 'margin' not in str(result)
+    status, result, _ = c('POST', '/api/quote', {'children': {'lines': [{'_key': 'row-1', 'qty': '9'}]}})
+    assert status == 422
+    assert result['fields'] == {'lines.row-1._form': 'Reduce the quantity', '_form': 'One or more values are invalid'}
+    for key in ('²', '9' * 20):
+        status, result, _ = c('POST', '/api/quote', {'children': {'lines': [{'_key': key, 'qty': '9'}]}})
+        assert status == 422 and 'margin' not in str(result)

@@ -297,24 +297,33 @@ class Business:
         except ValidationError as exc:
             raise ValidationError(self.visible_errors(user, model, exc.errors)) from None
 
-    def visible_errors(self, user, model, errors):
+    def visible_errors(self, user, model, errors, tx=None):
         """Hide error keys that name unreadable fields or rows the user cannot see."""
         tables = {child.name: child.model for child in self.children.values() if child.parent is model}
         readable = self.policy.fields(user, model)
-        visible, hidden = {}, False
-        with self.database.transaction() as tx:
-            for key, message in errors.items():
-                parts = key.split('.')
-                if len(parts) == 3 and parts[0] in tables:
-                    child = tables[parts[0]]
-                    shown = self.policy.allows(user, child, 'read') and parts[2] in self.policy.fields(user, child)
-                    if shown and parts[1].isdigit():
-                        try: self.policy.record(tx, user, child, int(parts[1]))
-                        except AccessError: shown = False
+        def row_visible(child, key):
+            if not re.fullmatch('[1-9][0-9]{0,18}', key) or int(key) > 2**63-1:
+                return True  # A client's temporary row key.
+            try:
+                if tx is not None:
+                    self.policy.record(tx, user, child, int(key))
                 else:
-                    shown = parts[0] not in model.__declared_fields__ or parts[0] in readable
-                if shown: visible[key] = message
-                else: hidden = True
+                    with self.database.transaction() as check:
+                        self.policy.record(check, user, child, int(key))
+            except AccessError:
+                return False
+            return True
+        visible, hidden = {}, False
+        for key, message in errors.items():
+            parts = key.split('.', 2)
+            if len(parts) == 3 and parts[0] in tables:
+                child, field = tables[parts[0]], parts[2]
+                shown = (self.policy.allows(user, child, 'read') and row_visible(child, parts[1])
+                         and (field not in child.__declared_fields__ or field in self.policy.fields(user, child)))
+            else:
+                shown = parts[0] not in model.__declared_fields__ or parts[0] in readable
+            if shown: visible[key] = message
+            else: hidden = True
         if hidden: visible.setdefault('_form', 'One or more values are invalid')
         return visible
 

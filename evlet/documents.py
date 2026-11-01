@@ -5,6 +5,7 @@ from types import MappingProxyType, MethodType
 from uuid import uuid4
 from contextlib import contextmanager
 import inspect
+import re
 
 from .auth import AccessError
 from .declarations import Ref
@@ -196,6 +197,8 @@ class Context:
         self._active.append(key)
         try:
             return operate(self, model, record_id, values, action=action, arguments=arguments)
+        except ValidationError as exc:
+            raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
         finally:
             self._active.pop()
 
@@ -246,8 +249,8 @@ def load_draft(context, model, record_id, values, *, preview=False):
             value = dict(value)
             row_id = value.pop('id', None)
             temporary = value.pop('_key', None)
-            if temporary is not None and (not isinstance(temporary, str) or not 1 <= len(temporary) <= 64 or temporary in keys):
-                raise ValidationError({child.name: 'Row keys must be distinct strings of at most 64 characters'})
+            if temporary is not None and (not isinstance(temporary, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', temporary) or temporary in keys):
+                raise ValidationError({child.name: 'Row keys must be distinct strings of at most 64 letters, digits, hyphens or underscores'})
             keys.add(temporary) if temporary is not None else None
             business.policy.check_values(tx, user, child.model, value)
             if row_id is not None:
