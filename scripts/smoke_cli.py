@@ -64,7 +64,7 @@ def main():
         command('install', 'notes', '--instance', 'acme', '--trust', '--project', root)
         with server('serve', 'acme', '--project', root) as url:
             with urlopen(url) as response:
-                assert b'<div id="root">' in response.read()
+                assert b'<div id="evlet-app">' in response.read()
             client = HTTPClient(url)
             client.request('POST', '/api/auth/setup', {'username': 'owner', 'password': password})
             client = client.login('owner', password)

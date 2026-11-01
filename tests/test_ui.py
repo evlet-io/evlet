@@ -271,10 +271,14 @@ def test_static_ui_preserves_unknown_routes_and_api_authentication(secured):
         "/docs",
         "/docs/components",
         "/demo/projects",
+        "/settings/accounts",
+        "/app/customer",
         "/app/customer/new",
+        "/app/customer/12",
+        "/app/customer/12/view",
     ):
         status, payload, headers = http(secured, "GET", path)
-        assert status == 200 and b'<div id="root">' in payload
+        assert status == 200 and b'<div id="evlet-app">' in payload
         assert b"frame-ancestors 'none'" in headers[b"content-security-policy"]
     assert http(secured, "GET", "/missing")[0] == 404
     assert http(secured, "GET", "/assets/../app.py")[0] == 404

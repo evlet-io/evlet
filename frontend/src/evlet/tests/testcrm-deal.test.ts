@@ -26,7 +26,7 @@ describe('testCRM: a deal and its lines', () => {
   it('edits, adds, reorders and removes lines; totals follow at once and after the save', async () => {
     const run = scenario('sara_win');
     const id = idOf('sara_win', 'deal', 'Production planning module');
-    const { host } = run.start(`/ui/m/deal/${id}?tab=t-lines`);
+    const { host } = run.start(`/app/deal/${id}?tab=t-lines`);
     await until(() => expect(rows(host)).toHaveLength(2));
     expect(text(host.querySelector('.doc-head h1'))).toBe('Production planning module');
     expect(sums(host)).toBe('SubtotalAED 83,400.00Vat totalAED 4,170.00TotalAED 87,570.00');
@@ -83,7 +83,7 @@ describe('testCRM: a deal and its lines', () => {
     const id = idOf('sara_win', 'deal', 'Production planning module');
     // Start after the line save the first test makes.
     run.skip(1);
-    const { host } = run.start(`/ui/m/deal/${id}`);
+    const { host } = run.start(`/app/deal/${id}`);
     await until(() => expect(button(host, 'Negotiate')).not.toBeNull());
     click(button(host, 'Negotiate'));
     await until(() => expect(current(host)).toBe('Negotiation'));
@@ -111,7 +111,7 @@ describe('testCRM: a deal and its lines', () => {
     const run = scenario('omar_lost');
     const id = idOf('omar_lost', 'deal', 'Shipment tracking integration');
     run.skip(1);
-    const { host } = run.start(`/ui/m/deal/${id}?tab=details`);
+    const { host } = run.start(`/app/deal/${id}?tab=details`);
     await until(() => expect(current(host)).toBe('Qualified'));
     const proposal = button(host, 'Send proposal');
     expect(proposal.getAttribute('aria-disabled')).toBe('true');
@@ -144,7 +144,7 @@ describe('testCRM: a deal and its lines', () => {
   it('known gap: the lead reason rule refuses Mark lost, and the screen does not say why', async () => {
     const run = scenario('sara_lead_lost');
     const id = idOf('sara_lead_lost', 'lead', 'Majid Obaid');
-    const { host } = run.start(`/ui/m/lead/${id}?tab=details`);
+    const { host } = run.start(`/app/lead/${id}?tab=details`);
     await until(() => expect(button(host, 'Mark lost')).not.toBeNull());
     click(button(host, 'Mark lost'));
     await until(() => expect(run.writes).toHaveLength(1));
@@ -159,7 +159,7 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
   it('pages in 150 lines, edits the last one and saves only that change', async () => {
     const run = scenario('sara_big');
     const id = idOf('sara_big', 'deal', 'Group rollout, 150 sites');
-    const { host } = run.start(`/ui/m/deal/${id}?tab=t-lines`);
+    const { host } = run.start(`/app/deal/${id}?tab=t-lines`);
     await until(() => expect(text(host.querySelector('.doc-tabs'))).toContain('Lines150'));
     await until(() => expect(text(host.querySelector('.g-t .n'))).toBe('150'));
     // Only the rows in view are in the DOM.
@@ -187,7 +187,7 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
   it('two sessions: the later save is a conflict; Reload keeps the typed title to save again', async () => {
     const run = scenario('sara_conflict');
     const id = idOf('sara_conflict', 'deal', 'ERP rollout, 3 entities');
-    const { host } = run.start(`/ui/m/deal/${id}?tab=details`);
+    const { host } = run.start(`/app/deal/${id}?tab=details`);
     await until(() => expect(field(host, 'title')).not.toBeNull());
     click(field(host, 'title')!.querySelector('.fval'));
     const input = field(host, 'title')!.querySelector<HTMLInputElement>('input')!;
@@ -207,18 +207,18 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
 
   it('a sales person cannot open another person\'s deal; viewers never see internal notes, admins do', async () => {
     const scoped = scenario('sara_scope');
-    const theirs = scoped.start(`/ui/m/deal/${ids.theirs}`);
+    const theirs = scoped.start(`/app/deal/${ids.theirs}`);
     await until(() => expect(text(theirs.host.querySelector('main'))).toContain('Deal not found'));
     stopAll();
     const id = ids.deal;
-    const viewer = scenario('vera_deal').start(`/ui/m/deal/${id}?tab=details`);
+    const viewer = scenario('vera_deal').start(`/app/deal/${id}?tab=details`);
     await until(() => expect(field(viewer.host, 'title')).not.toBeNull());
     expect(field(viewer.host, 'internal_notes')).toBeNull();
     expect(text(viewer.host.querySelector('.doc-main'))).not.toContain('Partner sign-off');
     // Nothing is editable for a viewer.
     expect(viewer.host.querySelector('.fs .fval:not(.ro)')).toBeNull();
     stopAll();
-    const admin = scenario('admin_deal').start(`/ui/m/deal/${id}?tab=details`);
+    const admin = scenario('admin_deal').start(`/app/deal/${id}?tab=details`);
     await until(() => expect(field(admin.host, 'internal_notes')).not.toBeNull());
     expect(text(field(admin.host, 'internal_notes'))).toContain('Partner sign-off needed');
   });
@@ -230,7 +230,7 @@ describe('testCRM: activity', () => {
     const id = idOf('sara_win', 'deal', 'Production planning module');
     // After the line save, Negotiate and Mark won.
     run.skip(3);
-    const { host } = run.start(`/ui/m/deal/${id}`);
+    const { host } = run.start(`/app/deal/${id}`);
     await until(() => expect(text(host.querySelector('.doc-tabs [role="tab"]'))).toBe('Activity'));
     await until(() => expect(host.querySelectorAll('.tl-item').length).toBeGreaterThan(6));
     const heads = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));

@@ -15,7 +15,7 @@ const listed = (run: ReturnType<typeof scenario>, sent: { method: string; url: s
 describe('testCRM: sign in and the deals list', () => {
   it('signs in, then the sidebar leads to Deals with only her deals and the pipeline measures', async () => {
     const run = scenario('sara_list', { signedIn: false });
-    const { host } = run.start('/ui/');
+    const { host } = run.start('/');
     await until(() => expect(host.querySelector('h1')?.textContent).toBe('Welcome back'));
     typeInto(host.querySelector<HTMLInputElement>('#ev-username')!, 'sara');
     typeInto(host.querySelector<HTMLInputElement>('#ev-password')!, 'not the password');
@@ -23,12 +23,12 @@ describe('testCRM: sign in and the deals list', () => {
     await until(() => expect(text(host.querySelector('[role="alert"]'))).toBe('Invalid username or password'));
     typeInto(host.querySelector<HTMLInputElement>('#ev-password')!, 'a long local test password');
     submit(host);
-    await until(() => expect(location.pathname).toBe('/ui/docs'));
+    await until(() => expect(location.pathname).toBe('/docs'));
     // Documents (with a State or lines) and records, from the schema alone.
     const nav = [...host.querySelectorAll('a.nav-item')].map(text);
     expect(nav).toEqual(expect.arrayContaining(['Deals', 'Leads', 'Organizations', 'Contacts', 'Products', 'Tasks', 'Bookings']));
     click(byText(host, 'a.nav-item', 'Deals'));
-    await until(() => expect(location.pathname).toBe('/ui/m/deal'));
+    await until(() => expect(location.pathname).toBe('/app/deal'));
     await until(() => expect(titles(host).length).toBe(8));
     expect(titles(host)).not.toContain('Fleet and warehouse ERP');
     expect([...host.querySelectorAll('thead th')].map(text).slice(1)).toEqual(['Number', 'Title', 'Organization', 'Owner', 'Stage', 'Total', 'Expected close']);
@@ -39,7 +39,7 @@ describe('testCRM: sign in and the deals list', () => {
 
   it('searches, filters by a saved view per stage and sorts on the server', async () => {
     const run = scenario('sara_list');
-    const { host, sent } = run.start('/ui/m/deal');
+    const { host, sent } = run.start('/app/deal');
     await until(() => expect(titles(host).length).toBe(8));
     typeInto(host.querySelector<HTMLInputElement>('.toolbar input')!, 'planning');
     await until(() => expect(titles(host)).toEqual(['Production planning module']));
@@ -61,7 +61,7 @@ describe('testCRM: sign in and the deals list', () => {
 
   it('moves a card on the board with the keyboard, and finds deals in the command palette', async () => {
     const run = scenario('sara_list');
-    const { host, sent } = run.start('/ui/m/deal?view=board');
+    const { host, sent } = run.start('/app/deal?view=board');
     await until(() => expect(host.querySelectorAll('.board .card').length).toBe(8));
     const column = (label: string) => byText(host, '.col-k', new RegExp(`^${label}`))!;
     expect([...host.querySelectorAll('.col-h .pill')].map(text)).toEqual(['Lead', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost', 'Void']);

@@ -1,7 +1,7 @@
 # testCRM
 
 testCRM is a small CRM declared only in Python models: `examples/testcrm/models.py`. It has no
-frontend code and no custom views. Every screen comes from the generated UI at `/ui`. It is the
+frontend code and no custom views. Every screen comes from the generated UI at the site root (`/app/<model>`). It is the
 working tester for the model engine and the UI framework (phase `ui/04-testcrm` of
 [handoff-plan.md](handoff-plan.md)). The data is fictional. It is not a production CRM.
 
@@ -18,7 +18,7 @@ The launcher needs the Playground's setup (`bash scripts/playground.sh --setup`)
    Asia/Dubai) and installs the app, exactly like `evlet install`,
 3. seeds fictional UAE data (`scripts/testcrm.py`) and prints the users and their password,
 4. starts the backend on `127.0.0.1:8010` and the UI development server on `127.0.0.1:5180`,
-   then prints the address: `http://127.0.0.1:5180/ui`.
+   then prints the address: `http://127.0.0.1:5180/`.
 
 Control-C stops both servers and deletes the project. `EVLET_KEEP_DATA=1` keeps it.
 `EVLET_BACKEND_PORT` and `EVLET_FRONTEND_PORT` change the ports, and `EVLET_TESTCRM_PASSWORD`
