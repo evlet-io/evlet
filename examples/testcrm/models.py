@@ -118,7 +118,7 @@ class Deal(Model):
                        write_fields=('title', 'organization', 'contact', 'owner', 'lead_source', 'expected_close',
                                      'payment_days', 'vat_rate', 'lost_reason', 'next_step', 'tags')),
         'viewer': Rule(('read',), read_fields=('number', 'title', 'organization', 'contact', 'owner', 'lead_source',
-                                               'expected_close', 'stage', 'probability', 'subtotal', 'vat_total',
+                                               'expected_close', 'stage', 'probability', 'vat_rate', 'subtotal', 'vat_total',
                                                'total', 'weighted', 'won_on', 'lost_reason')),
     }
 
