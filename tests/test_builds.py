@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import re
 import shutil
 import sys
 
@@ -119,8 +120,11 @@ def test_reference_app_full_public_flow(project):
     move = lambda target, to: c('POST', f'{target}/moves/{to}', {}, headers={b'if-match': c('GET', target)[2][b'etag']})
     act = lambda body: c('POST', url + '/actions/extend_validity', body, headers={b'if-match': c('GET', url)[2][b'etag']})
     assert act({'extra_days': 5})[1]['error'] == 'Extend validity is not available: the condition for this action is not met'
+    # The quote number is null until the quote is sent, and only the engine writes it.
+    assert saved['number'] is None and edit({'number': 'Q-1'})[1]['fields'] == {'number': 'This number is assigned by the system'}
     sent = move(url, 'sent')[1]
     assert sent['stage'] == 'sent' and [item['to'] for item in sent['_moves']] == ['won', 'lost', 'draft']
+    assert re.fullmatch(r'Q-[0-9]{4}-0001', sent['number'])
     assert edit({'discount_rate': '5'})[1]['fields'] == {'discount_rate': 'This record is sent, so it is locked'}
     assert act({'extra_days': 0})[1]['fields'] == {'extra_days': 'Must be at least 1'}
     extended = act({'extra_days': 5})[1]
@@ -131,9 +135,13 @@ def test_reference_app_full_public_flow(project):
     lost = c('POST', '/api/quote', {'name': 'Q-3', 'children': {'lines': [{'qty': '1', 'rate': '10'}]}})[1]
     lost_url = f"/api/quote/{lost['id']}"
     assert move(lost_url, 'sent')[0] == 200 and move(lost_url, 'lost')[1]['stage'] == 'lost'
+    assert c('GET', lost_url)[1]['number'] == sent['number'][:-1] + '2'
     reason = c('PATCH', lost_url, {'lost_reason': 'Price'}, headers={b'if-match': c('GET', lost_url)[2][b'etag']})[1]
     assert reason['lost_reason'] == 'Price'
-    assert move(lost_url, 'draft')[1]['lost_reason'] is None
+    reopened = move(lost_url, 'draft')[1]
+    assert reopened['lost_reason'] is None
+    # A reopened and resent quote keeps its number.
+    assert move(lost_url, 'sent')[1]['number'] == reopened['number'] == sent['number'][:-1] + '2'
     quote_schema = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')
     assert quote_schema['state']['final'] == ['won', 'void'] and quote_schema['actions'][0]['inputs'][0]['name'] == 'extra_days'
     # A sent quote is revised: it becomes void and a new draft copy with the same lines links back to it.
@@ -150,6 +158,9 @@ def test_reference_app_full_public_flow(project):
     assert original['stage'] == 'void' and original['revised_by'] == copy['id']
     copy_url = f"/api/quote/{copy['id']}"
     assert c('PATCH', copy_url, {'name': 'Q-4 rev'}, headers={b'if-match': c('GET', copy_url)[2][b'etag']})[1]['name'] == 'Q-4 rev'
+    number = next(field for field in quote_schema['fields'] if field['name'] == 'number')
+    assert (number['type'], number['read_only'], number['sequence']) == (
+        'sequence', True, {'format': 'Q-{year}-{n:04}', 'scope': [], 'assign_on': 'sent', 'date': None})
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest
