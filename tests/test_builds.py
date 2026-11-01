@@ -95,6 +95,13 @@ def test_reference_app_full_public_flow(project):
     assert report[0] == 200, report
     assert report[1]['rows'][0]['total'] == '6.75'
     assert c('GET', f'/api/_services/amendment.services.integrations.warehouse.checks.balance_count?warehouse={warehouse}')[1] == {'count': 1}
+    quote = {'name': 'Q-1', 'inclusive': True, 'children': {'lines': [{'_key': 'a', 'qty': '1', 'rate': '105'},
+                                                                      {'_key': 'b', 'qty': '2', 'rate': '10', 'taxable': False}]}}
+    status, saved, _ = c('POST', '/api/quote', quote)
+    assert status == 201, saved
+    assert (saved['net_total'], saved['vat_total'], saved['taxable_net'], saved['grand_total']) == ('120.00', '5.00', '100.00', '125.00')
+    calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
+    assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest
     assert len(manifest['apis']) == len(manifest['schedules']) == len(manifest['native']['panels']) == 1
     schema = c('GET', '/api/schema')[1]
