@@ -354,6 +354,7 @@ reasons above. They never include counts or names.
 * Effects (Phase 6) will be reversed in `evlet.corrections.reverse_effects()` and Sequence
   numbers (Phase 7) cleared on a revision in `evlet.corrections.prepare_copy()`. Both are
   empty today.
+* Document numbers assigned on entering a state are described in [sequences.md](sequences.md).
 * The void reason is not stored until the Journal exists.
 * Draft previews (`/api/_draft`) do not report the State lock; the save does.
 * The connector and the MCP server do not offer moves, void or revise yet.

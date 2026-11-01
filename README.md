@@ -33,7 +33,8 @@ owned child tables, reactive fields, dialogs, reports, services and native addit
 [Finite calculations](docs/finite-calculations.md) describe the finite-v1 formula
 language, nested owned tables and the shared Python/browser calculation engine.
 [States, moves and model actions](docs/states-actions.md) describe document states,
-locks and actions with validated inputs.
+locks and actions with validated inputs. [Document numbers](docs/sequences.md) describe
+`Sequence` fields.
 
 For virtual environment setup and each step explained, read
 [Your first site](docs/getting-started.md).

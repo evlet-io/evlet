@@ -67,6 +67,7 @@ class Visit(Model):
 | `Tags` | TEXT JSON array | at most 20 distinct tags (ignoring case) of 1 to 40 characters, without quotes, backslashes, commas or control characters; a text value is split on commas | `contains` matches one whole tag exactly, including case (duplicates are detected ignoring case); equality matches the whole list |
 | `Reference` | two columns `<name>_model`, `<name>_id`, no SQL foreign key | a registered model and a record that exists, checked when the value changes | equality with `{"model", "id"}` and `isnull` |
 | `State` | TEXT like `Select` | one of its states; set only to the default on create, then changed only by its `Move`s; at most one per root document; see [states-actions.md](states-actions.md) | text filters |
+| `Sequence` | TEXT, null until assigned, unique with its scope fields | a document number such as `INV-{year}-{n:05}` written only by the engine on create or when a move enters `assign_on`; root documents only; see [sequences.md](sequences.md) | text filters |
 
 Any editable field may declare `editable_when_locked=True` so that ordinary writes can still
 change it while its document is in a locked State (for example remarks).
