@@ -4942,6 +4942,217 @@
   "etag": null,
   "status": 200
  },
+ "lines_page_after_update": {
+  "body": {
+   "items": [
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 102,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 103,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 104,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 105,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 106,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 107,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 108,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 109,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 110,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 111,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 112,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 113,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 114,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 115,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 116,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 117,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 118,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 119,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.50",
+     "children": {
+      "parts": []
+     },
+     "id": 120,
+     "product": 1,
+     "qty": "1.0000",
+     "rate": "2.50"
+    },
+    {
+     "amount": "2.00",
+     "children": {
+      "parts": []
+     },
+     "id": 121,
+     "product": null,
+     "qty": "2.0000",
+     "rate": "1.00"
+    }
+   ],
+   "limit": 100,
+   "offset": 100,
+   "total": 120
+  },
+  "etag": null,
+  "status": 200
+ },
  "list": {
   "body": {
    "items": [
