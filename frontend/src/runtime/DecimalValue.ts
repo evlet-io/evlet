@@ -1,4 +1,6 @@
 // Exact decimal arithmetic for the bounded document expression contract.
+// Same text as the server, which treats a missing input as a state during preview.
+export const MISSING_INPUT = 'A required calculation input is missing';
 export class DecimalValue {
   constructor(public coefficient: bigint, public scale = 0) {
     if (scale > 36 || coefficient.toString().replace('-', '').length > 40)
@@ -6,7 +8,8 @@ export class DecimalValue {
   }
   static from(value: any): DecimalValue {
     if (value instanceof DecimalValue) return value;
-    if (value == null || typeof value === 'boolean' || (typeof value === 'number' && !Number.isSafeInteger(value)))
+    if (value == null) throw new Error(MISSING_INPUT);
+    if (typeof value === 'boolean' || (typeof value === 'number' && !Number.isSafeInteger(value)))
       throw new Error('A valid calculation input is required');
     const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(String(value));
     if (!match) throw new Error('Use an exact decimal value');

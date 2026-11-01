@@ -2,6 +2,7 @@
 
 from importlib import import_module
 from pathlib import Path
+import sys
 import tempfile
 
 from .. import Database, LocalAuth
@@ -15,8 +16,12 @@ def modules():
         if exc.name not in ('evlet.resources.playground', 'evlet.resources.playground.app'):
             raise
         # Contributors use the same source examples that the build bundles.
-        if not (Path(__file__).resolve().parents[2] / 'examples/playground/app.py').is_file():
+        root = Path(__file__).resolve().parents[2]
+        if not (root / 'examples/playground/app.py').is_file():
             raise ValueError('Playground resources are missing from this installation') from exc
+        # `python -m evlet` no longer puts the working directory on sys.path.
+        if str(root) not in sys.path:
+            sys.path.append(str(root))
         return tuple(import_module('examples.playground.' + name) for name in ('app', 'models', 'migrate'))
 
 

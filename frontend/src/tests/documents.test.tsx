@@ -2,7 +2,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@solidjs/testing-library';
 import { evaluate } from '../runtime/StateStore';
 import { DecimalValue } from '../runtime/DecimalValue';
-import { calculateDocument } from '../runtime/DocumentState';
+import { calculateDocument, fieldFilters } from '../runtime/DocumentState';
 import ReportView from '../views/ReportView';
 import { AppContext } from '../runtime/Context';
 import vectors from './document-vectors.json';
@@ -48,6 +48,20 @@ describe('shared exact document expressions', () => {
     const run = () => DecimalValue.from(evaluate(vector.expression, path => convert((vector.inputs as any)[path]))).fixed(vector.scale);
     if (vector.error) expect(run).toThrow();
     else expect(run()).toBe(vector.expected);
+  });
+  it('matches server preview rules for missing inputs, literals, filters and nulls', () => {
+    const row: any = {name: 'item', fields: [{name: 'qty', type: 'decimal'}, {name: 'rate', type: 'currency'}, {name: 'amount', type: 'currency', scale: 2}, {name: 'fee', type: 'currency', scale: 2}],
+      behavior: {amount: {compute: {$expr: 'mul', args: [{$expr: 'ref', args: ['qty']}, {$expr: 'ref', args: ['rate']}]}}, fee: {compute: {$expr: 'choose', args: [{$expr: 'ref', args: ['rate']}, 0, 1]}}}};
+    const parent: any = {name: 'order', fields: [], children: [{name: 'items', model: 'item'}], behavior: {}, order: ['items.amount', 'items.fee']};
+    const result = calculateDocument(parent, [parent, row], {}, {items: [{_key: 'new', qty: null, rate: '2'}]});
+    expect(result.errors).toEqual({});
+    expect(result.children.items[0].amount).toBe(null);
+    expect(result.children.items[0].fee).toBe('0.00');
+    const order: any = {name: 'order', fields: [{name: 'band', type: 'decimal', scale: 2}, {name: 'site', type: 'integer'}, {name: 'customer', type: 'link'}],
+      behavior: {customer: {filters: {band: {$expr: 'ref', args: ['band']}, site: {$expr: 'ref', args: ['site']}}}}};
+    expect(fieldFilters(order, order.fields[2], {band: '2.50', site: 7}, {}, [order])).toEqual({band: '2.50', site: 7});
+    expect(evaluate({$expr: 'eq', args: [{$expr: 'ref', args: ['missing']}, null]}, () => undefined)).toBe(true);
+    expect(evaluate({$expr: 'ne', args: [{$expr: 'ref', args: ['missing']}, null]}, () => undefined)).toBe(false);
   });
   it('treats ordering against a missing value as false like the server', () => {
     const empty = () => null;

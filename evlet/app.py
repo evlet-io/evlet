@@ -110,7 +110,13 @@ class Application:
             logger.exception("Unhandled request failure")
             status, payload = 500, {"error": "Internal server error"}
         download = isinstance(payload, Download)
-        encoded = payload.content if download else b"" if status == 204 else json.dumps(payload, ensure_ascii=True, allow_nan=False).encode("utf-8")
+        try:
+            encoded = payload.content if download else b"" if status == 204 else json.dumps(payload, ensure_ascii=True, allow_nan=False).encode("utf-8")
+        except (TypeError, ValueError, RecursionError):
+            # Keep the application's JSON error and headers if a payload cannot be encoded.
+            logger.exception("Response encoding failed")
+            status, headers, download = 500, [], False
+            encoded = b'{"error": "Internal server error"}'
         response_headers = [(b"x-content-type-options", b"nosniff"), (b"cache-control", b"no-store"), *headers]
         if status != 204:
             if not download:

@@ -31,9 +31,9 @@ export function evaluate(value: any, read: (path: string) => any): any {
   if (['lt', 'lte', 'gt', 'gte'].includes(value.$expr) && (a == null || b == null)) return false;
   switch (value.$expr) {
     case "eq":
-      return a === b;
+      return (a ?? null) === (b ?? null);
     case "ne":
-      return a !== b;
+      return (a ?? null) !== (b ?? null);
     case "gt":
       return a > b;
     case "gte":

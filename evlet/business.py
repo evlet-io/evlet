@@ -4,7 +4,7 @@ import hashlib
 import json
 import base64
 import binascii
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 import re
 from urllib.parse import parse_qs, quote
@@ -292,6 +292,44 @@ class Business:
         model = self.registry.models.get(parts[2]) if len(parts) >= 3 and parts[:2] == ['', 'api'] else None
         if model is None or model in self.child_models:
             raise AccessError(404, 'Route not found')
+        try:
+            return self.model_dispatch(scope, body, user, model, parts)
+        except ValidationError as exc:
+            raise ValidationError(self.visible_errors(user, model, exc.errors)) from None
+
+    def visible_errors(self, user, model, errors, tx=None):
+        """Hide error keys that name unreadable fields or rows the user cannot see."""
+        tables = {child.name: child.model for child in self.children.values() if child.parent is model}
+        readable = self.policy.fields(user, model)
+        checks = ExitStack()
+        def row_visible(child, key):
+            nonlocal tx
+            if not re.fullmatch('[1-9][0-9]{0,18}', key) or int(key) > 2**63-1:
+                return True  # A client's temporary row key.
+            if tx is None:
+                tx = checks.enter_context(self.database.transaction())  # One lookup transaction, opened only if needed.
+            try:
+                self.policy.record(tx, user, child, int(key))
+            except AccessError:
+                return False
+            return True
+        visible, hidden = {}, False
+        with checks:
+            for key, message in errors.items():
+                parts = key.split('.', 2)
+                if len(parts) == 3 and parts[0] in tables:
+                    child, field = tables[parts[0]], parts[2]
+                    shown = (self.policy.allows(user, child, 'read') and row_visible(child, parts[1])
+                             and (field not in child.__declared_fields__ or field in self.policy.fields(user, child)))
+                else:
+                    shown = parts[0] not in model.__declared_fields__ or parts[0] in readable
+                if shown: visible[key] = message
+                else: hidden = True
+        if hidden: visible.setdefault('_form', 'One or more values are invalid')
+        return visible
+
+    def model_dispatch(self, scope, body, user, model, parts):
+        path, method = scope['path'], scope['method']
         if getattr(model, '__declaration_mode__', False) and method == 'DELETE' and len(parts) == 4:
             if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
             with self.context(user) as context:
@@ -425,7 +463,13 @@ class Business:
         try:
             self._save_children(tx, user, parent, collections)
         except ValidationError as exc:
-            raise ValidationError({'children': str(exc)}) from exc
+            # Child validate() errors may name child fields this user cannot read.
+            models = [child.model for child in self.children.values() if child.parent is type(parent)]
+            errors = {key: value for key, value in exc.errors.items()
+                      if not any(key in model.__declared_fields__ and key not in self.policy.fields(user, model) for model in models)}
+            parts = [str(ValidationError(errors))] if errors else []
+            if len(errors) < len(exc.errors): parts.append('One or more values are invalid')
+            raise ValidationError({'children': '; '.join(parts)}) from None
 
     def _save_children(self, tx, user, parent, collections):
         for name, rows in collections.items():

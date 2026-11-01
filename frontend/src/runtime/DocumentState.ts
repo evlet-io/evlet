@@ -1,6 +1,6 @@
 import type { FieldSchema, ModelSchema } from './types';
 import { evaluate } from './StateStore';
-import { DecimalValue } from './DecimalValue';
+import { DecimalValue, MISSING_INPUT } from './DecimalValue';
 
 export function documentRead(model: ModelSchema, values: any, collections: any, models: ModelSchema[], parent?: {model: ModelSchema; values: any}) {
   const scalar = (definition: ModelSchema, record: any, name: string) => {
@@ -29,6 +29,8 @@ export function behaviorValue(expression: any, read: (path: string) => any) {
   return evaluate(expression, read);
 }
 export function documentValue(field: FieldSchema, value: any) {
+  // Literal numbers (for example `0 if x else qty * rate`) are rounded like the server.
+  if (typeof value === 'number' && ['decimal', 'currency', 'integer'].includes(field.type)) value = DecimalValue.from(value);
   if (!(value instanceof DecimalValue)) return value;
   if (field.type === 'integer') {
     const integer = Number(value.fixed(0));
@@ -47,7 +49,8 @@ export function fieldFilters(model: ModelSchema, field: FieldSchema, values: any
     for (const [key, expression] of Object.entries(behavior.filters)) {
       const value = evaluate(expression, read);
       if (value == null || value === '') return null;
-      result[key] = value instanceof DecimalValue ? Number(value.fixed(0)) : value;
+      // Whole values (such as Link IDs) stay numbers; fractions keep their exact digits.
+      result[key] = value instanceof DecimalValue ? (value.scale === 0 && Number.isSafeInteger(Number(value.coefficient)) ? Number(value.coefficient) : value.fixed(value.scale)) : value;
     }
     return result;
   } catch { return null; }
@@ -62,7 +65,7 @@ export function calculateDocument(model: ModelSchema, models: ModelSchema[], val
     try {
       const value = evaluate(expression, documentRead(definition, row, rows, models, parent));
       row[name] = documentValue(field, value);
-    } catch (error: any) { row[name] = null; errors[prefix + name] = error.message; }
+    } catch (error: any) { row[name] = null; if (error.message !== MISSING_INPUT) errors[prefix + name] = error.message; }
   };
   const order = model.order?.length ? model.order : model.fields.map(field => field.name);
   for (const key of order) {

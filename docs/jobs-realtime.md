@@ -113,6 +113,9 @@ also restores pending jobs and schedules, so review those before restarting work
 target=(Model, id))` creates an interval schedule. Intervals range from 60 seconds
 to one year. `start_at` defaults to one interval from now. Names are unique and
 use lowercase letters, digits, and underscores, beginning with a letter.
+Calendar schedules pass `calendar=(expression, timezone)` so the schedule and its
+calendar are written in one transaction; apps normally declare `CalendarSchedule`
+instead of calling this directly.
 
 The worker calls `tick()` before claiming work. Each tick processes at most 100 due
 schedules. An occurrence and its next due time commit together. After downtime,
@@ -282,5 +285,7 @@ A known database failure before a task handler starts, or a graceful stop after
 claiming, returns the job to the queue without consuming an attempt. Handler
 failures still use the task retry policy. A crashed worker retains the existing
 lease recovery and attempt limit. CLI servers end live event streams before
-waiting for graceful shutdown; other ASGI hosts can call `Application.stop()`
-when beginning their shutdown drain.
+waiting for graceful shutdown; other ASGI hosts can call `Application.stop()`, or
+`TenantApplication.stop()` for every tenant, when beginning their shutdown drain.
+Uvicorn drains connections before lifespan shutdown, so call it from the host's
+shutdown hook rather than relying on lifespan.

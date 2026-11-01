@@ -5,6 +5,7 @@ from types import MappingProxyType, MethodType
 from uuid import uuid4
 from contextlib import contextmanager
 import inspect
+import re
 
 from .auth import AccessError
 from .declarations import Ref
@@ -196,6 +197,8 @@ class Context:
         self._active.append(key)
         try:
             return operate(self, model, record_id, values, action=action, arguments=arguments)
+        except ValidationError as exc:
+            raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
         finally:
             self._active.pop()
 
@@ -246,8 +249,8 @@ def load_draft(context, model, record_id, values, *, preview=False):
             value = dict(value)
             row_id = value.pop('id', None)
             temporary = value.pop('_key', None)
-            if temporary is not None and (not isinstance(temporary, str) or not 1 <= len(temporary) <= 64 or temporary in keys):
-                raise ValidationError({child.name: 'Row keys must be distinct strings of at most 64 characters'})
+            if temporary is not None and (not isinstance(temporary, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', temporary) or temporary in keys):
+                raise ValidationError({child.name: 'Row keys must be distinct strings of at most 64 letters, digits, hyphens or underscores'})
             keys.add(temporary) if temporary is not None else None
             business.policy.check_values(tx, user, child.model, value)
             if row_id is not None:
@@ -447,7 +450,7 @@ def freeze_draft(draft):
     object.__setattr__(draft, '_readonly', True)
 
 
-def source_values(draft, allowed=None):
+def source_values(draft, allowed=None, behaviors=('compute',)):
     from .reactivity import references
     sources = draft._definition.__sources__
     used = {name: set(source.fields) for name, source in sources.items()}
@@ -455,7 +458,11 @@ def source_values(draft, allowed=None):
         # Return only the outputs that readable fields use; others may feed hidden fields.
         used = {}
         for name in allowed:
-            for path in references(plans(draft._definition)[name].get('compute')):
+            entry = plans(draft._definition)[name]
+            # Record schemas expose only computes over sources; dialogs also use conditions and filters.
+            expressions = [entry.get(key) for key in behaviors if key != 'filters']
+            expressions += list(entry.get('filters', {}).values()) if 'filters' in behaviors else []
+            for path in set().union(*(references(expression) for expression in expressions)):
                 parts = path.split('.')
                 if len(parts) == 2 and parts[0] in sources and parts[1] in sources[parts[0]].fields:
                     used.setdefault(parts[0], set()).add(parts[1])

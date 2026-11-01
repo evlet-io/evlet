@@ -343,3 +343,140 @@ def test_float_action_arguments_accept_whole_json_numbers():
         typed_arguments(apply, {'count': 1.5}, skip=1)
     with pytest.raises(ValidationError):
         typed_arguments(apply, {'rate': True}, skip=1)
+
+
+def test_validation_errors_do_not_name_hidden_fields(tmp_path):
+    class Payslip(Model):
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete'), read_fields=('name',), write_fields=('name',))}
+        name = Text()
+        bonus = Currency(default='0')
+        def validate(self):
+            if self.name == 'bad':
+                raise ValidationError({'bonus': 'Bonus exceeds the approved band', 'name': 'Check the name'})
+    app = application(tmp_path, Payslip)
+    status, result, _ = client(app)('POST', '/api/payslip', {'name': 'bad'})
+    assert status == 422
+    assert result['fields'] == {'name': 'Check the name', '_form': 'One or more values are invalid'}
+    assert 'bonus' not in str(result) and 'band' not in str(result)
+
+
+def test_child_validation_errors_hide_restricted_fields_but_keep_row_messages(tmp_path):
+    class Quote(Model):
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+        class Line(Child):
+            permissions = {'admin': Rule(('read', 'create', 'update', 'delete'), read_fields=('qty',), write_fields=('qty',))}
+            qty = Decimal(default='1')
+            cost = Currency(default='4.25')
+            def validate(self):
+                if self.qty > 5:
+                    raise ValidationError({'cost': 'Cost 4.25 is above margin', '_form': 'Reduce the quantity'})
+        lines = Table(Line)
+    app = application(tmp_path, Quote)
+    c = client(app)
+    status, result, _ = c('POST', '/api/quote', {'children': {'lines': [{'_key': 'a.b', 'qty': '9'}]}})
+    assert status == 422 and 'margin' not in str(result)
+    status, result, _ = c('POST', '/api/quote', {'children': {'lines': [{'_key': 'row-1', 'qty': '9'}]}})
+    assert status == 422
+    assert result['fields'] == {'lines.row-1._form': 'Reduce the quantity', '_form': 'One or more values are invalid'}
+    for key in ('²', '9' * 20):
+        status, result, _ = c('POST', '/api/quote', {'children': {'lines': [{'_key': key, 'qty': '9'}]}})
+        assert status == 422 and 'margin' not in str(result)
+
+
+def test_storage_names_must_be_lowercase_routes():
+    class SalesOrder(Model):
+        storage_name = 'SalesOrders'
+        name = Text()
+    with pytest.raises(ValueError, match='lowercase'):
+        Registry(SalesOrder)
+
+
+def test_source_outputs_follow_the_behaviours_each_route_exposes():
+    from types import SimpleNamespace
+    from evlet.documents import Draft, source_values
+    @depends('item')
+    def stock_of(doc):
+        return {'qty': D(5), 'cost': D('12.34')}
+    class Order(Model):
+        permissions = ALL
+        item = Text()
+        stock = Query(stock_of, fields={'qty': Decimal(), 'cost': Currency()})
+        note = Text(visible_if='stock.qty > 0')
+    Registry(Order)
+    draft = Draft(Order, {'item': 'A'})
+    draft._sources['stock'] = SimpleNamespace(qty=D(5), cost=D('12.34'))
+    assert source_values(draft, {'item', 'note'}) == {}
+    dialog_behaviours = ('compute', 'visible_if', 'required_if', 'read_only_if', 'default_ref', 'filters')
+    assert source_values(draft, {'item', 'note'}, dialog_behaviours) == {'stock': {'qty': '5.0000'}}
+
+
+def test_tampered_storage_types_return_a_json_error(tmp_path):
+    from evlet import Integer
+    class Item(Model):
+        name = Text()
+        count = Integer()
+    app = application(tmp_path, Item)
+    c = client(app)
+    _, item, _ = c('POST', '/api/item', {'name': 'a', 'count': 1})
+    with app.database._connection() as connection:
+        connection.execute('UPDATE item SET count=? WHERE id=?', (b'\x00raw', item['id']))
+        connection.commit()
+    for path in ('/api/item', f"/api/item/{item['id']}"):
+        status, result, headers = c('GET', path)
+        assert status == 500 and result == {'error': 'Internal server error'}
+        assert headers[b'content-type'] == b'application/json; charset=utf-8'
+
+
+def test_legacy_child_errors_do_not_name_hidden_child_fields(tmp_path):
+    from evlet import Link, Policy
+    from evlet.business import ChildTable
+    class Parent(Model):
+        name = Text()
+    class Line(Model):
+        owner = Link(Parent, required=True)
+        qty = Decimal(default='1')
+        cost = Currency(default='4.25')
+        def validate(self):
+            raise ValidationError({'cost': 'Cost 4.25 is above margin'})
+    db = Database(tmp_path / 'db.sqlite3', Registry(Parent, Line))
+    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
+                      children=(ChildTable(Parent, 'lines', Line, 'owner', 'Lines'),))
+    app.initialize()
+    app.business.policy = Policy(db.registry, rules={('admin', Line): Rule(('read', 'create', 'update', 'delete'), read_fields=('owner', 'qty'))})
+    http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
+    status, result, _ = client(app)('POST', '/api/parent', {'name': 'p', 'children': {'lines': [{'qty': '1'}]}})
+    assert status == 422 and 'cost' not in str(result) and 'margin' not in str(result)
+
+
+def test_text_matching_rejects_nul_like_postgresql(tmp_path):
+    class Note(Model):
+        title = Text()
+    app = application(tmp_path, Note)
+    c = client(app)
+    from urllib.parse import quote
+    for query in ('title__contains=' + quote('a\x00'), 'title__startswith=' + quote('\x00'), 'q=' + quote('a\x00b')):
+        status, result, _ = c('GET', '/api/note?' + query)
+        assert status == 422, (query, result)
+
+
+def test_module_entry_drops_the_working_directory_from_sys_path(tmp_path):
+    import os, subprocess, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    # Emulate `python -m evlet` started inside an app folder, then report sys.path.
+    probe = ("import os, sys, runpy, evlet.cli; sys.path[:] = [os.getcwd()] + [p for p in sys.path if p]; "
+             "evlet.cli.main = lambda: print(os.getcwd() in sys.path or '' in sys.path); runpy.run_module('evlet', run_name='__main__')")
+    result = subprocess.run([sys.executable, '-c', probe], cwd=tmp_path, capture_output=True, text=True,
+                            env={**os.environ, 'PYTHONPATH': str(root)})
+    assert result.stdout.strip() == 'False', result.stderr
+
+
+def test_source_checkout_playground_loads_without_the_working_directory(tmp_path):
+    import os, subprocess, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    probe = ("import sys; sys.path[:] = [p for p in sys.path if p]; "
+             "from evlet.cli.playground import modules; print(len(modules()))")
+    result = subprocess.run([sys.executable, '-c', probe], cwd=tmp_path, capture_output=True, text=True,
+                            env={**os.environ, 'PYTHONPATH': str(root)})
+    assert result.stdout.strip() == '3', result.stderr
