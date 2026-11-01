@@ -515,16 +515,20 @@ class Business:
                 self.policy.record(tx, user, model, record_id, 'update')
                 self.save_children(tx, user, record, children)
                 self.changed(tx, model, record_id)
-            result = self.detail(tx, user, record, row_limit=None)
-            extra = self.availability(Context(self, tx, user, readonly=True), model, record) if method == 'GET' else {}
+            loaded = {} if method == 'GET' else None
+            result = self.detail(tx, user, record, row_limit=None, loaded=loaded)
+            extra = self.availability(Context(self, tx, user, readonly=True), model, record, loaded) if method == 'GET' else {}
         return 200, {**self.embedded(result), **extra}, [(b'etag', self.revision(result))]
 
-    def availability(self, context, model, record):
-        """Moves and actions the caller may use on a saved record now (`_moves`, `_actions`, `_locked`); not part of the ETag."""
+    def availability(self, context, model, record, loaded=None):
+        """Moves and actions the caller may use on a saved record now (`_moves`, `_actions`, `_locked`); not part of the ETag.
+
+        `loaded` holds the owned rows a detail of the record just read (see `detail`), for guards that read rows.
+        """
         if model.__state__ is None and model not in self.registry.guards:
             return {}
         from .states import availability
-        return availability(self, context.read_context(), model, record)
+        return availability(self, context.read_context(), model, record, loaded)
 
     def field_expressions(self, user, model):
         """Serialized finite expressions per readable field: compute, initial and the three rules.
@@ -741,24 +745,33 @@ class Business:
                 self.policy.record(tx, user, child.model, row_id, 'delete')
                 tx.delete(child.model, row_id)
 
-    def detail(self, tx, user, record, *, row_limit=EMBEDDED_ROWS):
+    def detail(self, tx, user, record, *, row_limit=EMBEDDED_ROWS, loaded=None):
         """A record with its readable owned rows at every depth, in position order.
 
         Each collection embeds at most `row_limit` rows (None embeds all). A collection with more
         readable rows is listed under `children_pages` with its total so a client can page it.
         Rows load one table level at a time, so the statement count does not grow with the rows.
+        A `loaded` dict receives the saved rows read ({(child, owner id): records}) and is marked
+        partial when some saved rows were left out (unreadable, outside the row scope or not embedded).
         """
         result = self.policy.serialize(tx, user, record)
-        self.embed(tx, user, type(record), {record.id: result}, row_limit)
+        self.embed(tx, user, type(record), {record.id: result}, row_limit, loaded)
         return result
 
-    def embed(self, tx, user, model, results, row_limit=EMBEDDED_ROWS):
+    def embed(self, tx, user, model, results, row_limit=EMBEDDED_ROWS, loaded=None):
         """Add readable owned rows to serialized records of one model ({id: result}), level by level."""
         from .documents import owned_rows
         for child in self.children.values():
-            if child.parent is not model or not self.policy.allows(user, child.model, 'read'):
+            if child.parent is not model:
+                continue
+            readable = self.policy.allows(user, child.model, 'read')
+            if loaded is not None and (not readable or row_limit is not None or self.policy.rule(user, child.model).scope is not None):
+                loaded['partial'] = True
+            if not readable:
                 continue
             found = owned_rows(tx, child, list(results), scope=self.policy.scope_sql(user, child.model), limit=row_limit)
+            if loaded is not None:
+                loaded.update({(child, owner): found.get(owner, ((), 0))[0] for owner in results})
             records = [record for owner in results for record in found.get(owner, ((), 0))[0]]
             values = dict(zip((record.id for record in records), self.policy.serialize_many(tx, user, records)))
             for value in values.values():
@@ -770,7 +783,7 @@ class Business:
                 if total > len(rows):
                     result.setdefault('children_pages', {})[child.name] = {'total': total, 'limit': row_limit, 'partial': True}
             if values:
-                self.embed(tx, user, child.model, values, row_limit)
+                self.embed(tx, user, child.model, values, row_limit, loaded)
 
     def lines(self, scope, user, model, record_id, path):
         """GET /api/{model}/{id}/lines/{name}[/{row id}/{name}...]: one page of a readable owned collection."""

@@ -94,8 +94,21 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
   had when the record was locked, even if a linked record or today's date changed since.
   Moves and actions settle normally and recalculate. So that this stays consistent, a
   stored result (at any depth of the document) may not read an `editable_when_locked`
-  field; registration fails with a message naming the field. A virtual result may.
+  field; registration fails with a message naming the field. This covers finite formulas,
+  legacy string formulas (`compute="sum(lines.extra)"`), reads through virtual results,
+  Query fields and `fetch="customer.name"` copies whose Link is `editable_when_locked`.
+  A virtual result may read such a field. A creation default (`default=Ref(...)`) is not a
+  result: it applies once, on create.
+* Rules and validation on such a write read the saved results too: `required_when`,
+  `applies_when`, `locked_when`, `required_if` and validators see the values the record
+  keeps, not values it would get if it were recalculated. Fetched copies are not refreshed.
 * `"_calculation": {"recalculate": true}` on a locked record is refused with 409.
+* An ordinary write on a locked record does not recalculate, so it does not need the
+  active formula version and does not change the version recorded for the record. Its
+  `editable_when_locked` fields stay editable after a deploy that changes formulas. A move
+  or action on such a record recalculates, so it answers 409 `SCHEMA_VERSION_MISMATCH`;
+  send `{"_calculation": {"model_schema_hash": "<active hash>", "recalculate": true}}` as
+  the body of the move (or with the action) to recalculate with the active formulas.
 * Deleting a record in a locked state is refused with 409. Corrections will come from
   void and revise (Phase 5).
 * Uploading or removing an attachment is an ordinary write: on a locked record it is
@@ -119,8 +132,10 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
   current state: 409 `This record cannot move from draft to paid`. A role the move does
   not list: 403 `Your role cannot use Mark paid`. A guard that is not true: 409, for
   example `Issue is not available: the condition for this move is not met`.
-* A role that cannot read the State field gets `This record has no such move now` for
-  both 409 cases, so the message does not name the state.
+* A role that cannot read the State field gets 409 `This record has no such move now` for
+  every refused move: a target that is not a state, a final state, no such move, a move
+  for other roles and a guard that is not true. It cannot tell which states and moves
+  exist. Roles that can read the State keep the detailed messages above.
 * The state change, the `run` method, calculations, rules, validation and the stored
   rows commit in one transaction. Any failure rolls everything back.
 * The response is the permission-filtered detail with a new ETag.
@@ -193,8 +208,9 @@ Detail responses of a model with a State, or with an action that declares
 * A role that cannot read the State field gets no `_moves`, no `_locked` and no `state`
   schema. It still gets `_actions`, because actions are not part of the State.
 * Guards that read only the record's own values (stored results included) are decided
-  without loading its rows. Guards that read owned rows or virtual results load the saved
-  document once per request.
+  without loading its rows. Guards that read owned rows or virtual results use the rows the
+  detail response already read when the caller can read every row; otherwise they load the
+  saved document once per request.
 
 ## Schema metadata
 

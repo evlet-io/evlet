@@ -697,3 +697,191 @@ def test_reading_a_stated_document_costs_at_most_one_more_statement(tmp_path):
         assert status == 200
     assert body['_moves'] == [{'to': 'issued', 'label': 'Issue', 'allowed': True}] and body['_actions'][0]['allowed'] is True
     assert counts['bigstated'] <= counts['bigplain'] + 1, counts
+
+
+# Remaining lock and leak gaps
+
+def test_stored_results_reading_editable_fields_through_legacy_formulas_and_fetches_are_rejected():
+    class Owner(Model):
+        name = Text(default='')
+
+    class Extra(Child):
+        extra = Integer(default=0, editable_when_locked=True)
+
+    class Fixed(Child):
+        qty = Integer(default=0)
+
+    def build(fields, meta=False):
+        namespace = {'status': State(('a', 'b'), locked=('b',)), **fields}
+        if meta:
+            namespace['Meta'] = FiniteMeta
+        return Registry(Owner, type('Bad', (Model,), namespace))
+    rejected = (
+        {'lines': Table(Extra), 'total': Integer(compute='sum(lines.extra)')},
+        {'remarks': Integer(default=0, editable_when_locked=True), 'v': Integer(compute='remarks * 2', stored=False),
+         's': Integer(compute='v + 1')},
+        {'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.name')},
+        {'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.name', read_only=True)},
+    )
+    for fields in rejected:
+        with pytest.raises(ValueError, match='editable while locked'):
+            build(fields)
+    # A finite stored result that reads a fetched copy of an editable Link is rejected too.
+    with pytest.raises(ValueError, match='editable while locked'):
+        build({'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.name'),
+               'shown': Text(compute=F('owner_name'))}, meta=True)
+    # Counting rows reads no field; a virtual result and a fetch over a fixed Link stay allowed.
+    build({'lines': Table(Extra), 'n': Integer(compute='count(lines)')})
+    build({'lines': Table(Fixed), 'total': Integer(compute='sum(lines.qty)'), 'remarks': Integer(default=0, editable_when_locked=True),
+           'v': Integer(compute='remarks * 2', stored=False)})
+    build({'owner': Link(Owner), 'owner_name': Text(fetch='owner.name', read_only=True)})
+
+
+class Account(Model):
+    permissions = ALL
+    name = Text(default='')
+    limit = Currency(default=0)
+
+
+class KeptLine(Child):
+    qty = Decimal(default=1)
+    note = Text(default='', editable_when_locked=True)
+
+
+class Kept(Model):
+    Meta = FiniteMeta
+    permissions = ALL
+    account = Link(Account)
+    limit = Currency(compute=F('account.limit'))
+    remarks = Text(default='', editable_when_locked=True, required_when=F('limit') > 50)
+    memo = Text(default='', editable_when_locked=True, applies_when=F('limit') <= 50)
+    lines = Table(KeptLine)
+    status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'),), locked=('issued',))
+
+
+class KeptLegacy(Model):
+    permissions = ALL
+    account = Link(Account)
+    account_name = Text(fetch='account.name', read_only=True)
+    remarks = Text(default='', editable_when_locked=True, required_if='account_name == "Big"')
+    note = Text(default='', editable_when_locked=True)
+    status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'),), locked=('issued',))
+
+
+def test_rules_on_locked_records_read_the_saved_results(tmp_path):
+    app = start(Database(tmp_path / 'kept.sqlite3', Registry(Account, Kept, KeptLegacy)))
+    c = client(app)
+    account = c('POST', '/api/account', {'name': 'Small', 'limit': '10'})[1]['id']
+    record = c('POST', '/api/kept', {'account': account, 'memo': 'm', 'children': {'lines': [{'_key': 'a'}]}})[1]
+    url, line = f"/api/kept/{record['id']}", record['children']['lines'][0]['id']
+    legacy = f"/api/keptlegacy/{c('POST', '/api/keptlegacy', {'account': account})[1]['id']}"
+    for path in (url, legacy):
+        assert move(c, path, 'issued')[0] == 200
+    c('PATCH', f'/api/account/{account}', {'name': 'Big', 'limit': '99'}, headers=etag(c, f'/api/account/{account}'))
+    # The record keeps limit 10.00, so remarks is not required and memo still applies and keeps its value.
+    status, body, _ = c('PATCH', url, {'children': {'lines': {'update': [{'id': line, 'note': 'n'}]}}}, headers=etag(c, url))
+    assert status == 200, body
+    assert (body['limit'], body['memo'], body['children']['lines'][0]['note']) == ('10.00', 'm', 'n')
+    status, body, _ = c('PATCH', legacy, {'note': 'n'}, headers=etag(c, legacy))
+    assert status == 200 and (body['account_name'], body['note']) == ('Small', 'n'), body
+
+
+class Versioned(Model):
+    Meta = FiniteMeta
+    permissions = ALL
+    qty = Decimal(default=1)
+    double = Decimal(compute=F('qty') * 2)
+    remarks = Text(default='', editable_when_locked=True)
+    status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'), Move('issued', 'draft', 'Reopen')),
+                   locked=('issued',))
+
+
+def test_locked_records_saved_under_an_older_formula_stay_editable(tmp_path):
+    from evlet import Application, LocalAuth
+    app = start(Database(tmp_path / 'versions.sqlite3', Registry(Versioned)))
+    c = client(app)
+    url = f"/api/versioned/{c('POST', '/api/versioned', {'qty': '2'})[1]['id']}"
+    assert move(c, url, 'issued')[0] == 200
+
+    class Newer(Model):
+        __resource__ = 'versioned'
+        Meta = FiniteMeta
+        permissions = ALL
+        qty = Decimal(default=1)
+        double = Decimal(compute=F('qty') * 3)
+        remarks = Text(default='', editable_when_locked=True)
+        status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'), Move('issued', 'draft', 'Reopen')),
+                       locked=('issued',))
+    Newer.__name__ = 'Versioned'
+    db = Database(tmp_path / 'versions.sqlite3', Registry(Newer))
+    newer = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
+    newer.initialize()
+    c = client(newer)
+    version = "SELECT plan_hash FROM evlet_calculation_versions WHERE resource='versioned'"
+    with db.transaction() as tx:
+        recorded = tx.connection.execute(version).fetchone()[0]
+    status, body, _ = c('PATCH', url, {'remarks': 'still editable'}, headers=etag(c, url))
+    assert status == 200 and (body['remarks'], body['double']) == ('still editable', '4.0000'), body
+    with db.transaction() as tx:
+        assert tx.connection.execute(version).fetchone()[0] == recorded
+    # A move recalculates, so it needs the active formula version.
+    status, body, _ = move(c, url, 'draft')
+    assert status == 409 and 'SCHEMA_VERSION_MISMATCH' in body['error']
+    plan = newer.business.registry.plan_for(Newer)
+    status, body, _ = c('POST', url + '/moves/draft', {'_calculation': {'model_schema_hash': plan['model_schema_hash'], 'recalculate': True}},
+                        headers=etag(c, url))
+    assert status == 200 and (body['status'], body['double']) == ('draft', '6.0000'), body
+
+
+class Veiled(Model):
+    permissions = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'), read_fields=('title',), write_fields=('title',))}
+    title = Text(default='')
+    status = State(('a', 'b', 'c'), moves=(Move('a', 'b', 'B', when=F('title') == 'go'), Move('b', 'c', 'C', roles=('admin',))),
+                   locked=('b', 'c'), final=('c',))
+
+
+def test_roles_that_cannot_read_the_state_get_one_answer_for_every_refused_move(tmp_path):
+    app = start(Database(tmp_path / 'veiled.sqlite3', Registry(Veiled)))
+    c, editor = client(app), add_user(app, 'editor')
+    url = f"/api/veiled/{c('POST', '/api/veiled', {})[1]['id']}"
+    generic = (409, {'error': 'This record has no such move now'})
+    # An unknown state, no such move from here and a guard that is not met all look the same.
+    assert move(editor, url, 'zzz')[:2] == generic
+    assert move(editor, url, 'c')[:2] == generic
+    assert move(editor, url, 'b')[:2] == generic
+    editor('PATCH', url, {'title': 'go'}, headers=etag(editor, url))
+    assert move(editor, url, 'b')[0] == 200
+    # A move this role may not use looks the same as one that does not exist.
+    assert move(editor, url, 'c')[:2] == generic
+    assert move(editor, url, 'zzz')[:2] == generic
+    # Roles that can read the State keep the detailed messages.
+    assert move(c, url, 'zzz')[:2] == (404, {'error': 'Move not found'})
+    assert move(c, url, 'a')[:2] == (409, {'error': 'This record cannot move from b to a'})
+
+
+class BigRowGuard(Model):
+    Meta = FiniteMeta
+    permissions = ALL
+    title = Text(default='')
+    lines = Table(BigLine, max_rows=1000)
+    total = Currency(compute=lines.sum('amount'))
+    shown = Currency(compute=lines.sum('amount'), stored=False)
+    status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue', when=F('shown') > 0),), locked=('issued',))
+
+    @action('Note', available_when=F('shown') > 0)
+    def note(self):
+        self.title = 'noted'
+
+
+def test_guards_over_rows_reuse_the_rows_the_detail_loaded(tmp_path):
+    from test_lines import Counting, counted
+    app = start(Counting(tmp_path / 'rows.sqlite3', Registry(BigPlain, BigRowGuard)))
+    c = client(app)
+    rows = [{'_key': f'l{index}', 'qty': '1', 'rate': '2.50'} for index in range(1000)]
+    counts = {}
+    for name in ('bigplain', 'bigrowguard'):
+        record = c('POST', f'/api/{name}', {'children': {'lines': rows}})[1]
+        (status, body, _), counts[name] = counted(c, 'GET', f"/api/{name}/{record['id']}")
+        assert status == 200
+    assert body['_moves'] == [{'to': 'issued', 'label': 'Issue', 'allowed': True}] and body['_actions'][0]['allowed'] is True
+    assert counts['bigrowguard'] <= counts['bigplain'] + 1, counts

@@ -382,7 +382,8 @@ Branch `model/04-state`, stacked on `model/03-lines`. Guide: [states-actions.md]
 Known limitations:
 
 * A guard that reads owned rows or virtual results loads the whole saved document for a
-  detail response (one extra document load per read); other guards read only the root.
+  detail response when the caller cannot read every row (hidden collections or a row
+  scope); otherwise it reuses the rows the detail read. Other guards read only the root.
 * Draft previews do not report the State lock. The connector, the MCP server and the
   SolidJS form do not offer moves.
 * Void and revise (Phase 5) are not implemented; `voidable` is stored metadata only.
@@ -405,3 +406,23 @@ Review fixes (01-11-2026):
 * `Session.create` and `Session.update` refuse State changes outside `maintenance()`.
 * Action input names `name`, `model`, `record_id` and `self` are rejected; input fields are
   copied rather than renamed in place.
+
+Lock and leak fixes (01-11-2026):
+
+* The registration check for stored results follows legacy string formulas, virtual
+  chains, Query fields and fetches through the legacy template graph's value inputs
+  (`evlet.reactivity.template`), and finite results through their plan reads, including
+  reads of fetched copies. `sum(lines.extra)`, `v = remarks * 2` (virtual) read by a stored
+  `s = v + 1`, and `fetch="cust.name"` over an `editable_when_locked` Link now fail.
+* Ordinary writes on a locked record settle with a kept plan (`Registry.kept_plans`) in
+  which stored results are saved values, and legacy roots skip stored formulas and fetches.
+  Rules and validation therefore read the values the record keeps; a linked limit that
+  changed after locking no longer makes a field required.
+* Those writes skip the formula-version check and leave the recorded version unchanged, so
+  a locked record saved under older formulas stays editable. Moves and actions still check
+  the version; the guide says how to recalculate.
+* A role that cannot read the State gets one answer (409 `This record has no such move
+  now`) for unknown targets, missing moves, role refusals and unmet guards.
+* Guards that read rows reuse the rows the GET detail loaded when the caller reads every
+  row without a row scope. A 1,000-row document with such a guard now costs 8 statements
+  against 7 without a State (it was 13).

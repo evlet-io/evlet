@@ -674,11 +674,13 @@ def link_matches(context, item, field, value, targets=None):
     return True
 
 
-def settle(context, draft, *, complete, previous=None):
+def settle(context, draft, *, complete, previous=None, kept=False):
     """Bring a document tree to a consistent state: inputs, fetches, calculations, then checks.
 
     A preview (complete=False) returns errors and field states; a save (complete=True) also runs
-    the full validation and raises ValidationError on any error.
+    the full validation and raises ValidationError on any error. With `kept` (an ordinary write on a
+    locked record) stored results and fetched copies keep their saved values, and rules, virtual
+    results and validation read those saved values.
     """
     registry = context._business.registry
     errors, states = {}, {}
@@ -694,12 +696,15 @@ def settle(context, draft, *, complete, previous=None):
     for prefix, item in all_drafts:
         apply_inputs(item, prefix, internal(item), errors)
         object.__setattr__(item, '_caller', dict(item._values))
-        apply_fetches(context, item, prefix, prior(item), errors, targets)
+        if not kept:
+            apply_fetches(context, item, prefix, prior(item), errors, targets)
     plan = registry.plan_for(draft._definition)
     if plan is not None:
-        finite_settle(context, plan, draft, errors, states, complete, previous)
+        if kept:
+            plan = registry.kept_plans[registry.root_of(draft._definition)]
+        finite_settle(context, plan, draft, errors, states, complete, previous, kept)
     else:
-        compute_legacy(context, draft, all_drafts, errors, states, complete)
+        compute_legacy(context, draft, all_drafts, errors, states, complete, kept)
     # Every Link target is read once, in batches, before the per-field checks.
     targets.prefetch(link_values([item for _, item in all_drafts]))
     if complete:
@@ -748,8 +753,11 @@ def apply_fetches(context, item, prefix, old, errors, targets=None):
         except ValueError as exc: errors[prefix + name] = str(exc)
 
 
-def compute_legacy(context, draft, all_drafts, errors, states, complete):
-    """String-formula computes, Query sources and query fields, in dependency order."""
+def compute_legacy(context, draft, all_drafts, errors, states, complete, kept=False):
+    """String-formula computes, Query sources and query fields, in dependency order.
+
+    With `kept`, stored results keep their saved values and only virtual results are calculated.
+    """
     nodes, order = graph(context._business.registry, draft._definition)
     source_cache = {}
     for key in order:
@@ -761,6 +769,8 @@ def compute_legacy(context, draft, all_drafts, errors, states, complete):
                 load_source(context, item, prefix, name, all_drafts, source_cache, errors, states)
                 continue
             field = item._definition.__declared_fields__[name]
+            if kept and field.stored:
+                continue
             try:
                 if field.compute is not None:
                     value = round_field(field, evaluate(nodes[key]['compute'], item.read))
@@ -962,8 +972,10 @@ def fill_lookups(registry, tx, document):
         document.batch(lambda session: [session.set_lookups(*item) for item in found])
 
 
-def finite_settle(context, plan, draft, errors, states, complete, previous=None):
+def finite_settle(context, plan, draft, errors, states, complete, previous=None, kept=False):
     """Authoritative finite-v1 evaluation over the whole draft tree in this transaction.
+
+    With `kept` the plan is the root's kept plan, which reads stored results as saved values.
 
     With initial suggestions on an update, the session starts from the saved document and receives
     this write's changes as one batch, exactly as a browser session would, so an initial fires only
@@ -976,7 +988,7 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None)
     def data(item, path=()):
         # A new row leaves out initial fields the caller did not supply, so their suggestions apply.
         values = {name: item._values.get(name) for name, field in item._definition.__declared_fields__.items()
-                  if not is_finite(field) and name not in getattr(item._definition, '__internal_fields__', ())
+                  if (not is_finite(field) or kept and field.stored) and name not in getattr(item._definition, '__internal_fields__', ())
                   and not (item.id is None and (path, name) in initials and name not in item._submitted)}
         # Engine keys are internal: saved rows by ID and new rows by draft, so a client _key never meets a saved ID.
         values['_key'], values['id'] = ('s' + str(item.id)) if item.id else 'n' + str(id(item)), item.id
@@ -1156,6 +1168,9 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         states.check_recalculate(context, model, before)
     plan = business.registry.plan_for(model)
     version = business.registry.formula_hashes.get(business.registry.root_of(model))
+    # A locked write does not recalculate, so it neither checks nor updates the recorded formula version.
+    if locked_write:
+        plan = None
     if plan is not None and record_id:
         row = tx.connection.execute('SELECT plan_hash FROM evlet_calculation_versions WHERE resource=? AND record_id=?',
                                     (business.registry.name_for(model), record_id)).fetchone()
@@ -1176,7 +1191,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         outcome = method(draft, **states.action_arguments(context, model, method, declaration, arguments, before))
     elif before is not None:
         states.check_state_lock(context, draft, before)
-    settle(context, draft, complete=True, previous=before)
+    settle(context, draft, complete=True, previous=before, kept=locked_write)
     if locked_write:
         states.keep_saved(draft, before)
     prior = before.stored_values() if before else None

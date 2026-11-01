@@ -89,12 +89,38 @@ def root_plan(plan):
     return result
 
 
+def kept_plan(plan):
+    """The plan of ordinary writes on a locked record: stored results, at every depth, are saved values.
+
+    Virtual results and the rules (required_when, applies_when, locked_when) still evaluate, so they
+    read the results the record keeps instead of results it would get if it were recalculated.
+    """
+    from copy import deepcopy
+    result = deepcopy(dict(plan))
+    for table in result['tables'].values():
+        table['fields'] = {name: {**meta, 'computed': False, 'default': None} if meta['computed'] and meta['stored'] else meta
+                           for name, meta in table['fields'].items()}
+    result['fields'] = [field for field in result['fields'] if field.get('kind') or not field['stored']]
+    return result
+
+
 def check_kept_results(registry, model, plan):
-    """A locked record keeps its saved results, so no stored result may read an editable_when_locked field."""
+    """A locked record keeps its saved results, so no stored result may read an editable_when_locked field.
+
+    Reads are followed through virtual results and fetched copies: finite results by their plan reads,
+    legacy string formulas, Query fields and fetches by the value inputs of the legacy template graph.
+    Creation defaults and conditions are not results, so what they read does not matter here.
+    """
     from .calc import is_finite
-    from .reactivity import plans as legacy_plans, references
-    owners = {child.model: child.parent for child in registry.children}
+    from .reactivity import template
     members = [model] + [child.model for child in registry.children if registry.root_of(child.model) is model]
+    nodes, _, inputs, owners = template(registry, model)
+    keys = {}
+    for key, definition in owners.items():
+        keys.setdefault((definition, key.rpartition('.')[2]), key)
+
+    def derived(field):
+        return field.compute is not None or field.query is not None or bool(field.fetch)
 
     def editable(target, name, seen):
         field = target.__declared_fields__.get(name)
@@ -102,23 +128,24 @@ def check_kept_results(registry, model, plan):
             return False
         if field.editable_when_locked:
             return True
-        if not is_finite(field) or plan is None:
-            return False
-        return any(read is not None and scope != 'lookup' and editable(source, read, seen | {(target, name)})
-                   for scope, source, read in registry.finite_reads(target, name))
+        seen = seen | {(target, name)}
+        if field.fetch:
+            return editable(target, field.fetch.split('.')[0], seen)
+        if is_finite(field):
+            return plan is not None and any(read is not None and scope != 'lookup' and editable(source, read, seen)
+                                            for scope, source, read in registry.finite_reads(target, name))
+        if derived(field):
+            key = keys.get((target, name))
+            return key is not None and any(node(dependency, seen) for dependency in inputs[key])
+        return False
+
+    def node(key, seen):
+        if nodes[key].get('source'):
+            return any(node(dependency, seen) for dependency in inputs[key])
+        return editable(owners[key], key.rpartition('.')[2], seen)
     for member in members:
         for name, field in member.__declared_fields__.items():
-            if not field.stored or field.compute is None:
-                continue
-            if is_finite(field):
-                bad = plan is not None and editable(member, name, frozenset()) and not field.editable_when_locked
-            else:
-                paths = references(legacy_plans(member)[name].get('compute'))
-                bad = any(len(path.split('.')) == 1 and getattr(member.__declared_fields__.get(path), 'editable_when_locked', False)
-                          or path.startswith('parent.') and member in owners
-                          and getattr(owners[member].__declared_fields__.get(path.split('.')[1]), 'editable_when_locked', False)
-                          for path in paths)
-            if bad:
+            if field.stored and derived(field) and not field.editable_when_locked and editable(member, name, frozenset()):
                 raise ValueError(f'{member.__name__}.{name} is a stored result that reads a field editable while locked; '
                                  'a locked record keeps its saved results, so make the field it reads not editable_when_locked '
                                  'or the result virtual (stored=False)')
@@ -339,25 +366,39 @@ def keep_saved(draft, before):
 
 
 def begin_move(context, model, draft, before, to):
-    """Check a move on the saved record, set the new state and return the declared Move."""
+    """Check a move on the saved record, set the new state and return the declared Move.
+
+    A role that cannot read the State gets one answer for every refused move (an unknown state, no such
+    move now, a move for other roles or a guard that is not met), so it cannot learn which states and
+    moves exist.
+    """
     name = model.__state__
     if name is None:
         raise AccessError(404, 'This record has no moves')
     field = model.__declared_fields__[name]
+    current, shown = before._values.get(name), state_shown(context, model)
+    if not shown:
+        try:
+            return checked_move(context, model, field, draft, before, current, to)
+        except AccessError:
+            raise AccessError(409, 'This record has no such move now') from None
+    return checked_move(context, model, field, draft, before, current, to)
+
+
+def checked_move(context, model, field, draft, before, current, to):
     if to not in field.choices:
         raise AccessError(404, 'Move not found')
-    current, shown = before._values.get(name), state_shown(context, model)
     if current in field.final:
-        raise AccessError(409, f'This record is {current}, which is final; it has no moves' if shown else 'This record has no such move now')
+        raise AccessError(409, f'This record is {current}, which is final; it has no moves')
     move = field.move(current, to)
     if move is None:
-        raise AccessError(409, f'This record cannot move from {current} to {to}' if shown else 'This record has no such move now')
+        raise AccessError(409, f'This record cannot move from {current} to {to}')
     if context.user.role not in move.roles:
         raise AccessError(403, f'Your role cannot use {move.label}')
     guard = context._business.registry.guards.get(model, {}).get(move)
     check_guard(context, Guards(context, model, before._values, lambda: before), guard, move.label, 'move')
     # The engine writes the state; Draft attribute writes of a State are refused.
-    draft._values[name] = to
+    draft._values[model.__state__] = to
     return move
 
 
@@ -399,8 +440,41 @@ def action_arguments(context, model, method, declaration, arguments, saved):
 
 # What the caller may do now
 
-def availability(business, context, model, record):
+def loaded_document(business, model, record, loaded):
+    """The saved document tree from the rows a detail already read, or None when it left rows out.
+
+    Over a row limit it is None too, so the guard loads the document itself and reports the limit.
+    """
+    from .calc import LIMITS
+    from .documents import Draft, row_bounds
+    if loaded is None or loaded.get('partial'):
+        return None
+    finite = business.registry.plan_for(model) is not None
+    count = [0]
+
+    def build(definition, values, record_id):
+        item = Draft(definition, values, record_id=record_id)
+        for child in business.children.values():
+            if child.parent is not definition:
+                continue
+            rows = loaded.get((child, record_id), ())
+            count[0] += len(rows)
+            if len(rows) > row_bounds(business, child)[2] or finite and count[0] > LIMITS['document_rows']:
+                return None
+            item._rows[child.name] = []
+            for row in rows:
+                built = build(child.model, row._values, row.id)
+                if built is None:
+                    return None
+                item._rows[child.name].append(built)
+        return item
+    return build(model, record._values, record.id)
+
+
+def availability(business, context, model, record, loaded=None):
     """`_moves`, `_actions` and `_locked` for a detail response, or {} for models without them.
+
+    Guards that read rows use the rows the detail `loaded` when it read them all.
 
     Moves out of the current state are listed for every role that can read the State, with a plain-English
     reason when one is blocked; actions are those this role may run, listed also when the State is unreadable.
@@ -419,7 +493,8 @@ def availability(business, context, model, record):
     # Without a row scope, update permission is the role's; otherwise one statement checks the row.
     updatable = policy.allows(user, model, 'update') and (policy.rule(user, model).scope is None
                                                           or bool(policy.visible(context._tx, user, model, [record.id], 'update')))
-    guards_now = Guards(context, model, record._values, lambda: load_draft(context, model, record.id, {}, preview=True)[0])
+    guards_now = Guards(context, model, record._values, lambda: loaded_document(business, model, record, loaded)
+                        or load_draft(context, model, record.id, {}, preview=True)[0])
 
     def evaluator():
         return guards_now

@@ -147,10 +147,20 @@ def plans(model, parent=None):
     return result
 
 
-@lru_cache(maxsize=512)
 def graph(registry, model):
-    """Build a template graph across parent fields and each owned row type."""
-    nodes, dependencies, owners = {}, {}, {}
+    """Build a template graph across parent fields and each owned row type: (nodes, order)."""
+    nodes, order, _, _ = template(registry, model)
+    return nodes, order
+
+
+@lru_cache(maxsize=512)
+def template(registry, model):
+    """(nodes, order, inputs, owners) of a document's template graph.
+
+    `inputs` maps each node to the nodes its value is derived from (compute, Query and fetch), without
+    the nodes that only conditions, filters or creation defaults read. `owners` maps nodes to models.
+    """
+    nodes, dependencies, inputs, owners = {}, {}, {}, {}
     children = {child.name: child.model for child in registry.children if child.parent is model}
     contexts = [('', model, None)] + [(name + '.', children.get(name, table.child), model) for name, table in model.__tables__.items()]
     for prefix, definition, parent in contexts:
@@ -158,6 +168,7 @@ def graph(registry, model):
             nodes[prefix + name] = {'source': True}
             paths = {value.path for value in source.filters.values() if isinstance(value, Ref)} | set(getattr(source.target, '__depends__', ()))
             dependencies[prefix + name] = {path[7:] if path.startswith('parent.') and parent else prefix + path.replace('.*.', '.') for path in paths}
+            inputs[prefix + name] = dependencies[prefix + name]
             owners[prefix + name] = definition
         for name, field in definition.__declared_fields__.items():
             owners[prefix + name] = definition
@@ -167,18 +178,23 @@ def graph(registry, model):
             paths |= set().union(*(references(value) for value in entry.get('filters', {}).values()))
             paths |= set(getattr(field.query, '__depends__', ()))
             if field.fetch: paths.add(field.fetch.split('.')[0])
-            deps = set()
-            for path in paths:
-                path = path.replace('.*.', '.')
-                if path.startswith('source.') and getattr(model, '__source__', None) is not None:
-                    if path[7:] not in model.__source__.__declared_fields__: raise ValueError('Unknown source field: ' + path)
-                    continue
-                if not prefix and path in model.__tables__:
-                    continue
-                key = path[7:] if path.startswith('parent.') and parent else prefix + path
-                deps.add(key)
-            dependencies[prefix + name] = deps
-    for key, deps in dependencies.items():
+            values = references(entry.get('compute')) | set(getattr(field.query, '__depends__', ()))
+            if field.fetch: values.add(field.fetch.split('.')[0])
+
+            def keys(paths):
+                deps = set()
+                for path in paths:
+                    path = path.replace('.*.', '.')
+                    if path.startswith('source.') and getattr(model, '__source__', None) is not None:
+                        if path[7:] not in model.__source__.__declared_fields__: raise ValueError('Unknown source field: ' + path)
+                        continue
+                    if not prefix and path in model.__tables__:
+                        continue
+                    deps.add(path[7:] if path.startswith('parent.') and parent else prefix + path)
+                return deps
+            dependencies[prefix + name], inputs[prefix + name] = keys(paths), keys(values)
+
+    def resolve(key, deps):
         resolved = set()
         for dependency in deps:
             owner_path, _, member = dependency.rpartition('.')
@@ -189,7 +205,9 @@ def graph(registry, model):
             if dependency not in nodes:
                 raise ValueError(f'{model.__name__}.{key}: unknown dependency {dependency}')
             resolved.add(dependency)
-        dependencies[key] = resolved
+        return resolved
+    dependencies = {key: resolve(key, deps) for key, deps in dependencies.items()}
+    inputs = {key: frozenset(resolve(key, deps)) for key, deps in inputs.items()}
     visited, active, order = set(), set(), []
     def visit(key):
         if key in active:
@@ -226,7 +244,7 @@ def graph(registry, model):
                 target_type = 'number' if field.kind in ('decimal', 'currency', 'integer') else field.kind
                 if kind == 'compute' and result_type not in (target_type, 'null'):
                     raise ValueError(f'{model.__name__}.{prefix}{name}: expression type {result_type} does not match {target_type}')
-    return nodes, order
+    return nodes, order, inputs, owners
 
 
 def expression_type(value, read):

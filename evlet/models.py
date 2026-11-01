@@ -230,8 +230,10 @@ class Registry:
         # What saved documents record: changes only when formulas or the fields they use change.
         self.formula_hashes = MappingProxyType({root: formula_hash(plan) for root, plan in plans.items()})
         # Move guards and action availability, compiled once per root document.
-        from .states import compile_guards
+        from .states import compile_guards, kept_plan
         self.guards, self.guard_plans, self.guard_root_plans = compile_guards(self, models, plans, child_models)
+        # Ordinary writes on a locked record evaluate rules over the results it keeps.
+        self.kept_plans = MappingProxyType({root: kept_plan(plan) for root, plan in plans.items() if root.__state__ is not None})
 
     def root_of(self, model):
         owners = {child.model: child.parent for child in self.children}
