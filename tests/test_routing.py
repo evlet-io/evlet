@@ -9,7 +9,7 @@ from evlet import AppDefinition, ControlsAccess, Docs, Frontend, Host, Instance
 from evlet.cli.install import install
 from evlet.cli.main import main
 from evlet.instances import load_runtime
-from evlet.routing import RESERVED, host_name, require_served, reserved, resolve_routes
+from evlet.routing import RESERVED, host_name, reserved, resolve_routes
 from evlet.ui import Column, PageView, Text, ViewRegistry
 from evlet.ui.registry import route_pattern
 from evlet.ui.serving import STATIC, static_response
@@ -129,7 +129,7 @@ def test_routes_py_moves_frontends_and_redirects_the_root():
         resolve_routes([app('crm', crm)], None, {'paths': {crm: '/app'}})
     with pytest.raises(ValueError, match='no installed app registers'):
         resolve_routes([app('crm', crm)], None, {'paths': {Frontend('other', path='/other'): '/x'}})
-    with pytest.raises(ValueError, match='sub-hosts are not available yet'):
+    with pytest.raises(ValueError, match='must be a .localhost name in development'):
         resolve_routes([app('crm', crm, portal)], None, {'hosts': (Host('portal.acme.com', root=portal),)})
 
 
@@ -147,8 +147,8 @@ def test_docs_are_on_in_development_and_off_with_a_domain_unless_routes_py_says_
     assert resolve_routes((), Instance('acme', domain='erp.acme.com'), {'docs': Docs(enabled=True)}).docs
     assert not resolve_routes((), Instance('acme'), {'docs': Docs(enabled=False)}).docs
     assert resolve_routes((), Instance('acme', domain='a.b')).match(b'a.b', '/docs') == ('evlet.desk', '/', '/docs')
-    with pytest.raises(ValueError, match='not available yet'):
-        Docs(path='/help')
+    with pytest.raises(ValueError, match='one free segment'):
+        Docs(path='/settings')
 
 
 def test_route_table_is_frozen():
@@ -232,15 +232,10 @@ erp.acme.com   /portal     crm.portal       portal    app crm
 erp.acme.com   /           -> /sales        desk      routes.py'''
 
 
-def test_frontends_and_root_resolve_but_are_refused_until_served():
+def test_frontends_and_root_resolve_into_rows():
     crm, portal = Frontend('crm', path='/crm'), Frontend('portal', kind='static', dist='portal/dist', path='/portal', auth='portal')
     table = resolve_routes([app('crm', crm, portal)], Instance('acme'), {'primary': Host('erp.acme.com', root=crm), 'paths': {crm: '/sales'}})
     assert table.text() == TABLE
-    with pytest.raises(ValueError, match='root= on the primary host is not available yet'):
-        require_served(table)
-    with pytest.raises(ValueError, match=r'^Frontend crm.crm in app crm is not available yet'):
-        require_served(resolve_routes([app('crm', crm)]))
-    require_served(resolve_routes([app('notes', views=(PageView('feed', route='/feed'),))]))
 
 
 ROUTES = '''HOST           PATH        SERVES           SIGN-IN   SOURCE
@@ -293,16 +288,6 @@ def test_instance_routes_py_resolves_on_start_and_prints_with_evlet_routes(proje
     config.write_text(config.read_text().replace('domain=None', 'domain="www.acme.com"'))
     with pytest.raises(ValueError, match='sets domain www.acme.com but instances/acme/routes.py sets primary erp.acme.com'):
         runtime(project)
-
-
-def test_app_frontends_fail_boot_until_served(project):
-    package = project / 'apps/notes/notes'
-    (package / 'frontends.py').write_text('from evlet import Frontend\n\nboard = Frontend("board", path="/board")\n')
-    hooks = package / 'hooks.py'
-    hooks.write_text(hooks.read_text().replace('from .migrations import migrations', 'from .migrations import migrations\nfrom .frontends import board')
-                     .replace('migrations=migrations)', 'migrations=migrations, frontends=(board,))'))
-    with pytest.raises(ValueError, match='^Frontend notes.board in app notes is not available yet'):
-        install(project, 'acme', app_name='notes', trust=True)
 
 
 def test_routes_py_typo_fails_boot(project):
