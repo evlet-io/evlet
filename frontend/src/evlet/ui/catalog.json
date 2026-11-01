@@ -1,0 +1,3219 @@
+{
+ "levels": {
+  "Base": "slate",
+  "Element": "blue",
+  "Composite": "violet",
+  "Section": "amber"
+ },
+ "groups": [
+  [
+   "inputs",
+   "Inputs",
+   "pencil",
+   "teal"
+  ],
+  [
+   "buttons",
+   "Buttons",
+   "circle-dot",
+   "blue"
+  ],
+  [
+   "elements",
+   "Elements",
+   "sparkles",
+   "violet"
+  ],
+  [
+   "display",
+   "Display",
+   "layout-grid",
+   "green"
+  ],
+  [
+   "layout",
+   "Layout areas",
+   "columns-3",
+   "amber"
+  ],
+  [
+   "sections",
+   "Sections",
+   "layers",
+   "rose"
+  ]
+ ],
+ "components": [
+  {
+   "cat": "inputs",
+   "id": "base-field",
+   "name": "BaseField",
+   "level": "Base",
+   "desc": "The reactive core every field type wraps. It owns the label, the value cell, required, locked and applies-when rules, the error and the hint. Field types only change the input and how the value is parsed and shown.",
+   "props": [
+    [
+     "label",
+     "text",
+     "From the model field label"
+    ],
+    [
+     "value",
+     "cell",
+     "Two-way bound value"
+    ],
+    [
+     "required",
+     "boolean or rule",
+     "Static or required_when"
+    ],
+    [
+     "locked",
+     "boolean or rule",
+     "Static or locked_when"
+    ],
+    [
+     "applies",
+     "rule",
+     "applies_when; hides and clears when false"
+    ],
+    [
+     "error",
+     "cell",
+     "Server or client validation message"
+    ],
+    [
+     "hint",
+     "text",
+     "Small note beside the label"
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Every form",
+    "Details tab",
+    "Create forms",
+    "Action dialogs"
+   ],
+   "variants": [
+    "Default",
+    "Required with error",
+    "Locked",
+    "Hidden by rule"
+   ],
+   "model": "Any Field"
+  },
+  {
+   "cat": "inputs",
+   "id": "text-field",
+   "name": "TextField",
+   "level": "Element",
+   "desc": "Single line text with a length limit.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Text(max_length=…)"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Text(max_length=…)"
+  },
+  {
+   "cat": "inputs",
+   "id": "longtext-field",
+   "name": "LongTextField",
+   "level": "Element",
+   "desc": "Multi-line text that grows with content.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "LongText()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "LongText()"
+  },
+  {
+   "cat": "inputs",
+   "id": "integer-field",
+   "name": "IntegerField",
+   "level": "Element",
+   "desc": "Whole numbers with optional minimum and maximum.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Integer(minimum, maximum)"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Integer(minimum, maximum)"
+  },
+  {
+   "cat": "inputs",
+   "id": "decimal-field",
+   "name": "DecimalField",
+   "level": "Element",
+   "desc": "Exact decimal with a fixed scale. Never a float; values travel as strings.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Decimal(scale=…)"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Decimal(scale=…)"
+  },
+  {
+   "cat": "inputs",
+   "id": "currency-field",
+   "name": "CurrencyField",
+   "level": "Element",
+   "desc": "Exact money amount with two decimals and the currency shown as a prefix.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Currency()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Currency()"
+  },
+  {
+   "cat": "inputs",
+   "id": "percent-field",
+   "name": "PercentField",
+   "level": "Element",
+   "desc": "Decimal from 0 to 100 shown with a percent suffix.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Percent()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Percent()"
+  },
+  {
+   "cat": "inputs",
+   "id": "date-field",
+   "name": "DateField",
+   "level": "Element",
+   "desc": "Calendar date shown as DD-MM-YYYY, stored as an ISO date.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Date()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Date()"
+  },
+  {
+   "cat": "inputs",
+   "id": "datetime-field",
+   "name": "DateTimeField",
+   "level": "Element",
+   "desc": "Date and time in the user's timezone, stored in UTC.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "DateTime()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "DateTime()"
+  },
+  {
+   "cat": "inputs",
+   "id": "time-field",
+   "name": "TimeField",
+   "level": "Element",
+   "desc": "Time of day without a date or timezone.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Time()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Time()"
+  },
+  {
+   "cat": "inputs",
+   "id": "duration-field",
+   "name": "DurationField",
+   "level": "Element",
+   "desc": "A length of time typed as 1h 30m, stored in seconds.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Duration()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Duration()"
+  },
+  {
+   "cat": "inputs",
+   "id": "boolean-field",
+   "name": "BooleanField",
+   "level": "Element",
+   "desc": "A switch for true or false. Wraps the Switch element.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Boolean()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Boolean()"
+  },
+  {
+   "cat": "inputs",
+   "id": "select-field",
+   "name": "SelectField",
+   "level": "Element",
+   "desc": "One choice from a declared list.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Select([...])"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Select([...])"
+  },
+  {
+   "cat": "inputs",
+   "id": "link-field",
+   "name": "LinkField",
+   "level": "Element",
+   "desc": "Picks a record of another model. Shows the record mark and title, and can filter its options by a rule.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Link(Model, filter=…)"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Link(Model, filter=…)"
+  },
+  {
+   "cat": "inputs",
+   "id": "email-field",
+   "name": "EmailField",
+   "level": "Element",
+   "desc": "Text checked for an address shape, with a copy action.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Email()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Email()"
+  },
+  {
+   "cat": "inputs",
+   "id": "url-field",
+   "name": "URLField",
+   "level": "Element",
+   "desc": "Absolute http or https address.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "URL()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "URL()"
+  },
+  {
+   "cat": "inputs",
+   "id": "phone-field",
+   "name": "PhoneField",
+   "level": "Element",
+   "desc": "Phone number, normalized when it starts with a country code.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Phone()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Phone()"
+  },
+  {
+   "cat": "inputs",
+   "id": "tags-field",
+   "name": "TagsField",
+   "level": "Element",
+   "desc": "A short list of labels. Type and press Enter to add.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Tags()"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Tags()"
+  },
+  {
+   "cat": "inputs",
+   "id": "state-field",
+   "name": "StateField",
+   "level": "Element",
+   "desc": "Shows the current state. It never edits directly; the value changes only through moves.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "State(…, moves=…)"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "State(…, moves=…)"
+  },
+  {
+   "cat": "inputs",
+   "id": "sequence-field",
+   "name": "SequenceField",
+   "level": "Element",
+   "desc": "The document number. Read only, empty until the state that assigns it.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "Sequence(\"INV-{year}-{n:05}\")"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "Sequence(\"INV-{year}-{n:05}\")"
+  },
+  {
+   "cat": "inputs",
+   "id": "computed-field",
+   "name": "ComputedField",
+   "level": "Element",
+   "desc": "A read-only value calculated from a rule. Hovering the hint shows the rule.",
+   "props": [
+    [
+     "…BaseField",
+     "",
+     "All BaseField properties"
+    ],
+    [
+     "model",
+     "field",
+     "compute=…"
+    ]
+   ],
+   "from": [
+    "base-field"
+   ],
+   "used": [
+    "Details tab",
+    "Create forms",
+    "Child table cells"
+   ],
+   "variants": [],
+   "model": "compute=…"
+  },
+  {
+   "cat": "inputs",
+   "id": "inline-value",
+   "name": "InlineValue",
+   "level": "Composite",
+   "desc": "Shows a field as plain text and turns into its field type on click. Enter saves, Esc cancels. Used wherever a record is read more than edited.",
+   "props": [
+    [
+     "field",
+     "field",
+     "Any field type"
+    ],
+    [
+     "display",
+     "formatter",
+     "How the value reads at rest"
+    ],
+    [
+     "onSave",
+     "action",
+     "Partial save of one field"
+    ]
+   ],
+   "from": [
+    "base-field",
+    "icon"
+   ],
+   "used": [
+    "Key fields",
+    "Details tab",
+    "Side panel"
+   ],
+   "variants": [
+    "At rest",
+    "Hover with pencil",
+    "Editing",
+    "Read only"
+   ]
+  },
+  {
+   "cat": "inputs",
+   "id": "search-input",
+   "name": "SearchInput",
+   "level": "Element",
+   "desc": "Text input with a search icon. Filters as you type and keeps the cursor in place.",
+   "props": [
+    [
+     "value",
+     "cell",
+     ""
+    ],
+    [
+     "placeholder",
+     "text",
+     ""
+    ]
+   ],
+   "from": [
+    "icon"
+   ],
+   "used": [
+    "List toolbars",
+    "Command palette"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "inputs",
+   "id": "checkbox",
+   "name": "Checkbox",
+   "level": "Base",
+   "desc": "Square check for selection and task completion.",
+   "props": [
+    [
+     "checked",
+     "cell",
+     ""
+    ],
+    [
+     "label",
+     "text",
+     "Optional"
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Row selection",
+    "Task rows",
+    "Filter menus"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "inputs",
+   "id": "switch",
+   "name": "Switch",
+   "level": "Base",
+   "desc": "On and off toggle. BooleanField and the layout control use it.",
+   "props": [
+    [
+     "on",
+     "cell",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "BooleanField",
+    "Layout control",
+    "Template"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "inputs",
+   "id": "segmented",
+   "name": "SegmentedControl",
+   "level": "Element",
+   "desc": "Two to four mutually exclusive options shown together.",
+   "props": [
+    [
+     "options",
+     "list",
+     ""
+    ],
+    [
+     "value",
+     "cell",
+     ""
+    ],
+    [
+     "size",
+     "default or small",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Board and list switch",
+    "Density",
+    "Report ranges"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "inputs",
+   "id": "quick-add",
+   "name": "QuickAddInput",
+   "level": "Element",
+   "desc": "A borderless input at the top of a list that creates an item on Enter.",
+   "props": [
+    [
+     "placeholder",
+     "text",
+     ""
+    ],
+    [
+     "onAdd",
+     "action",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "My tasks"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "buttons",
+   "id": "button",
+   "name": "Button",
+   "level": "Base",
+   "desc": "The one button. Variants set meaning, sizes set density, an icon is optional.",
+   "props": [
+    [
+     "variant",
+     "primary, default, ghost, success, danger, soft danger",
+     ""
+    ],
+    [
+     "size",
+     "default or small",
+     ""
+    ],
+    [
+     "icon",
+     "icon",
+     "Optional, before the label"
+    ],
+    [
+     "onClick",
+     "action",
+     ""
+    ]
+   ],
+   "from": [
+    "icon"
+   ],
+   "used": [
+    "Everywhere"
+   ],
+   "variants": [
+    "Primary",
+    "Default",
+    "Ghost",
+    "Success",
+    "Danger",
+    "Soft danger",
+    "Small",
+    "Icon only"
+   ]
+  },
+  {
+   "cat": "buttons",
+   "id": "icon-button",
+   "name": "IconButton",
+   "level": "Element",
+   "desc": "Square button with only an icon. Always carries a tooltip and an accessible label.",
+   "props": [
+    [
+     "icon",
+     "icon",
+     ""
+    ],
+    [
+     "tip",
+     "text",
+     "Tooltip and label"
+    ],
+    [
+     "active",
+     "boolean",
+     ""
+    ]
+   ],
+   "from": [
+    "icon",
+    "tooltip"
+   ],
+   "used": [
+    "Top bar",
+    "Side blocks",
+    "Drawers"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "buttons",
+   "id": "menu-button",
+   "name": "MenuButton",
+   "level": "Composite",
+   "desc": "A button that opens a menu of related actions.",
+   "props": [
+    [
+     "label",
+     "text",
+     ""
+    ],
+    [
+     "items",
+     "list of MenuItem",
+     ""
+    ]
+   ],
+   "from": [
+    "button",
+    "popover"
+   ],
+   "used": [
+    "New",
+    "More actions"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "buttons",
+   "id": "move-button",
+   "name": "MoveButton",
+   "level": "Element",
+   "desc": "Runs a state move. When its guard fails it stays visible, dims and explains why on hover or click.",
+   "props": [
+    [
+     "move",
+     "Move",
+     "From the State field"
+    ],
+    [
+     "guard",
+     "rule",
+     "Move.when"
+    ],
+    [
+     "reason",
+     "text",
+     "Shown when blocked"
+    ]
+   ],
+   "from": [
+    "button",
+    "tooltip"
+   ],
+   "used": [
+    "Doc header"
+   ],
+   "variants": [
+    "Ready",
+    "Blocked"
+   ]
+  },
+  {
+   "cat": "buttons",
+   "id": "link-button",
+   "name": "LinkButton",
+   "level": "Element",
+   "desc": "Text link for secondary navigation inside panels.",
+   "props": [
+    [
+     "label",
+     "text",
+     ""
+    ],
+    [
+     "to",
+     "route",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Panel headers",
+    "Side blocks"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "buttons",
+   "id": "add-chip",
+   "name": "AddChip",
+   "level": "Element",
+   "desc": "Dashed chip that adds an item to a small set.",
+   "props": [
+    [
+     "label",
+     "text",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Tags"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "buttons",
+   "id": "fab",
+   "name": "FloatingButton",
+   "level": "Element",
+   "desc": "Round-ended button fixed to a screen corner. Shows a count when something is changed.",
+   "props": [
+    [
+     "label",
+     "text",
+     ""
+    ],
+    [
+     "count",
+     "text",
+     "Optional"
+    ],
+    [
+     "open",
+     "boolean",
+     ""
+    ]
+   ],
+   "from": [
+    "button"
+   ],
+   "used": [
+    "Layout control"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "buttons",
+   "id": "app-tab",
+   "name": "AppTab",
+   "level": "Element",
+   "desc": "App icon in the app bar. The active one becomes a tab that opens into the sidebar.",
+   "props": [
+    [
+     "app",
+     "app",
+     ""
+    ],
+    [
+     "active",
+     "boolean",
+     ""
+    ]
+   ],
+   "from": [
+    "icon-tile",
+    "tooltip"
+   ],
+   "used": [
+    "App bar"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "buttons",
+   "id": "nav-item",
+   "name": "NavItem",
+   "level": "Element",
+   "desc": "Sidebar link with a tinted icon, label and optional count or badge.",
+   "props": [
+    [
+     "icon",
+     "icon",
+     ""
+    ],
+    [
+     "label",
+     "text",
+     ""
+    ],
+    [
+     "count",
+     "number",
+     ""
+    ],
+    [
+     "badge",
+     "number",
+     "Unread style"
+    ],
+    [
+     "active",
+     "boolean",
+     ""
+    ]
+   ],
+   "from": [
+    "icon",
+    "badge"
+   ],
+   "used": [
+    "Sidebar"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "buttons",
+   "id": "tab",
+   "name": "Tab",
+   "level": "Element",
+   "desc": "One tab in a Tabs bar, with an optional count.",
+   "props": [
+    [
+     "label",
+     "text",
+     ""
+    ],
+    [
+     "count",
+     "number",
+     ""
+    ],
+    [
+     "active",
+     "boolean",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Tabs"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "icon",
+   "name": "Icon",
+   "level": "Base",
+   "desc": "Line icon at 12, 14, 16 or 18 pixels. Takes the text colour or one of the tints.",
+   "props": [
+    [
+     "name",
+     "text",
+     ""
+    ],
+    [
+     "size",
+     "xs, sm, md, lg",
+     ""
+    ],
+    [
+     "tint",
+     "tint",
+     "Optional"
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Everywhere"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "icon-tile",
+   "name": "IconTile",
+   "level": "Element",
+   "desc": "Icon on a soft tinted square. Marks a page, a timeline entry or a card type.",
+   "props": [
+    [
+     "icon",
+     "icon",
+     ""
+    ],
+    [
+     "tint",
+     "tint",
+     ""
+    ],
+    [
+     "size",
+     "22 to 44",
+     ""
+    ]
+   ],
+   "from": [
+    "icon"
+   ],
+   "used": [
+    "Page headers",
+    "KPI tiles",
+    "Quick access"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "avatar",
+   "name": "Avatar",
+   "level": "Element",
+   "desc": "Initials on a tinted circle for people. Four sizes.",
+   "props": [
+    [
+     "person",
+     "user or contact",
+     ""
+    ],
+    [
+     "size",
+     "sm, md, lg, xl",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Owners",
+    "People blocks",
+    "Timeline"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "avatar-group",
+   "name": "AvatarFilter",
+   "level": "Composite",
+   "desc": "Overlapping avatars that filter a list by owner. Selected ones ring, others dim.",
+   "props": [
+    [
+     "people",
+     "list",
+     ""
+    ],
+    [
+     "selected",
+     "cell (set)",
+     ""
+    ]
+   ],
+   "from": [
+    "avatar"
+   ],
+   "used": [
+    "Deals toolbar"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "org-mark",
+   "name": "RecordMark",
+   "level": "Element",
+   "desc": "First letter of a company on a rounded square. Square for companies, round avatars for people.",
+   "props": [
+    [
+     "record",
+     "record",
+     ""
+    ],
+    [
+     "size",
+     "sm or lg",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Links",
+    "Headers",
+    "Cards"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "pill",
+   "name": "StatusPill",
+   "level": "Element",
+   "desc": "Dot and label on a tint. One colour per state, taken from the State field.",
+   "props": [
+    [
+     "state",
+     "state",
+     ""
+    ],
+    [
+     "tint",
+     "tint",
+     "From the state"
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Lists",
+    "Headers",
+    "Key fields"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "chip",
+   "name": "Chip",
+   "level": "Element",
+   "desc": "Small neutral label for tags, counts and flags.",
+   "props": [
+    [
+     "label",
+     "text",
+     ""
+    ],
+    [
+     "icon",
+     "icon",
+     "Optional"
+    ],
+    [
+     "tone",
+     "neutral or tint",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Tags",
+    "Cards",
+    "Tables"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "badge",
+   "name": "CountBadge",
+   "level": "Element",
+   "desc": "Count beside a label. Filled for unread, plain for totals.",
+   "props": [
+    [
+     "count",
+     "number",
+     ""
+    ],
+    [
+     "tone",
+     "filled or plain",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Nav items",
+    "Tabs"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "kbd",
+   "name": "Key",
+   "level": "Element",
+   "desc": "Keyboard key hint.",
+   "props": [
+    [
+     "keys",
+     "text",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Search",
+    "Shortcuts",
+    "Composer"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "tooltip",
+   "name": "Tooltip",
+   "level": "Element",
+   "desc": "Dark label with a pointer, shown at once on hover and kept until the pointer leaves. Points down when above, up when below.",
+   "props": [
+    [
+     "text",
+     "text",
+     ""
+    ],
+    [
+     "placement",
+     "auto",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Icon buttons",
+    "App bar",
+    "Blocked moves",
+    "Calculated hints"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "progress",
+   "name": "ProgressBar",
+   "level": "Element",
+   "desc": "Thin bar for a share of a whole, with an optional number.",
+   "props": [
+    [
+     "value",
+     "0 to 100",
+     ""
+    ],
+    [
+     "tint",
+     "tint",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Probability",
+    "Board columns",
+    "Leaderboard"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "score-bars",
+   "name": "ScoreBars",
+   "level": "Element",
+   "desc": "Four rising bars and a number. Colour moves from grey to amber to green with the score.",
+   "props": [
+    [
+     "score",
+     "0 to 100",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Leads list",
+    "Lead header"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "ring",
+   "name": "ScoreRing",
+   "level": "Element",
+   "desc": "Circular gauge with the value in the middle.",
+   "props": [
+    [
+     "value",
+     "0 to 100",
+     ""
+    ],
+    [
+     "label",
+     "text",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Scorecard"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "sparkline",
+   "name": "Sparkline",
+   "level": "Element",
+   "desc": "Small trend line with an area and a marked last point.",
+   "props": [
+    [
+     "values",
+     "list of numbers",
+     ""
+    ],
+    [
+     "tint",
+     "tint",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "KPI tiles"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "stage-bar",
+   "name": "StageBar",
+   "level": "Element",
+   "desc": "One bar split by share, with a colour per segment.",
+   "props": [
+    [
+     "segments",
+     "list",
+     "value and tint"
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Pipeline by stage"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "token",
+   "name": "PlaceholderToken",
+   "level": "Element",
+   "desc": "Shows where data goes in a layout preview.",
+   "props": [
+    [
+     "name",
+     "text",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Doc layout placeholders"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "elements",
+   "id": "divider",
+   "name": "Divider",
+   "level": "Base",
+   "desc": "Thin vertical or horizontal rule between groups.",
+   "props": [
+    [
+     "direction",
+     "vertical or horizontal",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Top bar",
+    "App bar",
+    "Menus"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "stat",
+   "name": "Stat",
+   "level": "Element",
+   "desc": "Label, value and a short note. The unit of the summary strip.",
+   "props": [
+    [
+     "label",
+     "text",
+     ""
+    ],
+    [
+     "value",
+     "cell",
+     ""
+    ],
+    [
+     "note",
+     "text",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Summary strip"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "summary-strip",
+   "name": "SummaryStrip",
+   "level": "Composite",
+   "desc": "Four stats in one bordered row. Values come from the model's measures.",
+   "props": [
+    [
+     "stats",
+     "list of up to 4",
+     "Field or measure"
+    ]
+   ],
+   "from": [
+    "stat"
+   ],
+   "used": [
+    "Doc view"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "kpi",
+   "name": "KpiTile",
+   "level": "Composite",
+   "desc": "Headline number with a trend against last period and a sparkline.",
+   "props": [
+    [
+     "label",
+     "text",
+     ""
+    ],
+    [
+     "value",
+     "measure",
+     ""
+    ],
+    [
+     "delta",
+     "number",
+     ""
+    ],
+    [
+     "trend",
+     "list",
+     ""
+    ]
+   ],
+   "from": [
+    "icon-tile",
+    "sparkline"
+   ],
+   "used": [
+    "Home"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "kv-list",
+   "name": "KeyValueList",
+   "level": "Composite",
+   "desc": "Two-column label and value list. Values are InlineValues when editable.",
+   "props": [
+    [
+     "fields",
+     "list",
+     ""
+    ]
+   ],
+   "from": [
+    "inline-value"
+   ],
+   "used": [
+    "Key fields",
+    "Record info",
+    "Peek drawer"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "mini-card",
+   "name": "MiniCard",
+   "level": "Composite",
+   "desc": "Compact bordered row for a related record: mark, title, subtitle and up to two quick actions.",
+   "props": [
+    [
+     "record",
+     "record",
+     ""
+    ],
+    [
+     "subtitle",
+     "text",
+     ""
+    ],
+    [
+     "actions",
+     "list",
+     "Optional"
+    ]
+   ],
+   "from": [
+    "avatar",
+    "org-mark",
+    "icon-button"
+   ],
+   "used": [
+    "People",
+    "Related",
+    "Next step"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "task-row",
+   "name": "TaskRow",
+   "level": "Composite",
+   "desc": "Checkbox, title, due and the linked record. Overdue turns the due date red.",
+   "props": [
+    [
+     "task",
+     "record",
+     ""
+    ],
+    [
+     "onToggle",
+     "action",
+     ""
+    ]
+   ],
+   "from": [
+    "checkbox",
+    "avatar"
+   ],
+   "used": [
+    "My tasks",
+    "Home",
+    "Tasks tab"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "timeline-item",
+   "name": "TimelineItem",
+   "level": "Composite",
+   "desc": "One journal entry: icon by kind, sentence, time and an optional body.",
+   "props": [
+    [
+     "entry",
+     "journal entry",
+     ""
+    ],
+    [
+     "kind",
+     "note, email, call, changed, moved…",
+     ""
+    ]
+   ],
+   "from": [
+    "icon-tile",
+    "message-card",
+    "diff"
+   ],
+   "used": [
+    "Journal"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "diff",
+   "name": "ChangeDiff",
+   "level": "Element",
+   "desc": "Field, old value struck through, new value. One line per changed field.",
+   "props": [
+    [
+     "changes",
+     "list",
+     "label, old, new"
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Journal"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "message-card",
+   "name": "MessageCard",
+   "level": "Element",
+   "desc": "Bordered body for notes, calls and emails. Emails show a subject line.",
+   "props": [
+    [
+     "subject",
+     "text",
+     "Emails only"
+    ],
+    [
+     "body",
+     "text",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Journal"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "empty-state",
+   "name": "EmptyState",
+   "level": "Composite",
+   "desc": "Tinted icon, a short heading, what to do next and an optional button.",
+   "props": [
+    [
+     "icon",
+     "icon",
+     ""
+    ],
+    [
+     "title",
+     "text",
+     ""
+    ],
+    [
+     "text",
+     "text",
+     ""
+    ],
+    [
+     "action",
+     "button",
+     "Optional"
+    ]
+   ],
+   "from": [
+    "icon-tile",
+    "button"
+   ],
+   "used": [
+    "Empty lists",
+    "Empty tabs"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "banner",
+   "name": "StateBanner",
+   "level": "Element",
+   "desc": "Full-width note under a header about the record's state, with optional actions.",
+   "props": [
+    [
+     "tone",
+     "neutral, info, danger",
+     ""
+    ],
+    [
+     "text",
+     "text",
+     ""
+    ],
+    [
+     "actions",
+     "list",
+     "Optional"
+    ]
+   ],
+   "from": [
+    "icon",
+    "button"
+   ],
+   "used": [
+    "Doc view"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "info-note",
+   "name": "InfoNote",
+   "level": "Element",
+   "desc": "Quiet explanation above a block that behaves differently from the rest.",
+   "props": [
+    [
+     "text",
+     "text",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Postings",
+    "Journal"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "filter-chip",
+   "name": "FilterChip",
+   "level": "Element",
+   "desc": "An active filter with a remove button.",
+   "props": [
+    [
+     "label",
+     "text",
+     ""
+    ],
+    [
+     "onRemove",
+     "action",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "List toolbars"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "toast",
+   "name": "Toast",
+   "level": "Element",
+   "desc": "Short confirmation at the bottom of the screen. Undo when the change can be reversed.",
+   "props": [
+    [
+     "text",
+     "text",
+     ""
+    ],
+    [
+     "icon",
+     "icon",
+     ""
+    ],
+    [
+     "undo",
+     "action",
+     "Optional"
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Every save and move"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "data-table",
+   "name": "DataTable",
+   "level": "Composite",
+   "desc": "List table with a sticky header, pinned first columns, resizable columns saved per user, sorting and row selection.",
+   "props": [
+    [
+     "columns",
+     "list",
+     "From list_fields"
+    ],
+    [
+     "rows",
+     "query",
+     ""
+    ],
+    [
+     "pinned",
+     "number",
+     "Columns to pin"
+    ],
+    [
+     "selectable",
+     "boolean",
+     ""
+    ]
+   ],
+   "from": [
+    "checkbox",
+    "pill",
+    "avatar"
+   ],
+   "used": [
+    "Every list"
+   ],
+   "variants": [
+    "Plain",
+    "Selectable",
+    "With totals"
+   ]
+  },
+  {
+   "cat": "display",
+   "id": "board-card",
+   "name": "BoardCard",
+   "level": "Composite",
+   "desc": "Draggable record card for boards: tags, title, linked record, value, date and owner.",
+   "props": [
+    [
+     "record",
+     "record",
+     ""
+    ],
+    [
+     "fields",
+     "list",
+     "From key fields"
+    ]
+   ],
+   "from": [
+    "chip",
+    "org-mark",
+    "avatar"
+   ],
+   "used": [
+    "Board"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "feed-item",
+   "name": "FeedItem",
+   "level": "Composite",
+   "desc": "Compact activity line with a link to the record, for feeds across records.",
+   "props": [
+    [
+     "entry",
+     "journal entry",
+     ""
+    ]
+   ],
+   "from": [
+    "icon-tile"
+   ],
+   "used": [
+    "Home",
+    "Inbox"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "list-row",
+   "name": "ListRow",
+   "level": "Composite",
+   "desc": "Mark, title and subtitle on the left, value and date on the right.",
+   "props": [
+    [
+     "record",
+     "record",
+     ""
+    ],
+    [
+     "value",
+     "field",
+     ""
+    ],
+    [
+     "meta",
+     "field",
+     ""
+    ]
+   ],
+   "from": [
+    "org-mark"
+   ],
+   "used": [
+    "Closing soon"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "bar-chart",
+   "name": "BarChart",
+   "level": "Composite",
+   "desc": "Vertical bars with values on top and labels below. Current period full colour, past ones lighter.",
+   "props": [
+    [
+     "series",
+     "measure grouped by period",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Reports"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "file-row",
+   "name": "FileRow",
+   "level": "Composite",
+   "desc": "File type tile, name, size, who and when, and a download action.",
+   "props": [
+    [
+     "file",
+     "attachment",
+     ""
+    ]
+   ],
+   "from": [
+    "icon-button"
+   ],
+   "used": [
+    "Files tab"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "notification",
+   "name": "NotificationItem",
+   "level": "Composite",
+   "desc": "Icon, sentence and time. Tinted background until read.",
+   "props": [
+    [
+     "item",
+     "notification",
+     ""
+    ],
+    [
+     "unread",
+     "boolean",
+     ""
+    ]
+   ],
+   "from": [
+    "icon-tile"
+   ],
+   "used": [
+    "Notifications",
+    "Inbox"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "scorecard",
+   "name": "Scorecard",
+   "level": "Composite",
+   "desc": "Score ring beside three labelled bars.",
+   "props": [
+    [
+     "score",
+     "measure",
+     ""
+    ],
+    [
+     "parts",
+     "list of 3",
+     ""
+    ]
+   ],
+   "from": [
+    "ring",
+    "progress"
+   ],
+   "used": [
+    "Highlight card"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "display",
+   "id": "channel-row",
+   "name": "ChannelRow",
+   "level": "Composite",
+   "desc": "Contact channel with a preferred flag and a copy action.",
+   "props": [
+    [
+     "channel",
+     "email, phone, WhatsApp",
+     ""
+    ],
+    [
+     "value",
+     "text",
+     ""
+    ],
+    [
+     "preferred",
+     "boolean",
+     ""
+    ]
+   ],
+   "from": [
+    "icon-tile",
+    "icon-button"
+   ],
+   "used": [
+    "Highlight card"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "app-shell",
+   "name": "AppShell",
+   "level": "Section",
+   "desc": "The frame of every screen: sidebar with app bar on the left, top bar and one scrolling view on the right. Collapses the sidebar to icons; becomes a drawer on phones.",
+   "props": [
+    [
+     "collapsed",
+     "cell",
+     "Saved per user"
+    ],
+    [
+     "view",
+     "route",
+     ""
+    ]
+   ],
+   "from": [
+    "ws-switcher",
+    "app-bar",
+    "sidebar-nav",
+    "top-bar"
+   ],
+   "used": [
+    "Everything"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "ws-switcher",
+   "name": "WorkspaceSwitcher",
+   "level": "Composite",
+   "desc": "Logo, workspace name and switch arrows. First row of the sidebar.",
+   "props": [
+    [
+     "workspace",
+     "workspace",
+     ""
+    ]
+   ],
+   "from": [
+    "icon"
+   ],
+   "used": [
+    "Sidebar"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "app-bar",
+   "name": "AppBar",
+   "level": "Composite",
+   "desc": "Row of AppTabs on white. The active app opens into the grey sidebar below with soft corners.",
+   "props": [
+    [
+     "apps",
+     "list",
+     ""
+    ],
+    [
+     "active",
+     "app",
+     ""
+    ]
+   ],
+   "from": [
+    "app-tab"
+   ],
+   "used": [
+    "Sidebar"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "sidebar-nav",
+   "name": "SidebarNav",
+   "level": "Composite",
+   "desc": "Grouped NavItems with small uppercase group labels. Scrolls on its own.",
+   "props": [
+    [
+     "groups",
+     "list",
+     ""
+    ],
+    [
+     "active",
+     "route",
+     ""
+    ]
+   ],
+   "from": [
+    "nav-item"
+   ],
+   "used": [
+    "Sidebar"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "top-bar",
+   "name": "TopBar",
+   "level": "Composite",
+   "desc": "Sidebar toggle, breadcrumbs, search, notifications and the New menu.",
+   "props": [
+    [
+     "crumbs",
+     "list",
+     ""
+    ]
+   ],
+   "from": [
+    "icon-button",
+    "breadcrumbs",
+    "search-input",
+    "menu-button"
+   ],
+   "used": [
+    "App shell"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "breadcrumbs",
+   "name": "Breadcrumbs",
+   "level": "Element",
+   "desc": "Where you are, with links back up.",
+   "props": [
+    [
+     "items",
+     "list",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Top bar"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "page-header",
+   "name": "PageHeader",
+   "level": "Composite",
+   "desc": "Page icon, title, optional count and the page actions on the right.",
+   "props": [
+    [
+     "icon",
+     "icon",
+     ""
+    ],
+    [
+     "title",
+     "text",
+     ""
+    ],
+    [
+     "actions",
+     "list",
+     ""
+    ]
+   ],
+   "from": [
+    "icon-tile",
+    "button"
+   ],
+   "used": [
+    "List pages"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "tabs",
+   "name": "Tabs",
+   "level": "Composite",
+   "desc": "Row of Tabs with an underline in the record accent. Scrolls sideways on phones.",
+   "props": [
+    [
+     "tabs",
+     "list",
+     ""
+    ],
+    [
+     "active",
+     "cell",
+     ""
+    ]
+   ],
+   "from": [
+    "tab"
+   ],
+   "used": [
+    "Doc view",
+    "Lists"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "toolbar",
+   "name": "Toolbar",
+   "level": "Composite",
+   "desc": "Search, filters and a summary in one wrapping row above a list.",
+   "props": [
+    [
+     "left",
+     "slots",
+     ""
+    ],
+    [
+     "right",
+     "slots",
+     ""
+    ]
+   ],
+   "from": [
+    "search-input",
+    "avatar-group",
+    "filter-chip"
+   ],
+   "used": [
+    "List pages"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "panel",
+   "name": "Panel",
+   "level": "Composite",
+   "desc": "Bordered card with a header row and a body. The standard container on dashboards.",
+   "props": [
+    [
+     "title",
+     "text",
+     ""
+    ],
+    [
+     "action",
+     "link",
+     "Optional"
+    ],
+    [
+     "body",
+     "slot",
+     ""
+    ]
+   ],
+   "from": [
+    "link-button"
+   ],
+   "used": [
+    "Home",
+    "Reports",
+    "Tasks"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "doc-frame",
+   "name": "DocFrame",
+   "level": "Section",
+   "desc": "The record layout: main column on the left, side panel on the right (or left). Side panel drops below on narrow screens.",
+   "props": [
+    [
+     "side",
+     "left, right or off",
+     "Per user"
+    ],
+    [
+     "density",
+     "comfortable or compact",
+     "Per user"
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Every record"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "side-block",
+   "name": "SideBlock",
+   "level": "Composite",
+   "desc": "Titled block inside the side panel, with an optional header action.",
+   "props": [
+    [
+     "title",
+     "text",
+     ""
+    ],
+    [
+     "action",
+     "button",
+     "Optional"
+    ],
+    [
+     "body",
+     "slot",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Side panel"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "drawer",
+   "name": "Drawer",
+   "level": "Composite",
+   "desc": "Panel that slides in from the right over the view. For quick looks without leaving the page.",
+   "props": [
+    [
+     "title",
+     "text",
+     ""
+    ],
+    [
+     "body",
+     "slot",
+     ""
+    ],
+    [
+     "footer",
+     "slot",
+     "Optional"
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Record peek"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "modal",
+   "name": "Modal",
+   "level": "Composite",
+   "desc": "Centred dialog with a header, body and footer. Esc and the scrim close it.",
+   "props": [
+    [
+     "title",
+     "text",
+     ""
+    ],
+    [
+     "body",
+     "slot",
+     ""
+    ],
+    [
+     "footer",
+     "slot",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Create forms",
+    "Action dialogs",
+    "Shortcuts"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "popover",
+   "name": "Popover",
+   "level": "Composite",
+   "desc": "Floating menu anchored to its button. Repositions near screen edges.",
+   "props": [
+    [
+     "anchor",
+     "element",
+     ""
+    ],
+    [
+     "items",
+     "list of MenuItem",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Menus",
+    "Filters",
+    "Columns"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "bulk-bar",
+   "name": "BulkBar",
+   "level": "Composite",
+   "desc": "Dark bar that rises from the bottom when rows are selected.",
+   "props": [
+    [
+     "count",
+     "number",
+     ""
+    ],
+    [
+     "actions",
+     "list",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Lists"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "floating-panel",
+   "name": "FloatingPanel",
+   "level": "Composite",
+   "desc": "Panel that opens above a FloatingButton and closes on outside click or Esc.",
+   "props": [
+    [
+     "title",
+     "text",
+     ""
+    ],
+    [
+     "body",
+     "slot",
+     ""
+    ],
+    [
+     "footer",
+     "slot",
+     ""
+    ]
+   ],
+   "from": [
+    "fab"
+   ],
+   "used": [
+    "Layout control"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "sticky-bar",
+   "name": "StickyBar",
+   "level": "Composite",
+   "desc": "Bar that sticks to the top of the view while the page scrolls.",
+   "props": [
+    [
+     "left",
+     "slot",
+     ""
+    ],
+    [
+     "right",
+     "slot",
+     ""
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Doc layout"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "doc-header",
+   "name": "DocHeader",
+   "level": "Section",
+   "desc": "Record mark, record type, title, key facts and the main actions. Moves and actions come from the model.",
+   "props": [
+    [
+     "record",
+     "record",
+     ""
+    ],
+    [
+     "meta",
+     "key fields",
+     ""
+    ],
+    [
+     "actions",
+     "moves and actions",
+     ""
+    ]
+   ],
+   "from": [
+    "org-mark",
+    "pill",
+    "move-button",
+    "button",
+    "menu-button"
+   ],
+   "used": [
+    "Every record"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "status-flow",
+   "name": "StatusFlow",
+   "level": "Section",
+   "desc": "The states of the State field as connected steps. Done steps tint, the current one fills, terminal states turn green or red.",
+   "props": [
+    [
+     "state",
+     "State field",
+     ""
+    ],
+    [
+     "moves",
+     "list",
+     "Click runs a move"
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Doc view"
+   ],
+   "variants": [
+    "In progress",
+    "Won",
+    "Lost or void"
+   ]
+  },
+  {
+   "cat": "sections",
+   "id": "state-banner",
+   "name": "LockBanner",
+   "level": "Section",
+   "desc": "The record's lifecycle under the header: draft, locked with void and revise, or void with the reason.",
+   "props": [
+    [
+     "record",
+     "record",
+     ""
+    ]
+   ],
+   "from": [
+    "banner",
+    "button"
+   ],
+   "used": [
+    "Transaction records"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "activity-composer",
+   "name": "ActivityComposer",
+   "level": "Section",
+   "desc": "One box for a note, email, call log or task. Cmd Enter saves to the journal.",
+   "props": [
+    [
+     "modes",
+     "list",
+     "note, email, call, task"
+    ],
+    [
+     "record",
+     "record",
+     ""
+    ]
+   ],
+   "from": [
+    "segmented",
+    "button",
+    "icon-button",
+    "kbd"
+   ],
+   "used": [
+    "Activity tab"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "journal",
+   "name": "Journal",
+   "level": "Section",
+   "desc": "Append-only history grouped by day: notes, messages, field changes, moves, postings and payments.",
+   "props": [
+    [
+     "record",
+     "record",
+     ""
+    ],
+    [
+     "kinds",
+     "filter",
+     "Optional"
+    ]
+   ],
+   "from": [
+    "timeline-item",
+    "diff",
+    "message-card"
+   ],
+   "used": [
+    "Activity tab"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "child-table",
+   "name": "ChildTable",
+   "level": "Section",
+   "desc": "Lines of a record. Pinned row and first column, resizable and reorderable columns saved per user, Tab and Enter editing, inline row expand, focus view and live totals. Locks with the record.",
+   "props": [
+    [
+     "lines",
+     "Lines field",
+     ""
+    ],
+    [
+     "columns",
+     "line fields",
+     ""
+    ],
+    [
+     "totals",
+     "list",
+     ""
+    ],
+    [
+     "locked",
+     "rule",
+     ""
+    ]
+   ],
+   "from": [
+    "checkbox",
+    "button",
+    "data-table",
+    "base-field"
+   ],
+   "used": [
+    "Items",
+    "Lines",
+    "Branches"
+   ],
+   "variants": [],
+   "live": 1
+  },
+  {
+   "cat": "sections",
+   "id": "form-section",
+   "name": "FormSection",
+   "level": "Section",
+   "desc": "Titled group of fields in two columns. Long text spans both.",
+   "props": [
+    [
+     "title",
+     "text",
+     ""
+    ],
+    [
+     "note",
+     "text",
+     ""
+    ],
+    [
+     "fields",
+     "list",
+     ""
+    ]
+   ],
+   "from": [
+    "inline-value",
+    "base-field"
+   ],
+   "used": [
+    "Details tab"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "postings",
+   "name": "PostingsTable",
+   "level": "Section",
+   "desc": "Rows the record wrote to other models, with reversals and a balance check. Read only.",
+   "props": [
+    [
+     "effects",
+     "Effects",
+     ""
+    ]
+   ],
+   "from": [
+    "info-note",
+    "data-table",
+    "chip"
+   ],
+   "used": [
+    "Transaction records"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "board",
+   "name": "Board",
+   "level": "Section",
+   "desc": "Columns by state with counts, totals and drag to move.",
+   "props": [
+    [
+     "group_by",
+     "State field",
+     ""
+    ],
+    [
+     "measure",
+     "measure",
+     "Column total"
+    ],
+    [
+     "card",
+     "BoardCard",
+     ""
+    ]
+   ],
+   "from": [
+    "board-card",
+    "pill",
+    "progress"
+   ],
+   "used": [
+    "Deals"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "list-view",
+   "name": "ListView",
+   "level": "Section",
+   "desc": "Page header, saved views, toolbar and DataTable, with a board switch when the model has a State.",
+   "props": [
+    [
+     "model",
+     "model",
+     ""
+    ],
+    [
+     "views",
+     "saved views",
+     ""
+    ]
+   ],
+   "from": [
+    "page-header",
+    "tabs",
+    "toolbar",
+    "data-table"
+   ],
+   "used": [
+    "Every list"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "command-palette",
+   "name": "CommandPalette",
+   "level": "Section",
+   "desc": "Search across records, pages and actions, with recent searches and a customizable quick access grid.",
+   "props": [
+    [
+     "recent",
+     "list",
+     "Last 4"
+    ],
+    [
+     "quick",
+     "list",
+     "1 or 2 rows"
+    ]
+   ],
+   "from": [
+    "search-input",
+    "quick-access",
+    "kbd"
+   ],
+   "used": [
+    "Cmd K"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "quick-access",
+   "name": "QuickAccess",
+   "level": "Section",
+   "desc": "Grid of tiles for modules, reports and documents. Documents carry a plus or list badge.",
+   "props": [
+    [
+     "tiles",
+     "list",
+     ""
+    ],
+    [
+     "rows",
+     "1 or 2",
+     ""
+    ]
+   ],
+   "from": [
+    "icon-tile"
+   ],
+   "used": [
+    "Command palette"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "layout-control",
+   "name": "LayoutControl",
+   "level": "Section",
+   "desc": "Floating control on records to show or hide blocks, set density and side panel position. On the layout page it edits the template.",
+   "props": [
+    [
+     "scope",
+     "user or template",
+     ""
+    ]
+   ],
+   "from": [
+    "fab",
+    "floating-panel",
+    "switch",
+    "segmented"
+   ],
+   "used": [
+    "Every record",
+    "Doc layout"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "create-form",
+   "name": "CreateForm",
+   "level": "Section",
+   "desc": "Dialog with the fields a new record needs, validated before it closes.",
+   "props": [
+    [
+     "model",
+     "model",
+     ""
+    ],
+    [
+     "fields",
+     "required fields",
+     ""
+    ]
+   ],
+   "from": [
+    "modal",
+    "base-field",
+    "button"
+   ],
+   "used": [
+    "New menu"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "action-dialog",
+   "name": "ActionDialog",
+   "level": "Section",
+   "desc": "Small dialog that collects an action's inputs before it runs.",
+   "props": [
+    [
+     "action",
+     "model action",
+     ""
+    ],
+    [
+     "inputs",
+     "fields",
+     ""
+    ]
+   ],
+   "from": [
+    "modal",
+    "base-field"
+   ],
+   "used": [
+    "Record payment",
+    "Void",
+    "Revise"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "peek-drawer",
+   "name": "RecordPeek",
+   "level": "Section",
+   "desc": "Drawer with a record's header, quick actions and details, plus a button to open the full record.",
+   "props": [
+    [
+     "record",
+     "record",
+     ""
+    ]
+   ],
+   "from": [
+    "drawer",
+    "kv-list",
+    "mini-card"
+   ],
+   "used": [
+    "People",
+    "Related"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "notifications",
+   "name": "NotificationsPanel",
+   "level": "Section",
+   "desc": "Popover list of recent notifications with mark all read and a link to the inbox.",
+   "props": [
+    [
+     "items",
+     "list",
+     ""
+    ]
+   ],
+   "from": [
+    "popover",
+    "notification"
+   ],
+   "used": [
+    "Top bar"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
+   "id": "side-panel",
+   "name": "SidePanel",
+   "level": "Section",
+   "desc": "Stack of side blocks: next step, key fields, highlight card, people, related records, tags and record info. Each can be turned off.",
+   "props": [
+    [
+     "blocks",
+     "list",
+     "From the template and user layout"
+    ]
+   ],
+   "from": [
+    "side-block",
+    "kv-list",
+    "mini-card",
+    "scorecard"
+   ],
+   "used": [
+    "Every record"
+   ],
+   "variants": []
+  }
+ ]
+}
