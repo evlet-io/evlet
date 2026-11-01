@@ -9,10 +9,10 @@ import time
 from types import MappingProxyType
 from urllib.parse import parse_qs, quote
 
-from .auth import ROLE_ID, ROLES, AccessError
+from .auth import PORTAL, RESERVED_ROLES, ROLE_ID, ROLES, AccessError
 from .fields import Link
 from .models import ValidationError
-from .permissions import CORRECTIONS, Policy, Rule, default_rule
+from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer
 
 OPERATIONS = ('read', 'create', 'update', 'delete', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
@@ -23,11 +23,9 @@ SETTINGS = MappingProxyType({
 })
 NOT_FOUND = 'Route not found'
 ADMIN_ONLY = 'Only an admin can do this: change admin accounts, give the admin role, manage roles or decide who opens Controls.'
-RESERVED_ROLES = ('controls', 'portal', 'public')
 TWO_STEP = 'Controls needs two-step sign-in, which this instance does not have yet. Remove require_two_step from routes.py for now.'
 LABELS = {None: 'All records', 'created_by': 'Records they created', 'owner': 'Records they own',
           'account_manager': 'Customers they manage', 'assignee': 'Tasks assigned to them', 'own_customer': 'Their own customer only'}
-NO_LINKS = 'Portal customer links are not set up on this instance yet, so this filter would hide every record. Choose another one.'
 
 
 def _field_scope(name):
@@ -103,12 +101,10 @@ def grant(database_path, username):
         connection.close()
 
 
-def client_ip(scope, auth=None):
-    """The address the Controls allowlist checks: the auth's own reading when it has one, else the socket peer."""
-    reader = getattr(auth, 'client_address', None)
-    value = reader(scope) if reader is not None else (scope.get('client') or ('',))[0]
+def client_ip(scope, auth):
+    """The address the Controls allowlist checks: LocalAuth.client_address, through trusted proxies only."""
     try:
-        address = ipaddress.ip_address(str(value))
+        address = ipaddress.ip_address(auth.client_address(scope))
     except ValueError:
         return None
     return (address.ipv4_mapped or address) if address.version == 6 else address
@@ -172,10 +168,10 @@ class Controls:
             ensure_schema(tx.connection)
             # Roles the app files name are created when missing, with the base the app declares.
             for role, base in self.file.roles.items():
-                if role not in ROLES:
+                if role not in (*ROLES, PORTAL):
                     app = self.app_roles.get(role, ('an installed',))[0]
-                    tx.connection.execute("INSERT OR IGNORE INTO evlet_roles(id,kind,base,realm,opens_controls,description) VALUES (?,'custom',?,'desk',0,?)",
-                                          (role, base, f'From the {app} app. Starts from {base}.'))
+                    tx.connection.execute("INSERT OR IGNORE INTO evlet_roles(id,kind,base,realm,opens_controls,description) VALUES (?,'custom',?,?,0,?)",
+                                          (role, base, 'portal' if base == PORTAL else 'desk', f'From the {app} app. Starts from {base}.'))
         self.ready = True
         self.refresh(force=True)
 
@@ -244,9 +240,13 @@ class Controls:
     # ---------- access ----------
 
     def host_allowed(self, scope):
+        """The primary host only. Without one (development, or a tenant whose factory leaves the route table
+        default), every host the auth accepts that is not a sub-host counts, so each tenant's own host works."""
         from .routing import host_name
-        name = host_name(dict(scope.get('headers', [])).get(b'host', b''))
-        return self.routes is not None and name is not None and name in self.routes.hosts()
+        host = dict(scope.get('headers', [])).get(b'host', b'')
+        if self.routes is None or host not in self.business.auth.hosts or self.routes.scopes(host) is not None:
+            return False
+        return self.routes.primary is None or host_name(host) == self.routes.primary
 
     def allows(self, scope, user):
         role = self.roles.get(user.role)
@@ -319,30 +319,15 @@ class Controls:
                 continue
         return found
 
-    def links_ready(self):
-        with self.database._connection() as connection:
-            return bool(connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_user_links'").fetchone()) \
-                if isinstance(connection, sqlite3.Connection) else False
-
     def compile_scope(self, key, model):
         if key in SCOPES:
             return SCOPES[key]
         if key in self.scopes:
             return self.scopes[key]
-        target = 'id' if self.registry.name_for(model) == 'customer' else 'customer'
-        database = self.database
-
-        def own_customer(user):
-            # Fails closed: no links table or no links means no records.
-            try:
-                with database._connection() as connection:
-                    ids = [row[0] for row in connection.execute(
-                        "SELECT record_id FROM evlet_user_links WHERE user_id=? AND model='customer' ORDER BY record_id LIMIT 100", (user.id,))]
-            except sqlite3.Error:
-                ids = []
-            return {target + '__in': ids}
-        own_customer.preset = 'own_customer'
-        return own_customer
+        # The same scope as permissions.own_customer, over the links the session preloads.
+        scope = own_customer('id' if self.registry.name_for(model) == 'customer' else 'customer')
+        scope.preset = 'own_customer'
+        return scope
 
     def file_value(self, role, model):
         rule = self.file_rule(role, model)
@@ -402,8 +387,6 @@ class Controls:
         if file_scope is None and scope is not None:
             if scope not in self.presets(model):
                 raise ValueError(f'{LABELS.get(scope, scope)} is not available for {model.__name__}.')
-            if scope == 'own_customer' and not self.links_ready():
-                raise ValueError(NO_LINKS)
         return {'ops': [op for op in OPERATIONS if op in ops], 'read': None if read is None else [name for name in fields if name in read],
                 'write': None if write is None else [name for name in fields if name in write], 'scope': scope}
 
@@ -595,13 +578,15 @@ class Controls:
             raise AccessError(403, ADMIN_ONLY)
         if not isinstance(body, dict) or set(body) - {'id', 'base', 'realm', 'description'}:
             raise ValidationError({'_form': 'Use id, base, realm and description'})
-        role, base, realm, description = body.get('id'), body.get('base', 'editor'), body.get('realm', 'desk'), body.get('description', '')
+        realm = body.get('realm', 'desk')
+        role, base, description = body.get('id'), body.get('base', PORTAL if realm == 'portal' else 'editor'), body.get('description', '')
         if not isinstance(role, str) or not ROLE_ID.fullmatch(role):
             raise ValidationError({'id': 'Use 2 to 31 lowercase letters, digits or underscores, starting with a letter.'})
-        if base not in ('editor', 'viewer'):
-            raise ValidationError({'base': 'Start from editor or viewer.'})
-        if realm != 'desk':
-            raise ValidationError({'realm': 'Portal roles arrive with portal hosts. Use desk for now.'})
+        if realm not in ('desk', 'portal'):
+            raise ValidationError({'realm': 'Use desk or portal.'})
+        # Portal roles start from portal, which sees nothing until an app grants it, and never open Controls.
+        if realm == 'desk' and base not in ('editor', 'viewer') or realm == 'portal' and base != PORTAL:
+            raise ValidationError({'base': 'Start from editor or viewer.' if realm == 'desk' else 'Portal roles start from portal.'})
         if not isinstance(description, str) or len(description) > 200:
             raise ValidationError({'description': 'Use at most 200 characters.'})
         with self.database.transaction() as tx:
@@ -674,6 +659,7 @@ class Controls:
 
     def state(self, user, scope):
         from importlib import metadata
+        from .routing import host_name
         try:
             version = metadata.version('evlet')
         except metadata.PackageNotFoundError:
@@ -694,14 +680,14 @@ class Controls:
         controls = self.routes.controls
         return {
             'instance': {'name': self.business.application.get('name', 'Evlet') if self.business.application else 'Evlet',
-                         'host': self.routes.primary or 'localhost', 'evlet': version, 'version': self.version},
+                         'host': self.routes.primary or host_name(dict(scope.get('headers', [])).get(b'host', b'')) or 'localhost', 'evlet': version, 'version': self.version},
             'me': user.public(), 'apps': self.apps, 'models': models, 'roles': self.role_list(),
             'routes': [{'host': row.host, 'path': row.path, 'serves': row.serves, 'realm': row.realm, 'source': row.source, 'locked': row.locked} for row in self.routes.rows()],
             'scopes': {key or '': label for key, label in LABELS.items()} | {key: key.replace('_', ' ').capitalize() for key in self.scopes},
             'settings': {key: {'file': SETTINGS[key], 'value': self.settings[key]} for key in SETTINGS},
             'controls': {'allow_ips': list(controls.allow_ips), 'require_two_step': controls.require_two_step},
             'attention': attention, 'overrides': overrides, 'users': {'active': active or 0, 'total': total},
-            'audit': recent, 'two_step': False, 'links': self.links_ready(), 'client': str(client_ip(scope, self.business.auth) or ''),
+            'audit': recent, 'two_step': False, 'client': str(client_ip(scope, self.business.auth) or ''),
         }
 
     # ---------- HTTP ----------
@@ -749,5 +735,5 @@ class Controls:
 
 
 class _Probe:
-    id, username, role = 0, 'probe', 'viewer'
+    id, username, role, links = 0, 'probe', 'viewer', ()
 

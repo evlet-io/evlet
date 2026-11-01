@@ -87,11 +87,11 @@ class AppDefinition:
         if not callable(self.actions):
             object.__setattr__(self, 'actions', tuple(self.actions))
         object.__setattr__(self, 'permissions', dict(self.permissions))
-        from .auth import ROLE_ID, ROLES
+        from .auth import PORTAL, RESERVED_ROLES, ROLE_ID, ROLES
         object.__setattr__(self, 'roles', dict(self.roles))
         for role, base in self.roles.items():
-            if not isinstance(role, str) or not ROLE_ID.fullmatch(role) or role in ROLES or role in ('controls', 'portal', 'public') or base not in ('editor', 'viewer'):
-                raise ValueError(f'roles maps a new lowercase role id to its base, editor or viewer: {role!r}')
+            if not isinstance(role, str) or not ROLE_ID.fullmatch(role) or role in ROLES or role in RESERVED_ROLES or base not in ('editor', 'viewer', PORTAL):
+                raise ValueError(f'roles maps a new lowercase role id to its base, editor, viewer or portal: {role!r}')
         object.__setattr__(self, 'scopes', dict(self.scopes))
         if any(not isinstance(key, str) or not ROLE_ID.fullmatch(key) or not callable(scope) for key, scope in self.scopes.items()):
             raise ValueError('scopes maps lowercase names to callables returning query filters')
@@ -318,7 +318,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     secure = routes.primary is not None
     auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=secure, allow_setup=not secure,
                      trusted_proxies=config.trusted_proxies)
-    rules, views, schedules, roles = {}, ViewRegistry(), [], {role: role for role in ('admin', 'editor', 'viewer')}
+    rules, views, schedules, roles = {}, ViewRegistry(), [], {role: role for role in ('admin', 'editor', 'viewer', 'portal')}
     for name, definition in definitions:
         for role, base in definition.roles.items():
             if roles.setdefault(role, base) != base:

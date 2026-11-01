@@ -6,8 +6,12 @@ Permissions and Security.
 
 ## Access
 
-- Served on the primary host only. Any other host gets 404. In development the loopback
-  hosts count as primary.
+- Served on the primary host only. Sub-hosts get 404 for the page, every
+  `/api/_controls/*` route and `/api/auth/users`, from the route table. Without a primary
+  host (development, or a tenant whose factory keeps the default route table) every host
+  the instance accepts counts as primary, except sub-hosts. So each tenant of a
+  `TenantApplication` manages its own users on its own host, in its own database.
+- Only desk roles open Controls. Portal roles never do, whatever their settings.
 - Open to roles with "Opens Controls" on. `admin` always has it; it can't be turned off.
 - Opening Controls is not the same as being admin. Only admins can give or remove the admin
   role, change admin accounts (role, active, password, sessions), add admin users, create or
@@ -16,7 +20,10 @@ Permissions and Security.
 - Everyone else gets 404 on the page and on every `/api/_controls/*` route. Anonymous
   visitors to the page go to `/login?next=/controls`.
 - `ControlsAccess(allow_ips=...)` in `routes.py` and the `security.controls_ips` setting can
-  both narrow it; a request must match both lists when both are set.
+  both narrow it; a request must match both lists when both are set. The address checked is
+  `LocalAuth.client_address(scope)`: `X-Forwarded-For` counts only when the connection
+  comes from one of the instance's `trusted_proxies` ([routing.md](routing.md)). Sign-in
+  throttling and the public endpoint limit read the same address.
 - `ControlsAccess(require_two_step=True)` refuses Controls with a message until two-step
   sign-in exists.
 - Break glass from the server shell:
@@ -32,11 +39,24 @@ Permissions and Security.
 
 ## Roles
 
-`evlet_roles` holds every role. `admin`, `editor` and `viewer` are framework roles and
-can't be deleted. A custom role has a base (`editor` or `viewer`) and a realm (`desk` for
-now). On any model without its own rule, a custom role gets its base role's rule from the
-app files. Overrides on `editor` or `viewer` do not carry over to custom roles based on them.
-The ids `controls`, `portal` and `public` are reserved.
+`evlet_roles` holds every role, with its realm. The realm decides where its users sign in:
+desk roles on desk hosts, portal roles on portal hosts ([routing.md](routing.md)).
+
+| Role | Kind | Realm | Default on a model without a rule |
+|---|---|---|---|
+| `admin` | framework | desk | Everything. Always opens Controls. |
+| `editor` | framework | desk | Read, create, update, delete |
+| `viewer` | framework | desk | Read |
+| `portal` | framework | portal | Nothing until an app grants it. Never opens Controls. |
+
+Framework roles can't be deleted. `public` is not a role in this table: public endpoints run
+as it, no account can have it and no role can take its id. `controls` is reserved too.
+
+A custom role has a base and a realm. Desk roles start from `editor` or `viewer`; portal
+roles start from `portal` and never open Controls. On any model without its own rule, a
+custom role gets its base role's rule from the app files, so a portal role sees what the app
+grants `portal`. Overrides on a framework role do not carry over to custom roles based on it.
+Users can have any role in the table; a portal user signs in on portal hosts only.
 
 Apps can declare roles and name them in permissions:
 
@@ -45,7 +65,8 @@ app = AppDefinition(models=(Lead,), roles={"sales": "editor"},
                     permissions={("sales", Lead): Rule(("read", "create"), scope=SCOPES["owner"])})
 ```
 
-Declared roles are created on start when missing and can't be deleted in Controls. A role
+An app may declare a portal role too, `roles={"reseller": "portal"}`. Declared roles are
+created on start when missing and can't be deleted in Controls. A role
 that users still have can't be deleted; deleting one removes its permission overrides.
 
 ## Overrides
@@ -68,16 +89,18 @@ operations, readable and writable fields must stay within the file rule. Write n
 no access clears fields and rows, revise needs create. Admin rules can't be overridden.
 Row scopes are named presets: `created_by`, `owner`, `account_manager` and `assignee` (for
 models with that field), `own_customer` and the app's own (`AppDefinition(scopes={...})`).
-A row scope set in the app file can't be changed. `own_customer` reads portal customer
-links (`evlet_user_links`), which arrive with portal hosts; until then it can't be chosen
-and matches no records.
+A row scope set in the app file can't be changed. The `own_customer` preset is
+`permissions.own_customer` (with `field="id"` on the customer model itself): it reads the
+user's links (`evlet_user_links`) that the session loads with each request, so a user with
+no customer links sees no records. Link users with `evlet link-user` or
+`LocalAuth.link_user`.
 
 **Security** (kind `setting`):
 
 | Key | File value | Rule |
 |---|---|---|
 | `security.password_min` | 15 | Up only, 64 at most. Applies to new passwords. |
-| `security.session_hours` | 8 | Down only. Lowering it ends sessions already older than the new length. |
+| `security.session_hours` | 8 | Down only. Sets the session and cookie length in every realm. Lowering it ends sessions already older than the new length, desk and portal alike. |
 | `security.lockout` | 10 | Down only, 3 at least. Failed sign-ins per network and account. |
 | `security.two_step_roles` | `["admin"]` | Admin stays. Saved now, enforced once two-step sign-in exists. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
