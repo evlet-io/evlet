@@ -98,6 +98,9 @@ screen test opens the same deal on its Activity tab and adds a note through the 
   with Table(...)`, instead of becoming a root model.
 - **Screens.** Fixed here: the child table footer took a filtered sum (`recurring_total`) for the
   Amount column; the lines lock note kept the state the page opened with; the Related side block
-  did not count again after a move or action. Still open: Undo offered after a board move, which
-  needs a move back the model may not declare (not checked).
+  did not count again after a move or action. Fixed in `ui-final/06`: the measures strip and stage
+  counts follow the search box; link titles are read once per model per page and cached; typing in
+  a grid Link cell opens its search; the lock banner offers only the corrections the user can make;
+  Undo after a board move only when a move back exists; a dialog commits the field being typed in
+  when it is submitted (Convert to deal kept its date).
 - **Performance.** Opening a 1,000-line deal takes about 160 ms in jsdom, over the 100 ms budget.

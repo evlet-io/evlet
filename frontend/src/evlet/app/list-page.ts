@@ -232,6 +232,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     if (!move) return `${titleOf(model, row)} cannot move from ${humanize(from)} to ${humanize(to)}`;
     if (move.roles && !move.roles.includes(role)) return `Your role cannot use ${move.label}`;
     if (model.permissions?.update === false) return 'You cannot change this record';
+    // A move that asks for values (a reason, say) is made from the record, where its dialog asks for them.
+    if (move.asks?.length) return `Open ${titleOf(model, row)} to use ${move.label}: it asks for ${move.asks.map(field => fieldOf(model, field)?.label.toLowerCase() ?? field).join(' and ')}`;
     return null;
   };
   const setRow = (id: number, next: RecordData) => rows.set(rows.peek().map(item => item.id === id ? next : item));
@@ -257,9 +259,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
       value: valueField ? () => formatOf(valueField, row()[valueField.name]) : undefined,
       date: dateField ? () => formatOf(dateField, row()[dateField.name]) : undefined,
       onOpen: () => open(row()) }),
+    canMove: moveBlocked,
     onMove: (row, to) => {
-      const why = moveBlocked(row, to);
-      if (why) return why;
       const before = row;
       // Shown in the new column at once; put back if the server refuses the move.
       setRow(row.id, { ...row, [state.field]: to });

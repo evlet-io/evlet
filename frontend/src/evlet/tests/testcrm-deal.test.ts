@@ -176,6 +176,28 @@ describe('testCRM: a deal and its lines', () => {
   });
 });
 
+describe('testCRM: lead actions', () => {
+  it('Convert to deal sends the typed date even when the field was not left before submitting', async () => {
+    const run = scenario('sara_convert');
+    const id = idOf('sara_convert', 'lead', 'Anjali Varma');
+    const { host } = run.start(`/app/lead/${id}?tab=details`);
+    await until(() => expect(button(host, 'Convert to deal')).not.toBeNull());
+    click(button(host, 'Convert to deal'));
+    const dialog = document.querySelector('.modal')!;
+    const [title, close] = [...dialog.querySelectorAll<HTMLInputElement>('.fld input')];
+    typeInto(title, 'Pharmacy chain ERP');
+    // Typed, still in the field: no change event yet.
+    close.focus();
+    close.value = '15-12-2026';
+    close.dispatchEvent(new Event('input', { bubbles: true }));
+    click(byText(dialog, '.modal-f button', 'Convert to deal'));
+    await until(() => expect(run.writes).toHaveLength(1));
+    expect(run.writes[0].body).toEqual({ title: 'Pharmacy chain ERP', expected_close: '2026-12-15' });
+    await until(() => expect(document.querySelector('.modal')).toBeNull());
+    expect(run.misses).toEqual([]);
+  });
+});
+
 describe('testCRM: 150 lines, conflicts and roles', () => {
   it('pages in 150 lines, edits the last one and saves only that change', async () => {
     const run = scenario('sara_big');

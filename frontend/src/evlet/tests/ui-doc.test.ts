@@ -134,6 +134,36 @@ describe('list blocks', () => {
     expect(cards.peek()[2].stage).toBe('won');
   });
 
+  it('Board offers Undo only when the card may move back, and undoes from where the card is now', () => {
+    vi.useFakeTimers();
+    const cards = cell([{ id: 1, stage: 'new' }]);
+    const moved: string[] = [];
+    const onMove = (card: { id: number; stage: string }, to: string) => {
+      moved.push(`${card.stage}>${to}`);
+      cards.set(cards.peek().map(item => item.id === card.id ? { ...item, stage: to } : item));
+      return null;
+    };
+    // Nothing moves out of won.
+    const canMove = (card: { stage: string }) => card.stage === 'won' ? 'Won deals stay won' : null;
+    const host = render(() => Board({ label: 'Deals', columns: ['new', 'lost', 'won'].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1), tint: 'blue' as const })),
+      cards, key: card => card.id, group: card => card.stage, onMove, canMove, card: card => BoardCard({ title: () => `Deal ${card().id}` }) }));
+    const cardIn = (index: number) => [...host.querySelectorAll<HTMLElement>('.col-k')][index].querySelector<HTMLElement>('.card')!;
+    const toastButtons = () => [...document.querySelectorAll('.toast')].pop()!.querySelectorAll('button');
+    key(cardIn(0), 'ArrowRight', { altKey: true });
+    expect(lastToast()).toContain('Moved to Lost');
+    toastButtons()[0].click();
+    expect(cards.peek()[0].stage).toBe('new');
+    expect(moved).toEqual(['new>lost', 'lost>new']);
+    // Into won there is no way back, so no Undo; out of won is refused before onMove runs.
+    cards.set([{ id: 2, stage: 'lost' }]);
+    key(cardIn(1), 'ArrowRight', { altKey: true });
+    expect(lastToast()).toContain('Moved to Won');
+    expect(toastButtons()).toHaveLength(0);
+    key(cardIn(2), 'ArrowLeft', { altKey: true });
+    expect(lastToast()).toContain('Won deals stay won');
+    expect(moved).toEqual(['new>lost', 'lost>new', 'lost>won']);
+  });
+
   it('BulkBar rises with a selection and Filters remove and clear chips', () => {
     const selected = cell(0);
     const assign = vi.fn();

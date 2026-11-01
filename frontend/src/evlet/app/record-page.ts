@@ -467,9 +467,13 @@ function actionInputs(action: ActionMeta): FieldSchema[] {
  * answers null when done, a message, or field errors by input name. */
 export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (values: Record<string, unknown>) => Promise<string | Record<string, string> | null>) {
   const fields = inputs.map(meta => localField(meta as any, meta.default ?? (meta.type === 'boolean' ? false : null)));
+  const controls = fields.map(field => fieldFor({ field, full: true }));
   const note = cell<string>('');
   let busy = false;
   const submit = async (close: () => void) => {
+    // A value typed but not yet committed (the field was not left) counts: commit every text input first.
+    for (const input of controls.flatMap(element => [...element.querySelectorAll('input, textarea')])) input.dispatchEvent(new Event('change'));
+    if (fields.some(field => field.error.peek())) return;
     let valid = true;
     for (const field of fields) {
       const value = field.value.peek();
@@ -486,7 +490,7 @@ export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (va
   };
   let closeDialog = () => {};
   closeDialog = openModal({ title: action.label, icon: 'zap', tint: 'blue', narrow: true, onSubmit: () => void submit(closeDialog),
-    body: () => [...fields.map(field => fieldFor({ field, full: true })), html`<p class="ev-error" role="alert" hidden=${() => !note.get()}>${() => note.get()}</p>`],
+    body: () => [...controls, html`<p class="ev-error" role="alert" hidden=${() => !note.get()}>${() => note.get()}</p>`],
     footer: close => DialogFooter({ cancel: close, submit: { label: action.label, onClick: () => void submit(close) } }) });
   return closeDialog;
 }

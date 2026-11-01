@@ -68,8 +68,10 @@ export interface BoardProps<T> {
   /** Show an amount and share bar from `totals`. */
   amounts?: boolean;
   card: (card: () => T) => Node;
-  /** Move a card; return a reason to refuse it. The board confirms with Undo. */
+  /** Move a card; return a reason to refuse it. The board confirms with Undo when the card may move back. */
   onMove: (card: T, to: string) => string | null | void;
+  /** Why a card may not move to a column now, or null. Checked before onMove and to decide whether Undo is offered. */
+  canMove?: (card: T, to: string) => string | null;
   onAdd?: (column: BoardColumn) => void;
   addLabel?: string;
   currency?: string;
@@ -87,13 +89,21 @@ export function Board<T>(props: BoardProps<T>): HTMLElement {
   const grand = derive(() => sumOf(read(props.cards) ?? []));
   const over = cell<string | null>(null);
   let dragged: T | null = null;
+  // The card as it is now (onMove may replace it), found by its key.
+  const latest = (card: T) => (read(props.cards) ?? []).find(item => props.key(item) === props.key(card)) ?? card;
   const move = (card: T, to: string) => {
     const from = props.group(card);
     if (from === to) return;
-    const reason = props.onMove(card, to);
+    const reason = props.canMove?.(card, to) || props.onMove(card, to);
     if (reason) { toast(reason, { icon: 'info' }); return; }
     const label = props.columns.find(column => column.value === to)?.label ?? to;
-    toast(`Moved to ${label}`, { undo: () => { props.onMove(card, from); } });
+    // Undo is a move back, offered only when the card may make it.
+    const now = latest(card);
+    const back = !props.canMove?.(now, from);
+    toast(`Moved to ${label}`, back ? { undo: () => {
+      const card = latest(now), why = props.canMove?.(card, from) || props.onMove(card, from);
+      if (why) toast(why, { icon: 'info' });
+    } } : {});
   };
   const column = (item: BoardColumn) => {
     const cards = () => groups.get().get(item.value) ?? [];

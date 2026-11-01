@@ -73,6 +73,9 @@ describe('testCRM: sign in and the deals list', () => {
     press(portal, 'ArrowRight', { altKey: true });
     await until(() => expect(byText(column('Proposal'), '.card', /Distributor portal/)).not.toBeNull());
     await until(() => expect(sent.filter(item => item.method === 'POST' && /moves\/proposal$/.test(item.url))).toHaveLength(1));
+    // Deal declares no move from proposal back to qualified, so the board offers no Undo.
+    expect(lastToast()).toBe('Moved to Proposal');
+    expect([...document.querySelectorAll('.toast')].pop()!.querySelector('button')).toBeNull();
     // Won deals cannot be moved by the board: the reason is shown and nothing is sent.
     press(byText(column('Won'), '.card', /AMC renewal/)!, 'ArrowRight', { altKey: true });
     expect(lastToast()).not.toBe('');

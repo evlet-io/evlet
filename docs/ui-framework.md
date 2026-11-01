@@ -404,11 +404,11 @@ tab closes. Signing in keeps the address the user opened.
 | `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. Form dialog actions (`dialog: true`) are not shown: these screens cannot open them yet |
-| `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board, the status flow, move buttons; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column |
+| `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board, the status flow, move buttons; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
 | Locked states, `editable_when_locked` | Lock banner; only the declared fields stay editable; lines lock |
 | Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |
 | `Sequence` (Phase 7) | The number in mono as the title; "Number assigned on ..." until then |
-| `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
+| `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.key_fields` (Phase 10) | Header facts, the summary strip and the Key fields side block (without it: the first fields) |
 | `Meta.relations` (Phase 10) | The Related tab and side block |
 | `attachments` | The Files side block, with upload for roles that can update while the record is not locked |

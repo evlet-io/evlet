@@ -251,6 +251,16 @@ def record(app, out):
     sara.record_page('lead', lead)
     out['sara_lead_lost'] = sara.dump()
 
+    # Convert to deal on a qualified lead: the dialog sends the title and the expected close date.
+    sara = Scenario(app, 'sara')
+    lead = ids(sara, 'lead', name='Anjali Varma')
+    sara.record_page('lead', lead)
+    converted = sara.write('POST', f'/api/lead/{lead}/actions/convert', {'title': 'Pharmacy chain ERP', 'expected_close': '2026-12-15'},
+                           read=f'/api/lead/{lead}')
+    assert converted['status'] == 200, converted
+    sara.record_page('lead', lead)
+    out['sara_convert'] = sara.dump()
+
     # A deal with 150 lines: 100 embedded, the rest paged in; one edit on the last line.
     sara = Scenario(app, 'sara')
     deal = ids(sara, 'deal', title='Group rollout, 150 sites')
