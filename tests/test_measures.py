@@ -337,11 +337,20 @@ def test_unsupported_where_expressions_are_rejected(app):
         (F('status') > 'a', 'ordered comparisons'),
         (F('labels') == 'x', 'tags field'),
         (F('total') == D('99999999999999999999'), 'outside the range'),
+        # A literal shift as large as the old month_start() marker is a shift, and out of range.
+        (F('posting_date') >= today() - days(10**12), 'days'),
     ]
     for condition, message in rejected:
         with pytest.raises(ValidationError) as error:
             total(app, measures={'n': Count(where=condition)})
         assert message in error.value.errors['n'], (condition, error.value.errors)
+
+
+def test_month_start_belongs_only_in_a_measure_where():
+    for options in ({'compute': month_start()}, {'applies_when': F('day') >= month_start()}):
+        Bad = type('Bad', (Model,), {'day': Date(), 'shown': Date(**options) if 'compute' in options else Text(**options)})
+        with pytest.raises(Exception, match=r'month_start\(\) belongs only in a measure where='):
+            Registry(Bad)
 
 
 def test_meta_measures_are_checked_at_registration():

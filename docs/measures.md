@@ -109,7 +109,8 @@ Count(where=F("due_on") < today())
 Count(where=F("posting_date") >= today() - days(30))
 ```
 
-`month_start()` belongs only in a measure's `where=`.
+`month_start()` belongs only in a measure's `where=`. A `compute=`, rule or guard that uses it is
+rejected when the model is registered, with a message that names the field.
 
 Not supported, and rejected with a clear message when the measure is declared (or
 when an ad hoc call is made): arithmetic (`F("total") - F("paid") > 0`), Link paths

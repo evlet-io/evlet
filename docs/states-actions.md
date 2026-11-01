@@ -142,9 +142,15 @@ context.move(Deal, 7, "lost", lost_reason="Chose another vendor")
 * The values are applied with the move and checked by the same rules, validation and permissions
   in its transaction. A required value that is missing fails the move with a field error (422)
   and nothing changes.
-* Any other key is a field error: `This move does not take this value`.
+* Any other key is refused with `This move does not take this value`: as a field error when
+  the role can read the field, and as a form error (`_form`) for an unknown key or a field the
+  role cannot read, so the answer never confirms a hidden field.
+* The move itself is checked first (the order below), so values never reveal which moves
+  exist: an unknown target is 404 with or without values.
 * `_moves` and the schema's `state.moves` list the asked fields as `asks` (field names in
-  declaration order). A move that asks for nothing has no `asks` key.
+  declaration order). A move that asks for nothing has no `asks` key. The schema lists what the
+  declaration asks for; `_moves` also leaves out a field whose `locked_when` holds on the record,
+  since a locked field cannot take a value.
 
 * It requires `If-Match` with the record's current ETag, like other document writes:
   428 without it, 409 when it is stale.

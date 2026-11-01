@@ -501,7 +501,7 @@ def availability(business, context, model, record, loaded=None):
 
     def evaluator():
         return guards_now
-    result = {}
+    result, locks = {}, []
     if shown_state:
         field = model.__declared_fields__[name]
         current = record._values.get(name)
@@ -517,6 +517,11 @@ def availability(business, context, model, record, loaded=None):
             elif move in guards:
                 reason = blocked_reason(evaluator().result(guards[move]), readable(policy, user, guards[move]), 'move')
             asks = writable_asks(business, user, model, move)
+            # A field locked on this record cannot take a value, so the move does not ask for it.
+            if any(model.__declared_fields__[ask].locked_when is not None for ask in asks):
+                if not locks:
+                    locks.append(saved_locks(context, model, guards_now.load))
+                asks = [ask for ask in asks if ask not in locks[0]]
             moves.append({'to': move.to, 'label': move.label, 'allowed': reason is None, **({'reason': reason} if reason else {}),
                           **({'asks': asks} if asks else {})})
         result['_moves'] = moves
@@ -531,6 +536,22 @@ def availability(business, context, model, record, loaded=None):
         actions.append({'name': action_name, 'label': action.label, 'allowed': reason is None, **({'reason': reason} if reason else {})})
     result['_actions'] = actions
     return result
+
+
+def saved_locks(context, model, load):
+    """Root fields whose locked_when holds on the saved record, decided as a save decides them:
+    a rule that is not decided locks the field."""
+    from .calc import CalcError, Document
+    from .documents import host_today, resolve_lookups
+    business = context._business
+    names = {name for name, field in model.__declared_fields__.items() if field.locked_when is not None}
+    try:
+        document = Document(business.registry.plan_for(model), saved_data(load()), checked=True)
+        document.set_today(host_today(business))
+        resolve_lookups(context, document)
+    except (CalcError, ValidationError):
+        return names
+    return {name for name in names if document.locked(document.root, name)}
 
 
 def state_schema(business, user, model):
@@ -632,15 +653,14 @@ def writable_asks(business, user, model, move):
     return [name for name in move_asks(business, model, move) if name in allowed]
 
 
-def check_move_values(context, model, record_id, to, values):
-    """Refuse values a move does not ask for, before any of them is applied."""
-    if not values:
-        return
+def check_move_values(context, model, move, values):
+    """Refuse values the checked move does not ask this role for, before any of them is applied.
+
+    A key that names no field this role can read (unknown or hidden) gets one form error, so the
+    answer never confirms a hidden field."""
     business = context._business
-    name = model.__state__
-    current = business.policy.record(context._tx, context.user, model, record_id, 'update') if name else None
-    declared = model.__declared_fields__[name].move(current._values.get(name), to) if current is not None else None
-    allowed = set(move_asks(business, model, declared)) if declared is not None else set()
-    errors = {key: 'This move does not take this value' for key in values if key not in allowed}
+    allowed, readable = set(writable_asks(business, context.user, model, move)), business.policy.fields(context.user, model)
+    message = 'This move does not take this value'
+    errors = {key if key in readable else '_form': message for key in values if key not in allowed}
     if errors:
         raise ValidationError(errors)

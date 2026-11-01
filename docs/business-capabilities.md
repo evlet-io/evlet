@@ -124,8 +124,15 @@ a permission-aware join planner is future work.
 A scope on the signed-in user pairs with `default=CurrentUser`, which fills a field from that
 user when a record is created without a value: the username in a `Text` field, the account id
 in an `Integer` field. Other field types refuse it. A value the caller sends wins and still has
-to fit the scope. Updates never change it. The schema marks the field `default_kind: "user"`
-and the record view fills it in on a new record.
+to fit the scope. Updates never apply the default again. The schema marks the field
+`default_kind: "user"` and the record view fills it in on a new record.
+
+`CurrentUser` is only a default. A role that may write the field can still change it, on create
+or later. For ownership, declare the field `read_only=True` (it is still filled on create), leave
+it out of the role's `write_fields`, or rely on a row scope, which refuses a value outside it.
+
+A `business.context()` needs a `User`: its reads and writes are checked against that user's
+role, so a context opened with `None` refuses them with a plain `ValueError`.
 
 ```python
 class Deal(Model):

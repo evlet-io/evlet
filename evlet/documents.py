@@ -134,6 +134,9 @@ class Context:
         return Context(self._business, self._tx, self.user, readonly=True, active=self._active)
 
     def _model(self, value):
+        if self.user is None:
+            raise ValueError('A document context needs a User: pass the account whose permissions apply, '
+                             'such as User(1, "admin", "admin"), to business.context()')
         model = self._business.registry.resolve(value)
         if model in self._business.child_models:
             raise AccessError(403, 'Access child rows through their parent document')
@@ -1246,9 +1249,17 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     business, tx, user = context._business, context._tx, context.user
     if (action is not None or move is not None) and not record_id:
         raise AccessError(404, 'Record not found')
+    declared_move = None
     if move is not None:
-        states.check_move_values(context, model, record_id, move, values)
-    draft, before = load_draft(context, model, record_id, values)
+        # The move is checked on the saved record before its values, so values never reveal which moves exist.
+        draft, before = load_draft(context, model, record_id, {})
+        declared_move = states.begin_move(context, model, draft, before, move)
+        if values:
+            states.check_move_values(context, model, declared_move, values)
+            draft, before = load_draft(context, model, record_id, values)
+            draft._values[model.__state__] = move
+    else:
+        draft, before = load_draft(context, model, record_id, values)
     # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
     locked_write = action is None and move is None and before is not None and states.locked_state(model, before._values) is not None
     if locked_write and context._recalculate == (model, record_id):
@@ -1265,9 +1276,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         if row is not None and row[0] != version and context._recalculate != (model, record_id):
             raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; '
                                    'resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it')
-    outcome = declared_move = None
-    if move is not None:
-        declared_move = states.begin_move(context, model, draft, before, move)
+    outcome = None
+    if declared_move is not None:
         if declared_move.run is not None:
             outcome = getattr(model, declared_move.run)(draft)
     elif action is not None:

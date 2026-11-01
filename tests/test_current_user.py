@@ -45,3 +45,27 @@ def test_current_user_is_for_text_and_whole_number_fields():
     for field in (Email, Link):
         with pytest.raises(ValueError, match='CurrentUser'):
             field(Note, default=CurrentUser) if field is Link else field(default=CurrentUser)
+
+
+def test_a_context_without_a_user_refuses_with_a_plain_message(notes):
+    app, _ = notes
+    with app.business.context(None) as context:
+        for call in (lambda: context.create(Note, title='x'), lambda: context.get(Note, 1), lambda: context.list(Note)):
+            with pytest.raises(ValueError, match='needs a User'):
+                call()
+
+
+class Locked(Model):
+    permissions = ALL
+    title = Text(default='')
+    owner = Text(read_only=True, default=CurrentUser)
+
+
+def test_a_read_only_current_user_field_is_filled_but_not_rewritten(tmp_path):
+    app = start(Database(tmp_path / 'db.sqlite3', Registry(Locked)))
+    editor = add_user(app, 'editor')
+    status, note, _ = editor('POST', '/api/locked', {'title': 'Mine'})
+    assert status == 201 and note['owner'] == 'editor'
+    url = f"/api/locked/{note['id']}"
+    assert editor('PATCH', url, {'owner': 'admin'}, headers={b'if-match': editor('GET', url)[2][b'etag']})[0] in (403, 422)
+    assert editor('GET', url)[1]['owner'] == 'editor'

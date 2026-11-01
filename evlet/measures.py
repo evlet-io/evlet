@@ -226,7 +226,7 @@ def compile_where(registry, model, where):
     from .calc import CalcError, Expr, _Context, compile_expression, lift
     try:
         expression = where if isinstance(where, Expr) else lift(where)
-        ir, result, _ = compile_expression(expression, _Context(model, (), None, {}, registry=registry), 'where')
+        ir, result, _ = compile_expression(expression, _Context(model, (), None, {}, registry=registry, measure=True), 'where')
     except CalcError as exc:
         raise ValueError(exc.message) from None
     if result != 'boolean':
@@ -271,15 +271,19 @@ def stored(model, node, reads):
 
 def today_value(node):
     """A Today parameter for today(), today() + or - days(n) and month_start(); None for anything else."""
-    from .calc import MONTH_START, parse
+    from .calc import MAX_DAY, parse
     if node['$expr'] == 'today':
         return Today()
+    if node['$expr'] == 'month_start':
+        return Today(month_start=True)
     if node['$expr'] in ('date_add', 'date_sub') and node['args'][0]['$expr'] == 'today' and node['args'][1]['$expr'] == 'literal' \
             and node['args'][1]['type'] == 'decimal':
         number = parse(node['args'][1]['value'])
         if number.scale == 0:
             count = number.coef if node['$expr'] == 'date_add' else -number.coef
-            return Today(month_start=True) if count == -MONTH_START else Today(days=count)
+            if abs(count) >= MAX_DAY:
+                raise ValueError('where: days() moves today() past the supported dates')
+            return Today(days=count)
     return None
 
 
