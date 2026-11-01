@@ -74,9 +74,10 @@ instance's database, read only and in one snapshot. It prints one line per break
 exits with 1 when there is any; see the [journal guide](journal.md).
 
 `playground` works outside a project, uses temporary demo data, and removes that
-data on exit. It runs the existing framework examples, layouts and Projects demo.
+data on exit. It runs the existing framework examples with their generated screens.
 It does not read `EVLET_DATABASE`, create an app or touch customer instances.
-The Projects demo retains its separate browser-local storage behavior.
+Its Python pages (the Projects demo and the Layouts page) are registered in `/api/ui`
+but not rendered by the browser interface.
 `docs` serves this installed version's guides locally without a login or database.
 `effects check` recomputes the rows records post to other models and reports differences.
 It reads one snapshot without writing or taking the write lock, so it may run beside a server;

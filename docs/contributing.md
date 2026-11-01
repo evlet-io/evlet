@@ -84,12 +84,13 @@ npm --prefix frontend run dev
 
 The backend listens on port 8000; Vite listens on port 5173 and proxies `/api` and
 `/health` to it. Both bind to loopback. Use your development environment's normal
-browser access where supported. Open http://127.0.0.1:5173 for the native SolidJS UI. Sign-in opens Docs.
-Demo Pages contains the approved Projects example and a Python-authored reactive
-page. Models opens the real database-backed screens.
+browser access where supported. Open http://127.0.0.1:5173 for the Evlet UI. Sign-in opens Docs.
+The sidebar lists the models with their database-backed screens.
+http://127.0.0.1:5173/evlet.html opens the component Library in development.
 
-Create the first administrator account when prompted. Use Accounts to add Editor
-or Viewer accounts. Docs opens first; choose Models in the sidebar to create a customer, an invoice referencing it, and a payment
+Create the first administrator account when prompted. Add Editor or Viewer
+accounts through the `/api/auth/users` routes; the browser interface has no Accounts
+screen. Docs opens first; choose a model in the sidebar to create a customer, an invoice referencing it, and a payment
 referencing that invoice. Refresh or restart the backend to verify persistence.
 The default database is `examples/playground/.data/playground.sqlite3`, ignored
 by Git. `EVLET_DATABASE` can select another SQLite file. Each database has its own accounts.
@@ -160,8 +161,8 @@ python3 -m venv /tmp/evlet-wheel-check
 ```
 
 The Python suite exercises real SQLite files, validation, rollback, constraints,
-concurrent short writes, and full ASGI requests. The frontend suite exercises the Solid UI and retains the original Vue screens
-as a test-only regression harness. Tests substitute HTTP responses and missing
+concurrent short writes, and full ASGI requests. The frontend suite exercises the Evlet UI framework, its components and the
+generated screens in jsdom. Tests substitute HTTP responses and missing
 DOM layout APIs. The live smoke check covers the actual server and Vite proxy. Package checks
 verify the installed wheel outside the source tree. GitHub Actions runs Python
 tests on 3.12 and 3.13, distribution checks, frontend tests/build, and a live API
@@ -189,12 +190,13 @@ This is a development preview, not a deployment recipe.
 - Lists, counts, search, filters, and relationship choices use bounded server queries.
   Text search uses SQLite ASCII case folding. Browser integer actions require safe integers.
 - Forms, lists, and details are generated from renderer-neutral Python metadata.
-  The production bundle uses SolidJS and first-party components. Projects and
-  account management load separately. The previous Vue screens remain only as a
-  development test harness. No performance or scalability guarantees are claimed.
+  The production bundle contains only Evlet's own UI framework and screens; it has
+  no runtime dependencies. Python pages, native panels, reports and account
+  management keep their APIs but are not rendered. No performance or scalability
+  guarantees are claimed.
 
-See [Evlet UI](ui.md) for Python pages, layouts, component contracts, state,
-routes, generated records and custom Solid components.
+See [Evlet UI](ui.md) for the browser routes, generated screens and the Python
+page API, and [UI framework](ui-framework.md) for the browser code.
 
 Read [architecture decisions](architecture.md), the [full specification](specification.md),
 and [agent instructions](../AGENTS.md). The [model engine guide](model-engine.md)

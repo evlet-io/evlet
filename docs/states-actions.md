@@ -360,5 +360,5 @@ reasons above. They never include counts or names.
   is numbered again when it reaches `assign_on`.
 * Draft previews (`/api/_draft`) do not report the State lock; the save does.
 * The connector and the MCP server do not offer moves, void or revise yet.
-* The current SolidJS form shows the State as a read-only select and does not show
-  `_moves`, `_void` or `_revise`; the new UI will.
+* The record view shows the State as steps with its moves, and offers void and revise
+  from `_moves`, `_void` and `_revise`.

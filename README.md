@@ -56,7 +56,8 @@ For virtual environment setup and each step explained, read
   backups and moving a project.
 - [Model engine](docs/model-engine.md) and [business capabilities](docs/business-capabilities.md):
   database queries, accounts, child rows, actions and private attachments.
-- [UI guide](docs/ui.md): Python pages and the SolidJS components.
+- [UI guide](docs/ui.md): the browser interface, its routes and the Python page API.
+- [UI framework](docs/ui-framework.md): Evlet's own browser framework and components.
 
 `evlet dev --instance acme` reloads Python changes while you work. Stop the server
 and run `evlet migrate acme` when a model change needs a migration.
@@ -68,8 +69,7 @@ evlet playground
 evlet docs
 ```
 
-The Playground uses temporary demo data. Its Projects demo also uses browser
-storage. Use an instance for records you want to keep. Offline documentation
+The Playground uses temporary demo data. Use an instance for records you want to keep. Offline documentation
 opens at **http://127.0.0.1:8001**.
 
 ## Optional capabilities

@@ -1,7 +1,8 @@
 # Automatic application generation
 
 Milestone 3 generates navigation, forms, lists, and record details from registered
-Python models. The same Vue/PrimeVue components render every model. The Playground
+Python models. The same browser components render every model (first Vue and
+PrimeVue, then SolidJS, now Evlet's own UI framework). The Playground
 adds Project alongside Customer, Invoice, and Payment to demonstrate this.
 
 ## Define a screen in Python
@@ -56,7 +57,7 @@ and Decimal remain strings throughout editing and submission. DateTime accepts
 an ISO value with an explicit timezone, preserving the backend's UTC contract.
 
 Fields accept optional `label`, `help_text`, `placeholder`, `hidden`, and
-`read_only` arguments. These are neutral metadata, with no Vue or PrimeVue names.
+`read_only` arguments. These are neutral metadata, with no browser component names.
 A hidden field is omitted from generated forms, lists, and details. It remains
 available through the API; hiding is not a permission boundary. A read-only field
 is disabled in the renderer, and HTTP POST/PATCH rejects attempts to set it.

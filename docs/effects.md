@@ -261,4 +261,5 @@ A record changed after posting, for example by an action on a locked record, is 
   Without it, startup reports that an explicit index migration is required.
 * Effects post only on a move. Creating a record in a state, or changing it inside
   `tx.maintenance()`, posts nothing.
-* The SolidJS form does not show `_effects` yet.
+* The record view shows `_effects` in its Postings tab; the connector and the MCP server
+  do not show them yet.
