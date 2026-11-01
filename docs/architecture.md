@@ -62,7 +62,13 @@ SolidJS by Evlet's own UI framework.
 The model, persistence and ASGI APIs continue to use the standard library.
 The integrated CLI installs Uvicorn so `pip install evlet` can immediately serve
 an instance, and packaging to validate Python requirement and version standards.
-These avoid a custom HTTP server or an incomplete dependency parser. The `dev`
+These avoid a custom HTTP server or an incomplete dependency parser.
+`cryptography` (44.0.1 or later, below 52; locked at 50.0.2) encrypts connector secrets
+at rest with AES-GCM. Passwords and API keys for other services must be readable by
+the server, so they can't be hashed, and the standard library has no authenticated
+cipher. It is the maintained, audited library for this in Python; its wheels bring cffi
+and pycparser. 44.0.1 is the first release with the OpenSSL fix for CVE-2024-12797.
+Only `evlet/connectors.py` imports it, and only when a secret is encrypted or read. The `dev`
 extra adds pytest (tests) and build (distribution checks).
 setuptools is the packaging build backend. `requirements-dev.lock` pins the
 resolved Python setup dependencies and their transitive dependencies with hashes.
@@ -237,7 +243,7 @@ are the default; an operator must enable writes at process startup. Tool input
 cannot change the origin, session, or HTTP headers. Transport bounds, no redirects,
 private session files, and no automatic write retries keep this boundary explicit.
 
-The core uses only the standard library. The official MCP SDK is optional test
+The MCP connector uses only the standard library. The official MCP SDK is optional test
 instrumentation, pinned with transitive hashes in `requirements-mcp.lock` and
 constrained by the development lock. It verifies protocol interoperability without
 adding a runtime dependency. The starter command writes a small authenticated

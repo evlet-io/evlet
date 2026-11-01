@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-dependencies = ["packaging>=24,<27", "uvicorn>=0.34,<1"]
+dependencies = ["cryptography>=44.0.1,<52", "packaging>=24,<27", "uvicorn>=0.34,<1"]
 
 [project.urls]
 Homepage = "https://github.com/evlet-io/evlet"

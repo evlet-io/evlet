@@ -2,7 +2,8 @@
 
 Milestone 2 extends the foundation with typed fields, updates and deletes,
 parameterized queries, relationship traversal, and explicit SQLite migrations.
-The Python core still has no third-party runtime dependencies.
+At the time the Python core had no third-party runtime dependencies; connector
+secrets later added `cryptography` (see [architecture](architecture.md)).
 
 ## Fields and validation
 
