@@ -40,12 +40,103 @@ The framework has its own frontends: `evlet.desk` at `/app` (the generated scree
 `evlet.docs` at `/docs`, `evlet.controls` at `/controls` and `evlet.settings` at
 `/settings`.
 
-Status: app frontends are validated and checked for clashes, but they are not served
-yet, so an instance with any app frontend fails at boot with a "not available yet"
-message naming it. `evlet.controls` answers 404 for now, and `evlet.settings` serves
-only `/settings/accounts`.
-Sub-hosts, sign-in realms, API scopes and the `static` and `server` kinds come next.
-Flat-layout apps cannot register frontends yet.
+How each kind is served:
+
+- `evlet`: the desk shell under the frontend's base, `<base>/<model>`,
+  `<base>/<model>/new` and `<base>/<model>/<id>`, with every model the role can read.
+  Narrowing the shell to the app's own models comes later.
+- `static`: files from `dist`, a folder inside the app package, copied into the build
+  generation with the app source. Only html, js, css, svg, png, jpg, webp, ico, woff2,
+  json and map files are served; other types, dotfiles, `..` and links that leave the
+  folder answer 404. Any path without a file type gets `index.html`, so the app can
+  route in the browser. Evlet adds `<base href="<base>/">` to `index.html` unless it
+  has one, so relative asset paths work at any mount. The CSP is the desk's, plus the
+  frontend's `connect-src` origins.
+- `server`: `handler(request)` returns a `Response(body, status=200,
+  content_type="text/html; charset=utf-8")` or HTML text. It runs in the worker
+  thread pool, never on the event loop. `request` has `path` (under the base), `query`
+  (the raw query string), `host`, `user` (or `None`) and `params` (the query as a
+  dict). With `auth="desk"` a visitor who is not signed in is sent to `/login`; with
+  `roles=(...)` other roles get 404.
+
+Every page the framework serves gets one non-executable block in `<head>`:
+
+```html
+<script id="evlet-config" type="application/json">{"frontend":"crm.customer_portal","base":"/","api":"/api","realm":"portal","host":"portal.acme.com","docs":null,"version":"0.1.3"}</script>
+```
+
+The desk shell's router and API client read `base`, `docs` and `api` from it, so one
+build runs at `/customer-portal` on the primary host and at `/` on a sub-host.
+
+`evlet.controls` answers 404 for now, and `evlet.settings` serves only
+`/settings/accounts`. Flat-layout apps cannot register frontends yet.
+
+## Sub-hosts, realms and API scopes
+
+```python
+# apps/crm/crm/hooks.py
+from evlet import ApiScope
+portal_api = ApiScope("portal", models=(Customer, Invoice), actions=((Invoice, "accept"),), endpoints=("crm.contact",))
+app = AppDefinition(..., frontends=(crm, customer_portal), api_scopes=(portal_api,))
+
+# instances/acme/routes.py
+primary = Host("erp.acme.com", root=crm)
+hosts = (Host("portal.acme.com", root=customer_portal),)
+```
+
+- A sub-host serves its root frontend at `/`. That frontend leaves the primary host
+  unless `also_on_primary=True`. Sub-hosts serve `static` and `server` frontends; the
+  framework pages (`/controls`, `/docs`, `/app`, `/settings` and the other reserved
+  paths except `/assets`, `/login` and `/logout`) answer 404 there.
+- In development, sub-hosts are `.localhost` names, such as `portal.localhost`, served
+  over the development port. With a primary host they are public names on HTTPS.
+- **Realms.** A host's realm is `desk` on the primary host and the root frontend's
+  `auth` on a sub-host: `portal`, or `public` when `auth=None`. The built-in `portal`
+  role signs in on portal hosts only, and the desk roles on desk hosts only. A
+  mismatch gets the same "Invalid username or password" as a wrong password. Public
+  hosts have no sign-in. Sessions record their realm in `evlet_sessions.realm`.
+- **Cookies** are host-only, with no `Domain`, and named per realm: `evlet_session`
+  for the desk and `evlet_portal_session` for portals.
+- **API scope.** `/api` on a sub-host serves `/api/auth/session`, `login` and `logout`,
+  plus what its frontend's `api` scopes list: the scope's models (records, lines,
+  related records, files, drafts), the listed `(Model, "action")` pairs for actions
+  and moves, and the listed service endpoints. Everything else answers 404 there.
+  Permissions and row scopes still apply to every call.
+- The `portal` role and the `public` role have no access to any model unless an app
+  grants it in its permission rules.
+
+### Portal users and their customer
+
+`evlet_user_links(user_id, model, record_id)` links accounts to records. The
+`own_customer(field="customer", model="customer")` row scope reads it: a portal user
+sees the rows whose `field` holds a record of `model` they are linked to. Use
+`field="id"` on the linked model itself.
+
+```python
+from evlet import Rule, own_customer
+permissions = {
+    ("portal", Customer): Rule(("read",), scope=own_customer("id")),
+    ("portal", Invoice): Rule(("read",), scope=own_customer()),
+}
+auth.link_user(user.id, Customer, 42)      # or: evlet link-user acme buyer customer 42
+auth.unlink_user(user.id, Customer, 42)
+auth.user_links(user.id)                   # (("customer", 42),)
+```
+
+Links are read with the session on each request, so a change applies at once.
+
+### Public endpoints
+
+Model endpoints are always private, and `auth=None` on a frontend makes nothing
+public. A service endpoint opts in with `@api(..., public=True)`. It runs as the
+`public` role, so its permission needs a rule such as `("public", Lead): Rule(("read",
+"create"))`, and each client address gets at most 30 calls a minute and 300 an hour.
+This limit is built in and can't be turned off. Behind a proxy the address is the
+proxy's unless the server trusts its forwarded headers.
+
+The Playground has a working example: `examples/playground/portal` is a static portal
+served at `http://portal.localhost:8000` (and `/portal`), limited to customers and
+invoices through `own_customer`.
 
 ## Reserved paths
 
@@ -85,16 +176,18 @@ controls = ControlsAccess(allow_ips=("10.0.0.0/8",), require_two_step=True)
   HTTPS origin and secure cookies, and allows binding beyond loopback. `evlet dev`
   refuses both.
 - `paths` moves app frontends to another single segment. Framework frontends can't move.
-- `root` on the primary host will make `/` redirect to that frontend. It fails at
-  boot as "not available yet" until app frontends are served.
+- `root` on the primary host makes `/` redirect to that frontend.
 - `docs`: Docs are on in development and off when a primary host or `Instance.domain`
-  is set. `Docs(enabled=True)` or `Docs(enabled=False)` overrides that. Moving docs
-  or limiting them to roles is not available yet. `GET /api/auth/session` reports it
-  as `application.docs`: `"/docs"` or `null`. With Docs off, the browser starts on
-  the first list the role can open and shows no Docs links or shortcut.
+  is set. `Docs(enabled=True)` or `Docs(enabled=False)` overrides that.
+  `Docs(path="/help")` moves them to another free segment, and `Docs(roles=("admin",))`
+  sends visitors who are not signed in to `/login` and answers 404 to other roles.
+  Docs are never served on sub-hosts.
+  `GET /api/auth/session` reports Docs as `application.docs`: the path or `null`. With
+  Docs off, the browser starts on the first list the role can open and shows no Docs
+  links or shortcut.
 - `controls` can only tighten access to Controls. It is stored with the route table
   for the Controls page.
-- `hosts` (sub-hosts) are not available yet; boot fails if it is set.
+- `hosts` lists sub-hosts, each with a root frontend (see above).
 - Any other top-level name fails boot, so a typo such as `primay` is caught. Imports
   (modules, classes, functions, frontends) and names starting with `_` are skipped.
   Each known name must have its type: `paths` a dict, `hosts` a tuple, and so on.
@@ -104,12 +197,13 @@ controls = ControlsAccess(allow_ips=("10.0.0.0/8",), require_two_step=True)
 
 ## Resolution
 
-`resolve_routes(definitions, instance_config, routes_module, port=8000)` in
-`evlet/routing.py` runs in this order:
+`resolve_routes(definitions, instance_config, routes_module, port=8000, roots=None)` in
+`evlet/routing.py` runs in this order (`roots` maps app names to their package
+folders, where static frontends keep `dist`):
 
 1. Framework rows.
 2. App frontends at their default paths, in app order.
-3. Moves and the primary root from `routes.py`.
+3. Moves, sub-hosts and the primary root from `routes.py`.
 4. The clash check across the table, per host and first segment, ignoring case.
    Two apps on one path fail with, for example,
    `crm.portal and sales.portal both want /portal on erp.acme.com. Move one in instances/acme/routes.py.`
@@ -117,26 +211,80 @@ controls = ControlsAccess(allow_ips=("10.0.0.0/8",), require_two_step=True)
 5. Freeze.
 
 The `RouteTable` is immutable. It exposes `match(host, path)` returning
-`(frontend, base, rest)` or `None`, `redirect(host, path)`, `hosts()`, `origins()`
-and `rows()`. Paths with no mounted base belong to the desk shell at `/`, which
-serves the host root and the Python page routes.
+`(frontend, base, rest)` or `None`, `redirect(host, path)`, `hosts()`, `origins()`,
+`realm(host)`, `realms()`, `scopes(host)` and `rows()`. Paths with no mounted base
+belong to the desk shell at `/`, which serves the host root and the Python page routes.
+`LocalAuth(origins=table.origins(), realms=table.realms())` takes its hosts and realms
+from the table.
 
 ## `evlet routes`
 
 ```text
 $ evlet routes acme
-HOST           PATH        SERVES           SIGN-IN   SOURCE
-erp.acme.com   /controls   evlet.controls   control   locked
-erp.acme.com   /settings   evlet.settings   desk      locked
-erp.acme.com   /app        evlet.desk       desk      locked
-erp.acme.com   /reports    evlet.reports    desk      locked
-erp.acme.com   /login      evlet.login      public    locked
-erp.acme.com   /assets     evlet.assets     public    locked
-erp.acme.com   /health     evlet.health     public    locked
-erp.acme.com   /api/*      evlet.api        desk      locked
-erp.acme.com   /sales      crm.crm          desk      routes.py
-erp.acme.com   /           -> /sales        desk      routes.py
+HOST              PATH        SERVES                SIGN-IN   SOURCE
+erp.acme.com      /controls   evlet.controls        control   locked
+erp.acme.com      /settings   evlet.settings        desk      locked
+erp.acme.com      /app        evlet.desk            desk      locked
+erp.acme.com      /reports    evlet.reports         desk      locked
+erp.acme.com      /login      evlet.login           public    locked
+erp.acme.com      /assets     evlet.assets          public    locked
+erp.acme.com      /health     evlet.health          public    locked
+erp.acme.com      /api/*      evlet.api             desk      locked
+erp.acme.com      /sales      crm.crm               desk      routes.py
+erp.acme.com      /           -> /sales             desk      routes.py
+portal.acme.com   /           crm.customer_portal   portal    routes.py
+portal.acme.com   /api/*      crm.portal (scoped)   portal    routes.py
 ```
 
 In development the host column shows `localhost`. `--port` sets the port used for the
 loopback origins.
+
+## `evlet proxy`
+
+`evlet proxy acme --caddy` (or `--nginx`) prints a reverse proxy configuration for
+the instance's primary host and sub-hosts, forwarding to `127.0.0.1:<port>`. On
+sub-hosts it answers 404 for `/controls*` and `/docs*` itself, as the instance does.
+
+```text
+erp.acme.com {
+	reverse_proxy 127.0.0.1:8000
+}
+
+portal.acme.com {
+	@primary_only path_regexp (?i)^/(controls|docs)(/|$)
+	respond @primary_only 404
+	reverse_proxy 127.0.0.1:8000
+}
+```
+
+- `--write PATH` writes it to that file. Without it nothing is written, and the
+  command never reloads Caddy or nginx; review the file and reload it yourself.
+- `--check` resolves each host's A and AAAA records and reports whether they point at
+  this server, found from its outgoing address. Behind NAT, pass `--ip` with the public
+  address. It exits with status 1 when a host points elsewhere or has no record.
+- The nginx output expects certificates under `/etc/letsencrypt/live/<host>/`.
+
+### Many instances on one server
+
+Caddy can get certificates on demand instead of listing every host. Each instance
+answers `GET /_/tls-allowed?domain=<host>` from its route table: 200 for its own hosts,
+404 otherwise. It only answers loopback callers.
+
+```text
+{
+	on_demand_tls {
+		ask http://127.0.0.1:8000/_/tls-allowed
+	}
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+	reverse_proxy 127.0.0.1:8000
+}
+```
+
+Caddy takes one `ask` URL, so with several instances on different ports, keep one site
+block per instance (the `evlet proxy` output) or put a small script in front that asks
+each instance in turn.

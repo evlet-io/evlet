@@ -378,6 +378,14 @@ not part of the build.
 | `client.ts` | The API client plus the routes the screens use, and the last detail per record |
 | `meta.ts` | What the screens read from the schema, with the optional keys of later phases |
 | `prefs.ts` | Per-user preferences |
+| `config.ts` | Reads the runtime config block the server puts in every page |
+
+Every page the server serves carries one non-executable block in `<head>`:
+`<script id="evlet-config" type="application/json">{"frontend":"evlet.desk","base":"/app","api":"/api",...}</script>`.
+The router reads `base` (where the model screens are mounted) and `docs` from it, and the API
+client sends `/api/...` paths to `api`, so the same build runs under any mount path. Nothing
+in the app hardcodes `/app` or a host; a page without the block (the Vite server) uses the desk
+values.
 
 Routes are the paths the Python server serves (`evlet/ui/routes.py`): `/docs` and
 `/docs/:topic`, `/app/:model` (list), `/app/:model/new` (a new record; field values in the query

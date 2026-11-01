@@ -48,6 +48,8 @@ evlet dev --instance acme
 evlet migrate acme --trust
 evlet effects check acme
 evlet routes acme
+evlet proxy acme --caddy --check
+evlet link-user acme buyer customer 42
 evlet playground --port 8000
 evlet docs --port 8001
 ```
@@ -81,6 +83,14 @@ it exits with status 1 when there is any difference. See [effects.md](effects.md
 `routes` loads the installed apps and the optional `routes.py` the same way `serve`
 does, then prints the resolved hosts and paths, marking locked rows and where each
 row came from. See [routing.md](routing.md).
+`proxy` prints a Caddy (`--caddy`) or nginx (`--nginx`) configuration for the
+instance hosts, refusing `/controls` and `/docs` on sub-hosts. `--write PATH` writes
+it to that file instead; nothing else is written and no service is reloaded.
+`--check` reports whether each host's A and AAAA records point at this server and
+exits with status 1 when one does not; pass `--ip` when the public address cannot
+be detected.
+`link-user` links an account to a record, such as a portal user to their customer,
+for row scopes like `own_customer`. `--remove` removes the link.
 
 ## App package
 
@@ -226,7 +236,7 @@ instance = Instance(name="acme", domain=None, timezone="UTC")
 ```
 
 `routes.py` is optional trusted Python that moves app frontends, sets the primary
-host and turns Docs on or off. It must be a regular file inside the instance folder,
+host and sub-hosts, and moves Docs or turns them on or off. It must be a regular file inside the instance folder,
 not a symbolic link. Without it every frontend mounts at its default path and the
 URLs are unchanged. Docs are on in development and off once a domain or primary host
 is set. See [routing.md](routing.md).
