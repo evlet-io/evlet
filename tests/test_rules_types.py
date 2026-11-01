@@ -348,8 +348,10 @@ def test_new_types_validate_and_serialize():
     for bad in ({'model': 'Product', 'id': 3}, {'model': 'product', 'id': 0}, {'model': 'product'}, 'product:3'):
         with pytest.raises(ValueError):
             Reference().validate(bad)
-    with pytest.raises(ValueError):
-        Reference(index=True)
+    # index=True indexes both columns together; a Reference is never unique.
+    assert Reference(index=True).index
+    with pytest.raises(ValueError, match="cannot be unique"):
+        Reference(unique=True)
     with pytest.raises(ValueError, match='collide'):
         type('Clash', (Model,), {'about': Reference(), 'about_id': Integer()})
     assert Ref('parent.warehouse').path == 'parent.warehouse'

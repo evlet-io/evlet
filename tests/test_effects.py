@@ -270,8 +270,9 @@ def test_rows_see_the_saved_document_read_only(tmp_path):
     app = start(Database(tmp_path / 'db.sqlite3', Registry(StockMove, Probe)))
     c = client(app)
     url = f"/api/probe/{c('POST', '/api/probe', {'children': {'lines': [{'item': 'x', 'qty': '2', 'rate': '3'}]}})[1]['id']}"
-    # Changing the record from its rows method is a programming error: the move fails and rolls back.
-    assert move(c, url, 'issued')[0] == 500
+    # Changing the record from its rows method fails the move; the exception is not shown.
+    status, body, _ = move(c, url, 'issued')
+    assert status == 422 and body['fields'] == {'_effects': 'Probe.rows could not produce the StockMove rows'}
     assert seen == [('issued', '6.00', ['x'])] and c('GET', url)[1]['status'] == 'draft'
 
 
@@ -389,9 +390,9 @@ def test_roles_that_cannot_read_a_target_see_nothing_about_it(books):
         {'target': 'ledgerentry', 'on': 'issued', 'balanced': ['debit', 'credit'], 'reverse': {'swap': ['debit', 'credit']}},
         {'target': 'stockmove', 'on': 'issued', 'balanced': None, 'reverse': {'negate': ['qty']}}]
     assert viewer('GET', '/api/ledgerentry')[0] == 403
-    # A failing post names target details only to roles that can read the target.
+    # The editor cannot read the amounts, so the balance error does not show the totals.
     url = invoice(editor, account, skew='1')
-    assert move(editor, url, 'issued')[1]['fields'] == {'_effects': 'LedgerEntry rows are not balanced: debit totals 0.30 and credit totals -0.70'}
+    assert move(editor, url, 'issued')[1]['fields'] == {'_effects': 'LedgerEntry rows are not balanced'}
 
 
 def test_failures_are_generic_for_roles_that_cannot_read_the_target(tmp_path):
@@ -481,3 +482,244 @@ def test_check_command_exit_codes(books, tmp_path, monkeypatch, capsys):
     assert output.out.startswith('invoice 1 -> stockmove: missing; expected ') and output.err == '1 difference\n'
     # Nothing was written by the check.
     assert len(entries(app, 'stockmove')) == 1 and len(entries(app)) == 3
+
+
+# Review findings
+
+def main_branch(user):
+    return {'name': 'main'}
+
+
+class Branch(Model):
+    # The admin role sees only the main branch; editors see every branch.
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'), scope=main_branch),
+                   'editor': Rule(('read', 'create', 'update', 'delete'))}
+    name = Text(default='')
+    open = Boolean(default=True)
+
+
+class BranchEntry(Model):
+    """Declarative target whose Link has a filter and links to a model admin can only partly read."""
+    permissions = {'admin': Rule(('read',)), 'editor': Rule(('read',)), 'viewer': Rule(())}
+    branch = Link(Branch, required=True, filters={'open': True})
+    amount = Currency(default=0)
+    source = Reference()
+    reversal = Boolean(default=False)
+
+
+class PlainEntry(Model):
+    """Plain target: a Link to a missing record must be a 422, not a foreign key conflict."""
+    branch = Link(Branch)
+    qty = Decimal()
+    source = Reference()
+    reversal = Boolean(default=False)
+
+
+class BranchOrder(Model):
+    Meta = type('Meta', (FiniteMeta,), {'effects': (Effect(BranchEntry, rows='entries', on='done'),
+                                                    Effect(PlainEntry, rows='plain', on='done'))})
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete'))}
+    branch = Link(Branch)
+    missing = Integer(default=0)
+    plain_missing = Integer(default=0)
+    status = State(('draft', 'done'), moves=(Move('draft', 'done', 'Done'),), locked=('done',), final=('done',))
+
+    def entries(self):
+        return [{'branch': self.missing or self.branch, 'amount': '5'}]
+
+    def plain(self):
+        return [{'branch': self.plain_missing or self.branch, 'qty': '1'}]
+
+
+@pytest.fixture
+def branches(tmp_path):
+    app = start(Database(tmp_path / 'db.sqlite3', Registry(Branch, BranchEntry, PlainEntry, BranchOrder)))
+    return app, add_user(app, 'editor')
+
+
+def test_rows_are_validated_without_any_role(branches):
+    app, editor = branches
+    branch = editor('POST', '/api/branch', {'name': 'dubai'})[1]['id']
+    url = f"/api/branchorder/{editor('POST', '/api/branchorder', {'branch': branch})[1]['id']}"
+    # Admin cannot read the dubai branch, yet the engine posts rows linking to it.
+    status, body, _ = move(editor, url, 'done')
+    assert status == 200, body
+    assert [row['branch'] for row in entries(app, 'branchentry')] == [branch] and len(entries(app, 'plainentry')) == 1
+    # Link filters are decided on the stored record.
+    closed = editor('POST', '/api/branch', {'name': 'closed', 'open': False})[1]['id']
+    url = f"/api/branchorder/{editor('POST', '/api/branchorder', {'branch': closed})[1]['id']}"
+    assert move(editor, url, 'done')[1]['fields'] == {
+        '_effects': 'BranchEntry row 1 is not valid: branch: The selected record does not match the current filters'}
+
+
+def test_links_to_missing_records_are_field_errors(branches):
+    app, editor = branches
+    branch = editor('POST', '/api/branch', {'name': 'main'})[1]['id']
+    url = f"/api/branchorder/{editor('POST', '/api/branchorder', {'branch': branch, 'missing': 999})[1]['id']}"
+    assert move(editor, url, 'done')[1]['fields'] == {'_effects': 'BranchEntry row 1 is not valid: branch: The linked record does not exist'}
+    # A plain target gives the same 422, not a 409 from the foreign key.
+    url = f"/api/branchorder/{editor('POST', '/api/branchorder', {'branch': branch, 'plain_missing': 999})[1]['id']}"
+    status, body, _ = move(editor, url, 'done')
+    assert status == 422 and body['fields'] == {'_effects': 'PlainEntry row 1 is not valid: branch: The linked record does not exist'}
+    assert entries(app, 'branchentry') == entries(app, 'plainentry') == [] and editor('GET', url)[1]['status'] == 'draft'
+
+
+def test_a_reverse_must_keep_a_balanced_pair_balanced():
+    for reverse in (Negate('debit'), Swap('debit', 'other')):
+        model = target(debit=Currency(), credit=Currency(), other=Currency())
+        with pytest.raises(ValueError, match='would not balance'):
+            Registry(source(Effect(model, rows='rows', on='done', reverse=reverse, balanced=('debit', 'credit'))), model)
+    for reverse in (Negate('debit', 'credit'), Swap('credit', 'debit'), Negate('other')):
+        model = target(debit=Currency(), credit=Currency(), other=Currency())
+        Registry(source(Effect(model, rows='rows', on='done', reverse=reverse, balanced=('debit', 'credit'))), model)
+
+
+def test_void_checks_the_balance_of_the_mirror_rows(books, monkeypatch):
+    app, c, account = books
+    url = invoice(c, account)
+    move(c, url, 'issued')
+    original = effects.mirror_values
+
+    def skewed(bound, values):
+        result = original(bound, values)
+        if bound.balanced and result.get('debit'):
+            result['debit'] += D('1')
+        return result
+    monkeypatch.setattr(effects, 'mirror_values', skewed)
+    status, body, _ = c('POST', f'{url}/void', {'reason': 'x'}, headers=etag(c, url))
+    assert status == 422 and body['fields']['_effects'].startswith('The reversal of the LedgerEntry rows are not balanced: debit totals')
+    assert c('GET', url)[1]['status'] == 'issued' and len(entries(app)) == 3
+
+
+def test_a_failing_rows_method_is_a_field_error_and_an_invalid_check(books, monkeypatch, caplog):
+    app, c, account = books
+    url = invoice(c, account)
+    move(c, url, 'issued')
+    monkeypatch.setattr(Invoice, 'stock_rows', lambda self: 1 / 0)
+    found = effects.check(app)
+    assert [(item['target'], item['kind']) for item in found] == [('stockmove', 'invalid')]
+    assert 'ZeroDivisionError' in found[0]['message']
+    other = invoice(c, account)
+    status, body, _ = move(c, other, 'issued')
+    assert status == 422 and body['fields'] == {'_effects': 'Invoice.stock_rows could not produce the StockMove rows'}
+    assert 'division' not in str(body) and 'ZeroDivisionError' in caplog.text
+    assert c('GET', other)[1]['status'] == 'draft' and len(entries(app)) == 3
+
+
+def test_reading_a_virtual_result_is_an_error(tmp_path):
+    class Virtual(Model):
+        Meta = type('Meta', (FiniteMeta,), {'effects': (Effect(StockMove, rows='rows', on='done'),)})
+        permissions = ALL
+        n = Decimal(default=2)
+        double = Decimal(stored=False, compute=F('n') * 2)
+        status = State(('draft', 'done'), moves=(Move('draft', 'done', 'Done'),), locked=('done',))
+
+        def rows(self):
+            return [{'item': 'x', 'qty': self.double}]
+    app = start(Database(tmp_path / 'db.sqlite3', Registry(StockMove, Virtual)))
+    c = client(app)
+    url = f"/api/virtual/{c('POST', '/api/virtual', {})[1]['id']}"
+    status, body, _ = move(c, url, 'done')
+    assert status == 422 and 'Virtual.double is a virtual result (stored=False)' in body['fields']['_effects']
+    assert entries(app, 'stockmove') == []
+
+
+def test_an_unreachable_state_is_rejected():
+    model = target()
+    state = State(('draft', 'limbo', 'done', 'void'), moves=(Move('limbo', 'done', 'Done'),), locked=('done', 'void', 'limbo'),
+                  final=('void',), voidable=('done',))
+    with pytest.raises(ValueError, match='no sequence of declared moves'):
+        Registry(source(Effect(model, rows='rows', on='done', reverse=Negate('amount')), state=state), model)
+
+
+def test_check_reads_a_snapshot_without_the_write_lock(books):
+    import sqlite3
+    app, c, account = books
+    move(c, invoice(c, account), 'issued')
+    writer = sqlite3.connect(app.database.path, timeout=0)
+    try:
+        writer.execute('BEGIN IMMEDIATE')
+        writer.execute('UPDATE stockmove SET qty = 0')
+        # The writer holds the write lock and has not committed: the check neither waits nor sees its change.
+        assert effects.check(app) == []
+    finally:
+        writer.rollback()
+        writer.close()
+
+
+def test_source_lookups_use_the_source_index(books):
+    import sqlite3
+    app, c, account = books
+    assert LedgerEntry.__declared_fields__['source'].index and Reference(index=True).index
+    with pytest.raises(ValueError, match='cannot be unique'):
+        Reference(unique=True)
+    connection = sqlite3.connect(app.database.path)
+    indexes = [row[0] for row in connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='ledgerentry'")]
+    plan = connection.execute('EXPLAIN QUERY PLAN SELECT * FROM "ledgerentry" WHERE "source_model"=? AND "source_id" IN (?) ORDER BY id',
+                              ('invoice', 1)).fetchall()
+    connection.close()
+    assert any('"source_model", "source_id"' in (sql or '') for sql in indexes), indexes
+    assert any('INDEX' in row[3] and 'source' in row[3] for row in plan), plan
+
+
+def test_an_existing_target_table_adds_the_source_index_by_migration(tmp_path):
+    from evlet import AddIndex, CreateModel, Migration, SchemaError
+
+    def entry_model(indexed):
+        return type('Entry', (Model,), {'item': Text(default=''), 'source': Reference(index=indexed), 'reversal': Boolean(default=False)})
+    old, new = entry_model(False), entry_model(True)
+    path = tmp_path / 'db.sqlite3'
+    first = (Migration('0001', CreateModel(old)),)
+    Database(path, Registry(old), migrations=first).migrate(first)
+    with pytest.raises(SchemaError):
+        Database(path, Registry(new), migrations=first).initialize()
+    second = first + (Migration('0002_source_index', AddIndex('entry', 'source')),)
+    Database(path, Registry(new), migrations=second).migrate(second)
+    Database(path, Registry(new), migrations=second).initialize()
+
+
+def test_a_renamed_indexed_reference_keeps_its_index(tmp_path):
+    from evlet import CreateModel, Migration, RenameField
+    before = type('Note', (Model,), {'about': Reference(index=True)})
+    after = type('Note', (Model,), {'subject': Reference(index=True)})
+    path = tmp_path / 'db.sqlite3'
+    first = (Migration('0001', CreateModel(before)),)
+    Database(path, Registry(before), migrations=first).migrate(first)
+    second = first + (Migration('0002', RenameField('note', 'about', 'subject')),)
+    Database(path, Registry(after), migrations=second).migrate(second)
+    Database(path, Registry(after), migrations=second).initialize()
+
+
+def test_posting_many_rows_costs_one_statement_per_row(tmp_path):
+    from contextlib import contextmanager
+    log = []
+
+    class Counting(Database):
+        @contextmanager
+        def _connection(self):
+            with super()._connection() as connection:
+                connection.set_trace_callback(log.append)
+                yield connection
+
+    class Big(Model):
+        Meta = type('Meta', (FiniteMeta,), {'effects': (Effect(LedgerEntry, rows='rows', on='done', reverse=Swap('debit', 'credit'),
+                                                               balanced=('debit', 'credit')),)})
+        permissions = ALL
+        account = Link(Account)
+        status = State(('open', 'done', 'void'), moves=(Move('open', 'done', 'Done'),), locked=('done', 'void'), final=('void',),
+                       voidable=('done',))
+
+        def rows(self):
+            return [{'account': self.account, 'debit': '1'}, {'account': self.account, 'credit': '1'}] * 250
+    app = start(Counting(tmp_path / 'db.sqlite3', Registry(Account, LedgerEntry, Big)))
+    c = client(app)
+    account = c('POST', '/api/account', {'name': 'A'})[1]['id']
+    url = f"/api/big/{c('POST', '/api/big', {'account': account})[1]['id']}"
+    headers = etag(c, url)
+    log.clear()
+    assert c('POST', f'{url}/moves/done', {}, headers=headers)[0] == 200
+    inserts = [sql for sql in log if sql.startswith('INSERT INTO "ledgerentry"')]
+    assert len(inserts) == 500 and len(log) - 500 < 60, (len(log), [sql[:80] for sql in log if not sql.startswith('INSERT')])
+    log.clear()
+    assert c('POST', f'{url}/void', {'reason': 'x'}, headers=etag(c, url))[0] == 200
+    assert len(log) - 500 < 60, len(log)

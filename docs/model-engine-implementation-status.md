@@ -749,3 +749,25 @@ Known limitations:
 * The check holds one write transaction for the whole run.
 * Effects post only on a move; raw writes inside `tx.maintenance()` post nothing.
 * The SolidJS form, the connector and the MCP server do not show `_effects`.
+
+### Phase 6 review findings (01-11-2026)
+
+* Effect rows are validated without any role: an engine policy reads linked records as stored,
+  in batches, so Link existence and Link filters do not depend on the admin role's scope or
+  read access. A Link to a missing record is a 422 under `_effects` for plain and declarative
+  targets.
+* A `reverse` that changes one field of the `balanced` pair is rejected at registration, and a
+  void checks the balance of the mirror rows too. Roles that cannot read both balanced fields get
+  the balance error without totals.
+* A failing rows method is a 422 that rolls back (the exception is logged, not shown) and an
+  `invalid` difference in the check. Reading a virtual result is an error with a clear message.
+* An `on` state that no sequence of moves from the default reaches is rejected.
+* The check reads one snapshot (deferred SQLite transaction, `REPEATABLE READ READ ONLY` on
+  PostgreSQL) without the write lock, and scans for orphans in batches.
+* `Reference(index=True)` creates one index over both columns on SQLite and PostgreSQL (create,
+  AddField, AddIndex, rename, schema check). Effects index the target's `source`; an existing
+  table gains it with `AddIndex("<target>", "source")`. EXPLAIN shows an index search.
+* Posting writes one INSERT per row with linked records read in batches and no reload: 500
+  ledger rows take 524 statements for the move (about 1,500 before) and 518 for the void.
+* Events: `EventStore.publish` inserts into `evlet_events` in the operation's transaction, so an
+  event for an effect row is discarded with any rollback, including a savepoint rollback.

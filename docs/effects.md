@@ -63,8 +63,9 @@ class Invoice(Model):
 * `rows` names a model method that takes only `self` and returns a list of dicts, one per
   row. `self` is the saved document: every stored field, stored results included, and its
   Table rows at every depth, read with full access whatever the caller may read. It is read
-  only; assigning a value fails the move. Virtual results (`stored=False`) are not available.
-  The handoff sketched `ledger_rows(self, tx)`; the method takes no transaction, so its rows
+  only; assigning a value fails the move. Reading a virtual result (`stored=False`) fails the
+  move with `Invoice.x is a virtual result (stored=False), which effect rows cannot read`;
+  store the result, or calculate the value in the method. The handoff sketched `ledger_rows(self, tx)`; the method takes no transaction, so its rows
   depend only on the record and the check command can recompute them.
 * `on` is the state that posts the rows.
 * `reverse` says how the engine cancels a row on void: `Swap("debit", "credit")` exchanges
@@ -79,7 +80,8 @@ A model declares at most one effect per target model.
 Startup fails with a message naming the model when:
 
 * The model has no State, or is a `Table` row. Effects belong on root documents.
-* `on` is not a state, is the default state, or no declared move enters it.
+* `on` is not a state, is the default state, no declared move enters it, or no sequence of
+  declared moves from the default state reaches it.
 * A record could enter `on` twice, because a move leads back to it. It would post twice.
 * A state a record may be in after `on` is not locked. Posted rows must keep matching a record
   that ordinary writes and deletes cannot change.
@@ -92,6 +94,8 @@ Startup fails with a message naming the model when:
 * `Swap` names fields of different types, scales or bounds, or `Negate` names a field whose
   bounds are not symmetric (no bounds, or a minimum equal to minus the maximum). A reversal
   row must always be valid when its original was.
+* `reverse` changes one field of the `balanced` pair but not the other, so reversal rows would
+  not balance. Swapping the balanced pair, negating both or negating neither is fine.
 * `reverse` is missing while a record can be voided after posting (a voidable state is
   reachable from `on`). When the record can never be voided after posting, `reverse` is
   optional.
@@ -104,8 +108,10 @@ rows are saved and before the move completes:
 1. The engine calls the rows method on the saved document.
 2. Each row is validated as a new record of the target. A declarative target settles like any
    new record: defaults, calculations, `required`, `required_when`, `applies_when`, validators
-   and `validate()`. A plain model checks its fields and `validate()`. Link values are checked
-   with the admin role's read access, not the caller's, because the engine writes the rows.
+   and `validate()`. A plain model checks its fields and `validate()`. No role applies, because
+   the engine writes the rows: every Link must name a stored record (`The linked record does
+   not exist`), and Link filters are decided on that record as stored. Linked records are read
+   in batches, one statement per linked model.
 3. Rows may set only the target's own source fields. `source`, `reversal`, calculated fields
    and unknown names are refused (`Not a field the rows may set`).
 4. The engine fills `source` with the record (`{"model": "invoice", "id": 7}`) and `reversal`
@@ -121,9 +127,16 @@ Effects run in declaration order. Any failure rolls back the whole move: the sta
 ```
 
 A role that cannot read the target gets `The rows this record posts to other records are not
-valid` instead, and field names it cannot read are not shown. A rows method that raises
-something else, returns something other than a list of dicts, or changes the record answers
-500 and rolls back, like a `run` method.
+valid` instead, and field names it cannot read are not shown. A role that cannot read both
+balanced fields gets `LedgerEntry rows are not balanced` without the totals.
+
+A rows method that raises, returns something other than a list of dicts, or changes the
+record also fails the move with 422 and rolls it back:
+`Invoice.stock_rows could not produce the StockMove rows`. The exception is written to the
+server log and never shown.
+
+Each row costs one INSERT statement (plus the calculation version of a finite-v1 target, and
+an event when events are enabled). Posting 500 rows runs about 520 statements in all.
 
 ## Effect rows are read only
 
@@ -150,7 +163,7 @@ each original row of every effect with a `reverse`:
   `reversal` set to true. Calculated fields of the target are calculated again.
 * Mirror rows are validated like the originals. If one is refused (a target validator that
   rejects it), the void fails with `The reversal of StockMove row 1 is not valid: ...` and
-  rolls back.
+  rolls back. A balanced effect also checks the balance of the mirror rows.
 * Original rows are never changed or deleted. A record whose rows were reversed already is
   not reversed again.
 * Revising a void record that has no revision yet does not void it again, so nothing is
@@ -185,8 +198,10 @@ evlet effects check acme
 ```
 
 The command recomputes the rows of every record of every model with effects and compares
-them with the saved rows. It writes nothing. It prints one line per difference and exits
-with status 1 when there is any, or prints `No differences` and exits with 0.
+them with the saved rows. It writes nothing and takes no write lock: it reads one consistent
+snapshot (a read transaction on SQLite, `REPEATABLE READ READ ONLY` on PostgreSQL), so it may
+run while the instance serves. It prints one line per difference and exits with status 1 when
+there is any, or prints `No differences` and exits with 0.
 
 From Python, `evlet.effects.check(application)` returns the differences as a list of dicts
 with `model`, `record`, `target`, `kind`, `reversal` and, where they apply, `expected`,
@@ -198,8 +213,8 @@ with `model`, `record`, `target`, `kind`, `reversal` and, where they apply, `exp
 * `changed`: a saved row differs from the one the record produces now. Rows that match
   exactly are paired first; the rest are paired in order.
 * `unbalanced`: the saved original rows (or mirror rows) of a balanced effect do not balance.
-* `invalid`: the record's rows cannot be produced now (the rows method fails or a row is not
-  valid).
+* `invalid`: the record's rows cannot be produced now: the rows method raises (the message
+  names the exception) or a row is not valid. The check goes on with the next record.
 
 Which records must have posted is decided from the State's moves: a record in a state that
 can only be reached through `on` must have rows. When a state could also be reached another
@@ -211,11 +226,16 @@ A record changed after posting, for example by an action on a locked record, is 
 
 ## Notes and limits
 
-* Reference fields cannot be indexed, so finding a record's rows scans the target table. This
-  is fine for small tables; large ledgers will need an index on `(source_model, source_id)`
-  added by a later phase.
-* The check reads every source record and every target row in one write transaction, so it
-  briefly holds the database write lock on SQLite.
+* The engine indexes the target's `source`: an effect sets `index=True` on it, which creates
+  one index over `(source_model, source_id)`. Details, void and the check find a record's rows
+  with an index search. `Reference(index=True)` works on any model, on SQLite and PostgreSQL.
+  A target table created before it was an effect target needs a migration to gain the index:
+
+  ```python
+  Migration("0007_ledger_source_index", AddIndex("ledgerentry", "source"))
+  ```
+
+  Without it, startup reports that an explicit index migration is required.
 * Effects post only on a move. Creating a record in a state, or changing it inside
   `tx.maintenance()`, posts nothing.
 * The SolidJS form does not show `_effects` yet.

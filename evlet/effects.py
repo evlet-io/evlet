@@ -22,15 +22,17 @@ from dataclasses import dataclass
 from decimal import Decimal, localcontext
 import inspect
 import json
+import logging
 import re
 from types import MappingProxyType
 
 from .auth import AccessError, User
 from .fields import Boolean, Link, Reference
 from .models import Model, ValidationError, identifier
+from .permissions import CHUNK, Policy, Rule
 
 NUMERIC = ('integer', 'decimal', 'currency', 'percent')
-# The engine validates effect rows with the admin role's read access to the records they link to.
+# The engine validates the rows it writes without any role: see EnginePolicy.
 ENGINE = User(0, 'evlet-effects', 'admin')
 SOURCE, REVERSAL = 'source', 'reversal'
 BATCH = 500
@@ -83,6 +85,7 @@ class Effect:
             raise ValueError('Effect balanced names two different fields, for example ("debit", "credit")')
         self.target, self.rows, self.on, self.reverse = target, rows, on, reverse
         self.balanced = None if balanced is None else tuple(balanced)
+        index_source(target)
 
     def __repr__(self):
         name = self.target if isinstance(self.target, str) else self.target.__name__
@@ -105,6 +108,13 @@ class Bound:
 
 
 # Registration
+
+def index_source(target):
+    """Rows are found by their source, so the engine indexes a target's `source` Reference on both columns."""
+    field = getattr(target, '__declared_fields__', {}).get(SOURCE) if isinstance(target, type) else None
+    if isinstance(field, Reference):
+        field.index = True
+
 
 def compile_effects(registry, models, child_models):
     """({source model: (Bound, ...)}, frozenset of target models) for the models of one registry."""
@@ -130,6 +140,7 @@ def compile_effects(registry, models, child_models):
                 raise ValueError(f'{name}: declare at most one effect per target model ({target.__name__})')
             seen.add(target)
             check_target(registry, model, target, child_models)
+            index_source(target)
             implied, after = check_state(model, effect)
             check_method(model, effect)
             check_fields(model, target, effect, after)
@@ -185,6 +196,8 @@ def check_state(model, effect):
                     found.add(item)
                     queue.append(item)
         return found
+    if effect.on not in reachable([field.default]):
+        raise ValueError(f'{label}: no sequence of declared moves from {field.default!r} reaches {effect.on!r}')
     after = reachable([effect.on])
     if effect.on in reachable([move.to for move in field.moves if effect.on in move.sources] + (['void'] if effect.on in field.voidable else [])):
         raise ValueError(f'{label}: a record could enter {effect.on!r} twice and post its rows again; '
@@ -224,6 +237,10 @@ def check_fields(model, target, effect, after):
             raise ValueError(f'{label}: a record can be voided after posting (from {", ".join(sorted(voidable))}), '
                              'so the effect needs reverse=Swap(...) or Negate(...)')
         return
+    touched = set(effect.reverse.fields) & set(effect.balanced or ())
+    if touched and touched != set(effect.balanced):
+        raise ValueError(f'{label}: the reverse changes {", ".join(sorted(touched))} but not the other balanced field, '
+                         'so reversal rows would not balance; swap the balanced pair, or negate both or neither')
     if isinstance(effect.reverse, Swap):
         first, second = (numeric(name, 'Swap') for name in effect.reverse.fields)
         if type(first) is not type(second) or getattr(first, 'scale', None) != getattr(second, 'scale', None) \
@@ -244,11 +261,30 @@ def targets_of(registry):
 
 # Posting and reversal
 
+class VirtualRead(AttributeError):
+    """A rows method read a virtual result, which the saved document does not hold."""
+
+
+def saved_draft():
+    """The Draft class of a saved document handed to a rows method: reading a virtual result is an error."""
+    from .documents import Draft
+
+    class Saved(Draft):
+        def __getattr__(self, name):
+            field = self._definition.__declared_fields__.get(name)
+            if field is not None and not field.stored:
+                raise VirtualRead(f'{self._definition.__name__}.{name} is a virtual result (stored=False), which effect rows '
+                                  'cannot read; store it or calculate the value in the rows method')
+            return super().__getattr__(name)
+    return Saved
+
+
 def load_document(business, tx, model, record_id):
     """The saved document with every row at every depth, read with full access and frozen."""
-    from .documents import Draft, freeze_draft, owned_rows
+    from .documents import freeze_draft, owned_rows
+    Saved = saved_draft()
     saved = tx.get(model, record_id)
-    root = Draft(model, dict(saved._values), record_id=saved.id)
+    root = Saved(model, dict(saved._values), record_id=saved.id)
     level = [(model, saved.id, root)]
     while level:
         following = []
@@ -260,7 +296,7 @@ def load_document(business, tx, model, record_id):
             for owner_id, item in owners.items():
                 rows = []
                 for row in found.get(owner_id, ((), 0))[0]:
-                    draft = Draft(child.model, dict(row._values), parent=item, record_id=row.id)
+                    draft = Saved(child.model, dict(row._values), parent=item, record_id=row.id)
                     rows.append(draft)
                     following.append((child.model, row.id, draft))
                 item._rows[child.name] = rows
@@ -284,9 +320,109 @@ class RowError(ValueError):
         super().__init__(f'{bound.target.__name__} row {index}: ' + '; '.join(f'{key}: {value}' for key, value in errors.items()))
 
 
+class EnginePolicy(Policy):
+    """Full read access without roles or row scopes, for validating rows the engine writes itself.
+
+    Linked records are read as they are stored, in batches, and kept for the rest of the operation, so Link
+    existence and Link filters are decided on the raw records whatever any role may read.
+    """
+    def __init__(self, policy):
+        self.registry, self.rules, self.governed, self.corrections = policy.registry, policy.rules, policy.governed, policy.corrections
+        self.cache = {}
+
+    def rule(self, user, model):
+        return Rule(('read',))
+
+    def allows(self, user, model, operation):
+        return operation == 'read'
+
+    def presented(self, user, model):
+        return set(model.__declared_fields__)
+
+    def fields(self, user, model, *, write=False, _visiting=frozenset()):
+        return set(model.__declared_fields__)
+
+    def scope_sql(self, user, model):
+        return '', []
+
+    def load(self, tx, model, record_ids):
+        """Read the records not read yet, one statement per model and chunk; absent ids are remembered too."""
+        wanted = [record_id for record_id in dict.fromkeys(record_ids) if (model, record_id) not in self.cache]
+        table = identifier(self.registry.name_for(model))
+        for start in range(0, len(wanted), CHUNK):
+            part = wanted[start:start + CHUNK]
+            self.cache.update(((model, record_id), None) for record_id in part)
+            for row in tx.connection.execute(f'SELECT * FROM {table} WHERE id IN ({", ".join("?" for _ in part)})', part).fetchall():
+                self.cache[model, row['id']] = model._from_row(row)
+
+    def _scoped(self, tx, user, model, record_ids, operation, columns):
+        if operation != 'read':
+            return {}
+        ids = [record_id for record_id in dict.fromkeys(record_ids) if type(record_id) is int]
+        self.load(tx, model, ids)
+        found = {record_id: self.cache[model, record_id] for record_id in ids if self.cache[model, record_id] is not None}
+        return dict.fromkeys(found) if columns == 'record.id' else found
+
+    def record(self, tx, user, model, record_id, operation='read'):
+        found = self._scoped(tx, user, model, [record_id], operation, 'record.*')
+        if record_id not in found:
+            raise AccessError(404, 'Record not found')
+        return found[record_id]
+
+
+class EngineBusiness:
+    """The application's business with the engine policy, for the engine's own Context."""
+    def __init__(self, business):
+        self._business, self.policy = business, EnginePolicy(business.policy)
+
+    def __getattr__(self, name):
+        return getattr(self._business, name)
+
+
 def engine_context(business, tx):
     from .documents import Context
-    return Context(business, tx, ENGINE)
+    return Context(EngineBusiness(business), tx, ENGINE)
+
+
+def check_links(engine, bound, rows):
+    """Batch-read every record the rows link to; returns {row index: {field: message}} for Links to missing records.
+
+    Values that are not valid ids are left to field validation.
+    """
+    policy, tx = engine._business.policy, engine._tx
+    fields = {name: field for name, field in bound.target.__declared_fields__.items() if isinstance(field, Link)}
+
+    def cleaned(field, value):
+        try:
+            return None if value is None else field.clean(value)
+        except (ValueError, TypeError):
+            return None
+    wanted = {}
+    for values in rows:
+        for name, field in fields.items():
+            value = cleaned(field, values.get(name))
+            if value is not None:
+                wanted.setdefault(field.target, set()).add(value)
+    for model, ids in wanted.items():
+        policy.load(tx, model, list(ids))
+    errors = {}
+    for index, values in enumerate(rows, 1):
+        for name, field in fields.items():
+            value = cleaned(field, values.get(name))
+            if value is not None and policy.cache.get((field.target, value)) is None:
+                errors.setdefault(index, {})[name] = 'The linked record does not exist'
+    return errors
+
+
+def prepare_all(engine, bound, rows, record_id, *, reversal=False):
+    """Validate a batch of rows (dicts) as new records of the target; returns their drafts, or raises RowError."""
+    linked = check_links(engine, bound, rows)
+    drafts = []
+    for index, values in enumerate(rows, 1):
+        if index in linked:
+            raise RowError(bound, index, linked[index])
+        drafts.append(prepare(engine, bound, values, record_id, index, reversal=reversal))
+    return drafts
 
 
 def prepare(engine, bound, values, record_id, index, *, reversal=False):
@@ -294,7 +430,8 @@ def prepare(engine, bound, values, record_id, index, *, reversal=False):
 
     The engine fills `source` and `reversal`. Other keys must be fields the row may set: no calculated
     values and no unknown names. Declarative targets settle like any new record (defaults, calculations,
-    rules, validators); plain models validate their fields and `validate()`.
+    rules, validators); plain models validate their fields and `validate()`. Links were checked by
+    `check_links`, without any role.
     """
     from .documents import Draft, settle
     business, target = engine._business, bound.target
@@ -314,7 +451,7 @@ def prepare(engine, bound, values, record_id, index, *, reversal=False):
     except ValidationError as exc:
         raise RowError(bound, index, exc.errors) from None
     except AccessError:
-        raise RowError(bound, index, {'_form': 'A linked record is not available'}) from None
+        raise RowError(bound, index, {'_form': 'A linked record does not exist'}) from None
     return draft
 
 
@@ -339,13 +476,21 @@ def is_balanced(bound, rows):
 
 
 def write(engine, bound, draft):
-    from .documents import record_plan, write_snapshot
-    business, tx = engine._business, engine._tx
-    saved = write_snapshot(tx, draft)
-    if business.registry.plan_for(bound.target) is not None:
-        record_plan(tx, business.registry.name_for(bound.target), saved.id, business.registry.formula_hashes.get(bound.target))
-    business.changed(tx, bound.target, saved.id)
-    return saved
+    """Insert one row with one statement, plus the calculation version of a finite-v1 target and an event when
+    events are enabled. The source is the record being moved or voided, so it is not checked again."""
+    from .database import storage_columns
+    from .documents import record_plan
+    business, tx, target = engine._business, engine._tx, bound.target
+    tx.check_references(target, {name: draft._values.get(name) for name, field in target.__declared_fields__.items()
+                                 if isinstance(field, Reference) and name != SOURCE})
+    names, values = storage_columns(target, draft._values, target.__fields__)
+    table = identifier(business.registry.name_for(target))
+    record_id = tx.connection.execute(f'INSERT INTO {table} ({", ".join(identifier(name) for name in names)}) '
+                                      f'VALUES ({", ".join("?" for _ in names)})', values).lastrowid
+    if business.registry.plan_for(target) is not None:
+        record_plan(tx, business.registry.name_for(target), record_id, business.registry.formula_hashes.get(target))
+    business.changed(tx, target, record_id)
+    return record_id
 
 
 def readable(business, user, target):
@@ -368,6 +513,27 @@ def row_message(business, user, error):
     return f'{error.bound.target.__name__} row {error.index} is not valid: ' + '; '.join(parts)
 
 
+def balance_message(business, user, bound, values, prefix=''):
+    """Why a batch does not balance; the totals only for roles that can read both balanced fields."""
+    if not set(bound.balanced) <= business.policy.fields(user, bound.target):
+        return f'{prefix}{bound.target.__name__} rows are not balanced'
+    first, second = totals(bound, values)
+    return (f'{prefix}{bound.target.__name__} rows are not balanced: '
+            f'{bound.balanced[0]} totals {first} and {bound.balanced[1]} totals {second}')
+
+
+def rows_of(context, bound, document):
+    """The rows method's result, or a 422 failure. Its exception is logged and never shown."""
+    try:
+        return produce(bound, document)
+    except VirtualRead as exc:
+        raise failure(context._business, context.user, bound, str(exc)) from None
+    except Exception:
+        logging.getLogger(__name__).exception('%s.%s failed', bound.source.__name__, bound.rows)
+        raise failure(context._business, context.user, bound,
+                      f'{bound.source.__name__}.{bound.rows} could not produce the {bound.target.__name__} rows') from None
+
+
 def post(context, model, record_id, state):
     """Called once a move into `state` is saved, in its transaction: write the rows of every effect on it."""
     business, tx = context._business, context._tx
@@ -377,24 +543,22 @@ def post(context, model, record_id, state):
     document = load_document(business, tx, model, record_id)
     engine = engine_context(business, tx)
     for bound in bounds:
-        drafts = []
-        for index, values in enumerate(produce(bound, document), 1):
-            try:
-                drafts.append(prepare(engine, bound, values, record_id, index))
-            except RowError as error:
-                raise failure(business, context.user, bound, row_message(business, context.user, error)) from None
-        if not is_balanced(bound, [normalized(draft) for draft in drafts]):
-            first, second = totals(bound, [normalized(draft) for draft in drafts])
-            names = bound.balanced
-            raise failure(business, context.user, bound, f'{bound.target.__name__} rows are not balanced: '
-                                                         f'{names[0]} totals {first} and {names[1]} totals {second}')
+        try:
+            drafts = prepare_all(engine, bound, rows_of(context, bound, document), record_id)
+        except RowError as error:
+            raise failure(business, context.user, bound, row_message(business, context.user, error)) from None
+        values = [normalized(draft) for draft in drafts]
+        if not is_balanced(bound, values):
+            raise failure(business, context.user, bound, balance_message(business, context.user, bound, values))
         for draft in drafts:
             write(engine, bound, draft)
 
 
 def posted(tx, registry, bound, record_ids):
-    """Saved rows of an effect for the given source ids: {source id: [target records in id order]}."""
-    from .permissions import CHUNK
+    """Saved rows of an effect for the given source ids: {source id: [target records in id order]}.
+
+    The `source` index covers (source_model, source_id), so this is an index search.
+    """
     table, name = identifier(registry.name_for(bound.target)), registry.name_for(bound.source)
     ids, found = list(dict.fromkeys(record_ids)), {}
     for start in range(0, len(ids), CHUNK):
@@ -428,12 +592,14 @@ def reverse(context, model, record_id):
         if not originals or len(originals) != len(rows):
             # Nothing was posted, or this record's rows were reversed already.
             continue
-        drafts = []
-        for index, row in enumerate(originals, 1):
-            try:
-                drafts.append(prepare(engine, bound, mirror_values(bound, row._values), record_id, index, reversal=True))
-            except RowError as error:
-                raise failure(business, context.user, bound, 'The reversal of ' + row_message(business, context.user, error)) from None
+        try:
+            drafts = prepare_all(engine, bound, [mirror_values(bound, row._values) for row in originals], record_id, reversal=True)
+        except RowError as error:
+            raise failure(business, context.user, bound, 'The reversal of ' + row_message(business, context.user, error)) from None
+        values = [normalized(draft) for draft in drafts]
+        # Registration keeps a balanced pair balanced; this also guards a target that recalculates the pair.
+        if not is_balanced(bound, values):
+            raise failure(business, context.user, bound, balance_message(business, context.user, bound, values, 'The reversal of the '))
         for draft in drafts:
             write(engine, bound, draft)
 
@@ -488,44 +654,64 @@ def check(application):
     Takes an Application (or its Business). Returns a list of differences, each a dict with `model`,
     `record`, `target`, `kind` ("missing", "extra", "changed", "unbalanced" or "invalid"), `reversal`
     and, where they apply, `expected`, `actual` (serialized values), `row` (the saved row id) and `message`.
-    Reads run in one transaction that writes nothing.
+    Everything is read from one read-only snapshot (a deferred SQLite transaction, or REPEATABLE READ READ
+    ONLY on PostgreSQL), so writers are not blocked and records and rows are read consistently.
     """
+    from .database import Session
     business = getattr(application, 'business', application)
     registry = business.registry
     differences = []
-    with business.database.transaction() as tx:
-        engine = engine_context(business, tx)
-        for model, bounds in registry.effects.items():
-            table, name = identifier(registry.name_for(model)), registry.name_for(model)
-            state_name = model.__state__
-            seen = set()
-            last = 0
-            while True:
-                records = [model._from_row(row) for row in tx.connection.execute(
-                    f'SELECT * FROM {table} WHERE id > ? ORDER BY id LIMIT ?', (last, BATCH)).fetchall()]
-                if not records:
-                    break
-                last = records[-1].id
-                ids = [record.id for record in records]
-                saved = {bound: posted(tx, registry, bound, ids) for bound in bounds}
-                for record in records:
-                    seen.add(record.id)
-                    document = None
-                    for bound in bounds:
-                        rows = saved[bound].get(record.id, [])
-                        state = record._values.get(state_name)
-                        if document is None and (rows or state in bound.implied):
-                            document = load_document(business, tx, model, record.id)
-                        differences += compare(engine, bound, name, record.id, state, document, rows)
-            # Rows whose source record no longer exists.
-            for bound in bounds:
-                target_table = identifier(registry.name_for(bound.target))
-                for row in tx.connection.execute(f'SELECT * FROM {target_table} WHERE "{SOURCE}_model"=? ORDER BY id', (name,)).fetchall():
-                    item = bound.target._from_row(row)
-                    if item._values[SOURCE][1] not in seen:
-                        differences.append(difference(bound, name, item._values[SOURCE][1], 'extra', item._values[REVERSAL],
-                                                      actual=item, message='The source record does not exist'))
+    with business.database._connection() as connection:
+        connection.execute('BEGIN')
+        try:
+            tx = Session(connection, registry)
+            engine = engine_context(business, tx)
+            for model, bounds in registry.effects.items():
+                table, name = identifier(registry.name_for(model)), registry.name_for(model)
+                state_name = model.__state__
+                last = 0
+                while True:
+                    records = [model._from_row(row) for row in tx.connection.execute(
+                        f'SELECT * FROM {table} WHERE id > ? ORDER BY id LIMIT ?', (last, BATCH)).fetchall()]
+                    if not records:
+                        break
+                    last = records[-1].id
+                    ids = [record.id for record in records]
+                    saved = {bound: posted(tx, registry, bound, ids) for bound in bounds}
+                    for record in records:
+                        document = None
+                        for bound in bounds:
+                            rows = saved[bound].get(record.id, [])
+                            state = record._values.get(state_name)
+                            if document is None and (rows or state in bound.implied):
+                                document = load_document(business, tx, model, record.id)
+                            differences += compare(engine, bound, name, record.id, state, document, rows)
+                for bound in bounds:
+                    differences += orphans(tx, registry, bound, name, table)
+        finally:
+            connection.rollback()
     return differences
+
+
+def orphans(tx, registry, bound, name, table):
+    """Rows whose source record no longer exists, read in batches."""
+    target_table = identifier(registry.name_for(bound.target))
+    result, last = [], 0
+    while True:
+        rows = tx.connection.execute(f'SELECT * FROM {target_table} WHERE "{SOURCE}_model"=? AND id > ? ORDER BY id LIMIT ?',
+                                     (name, last, BATCH)).fetchall()
+        if not rows:
+            return result
+        items = [bound.target._from_row(row) for row in rows]
+        last = items[-1].id
+        sources = list({item._values[SOURCE][1] for item in items})
+        existing = set()
+        for start in range(0, len(sources), CHUNK):
+            part = sources[start:start + CHUNK]
+            existing |= {row[0] for row in tx.connection.execute(
+                f'SELECT id FROM {table} WHERE id IN ({", ".join("?" for _ in part)})', part).fetchall()}
+        result += [difference(bound, name, item._values[SOURCE][1], 'extra', item._values[REVERSAL], actual=item,
+                              message='The source record does not exist') for item in items if item._values[SOURCE][1] not in existing]
 
 
 def difference(bound, model_name, record_id, kind, reversal, *, expected=None, actual=None, message=None):
@@ -566,14 +752,15 @@ def compare(engine, bound, model_name, record_id, state, document, rows):
         return result + [difference(bound, model_name, record_id, 'extra', True, actual=row,
                                     message='A reversal without original rows') for row in reversals]
     try:
-        expected = [normalized(prepare(engine, bound, values, record_id, index))
-                    for index, values in enumerate(produce(bound, document), 1)]
+        expected = [normalized(draft) for draft in prepare_all(engine, bound, produce(bound, document), record_id)]
         mirrors = []
         if state == 'void' and bound.reverse is not None:
-            mirrors = [normalized(prepare(engine, bound, mirror_values(bound, values), record_id, index, reversal=True))
-                       for index, values in enumerate(expected, 1)]
-    except (RowError, TypeError) as error:
-        return result + [difference(bound, model_name, record_id, 'invalid', False, message=str(error))]
+            mirrors = [normalized(draft) for draft in
+                       prepare_all(engine, bound, [mirror_values(bound, values) for values in expected], record_id, reversal=True)]
+    except Exception as error:  # Any failure of the rows method is reported for this record.
+        message = str(error) if isinstance(error, (RowError, VirtualRead)) else \
+            f'{bound.source.__name__}.{bound.rows} failed: {type(error).__name__}: {error}'
+        return result + [difference(bound, model_name, record_id, 'invalid', False, message=message)]
     result += match(bound, model_name, record_id, expected, originals, False)
     result += match(bound, model_name, record_id, mirrors, reversals, True)
     return result

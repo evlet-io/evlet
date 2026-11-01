@@ -28,13 +28,26 @@ def _column(name, field):
     return result
 
 
-def _index(connection, table, field, *, unique=False):
+def index_columns(name, field):
+    """The columns an index on a field covers: one, or both columns of a Reference."""
+    return tuple(column for column, _ in field.columns(name))
+
+
+def stored_columns(columns, name):
+    """The columns of a field as stored, from a table's column names: a Reference has <name>_model and <name>_id."""
+    if name not in columns and {name + '_model', name + '_id'} <= set(columns):
+        return (name + '_model', name + '_id')
+    return (name,)
+
+
+def _index(connection, table, field, *, unique=False, columns=None):
     base = f'evlet_{table}_{field}_{"unique" if unique else "index"}'
     name, suffix = base, 1
     while connection.execute('SELECT 1 FROM sqlite_master WHERE name = ?', (name,)).fetchone():
         suffix += 1
         name = f'{base}_{suffix}'
-    connection.execute(f'CREATE {"UNIQUE " if unique else ""}INDEX {identifier(name)} ON {identifier(table)} ({identifier(field)})')
+    covered = ', '.join(identifier(column) for column in (columns or (field,)))
+    connection.execute(f'CREATE {"UNIQUE " if unique else ""}INDEX {identifier(name)} ON {identifier(table)} ({covered})')
 
 
 def _sequence_index(connection, table, name, field):
@@ -54,7 +67,7 @@ def _create(connection, table, model):
     connection.execute(f'CREATE TABLE {identifier(table)} ({", ".join(columns)})')
     for name, field in model.__fields__.items():
         if field.index or field.unique:
-            _index(connection, table, name, unique=field.unique)
+            _index(connection, table, name, unique=field.unique, columns=index_columns(name, field))
         if field.kind == 'sequence':
             _sequence_index(connection, table, name, field)
 
@@ -99,7 +112,7 @@ def _check(connection, registry, *, rows=False):
                 unique.add(fields)
         if unique != {(key,) for key, field in model.__fields__.items() if field.unique}:
             raise SchemaError(f'{name}: unique constraints differ from models')
-        if any((key,) not in indexed for key, field in model.__fields__.items() if field.index):
+        if any(index_columns(key, field) not in indexed for key, field in model.__fields__.items() if field.index):
             raise SchemaError(f'{name}: an explicit index migration is required')
         if any((*field.scope, key) not in partial for key, field in model.__fields__.items() if field.kind == 'sequence'):
             raise SchemaError(f'{name}: a Sequence field is missing its unique index')
@@ -204,7 +217,7 @@ class AddField:
             literal = connection.execute('SELECT quote(?)', (value,)).fetchone()[0]
             connection.execute(f'ALTER TABLE {identifier(self.table)} ADD COLUMN {sql} DEFAULT {literal}')
         if self.field.unique or self.field.index:
-            _index(connection, self.table, self.name, unique=self.field.unique)
+            _index(connection, self.table, self.name, unique=self.field.unique, columns=index_columns(self.name, self.field))
         if self.field.kind == 'sequence':
             _sequence_index(connection, self.table, self.name, self.field)
 
@@ -244,8 +257,11 @@ class AddIndex:
         identifier(self.field)
         return {'operation': 'add_index', 'table': self.table, 'field': self.field, 'unique': self.unique}
 
-    def apply(self, connection):
-        _index(connection, self.table, self.field, unique=self.unique)
+    def apply(self, connection, columns=None):
+        """columns: the table's column names (read from SQLite when not given); a Reference indexes both of its columns."""
+        if columns is None:
+            columns = {row[1] for row in connection.execute(f'PRAGMA table_info({identifier(self.table)})')}
+        _index(connection, self.table, self.field, unique=self.unique, columns=stored_columns(columns, self.field))
 
 
 @dataclass(frozen=True)
