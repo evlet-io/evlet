@@ -13,14 +13,13 @@ import type { Prefs } from './prefs';
 /** The route table. These are the paths the Python server serves the app for (evlet/ui/routes.py).
  * The model screens live under the frontend's base from the config block (/app for the desk).
  * <base>/:model/new comes before <base>/:model/:id so "new" is never taken for an id. <base>/:model/:id/view
- * is an older link to a record and opens the record. Accounts and reports are not part of this UI;
- * their addresses still open and say so. */
+ * is an older link to a record and opens the record. Reports are not part of this UI; their
+ * addresses still open and say so. Accounts moved to Controls (/controls/users), a separate page. */
 const FIXED = {
   home: '/',
   login: '/login',
   docs: '/docs',
   topic: '/docs/:topic',
-  accounts: '/settings/accounts',
   report: '/reports/:report',
 } as const;
 const MODELS = {
