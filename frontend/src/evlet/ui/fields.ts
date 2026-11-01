@@ -9,7 +9,7 @@
 import { html, when, type Child } from '../dom';
 import { cell, derive, effect, untrack, type Cell, type Readable } from '../reactive';
 import type { ApiClient } from '../api';
-import { sameValue, type Outcome, type Rules } from '../model/record';
+import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '../model/record';
 import type { FieldSchema, SchemaIndex } from '../model/schema';
 import { Chip, Icon, IconButton, RecordMark, StatusPill, Switch } from './base';
 import { read, tintFor, uid, type Prop, type Tint } from './core';
@@ -55,10 +55,19 @@ export function edited(field: FieldLike): Cell<boolean> {
   return flag;
 }
 
+/** The record store a field belongs to, or null for a local field. */
+export function recordOf(field: FieldLike): RecordStore | null {
+  return field instanceof Field ? field.row.record : null;
+}
+
+/** The fields of the model a field belongs to (just the field itself for a local field). */
+export function siblingsOf(field: FieldLike): FieldSchema[] {
+  return field instanceof Field ? field.row.model.fields : [field.meta];
+}
+
 // Labels of the other fields of the field's model, for sentences such as "Locked when Stage is won".
 function labelsOf(field: FieldLike) {
-  const fields = (field as any).row?.model?.fields as FieldSchema[] | undefined;
-  return labeller(fields ?? [field.meta]);
+  return labeller(siblingsOf(field));
 }
 
 const isEmpty = (value: unknown) => value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length);
@@ -72,11 +81,18 @@ export interface LinkSource {
   /** The title of a record, as a cell that fills in once it is read. */
   title(model: string, id: number): Readable<string | null>;
   remember?(model: string, id: number, title: string): void;
+  /** Forget everything read so far (on sign-out). */
+  clear?(): void;
 }
 
-/** A LinkSource over the API: list search with ?q= and titles from GET /api/{model}/{id}. */
+/**
+ * A LinkSource over the API: list search with ?q= and titles from GET /api/{model}/{id}.
+ * Titles are kept for the signed-in session and forgotten when it ends.
+ */
 export function apiLinks(api: ApiClient, schema: SchemaIndex): LinkSource {
-  const titles = new Map<string, Cell<string | null>>();
+  let titles = new Map<string, Cell<string | null>>();
+  const clear = () => { titles = new Map(); };
+  if (typeof window !== 'undefined') window.addEventListener('evlet-session-ended', clear);
   const titleOf = (model: string, data: Record<string, unknown>) => {
     const field = schema.model(model).title_field;
     return String(data[field] ?? `#${data.id}`);
@@ -100,6 +116,7 @@ export function apiLinks(api: ApiClient, schema: SchemaIndex): LinkSource {
       return title;
     },
     remember,
+    clear,
   };
 }
 
@@ -199,12 +216,19 @@ export interface Control {
   focus(): void;
 }
 
+// Two date-times that name the same moment (the server keeps microseconds, typed text has minutes).
+function sameInstant(meta: FieldSchema, a: unknown, b: unknown) {
+  if (meta.type !== 'datetime' || typeof a !== 'string' || typeof b !== 'string') return false;
+  const x = Date.parse(a), y = Date.parse(b);
+  return !Number.isNaN(x) && x === y;
+}
+
 /** Write a value to a field: checks required, records the edit and reports a refused write. */
 export function writeValue(field: FieldLike, value: unknown, label = field.meta.label): boolean {
   const required = untrack(() => field.rules.get().required);
   if (required && isEmpty(value)) { field.error.set(`${label} is required`); return false; }
   const current = untrack(() => field.value.get());
-  if (sameValue(field.meta, current, value) || JSON.stringify(current ?? null) === JSON.stringify(value ?? null)) {
+  if (sameValue(field.meta, current, value) || JSON.stringify(current ?? null) === JSON.stringify(value ?? null) || sameInstant(field.meta, current, value)) {
     field.error.set(null);
     return true;
   }
@@ -259,6 +283,13 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
   const textarea = kind.control === 'textarea';
   const shown = () => (kind.edit ?? kind.format)(field.value.get(), meta);
   const commit = (): boolean => {
+    // Text the user did not change is not a change, even when the stored value is more precise
+    // than its display (date-times with seconds) or the server normalized it (+971 numbers).
+    if (input.value === untrack(shown)) {
+      if (untrack(() => field.rules.get().required) && isEmpty(untrack(() => field.value.get()))) { field.error.set(`${field.meta.label} is required`); return false; }
+      field.error.set(null);
+      return true;
+    }
     let value: unknown;
     try { value = kind.parse ? kind.parse(input.value, meta) : input.value; }
     catch (error) {

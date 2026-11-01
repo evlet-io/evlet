@@ -1,18 +1,20 @@
 /* Evlet UI styles, ported from docs/ui-design/reference/styles.css (the approved design): the
    tokens for both themes, then component styles with the mockup's class names. Additions for the
-   framework components are at the end. Import this file once per page. */
+   framework components are at the end. Import this file once per page. A few token values are
+   darker or lighter than the mockup so small text meets WCAG AA contrast; docs/ui-framework.md
+   lists them under "Deviations from the mockup". */
 /* Layout: fixed sidebar + topbar shell, one scrolling view region. White ground, cool slate neutrals, one blue accent, soft tinted icons. */
 :root{
   --bg:#ffffff; --bg-subtle:#f8f9fb; --bg-muted:#f2f4f7; --side-bg:#f4f5f8; --surface:#ffffff; --overlay:rgba(16,20,30,.32);
   --border:#e8eaef; --border-strong:#d8dce3; --divider:#eef0f3;
-  --fg:#151821; --fg-2:#4b5263; --fg-3:#858b99; --fg-4:#a9aeb9;
+  --fg:#151821; --fg-2:#4b5263; --fg-3:#696f7e; --fg-4:#868d9c;
   --accent:#2f5be8; --accent-hover:#244ed4; --accent-fg:#ffffff; --accent-soft:#eef2fe; --accent-ring:rgba(47,91,232,.22);
-  --t-blue:#3466e6;  --t-blue-bg:#eef2fd;
-  --t-green:#159452; --t-green-bg:#e9f7ef;
-  --t-amber:#c27a0a; --t-amber-bg:#fdf4e3;
-  --t-rose:#d6435b;  --t-rose-bg:#fdeef0;
+  --t-blue:#3365e6;  --t-blue-bg:#eef2fd;
+  --t-green:#128047; --t-green-bg:#e9f7ef;
+  --t-amber:#9e6308; --t-amber-bg:#fdf4e3;
+  --t-rose:#cf2d47;  --t-rose-bg:#fdeef0;
   --t-violet:#7553d9;--t-violet-bg:#f3effd;
-  --t-teal:#0e8f8a;  --t-teal-bg:#e6f6f5;
+  --t-teal:#0c7c78;  --t-teal-bg:#e6f6f5;
   --t-slate:#5f6778; --t-slate-bg:#f0f2f5;
   --shadow-sm:0 1px 2px rgba(16,24,40,.05);
   --shadow-md:0 1px 2px rgba(16,24,40,.04),0 4px 12px rgba(16,24,40,.06);
@@ -25,7 +27,7 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0f1115; --bg-subtle:#13161b; --bg-muted:#1a1e25; --side-bg:#14171c; --surface:#16191f; --overlay:rgba(0,0,0,.55);
   --border:#252a33; --border-strong:#323844; --divider:#1e222a;
-  --fg:#e8eaf0; --fg-2:#b2b8c5; --fg-3:#7d8494; --fg-4:#5c6270;
+  --fg:#e8eaf0; --fg-2:#b2b8c5; --fg-3:#7e8595; --fg-4:#626978;
   --accent:#5b80f5; --accent-hover:#6d8ef7; --accent-fg:#ffffff; --accent-soft:#1b2440; --accent-ring:rgba(91,128,245,.3);
   --t-blue:#7a9cf7; --t-blue-bg:#1a2340; --t-green:#43c27f; --t-green-bg:#13281d; --t-amber:#e2a53e; --t-amber-bg:#2a2112;
   --t-rose:#f07b8d; --t-rose-bg:#2e1820; --t-violet:#a48df0; --t-violet-bg:#221c38; --t-teal:#3fc2bc; --t-teal-bg:#10292a;
@@ -35,7 +37,7 @@
 :root[data-theme="dark"]{
   --bg:#0f1115; --bg-subtle:#13161b; --bg-muted:#1a1e25; --side-bg:#14171c; --surface:#16191f; --overlay:rgba(0,0,0,.55);
   --border:#252a33; --border-strong:#323844; --divider:#1e222a;
-  --fg:#e8eaf0; --fg-2:#b2b8c5; --fg-3:#7d8494; --fg-4:#5c6270;
+  --fg:#e8eaf0; --fg-2:#b2b8c5; --fg-3:#7e8595; --fg-4:#626978;
   --accent:#5b80f5; --accent-hover:#6d8ef7; --accent-fg:#ffffff; --accent-soft:#1b2440; --accent-ring:rgba(91,128,245,.3);
   --t-blue:#7a9cf7; --t-blue-bg:#1a2340; --t-green:#43c27f; --t-green-bg:#13281d; --t-amber:#e2a53e; --t-amber-bg:#2a2112;
   --t-rose:#f07b8d; --t-rose-bg:#2e1820; --t-violet:#a48df0; --t-violet-bg:#221c38; --t-teal:#3fc2bc; --t-teal-bg:#10292a;
@@ -406,7 +408,7 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .pal-in{display:flex;align-items:center;gap:12px;padding:0 20px;border-bottom:1px solid var(--divider);height:64px;flex:none;color:var(--fg-3)}
 .pal-in svg{width:20px;height:20px}
 .pal-in input{flex:1;border:0;outline:none;background:transparent;font-size:16.5px;height:100%;color:var(--fg);min-width:0}
-.pal-in input::placeholder{color:var(--fg-4)}
+.pal-in input::placeholder{color:var(--fg-3)}
 .pal-list{overflow-y:auto;padding:8px 12px 12px;flex:1;min-height:0}
 .pal-sec{padding:6px 0 4px}
 .pal-sec+.pal-sec{border-top:1px solid var(--divider);margin-top:6px;padding-top:12px}
@@ -440,7 +442,7 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .qa-rm svg{stroke-width:3}
 .qa-tile.empty{cursor:default}
 .qa-tile.empty .qa-ic{border:1.5px dashed var(--border-strong);color:var(--fg-4)}
-.qa-tile.empty .qa-lbl{color:var(--fg-4)}
+.qa-tile.empty .qa-lbl{color:var(--fg-3)}
 .qa-tile.empty:hover{background:none}
 .qa-picker{margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--bg-subtle);display:grid;gap:12px}
 .qa-note{font-size:12.5px;color:var(--fg-3)}
@@ -583,7 +585,7 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .ff{min-width:0;display:flex;flex-direction:column;gap:1px;padding:3px 0}
 .ff.full{grid-column:1/-1}
 .ff label{font-size:12px;color:var(--fg-3);font-weight:500;display:flex;gap:8px;align-items:center}
-.ff-hint{display:inline-flex;align-items:center;gap:3px;color:var(--fg-4);font-weight:400}
+.ff-hint{display:inline-flex;align-items:center;gap:3px;color:var(--fg-3);font-weight:400}
 .ff .fval{min-height:34px;border:1px solid transparent}
 .ff .fval:hover{border-color:var(--border);background:var(--surface)}
 .ff.full .fval span.tx{white-space:pre-wrap;overflow:visible}
@@ -725,7 +727,7 @@ table.g{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:1
 th:hover>.rz::after{background:var(--border-strong)}
 .rz:hover::after,.resizing .rz:hover::after{background:var(--accent)}
 .grid.resizing,.dt.resizing{cursor:col-resize;user-select:none}
-.g-ph{color:var(--fg-4)}
+.g-ph{color:var(--fg-3)}
 .g tr.g-xrow td{padding:0;height:auto;background:var(--bg-subtle);white-space:normal;overflow:visible}
 .g-x{position:sticky;left:0;width:var(--gw,100%);padding:12px 14px 14px;box-shadow:inset 3px 0 0 var(--accent);animation:slidein .18s ease}
 .g-x-h{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap}
@@ -752,7 +754,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .col-row{display:flex;align-items:center;gap:6px;height:32px;padding:0 4px 0 4px;border-radius:6px}
 .col-row:hover{background:var(--bg-muted)}
 .col-row .lbl{flex:1;font-size:13px}
-.col-row.hid .lbl{color:var(--fg-4)}
+.col-row.hid .lbl{color:var(--fg-3)}
 .col-eye{width:26px;height:26px;display:grid;place-items:center;border-radius:6px;color:var(--fg-3)}
 .col-eye:hover:not(:disabled){color:var(--accent)}
 .icon-btn.sm{width:24px;height:24px}
@@ -987,5 +989,6 @@ th:hover>.rz::after{background:var(--border-strong)}
 .lib-bulk{width:100%;display:flex;justify-content:center}
 .lib-bulk .bulk{position:static;transform:none}
 .lib-bulk .bulk:not(.show){opacity:.5}
+@media (max-width:480px){.g-exp{min-width:24px}.g-exp .num{display:none}}
 @media (max-width:760px){.lib-app .sidebar{display:none}.g-x-f>div.wide{grid-column:1/-1}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}

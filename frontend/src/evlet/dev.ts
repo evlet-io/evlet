@@ -11,6 +11,7 @@ import { cell, effect } from './reactive';
 import { createRouter } from './router';
 import { apiLinks, setLinkSource } from './ui/fields';
 import { LibraryPage } from './ui/library';
+import { mountToasts } from './ui/layers';
 import { copy, responses, server } from './tests/server';
 
 const schema = responses.schema.body as AppSchema;
@@ -37,6 +38,7 @@ function sampleApi() {
 
 const api = sampleApi();
 setLinkSource(apiLinks(api, new SchemaIndex(schema)));
+mountToasts();
 const record = new RecordStore({ api, schema, model: 'order' });
 void record.open(1);
 

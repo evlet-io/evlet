@@ -8,7 +8,7 @@
 // keeps only the rows in view in the DOM. It locks with the record.
 
 import { each, html, when } from '../dom';
-import { batch, cell, derive, effect, untrack, type Cell } from '../reactive';
+import { batch, cell, derive, effect, onCleanup, untrack, type Cell } from '../reactive';
 import type { Field, Row, Table } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Button, Checkbox, Icon, IconButton, IconTile, Key } from './base';
@@ -19,7 +19,11 @@ import { openPopover, toast } from './layers';
 import { arrange, byKey, emptyPrefs, fullOrder, moveColumn, resizeHandle, virtualWindow, type TablePrefs } from './table';
 import { tooltip } from './tooltip';
 
-const CTL = 84, ROW = 38, HEADER = 36;
+const ROW = 38, HEADER = 36;
+// Under 480 px the control column drops the row number and the first column starts narrower,
+// so a phone keeps room for the other columns.
+const NARROW = '(max-width: 480px)';
+const narrowNow = () => { try { return Boolean(window.matchMedia?.(NARROW)?.matches); } catch { return false; } };
 const WIDTHS: Record<string, number> = { text: 200, longtext: 260, link: 200, currency: 140, decimal: 110, integer: 90, percent: 100, date: 120, datetime: 160,
   time: 90, duration: 110, select: 140, boolean: 90, email: 200, url: 200, phone: 150, tags: 200, state: 120, sequence: 150, reference: 180 };
 const RICH = new Set(['link', 'state', 'tags', 'sequence', 'boolean']);
@@ -79,9 +83,11 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     return { key: name, label: meta.label, width: WIDTHS[meta.type] ?? 160, meta, calculated, align: kindOf(meta.type).align === 'right' ? 'right' : 'left' };
   });
   const columns = derive(() => arrange(allColumns, prefs.get(), true), { name: `${table.name} (shown columns)` });
-  const widthOf = (column: ChildColumn) => prefs.get().widths[column.key] ?? column.width;
-  const totalWidth = derive(() => CTL + columns.get().reduce((sum, column) => sum + widthOf(column), 0));
-  const firstLeft = CTL;
+  const narrow = cell(narrowNow(), { name: `${table.name} (narrow)` });
+  const ctl = () => narrow.get() ? 64 : 84;
+  const widthOf = (column: ChildColumn) => prefs.get().widths[column.key]
+    ?? (narrow.get() && columns.get()[0]?.key === column.key ? Math.min(column.width, 120) : column.width);
+  const totalWidth = derive(() => ctl() + columns.get().reduce((sum, column) => sum + widthOf(column), 0));
   const locked = derive(() => Boolean(read(props.locked ?? false)), { name: `${table.name} (locked)` });
   const readOnly = derive(() => locked.get() || !record.ready.get());
   const sums = props.totals ?? parentSums(table);
@@ -174,7 +180,15 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
 
   // ---------- rows ----------
 
-  const copyValues = (row: Row) => Object.fromEntries([...row.fields.values()].filter(field => !field.calculated).map(field => [field.name, untrack(() => field.value.get())]));
+  // A row's own values and its rows of rows, as new rows for table.add().
+  const copyValues = (row: Row): Record<string, unknown> => {
+    const values: Record<string, unknown> = Object.fromEntries([...row.fields.values()].filter(field => !field.calculated).map(field => [field.name, untrack(() => field.value.get())]));
+    if (row.tables.size) values.children = Object.fromEntries([...row.tables].map(([name, nested]) => [name, untrack(() => nested.rows.get()).map(copyValues)]));
+    return values;
+  };
+  // Why rows can't change now, or null.
+  const blocked = () => readOnly.peek() ? (locked.peek() ? 'The lines are locked, so the rows can\u2019t come back.' : 'The record is still loading. Try Undo again in a moment.')
+    : record.saving.peek() ? 'The record is being saved. Try Undo again in a moment.' : null;
   const add = () => {
     if (readOnly.peek()) return;
     const row = table.add();
@@ -194,7 +208,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   };
   const remove = (list: Row[]) => {
     if (readOnly.peek() || !list.length) return;
-    const positions = list.map(row => ({ at: untrack(() => rows.get()).indexOf(row), values: copyValues(row) })).sort((a, b) => a.at - b.at);
+    const positions = list.map(row => ({ at: untrack(() => rows.get()).indexOf(row), row })).sort((a, b) => a.at - b.at);
     batch(() => {
       for (const row of list) table.remove(row);
       selection.set(new Set());
@@ -202,7 +216,13 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     });
     toast(list.length === 1 ? 'Deleted 1 row' : `Deleted ${list.length} rows`, {
       icon: 'trash-2',
-      undo: () => batch(() => { for (const item of positions) { const row = table.add(item.values); table.move(row, Math.min(item.at, untrack(() => rows.get()).length - 1)); } }),
+      // The same rows come back, with their ids and rows of rows, where they were.
+      undo: () => {
+        const why = blocked();
+        if (why) { toast(why, { icon: 'info' }); return; }
+        try { for (const item of positions) table.restore(item.row, item.at); }
+        catch (error) { toast(error instanceof Error ? error.message : 'The rows could not come back.', { icon: 'info' }); }
+      },
     });
   };
   const moveRow = (row: Row, direction: 1 | -1) => {
@@ -217,7 +237,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
 
   // ---------- views ----------
 
-  const pinStyle = (column: () => ChildColumn) => () => columns.get()[0]?.key === column().key ? `${firstLeft}px` : null;
+  const pinStyle = (column: () => ChildColumn) => () => columns.get()[0]?.key === column().key ? `${ctl()}px` : null;
   const isFirst = (column: () => ChildColumn) => () => columns.get()[0]?.key === column().key;
 
   const header = (column: () => ChildColumn) => {
@@ -259,7 +279,9 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
           ${Button({ icon: 'trash-2', label: 'Delete', variant: 'soft-danger', size: 'small', onClick: () => remove([row]) })}`)}
         ${Button({ label: 'Done', size: 'small', onClick: () => { expanded.set(null); queueMicrotask(() => byKey(scroller, 'tr', row.key)?.querySelector<HTMLElement>('.g-exp')?.focus()); } })}</div>
       <div class="g-x-f">${allColumns.map(column => html`<div class=${column.meta.type === 'longtext' ? 'wide' : ''}>${BaseField({ field: row.field(column.key), links: props.links })}${() => prefs.get().hidden.includes(column.key)
-        ? html`<span class="muted g-x-hid">Hidden column</span>` : null}</div>`)}</div></div></td></tr>` as HTMLElement;
+        ? html`<span class="muted g-x-hid">Hidden column</span>` : null}</div>`)}</div>
+      ${[...row.tables.values()].map(nested => html`<div class="g-x-nested">${ChildTable({ table: nested, locked: props.locked, links: props.links, height: 228,
+        lockedText: props.lockedText, icon: 'rows-3', tint: props.tint })}</div>`)}</div></td></tr>` as HTMLElement;
     queueMicrotask(() => expandedHeight.set(panel.getBoundingClientRect().height));
     return panel;
   };
@@ -328,7 +350,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     <div class="g-scroll" tabindex="-1">
       <table class="g" role="grid" aria-labelledby=${titleId} aria-rowcount=${() => String(rows.get().length + 1)} aria-colcount=${() => String(columns.get().length + 1)}
         aria-readonly=${() => readOnly.get() ? 'true' : null} style:width=${() => `${totalWidth.get()}px`}>
-        <colgroup><col style:width=${`${CTL}px`}>${each(columns, column => column.key, column => html`<col style:width=${() => `${widthOf(column())}px`}>`)}</colgroup>
+        <colgroup><col style:width=${() => `${ctl()}px`}>${each(columns, column => column.key, column => html`<col style:width=${() => `${widthOf(column())}px`}>`)}</colgroup>
         <thead><tr role="row" aria-rowindex="1"><th class="g-ctl stk" style="left:0" scope="col">${Checkbox({ checked: () => rows.get().length > 0 && selectedRows().length === rows.get().length,
           mixed: () => selectedRows().length > 0 && selectedRows().length < rows.get().length, ariaLabel: 'Select all rows',
           onChange: on => selection.set(on ? new Set(rows.peek().map(row => row.key)) : new Set()) })}</th>${each(columns, column => column.key, header)}</tr></thead>
@@ -349,6 +371,10 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   </div>` as HTMLElement;
   scroller = grid.querySelector('.g-scroll') as HTMLElement;
   view.attach(scroller);
+  const media = (() => { try { return window.matchMedia?.(NARROW) ?? null; } catch { return null; } })();
+  const onMedia = () => narrow.set(narrowNow());
+  media?.addEventListener?.('change', onMedia);
+  onCleanup(() => media?.removeEventListener?.('change', onMedia));
   const width = () => grid.style.setProperty('--gw', `${scroller.clientWidth || 600}px`);
   width();
   scroller.addEventListener('scroll', () => grid.classList.toggle('scrolled', scroller.scrollLeft > 0), { passive: true });
