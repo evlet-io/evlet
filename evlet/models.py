@@ -280,6 +280,8 @@ class Registry:
         # Document numbers: {model: {field name: Sequence}}.
         from .sequences import compile_sequences
         self.sequences = compile_sequences(self, models, plans, child_models)
+        from .measures import compile_declared
+        self.measures = MappingProxyType(compile_declared(self, models))
 
     def root_of(self, model):
         owners = {child.model: child.parent for child in self.children}

@@ -167,6 +167,16 @@ class Context:
     def count(self, model, *, filters=None):
         return self.list(model, filters=filters, limit=1)['total']
 
+    def aggregate(self, model, *, measures, group_by=(), filters=None):
+        """Database.aggregate with this user's row scope and field permissions."""
+        from .measures import scoped_aggregate
+        return scoped_aggregate(self._business, self._tx, self.user, self._model(model), measures, group_by, filters)
+
+    def measures(self, model, record_id=None, *, filters=None):
+        """Declared measures this user may read, with row scopes applied."""
+        from .measures import scoped_measures
+        return scoped_measures(self._business, self._tx, self.user, self._model(model), record_id, filters)
+
     def create(self, model, **values):
         return self._write(model, None, values)
 

@@ -105,6 +105,19 @@ class Database:
         with self._connection() as connection:
             return Session(connection, self.registry).count(model, filters=filters, search=search)
 
+    def aggregate(self, model, *, measures, group_by=(), filters=None):
+        """Exact aggregates over all records; see docs/measures.md."""
+        from .measures import aggregate
+        with self._connection() as connection:
+            return aggregate(Session(connection, self.registry), model, measures, group_by, filters)
+
+    def measures(self, model, record_id=None, *, filters=None):
+        """Declared Meta.measures: model-level values, or per-record values when record_id is given."""
+        from .measures import measures
+        with self._connection() as connection:
+            connection.execute("BEGIN")
+            return measures(Session(connection, self.registry), model, record_id, filters)
+
     def page(self, model, **query):
         """Return records and their filtered count from one read snapshot."""
         with self._connection() as connection:
