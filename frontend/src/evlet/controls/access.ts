@@ -29,7 +29,7 @@ export function toggleOp(value: PermValue, file: PermValue, op: string): PermVal
   return normalize({ ...value, ops: [...ops], read: ops.size ? value.read : null }, file);
 }
 
-const SOURCE: Record<string, [string, string]> = { ov: ['ov', 'Override'], app: ['app', 'App rule'], framework: ['file', 'Framework default'] };
+const SOURCE: Record<string, [string, string]> = { ov: ['s-ov', 'Override'], app: ['s-app', 'App rule'], framework: ['s-file', 'Framework default'] };
 const Source = (kind: string) => html`<span class=${`ctl-src ${SOURCE[kind][0]}`}><i></i>${SOURCE[kind][1]}</span>`;
 
 function fieldSummary(model: ModelInfo, value: PermValue) {

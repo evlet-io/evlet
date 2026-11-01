@@ -234,7 +234,7 @@ function Overview(ctx: ControlsContext): HTMLElement {
         <section class="ctl-card pad"><h2>How Controls works</h2>
           <p class="muted ctl-small">Apps, models and permissions are read from the installed apps each time the instance starts. A change made here is stored in this instance's database as an override. App files are never edited.</p>
           <p class="muted ctl-small">Reset an override to go back to the file value.</p>
-          <div class="ctl-legend"><span class="ctl-src file"><i></i>Framework default</span><span class="ctl-src app"><i></i>App rule</span><span class="ctl-src ov"><i></i>Override</span></div></section>
+          <div class="ctl-legend"><span class="ctl-src s-file"><i></i>Framework default</span><span class="ctl-src s-app"><i></i>App rule</span><span class="ctl-src s-ov"><i></i>Override</span></div></section>
       </div>
     </div></div>` as HTMLElement;
 }
