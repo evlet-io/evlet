@@ -57,6 +57,8 @@ __all__ += ["App"]
 from .instances import AppDefinition, Instance, Schedule
 
 __all__ += ["AppDefinition", "Instance", "Schedule"]
+from .routing import ControlsAccess, Docs, Frontend, Host
+__all__ += ["ControlsAccess", "Docs", "Frontend", "Host"]
 __all__ += ["Child", "Move", "Table", "Ref", "Query", "action", "depends"]
 from .forms import Dialog, Report, Column
 from .effects import Effect, Negate, Swap
