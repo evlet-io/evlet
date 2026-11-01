@@ -136,7 +136,15 @@ def test_reference_app_full_public_flow(project):
     assert act({'extra_days': 0})[1]['fields'] == {'extra_days': 'Must be at least 1'}
     extended = act({'extra_days': 5})[1]
     assert (extended['payment_days'], extended['valid_until']) == (15, '2026-11-16')
-    assert move(url, 'won')[1]['stage'] == 'won' and move(url, 'draft')[0] == 409
+    won = move(url, 'won')[1]
+    assert won['stage'] == 'won' and move(url, 'draft')[0] == 409
+    # Winning posted one read-only ledger row through the Quote's effect.
+    assert won['_effects'] == [{'target': 'salesledger', 'rows': 1, 'reversals': 0}]
+    ledger = c('GET', '/api/salesledger')[1]['items']
+    assert [(row['amount'], row['memo'], row['source']) for row in ledger] == [(won['payable'], 'Q-1', {'model': 'quote', 'id': won['id']})]
+    assert c('POST', '/api/salesledger', {'amount': '1'})[0] == 403
+    from evlet.effects import check
+    assert check(app) == []
     assert edit({'discount_rate': '5'})[1]['fields'] == {'discount_rate': 'This record is won, so it is locked'}
     # A lost quote takes a reason while locked; reopening it clears the reason.
     lost = c('POST', '/api/quote', {'name': 'Q-3', 'children': {'lines': [{'qty': '1', 'rate': '10'}]}})[1]
