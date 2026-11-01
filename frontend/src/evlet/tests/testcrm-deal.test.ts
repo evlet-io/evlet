@@ -90,7 +90,8 @@ describe('testCRM: a deal and its lines', () => {
     expect(lastToast()).toContain('Negotiation');
     click(button(host, 'Mark won'));
     await until(() => expect(current(host)).toBe('Won'));
-    expect(text(host.querySelector('.inv-banner'))).toContain('Won and locked. Only lost reason and next step can change.');
+    // A sales person cannot void or revise, so the banner does not offer it.
+    expect(text(host.querySelector('.inv-banner > div'))).toBe('Won and locked. Only lost reason and next step can change.');
     expect(run.writes.map(write => `${write.method} ${new URL(write.url, 'http://x').pathname}`)).toEqual([`POST /api/deal/${id}/moves/negotiation`, `POST /api/deal/${id}/moves/won`]);
     expect(run.writes.every(write => write.headers['if-match'] && JSON.stringify(write.body) === '{}')).toBe(true);
     // The win created a kick-off task: the Related block counts it again after the move.
@@ -129,6 +130,8 @@ describe('testCRM: a deal and its lines', () => {
     click(byText(dialog, '.modal-f button', 'Mark lost'));
     await until(() => expect(current(host)).toBe('Lost'));
     expect(run.writes.at(-1)!.body).toEqual({ lost_reason: 'Budget moved' });
+    // Lost is not voidable, so the banner offers no correction.
+    expect(text(host.querySelector('.inv-banner > div'))).toBe('Lost and locked. Only lost reason and next step can change.');
     expect(document.querySelector('.modal')).toBeNull();
     expect(field(host, 'lost_reason')!.hidden).toBe(false);
     // Locked, but the reason stays editable in place.

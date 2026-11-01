@@ -332,8 +332,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       const buttons = [now._revise?.allowed ? Button({ label: 'Revise', icon: 'copy', size: 'small', onClick: () => correct('revise') }) : null,
         now._void?.allowed ? Button({ label: 'Void', icon: 'circle-x', size: 'small', variant: 'soft-danger', onClick: () => correct('void') }) : null].filter(Boolean) as Node[];
       const editable = model.fields.filter(field => (field as any).editable_when_locked).map(field => field.label.toLowerCase());
+      // Only the corrections this user can make now (the state allows them and so does the role).
+      const ways = [now._void?.allowed ? 'void' : null, now._revise?.allowed ? 'revise' : null].filter(Boolean);
+      const correction = ways.length === 2 ? ' To correct it, void or revise.' : ways.length ? ` To correct it, ${ways[0]} it.` : '';
       return StateBanner({ tone: 'info', title: `${humanize(value)} and locked.`, actions: buttons,
-        text: [editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.', now._void || now._revise ? ' To correct it, void or revise.' : '', ...reviseOf] });
+        text: [editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.', correction, ...reviseOf] });
     }
     const next = (state.moves.find(move => (Array.isArray(move.from) ? move.from : [move.from]).includes(value) && state.locked?.includes(move.to)));
     return StateBanner({ tone: 'neutral', title: `${humanize(value)}.`, text: [next ? `Everything can change until it is ${humanize(next.to).toLowerCase()}.` : 'Everything can change.', ...reviseOf] });

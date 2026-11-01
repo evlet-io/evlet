@@ -98,7 +98,6 @@ screen test opens the same deal on its Activity tab and adds a note through the 
   with Table(...)`, instead of becoming a root model.
 - **Screens.** Fixed here: the child table footer took a filtered sum (`recurring_total`) for the
   Amount column; the lines lock note kept the state the page opened with; the Related side block
-  did not count again after a move or action. Still open: "To correct
-  it, void or revise" on a lost deal, which cannot be voided; Undo offered after a board move, which
+  did not count again after a move or action. Still open: Undo offered after a board move, which
   needs a move back the model may not declare (not checked).
 - **Performance.** Opening a 1,000-line deal takes about 160 ms in jsdom, over the 100 ms budget.
