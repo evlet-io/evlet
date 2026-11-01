@@ -2,7 +2,7 @@
 
 import pytest
 
-from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Text, Rule,
+from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Text, Integer, Rule,
                    Policy, Action, ValidationError, action)
 from evlet.calc import round, parent
 from evlet.business import Business
@@ -210,7 +210,7 @@ def test_schema_projects_calculation_capabilities_without_hidden_inputs(tmp_path
     from evlet.calc import Document
     assert Document(admin['plan'], {'children': {'lines': [{'cost': '2', 'price': '5'}]}}).snapshot()['profit'] == '3.00'
     viewer = next(model for model in client(app, 'viewer')('GET', '/api/schema')[1]['models'] if model['name'] == 'deal')['calculation']
-    assert viewer['capabilities'] == {'lines[*].margin': 'unavailable', 'revenue': 'local_universal', 'profit': 'unavailable'}
+    assert viewer['capabilities'] == {'revenue': 'local_universal', 'profit': 'unavailable'}
     assert 'plan' not in viewer and 'cost' not in str(viewer)
 
 
@@ -345,3 +345,116 @@ def test_formula_changes_never_silently_rewrite_saved_documents(tmp_path):
     assert status == 200 and result['total'] == '1800.00'
     _, current, headers = c('GET', url)
     assert c('PATCH', url, {'title': 'again'}, headers={b'if-match': headers[b'etag']})[0] == 200
+
+
+class Line(Child):
+    n = Integer(default=0)
+
+
+Ledger = type('Ledger', (Model,), {'permissions': ALL, 'title': Text(default='x'), **{f't{i}': Table(Line) for i in range(11)}})
+
+
+def test_row_limits_apply_to_finite_roots_only_and_allow_full_swaps(tmp_path):
+    app = application(tmp_path, Plan, Ledger)
+    c = client(app)
+    # A legacy one-level document keeps only the per-collection limit.
+    status, created, headers = c('POST', '/api/ledger', {'children': {f't{i}': [{'n': j} for j in range(95)] for i in range(11)}})
+    assert status == 201, created
+    status, result, _ = c('PATCH', f"/api/ledger/{created['id']}", {'title': 'renamed'}, headers={b'if-match': headers[b'etag']})
+    assert status == 200, result
+    # A finite document at the cap can drop and add rows in one write.
+    tree = [{'_key': f's{s}', 'children': {'tasks': [{'_key': f's{s}t{t}', 'hours': '1'} for t in range(99)]}} for s in range(10)]
+    status, plan, _ = c('POST', '/api/plan', {'children': {'stages': tree}})
+    assert status == 201, plan
+    _, current, headers = c('GET', f"/api/plan/{plan['id']}")
+    stages = [{'id': stage['id'], 'children': {'tasks': [{'id': task['id']} for task in stage['children']['tasks']]}} for stage in current['children']['stages']]
+    stages[0]['children']['tasks'] = stages[0]['children']['tasks'][5:] + [{'_key': f'n{k}', 'hours': '2'} for k in range(5)]
+    status, result, _ = c('PATCH', f"/api/plan/{plan['id']}", {'children': {'stages': stages}}, headers={b'if-match': headers[b'etag']})
+    assert status == 200, result
+    stages[1]['children']['tasks'].append({'_key': 'over', 'hours': '1'})
+    _, _, headers = c('GET', f"/api/plan/{plan['id']}")
+    assert c('PATCH', f"/api/plan/{plan['id']}", {'children': {'stages': stages}}, headers={b'if-match': headers[b'etag']})[0] == 422
+
+
+def test_draft_previews_reject_bad_ids_and_report_invalid_values(tmp_path):
+    app = application(tmp_path, Plan)
+    c = client(app)
+    for bad in ([1], {'a': 1}, True, 0):
+        assert c('POST', '/api/_draft/plan', {'id': bad, 'values': {}})[0] == 422
+    status, result, _ = c('POST', '/api/_draft/plan', {'values': {'hourly_rate': 'abc', 'children': {'stages': [
+        {'_key': 'A', 'children': {'tasks': [{'_key': 'a1', 'hours': 'NaN'}, {'_key': 'a2', 'hours': [1]}]}}]}}})
+    assert status == 200, result
+    assert result['values']['hourly_rate'] is None and 'hourly_rate' in result['errors']
+    assert {'stages.A.tasks.a1.hours', 'stages.A.tasks.a2.hours'} <= set(result['errors'])
+
+
+def users(app):
+    admin = client(app)
+    for role in ('editor', 'viewer'):
+        assert admin('POST', '/api/auth/users', {'username': role, 'password': PASSWORD, 'role': role})[0] == 201
+    return admin, client(app, 'editor')
+
+
+def test_scoped_rows_bounded_results_and_unreadable_tables_stay_private(tmp_path):
+    full = Rule(('read', 'create', 'update', 'delete'))
+
+    class Area(Child):
+        permissions = {'admin': full, 'editor': Rule(('read', 'create', 'update', 'delete'), scope=lambda user: {'region': 'east'})}
+        region = Text(default='east')
+        amount = Currency(default=0)
+
+    class Cost(Child):
+        permissions = {'admin': full}
+        supplier_code = Text(default='ACME-PRIVATE')
+
+    class Deal(Model):
+        Meta = FiniteMeta
+        permissions = {'admin': full, 'editor': Rule(('read', 'create', 'update'), read_fields=('title', 'price'), write_fields=('title', 'price'))}
+        title = Text(default='x')
+        price = Currency(default=0)
+        secret_cost = Currency(default=0)
+        margin = Currency(compute=price - secret_cost, minimum='0')
+
+    class Order(Model):
+        Meta = FiniteMeta
+        permissions = {'admin': full, 'editor': full}
+        areas = Table(Area)
+        costs = Table(Cost)
+        total = Currency(compute=areas.sum('amount'))
+
+    app = application(tmp_path, Deal, Order)
+    admin, editor = users(app)
+    # An editor cannot move a scoped row out of their own scope.
+    _, order, _ = admin('POST', '/api/order', {'children': {'areas': [{'region': 'east', 'amount': '5'}, {'region': 'west', 'amount': '9'}]}})
+    _, seen, headers = editor('GET', f"/api/order/{order['id']}")
+    row = seen['children']['areas'][0]
+    status, _, _ = editor('PATCH', f"/api/order/{order['id']}", {'children': {'areas': [{'id': row['id'], 'region': 'west'}]}}, headers={b'if-match': headers[b'etag']})
+    assert status == 404
+    assert [area['region'] for area in admin('GET', f"/api/order/{order['id']}")[1]['children']['areas']] == ['east', 'west']
+    # A bounded result over a hidden input is a redacted calculation error, never a 500 oracle.
+    _, deal, _ = admin('POST', '/api/deal', {'price': '100', 'secret_cost': '42.50'})
+    for price in ('42.49', '42.50'):
+        status, result, _ = editor('POST', '/api/_draft/deal', {'id': deal['id'], 'values': {'price': price}})
+        assert status == 200 and result['errors'] == {} and 'margin' not in result['values']
+    status, result, _ = admin('POST', '/api/_draft/deal', {'id': deal['id'], 'values': {'price': '42.49'}})
+    assert result['errors']['margin'].startswith('COMPUTE_RANGE_ERROR')
+    # Tables and calculated fields the role cannot read are not described in the schema.
+    calculation = next(model for model in editor('GET', '/api/schema')[1]['models'] if model['name'] == 'order')['calculation']
+    assert 'ACME' not in str(calculation) and 'supplier_code' not in str(calculation)
+    calculation = next(model for model in editor('GET', '/api/schema')[1]['models'] if model['name'] == 'deal')['calculation']
+    assert calculation['capabilities'] == {} and 'plan' not in calculation
+
+
+def test_draft_previews_report_invalid_dates_without_failing(tmp_path):
+    from evlet import Date, DateTime
+
+    class Visit(Model):
+        permissions = ALL
+        due = Date()
+        at = DateTime()
+        lines = Table(Line)
+    app = application(tmp_path, Visit)
+    c = client(app)
+    for values in ({'due': 'not-a-date'}, {'at': 'nope'}, {'due': 5}):
+        status, result, _ = c('POST', '/api/_draft/visit', {'values': values})
+        assert status == 200 and set(values) <= set(result['errors']) and all(result['values'][name] is None for name in values)

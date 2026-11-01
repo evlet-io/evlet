@@ -258,6 +258,9 @@ class Business:
                 raise AccessError(404, 'Draft evaluation is unavailable')
             if set(body) - {'id', 'values', 'revision', 'calculation'} or not isinstance(body.get('values', {}), dict):
                 raise ValidationError({'draft': 'Invalid draft request'})
+            record_id = body.get('id')
+            if record_id is not None and (type(record_id) is not int or not 0 < record_id < 2**63):
+                raise ValidationError({'draft': 'Invalid draft request'})
             if 'calculation' in body:
                 self.check_calculation(model, body['calculation'])
             with self.context(user, readonly=True) as context:
@@ -265,7 +268,11 @@ class Business:
                 errors, states = settle(context, draft, complete=False, previous=previous)
                 def values(item):
                     allowed = self.policy.fields(user, item._definition)
-                    return {'id': item.id, '_key': item.key, '_sources': source_values(item, allowed), **{name: field.serialize(item._values.get(name))
+                    def shown(field, value):
+                        # Invalid submitted values are reported in errors; the preview sends null.
+                        try: return field.serialize(value)
+                        except Exception: return None
+                    return {'id': item.id, '_key': item.key, '_sources': source_values(item, allowed), **{name: shown(field, item._values.get(name))
                             for name, field in item._definition.__declared_fields__.items() if name in allowed and not name.startswith('evlet_')}}
                 allowed_errors = set()
 
@@ -471,22 +478,29 @@ class Business:
                 current = owners[current].parent
             if current is model:
                 models[tuple(path)] = item
-        capabilities = {}
+        def readable(target):
+            return self.policy.fields(user, target) if target is not None and self.policy.allows(user, target, 'read') else set()
+        capabilities, local = {}, True
         for field in plan['fields']:
             target = models.get(tuple(field['path']))
-            readable = target is not None and self.policy.allows(user, target, 'read') and field['field'] in self.policy.fields(user, target)
-            capabilities[field['target']] = 'local_universal' if readable else 'unavailable'
+            if field['field'] in readable(target):
+                capabilities[field['target']] = 'local_universal'
+                continue
+            local = False
+            # Fields this role cannot see at all are not named.
+            if target is not None and self.policy.allows(user, target, 'read') and field['field'] in self.policy.presented(user, target):
+                capabilities[field['target']] = 'unavailable'
         result = {'language': plan['language'], 'numeric_profile': plan['numeric_profile'],
                   'model_schema_hash': plan['model_schema_hash'], 'capabilities': capabilities}
-        if all(value == 'local_universal' for value in capabilities.values()):
+        if local:
             # Ship only fields this role can read: no hidden names, bounds or defaults.
             from copy import deepcopy
             from .calc import fingerprint
             projected = deepcopy(dict(plan))
             for entry in projected['tables'].values():
                 target = models.get(tuple(entry['path']))
-                readable = self.policy.fields(user, target) if target is not None else set()
-                entry['fields'] = {name: meta for name, meta in entry['fields'].items() if name in readable}
+                visible = readable(target)
+                entry['fields'] = {name: meta for name, meta in entry['fields'].items() if name in visible}
             projected['source_plan_hash'] = plan['model_schema_hash']
             projected['model_schema_hash'] = fingerprint(projected)
             result['plan'] = projected

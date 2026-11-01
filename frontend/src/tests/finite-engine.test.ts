@@ -99,6 +99,52 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     expect(document.revision).toBe(1);
   });
 
+  it('keeps failed commands atomic, checks arity and bounds, and refuses async callbacks', () => {
+    const plan = plans.invoice;
+    const document = new FiniteDocument(plan, {inclusive: false, children: {items: [{_key: 'a', qty: '1', rate: '10'}, {_key: 'b', qty: '2', rate: '10'}]}});
+    const before = JSON.stringify(document.snapshot()), rows = document.rows.size, a = document.find('items.a');
+    document.batch(commands => {
+      expect(() => commands.moveRow(a, document.root.handle, 'items', 99)).toThrow(CalcError);
+      expect(() => commands.moveRow(a, document.root.handle, 'items', 2)).toThrow(CalcError);
+      expect(() => commands.addRow(document.root.handle, 'items', {_key: 'b', qty: '5'})).toThrow(CalcError);
+    });
+    expect(JSON.stringify(document.snapshot())).toBe(before);
+    expect(document.rows.size).toBe(rows);
+    let late = false;
+    expect(() => document.batch(async commands => { await null; late = true; commands.set(a, 'qty', '7'); })).toThrow('ASYNC_BATCH_UNSUPPORTED');
+    expect(late).toBe(false);
+    const literal = (type: string, value: unknown) => ({$expr: 'literal', type, value});
+    for (const expression of [{$expr: 'add', args: []}, {$expr: 'add', args: [literal('integer', 1), literal('integer', 1)]},
+      {$expr: 'round', args: [literal('decimal', '1'), literal('decimal', '1')]}, {$expr: 'aggregate', kind: 'sum', table: 'items', field: 'net'},
+      literal('decimal', 'NaN')]) {
+      const broken = structuredClone(plan);
+      broken.fields[0].expression = expression;
+      broken.model_schema_hash = fingerprint(broken);
+      expect(() => new FiniteDocument(broken, {})).toThrow(CalcError);
+    }
+    const bounded = structuredClone(plan);
+    bounded.tables.$root.fields.grand_total.minimum = '1000';
+    bounded.model_schema_hash = fingerprint(bounded);
+    const small = new FiniteDocument(bounded, {inclusive: false, children: {items: [{qty: '1', rate: '10'}]}});
+    expect(small.snapshot()._states.grand_total.code).toBe('COMPUTE_RANGE_ERROR');
+  });
+
+  it('keeps rows added before a rolled-back command and undoes caught nested batches', () => {
+    const document = new FiniteDocument(plans.invoice, {inclusive: false, children: {items: []}});
+    const root = document.root.handle;
+    document.batch(commands => {
+      commands.addRow(root, 'items', {qty: '2', rate: '10'});
+      expect(() => commands.set('nope', 'qty', '1')).toThrow(CalcError);
+      expect(() => commands.batch(inner => { inner.set(root, 'inclusive', true); throw new Error('stop'); })).toThrow('stop');
+    });
+    expect(document.snapshot().grand_total).toBe('21.00');
+    expect(document.snapshot().inclusive).toBe(false);
+    const bounded = structuredClone(plans.invoice);
+    bounded.tables.$root.fields.grand_total.maximum = '1E+3';
+    bounded.model_schema_hash = fingerprint(bounded);
+    expect(() => new FiniteDocument(bounded, {})).toThrow(CalcError);
+  });
+
   it('publishes one revision per batch and blocks observer mutation', () => {
     const document = new FiniteDocument(plans.invoice, {inclusive: true, children: {items: [{_key: 'a', qty: '1', rate: '105'}]}});
     const seen: Array<[number, string]> = [];

@@ -1,6 +1,7 @@
 """Finite-v1 language: authoring, compiler checks, numeric profile and propagation shapes."""
 
 from decimal import Decimal as Reference, ROUND_HALF_UP, localcontext
+from decimal import Decimal as PyDecimal
 import random
 
 import pytest
@@ -744,3 +745,82 @@ def test_allocation_residuals_are_explicit_not_silently_lost():
     snap = document(Allocation, {'children': {'shares': [{'_key': k} for k in 'abc']}}).snapshot()
     assert [row['allocated'] for row in snap['children']['shares']] == ['0.00', '0.00', '0.00']
     assert (snap['allocated_total'], snap['residual']) == ('0.00', '0.01')
+
+
+def test_second_review_engine_regressions():
+    from copy import deepcopy
+    from evlet.calc import fingerprint
+    # The emitted IR (with Boolean conversions) is what must fit the expression limits.
+    def balanced(n): return F('flag') if n == 1 else balanced(n // 2) + balanced(n - n // 2)
+
+    wide = type(Model)('Wide', (Model,), {'Meta': FiniteMeta, 'flag': Boolean(default=True), 'score': Decimal(scale=0, compute=balanced(64)), '__module__': __name__})
+    with pytest.raises(CalcError, match='CALCULATION_LIMIT_EXCEEDED'):
+        plan(wide)
+    assert document(type(Model)('Fits', (Model,), {'Meta': FiniteMeta, 'flag': Boolean(default=True), 'score': Decimal(scale=0, compute=balanced(40)), '__module__': __name__})).snapshot()['score'] == '40'
+
+    # A failed command whose error the batch catches leaves the document unchanged.
+    doc = document(Invoice, {'inclusive': False, 'children': {'items': [{'_key': 'a', 'qty': '1', 'rate': '10'}, {'_key': 'b', 'qty': '2', 'rate': '10'}]}})
+    before, rows = doc.snapshot(), len(doc.rows)
+    a = doc.find('items.a')
+
+    def run(commands):
+        for attempt in (lambda: commands.move_row(a, doc.root.handle, 'items', 99),
+                        lambda: commands.move_row(a, doc.root.handle, 'items', 2),
+                        lambda: commands.add_row(doc.root.handle, 'items', {'_key': 'b', 'qty': '5'})):
+            with pytest.raises(CalcError):
+                attempt()
+    doc.batch(run)
+    assert doc.snapshot() == before and len(doc.rows) == rows
+    doc.move_row(a, doc.root.handle, 'items', 1)
+    assert [item['_key'] for item in doc.snapshot()['children']['items']] == ['b', 'a']
+
+    # Malformed plans fail as calculation errors, never as Python exceptions.
+    source = plan(Invoice)
+    for mutate in (lambda node: node.update({'$expr': 'add', 'args': []}),
+                   lambda node: node.update({'$expr': 'add', 'args': [{'$expr': 'literal', 'type': 'integer', 'value': 1}] * 2}),
+                   lambda node: node.update({'$expr': 'round', 'args': [{'$expr': 'literal', 'type': 'decimal', 'value': '1'}] * 2}),
+                   lambda node: node.update({'$expr': 'aggregate', 'kind': 'sum', 'table': 'items', 'field': 'net'}),
+                   lambda node: node.update({'$expr': 'literal', 'type': 'decimal', 'value': 'NaN'})):
+        crafted = deepcopy(source)
+        mutate(crafted['fields'][0]['expression'])
+        crafted['model_schema_hash'] = fingerprint(crafted)
+        with pytest.raises(CalcError):
+            Document(crafted, {})
+
+    # Declared bounds and the scaled range hold in the engine, as on the server.
+    class Bounded(Model):
+        Meta = FiniteMeta
+        price = Currency(default=0)
+        cost = Currency(default=0)
+        profit = Currency(compute=price - cost, minimum='0')
+        huge = Currency(stored=False, compute=price * D('100000000000000000'))
+    result = document(Bounded, {'price': '5', 'cost': '8'})
+    assert result.results[result.root.handle, 'profit'].code == 'COMPUTE_RANGE_ERROR'
+    assert result.results[result.root.handle, 'huge'].code == 'COMPUTE_RANGE_ERROR'
+
+    # Equality with values that are not calculation operands keeps plain Python semantics.
+    field = Decimal()
+    assert field in [{'k': 1}, field] and [object(), field].index(field) == 1 and (field == 1.5) is False
+
+
+def test_rolled_back_commands_keep_earlier_batch_rows_and_bounds_accept_exponents():
+    doc = document(Invoice, {'inclusive': False})
+    root = doc.root.handle
+
+    def run(commands):
+        commands.add_row(root, 'items', {'qty': '2', 'rate': '10'})
+        with pytest.raises(CalcError):
+            commands.set('nope', 'qty', '1')
+        with pytest.raises(RuntimeError):
+            commands.batch(lambda inner: (inner.set(root, 'inclusive', True), (_ for _ in ()).throw(RuntimeError('stop'))))
+    doc.batch(run)
+    assert doc.snapshot()['grand_total'] == Document(plan(Invoice), doc.sources()).snapshot()['grand_total'] == '21.00'
+    assert doc.snapshot()['inclusive'] is False
+
+    class Capped(Model):
+        Meta = FiniteMeta
+        a = Decimal(scale=2, default=1)
+        b = Decimal(scale=2, compute=a * 2, maximum='1E+3', minimum=PyDecimal('-1E+2'))
+    capped = plan(Capped)
+    assert capped['tables']['$root']['fields']['b']['maximum'] == '1000'
+    assert Document(capped, {'a': '600'}).results[(Document(capped, {}).root.handle, 'b')].code == 'COMPUTE_RANGE_ERROR'

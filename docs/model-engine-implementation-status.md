@@ -56,8 +56,8 @@ cutover** is not started.
 Final run on the branch head (macOS arm64, Python 3.12.16, Node 24.16.0):
 
 ```
-.venv/bin/python -m pytest                       -> 511 passed, 35 skipped (PostgreSQL DSN unset)
-cd frontend && npm test                          -> 265 passed, 1 skipped (opt-in benchmark)
+.venv/bin/python -m pytest                       -> 521 passed, 35 skipped (PostgreSQL DSN unset)
+cd frontend && npm test                          -> 268 passed, 1 skipped (opt-in benchmark)
 cd frontend && npm run build                     -> typecheck and build passed
 .venv/bin/python -m build --no-isolation         -> wheel and sdist built
 python -I scripts/check_package.py               -> passed (installed wheel, clean venv)
@@ -69,6 +69,24 @@ python scripts/check_flat_package.py dist/*.whl  -> passed
 PostgreSQL tests were skipped locally; CI's PostgreSQL jobs run the existing suite, which
 has no finite-v1 or nested cases.
 
+## Pre-merge review (second round)
+
+Four independent reviewers covered the number engine, nested persistence, security and the
+earlier framework changes; a fifth checked the fixes. Fixed, each with a regression test that
+fails on the old code:
+
+* Engine: compile-time IR limit check, plan arity and literal shape checks, declared bounds and
+  the scaled range enforced in both runtimes, failed commands inside a batch roll back, moves
+  validate before removing, async batch callbacks refused up front, field equality with
+  non-operands keeps Python semantics.
+* Persistence: legacy roots no longer hit the finite row cap, full finite documents can swap
+  rows, `/api/_draft` no longer returns 500 for invalid values or ids.
+* Security: updated child rows are re-checked against the row scope, bounded results over
+  hidden inputs are calculation errors (not 500), the schema no longer describes unreadable
+  tables or fields.
+* Framework: exact negation in legacy formulas, `-P` for the build subprocess, removed and
+  restored cron schedules re-enable, a field named `storage_name` no longer breaks registration.
+
 ## Migration effects
 
 * No app table, migration or checksum changed. Formula-only changes do not alter
@@ -77,6 +95,7 @@ has no finite-v1 or nested cases.
   created with `CREATE TABLE IF NOT EXISTS` at startup.
 * Existing finite-v1 records saved before that table existed (none outside this branch)
   would need one explicit `recalculate` write.
+* `evlet_calendar_schedules` gains a `retired` column, added at startup when missing.
 * Nested tables create new child tables (`<parent storage>_<table>`) through the usual
   explicit migrations.
 

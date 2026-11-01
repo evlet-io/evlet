@@ -212,7 +212,7 @@ function aggregate(node: any, scope: Scope, budget: Budget): Result {
   return ready(selected.reduce((best, value) => (compare(value, best) < 0) === (node.kind === 'min') ? value : best));
 }
 
-function convert(result: Result, field: any, at: string): Result {
+function convert(result: Result, field: any, at: string, meta?: any): Result {
   if (result.state !== 'ready' || result.value === null || field.result_type !== 'decimal') return result;
   const value = result.value as Num, scale = field.scale;
   if (scale !== null) {
@@ -221,7 +221,9 @@ function convert(result: Result, field: any, at: string): Result {
   }
   const magnitude = value.coef < 0n ? -value.coef : value.coef;
   if (field.target_type === 'integer' && magnitude > SAFE_INTEGER) return failed('COMPUTE_RANGE_ERROR', [at]);
-  if (field.stored && scale !== null && magnitude * 10n ** BigInt(scale - value.scale) > STORED_LIMIT) return failed('COMPUTE_RANGE_ERROR', [at]);
+  if (scale !== null && magnitude * 10n ** BigInt(scale - value.scale) > STORED_LIMIT) return failed('COMPUTE_RANGE_ERROR', [at]);
+  if (meta && ((meta.minimum != null && compare(value, parse(meta.minimum)) < 0) || (meta.maximum != null && compare(value, parse(meta.maximum)) > 0)))
+    return failed('COMPUTE_RANGE_ERROR', [at]);
   return result;
 }
 
@@ -258,25 +260,40 @@ export function checkPlan(plan: any) {
       throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target scale');
     checkNode(field.expression, 0, {count: 0});
   }
+  for (const table of Object.values<any>(plan.tables))
+    for (const meta of Object.values<any>(table.fields))
+      for (const bound of [meta.minimum, meta.maximum]) if (bound !== null && bound !== undefined) parse(bound);
 }
 
-const SCOPES = new Set(['self', 'parent', 'row']), LITERALS = new Set(['decimal', 'integer', 'boolean', 'text', 'null']);
+const SCOPES = new Set(['self', 'parent', 'row']);
+const LITERALS: Record<string, string> = {decimal: 'string', boolean: 'boolean', text: 'string'};
+const ARITY: Record<string, number> = {add: 2, sub: 2, mul: 2, div: 2, neg: 1, eq: 2, ne: 2, lt: 2, lte: 2, gt: 2, gte: 2,
+  and: 2, or: 2, not: 1, round: 2, coalesce: 2, safe_divide: 3, bool_to_decimal: 1};
 const FIELD = /^[A-Za-z][A-Za-z0-9_]*$/;
-// Closed, bounded IR: unknown operations, scopes or shapes fail before evaluation.
-function checkNode(node: any, depth: number, counter: {count: number}) {
+// Closed, bounded IR: unknown operations, arities, scopes or shapes fail before evaluation.
+// An integer literal is only valid as round()'s scale, and nothing else is valid there.
+function checkNode(node: any, depth: number, counter: {count: number}, scale = false) {
   counter.count++;
   if (!node || typeof node !== 'object' || Array.isArray(node) || depth > LIMITS.expression_depth || counter.count > LIMITS.expression_nodes)
     throw new CalcError('UNSUPPORTED_EXPRESSION', 'Calculation plans must be bounded expression objects');
   const op = ownValue(node, '$expr');
   let ok: boolean;
-  if (op === 'literal') ok = LITERALS.has(node.type) && (node.type !== 'integer' || (integer(node.value) !== null && node.value >= 0 && node.value <= MAX_SCALE));
-  else if (op === 'ref') ok = SCOPES.has(node.scope) && typeof node.field === 'string' && FIELD.test(node.field);
+  if (op === 'literal') {
+    const kind = ownValue(node, 'type'), value = ownValue(node, 'value');
+    if (kind === 'integer') ok = scale && integer(value) !== null && value >= 0 && value <= MAX_SCALE;
+    else {
+      ok = !scale && (kind === 'null' ? value === null : own(LITERALS, kind) && typeof value === LITERALS[kind]);
+      if (ok && kind === 'decimal') parse(value);
+    }
+  } else if (op === 'ref') ok = !scale && SCOPES.has(node.scope) && typeof node.field === 'string' && FIELD.test(node.field);
   else if (op === 'aggregate') {
-    ok = ['sum', 'min', 'max', 'count'].includes(node.kind) && typeof node.table === 'string';
-    if (ok && node.where !== null && node.where !== undefined) checkNode(node.where, depth + 1, counter);
+    const field = own(node, 'field') ? node.field : 0;
+    ok = !scale && ['sum', 'min', 'max', 'count'].includes(node.kind) && typeof node.table === 'string' && own(node, 'where')
+      && (node.kind === 'count' ? field === null : typeof field === 'string' && FIELD.test(field));
+    if (ok && node.where !== null) checkNode(node.where, depth + 1, counter);
   } else {
-    ok = OPERATIONS.has(op) && Array.isArray(node.args);
-    if (ok) for (const arg of node.args) checkNode(arg, depth + 1, counter);
+    ok = !scale && typeof op === 'string' && own(ARITY, op) && Array.isArray(node.args) && node.args.length === ARITY[op];
+    if (ok) node.args.forEach((arg: any, index: number) => checkNode(arg, depth + 1, counter, op === 'round' && index === 1));
   }
   if (!ok) throw new CalcError('UNSUPPORTED_EXPRESSION', 'Unknown or malformed calculation node');
 }
@@ -488,7 +505,7 @@ export class FiniteDocument {
       const [handle, name] = nodeParts(node);
       const row = this.rows.get(handle)!, field = this.fields.get(row.path.join('/') + '\u0000' + name);
       const at = row.label + name;
-      const outcome = convert(evaluate(field.expression, new Scope(this, row, null, at), budget), field, at);
+      const outcome = convert(evaluate(field.expression, new Scope(this, row, null, at), budget), field, at, ownValue(this.schema.get(row.path.join('/')).fields, field.field));
       evaluated++;
       this.counts.set(node, (this.counts.get(node) || 0) + 1);
       if (!same(outcome, this.results.get(node))) { this.results.set(node, outcome); changed.add(node); updated.add(node); }
@@ -504,8 +521,13 @@ export class FiniteDocument {
 
   batch(run: (commands: FiniteDocument) => unknown) {
     this.usable();
+    // An async callback would run its tail after the batch closed, outside any rollback.
+    if ((run as any)?.constructor?.name === 'AsyncFunction')
+      throw new CalcError('ASYNC_BATCH_UNSUPPORTED', 'A calculation batch cannot await; apply network results as a later batch');
     const outer = this.current === null;
-    if (outer) this.current = {snapshot: this.capture(), sources: new Set<Node>(), membership: new Set<Node>(), moved: new Set<string>(), structure: false, order: new Set<Node>()};
+    // A nested batch is one command: if its error is caught, its changes are undone.
+    if (!outer) { this.command(() => { if ((run(this) as any)?.then instanceof Function) throw new CalcError('ASYNC_BATCH_UNSUPPORTED', 'A calculation batch cannot await; apply network results as a later batch'); }); return; }
+    if (outer) this.current = {snapshot: this.capture(), bound: new Set(this.deps.keys()), sources: new Set<Node>(), membership: new Set<Node>(), moved: new Set<string>(), structure: false, order: new Set<Node>()};
     try {
       const value: any = run(this);
       if (value && typeof value.then === 'function')
@@ -531,7 +553,11 @@ export class FiniteDocument {
   private command<T>(run: () => T): T {
     if (this.current === null) { let value!: T; this.batch(() => { value = run(); }); return value; }
     this.usable();
-    return run();
+    // A command whose error the batch catches must not leave the document half changed.
+    const snapshot = this.capture(), state = {...this.current, sources: new Set(this.current.sources), membership: new Set(this.current.membership),
+      moved: new Set(this.current.moved), order: new Set(this.current.order)};
+    try { return run(); }
+    catch (exc) { this.restore(snapshot); this.current = state; throw exc; }
   }
 
   private usable() {
@@ -627,10 +653,11 @@ export class FiniteDocument {
       for (let ancestor: Row | null = destination; ancestor; ancestor = ancestor.parent)
         if (ancestor === row) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'A row cannot move into its own subtree');
       const source = row.parent!;
+      const position = integer(at);
+      if (position === null || position < 0 || position > destination.children[table].length - (destination === source ? 1 : 0))
+        throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Use a valid destination position');
       source.children[table] = source.children[table].filter(item => item !== row);
       this.structure(source.handle, table);
-      const position = integer(at);
-      if (position === null || position < 0 || position > destination.children[table].length) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Use a valid destination position');
       this.place(destination, table, row, position);
       this.structure(owner, table);
       const stack = [row];
@@ -669,7 +696,8 @@ export class FiniteDocument {
   }
 
   private commit(batch: any): Array<() => void> {
-    const old = new Set(this.deps.keys());
+    // Bindings as the batch began: a rolled-back command rebinds, so this.deps may already be newer.
+    const old: Set<Node> = batch.bound;
     if (batch.structure) this.bind();
     const live = new Set(this.deps.keys());
     for (const node of old) if (!live.has(node)) { this.results.delete(node); this.counts.delete(node); }

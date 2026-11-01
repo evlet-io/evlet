@@ -231,7 +231,9 @@ def load_draft(context, model, record_id, values, *, preview=False):
     draft = Draft(model, {**(dict(current._values) if current else {}), **scalars}, context=context, record_id=record_id)
     object.__setattr__(draft, '_submitted', frozenset(scalars))
     old = Draft(model, dict(current._values), context=context, record_id=record_id) if current else None
-    load_rows(context, model, draft, old, record_id, collections, preview, '', set(), [0])
+    # Finite-v1 roots bound the rows they load; legacy roots keep the per-collection limit only.
+    bounded = [0, 0] if business.registry.plan_for(model) is not None else None
+    load_rows(context, model, draft, old, record_id, collections, preview, '', set(), bounded)
     if business.registry.plan_for(model) is not None and sum(1 for _ in walk(draft)) - 1 > LIMITS['document_rows']:
         raise ValidationError({'children': 'This document exceeds the owned row limit'})
     return draft, old
@@ -249,12 +251,12 @@ def computed_write(business, model, values, prefix):
 def load_rows(context, model, draft, old, record_id, collections, preview, prefix, keys_seen, loaded=None):
     """Merge submitted child collections at every depth, keeping hidden rows."""
     business, tx, user = context._business, context._tx, context.user
-    loaded = [0] if loaded is None else loaded
-
-    def count(rows):
-        # Each existing row once (draft side) plus each new submitted row.
-        loaded[0] += rows
-        if loaded[0] > LIMITS['document_rows']:
+    def count(rows, slot):
+        # Stored rows (each once, draft side) and new submitted rows are bounded separately so
+        # a full document can still swap rows; load_draft checks the merged total.
+        if loaded is None: return
+        loaded[slot] += rows
+        if loaded[slot] > LIMITS['document_rows']:
             raise ValidationError({'children': 'This document exceeds the owned row limit'})
     if set(collections) - {child.name for child in business.children.values() if child.parent is model}:
         raise ValidationError({prefix + 'children': 'Unknown child collection'})
@@ -263,7 +265,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
         existing = tx.list(child.model, filters={child.link: record_id}, limit=100, order_by=('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',)) if record_id else []
         if record_id and tx.count(child.model, filters={child.link: record_id}) > 100:
             raise ValidationError({prefix + 'children': 'This collection exceeds the 100-row editor limit'})
-        count(len(existing))
+        count(len(existing), 0)
         originals = {row.id: row for row in existing}
         hidden = set()
         for row in existing:
@@ -275,14 +277,14 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             load_rows(context, child.model, item, None, row.id, {}, True, prefix + child.name + '.' + item.key + '.', set(), counter)
             return item
         if old is not None:
-            old._rows[child.name] = [stored(row, old, [0]) for row in existing]
+            old._rows[child.name] = [stored(row, old, None if loaded is None else [0, 0]) for row in existing]
         if child.name not in collections:
             draft._rows[child.name] = [stored(row, draft, loaded) for row in existing]
             continue
         rows = collections[child.name]
         if not isinstance(rows, list) or len(rows) > 100:
             raise ValidationError({prefix + child.name: 'Use at most 100 rows'})
-        count(sum(1 for value in rows if isinstance(value, dict) and value.get('id') is None))
+        count(sum(1 for value in rows if isinstance(value, dict) and value.get('id') is None), 1)
         kept, keys, merged = set(), set(), []
         for index, value in enumerate(rows):
             if not isinstance(value, dict):
@@ -315,7 +317,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
         for row_id in originals.keys() - kept - hidden:
             if not preview:
                 # Removing a row removes its whole subtree: every descendant must be deletable too.
-                for _, item in walk(stored(originals[row_id], draft, [0])):
+                for _, item in walk(stored(originals[row_id], draft, None if loaded is None else [0, 0])):
                     try: business.policy.record(tx, user, item._definition, item.id, 'delete')
                     except AccessError: raise AccessError(403, 'You do not have permission for this operation') from None
         merged.extend(stored(originals[row_id], draft, loaded) for row_id in sorted(hidden))
@@ -524,7 +526,14 @@ def finite_settle(plan, draft, errors, states, complete):
             value = None
             if result.state == 'ready' and result.value is not None:
                 value = int(to_decimal(result.value)) if field['target_type'] == 'integer' else to_decimal(result.value) if field['result_type'] == 'decimal' else result.value
-                value = definition.validate(value)
+                try:
+                    value = definition.validate(value)
+                except ValueError as exc:
+                    # Declared bounds on a result are a calculation error, reported like any other.
+                    item._values[name] = None
+                    states[prefix + name] = 'error'
+                    errors[prefix + name] = f'COMPUTE_RANGE_ERROR: {exc}'
+                    continue
             item._values[name] = value
             if result.state == 'ready':
                 continue
@@ -676,6 +685,8 @@ def persist_rows(context, model, draft, before, owner_id, keys):
             elif row.stored_values() != old_by_id[row.id].stored_values():
                 business.policy.record(tx, user, child.model, row.id, 'update')
                 write_snapshot(tx, row)
+                # The written row must stay inside this user's row scope.
+                business.policy.record(tx, user, child.model, row.id, 'update')
                 updated.append(row.id)
             inner = persist_rows(context, child.model, row, old_by_id.get(row.id), row.id, keys)
             if inner: nested[row.id] = inner

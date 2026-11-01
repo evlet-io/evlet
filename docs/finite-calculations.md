@@ -148,8 +148,10 @@ route first. Formula changes never backfill stored totals on their own.
 
 A calculated result is readable only when every input it reads is readable and every
 collection it aggregates is complete for that user (no child row scope). Otherwise the
-result is withheld. `/api/schema` reports, per finite root, the plan hash and a capability
-per field (`local_universal` or `unavailable`). The plan is included only when every
+result is withheld. A withheld result still has to be valid for a save, so a user who can
+write its sources learns whether a save failed: avoid bounds such as `minimum` on results
+over inputs a writer cannot read. `/api/schema` reports, per finite root, the plan hash and a
+capability per calculated field the user can see (`local_universal` or `unavailable`). The plan is included only when every
 calculated field is local for that user. A shipped plan lists only fields that user can
 read (no hidden names, bounds or defaults); it carries its own hash and
 `source_plan_hash`, the active plan's hash. The existing SolidJS form previews finite

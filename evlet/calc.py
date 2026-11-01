@@ -229,6 +229,12 @@ def lift(value):
 UNARY = object()
 
 
+def operand_like(value):
+    """Whether a value can be lifted into an expression (fields, expressions, literals)."""
+    from .fields import Field
+    return value is None or isinstance(value, (Expr, Field, PyDecimal, Num, str)) or type(value) in (bool, int)
+
+
 def operand(op, left, right=UNARY):
     """Field descriptors build expressions through these operators."""
     return Expr(op, (lift(left),) if right is UNARY else (lift(left), lift(right)))
@@ -465,6 +471,11 @@ def compile_expression(expr, context, target):
         fail('UNSUPPORTED_EXPRESSION', f'unknown operation {op!r}')
 
     ir, kind, _ = visit(expr, 0, 'self')
+    try:
+        # Boolean arithmetic adds conversion nodes, so the emitted IR is what must fit the limits.
+        check_node(ir, 0, [0])
+    except CalcError:
+        raise CalcError('CALCULATION_LIMIT_EXCEEDED', f'{address(context.path, target)}: expression is too large') from None
     return ir, kind, reads
 
 
@@ -498,8 +509,8 @@ def compile_plan(registry, root):
                 continue
             entry[name] = {'type': field_type(field), 'kind': field.kind, 'stored': field.stored, 'computed': is_finite(field),
                            'required': field.required, 'scale': getattr(field, 'scale', None) if isinstance(field, DecimalField) else (0 if isinstance(field, Integer) else None),
-                           'minimum': None if getattr(field, 'minimum', None) is None else str(field.minimum),
-                           'maximum': None if getattr(field, 'maximum', None) is None else str(field.maximum),
+                           'minimum': None if getattr(field, 'minimum', None) is None else text(parse(field.minimum)),
+                           'maximum': None if getattr(field, 'maximum', None) is None else text(parse(field.maximum)),
                            'default': creation_default(field)}
         schema[address(path, '').rstrip('.') or '$root'] = {'path': list(path), 'model': registry.name_for(model), 'fields': entry,
                                                                'tables': sorted(children)}
@@ -771,8 +782,8 @@ def aggregate(node, scope, budget):
     return ready(best)
 
 
-def convert(result, field, at):
-    """Strict target assignment: no unrequested rounding."""
+def convert(result, field, at, meta=None):
+    """Strict target assignment: no unrequested rounding, and the target's declared bounds hold."""
     if result.state != 'ready' or result.value is None or field['result_type'] != 'decimal':
         return result
     value, scale = result.value, field['scale']
@@ -780,7 +791,10 @@ def convert(result, field, at):
         return error('COMPUTE_SCALE_ERROR', [at])
     if field['target_type'] == 'integer' and abs(value.coef) > SAFE_INTEGER:
         return error('COMPUTE_RANGE_ERROR', [at])
-    if field['stored'] and scale is not None and abs(value.coef * 10**(scale - value.scale)) > 2**63 - 1:
+    if scale is not None and abs(value.coef * 10**(scale - value.scale)) > 2**63 - 1:
+        return error('COMPUTE_RANGE_ERROR', [at])
+    if meta is not None and (meta.get('minimum') is not None and compare(value, parse(meta['minimum'])) < 0
+                             or meta.get('maximum') is not None and compare(value, parse(meta['maximum'])) > 0):
         return error('COMPUTE_RANGE_ERROR', [at])
     return result
 
@@ -1005,7 +1019,7 @@ class Document:
             row = self.rows[node[0]]
             field = templates[node[1], row.path]
             at = row.label + node[1]
-            outcome = convert(evaluate(field['expression'], Scope(self, row, at=at), budget), field, at)
+            outcome = convert(evaluate(field['expression'], Scope(self, row, at=at), budget), field, at, self.schema[row.path]['fields'][node[1]])
             evaluated += 1
             self.counts[node] = self.counts.get(node, 0) + 1
             if node not in self.results or self.results[node] != outcome:
@@ -1021,7 +1035,10 @@ class Document:
         self._usable()
         outer = self._batch is None
         if outer:
-            self._batch = {'snapshot': self._capture(), 'sources': set(), 'membership': set(), 'moved': set(), 'structure': False, 'order': set()}
+            self._batch = {'snapshot': self._capture(), 'bound': set(self.deps), 'sources': set(), 'membership': set(), 'moved': set(), 'structure': False, 'order': set()}
+        if not outer:
+            # A nested batch is one command: if its error is caught, its changes are undone.
+            return self._command(lambda: check_async(run(self)))
         try:
             check_async(run(self))
         except BaseException:
@@ -1045,7 +1062,15 @@ class Document:
         if self._batch is None:
             return self.batch(lambda _: run())
         self._usable()
-        return run()
+        # A command whose error the batch catches must not leave the document half changed.
+        snapshot = self._capture(), {key: set(value) if isinstance(value, set) else value for key, value in self._batch.items()}
+        try:
+            return run()
+        except BaseException:
+            self._restore(snapshot[0])
+            self._batch.clear()
+            self._batch.update(snapshot[1])
+            raise
 
     def _usable(self):
         if self._disposed:
@@ -1151,11 +1176,11 @@ class Document:
                     raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'A row cannot move into its own subtree')
                 ancestor = ancestor.parent
             source = row.parent
+            position = integer(at)
+            if position is None or not 0 <= position <= len(destination.children[table]) - (destination is source):
+                raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Use a valid destination position')
             source.children[table].remove(row)
             self._structure(source.handle, table)
-            position = integer(at)
-            if position is None or not 0 <= position <= len(destination.children[table]):
-                raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Use a valid destination position')
             self._place(destination, table, row, position)
             self._structure(owner, table)
             stack = [row]
@@ -1198,7 +1223,8 @@ class Document:
         self._bind()
 
     def _commit(self, batch):
-        old = set(self.deps)
+        # Bindings as the batch began: a rolled-back command rebinds, so self.deps may already be newer.
+        old = batch['bound']
         if batch['structure']:
             self._bind()
         live = set(self.deps)
@@ -1348,29 +1374,49 @@ def check_plan(plan):
         if scale is not None and (type(scale) is not int or not 0 <= scale <= MAX_SCALE):
             raise CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target scale')
         check_node(field['expression'], 0, [0])
+    for table in plan['tables'].values():
+        for meta in table['fields'].values():
+            for bound in (meta.get('minimum'), meta.get('maximum')):
+                if bound is not None:
+                    parse(bound)
 
 
 SCOPES = {'self', 'parent', 'row'}
-LITERALS = {'decimal', 'integer', 'boolean', 'text', 'null'}
+ARITY = {'add': 2, 'sub': 2, 'mul': 2, 'div': 2, 'neg': 1, 'eq': 2, 'ne': 2, 'lt': 2, 'lte': 2, 'gt': 2, 'gte': 2,
+         'and': 2, 'or': 2, 'not': 1, 'round': 2, 'coalesce': 2, 'safe_divide': 3, 'bool_to_decimal': 1}
+LITERALS = {'decimal': str, 'boolean': bool, 'text': str}
+NAME = r'[A-Za-z][A-Za-z0-9_]*'
 
 
-def check_node(node, depth, count):
-    """Closed, bounded IR: unknown operations, scopes or shapes fail before evaluation."""
+def check_node(node, depth, count, scale=False):
+    """Closed, bounded IR: unknown operations, arities, scopes or shapes fail before evaluation.
+
+    An integer literal is only valid as round()'s scale (`scale`), and nothing else is valid there.
+    """
     count[0] += 1
     if not isinstance(node, dict) or depth > LIMITS['expression_depth'] or count[0] > LIMITS['expression_nodes']:
         raise CalcError('UNSUPPORTED_EXPRESSION', 'Calculation plans must be bounded expression objects')
     op = node.get('$expr')
     if op == 'literal':
-        ok = node.get('type') in LITERALS and (node['type'] != 'integer' or integer(node.get('value')) is not None and 0 <= node['value'] <= MAX_SCALE)
+        kind, value = node.get('type'), node.get('value')
+        if kind == 'integer':
+            ok = scale and integer(value) is not None and 0 <= value <= MAX_SCALE
+        else:
+            ok = not scale and (value is None if kind == 'null' else kind in LITERALS and type(value) is LITERALS[kind])
+            if ok and kind == 'decimal':
+                parse(value)
     elif op == 'ref':
-        ok = node.get('scope') in SCOPES and isinstance(node.get('field'), str) and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', node['field']) is not None
+        ok = not scale and node.get('scope') in SCOPES and isinstance(node.get('field'), str) and re.fullmatch(NAME, node['field']) is not None
     elif op == 'aggregate':
-        ok = node.get('kind') in ('sum', 'min', 'max', 'count') and isinstance(node.get('table'), str)
-        if ok and node.get('where') is not None:
+        field = node.get('field', 0)
+        ok = not scale and node.get('kind') in ('sum', 'min', 'max', 'count') and isinstance(node.get('table'), str) and 'where' in node \
+            and (field is None if node['kind'] == 'count' else isinstance(field, str) and re.fullmatch(NAME, field) is not None)
+        if ok and node['where'] is not None:
             check_node(node['where'], depth + 1, count)
     else:
-        ok = op in OPERATIONS and isinstance(node.get('args'), list)
-        for arg in node.get('args', []) if ok else []:
-            check_node(arg, depth + 1, count)
+        args = node.get('args')
+        ok = not scale and op in ARITY and isinstance(args, list) and len(args) == ARITY[op]
+        for index, arg in enumerate(args if ok else []):
+            check_node(arg, depth + 1, count, op == 'round' and index == 1)
     if not ok:
         raise CalcError('UNSUPPORTED_EXPRESSION', f'Unknown or malformed calculation node {op!r}')

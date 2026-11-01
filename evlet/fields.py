@@ -9,6 +9,16 @@ MISSING = object()
 MAX_INTEGER = 2**63 - 1
 
 
+def storage_name(model):
+    from .models import storage_name
+    return storage_name(model)
+
+
+def _operand_like(value):
+    from .calc import operand_like
+    return operand_like(value)
+
+
 def _expr(op, left, *right):
     from .calc import operand
     return operand(op, left, *right)
@@ -71,9 +81,11 @@ class Field:
         # Fields and MISSING compare by identity (dictionary and list safety). Comparing with any
         # other value, including None, builds an expression so formulas never miscompile silently;
         # plain code should use `field is None`.
+        if not isinstance(other, Field) and other is not MISSING and not _operand_like(other): return NotImplemented
         return self is other if isinstance(other, Field) or other is MISSING else _expr('eq', self, other)
 
     def __ne__(self, other):
+        if not isinstance(other, Field) and other is not MISSING and not _operand_like(other): return NotImplemented
         return self is not other if isinstance(other, Field) or other is MISSING else _expr('ne', self, other)
 
     def __add__(self, other): return _expr('add', self, other)
@@ -404,5 +416,5 @@ class Link(Integer):
         self.target = target
 
     def metadata(self):
-        target = self.target if isinstance(self.target, str) else getattr(self.target, 'storage_name', self.target.__name__.lower())
+        target = self.target if isinstance(self.target, str) else storage_name(self.target)
         return {**super().metadata(), "target": target}
