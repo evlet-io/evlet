@@ -26,6 +26,27 @@ class Table:
     def __get__(self, instance, owner=None):
         return self if instance is None else getattr(instance, '_children', {}).get(self.name, ())
 
+    # Finite aggregates over this table's rows, e.g. lines.sum("amount").
+    def where(self, predicate=None, **equals):
+        from .calc import Selection
+        return Selection(self).where(predicate, **equals)
+
+    def sum(self, field):
+        from .calc import Selection
+        return Selection(self).sum(field)
+
+    def min(self, field):
+        from .calc import Selection
+        return Selection(self).min(field)
+
+    def max(self, field):
+        from .calc import Selection
+        return Selection(self).max(field)
+
+    def count(self):
+        from .calc import Selection
+        return Selection(self).count()
+
 
 class ReactiveQuery:
     """One typed, permission-aware source shared by several derived fields."""

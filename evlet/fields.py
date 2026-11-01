@@ -9,6 +9,11 @@ MISSING = object()
 MAX_INTEGER = 2**63 - 1
 
 
+def _expr(op, left, right=None):
+    from .calc import operand
+    return operand(op, left, right)
+
+
 class Field:
     kind = "field"
     sql_type = "TEXT"
@@ -57,6 +62,27 @@ class Field:
 
     def __set__(self, instance, value):
         raise AttributeError("Records are snapshots; use Database.update() to save changes")
+
+    # Finite calculations: descriptors build expressions. Equality stays identity-based
+    # so fields remain safe dictionary keys; use F("name") == value or where(name=value).
+    def __add__(self, other): return _expr('add', self, other)
+    def __radd__(self, other): return _expr('add', other, self)
+    def __sub__(self, other): return _expr('sub', self, other)
+    def __rsub__(self, other): return _expr('sub', other, self)
+    def __mul__(self, other): return _expr('mul', self, other)
+    def __rmul__(self, other): return _expr('mul', other, self)
+    def __truediv__(self, other): return _expr('div', self, other)
+    def __rtruediv__(self, other): return _expr('div', other, self)
+    def __neg__(self): return _expr('neg', self)
+    def __lt__(self, other): return _expr('lt', self, other)
+    def __le__(self, other): return _expr('lte', self, other)
+    def __gt__(self, other): return _expr('gt', self, other)
+    def __ge__(self, other): return _expr('gte', self, other)
+    def __and__(self, other): return _expr('and', self, other)
+    def __rand__(self, other): return _expr('and', other, self)
+    def __or__(self, other): return _expr('or', self, other)
+    def __ror__(self, other): return _expr('or', other, self)
+    def __invert__(self): return _expr('not', self)
 
     def clean(self, value):
         if value is MISSING:
@@ -162,7 +188,10 @@ class Decimal(Field):
 
     def __init__(self, *, scale=4, minimum=None, maximum=None, **kwargs):
         super().__init__(**kwargs)
-        if type(scale) is not int or not 0 <= scale <= 9:
+        from .calc import Expr
+        if scale is None and (self.stored or not isinstance(self.compute, Expr)):
+            raise ValueError("scale=None is only for virtual finite calculations: stored=False with compute=")
+        if scale is not None and (type(scale) is not int or not 0 <= scale <= 9):
             raise ValueError("scale must be an integer between 0 and 9")
         self.scale = scale
         self.minimum = DecimalValue(str(minimum)) if minimum is not None else None
@@ -179,6 +208,10 @@ class Decimal(Field):
             with localcontext(Context(prec=40)) as context:
                 context.prec = 40
                 amount = DecimalValue(value)
+                if self.scale is None:
+                    if not amount.is_finite():
+                        raise ValueError("Decimal is outside the supported range")
+                    return amount
                 if not amount.is_finite() or amount.copy_abs() > DecimalValue(MAX_INTEGER).scaleb(-self.scale):
                     raise ValueError("Decimal is outside the supported range")
                 rounded = amount.quantize(DecimalValue(1).scaleb(-self.scale))
@@ -205,6 +238,9 @@ class Decimal(Field):
             return None if value is None else DecimalValue(value).scaleb(-self.scale)
 
     def serialize(self, value):
+        if value is not None and self.scale is None:
+            from .calc import parse, text
+            return text(parse(value))
         return None if value is None else format(value, f".{self.scale}f")
 
     def metadata(self):

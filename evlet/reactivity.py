@@ -7,6 +7,7 @@ from decimal import Decimal, localcontext, ROUND_HALF_EVEN
 from .declarations import Ref
 from .fields import Decimal as DecimalField, Integer, MISSING
 from .ui.expressions import Expression
+from .calc import is_finite
 
 OPS = {ast.Add: 'add', ast.Sub: 'sub', ast.Mult: 'mul', ast.Div: 'div',
        ast.Eq: 'eq', ast.NotEq: 'ne', ast.Lt: 'lt', ast.LtE: 'lte', ast.Gt: 'gt', ast.GtE: 'gte',
@@ -130,7 +131,9 @@ def plans(model, parent=None):
         entry = {}
         for key in ('compute', 'visible_if', 'required_if', 'read_only_if'):
             source = getattr(field, key)
-            if source is not None:
+            if key == 'compute' and is_finite(field):
+                entry['finite'] = True  # Evaluated from the finite plan, not this legacy compiler.
+            elif source is not None:
                 entry[key] = compile_expression(source)
         if isinstance(field.default, Ref):
             entry['default_ref'] = Expression('ref', (field.default.path,))
