@@ -116,7 +116,12 @@ class ModelType(type):
         if revisable:
             fields['revises'].target = cls
             unique_and_required(name, fields, tables)
-        if states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
+        # Meta.journal = Journal(...) makes a document, so every write goes through the journaled pipeline.
+        journaled = False
+        if hasattr(meta, 'journal'):
+            from .journal import Journal
+            journaled = isinstance(meta.journal, Journal)
+        if journaled or states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
         reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}
@@ -292,6 +297,9 @@ class Registry:
         # Rows documents post to other models (Meta.effects); the targets' rows are read only.
         from .effects import compile_effects
         self.effects, self.effect_targets = compile_effects(self, models, child_models)
+        # Record histories: {model: Journal} (evlet/journal.py).
+        from .journal import compile_journals
+        self.journals = compile_journals(models, child_models)
 
     def root_of(self, model):
         owners = {child.model: child.parent for child in self.children}

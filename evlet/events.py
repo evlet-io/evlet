@@ -19,13 +19,15 @@ class EventStore:
         with self.database.transaction() as tx:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_events (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, model TEXT NOT NULL, record_id INTEGER NOT NULL, deleted INTEGER NOT NULL)')
 
-    def publish(self, tx, model, record_id, *, deleted=False):
+    def publish(self, tx, model, record_id, *, deleted=False, journal=False):
+        """Record that a record changed (or was deleted), or with journal=True that its journal gained an
+        entry; clients refresh the record or its journal. Stored as deleted = 0, 1 or 2."""
         if not self.database.owns(tx):
             raise ValueError('Event transaction belongs to another database')
         if type(record_id) is not int or not 1 <= record_id <= 2**63 - 1:
             raise ValueError('Use a valid record ID')
         token = secrets.token_hex(24)
-        event_id = tx.connection.execute('INSERT INTO evlet_events(token,model,record_id,deleted) VALUES (?,?,?,?)', (token, self.database.registry.name_for(model), record_id, bool(deleted))).lastrowid
+        event_id = tx.connection.execute('INSERT INTO evlet_events(token,model,record_id,deleted) VALUES (?,?,?,?)', (token, self.database.registry.name_for(model), record_id, 1 if deleted else 2 if journal else 0)).lastrowid
         tx.connection.execute('DELETE FROM evlet_events WHERE id<=?', (event_id - self.retention,))
         return token
 
@@ -52,7 +54,7 @@ class EventStore:
                 model = self.database.registry.models.get(row['model'])
                 if model is None or not policy.allows(user, model, 'read'):
                     continue
-                if row['deleted']:
+                if row['deleted'] == 1:
                     # A deleted row cannot be rechecked against a current row scope.
                     if policy.rule(user, model).scope is not None:
                         continue
@@ -61,5 +63,8 @@ class EventStore:
                         policy.record(tx, user, model, row['record_id'])
                     except (AccessError, NotFoundError):
                         continue
-                items.append({'model': row['model'], 'id': row['record_id'], 'deleted': bool(row['deleted'])})
+                item = {'model': row['model'], 'id': row['record_id'], 'deleted': row['deleted'] == 1}
+                if row['deleted'] == 2:
+                    item['journal'] = True
+                items.append(item)
             return {'items': items, 'cursor': rows[-1]['token'] if rows else after, 'reset': False, 'more': bool(rows and latest and rows[-1]['id'] < latest['id'])}

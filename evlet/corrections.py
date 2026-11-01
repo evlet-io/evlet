@@ -33,12 +33,16 @@ def prepare_copy(context, model, original, copy):
 
 
 def voided(context, model, record_id, previous, reason):
-    """Called once a void is saved. The Journal (Phase 8) records the reason here."""
+    """Called once a void is saved. Writes the Journal's `voided` entry with the reason."""
+    from . import journal
+    journal.voided(context, model, record_id, previous, reason)
 
 
 def revised(context, model, original_id, copy_id, reason):
     """Called once a revise is saved, after `voided` (which is skipped when the original was void already).
-    The Journal (Phase 8) records the link here."""
+    Writes the Journal's `revised` entry on the original, naming the copy."""
+    from . import journal
+    journal.revised(context, model, original_id, copy_id, reason)
 
 
 # Checks
@@ -164,6 +168,8 @@ def revise(context, model, record_id, reason):
     if reaction is not None:
         freeze_draft(copy)
         reaction(copy, Change('revise', user, None, freeze(copy.stored_values()), tuple(model.__fields__), freeze(children)))
+    from . import journal
+    journal.written(context, model, saved.id, None, copy)
     for name, number in numbers:
         sequences.assigned(context, model, saved.id, name, number)
     revised(context, model, record.id, saved.id, reason)

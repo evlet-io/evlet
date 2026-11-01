@@ -653,3 +653,13 @@ def test_postgres_reference_index_migrations(pg_dsn):
 def test_postgres_effects_beside_numbers_measures_and_relations(pg_dsn, check):
     from tests import test_effects as effects
     getattr(effects, check)(effects.stacked_books(PostgreSQLDatabase(pg_dsn, Registry(*effects.STACKED))))
+
+
+@pytest.mark.parametrize('check', ['check_engine', 'check_reading', 'check_user_entries', 'check_append_only_and_chain', 'check_rollback'])
+def test_postgres_journal(pg_dsn, monkeypatch, check):
+    from tests import test_journal as journal
+    from tests.test_rules_types import start
+    app = journal.seed(start(PostgreSQLDatabase(pg_dsn, Registry(*journal.MODELS))))
+    # The table, its index and its triggers are created once and kept on a restart.
+    app.initialize()
+    getattr(journal, check)(*((app, monkeypatch) if check == 'check_rollback' else (app,)))

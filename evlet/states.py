@@ -402,8 +402,11 @@ def checked_move(context, model, field, draft, before, current, to):
     return move
 
 
-def moved(context, model, record_id, previous, move):
-    """Called once a move is saved, in its transaction. The Journal entry for the move is written here."""
+def moved(context, model, record_id, previous, move, before=None, after=None):
+    """Called once a move is saved, in its transaction, with the record's drafts before and after it.
+    Writes the Journal's `moved` entry, which also lists what else the move changed."""
+    from . import journal
+    journal.moved(context, model, record_id, previous, move, before, after)
 
 
 def action_arguments(context, model, method, declaration, arguments, saved):

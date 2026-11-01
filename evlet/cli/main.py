@@ -55,6 +55,11 @@ def parser():
     effects_check = effects_commands.add_parser('check', help='Recompute effect rows and report differences without writing')
     effects_check.add_argument('instance')
     effects_check.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
+    journal = commands.add_parser('journal', help='Check record journals')
+    journal_commands = journal.add_subparsers(dest='journal_command', required=True)
+    verify = journal_commands.add_parser('verify', help='Report breaks in the hash chains of tamper-evident journals')
+    verify.add_argument('instance')
+    verify.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     for name, port in (('playground', 8000), ('docs', 8001)):
         command = commands.add_parser(name, help='Launch bundled ' + name + ' without a project')
         command.add_argument('--port', type=int, default=port)
@@ -160,6 +165,15 @@ def main(argv=None):
                 print(f'{len(differences)} difference' + ('' if len(differences) == 1 else 's'), file=sys.stderr)
                 raise SystemExit(1)
             print('No differences')
+        elif args.command == 'journal':
+            from .journal import verify_instance
+            checked, breaks = verify_instance(root, args.instance)
+            for entry, model, record_id, message in breaks:
+                print(f'Entry {entry} ({model} {record_id}): {message}')
+            if breaks:
+                print(f'{len(breaks)} break{"s" if len(breaks) > 1 else ""} in {checked} hashed entries', file=sys.stderr)
+                raise SystemExit(1)
+            print(f'Journal verified: {checked} hashed entries, no breaks')
         elif args.command in ('serve', 'dev'):
             from .serve import serve
             name = args.instance

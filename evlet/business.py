@@ -129,6 +129,8 @@ class Business:
             self.relations[model] = tuple(item for item in meaning.relations if item.source not in self.child_models)
         if any('children' in model.__fields__ for model in self.registry.models.values()):
             raise ValueError('children is reserved for owned collections')
+        # Rows of a ChildTable are journaled with their parent, like Table rows.
+        self.journals = {model: journal for model, journal in self.registry.journals.items() if model not in self.child_models}
 
     def initialize(self):
         self.auth.initialize()
@@ -147,6 +149,10 @@ class Business:
             with self.database.transaction() as tx:
                 # Document number counters, updated in each assigning write transaction.
                 ensure_counters(tx.connection)
+        if self.journals:
+            from .journal import ensure_table
+            with self.database.transaction() as tx:
+                ensure_table(tx.connection, postgres=getattr(self.database, 'driver', None) is not None)
         if getattr(self, 'forms', None) and (self.forms.dialogs or self.forms.reports):
             self.forms.initialize()
         if self.events:
@@ -164,9 +170,9 @@ class Business:
                     namespace = connection.execute('SELECT namespace FROM evlet_job_namespace WHERE id=1').fetchone()[0]
                 self.application['id'] = hashlib.sha256(namespace.encode()).hexdigest()
 
-    def changed(self, tx, model, record_id, *, deleted=False):
+    def changed(self, tx, model, record_id, *, deleted=False, journal=False):
         if self.events:
-            self.events.publish(tx, model, record_id, deleted=deleted)
+            self.events.publish(tx, model, record_id, deleted=deleted, journal=journal)
 
     @contextmanager
     def context(self, user, *, readonly=False):
@@ -289,6 +295,8 @@ class Business:
                 entry['measures'] = measure_schema(self, user, model)
             if entry['attachments']:
                 entry['attachment_limits'] = self.attachment_limits[model].public()
+            from .journal import schema as journal_schema
+            entry.update(journal_schema(self, user, model))
             meaning = self.registry.meaning[model]
             if meaning.key_fields:
                 entry['key_fields'] = [name for name in meaning.key_fields if name in readable]
@@ -454,6 +462,10 @@ class Business:
             if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
             from .corrections import dispatch
             return dispatch(self, scope, body, user, model, int(parts[3]), parts[4])
+        if len(parts) == 5 and parts[4] == 'journal':
+            if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
+            from .journal import route
+            return route(self, scope, body, user, model, int(parts[3]))
         if getattr(model, '__declaration_mode__', False) and method == 'DELETE' and len(parts) == 4:
             if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
             with self.context(user) as context:
@@ -584,14 +596,16 @@ class Business:
 
         `loaded` holds the owned rows a detail of the record just read (see `detail`), for guards that read rows.
         """
+        from .journal import summary as journal_summary
+        result = journal_summary(self, context._tx, model, record.id)
         if model.__state__ is None and model not in self.registry.guards:
-            return {}
+            return result
         from .states import availability
         from . import corrections
         reader = context.read_context()
         from .effects import summary
         return {**availability(self, reader, model, record, loaded), **corrections.availability(self, reader, model, record),
-                **summary(self, reader, model, record)}
+                **summary(self, reader, model, record), **result}
 
     def field_expressions(self, user, model):
         """Serialized finite expressions per readable field: compute, initial and the three rules.
@@ -1027,6 +1041,8 @@ class Business:
                 if tx.connection.execute('SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=?', args).fetchone()[0] >= limits.max_files:
                     raise ValidationError({'attachment': f'Use at most {limits.max_files} attachment{"s" if limits.max_files > 1 else ""} per record'})
                 file_id = self.storage.add(tx, *args, filename, content)
+                from .journal import file
+                file(self, tx, user, model, record_id, 'added', {'id': file_id, 'name': filename, 'size': len(content)})
                 self.changed(tx, model, record_id)
                 return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []
             row = tx.connection.execute('SELECT * FROM evlet_attachments WHERE model=? AND record_id=? AND id=?', (*args, file_id)).fetchone()
@@ -1036,6 +1052,8 @@ class Business:
                 return 200, Download(self.storage.read(row)), [(b'content-type', b'application/octet-stream'), (b'content-disposition', ("attachment; filename*=UTF-8''" + quote(row['name'], safe='')).encode()), (b'content-security-policy', b"default-src 'none'; sandbox")]
             if method == 'DELETE':
                 tx.connection.execute('DELETE FROM evlet_attachments WHERE id=?', (file_id,))
+                from .journal import file
+                file(self, tx, user, model, record_id, 'removed', {'id': file_id, 'name': row['name']})
                 self.changed(tx, model, record_id)
                 return 204, None, []
         raise AccessError(405, 'Method not allowed')
