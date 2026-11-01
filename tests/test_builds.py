@@ -92,6 +92,13 @@ def test_reference_app_full_public_flow(project):
     assert c('POST', base + '/submit', submission, headers=headers)[1] == planned[1]
     assert c('GET', '/api/workorder')[1]['total'] == 1
     assert c('GET', '/api/salesorder/' + str(order['id']))[2][b'etag'] == headers[b'if-match']
+    # The order's key fields and its work orders, listed through the declared relation.
+    order_schema = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'salesorder')
+    assert order_schema['key_fields'] == ['company', 'warehouse', 'status', 'total']
+    assert order_schema['relations'][0] == {'name': 'workorder.sales_order', 'label': 'Work orders', 'model': 'workorder',
+                                            'link': 'sales_order', 'limit': 5, 'order': ['-production_date', '-id']}
+    related = c('GET', f"/api/salesorder/{order['id']}/related/workorder.sales_order")[1]
+    assert related['total'] == 1 and related['limit'] == 5 and related['items'][0]['qty'] == '2.0000'
     report = c('POST', '/api/_reports/amendment.SalesRegister', {'filters': {'company': company}})
     assert report[0] == 200, report
     assert report[1]['rows'][0]['total'] == '6.75'
@@ -159,6 +166,10 @@ def test_reference_app_full_public_flow(project):
     original = c('GET', sent_url)[1]
     # The void original keeps its number; the revision is numbered when it is sent.
     assert original['stage'] == 'void' and original['revised_by'] == copy['id'] and original['number'] == sent_number
+    assert quote_schema['key_fields'] == ['company', 'stage', 'payable', 'valid_until']
+    assert [(item['name'], item['label']) for item in quote_schema['relations']] == [('quote.revises', 'Revisions')]
+    revisions = c('GET', f"{sent_url}/related/quote.revises")[1]
+    assert revisions['total'] == 1 and revisions['items'][0]['id'] == copy['id']
     copy_url = f"/api/quote/{copy['id']}"
     assert c('PATCH', copy_url, {'name': 'Q-4 rev'}, headers={b'if-match': c('GET', copy_url)[2][b'etag']})[1]['name'] == 'Q-4 rev'
     assert move(copy_url, 'sent')[1]['number'] == sent['number'][:-1] + '4'

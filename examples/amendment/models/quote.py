@@ -17,6 +17,8 @@ class Quote(Model):
             'won_total': Sum('grand_total', where=F('stage') == 'won'),
             'quotes': Count(),
         }
+        # Shown beside the quote; its revisions are listed as related records automatically.
+        key_fields = ('company', 'stage', 'payable', 'valid_until')
 
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
