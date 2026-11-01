@@ -114,6 +114,22 @@ macOS arm64, Python 3.12.16 (`scripts/benchmark_finite.py`) and Node 24.16.0
 Both runtimes report identical evaluation and step counts. A 10,000-row case needs raised
 limits, which plans refuse by design; it was not run.
 
+## Simplification audit quick wins
+
+* Saved documents now record a formula hash (formulas plus the type, scale and bounds of
+  the fields they read or write) instead of the whole plan hash. Unrelated model edits no
+  longer make every saved document return 409. At startup, rows recorded under the active
+  plan's full hash move to its formula hash. Rolling back to an older release makes those
+  documents return 409 until they are recalculated.
+* The server checks each plan once when the registry is built, not on every save.
+* `settle()` is split into named steps. On a save, a Link whose filters name a field the
+  user cannot read now returns 403 before any filter is compared (previously a mismatch
+  on an earlier filter could return a 422 first).
+* Deleting a legacy `ChildTable` parent with more than 100 children now deletes them page
+  by page. Document-pipeline deletes still refuse collections over 100 rows with a 422.
+* `Report.roles` is the documented name (`permissions` stays as an alias), so a report
+  field cannot be named `roles`.
+
 ## Known limitations
 
 * `Query` sources and query fields are not supported in finite-v1 roots.

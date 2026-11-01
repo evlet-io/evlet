@@ -89,6 +89,20 @@ def test_instances_start_without_database(project):
     assert read_lock(path) == {'apps': {}}
 
 
+def test_new_config_omits_reserved_fields_and_old_config_still_loads(project):
+    from evlet.instances import read_instance
+    path = project / 'instances/acme'
+    text = (path / 'config.py').read_text()
+    assert 'database=' not in text and 'storage=' not in text
+    config = read_instance(path)
+    assert (config.database, config.storage) == ('sqlite', 'local')
+    (path / 'config.py').write_text('from evlet import Instance\n\ninstance = Instance(name="acme", database="sqlite", storage="local", domain=None)\n')
+    assert read_instance(path).name == 'acme'
+    (path / 'config.py').write_text('from evlet import Instance\n\ninstance = Instance(name="acme", database="postgresql")\n')
+    with pytest.raises(ValueError, match='SQLite'):
+        read_instance(path)
+
+
 def test_untrusted_install_does_not_execute_source(project, tmp_path):
     marker = tmp_path / 'executed'
     hooks = project / 'apps/notes/notes/hooks.py'

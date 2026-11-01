@@ -136,9 +136,11 @@ All ordinary writes settle the document in the existing transaction:
   values afterwards; maintenance does not recompute them.
 
 Reading a saved record never recalculates or rewrites it. Each saved finite-v1 document
-records the plan it was calculated with (`evlet_calculation_versions`, created at startup
-for apps with finite plans; a document with no recorded plan adopts the active one on its
-next write). Writing a document saved under another plan is a 409
+records the formula version it was calculated with (`evlet_calculation_versions`, created at
+startup for apps with finite plans; a document with no recorded version adopts the active one
+on its next write). The formula version covers only the formulas and the fields they read or
+write (type, scale, bounds). Adding an unrelated field or changing a default, label or text
+limit does not change it. Writing a document saved under other formulas is a 409
 `SCHEMA_VERSION_MISMATCH` until the client resubmits with
 `"_calculation": {"model_schema_hash": <active>, "recalculate": true}`. Actions, dialogs
 and services that write such a document get the same 409; recalculate it through the

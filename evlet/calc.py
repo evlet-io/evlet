@@ -533,6 +533,7 @@ def compile_plan(registry, root):
             'root_resource': getattr(root, '__resource_id__', registry.name_for(root)), 'limits': LIMITS,
             'tables': schema, 'fields': [fields[index] for index in order]}
     plan['model_schema_hash'] = fingerprint(plan)
+    check_plan(plan)
     return plan
 
 
@@ -633,6 +634,32 @@ def find_cycle(edges):
 
 def fingerprint(plan):
     body = {key: value for key, value in plan.items() if key != 'model_schema_hash'}
+    return 'sha256:' + hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def formula_hash(plan):
+    """Hash of only what decides calculated results: the formulas and the fields they read or write.
+
+    Saved documents record this hash, so unrelated model edits (a new text field, a changed
+    default or label) do not force every saved document to be recalculated.
+    """
+    used = {(tuple(field['path']), field['field']) for field in plan['fields']}
+    for field in plan['fields']:
+        for scope, table, name in field['reads']:
+            if scope == 'self':
+                used.add((tuple(field['path']), name))
+            elif scope == 'parent':
+                used.add((tuple(field['path'][:-1]), name))
+            elif scope == 'member':
+                used.add((tuple(field['path']) + (table,), name))
+    keys = ('type', 'kind', 'stored', 'computed', 'scale', 'minimum', 'maximum')
+    fields = {}
+    for table in plan['tables'].values():
+        for name, meta in table['fields'].items():
+            if (tuple(table['path']), name) in used:
+                fields[address(tuple(table['path']), name)] = {key: meta[key] for key in keys}
+    body = {key: plan[key] for key in ('plan_version', 'language', 'numeric_profile', 'expression_version', 'compiler_version')}
+    body.update(formulas=plan['fields'], fields=fields)
     return 'sha256:' + hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
@@ -857,8 +884,10 @@ class Scope:
 
 class Document:
     """A browser-equivalent session over one plan. The server uses it for full settlement."""
-    def __init__(self, plan, data=None, *, budget=None):
-        check_plan(plan)
+    def __init__(self, plan, data=None, *, budget=None, checked=False):
+        # The server passes checked=True for plans its own registry compiled and checked at startup.
+        if not checked:
+            check_plan(plan)
         self.plan, self.hash = plan, plan['model_schema_hash']
         self.schema = {tuple(entry['path']): entry for entry in plan['tables'].values()}
         self.templates = {}

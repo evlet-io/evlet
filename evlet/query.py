@@ -8,7 +8,9 @@ from .models import ValidationError, identifier
 OPERATORS = {'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'isnull', 'contains', 'icontains', 'startswith'}
 
 
-class Query:
+class SqlQuery:
+    """Compiles filters, search and ordering into parameterized SQL (not the `evlet.Query` field source)."""
+
     def __init__(self, registry, model):
         self.registry = registry
         self.model = model
@@ -134,3 +136,7 @@ class Query:
         except ValueError as exc:
             raise ValidationError({'order_by': str(exc)}) from exc
         return ' ORDER BY ' + ', '.join(clauses)
+
+
+# Earlier name, kept so existing imports of evlet.query.Query keep working.
+Query = SqlQuery

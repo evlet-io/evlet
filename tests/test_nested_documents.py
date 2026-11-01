@@ -2,7 +2,7 @@
 
 import pytest
 
-from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Text, Integer, Rule,
+from evlet import (AddField, Migration, Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Text, Integer, Rule,
                    Policy, Action, ValidationError, action)
 from evlet.calc import round, parent
 from evlet.business import Business
@@ -345,6 +345,39 @@ def test_formula_changes_never_silently_rewrite_saved_documents(tmp_path):
     assert status == 200 and result['total'] == '1800.00'
     _, current, headers = c('GET', url)
     assert c('PATCH', url, {'title': 'again'}, headers={b'if-match': headers[b'etag']})[0] == 200
+
+
+def test_unrelated_model_edits_keep_saved_documents_writable_and_old_versions_migrate(tmp_path):
+    original = globals()['Plan']
+    app = application(tmp_path, original)
+    c = client(app)
+    status, created, _ = c('POST', '/api/plan', {'children': {'stages': stages()}})
+    assert status == 201
+    with app.database.transaction() as tx:  # How releases before the formula hash recorded versions.
+        tx.connection.execute('UPDATE evlet_calculation_versions SET plan_hash=?', (app.registry.plans[original]['model_schema_hash'],))
+    application(tmp_path, original)  # Starting the upgraded framework moves those rows to the formula hash.
+    with app.database.transaction() as tx:
+        assert [tuple(row) for row in tx.connection.execute('SELECT DISTINCT plan_hash FROM evlet_calculation_versions')] == [(app.registry.formula_hashes[original],)]
+
+    class Plan(Model):  # Same formulas plus one text field nothing calculates from.
+        Meta = FiniteMeta
+        storage_name = 'plan'
+        permissions = ALL
+        title = Text(default='Plan')
+        hourly_rate = Currency(default=100)
+        stages = Table(Stage)
+        total = Currency(compute=stages.sum('total'))
+        note = Text(default='')
+    database = Database(tmp_path / 'db.sqlite3', Registry(Plan))
+    database.migrate([Migration('add_note', AddField('plan', 'note', Text(default='')))])
+    upgraded = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+    upgraded.initialize()
+    assert upgraded.registry.plans[Plan]['model_schema_hash'] != app.registry.plans[original]['model_schema_hash']
+    c = client(upgraded)
+    url = f"/api/plan/{created['id']}"
+    _, loaded, headers = c('GET', url)
+    status, result, _ = c('PATCH', url, {'title': 'renamed'}, headers={b'if-match': headers[b'etag']})
+    assert status == 200 and result['total'] == '900.00'
 
 
 class Line(Child):

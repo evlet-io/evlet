@@ -585,6 +585,27 @@ def test_plan_fingerprint_is_deterministic_and_checked():
         Document(dict(first, numeric_profile='decimal28-half-up-v1'))
 
 
+def test_formula_hash_ignores_fields_and_settings_formulas_do_not_use():
+    from evlet.calc import formula_hash
+
+    def build(note=False, default=1, factor=1, minimum=None):
+        class Line(Child):
+            qty = Decimal(default=default)
+            rate = Currency(default=0)
+            amount = Currency(compute=round(qty * rate * factor, 2), minimum=minimum)
+        lines_table = Table(Line)
+        namespace = {'Meta': FiniteMeta, 'lines': lines_table, 'total': Currency(compute=lines_table.sum('amount'))}
+        if note:
+            namespace['note'] = Text(default='')
+        return plan(type('Order', (Model,), {'__module__': __name__, **namespace}))
+    base = build()
+    for unrelated in (build(note=True), build(default=5)):
+        assert unrelated['model_schema_hash'] != base['model_schema_hash']
+        assert formula_hash(unrelated) == formula_hash(base)
+    for related in (build(factor=2), build(minimum='0')):
+        assert formula_hash(related) != formula_hash(base)
+
+
 def test_incremental_settlement_matches_full_recomputation():
     generator = random.Random(7)
     doc = document(Invoice, {'inclusive': True, **lines(*[{'qty': str(i + 1), 'rate': '1.10'} for i in range(5)])})

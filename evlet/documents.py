@@ -5,13 +5,15 @@ from types import MappingProxyType, MethodType
 from uuid import uuid4
 from contextlib import contextmanager
 import inspect
+import json
 import re
 
 from .auth import AccessError
+from .database import ROW_LIMIT
 from .declarations import Ref
 from .fields import MISSING, Link
 from .models import ValidationError, identifier
-from .query import Query
+from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
 from .calc import CalcError, Document, LIMITS, is_finite, to_decimal
 
@@ -66,8 +68,8 @@ class Draft:
                 raise ValidationError({name: 'COMPUTED_FIELD_WRITE: this value is calculated'})
             self._values[name] = value
         elif name in self._definition.__tables__:
-            if not isinstance(value, (list, tuple)) or len(value) > 100:
-                raise ValidationError({name: 'Use at most 100 rows'})
+            if not isinstance(value, (list, tuple)) or len(value) > ROW_LIMIT:
+                raise ValidationError({name: f'Use at most {ROW_LIMIT} rows'})
             child = self._definition.__tables__[name].child
             self._rows[name] = [row if isinstance(row, Draft) else Draft(child, row, context=self.context, parent=self, source=self.source) for row in value]
         else:
@@ -135,9 +137,9 @@ class Context:
         business, tx = self._business, self._tx
         business.policy.require(self.user, model, 'read')
         business.policy.query_fields(self.user, model, filters, order_by)
-        if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 2**63-1:
-            raise ValidationError({'page': 'Use a page of 1 to 100 rows and a nonnegative offset'})
-        query = Query(business.registry, model)
+        if type(limit) is not int or not 1 <= limit <= ROW_LIMIT or type(offset) is not int or not 0 <= offset <= 2**63-1:
+            raise ValidationError({'page': f'Use a page of 1 to {ROW_LIMIT} rows and a nonnegative offset'})
+        query = SqlQuery(business.registry, model)
         where, values = query.where(filters)
         scoped, scope_values = business.policy.scope_sql(self.user, model)
         if scoped:
@@ -262,9 +264,9 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
         raise ValidationError({prefix + 'children': 'Unknown child collection'})
     for child in business.children.values():
         if child.parent is not model: continue
-        existing = tx.list(child.model, filters={child.link: record_id}, limit=100, order_by=('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',)) if record_id else []
-        if record_id and tx.count(child.model, filters={child.link: record_id}) > 100:
-            raise ValidationError({prefix + 'children': 'This collection exceeds the 100-row editor limit'})
+        existing = tx.list(child.model, filters={child.link: record_id}, limit=ROW_LIMIT, order_by=('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',)) if record_id else []
+        if record_id and tx.count(child.model, filters={child.link: record_id}) > ROW_LIMIT:
+            raise ValidationError({prefix + 'children': f'This collection exceeds the {ROW_LIMIT}-row editor limit'})
         count(len(existing), 0)
         originals = {row.id: row for row in existing}
         hidden = set()
@@ -282,8 +284,8 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             draft._rows[child.name] = [stored(row, draft, loaded) for row in existing]
             continue
         rows = collections[child.name]
-        if not isinstance(rows, list) or len(rows) > 100:
-            raise ValidationError({prefix + child.name: 'Use at most 100 rows'})
+        if not isinstance(rows, list) or len(rows) > ROW_LIMIT:
+            raise ValidationError({prefix + child.name: f'Use at most {ROW_LIMIT} rows'})
         count(sum(1 for value in rows if isinstance(value, dict) and value.get('id') is None), 1)
         kept, keys, merged = set(), set(), []
         for index, value in enumerate(rows):
@@ -321,7 +323,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
                     try: business.policy.record(tx, user, item._definition, item.id, 'delete')
                     except AccessError: raise AccessError(403, 'You do not have permission for this operation') from None
         merged.extend(stored(originals[row_id], draft, loaded) for row_id in sorted(hidden))
-        if len(merged) > 100: raise ValidationError({prefix + child.name: 'Use at most 100 rows'})
+        if len(merged) > ROW_LIMIT: raise ValidationError({prefix + child.name: f'Use at most {ROW_LIMIT} rows'})
         draft._rows[child.name] = merged
 
 
@@ -333,98 +335,110 @@ def walk(draft, prefix=''):
             yield from walk(row, prefix + name + '.' + row.key + '.')
 
 
-def matching(previous, item, draft):
-    """The prior version of a row (same model and ID) anywhere in the previous tree."""
-    if item is draft: return previous
-    if previous is None or item.id is None: return None
-    return next((row for _, row in walk(previous) if row is not previous and row.id == item.id and row._definition is item._definition), None)
+def prior_versions(previous, draft):
+    """A lookup for the prior version of each row (same model and ID) anywhere in the previous tree."""
+    rows = {}
+    if previous is not None:
+        for _, row in walk(previous):
+            if row is not previous: rows.setdefault((row._definition, row.id), row)
+
+    def prior(item):
+        if item is draft: return previous
+        return None if item.id is None else rows.get((item._definition, item.id))
+    return prior
+
+
+def link_matches(context, item, field, value):
+    """Whether the Link's selected record satisfies its filters; reading the record checks access."""
+    business = context._business
+    target = business.policy.record(context._tx, context.user, field.target, value)
+    visible = business.policy.fields(context.user, field.target)
+    if set(field.filters) - visible: raise AccessError(403, 'A selection constraint is unavailable')
+    for filter_name, expected in field.filters.items():
+        expected = item.read(expected.path) if isinstance(expected, Ref) else expected
+        if expected is None or getattr(target, filter_name) != expected: return False
+    return True
 
 
 def settle(context, draft, *, complete, previous=None):
+    """Bring a document tree to a consistent state: inputs, fetches, calculations, then checks.
+
+    A preview (complete=False) returns errors and field states; a save (complete=True) also runs
+    the full validation and raises ValidationError on any error.
+    """
     registry = context._business.registry
-    nodes, order = graph(registry, draft._definition)
     errors, states = {}, {}
-    source_cache = {}
     all_drafts = list(walk(draft))
+    prior = prior_versions(previous, draft)
     # Owner links of legacy child tables are set from the saved parent at write time.
     owner_links = {child.model: child.link for child in context._business.children.values() if child.parent is draft._definition}
     def internal(item):
         names = set(getattr(item._definition, '__internal_fields__', ()))
         return names | {owner_links[item._definition]} if item is not draft and item._definition in owner_links else names
     for prefix, item in all_drafts:
-        for name, field in item._definition.__declared_fields__.items():
-            if name in internal(item): continue
-            value = item._values.get(name, MISSING)
-            if value is MISSING and item.id is None:
-                if isinstance(field.default, Ref): value = item.read(field.default.path)
-                elif field.default is not MISSING: value = field.default() if callable(field.default) else field.default
-            if field.compute is not None or field.query is not None: continue
-            try:
-                item._values[name] = None if value is MISSING or value is None else field.validate(value)
-                if field.kind == 'integer' and item._values[name] is not None and abs(item._values[name]) > 2**53-1:
-                    raise ValueError('Document integers must fit the browser safe range')
-            except ValueError as exc:
-                errors[prefix + name] = str(exc)
-        for name, field in item._definition.__declared_fields__.items():
-            if not field.fetch: continue
-            link_name, target_name = field.fetch.split('.')
-            link = item._definition.__declared_fields__.get(link_name)
-            if not isinstance(link, Link) or target_name not in link.target.__declared_fields__:
-                raise ValueError('Fetch must reference a declared Link target field')
-            old = matching(previous, item, draft)
-            if not field.read_only and name in item._submitted and item._values.get(name) is not None:
-                if old is None or old._values.get(name) != item._values.get(name) or old._values.get(link_name) == item._values.get(link_name): continue
-            if not field.read_only and old is not None and old._values.get(link_name) == item._values.get(link_name): continue
-            try:
-                value = None
-                if item._values.get(link_name) is not None:
-                    record = context._business.policy.record(context._tx, context.user, link.target, item._values[link_name])
-                    if target_name not in context._business.policy.fields(context.user, link.target): raise AccessError(403, 'Fetched field is unavailable')
-                    value = getattr(record, target_name)
-                item._values[name] = field.clean(value)
-            except ValueError as exc: errors[prefix + name] = str(exc)
+        apply_inputs(item, prefix, internal(item), errors)
+        apply_fetches(context, item, prefix, prior(item), errors)
     plan = registry.plan_for(draft._definition)
     if plan is not None:
         finite_settle(plan, draft, errors, states, complete)
-    for key in ([] if plan is not None else order):
+    else:
+        compute_legacy(context, draft, all_drafts, errors, states, complete)
+    if complete:
+        validate_tree(context, all_drafts, internal, prior, errors)
+    else:
+        check_preview(context, all_drafts, internal, errors, states)
+    return errors, states
+
+
+def apply_inputs(item, prefix, internal, errors):
+    """Creation defaults, then type validation of every source (non-calculated) field."""
+    for name, field in item._definition.__declared_fields__.items():
+        if name in internal: continue
+        value = item._values.get(name, MISSING)
+        if value is MISSING and item.id is None:
+            if isinstance(field.default, Ref): value = item.read(field.default.path)
+            elif field.default is not MISSING: value = field.default() if callable(field.default) else field.default
+        if field.compute is not None or field.query is not None: continue
+        try:
+            item._values[name] = None if value is MISSING or value is None else field.validate(value)
+            if field.kind == 'integer' and item._values[name] is not None and abs(item._values[name]) > 2**53-1:
+                raise ValueError('Document integers must fit the browser safe range')
+        except ValueError as exc:
+            errors[prefix + name] = str(exc)
+
+
+def apply_fetches(context, item, prefix, old, errors):
+    """Copy `fetch='link.field'` values from the linked record when the link changed."""
+    for name, field in item._definition.__declared_fields__.items():
+        if not field.fetch: continue
+        link_name, target_name = field.fetch.split('.')
+        link = item._definition.__declared_fields__.get(link_name)
+        if not isinstance(link, Link) or target_name not in link.target.__declared_fields__:
+            raise ValueError('Fetch must reference a declared Link target field')
+        if not field.read_only and name in item._submitted and item._values.get(name) is not None:
+            if old is None or old._values.get(name) != item._values.get(name) or old._values.get(link_name) == item._values.get(link_name): continue
+        if not field.read_only and old is not None and old._values.get(link_name) == item._values.get(link_name): continue
+        try:
+            value = None
+            if item._values.get(link_name) is not None:
+                record = context._business.policy.record(context._tx, context.user, link.target, item._values[link_name])
+                if target_name not in context._business.policy.fields(context.user, link.target): raise AccessError(403, 'Fetched field is unavailable')
+                value = getattr(record, target_name)
+            item._values[name] = field.clean(value)
+        except ValueError as exc: errors[prefix + name] = str(exc)
+
+
+def compute_legacy(context, draft, all_drafts, errors, states, complete):
+    """String-formula computes, Query sources and query fields, in dependency order."""
+    nodes, order = graph(context._business.registry, draft._definition)
+    source_cache = {}
+    for key in order:
         parts = key.split('.')
         items = [(draft, '')] if len(parts) == 1 else [(row, parts[0] + '.' + row.key + '.') for row in draft._rows.get(parts[0], [])]
         name = parts[-1]
         for item, prefix in items:
             if name in item._definition.__sources__:
-                source = item._definition.__sources__[name]
-                inputs = {key: item.read(value.path) if isinstance(value, Ref) else value for key, value in source.filters.items()}
-                inputs.update({path: item.read(path.replace('.*.', '.')) for path in getattr(source.target, '__depends__', ())})
-                if any(value is None or value == '' for value in inputs.values()):
-                    item._sources[name] = None
-                    states[prefix + name] = 'missing-input'
-                    continue
-                import json
-                cache_key = (id(source), json.dumps(inputs, sort_keys=True, default=str))
-                try:
-                    if cache_key not in source_cache:
-                        if isinstance(source.target, type):
-                            allowed = context._business.policy.fields(context.user, source.target)
-                            if set(source.fields) - allowed: raise AccessError(403, 'Query outputs are unavailable')
-                            result = context.read_context().list(source.target, filters=inputs, limit=2)
-                            if result['total'] > 1: raise ValueError('A scalar query must match at most one record')
-                            result = {key: result['rows'][0].get(key) for key in source.fields} if result['rows'] else None
-                        else:
-                            with readonly_drafts(context, all_drafts): result = source.target(item)
-                        if result is not None:
-                            if not isinstance(result, dict) or set(result) != set(source.fields): raise ValueError('Query result must match its declared shape')
-                            result = {key: field.clean(result[key]) for key, field in source.fields.items()}
-                        source_cache[cache_key] = result
-                    result = source_cache[cache_key]
-                    item._sources[name] = Snapshot(result) if result is not None else None
-                    states[prefix + name] = 'ready' if result is not None else 'empty'
-                except AccessError:
-                    item._sources[name] = None
-                    states[prefix + name] = 'denied'
-                except (ValueError, TypeError, ArithmeticError) as exc:
-                    item._sources[name] = None
-                    states[prefix + name] = 'error'
-                    errors[prefix + name] = str(exc)
+                load_source(context, item, prefix, name, all_drafts, source_cache, errors, states)
                 continue
             field = item._definition.__declared_fields__[name]
             try:
@@ -438,7 +452,6 @@ def settle(context, draft, *, complete, previous=None):
                         item._values[name] = None
                         states[prefix + name] = 'missing-input'
                         continue
-                    import json
                     cache_key = (id(field.query), json.dumps([item.read(path.replace('.*.', '.')) for path in dependencies], default=str))
                     if cache_key not in source_cache:
                         with readonly_drafts(context, all_drafts): result = field.query(item)
@@ -450,49 +463,82 @@ def settle(context, draft, *, complete, previous=None):
                 missing = str(exc) == 'A required calculation input is missing'
                 if not missing or complete and field.stored: errors[prefix + name] = str(exc)
                 states[prefix + name] = 'missing-input' if missing else 'error'
-    if not complete:
-        for prefix, item in all_drafts:
-            for name, field in item._definition.__declared_fields__.items():
-                if name in internal(item): continue
-                try:
-                    required = field.required or field.required_if is not None and evaluate(plans(item._definition)[name]['required_if'], item.read)
-                    if required and item._values.get(name) in (None, ''): states[prefix + name] = 'required-input'
-                    if isinstance(field, Link) and item._values.get(name) is not None and field.filters:
-                        target = context._business.policy.record(context._tx, context.user, field.target, item._values[name])
-                        for filter_name, expected in field.filters.items():
-                            if filter_name not in context._business.policy.fields(context.user, field.target): raise AccessError(403, 'A selection constraint is unavailable')
-                            expected = item.read(expected.path) if isinstance(expected, Ref) else expected
-                            if expected is None or getattr(target, filter_name) != expected: errors[prefix + name] = 'The selected record does not match the current filters'
-                except (ValueError, TypeError, ArithmeticError) as exc: errors[prefix + name] = str(exc)
-    if complete:
-        for prefix, item in reversed(all_drafts):
-            for name, field in item._definition.__declared_fields__.items():
-                if name in internal(item): continue
-                try:
-                    old = matching(previous, item, draft)
-                    if name in item._submitted and field.read_only_if is not None and evaluate(plans(item._definition)[name]['read_only_if'], item.read):
-                        if old is None or old._values.get(name) != item._values.get(name):
-                            raise ValueError('This field is read only in the current state')
-                    if field.required_if is not None and evaluate(plans(item._definition)[name]['required_if'], item.read) and item._values.get(name) in (None, ''):
-                        raise ValueError('This field is required')
-                    item._values[name] = field.clean(item._values.get(name))
-                    if isinstance(field, Link) and item._values[name] is not None:
-                        target = context._business.policy.record(context._tx, context.user, field.target, item._values[name])
-                        for filter_name, expected in field.filters.items():
-                            if filter_name not in context._business.policy.fields(context.user, field.target):
-                                raise AccessError(403, 'A selection constraint is unavailable')
-                            expected = item.read(expected.path) if isinstance(expected, Ref) else expected
-                            if expected is None or getattr(target, filter_name) != expected:
-                                raise ValueError('The selected record does not match the current filters')
-                except ValueError as exc:
-                    errors[prefix + name] = str(exc)
-            for name, table in item._definition.__tables__.items():
-                if table.required and not item._rows.get(name): errors[prefix + name] = 'Add at least one row'
-            if not errors:
-                try: item.validate()
-                except ValidationError as exc: errors.update({prefix + key: value for key, value in exc.errors.items()})
-        if errors: raise ValidationError(errors)
-    return errors, states
+
+
+def load_source(context, item, prefix, name, all_drafts, source_cache, errors, states):
+    """Resolve one `Query` source into a read-only snapshot, cached by its inputs."""
+    source = item._definition.__sources__[name]
+    inputs = {key: item.read(value.path) if isinstance(value, Ref) else value for key, value in source.filters.items()}
+    inputs.update({path: item.read(path.replace('.*.', '.')) for path in getattr(source.target, '__depends__', ())})
+    if any(value is None or value == '' for value in inputs.values()):
+        item._sources[name] = None
+        states[prefix + name] = 'missing-input'
+        return
+    cache_key = (id(source), json.dumps(inputs, sort_keys=True, default=str))
+    try:
+        if cache_key not in source_cache:
+            if isinstance(source.target, type):
+                allowed = context._business.policy.fields(context.user, source.target)
+                if set(source.fields) - allowed: raise AccessError(403, 'Query outputs are unavailable')
+                result = context.read_context().list(source.target, filters=inputs, limit=2)
+                if result['total'] > 1: raise ValueError('A scalar query must match at most one record')
+                result = {key: result['rows'][0].get(key) for key in source.fields} if result['rows'] else None
+            else:
+                with readonly_drafts(context, all_drafts): result = source.target(item)
+            if result is not None:
+                if not isinstance(result, dict) or set(result) != set(source.fields): raise ValueError('Query result must match its declared shape')
+                result = {key: field.clean(result[key]) for key, field in source.fields.items()}
+            source_cache[cache_key] = result
+        result = source_cache[cache_key]
+        item._sources[name] = Snapshot(result) if result is not None else None
+        states[prefix + name] = 'ready' if result is not None else 'empty'
+    except AccessError:
+        item._sources[name] = None
+        states[prefix + name] = 'denied'
+    except (ValueError, TypeError, ArithmeticError) as exc:
+        item._sources[name] = None
+        states[prefix + name] = 'error'
+        errors[prefix + name] = str(exc)
+
+
+def check_preview(context, all_drafts, internal, errors, states):
+    """Preview-only hints: missing required inputs and Link selections that no longer match."""
+    for prefix, item in all_drafts:
+        for name, field in item._definition.__declared_fields__.items():
+            if name in internal(item): continue
+            try:
+                required = field.required or field.required_if is not None and evaluate(plans(item._definition)[name]['required_if'], item.read)
+                if required and item._values.get(name) in (None, ''): states[prefix + name] = 'required-input'
+                if isinstance(field, Link) and item._values.get(name) is not None and field.filters:
+                    if not link_matches(context, item, field, item._values[name]):
+                        errors[prefix + name] = 'The selected record does not match the current filters'
+            except (ValueError, TypeError, ArithmeticError) as exc: errors[prefix + name] = str(exc)
+
+
+def validate_tree(context, all_drafts, internal, prior, errors):
+    """Full save validation, children before parents; raises ValidationError on any error."""
+    for prefix, item in reversed(all_drafts):
+        old = prior(item)
+        for name, field in item._definition.__declared_fields__.items():
+            if name in internal(item): continue
+            try:
+                if name in item._submitted and field.read_only_if is not None and evaluate(plans(item._definition)[name]['read_only_if'], item.read):
+                    if old is None or old._values.get(name) != item._values.get(name):
+                        raise ValueError('This field is read only in the current state')
+                if field.required_if is not None and evaluate(plans(item._definition)[name]['required_if'], item.read) and item._values.get(name) in (None, ''):
+                    raise ValueError('This field is required')
+                item._values[name] = field.clean(item._values.get(name))
+                if isinstance(field, Link) and item._values[name] is not None:
+                    if not link_matches(context, item, field, item._values[name]):
+                        raise ValueError('The selected record does not match the current filters')
+            except ValueError as exc:
+                errors[prefix + name] = str(exc)
+        for name, table in item._definition.__tables__.items():
+            if table.required and not item._rows.get(name): errors[prefix + name] = 'Add at least one row'
+        if not errors:
+            try: item.validate()
+            except ValidationError as exc: errors.update({prefix + key: value for key, value in exc.errors.items()})
+    if errors: raise ValidationError(errors)
 
 
 MESSAGES = {'COMPUTE_INPUT_MISSING': 'A required calculation input is missing',
@@ -511,7 +557,7 @@ def finite_settle(plan, draft, errors, states, complete):
             values['children'] = {name: [data(row) for row in rows] for name, rows in item._rows.items()}
         return values
     try:
-        document = Document(plan, data(draft))
+        document = Document(plan, data(draft), checked=True)
     except CalcError as exc:
         raise ValidationError({'_form': f'{exc.code}: {exc.message}'}) from None
     fields = {}
@@ -611,11 +657,12 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     business, tx, user = context._business, context._tx, context.user
     draft, before = load_draft(context, model, record_id, values)
     plan = business.registry.plan_for(model)
+    version = business.registry.formula_hashes.get(business.registry.root_of(model))
     if plan is not None and record_id:
         row = tx.connection.execute('SELECT plan_hash FROM evlet_calculation_versions WHERE resource=? AND record_id=?',
                                     (business.registry.name_for(model), record_id)).fetchone()
         # No recorded version (saved outside the pipeline or before tracking) adopts the active plan.
-        if row is not None and row[0] != plan['model_schema_hash'] and context._recalculate != (model, record_id):
+        if row is not None and row[0] != version and context._recalculate != (model, record_id):
             raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; '
                                    'resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it')
     outcome = None
@@ -630,13 +677,13 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     after = draft.stored_values()
     if prior == after:
         if plan is not None:
-            record_plan(tx, business.registry.name_for(model), record_id, plan)
+            record_plan(tx, business.registry.name_for(model), record_id, version)
         result = business.detail(tx, user, tx.get(model, record_id))
         if outcome is not None: result['_outcome'] = outcome
         return result
     record = write_snapshot(tx, draft)
     if plan is not None:
-        record_plan(tx, business.registry.name_for(model), record.id, plan)
+        record_plan(tx, business.registry.name_for(model), record.id, version)
     context._active[-1] = (model, record.id)
     business.policy.record(tx, user, model, record.id, 'update' if before else 'create')
     keys = {}
@@ -657,10 +704,10 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     return result
 
 
-def record_plan(tx, resource, record_id, plan):
+def record_plan(tx, resource, record_id, version):
     tx.connection.execute('INSERT INTO evlet_calculation_versions(resource,record_id,plan_hash) VALUES (?,?,?) '
                           'ON CONFLICT(resource, record_id) DO UPDATE SET plan_hash=excluded.plan_hash',
-                          (resource, record_id, plan['model_schema_hash']))
+                          (resource, record_id, version))
 
 
 def persist_rows(context, model, draft, before, owner_id, keys):
@@ -700,7 +747,9 @@ def delete_tree(business, tx, model, record_id):
     """Document-pipeline deletion; callers have checked permissions for the whole subtree."""
     for child in business.children.values():
         if child.parent is model:
-            for row in tx.list(child.model, filters={child.link: record_id}, limit=100):
+            # Callers loaded and permission-checked this subtree, and loading refuses collections
+            # over ROW_LIMIT rows, so one page always holds every child.
+            for row in tx.list(child.model, filters={child.link: record_id}, limit=ROW_LIMIT):
                 delete_tree(business, tx, child.model, row.id)
     with tx.maintenance():
         tx.delete(model, record_id)

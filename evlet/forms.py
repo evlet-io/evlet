@@ -46,10 +46,20 @@ class Column:
 
 class Report(Model):
     title = ''
-    permissions = ()
+    roles = ()
+    permissions = ()  # Alias for roles, kept for existing reports.
     autorun = False
     columns = ()
     __transient__ = True
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        roles, permissions = cls.__dict__.get('roles'), cls.__dict__.get('permissions')
+        if roles is not None and permissions is not None and tuple(roles) != tuple(permissions):
+            raise ValueError('Set report roles once; permissions is an alias for roles')
+        value = roles if roles is not None else permissions
+        if value is not None:
+            cls.roles = cls.permissions = tuple(value)
 
     def run(self):
         raise NotImplementedError('Define the report run operation')
@@ -119,7 +129,7 @@ class Forms:
             if not isinstance(report, type) or not issubclass(report, Report): raise ValueError('Register Report classes')
             name = getattr(report, '__resource_id__', report.__name__)
             if name in self.reports: raise ValueError('Duplicate report identity: ' + name)
-            if type(report.autorun) is not bool or set(report.permissions) - {'admin', 'editor', 'viewer'}:
+            if type(report.autorun) is not bool or set(report.roles) - {'admin', 'editor', 'viewer'}:
                 raise ValueError('Reports require explicit roles and a boolean autorun')
             if not report.columns or any(not isinstance(column, Column) for column in report.columns):
                 raise ValueError('Reports require typed columns')
@@ -145,7 +155,7 @@ class Forms:
     def catalog(self, user):
         return [{**metadata(report, name), 'autorun': report.autorun,
                  'columns': [vars(column) for column in report.columns]}
-                for name, report in self.reports.items() if user.role in report.permissions]
+                for name, report in self.reports.items() if user.role in report.roles]
 
     def permission(self, context, definition, owner, record_id):
         permission = definition.permission or (owner, 'update')
@@ -162,7 +172,7 @@ class Forms:
             evaluate_only = name.endswith('/evaluate')
             if evaluate_only: name = name.removesuffix('/evaluate')
             report = self.reports.get(name)
-            if method != 'POST' or report is None or user.role not in report.permissions: raise AccessError(403, 'Report is unavailable')
+            if method != 'POST' or report is None or user.role not in report.roles: raise AccessError(403, 'Report is unavailable')
             if set(body) - {'filters', 'revision', 'limit', 'offset'}: raise ValidationError({'_form': 'Unknown report argument'})
             limit, offset = body.get('limit', 50), body.get('offset', 0)
             if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 2**53-1:

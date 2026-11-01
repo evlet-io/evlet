@@ -24,7 +24,7 @@ class HTTPError(Exception):
 
 
 class Application:
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=()):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False):
         from .ui import ViewRegistry
         if isinstance(hosts, (str, bytes)):
             raise ValueError("Pass a collection of explicit Host header values")
@@ -43,7 +43,7 @@ class Application:
             raise ValueError("Business features require authentication")
         self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
-            self.business.application = {"name": name, "playground": name == "Evlet Playground"}
+            self.business.application = {"name": name, "playground": bool(playground)}
             from .forms import Forms
             self.business.forms = Forms(self.business, reports)
             self.business.apis = tuple(apis)

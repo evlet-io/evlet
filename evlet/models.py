@@ -201,7 +201,7 @@ class Registry:
             resolve_sources(self, model)
         from .reactivity import graph
         child_models = {child.model for child in self.children}
-        from .calc import compile_plan
+        from .calc import compile_plan, formula_hash
         plans = {}
         for model in models:
             if getattr(model, '__declaration_mode__', False) and model not in child_models:
@@ -210,7 +210,8 @@ class Registry:
                 if plan is not None:
                     plans[model] = plan
         self.plans = MappingProxyType(plans)
-        self.roots = MappingProxyType({child.model: root for root in plans for child in self.children if self.root_of(child.model) is root})
+        # What saved documents record: changes only when formulas or the fields they use change.
+        self.formula_hashes = MappingProxyType({root: formula_hash(plan) for root, plan in plans.items()})
 
     def root_of(self, model):
         owners = {child.model: child.parent for child in self.children}
@@ -275,7 +276,7 @@ class Child(Model):
 
 
 def resolve_sources(registry, definition):
-    from .query import Query
+    from .query import SqlQuery
     for field in definition.__declared_fields__.values():
         if isinstance(field, Link):
             field.target = registry.resolve(field.target)
@@ -295,5 +296,5 @@ def resolve_sources(registry, definition):
             source.target = target
             if set(source.fields) - set(target.__fields__): raise ValueError('Query output names must be stored target fields')
             source.fields = {name: target.__fields__[name] for name in source.fields}
-            for name in source.filters: Query(registry, target).where({name: None})
+            for name in source.filters: SqlQuery(registry, target).where({name: None})
     for table in definition.__tables__.values(): resolve_sources(registry, table.child)

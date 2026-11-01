@@ -92,7 +92,7 @@ def can_access(business, target, user):
     model = business.registry.resources.get(target)
     report = business.forms.reports.get(target)
     if model: return business.policy.allows(user, model, 'read')
-    if report: return user.role in report.permissions
+    if report: return user.role in report.roles
     for (owner, name), dialog in business.forms.dialogs.items():
         resource = getattr(owner, '__resource_id__', business.registry.name_for(owner)) + '.' + name
         if resource == target:

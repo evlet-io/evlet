@@ -245,6 +245,10 @@ SQLite suitable for a transient serverless filesystem.
 
 ## AWS Lambda HTTP transport
 
+Status: experimental. The tests use synthetic gateway events only. There is no
+end-to-end test against a real Lambda or API Gateway deployment. The live event
+stream (SSE) returns 501 on this transport.
+
 `LambdaHTTP(app, domains=('app.example.com',))` wraps an explicitly initialized ASGI
 application as an AWS HTTP API payload-v2 or Lambda Function URL handler. It checks
 gateway domain and host agreement, constructs an HTTPS ASGI request, preserves

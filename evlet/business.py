@@ -10,12 +10,12 @@ import re
 from urllib.parse import parse_qs, quote
 
 from .auth import AccessError, ROLES
-from .database import Session
+from .database import ROW_LIMIT, Session
 from .fields import Link
 from .ui.metadata import view_for
 from .models import ValidationError, identifier
 from .permissions import Policy
-from .query import Query
+from .query import SqlQuery
 from .storage import SQLiteStorage
 from .jobs import JobReceipt
 from .discovery import Discovery
@@ -104,6 +104,11 @@ class Business:
             with self.database.transaction() as tx:
                 # The plan each saved finite-v1 document was calculated with (history guard).
                 tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_calculation_versions (resource TEXT NOT NULL, record_id INTEGER NOT NULL, plan_hash TEXT NOT NULL, PRIMARY KEY (resource, record_id))')
+                # Earlier releases recorded the whole plan's hash; rows saved under the active plan
+                # move to its formula hash so they keep saving without a recalculation round trip.
+                for root, plan in self.registry.plans.items():
+                    tx.connection.execute('UPDATE evlet_calculation_versions SET plan_hash=? WHERE plan_hash=?',
+                                          (self.registry.formula_hashes[root], plan['model_schema_hash']))
         if getattr(self, 'forms', None) and (self.forms.dialogs or self.forms.reports):
             self.forms.initialize()
         if self.events:
@@ -445,9 +450,11 @@ class Business:
             if method == 'DELETE':
                 for child in self.children.values():
                     if child.parent is model:
-                        for row in tx.list(child.model, filters={child.link: record_id}, limit=100):
-                            self.policy.record(tx, user, child.model, row.id, 'delete')
-                            tx.delete(child.model, row.id)
+                        # Lists are capped at ROW_LIMIT rows, so delete page by page until none are left.
+                        while rows := tx.list(child.model, filters={child.link: record_id}, limit=ROW_LIMIT):
+                            for row in rows:
+                                self.policy.record(tx, user, child.model, row.id, 'delete')
+                                tx.delete(child.model, row.id)
                 self.changed(tx, model, record_id, deleted=True)
                 tx.delete(model, record_id)
                 tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (parts[2], record_id))
@@ -509,7 +516,7 @@ class Business:
     def check_calculation(self, model, calculation):
         """A finite-v1 client names the plan it previewed; a different active plan is a conflict."""
         plan = self.registry.plan_for(model)
-        if plan is None or not isinstance(calculation, dict) or set(calculation) - {'language', 'model_schema_hash', 'client_revision', 'recalculate'} \
+        if plan is None or not isinstance(calculation, dict) or set(calculation) - {'language', 'model_schema_hash', 'recalculate'} \
                 or type(calculation.get('recalculate', False)) is not bool:
             raise ValidationError({'calculation': 'Invalid calculation metadata'})
         if calculation.get('language', plan['language']) != plan['language'] or calculation.get('model_schema_hash') != plan['model_schema_hash']:
@@ -570,12 +577,12 @@ class Business:
     def _save_children(self, tx, user, parent, collections):
         for name, rows in collections.items():
             child = self.children.get((type(parent), name))
-            if child is None or not isinstance(rows, list) or len(rows) > 100:
-                raise ValidationError({'children': 'Use a known child collection with at most 100 rows'})
-            if tx.count(child.model, filters={child.link: parent.id}) > 100:
-                raise ValidationError({'children': 'This collection exceeds the 100-row editor limit'})
+            if child is None or not isinstance(rows, list) or len(rows) > ROW_LIMIT:
+                raise ValidationError({'children': f'Use a known child collection with at most {ROW_LIMIT} rows'})
+            if tx.count(child.model, filters={child.link: parent.id}) > ROW_LIMIT:
+                raise ValidationError({'children': f'This collection exceeds the {ROW_LIMIT}-row editor limit'})
             existing, hidden = {}, set()
-            for row in tx.list(child.model, filters={child.link: parent.id}, limit=100):
+            for row in tx.list(child.model, filters={child.link: parent.id}, limit=ROW_LIMIT):
                 existing[row.id] = row
                 try:
                     self.policy.record(tx, user, child.model, row.id)
@@ -612,9 +619,9 @@ class Business:
         for child in self.children.values():
             if child.parent is not type(record) or not self.policy.allows(user, child.model, 'read'):
                 continue
-            if tx.count(child.model, filters={child.link: record.id}) > 100:
-                raise ValidationError({'children': 'This collection exceeds the 100-row editor limit'})
-            rows = tx.list(child.model, filters={child.link: record.id}, limit=100, order_by=('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',))
+            if tx.count(child.model, filters={child.link: record.id}) > ROW_LIMIT:
+                raise ValidationError({'children': f'This collection exceeds the {ROW_LIMIT}-row editor limit'})
+            rows = tx.list(child.model, filters={child.link: record.id}, limit=ROW_LIMIT, order_by=('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',))
             children[child.name] = []
             for row in rows:
                 try:
@@ -642,12 +649,12 @@ class Business:
             filters = json.loads(query.get('filters', ['{}'])[0])
             order = query.get('order_by', ['-id'])[0].split(',')
             limit, offset = int(query.get('limit', ['50'])[0]), int(query.get('offset', ['0'])[0])
-            if not isinstance(filters, dict) or not 1 <= limit <= 100 or not 0 <= offset <= 2**63-1:
+            if not isinstance(filters, dict) or not 1 <= limit <= ROW_LIMIT or not 0 <= offset <= 2**63-1:
                 raise ValueError()
         except (ValueError, UnicodeError, RecursionError):
             raise ValidationError({'query': 'Invalid query parameters'})
         self.policy.query_fields(user, model, filters, order)
-        compiler = Query(self.registry, model)
+        compiler = SqlQuery(self.registry, model)
         readable = self.policy.fields(user, model)
         search_fields = [name for name in view_for(model)['search_fields'] if name in readable]
         where, values = compiler.where(filters, query.get('q', [''])[0], search_fields=search_fields)

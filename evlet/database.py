@@ -6,7 +6,10 @@ import sqlite3
 
 from .fields import Link
 from .models import ValidationError, identifier
-from .query import Query
+from .query import SqlQuery
+
+# Most rows one list call returns, and most rows one child collection may hold in an editor.
+ROW_LIMIT = 100
 
 
 class NotFoundError(LookupError):
@@ -170,12 +173,12 @@ class Session:
         return model._from_row(row)
 
     def list(self, model, *, limit=50, offset=0, filters=None, order_by=None, search=""):
-        if type(limit) is not int or not 1 <= limit <= 100:
-            raise ValidationError({"limit": "Use an integer between 1 and 100"})
+        if type(limit) is not int or not 1 <= limit <= ROW_LIMIT:
+            raise ValidationError({"limit": f"Use an integer between 1 and {ROW_LIMIT}"})
         if type(offset) is not int or not 0 <= offset <= 2**63 - 1:
             raise ValidationError({"offset": "Use a non-negative 64-bit integer"})
         table = identifier(self.registry.name_for(model))
-        query = Query(self.registry, model)
+        query = SqlQuery(self.registry, model)
         where, values = query.where(filters, search)
         order = query.ordering(order_by)
         rows = self.connection.execute(
@@ -213,7 +216,7 @@ class Session:
 
     def count(self, model, *, filters=None, search=""):
         table = identifier(self.registry.name_for(model))
-        where, values = Query(self.registry, model).where(filters, search)
+        where, values = SqlQuery(self.registry, model).where(filters, search)
         return self.connection.execute(
             f'SELECT count(*) FROM {table} AS "record"{where}', values,
         ).fetchone()[0]
