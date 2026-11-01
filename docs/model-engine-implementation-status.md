@@ -9,7 +9,7 @@ Ledger for the finite-v1 model engine handoff (2026-11-01). Contract:
 | --- | --- |
 | Branch | `feat/model-engine`, on top of `fix/low-severity-followups` (PR 31 review fixes and low-severity follow-ups) |
 | PR 31 | Open, not merged. Head `509f7a3`; the follow-up branch adds `9f9f7aa`..`f6e3f03` |
-| Engine base commit | `f6e3f03` |
+| Engine base commit | `f6e3f03`; engine head is the latest `feat/model-engine` commit |
 | Main at handoff | `36a60c2` |
 | Toolchain | Python 3.12.16, Node 24.16.0, macOS arm64 |
 | Baseline tests | 460 passed, 35 skipped (PostgreSQL DSN unset); frontend 198 passed |
@@ -56,7 +56,7 @@ cutover** is not started.
 Final run on the branch head (macOS arm64, Python 3.12.16, Node 24.16.0):
 
 ```
-.venv/bin/python -m pytest                       -> 510 passed, 35 skipped (PostgreSQL DSN unset)
+.venv/bin/python -m pytest                       -> 511 passed, 35 skipped (PostgreSQL DSN unset)
 cd frontend && npm test                          -> 265 passed, 1 skipped (opt-in benchmark)
 cd frontend && npm run build                     -> typecheck and build passed
 .venv/bin/python -m build --no-isolation         -> wheel and sdist built
