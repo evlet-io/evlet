@@ -195,6 +195,9 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
   const pin = (key: string) => { let item = pinCache.get(key); if (!item) pinCache.set(key, item = pinOf(key)); return item; };
   const total = derive(() => (props.selectable ? CHECK_WIDTH : 0) + columns.get().reduce((sum, column) => sum + widthOf(column), 0));
   const active = cell<string | number | null>(null, { name: `${props.label} (active row)` });
+  // The row that takes Tab focus: the active one, else the first.
+  const focusKey = derive(() => active.get() ?? (rows.get()[0] ? props.key(rows.get()[0]) : null));
+  const rowCount = derive(() => rows.get().length);
   const view = virtualWindow({ count: () => rows.get().length, rowHeight, header: 36, fallback: props.height });
   const visible = derive(() => { const { start, end } = view.range.get(); return rows.get().slice(start, end); });
   let scroller!: HTMLElement;
@@ -273,7 +276,7 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
     const selected = () => selection.get().has(key());
     return html`<tr role="row" data-key=${key} class:sel=${selected} aria-selected=${props.selectable ? () => String(selected()) : null}
       aria-rowindex=${() => String(view.range.get().start + index() + 2)}
-      tabindex=${() => (active.get() ?? (rows.get()[0] ? props.key(rows.get()[0]) : null)) === key() ? '0' : '-1'}
+      tabindex=${() => focusKey.get() === key() ? '0' : '-1'}
       on:click=${(event: MouseEvent) => {
         if ((event.target as Element).closest('button,a,input,select,textarea,[role="checkbox"]')) return;
         active.set(key());
@@ -283,7 +286,7 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
 
   const colspan = () => String(columns.get().length + (props.selectable ? 1 : 0));
   const wrap = html`<div class="table-wrap" tabindex="-1">
-    <table class="dt fixed" role="grid" aria-label=${props.label} aria-rowcount=${() => String(rows.get().length + 1)} aria-multiselectable=${props.selectable ? 'true' : null}
+    <table class="dt fixed" role="grid" aria-label=${props.label} aria-rowcount=${() => String(rowCount.get() + 1)} aria-multiselectable=${props.selectable ? 'true' : null}
       style:width=${() => `${total.get()}px`}>
       <colgroup>${props.selectable ? html`<col style:width=${`${CHECK_WIDTH}px`}>` : null}${each(columns, column => column.key, column => html`<col style:width=${() => `${widthOf(column())}px`}>`)}</colgroup>
       <thead><tr role="row" aria-rowindex="1">${props.selectable ? html`<th class="w-check stk" style="left:0" scope="col">${Checkbox({ checked: allOn, mixed: someOn, ariaLabel: 'Select all rows',
