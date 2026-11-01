@@ -9,9 +9,9 @@ MISSING = object()
 MAX_INTEGER = 2**63 - 1
 
 
-def _expr(op, left, right=None):
+def _expr(op, left, *right):
     from .calc import operand
-    return operand(op, left, right)
+    return operand(op, left, *right)
 
 
 class Field:
@@ -68,11 +68,13 @@ class Field:
     __hash__ = object.__hash__
 
     def __eq__(self, other):
-        # Identity for fields, None and MISSING keeps containment checks (`None in fields`) working.
-        return self is other if isinstance(other, Field) or other is MISSING or other is None else _expr('eq', self, other)
+        # Fields and MISSING compare by identity (dictionary and list safety). Comparing with any
+        # other value, including None, builds an expression so formulas never miscompile silently;
+        # plain code should use `field is None`.
+        return self is other if isinstance(other, Field) or other is MISSING else _expr('eq', self, other)
 
     def __ne__(self, other):
-        return self is not other if isinstance(other, Field) or other is MISSING or other is None else _expr('ne', self, other)
+        return self is not other if isinstance(other, Field) or other is MISSING else _expr('ne', self, other)
 
     def __add__(self, other): return _expr('add', self, other)
     def __radd__(self, other): return _expr('add', other, self)

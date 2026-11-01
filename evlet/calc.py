@@ -226,9 +226,12 @@ def lift(value):
     raise CalcError('UNSUPPORTED_EXPRESSION', f'Unsupported calculation operand {type(value).__name__}; use D("1.5") for decimals')
 
 
-def operand(op, left, right=None):
+UNARY = object()
+
+
+def operand(op, left, right=UNARY):
     """Field descriptors build expressions through these operators."""
-    return Expr(op, (lift(left),) if right is None else (lift(left), lift(right)))
+    return Expr(op, (lift(left),) if right is UNARY else (lift(left), lift(right)))
 
 
 def D(value):

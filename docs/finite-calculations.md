@@ -65,9 +65,10 @@ valid inside `.where(...)`. There is no `parent.parent`, row indexing, string fo
 comparisons on expressions raise `EXPRESSION_TRUTH_TEST`.
 
 Field-to-field equality stays identity based so fields remain safe dictionary keys.
-Compare two fields with `F("a") == F("b")` and test for null with `F("a") == None`;
-`qty == 1` builds an expression. A field compared with another field, `None` or `MISSING`
-keeps Python identity semantics, so `None in fields` still works.
+Compare two fields with `F("a") == F("b")`. `qty == 1` and `qty == None` build
+expressions. A field compared with another field or `MISSING` keeps Python identity
+semantics; comparing a field with any other value in plain code raises
+`EXPRESSION_TRUTH_TEST` when truth-tested, so use `is` (`value is None`) there.
 
 Rounded shares are not reconciled automatically. Expose the difference as a named field
 and validate or display it:

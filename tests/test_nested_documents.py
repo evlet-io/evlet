@@ -232,7 +232,7 @@ def test_shipped_plans_omit_unreadable_fields_and_field_checks_stay_pythonic(tmp
     assert set(calculation['plan']['tables']['$root']['fields']) == {'title', 'discount', 'net'}
     assert '1234.56' not in str(calculation) and 'Supplier' not in str(calculation)
     fields = list(Quote.__declared_fields__.values())
-    assert None not in fields and (Quote.title == None) is False and Quote.title in fields  # noqa: E711
+    assert Quote.title in fields and fields.index(Quote.discount) == 1 and Quote.title is not None
     with pytest.raises(TypeError):
         sorted(fields)
     from evlet.calc import CalcError
