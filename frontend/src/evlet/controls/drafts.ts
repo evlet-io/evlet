@@ -114,3 +114,32 @@ export function describe(change: Change, scopes: Record<string, string>) {
     from: settingText(item.key, shown(change.from) ?? item.file) + (shown(change.from) === null ? ' (file)' : ''),
     to: settingText(item.key, shown(change.to) ?? item.file) + (shown(change.to) === null ? ' (file)' : '') };
 }
+
+// ---------- allowed networks ----------
+
+function toBits(address: string): [bigint, number] | null {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(address)) {
+    const parts = address.split('.').map(Number);
+    return parts.some(part => part > 255) ? null : [parts.reduce((total, part) => total * 256n + BigInt(part), 0n), 32];
+  }
+  if (!address.includes(':')) return null;
+  const [head, tail = ''] = address.split('::');
+  const left = head ? head.split(':') : [], right = tail ? tail.split(':') : [];
+  const groups = address.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left;
+  if (groups.length !== 8 || groups.some(group => !/^[0-9a-f]{1,4}$/i.test(group))) return null;
+  return [groups.reduce((total, group) => total * 65536n + BigInt(parseInt(group, 16)), 0n), 128];
+}
+
+/** Whether an address is inside any of the networks; an empty list allows every address. */
+export function ipAllowed(address: string, networks: string[]): boolean {
+  if (!networks.length) return true;
+  const ip = toBits(address);
+  if (!ip) return false;
+  return networks.some(network => {
+    const [base, size] = network.split('/');
+    const net = toBits(base);
+    if (!net || net[1] !== ip[1]) return false;
+    const shift = BigInt(ip[1] - (size === undefined ? ip[1] : Number(size)));
+    return shift >= 0n && (ip[0] >> shift) === (net[0] >> shift);
+  });
+}

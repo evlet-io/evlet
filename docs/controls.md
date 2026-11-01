@@ -9,6 +9,10 @@ Permissions and Security.
 - Served on the primary host only. Any other host gets 404. In development the loopback
   hosts count as primary.
 - Open to roles with "Opens Controls" on. `admin` always has it; it can't be turned off.
+- Opening Controls is not the same as being admin. Only admins can give or remove the admin
+  role, change admin accounts (role, active, password, sessions), add admin users, create or
+  delete roles, change framework roles and turn "Opens Controls" on or off. Other roles that
+  open Controls manage the other users, custom role descriptions, overrides and settings.
 - Everyone else gets 404 on the page and on every `/api/_controls/*` route. Anonymous
   visitors to the page go to `/login?next=/controls`.
 - `ControlsAccess(allow_ips=...)` in `routes.py` and the `security.controls_ips` setting can
@@ -21,14 +25,18 @@ Permissions and Security.
   evlet controls grant <instance> <username>
   ```
 
-  It makes the user an active admin, ends their sessions and writes an audit row by `cli`.
+  It makes the user an active admin, ends their sessions, clears the `security.controls_ips`
+  setting and writes audit rows by `cli`. It can't change `routes.py`: when `ControlsAccess`
+  there limits the networks, the command says so and you edit `routes.py`.
+- Saving allowed networks that leave out your own address asks first.
 
 ## Roles
 
 `evlet_roles` holds every role. `admin`, `editor` and `viewer` are framework roles and
 can't be deleted. A custom role has a base (`editor` or `viewer`) and a realm (`desk` for
 now). On any model without its own rule, a custom role gets its base role's rule from the
-app files.
+app files. Overrides on `editor` or `viewer` do not carry over to custom roles based on them.
+The ids `controls`, `portal` and `public` are reserved.
 
 Apps can declare roles and name them in permissions:
 
@@ -46,7 +54,10 @@ Overrides are stored in `evlet_overrides(kind, key, value)` and never change app
 They can only make a rule stricter. Saving sends every change at once
 (`POST /api/_controls/overrides`, `{"changes": [{kind, key, value}]}`, `null` resets); one
 invalid change saves none, and the reply names each invalid item as `changes.<index>`.
-A value equal to the file value is removed instead of stored. Each save writes audit rows
+A value equal to the file value is removed instead of stored. A stored override that no
+longer validates (after an app update, say) fails closed: a permission override becomes no
+access for that role and model, a setting takes its strictest value, and a policy that can't
+be built denies every role but admin. Each one is listed under Needs attention. Each save writes audit rows
 and raises `evlet_config.version`; every process reads that version once per request or
 job and rebuilds its `Policy` and settings when it moved. Open pages get a
 `config.changed` event.
@@ -66,7 +77,7 @@ and matches no records.
 | Key | File value | Rule |
 |---|---|---|
 | `security.password_min` | 15 | Up only, 64 at most. Applies to new passwords. |
-| `security.session_hours` | 8 | Down only. |
+| `security.session_hours` | 8 | Down only. Lowering it ends sessions already older than the new length. |
 | `security.lockout` | 10 | Down only, 3 at least. Failed sign-ins per network and account. |
 | `security.two_step_roles` | `["admin"]` | Admin stays. Saved now, enforced once two-step sign-in exists. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
@@ -83,4 +94,5 @@ overrides all write to it.
 | `GET /api/_controls/state` | Instance, apps, models, roles, routes, settings, attention list, recent audit rows |
 | `GET/POST /api/_controls/overrides` | File value, override, who and when; save changes |
 | `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end"}` |
+| `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules and audit rows; refused access is a 403 there |
 | `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls" and descriptions |

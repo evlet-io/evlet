@@ -263,12 +263,18 @@ class LocalAuth:
         return name.lower(), password_hash(body.get('password'), minimum=self.password_min), role
 
     def create_user(self, **values):
+        return self.add_user(values)
+
+    def add_user(self, values, check=None):
+        """Create an account; check(connection, user) runs in the same transaction (audit, limits)."""
         name, password, role = self.account_values(values)
         with self.database.transaction() as tx:
             self._role(tx.connection, role)
             if tx.connection.execute('SELECT 1 FROM evlet_users WHERE username=?', (name,)).fetchone():
                 raise ValidationError({'username': 'Someone already uses this username'})
             user_id = tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (name, password, role)).lastrowid
+            if check is not None:
+                check(tx.connection, User(user_id, name, role))
         return User(user_id, name, role)
 
     def setup_needed(self):
@@ -379,7 +385,8 @@ class LocalAuth:
             total = connection.execute('SELECT count(*) FROM evlet_users').fetchone()[0]
             return {'items': items, 'total': total, 'offset': offset, 'limit': 100}
 
-    def update_user(self, user_id, body):
+    def update_user(self, user_id, body, check=None):
+        """check(connection, row, changes) runs first in the transaction; what it returns runs after the writes."""
         if not body or set(body) - {'role', 'active', 'password'}:
             raise ValidationError({'_form': 'Use role, active, or password'})
         if 'active' in body and type(body['active']) is not bool:
@@ -393,9 +400,12 @@ class LocalAuth:
             row = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user_id,)).fetchone()
             if not row:
                 raise AccessError(404, 'Account not found')
+            after = check(tx.connection, row, changes) if check is not None else None
             if row['role'] == 'admin' and row['active'] and (changes.get('role', 'admin') != 'admin' or not changes.get('active', True)):
                 if tx.connection.execute("SELECT count(*) FROM evlet_users WHERE role='admin' AND active=1").fetchone()[0] == 1:
                     raise AccessError(409, LAST_ADMIN)
             for key, value in changes.items():
                 tx.connection.execute(f'UPDATE evlet_users SET {key}=? WHERE id=?', (value, user_id))
             tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (user_id,))
+            if after is not None:
+                after()

@@ -11,6 +11,9 @@ import type { RoleRow, UserRow } from './client';
 const ROLE_ID = /^[a-z][a-z0-9_]{1,30}$/;
 const TINTS: Record<string, string> = { admin: 'violet', editor: 'blue', viewer: 'slate' };
 export const RoleChip = (role: string) => StatusPill({ label: role, tint: (TINTS[role] ?? 'teal') as any });
+/** Only admins change admin accounts, give the admin role, manage roles and decide who opens Controls. */
+export const isAdmin = (ctx: ControlsContext) => ctx.state.peek().me.role === 'admin';
+const assignable = (ctx: ControlsContext) => ctx.state.peek().roles.filter(item => item.realm === 'desk' && (isAdmin(ctx) || item.id !== 'admin'));
 const message = (failure: unknown) => failure instanceof ApiError ? failure.message : 'Something went wrong. Try again.';
 
 function Select(props: { id: string; value: () => string; options: () => Array<[string, string]>; onChange: (value: string) => void; label?: string; disabled?: boolean }) {
@@ -72,7 +75,8 @@ export function UsersPage(ctx: ControlsContext): HTMLElement {
 
 function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<void>) {
   const role = cell(user.role), active = cell(user.active), password = cell(''), error = cell(''), fields = cell<Record<string, string>>({}), busy = cell(false);
-  const roles = ctx.state.peek().roles.filter(item => item.realm === 'desk');
+  const locked = !isAdmin(ctx) && user.role === 'admin';
+  const roles = locked ? ctx.state.peek().roles.filter(item => item.id === 'admin') : assignable(ctx);
   const required = ctx.state.peek().settings['security.two_step_roles'].value as string[];
   const save = async (close: () => void) => {
     const body: Record<string, unknown> = {};
@@ -100,21 +104,22 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
   };
   openDrawer({ title: user.username, icon: 'user', tint: 'blue', className: 'ctl-drawer',
     body: () => html`<div class="ctl-form">
-      ${field('Role', 'ctl-u-role', Select({ id: 'ctl-u-role', value: () => role.get(), options: () => roles.map(item => [item.id, item.id]),
+      ${locked ? Callout('info', 'lock', 'Only an admin can change an admin account.') : null}
+      ${field('Role', 'ctl-u-role', Select({ id: 'ctl-u-role', value: () => role.get(), options: () => roles.map(item => [item.id, item.id]), disabled: locked,
         onChange: value => { role.set(value); error.set(''); } }), () => roles.find(item => item.id === role.get())?.description ?? null, () => fields.get().role ?? null)}
-      <div class="ctl-field"><span class="lbl">Status</span>${Switch({ on: active, onChange: next => { active.set(next); error.set(''); },
+      <div class="ctl-field"><span class="lbl">Status</span>${Switch({ on: active, disabled: locked, onChange: next => { active.set(next); error.set(''); },
         label: () => active.get() ? 'Active, can sign in' : "Inactive, can't sign in" })}</div>
       ${when(error, () => Callout('err', 'info', error))}
       <section class="ctl-section"><h3>Two-step sign-in</h3><div class="ctl-line">${required.includes(user.role)
         ? StatusPill({ label: 'Required, not set up', tint: 'rose' }) : StatusPill({ label: 'Not set up', tint: 'slate' })}
         <span class="muted ctl-small">People set it up in their own settings, which arrive later.</span></div></section>
       <section class="ctl-section"><h3>Sessions</h3><div class="ctl-line"><span class="grow">${user.sessions ? `${plural(user.sessions, 'active session')}` : 'No active sessions.'}</span>
-        ${user.sessions ? Button({ label: 'Sign out everywhere', size: 'small', icon: 'log-out', onClick: () => void signOut() }) : null}</div></section>
-      <section class="ctl-section"><h3>Password</h3>
+        ${user.sessions && !locked ? Button({ label: 'Sign out everywhere', size: 'small', icon: 'log-out', onClick: () => void signOut() }) : null}</div></section>
+      ${locked ? null : html`<section class="ctl-section"><h3>Password</h3>
         ${field('New password', 'ctl-u-pass', html`<input class="input" id="ctl-u-pass" type="password" autocomplete="new-password"
           placeholder=${`At least ${ctx.state.peek().settings['security.password_min'].value} characters`} prop:value=${password}
           on:input=${(event: Event) => password.set((event.target as HTMLInputElement).value)}>`,
-          () => 'Leave empty to keep the current one. Their sessions end when it changes.', () => fields.get().password ?? null)}</section>
+          () => 'Leave empty to keep the current one. Their sessions end when it changes.', () => fields.get().password ?? null)}</section>`}
     </div>`,
     footer: close => DialogFooter({ cancel: close, submit: { label: () => busy.get() ? 'Saving…' : 'Save user', disabled: busy, onClick: () => void save(close) } }),
   });
@@ -122,7 +127,7 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
 
 function addUser(ctx: ControlsContext, refresh: () => Promise<void>) {
   const username = cell(''), role = cell('viewer'), password = cell(''), fields = cell<Record<string, string>>({}), busy = cell(false);
-  const roles = ctx.state.peek().roles.filter(item => item.realm === 'desk');
+  const roles = assignable(ctx);
   const minimum = ctx.state.peek().settings['security.password_min'].value as number;
   const input = (id: string, value: typeof username, type = 'text') => html`<input class="input" id=${id} type=${type} autocomplete="off"
     prop:value=${value} on:input=${(event: Event) => { value.set((event.target as HTMLInputElement).value); fields.set({}); }}>`;
@@ -172,16 +177,16 @@ export function RolesPage(ctx: ControlsContext): HTMLElement {
   };
   return html`<div>
     ${Head('Roles', 'Roles decide what people can do. Framework roles come from Evlet. Custom roles start from a framework role and inherit its defaults.',
-      Button({ label: 'New role', icon: 'plus', variant: 'primary', onClick: () => newRole(ctx) }))}
+      isAdmin(ctx) ? Button({ label: 'New role', icon: 'plus', variant: 'primary', onClick: () => newRole(ctx) }) : null)}
     <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Role</th><th>Type</th><th>Based on</th><th>Signs in on</th><th class="r">Users</th><th>Opens Controls</th><th></th></tr></thead>
       <tbody>${() => roles().map(row => html`<tr><td><div>${RoleChip(row.id)}</div><span class="ctl-sub">${row.description}</span></td>
         <td>${row.kind === 'framework' ? html`<span class="ctl-line muted">${Icon('lock', { size: 'xs' })}Framework</span>` : row.app ? html`<span>From ${row.app}</span>` : html`<span>Custom</span>`}</td>
         <td>${row.base ? RoleChip(row.base) : html`<span class="muted">—</span>`}</td><td>${row.realm === 'portal' ? 'Portal' : 'Desk'}</td><td class="r num">${row.users}</td>
-        <td><span class="ctl-line">${Switch({ on: row.opens_controls, ariaLabel: `Opens Controls for ${row.id}`, disabled: row.id === 'admin' || row.realm !== 'desk',
+        <td><span class="ctl-line">${Switch({ on: row.opens_controls, ariaLabel: `Opens Controls for ${row.id}`, disabled: row.id === 'admin' || row.realm !== 'desk' || !isAdmin(ctx),
           onChange: next => void setControls(row, next) })}${row.id === 'admin' ? html`<span class="muted ctl-small">Always</span>` : null}</span></td>
         <td class="r ctl-nowrap"><a class="ctl-link" href=${ctx.router.href('permissions', {}, { role: row.id })}>Permissions ${Icon('arrow-right', { size: 'xs' })}</a>
-          ${row.kind === 'custom' && !row.declared ? Button({ icon: 'trash-2', tip: `Delete ${row.id}`, size: 'small', variant: 'ghost', onClick: () => remove(row) }) : null}</td></tr>`)}</tbody></table></div>
-    ${Callout('info', 'info', html`Opening Controls is a separate right from any model permission. It never applies to portal roles, and admin always has it so the instance can't be locked out. From the server shell, <code>evlet controls grant &lt;instance&gt; &lt;user&gt;</code> restores access.`)}
+          ${row.kind === 'custom' && !row.declared && isAdmin(ctx) ? Button({ icon: 'trash-2', tip: `Delete ${row.id}`, size: 'small', variant: 'ghost', onClick: () => remove(row) }) : null}</td></tr>`)}</tbody></table></div>
+    ${Callout('info', 'info', html`Opening Controls is a separate right from any model permission. It never applies to portal roles, and admin always has it so the instance can't be locked out. Only admins change who opens Controls, manage roles and change admin accounts. From the server shell, <code>evlet controls grant &lt;instance&gt; &lt;user&gt;</code> restores access.`)}
   </div>` as HTMLElement;
 }
 

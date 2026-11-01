@@ -90,7 +90,7 @@ export function PermissionsPage(ctx: ControlsContext): HTMLElement {
       <tbody>${() => { role.get(); return groups.get().length ? groups.get().map(([app, models]) => [
         html`<tr class="ctl-group"><td colspan="9">${app ? `${app} · permissions.py` : 'Models'}</td></tr>`, models.map(row)])
         : html`<tr><td colspan="9"><div class="ctl-empty">No models match.</div></td></tr>`; }}</tbody></table></div>
-    <p class="muted ctl-small">Create, update and delete need read access. Turning off read turns them off too.</p>
+    <p class="muted ctl-small">Create, update and delete need read access. Turning off read turns them off too. A custom role starts from its base role's app rules; overrides on editor or viewer do not carry over to it.</p>
   </div>` as HTMLElement;
 }
 
