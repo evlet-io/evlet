@@ -7,8 +7,10 @@ Run from the repository root: .venv/bin/python -m scripts.generate_ui_framework_
 """
 
 import asyncio
+import base64
 import json
 from pathlib import Path
+from urllib.parse import quote
 import tempfile
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
@@ -101,6 +103,9 @@ class LedgerEntry(Model):
     memo = Text(default='')
     source = Reference()
     reversal = Boolean(default=False)
+
+    class Meta:
+        plural = 'Ledger entries'
 
 
 class InvoiceLine(Child):
@@ -281,32 +286,43 @@ def documents(out):
         assert status == 201, body
         return f"/api/invoice/{body['id']}"
 
-    # The first invoice: refused while it has no lines, issued once it has, then paid in part.
+    # An issued invoice that is voided, and one that stays issued until it is revised below.
+    voided = invoice(children={'lines': lines})
+    assert write('POST', voided, '/moves/issued', {})[0] == 200
+    keep('invoice_void_before', editor('GET', voided))
+    keep('invoice_void_reason_missing', write('POST', voided, '/void', {'reason': ''}))
+    keep('invoice_void', write('POST', voided, '/void', {'reason': 'Customer cancelled the order'}))
+    revised = invoice(children={'lines': lines})
+    assert write('POST', revised, '/moves/issued', {})[0] == 200
+    keep('invoice_revise_before', editor('GET', revised))
+    # A draft refused while it has no lines, then given lines: the list holds one invoice per state.
     url = invoice()
     keep('invoice_draft_blocked', editor('GET', url))
     keep('invoice_move_refused', write('POST', url, '/moves/issued', {}))
     assert write('PATCH', url, '', {'children': {'lines': {'create': lines}}})[0] == 200
     keep('invoice_draft', editor('GET', url))
+    keep('invoices', editor('GET', '/api/invoice?limit=50&offset=0'))
+    keep('invoice_measures', editor('GET', '/api/invoice/measures'))
+    keep('invoice_measures_issued', editor('GET', '/api/invoice/measures?filters=' + quote(json.dumps({'status': 'issued'}))))
+    keep('invoice_aggregate_by_status', editor('GET', '/api/invoice/aggregate?measures=n:count&group_by=status'))
+    keep('invoice_related_revisions', editor('GET', f'{url}/related/invoice.revises?limit=10&offset=0'))
+    keep('invoice_attachment_upload', editor('POST', f'{url}/attachments', {'name': 'signed-copy.pdf', 'content': 'JVBERi0='}))
+    keep('invoice_attachments', editor('GET', f'{url}/attachments'))
+    # The draft is issued and paid in part.
     keep('invoice_issued', write('POST', url, '/moves/issued', {}))
     keep('invoice_issued_detail', editor('GET', url))
     keep('invoice_action', write('POST', url, '/actions/record_payment', {'amount': '500.00', 'paid_on': '2026-11-10'}))
-    assert admin('POST', '/api/payment', {'invoice': int(url.rsplit('/', 1)[1]), 'amount': '500.00', 'paid_on': '2026-11-10'})[0] == 201
+    payment = admin('POST', '/api/payment', {'invoice': int(url.rsplit('/', 1)[1]), 'amount': '500.00', 'paid_on': '2026-11-10'})[1]
+    keep('invoice_payment', editor('GET', f"/api/payment/{payment['id']}"))
+    keep('invoice_customer', editor('GET', f'/api/customer/{customer}'))
     keep('invoice_lines_page', editor('GET', f'{url}/lines/lines?limit=1&offset=1'))
     keep('invoice_record_measures', editor('GET', f'{url}/measures'))
     keep('invoice_related_payments', editor('GET', f'{url}/related/payment.invoice?limit=5&offset=0'))
-    keep('invoice_related_revisions', editor('GET', f'{url}/related/invoice.revises?limit=10&offset=0'))
-    # A draft that stays a draft, and an issued invoice that is voided.
-    invoice(children={'lines': lines})
-    voided = invoice(children={'lines': lines})
-    assert write('POST', voided, '/moves/issued', {})[0] == 200
-    keep('invoice_void_reason_missing', write('POST', voided, '/void', {'reason': ''}))
-    keep('invoice_void', write('POST', voided, '/void', {'reason': 'Customer cancelled the order'}))
-    keep('invoices', editor('GET', '/api/invoice?limit=50&offset=0'))
-    keep('invoice_measures', editor('GET', '/api/invoice/measures'))
-    keep('invoice_aggregate_by_status', editor('GET', '/api/invoice/aggregate?measures=n:count&group_by=status'))
-    # Revising the first invoice voids it and opens a draft copy.
-    keep('invoice_revision', write('POST', url, '/revise', {'reason': 'Wrong quantity on line 2'}))
-    keep('invoice_revised_original', editor('GET', url))
+    # Files of a locked record cannot change.
+    keep('invoice_attachment_locked', editor('POST', f'{url}/attachments', {'name': 'receipt.pdf', 'content': 'JVBERi0='}))
+    # Revising voids the issued invoice and opens a draft copy.
+    keep('invoice_revision', write('POST', revised, '/revise', {'reason': 'Wrong quantity on line 2'}))
+    keep('invoice_revised_original', editor('GET', revised))
 
 
 def screens():
@@ -356,10 +372,11 @@ def screens():
                                                                    'phone': '+971 4 555 0101', 'notes': 'Prefers email.'}))
     url = f"/api/contact/{contact['id']}"
     keep('contact_detail', admin('GET', url))
-    # This base refuses uploads to models with declarations (permissions, actions...) with 405;
-    # the record view shows that refusal. Listing works.
+    keep('attachments_empty', admin('GET', f'{url}/attachments'))
     keep('attachment_upload', admin('POST', f'{url}/attachments', {'name': 'brief.txt', 'content': 'SGVsbG8='}))
     keep('attachments', admin('GET', f'{url}/attachments'))
+    # One byte over the framework maximum of 1 MiB: the record view shows why it was refused.
+    keep('attachment_refused', admin('POST', f'{url}/attachments', {'name': 'scan.pdf', 'content': base64.b64encode(bytes(2**20 + 1)).decode()}))
     keep('contacts', admin('GET', '/api/contact?limit=20&offset=0'))
     auth.create_user(username='viewer', password=PASSWORD, role='viewer')
     viewer = login('viewer')

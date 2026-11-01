@@ -359,7 +359,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     ...tables.map(child => ({ id: `t-${child.name}`, label: child.label, count: () => store.table(child.name).rows.get().length })),
     ...(relations.length ? [{ id: 'related', label: 'Related' }] : []),
   ];
-  const postings = !isNew && model.effects?.length ? derive(() => extras.get()._effects ?? null) : null;
+  // A record that has posted nothing yet still lists each target, with zero rows.
+  const postings = !isNew && model.effects?.length ? derive(() => extras.get()._effects?.some(item => item.rows || item.reversals) ? extras.get()._effects! : null) : null;
   if (postings) tabItems.push({ id: 'postings', label: 'Postings', count: () => postings.get()?.length ? postings.get()!.reduce((sum, item) => sum + item.rows + item.reversals, 0) : null });
   const wanted = options.query.tab;
   const active = cell(tabItems.some(tab => tab.id === wanted) ? wanted! : tabItems[0].id, { name: `${name} tab` });
@@ -494,6 +495,8 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
   const load = () => void ctx.api.attachments(model.name, store.id!).then(items => files.set(items), error => problem.set(error instanceof ApiError ? error.message : 'Files could not be loaded.'));
   load();
   const canWrite = model.permissions?.update !== false;
+  // The files of a locked record cannot change: the server refuses with 409.
+  const locked = () => Boolean(extrasOf(ctx.api.detail(model.name, store.id!).get())._locked);
   const limits = model.attachment_limits ?? { max_files: 10, max_size: 1_048_576 };
   const size = (bytes: number) => bytes >= 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
   const upload = (event: Event) => {
@@ -505,7 +508,7 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
     reader.onload = () => {
       const content = String(reader.result).split(',')[1] ?? '';
       ctx.api.upload(model.name, store.id!, file.name, content).then(() => { toast(`${file.name} attached`, { icon: 'paperclip' }); load(); },
-        error => toast(error instanceof ApiError ? `Not attached: ${error.message}` : 'Not attached.', { icon: 'info' }));
+        error => toast(error instanceof ApiError ? `Not attached: ${error.fields.attachment ?? error.message}` : 'Not attached.', { icon: 'info' }));
     };
     reader.readAsDataURL(file);
   };
@@ -513,7 +516,7 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
     ${() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : files.get() === null ? html`<p class="muted">Loading…</p>` : files.get()!.length === 0
       ? html`<p class="muted">No files yet.</p>` : html`<div class="files">${files.get()!.map(file => html`<div class="file">${Icon('paperclip', { size: 'sm', className: 'muted' })}
         <div style="flex:1;min-width:0"><a class="link" rel="external" href=${`/api/${model.name}/${store.id}/attachments/${file.id}`}>${file.name}</a><div class="muted" style="font-size:12px">${size(file.size)}</div></div></div>`)}</div>`}
-    ${canWrite ? html`<label class="btn sm ev-upload">${Icon('upload', { size: 'sm', className: 'tint' })}Attach a file<input type="file" hidden on:change=${upload}></label>` : null}</div>`;
+    ${canWrite ? when(() => !locked(), () => html`<label class="btn sm ev-upload">${Icon('upload', { size: 'sm', className: 'tint' })}Attach a file<input type="file" hidden on:change=${upload}></label>`) : null}</div>`;
 }
 
 // ---------- related ----------

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adminRoutes, byText, click, invoice, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until } from './screens-helpers';
-import type { Sent } from './server';
+import { copy, type Sent } from './server';
 
 afterEach(() => { vi.useRealTimers(); stopAll(); });
 
@@ -102,15 +102,16 @@ describe('generated list page', () => {
   });
 });
 
-describe('board and saved views (provisional State fixtures)', () => {
+describe('board and saved views (recorded State fixtures)', () => {
   const routes = () => [
     ['GET', /\/api\/auth\/session$/, invoice.session],
     ['GET', /\/api\/schema$/, invoice.schema],
     ['GET', /\/api\/invoice\?/, invoice.invoices],
-    ['GET', /\/api\/invoice\/measures/, invoice.invoice_measures],
+    ['GET', /\/api\/invoice\/measures/, (sent: Sent) => copy(new URL(sent.url, 'http://x').searchParams.get('filters') ? invoice.invoice_measures_issued : invoice.invoice_measures)],
     ['GET', /\/api\/invoice\/aggregate/, invoice.invoice_aggregate_by_status],
-    ['GET', /\/api\/customer\/1$/, { status: 200, etag: '"c1"', body: { id: 1, name: 'Al Sahra Trading', credit_days: 30 } }],
+    ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ] as any[];
+  const draftId = invoice.invoice_draft.body.id, issuedNumber = invoice.invoice_revise_before.body.number;
 
   it('shows saved views per state with counts, and the declared measures', async () => {
     const { host, sent } = start(routes(), '/ui/m/invoice');
@@ -126,8 +127,8 @@ describe('board and saved views (provisional State fixtures)', () => {
 
   it('moves a card with the keyboard through the move route, and explains a blocked move', async () => {
     const { host, sent } = start([...routes(),
-      ['GET', /\/api\/invoice\/7$/, invoice.invoice_draft],
-      ['POST', /\/api\/invoice\/7\/moves\/issued$/, invoice.invoice_issued],
+      ['GET', new RegExp(`/api/invoice/${draftId}$`), invoice.invoice_draft],
+      ['POST', new RegExp(`/api/invoice/${draftId}/moves/issued$`), invoice.invoice_issued],
     ], '/ui/m/invoice?view=board');
     await until(() => expect(host.querySelectorAll('.board .card').length).toBe(3));
     const column = (label: string) => byText(host, '.col-k', new RegExp(`^${label}`))!;
@@ -138,9 +139,9 @@ describe('board and saved views (provisional State fixtures)', () => {
     await until(() => expect(column('Issued').querySelectorAll('.card').length).toBe(2));
     await until(() => expect(requests(sent, 'POST', /moves\/issued$/)).toHaveLength(1));
     const move = requests(sent, 'POST', /moves\/issued$/)[0];
-    expect(move.headers['if-match']).toBe('"inv7-1"');
+    expect(move.headers['if-match']).toBe(invoice.invoice_draft.etag);
     // The issued card moves on to Paid only for admins: this editor is told why, and nothing is sent.
-    const issued = byText(column('Issued'), '.card', /INV-2026-00041/)!;
+    const issued = byText(column('Issued'), '.card', new RegExp(issuedNumber))!;
     press(issued, 'ArrowRight', { altKey: true });
     expect(lastToast()).toContain('Your role cannot use Mark paid');
     expect(requests(sent, 'POST', /moves\/paid/)).toHaveLength(0);
@@ -148,8 +149,8 @@ describe('board and saved views (provisional State fixtures)', () => {
 
   it('puts a card back when the server refuses the move', async () => {
     const { host } = start([...routes(),
-      ['GET', /\/api\/invoice\/7$/, invoice.invoice_draft_blocked],
-      ['POST', /\/api\/invoice\/7\/moves\/issued$/, invoice.move_refused],
+      ['GET', new RegExp(`/api/invoice/${draftId}$`), invoice.invoice_draft_blocked],
+      ['POST', new RegExp(`/api/invoice/${draftId}/moves/issued$`), invoice.invoice_move_refused],
     ], '/ui/m/invoice?view=board');
     await until(() => expect(host.querySelectorAll('.board .card').length).toBe(3));
     const draft = byText(host, '.col-k', /^Draft/)!;

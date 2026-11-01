@@ -404,14 +404,17 @@ tab closes. Signing in keeps the address the user opened.
 | `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters), board column totals, state counts on the saved views; per-record measures in the record's summary strip |
 | `Meta.key_fields` (Phase 10) | Header facts, the summary strip and the Key fields side block (without it: the first fields) |
 | `Meta.relations` (Phase 10) | The Related tab and side block |
-| `attachments` | The Files side block, with upload for roles that can update |
+| `attachments` | The Files side block, with upload for roles that can update while the record is not locked |
 | `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
 | Journal (Phase 8) | The Activity tab, first, with a note box |
 
-A section appears only when the schema or the detail carries its key, so the same screens run on
-this engine and on the later phases. The shapes of later-phase keys follow their docs
-(`states-actions.md`, `sequences.md`, `measures.md`, `meaning.md`, `effects.md`); the journal
-follows the outline in [handoff-model.md](handoff-model.md) and is provisional.
+A section appears only when the schema or the detail carries its key. The screen tests replay
+these keys as the engine sends them, recorded from an invoice with a State, a Sequence, effects,
+measures, key fields, relations and files. A record that has posted nothing yet still lists each
+effect target with zero rows; the Postings tab treats that as nothing posted. The files of a
+locked record cannot change, so the upload control hides while `_locked` is true. Only the
+journal is provisional: it follows the outline in [handoff-model.md](handoff-model.md)
+(`frontend/src/evlet/tests/provisional/`).
 
 Model icons and accents come from the model name (invoice: receipt, blue; contact: people,
 violet), since the schema has no presentation keys. Models with a State or a Table are listed as
@@ -424,8 +427,9 @@ until the backend has user settings.
 ## Tests and benchmarks
 
 The tests in `frontend/src/evlet/tests/` run in jsdom with `npm test`. API and record store
-tests replay responses recorded from the real ASGI routes in `api-fixture.json`
-(regenerate with `.venv/bin/python -m scripts.generate_ui_framework_fixtures` and review the
+tests replay responses recorded from the real ASGI routes in `api-fixture.json`, and the
+screen tests also those in `screens-fixture.json` (regenerate both with
+`.venv/bin/python -m scripts.generate_ui_framework_fixtures` and review the
 diff). The record store also replays the shared finite-v1 scenarios through its public API.
 `npm run bench:ui` measures the budgets; see "UI framework" in
 [performance.md](performance.md).
