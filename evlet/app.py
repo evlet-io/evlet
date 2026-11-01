@@ -47,7 +47,7 @@ class Application:
             raise ValueError("Business features require authentication")
         self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
-            self.business.application = {"name": name, "playground": bool(playground), "docs": "/docs" if self.routes.docs else None}
+            self.business.application = {"name": name, "playground": bool(playground), "docs": self.routes.docs_path if self.routes.docs else None}
             from .forms import Forms
             self.business.forms = Forms(self.business, reports)
             self.business.apis = tuple(apis)
@@ -68,6 +68,7 @@ class Application:
         try:
             if self.business is None:
                 self._guard_local(scope)
+            self._api_scope(scope)
             if scope['path'] == '/api/_events/stream' and self.business:
                 await self._event_stream(scope, receive, send)
                 return
@@ -128,6 +129,28 @@ class Application:
             response_headers.append((b"content-length", str(len(encoded)).encode()))
         await send({"type": "http.response.start", "status": status, "headers": response_headers})
         await send({"type": "http.response.body", "body": encoded})
+
+    def _api_scope(self, scope):
+        """On a sub-host, /api serves sign-in and its frontends' API scopes; everything else is 404."""
+        path = scope['path']
+        if path != '/api' and not path.startswith('/api/'):
+            return
+        scopes = self.routes.scopes(dict(scope.get('headers', [])).get(b'host', b''))
+        if scopes is None or path in ('/api/auth/session', '/api/auth/login', '/api/auth/logout'):
+            return
+        parts = path.split('/')
+        if path.startswith('/api/_services/'):
+            if any(path.removeprefix('/api/_services/') in item.endpoints for item in scopes):
+                return
+        elif len(parts) >= 3:
+            draft = parts[2] == '_draft' and len(parts) == 4
+            model = self.registry.models.get(parts[3] if draft else parts[2])
+            if model is not None and any(model in item.models for item in scopes):
+                if draft or len(parts) < 6 or parts[4] not in ('actions', 'moves'):
+                    return
+                if any((model, parts[5]) in item.actions for item in scopes):
+                    return
+        raise HTTPError(404, 'Route not found')
 
     def _guard_local(self, scope):
         headers = {}
