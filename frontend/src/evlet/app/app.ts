@@ -12,7 +12,7 @@ import { cell, derive, onCleanup } from '../reactive';
 import { SchemaIndex, type AppSchema } from '../model/schema';
 import { Button, EmptyState } from '../ui/base';
 import { apiLinks, setLinkSource } from '../ui/fields';
-import { closeDialogs, closePopover } from '../ui/layers';
+import { closeDialogs, closePopover, DialogFooter, openModal } from '../ui/layers';
 import { AppClient } from './client';
 import { newPageState, type AppContext, type AppRouter } from './context';
 import { DocsPage } from './docs';
@@ -105,11 +105,28 @@ export function App(options: AppOptions): Node {
   async function signOut() {
     // Leaving the page first lets an unsaved record ask.
     if (!(await router.go('docs', {}))) return;
-    try { await api.logout(); } catch (failure) { error.set(failure instanceof ApiError ? failure.message : 'Unable to sign out.'); }
+    try { await api.logout(); }
+    catch (failure) {
+      // 401: the server already ended the session. Anything else: the session may still be
+      // valid, so the user stays signed in and can try again.
+      if (!(failure instanceof ApiError && failure.kind === 'auth')) { signOutFailed(failure instanceof ApiError ? failure.message : 'The server did not answer.'); return; }
+    }
     endSession('');
     // Cached record titles and other session data are dropped (apiLinks listens for this).
     window.dispatchEvent(new Event('evlet-session-ended'));
   }
+
+  const signOutFailed = (message: string) => {
+    let busy = false;
+    openModal({ title: 'You are still signed in', icon: 'info', tint: 'amber', narrow: true,
+      body: () => html`<p>Signing out did not finish, so your session is still open. ${message}</p>`,
+      footer: close => DialogFooter({ cancel: close, submit: { label: 'Try again', icon: 'log-out', onClick: () => {
+        if (busy) return;
+        busy = true;
+        close();
+        void signOut();
+      } } }) });
+  };
 
   const endSession = (message: string) => {
     closeDialogs();
@@ -117,6 +134,8 @@ export function App(options: AppOptions): Node {
     context.peek()?.prefs.dispose();
     context.set(null);
     api.forget();
+    // The sign-in screen does not keep the last user's theme.
+    applyTheme('system');
     error.set(message);
     session.set({ ...(session.peek() ?? { user: null }), user: null, setup: false });
     phase.set('signin');
