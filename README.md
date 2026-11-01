@@ -57,6 +57,7 @@ For virtual environment setup and each step explained, read
 - [Model engine](docs/model-engine.md) and [business capabilities](docs/business-capabilities.md):
   database queries, accounts, child rows, actions and private attachments.
 - [UI guide](docs/ui.md): the browser interface, its routes and the Python page API.
+- [Routing](docs/routing.md): frontends, reserved paths, `routes.py` and `evlet routes`.
 - [UI framework](docs/ui-framework.md): Evlet's own browser framework and components.
 
 `evlet dev --instance acme` reloads Python changes while you work. Stop the server
