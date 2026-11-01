@@ -5,8 +5,8 @@ table. Dispatch, the allowed browser origins and `evlet routes` all read that ta
 It is never cached to disk.
 
 An instance with no `routes.py` serves the same URLs as before: the desk shell at
-`/`, `/login`, `/docs`, `/app/...`, `/settings/accounts`, `/reports/<name>`,
-`/assets/...` and the registered Python page routes.
+`/`, `/login`, `/docs`, `/app/...`, `/reports/<name>`, `/assets/...` and the
+registered Python page routes. `/settings/accounts` redirects (301) to `/controls/users`.
 
 ## Frontends
 
@@ -42,8 +42,8 @@ The framework has its own frontends: `evlet.desk` at `/app` (the generated scree
 
 Status: app frontends are validated and checked for clashes, but they are not served
 yet, so an instance with any app frontend fails at boot with a "not available yet"
-message naming it. `evlet.controls` answers 404 for now, and `evlet.settings` serves
-only `/settings/accounts`.
+message naming it. `evlet.controls` serves Controls ([controls.md](controls.md)), and
+`evlet.settings` only redirects `/settings/accounts` to `/controls/users`.
 Sub-hosts, sign-in realms, API scopes and the `static` and `server` kinds come next.
 Flat-layout apps cannot register frontends yet.
 
