@@ -193,6 +193,13 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
   const pinOf = (key: string) => derive(() => pins.get().get(key) ?? null, { equals: (a, b) => a === b || (Boolean(a) && Boolean(b) && a!.left === b!.left && a!.last === b!.last) });
   const pinCache = new Map<string, Derive<{ left: number; last: boolean } | null>>();
   const pin = (key: string) => { let item = pinCache.get(key); if (!item) pinCache.set(key, item = pinOf(key)); return item; };
+  // One binding per cell for its pinned state: sticky class, last-pinned hairline and left offset.
+  const bindPin = (element: HTMLElement, key: string) => effect(() => {
+    const at = pin(key).get();
+    element.classList.toggle('stk', Boolean(at));
+    element.classList.toggle('stk-last', Boolean(at?.last));
+    if (at) element.style.left = `${at.left}px`; else element.style.removeProperty('left');
+  });
   const total = derive(() => (props.selectable ? CHECK_WIDTH : 0) + columns.get().reduce((sum, column) => sum + widthOf(column), 0));
   const active = cell<string | number | null>(null, { name: `${props.label} (active row)` });
   // The row that takes Tab focus: the active one, else the first.
@@ -254,8 +261,7 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
       const value = (column().value ?? ((item: T) => (item as any)[key]))(row());
       return value === null || value === undefined ? '' : String(value);
     };
-    return html`<td role="gridcell" class=${column().align === 'right' ? 'r num' : ''} class:stk=${() => Boolean(pin(key).get())}
-      class:stk-last=${() => Boolean(pin(key).get()?.last)} style:left=${() => pin(key).get() ? `${pin(key).get()!.left}px` : null}>${content}</td>`;
+    return html`<td role="gridcell" class=${column().align === 'right' ? 'r num' : ''} ref=${(td: HTMLElement) => bindPin(td, key)}>${content}</td>`;
   };
 
   const focusRow = (key: string | number) => queueMicrotask(() => {
@@ -274,7 +280,7 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
   const rowView = (row: () => T, index: () => number) => {
     const key = () => props.key(row());
     const selected = () => selection.get().has(key());
-    return html`<tr role="row" data-key=${key} class:sel=${selected} aria-selected=${props.selectable ? () => String(selected()) : null}
+    return html`<tr role="row" data-key=${String(key())} class:sel=${selected} aria-selected=${props.selectable ? () => String(selected()) : null}
       aria-rowindex=${() => String(view.range.get().start + index() + 2)}
       tabindex=${() => focusKey.get() === key() ? '0' : '-1'}
       on:click=${(event: MouseEvent) => {
