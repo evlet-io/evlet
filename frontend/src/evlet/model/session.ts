@@ -31,8 +31,14 @@ export class Session {
     const plan = this.plan, doc = new FiniteDocument(plan, this.data(root));
     this.engine = doc;
     bindHandles(doc.root, root);
-    if (plan.fields.some((field: any) => field.reads.some((read: any[]) => read[0] === 'today'))) doc.setToday(this.today());
-    for (let known = this.cached(doc); known.length; known = this.cached(doc))
+    // Today and lookups read before are given in one batch, so the document settles once.
+    const today = plan.fields.some((field: any) => field.reads.some((read: any[]) => read[0] === 'today'));
+    let known = this.cached(doc);
+    if (today || known.length) doc.batch(session => {
+      if (today) session.setToday(this.today());
+      for (const [model, id, values] of known) session.setLookups(model, id, values);
+    });
+    for (known = this.cached(doc); known.length; known = this.cached(doc))
       doc.batch(session => { for (const [model, id, values] of known) session.setLookups(model, id, values); });
     batch(() => {
       const visit = (row: Row) => {
@@ -192,10 +198,21 @@ export class Session {
         // A session replaced meanwhile (reload) does not take or cache this answer.
         if (this.engine !== doc) return;
         this.lookups.set(key, values);
-        const known = Object.fromEntries(fields.filter(name => name in values).map(name => [name, values[name]]));
-        this.run(session => session.setLookups(model, id, known));
+        this.arrive(doc, [model, id, Object.fromEntries(fields.filter(name => name in values).map(name => [name, values[name]]))]);
       }));
     }
+  }
+
+  // Records that arrive together are handed over in one batch, so the document settles once for
+  // them instead of once per record; each still applies as soon as it arrives.
+  private arrived: Array<[string, number, Record<string, unknown>]> = [];
+  private arrive(doc: FiniteDocument, item: [string, number, Record<string, unknown>]) {
+    this.arrived.push(item);
+    if (this.arrived.length > 1) return;
+    queueMicrotask(() => {
+      const items = this.arrived.splice(0);
+      if (this.engine === doc) this.run(session => { for (const [model, id, known] of items) session.setLookups(model, id, known); });
+    });
   }
 
   private fetchLookups() {

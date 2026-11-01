@@ -103,4 +103,5 @@ screen test opens the same deal on its Activity tab and adds a note through the 
   a grid Link cell opens its search; the lock banner offers only the corrections the user can make;
   Undo after a board move only when a move back exists; a dialog commits the field being typed in
   when it is submitted (Convert to deal kept its date).
-- **Performance.** Opening a 1,000-line deal takes about 160 ms in jsdom, over the 100 ms budget.
+- **Performance.** Opening a 1,000-line deal took about 160 ms in jsdom, over the 100 ms budget. It
+  takes about 80 ms now, and a line edit about 5 ms ([performance.md](performance.md)).

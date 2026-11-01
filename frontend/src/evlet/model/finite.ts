@@ -331,6 +331,11 @@ const KEY = /^[A-Za-z0-9_-]{1,64}$/;
 type Node = string;
 const nodeKey = (handle: string, field: string): Node => handle + '\u0000' + field;
 const nodeParts = (node: Node) => node.split('\u0000') as [string, string];
+// Whether any input changed; `documentOnly` leaves out host inputs (@today, @lookups).
+function anyChanged(inputs: Set<Node>, changed: Set<Node>, documentOnly: boolean) {
+  for (const input of inputs) if (changed.has(input) && !(documentOnly && input.startsWith('@'))) return true;
+  return false;
+}
 
 // collection_rows is the most any owned table may declare (Table max_rows); each plan table carries its own.
 export const LIMITS = {expression_nodes: 128, expression_depth: 32, table_depth: 8, collection_rows: 1000, document_rows: 5000,
@@ -464,6 +469,8 @@ export class FiniteDocument {
   deps = new Map<Node, Set<Node>>();
   dependents = new Map<Node, Set<Node>>();
   order: Node[] = [];
+  // this.order with each node's row, plan field, inputs, target and target meta, built by bind().
+  private steps: Array<{node: Node; handle: string; name: string; row: Row; field: any; inputs: Set<Node>; target: Node; meta: any}> = [];
   observers = new Map<Node, Array<(result: Result) => void>>();
   tableObservers = new Map<Node, Array<(handles: string[]) => void>>();
   ruleObservers = new Map<string, Array<(states: Record<string, RuleState>) => void>>();
@@ -622,6 +629,10 @@ export class FiniteDocument {
     order.sort((a, b) => a[0] - b[0] || compareChains(a[1], b[1]));
     this.deps = deps;
     this.order = order.map(item => item[2]);
+    this.steps = this.order.map(node => {
+      const [handle, name] = nodeParts(node), row = this.rows.get(handle)!, path = row.path.join('/'), field = this.fields.get(path + '\u0000' + name);
+      return {node, handle, name, row, field, inputs: deps.get(node)!, target: nodeKey(handle, field.field), meta: ownValue(this.schema.get(path).fields, field.field)};
+    });
     this.dependents = new Map();
     for (const [node, inputs] of deps) for (const input of inputs) {
       if (!this.dependents.has(input)) this.dependents.set(input, new Set());
@@ -646,24 +657,20 @@ export class FiniteDocument {
   private settle(changed: Set<Node>, fresh: Set<Node>, touched: Set<Node> = new Set(), arm: Set<Node> = new Set()) {
     const budget = new Budget(this.budget), updated = new Set<Node>();
     let evaluated = 0, skipped = 0;
-    for (const node of this.order) {
-      const inputs = this.deps.get(node)!;
-      const [handle, name] = nodeParts(node);
-      const row = this.rows.get(handle)!, field = this.fields.get(row.path.join('/') + '\u0000' + name);
+    for (const {node, handle, name, row, field, inputs, target, meta} of this.steps) {
       if (field.kind === 'initial') {
-        if (arm.has(node) || [...inputs].some(input => changed.has(input) && !input.startsWith('@'))) this.armed.add(node);
-        if (touched.has(nodeKey(handle, field.field))) this.armed.delete(node);
+        if (arm.has(node) || anyChanged(inputs, changed, true)) this.armed.add(node);
+        if (touched.has(target)) this.armed.delete(node);
       }
-      if (!fresh.has(node) && ![...inputs].some(input => changed.has(input))) { skipped++; continue; }
+      if (!fresh.has(node) && !anyChanged(inputs, changed, false)) { skipped++; continue; }
       const at = row.label + name, scope = new Scope(this, row, null, at);
       let outcome = evaluate(field.expression, scope, budget);
-      if (!field.kind) outcome = convert(outcome, field, at, ownValue(this.schema.get(row.path.join('/')).fields, field.field));
+      if (!field.kind) outcome = convert(outcome, field, at, meta);
       else if (field.kind === 'initial') outcome = convert(outcome, field, at);
       if (scope.misses.size) this.misses.set(node, scope.misses); else this.misses.delete(node);
       evaluated++;
       this.counts.set(node, (this.counts.get(node) || 0) + 1);
       if (!same(outcome, this.results.get(node))) { this.results.set(node, outcome); changed.add(node); updated.add(node); }
-      const target = nodeKey(handle, field.field);
       let value: unknown = undefined, write = false;
       if (field.kind === 'initial' && this.armed.has(node) && outcome.state !== 'pending') {
         this.armed.delete(node);
@@ -729,6 +736,13 @@ export class FiniteDocument {
     catch (exc) { this.restore(snapshot); this.current = state; throw exc; }
   }
 
+  // A command that checks everything before it changes anything needs no snapshot to undo a failure.
+  private checked(run: () => void) {
+    if (this.current === null) { this.batch(run); return; }
+    this.usable();
+    run();
+  }
+
   private usable() {
     if (this.disposed) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'This document session was disposed');
     if (this.publishing) throw new CalcError('REACTIVE_REENTRANCY', 'Observers cannot change the document during publication');
@@ -741,7 +755,7 @@ export class FiniteDocument {
   }
 
   set(handle: string, field: string, value: unknown) {
-    this.command(() => {
+    this.checked(() => {
       const row = this.row(handle), meta = ownValue(this.schema.get(row.path.join('/')).fields, field);
       if (!meta) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown field ' + field);
       if (meta.computed) throw new CalcError('COMPUTED_FIELD_WRITE', row.label + field + ' is calculated');
@@ -752,12 +766,12 @@ export class FiniteDocument {
 
   // The host's current date (YYYY-MM-DD) for today().
   setToday(value: unknown) {
-    this.command(() => { this.today = value; this.current.sources.add(nodeKey('@', 'today')); });
+    this.checked(() => { this.today = value; this.current.sources.add(nodeKey('@', 'today')); });
   }
 
   // Field values of one linked record, as the host read them, for Link path expressions.
   setLookups(model: string, id: number, values: Record<string, unknown>) {
-    this.command(() => {
+    this.checked(() => {
       const fields = this.lookupFields.get(model), key = integer(id);
       if (!fields || key === null || key < 1 || !values || typeof values !== 'object' || Array.isArray(values) || Object.keys(values).some(name => !fields.has(name)))
         throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'This plan does not look up ' + model);
@@ -920,9 +934,12 @@ export class FiniteDocument {
     else if (this.pristine) this.takeLocks(true);
     this.revision++;
     if (batch.structure) this.structureRevision++;
-    for (const node of [...this.observers.keys()]) if (!this.rows.has(nodeParts(node)[0])) this.observers.delete(node);
-    for (const node of [...this.tableObservers.keys()]) if (!this.rows.has(nodeParts(node)[0])) this.tableObservers.delete(node);
-    for (const handle of [...this.ruleObservers.keys()]) if (!this.rows.has(handle)) this.ruleObservers.delete(handle);
+    // Only a change of structure removes rows, and with them their observers.
+    if (batch.structure) {
+      for (const node of [...this.observers.keys()]) if (!this.rows.has(nodeParts(node)[0])) this.observers.delete(node);
+      for (const node of [...this.tableObservers.keys()]) if (!this.rows.has(nodeParts(node)[0])) this.tableObservers.delete(node);
+      for (const handle of [...this.ruleObservers.keys()]) if (!this.rows.has(handle)) this.ruleObservers.delete(handle);
+    }
     const notify: Array<() => void> = [];
     for (const [node, listeners] of [...this.observers]) {
       if (!updated.has(node) && !batch.sources.has(node)) continue;
@@ -1063,7 +1080,7 @@ export class FiniteDocument {
     if (this.disposed) return;
     if (this.publishing) throw new CalcError('REACTIVE_REENTRANCY', 'Observers cannot dispose the document during publication');
     this.observers.clear(); this.tableObservers.clear(); this.ruleObservers.clear(); this.armed.clear(); this.rows.clear(); this.results.clear(); this.misses.clear();
-    this.deps = new Map(); this.dependents = new Map(); this.order = [];
+    this.deps = new Map(); this.dependents = new Map(); this.order = []; this.steps = [];
     this.disposed = true;
   }
 }
