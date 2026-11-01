@@ -165,6 +165,9 @@ class Session:
             self._maintenance = previous
 
     def _guard(self, model):
+        if not self._maintenance and model in getattr(self.registry, 'effect_targets', ()):
+            raise ValueError(f'{model.__name__} rows are posted by the effects of other records and are read only; '
+                             'use session.maintenance() for an audited repair')
         plan_for = getattr(self.registry, 'plan_for', None)
         if not self._maintenance and plan_for is not None and plan_for(model) is not None:
             raise ValueError(f'{model.__name__} is a finite-v1 document; write it through Context.create/update '

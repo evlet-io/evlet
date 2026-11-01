@@ -549,3 +549,42 @@ def test_postgres_related_records_follow_row_scope(pg_dsn):
 def test_postgres_attachment_limits_from_meta(pg_dsn):
     from tests import test_meaning as meaning
     meaning.check_attachment_limits(meaning.serve(PostgreSQLDatabase(pg_dsn, Registry(*meaning.MODELS))))
+
+
+def effect_books(pg_dsn):
+    from tests import test_effects as effects
+    from tests.test_rules_types import start
+    return effects, effects.seed(start(PostgreSQLDatabase(pg_dsn, Registry(*effects.MODELS))))
+
+
+@pytest.mark.parametrize('name', ['test_a_move_posts_balanced_rows_atomically', 'test_unbalanced_rows_roll_the_move_back',
+                                  'test_an_invalid_row_rolls_the_move_back'])
+def test_postgres_effects_post_balance_and_roll_back(pg_dsn, name):
+    effects, books = effect_books(pg_dsn)
+    getattr(effects, name)(books)
+
+
+def test_postgres_effect_rows_are_read_only(pg_dsn):
+    effects, books = effect_books(pg_dsn)
+    effects.test_effect_rows_are_read_only_on_every_write_path(books)
+
+
+def test_postgres_effects_are_reversed_on_void_and_revise(pg_dsn):
+    effects, books = effect_books(pg_dsn)
+    effects.test_void_writes_mirror_rows_and_keeps_originals(books)
+    effects.test_revise_reverses_the_original_and_the_copy_posts_its_own(books)
+
+
+def test_postgres_effect_permissions(pg_dsn):
+    effects, books = effect_books(pg_dsn)
+    effects.test_roles_that_cannot_read_a_target_see_nothing_about_it(books)
+
+
+def test_postgres_effects_check(pg_dsn):
+    effects, books = effect_books(pg_dsn)
+    effects.test_check_reports_changed_missing_extra_and_unbalanced_rows(books)
+
+
+def test_postgres_effects_check_command(pg_dsn, tmp_path, monkeypatch, capsys):
+    effects, books = effect_books(pg_dsn)
+    effects.test_check_command_exit_codes(books, tmp_path, monkeypatch, capsys)

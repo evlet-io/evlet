@@ -45,7 +45,9 @@ class Draft:
         object.__setattr__(self, '_sources', {})
         object.__setattr__(self, 'context', context)
         object.__setattr__(self, 'parent', parent)
-        object.__setattr__(self, 'source', source)
+        if 'source' not in definition.__declared_fields__:
+            # A flat record may name a field `source` (an effect target's Reference); the field wins.
+            object.__setattr__(self, 'source', source)
         object.__setattr__(self, 'id', record_id)
         object.__setattr__(self, 'key', str(record_id) if record_id else uuid4().hex)
         object.__setattr__(self, '_readonly', False)
@@ -1291,6 +1293,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         freeze_draft(draft)
         reaction(draft, change)
     if declared_move is not None:
+        from .effects import post
+        post(context, model, record.id, declared_move.to)
         states.moved(context, model, record.id, before._values.get(model.__state__), declared_move)
     for name, number in numbers:
         sequences.assigned(context, model, record.id, name, number)

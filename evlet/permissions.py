@@ -104,6 +104,9 @@ class Policy:
         return self.rules.get((user.role, model), Rule(('read',) if user.role == 'viewer' else ('read', 'create', 'update', 'delete')))
 
     def allows(self, user, model, operation):
+        if operation in ('create', 'update', 'delete') and model in getattr(self.registry, 'effect_targets', ()):
+            # Effect rows are written only by the engine, so no role may change them.
+            return False
         if operation in CORRECTIONS:
             return user.role in self.corrections.get((model, operation), ())
         return operation in self.rule(user, model).operations
