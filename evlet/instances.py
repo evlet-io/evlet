@@ -82,9 +82,10 @@ class AppDefinition:
     scopes: dict = field(default_factory=dict)
     settings: type | None = None
     preferences: type | None = None
+    connectors: tuple = ()
 
     def __post_init__(self):
-        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes'):
+        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes', 'connectors'):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         if not callable(self.actions):
             object.__setattr__(self, 'actions', tuple(self.actions))
@@ -110,6 +111,9 @@ class AppDefinition:
             raise ValueError('Register Frontend definitions')
         if any(not isinstance(scope, ApiScope) for scope in self.api_scopes):
             raise ValueError('Register ApiScope definitions')
+        from .connectors import Connector
+        if any(not isinstance(connector, Connector) for connector in self.connectors):
+            raise ValueError('Register Connector definitions')
 
 
 def read_instance(path):
@@ -367,6 +371,12 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
                       storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, **options)
     app.business.timezone = config.timezone
     app.business.secret_key = path / 'secret.key'
+    from .connectors import SecretKey
+    app.business.connectors.key = SecretKey(path / 'secret.key')
+    for name, definition in definitions:
+        for connector in definition.connectors:
+            app.business.connectors.register(name, connector)
+    services.connectors = app.business.connectors
     app.business.controls.load(definitions, pinned, path)
     for name, definition in definitions:
         if definition.settings or definition.preferences:

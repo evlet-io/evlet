@@ -78,3 +78,6 @@ __all__ += ["SCOPES"]
 from .settings import AppSettings, UserPreferences
 
 __all__ += ["AppSettings", "UserPreferences"]
+from .connectors import ConnectionFailed, Connector, ConnectorField
+
+__all__ += ["ConnectionFailed", "Connector", "ConnectorField"]

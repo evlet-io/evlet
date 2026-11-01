@@ -9,7 +9,7 @@ import time
 from types import MappingProxyType
 from urllib.parse import parse_qs, quote
 
-from .auth import PORTAL, RESERVED_ROLES, ROLE_ID, ROLES, AccessError
+from .auth import PORTAL, RESERVED_ROLES, ROLE_ID, ROLES, AccessError, User
 from .controls_system import System
 from .customization import Customization, activated, instance_fields
 from .fields import Layer
@@ -19,7 +19,7 @@ from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
-PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'models', 'naming', 'apps', 'routing', 'jobs', 'overrides', 'audit')
+PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'keys', 'models', 'naming', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
     'security.password_min': 15, 'security.session_hours': 8, 'security.lockout': 10,
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
@@ -307,7 +307,8 @@ class Controls:
 
     def allows(self, scope, user):
         role = self.roles.get(user.role)
-        if not self.host_allowed(scope) or role is None or role['realm'] != 'desk':
+        # API keys never open Controls.
+        if user.access is not None or not self.host_allowed(scope) or role is None or role['realm'] != 'desk':
             return False
         if user.role != 'admin' and not role['opens_controls']:
             return False
@@ -763,6 +764,89 @@ class Controls:
             self.publish(tx)
         self.refresh()
 
+    def connector(self, user, method, row_id, action, body):
+        connectors = self.business.connectors
+        if action is None and method == 'GET':
+            return 200, connectors.get(row_id), []
+        if action is None and method == 'PUT':
+            return 200, connectors.save(user, row_id, body), []
+        if action is None and method == 'DELETE':
+            connectors.remove(user, row_id)
+            return 204, None, []
+        if action == '/test' and method == 'POST':
+            return 200, connectors.test(user, row_id, body), []
+        if action == '/default' and method == 'POST':
+            return 200, connectors.make_default(user, row_id), []
+        raise AccessError(404, NOT_FOUND)
+
+    # ---------- API keys ----------
+
+    def key_scope(self, owner, value):
+        """Check a key's scope against what its user can do now: a key never does more than its user."""
+        if not isinstance(value, dict) or set(value) != {'access', 'models'} or value['access'] not in ('read', 'write'):
+            raise ValidationError({'scope': 'Send access (read or write) and models (a list, or null for all).'})
+        models = self.models()
+        names = value['models']
+        if names is not None and (not isinstance(names, list) or not names or len(names) > 50
+                                  or any(not isinstance(name, str) or name not in models for name in names) or len(set(names)) != len(names)):
+            raise ValidationError({'scope': 'Choose models from this instance, each once.'})
+        user = User(owner['id'], owner['username'], owner['role'])
+        chosen = [models[name] for name in names] if names is not None else list(models.values())
+        hidden = [model.__name__ for model in chosen if not self.business.policy.allows(user, model, 'read')]
+        if names is not None and hidden:
+            raise ValidationError({'scope': f"{owner['username']} can't read {', '.join(hidden)}. A key can never do more than the user it acts as."})
+        if value['access'] == 'write' and not any(self.business.policy.allows(user, model, op) for model in chosen for op in ('create', 'update', 'delete')):
+            raise ValidationError({'scope': f"{owner['username']} can only read these, so the key can only read."})
+        return {'access': value['access'], 'models': None if names is None else [name for name in models if name in names]}
+
+    def create_key(self, actor, body, personal=False):
+        allowed = {'name', 'scope'} if personal else {'name', 'scope', 'user'}
+        if not isinstance(body, dict) or set(body) - allowed:
+            raise ValidationError({'_form': 'Use ' + ', '.join(sorted(allowed))})
+        name = body.get('name')
+        if not isinstance(name, str) or not name.strip():
+            raise ValidationError({'name': 'Give the key a name so you can recognise it later.'})
+        if len(name.strip()) > 60:
+            raise ValidationError({'name': 'Use at most 60 characters.'})
+        with self.database._connection() as connection:
+            owner = connection.execute('SELECT id, username, role, active FROM evlet_users WHERE username=?',
+                                       (actor.username if personal else str(body.get('user', '')).lower(),)).fetchone()
+            count = connection.execute('SELECT count(*) FROM evlet_api_keys WHERE user_id=? AND revoked_at IS NULL', (owner['id'] if owner else 0,)).fetchone()[0]
+        if owner is None or not owner['active']:
+            raise ValidationError({'user': 'Choose an active user.'})
+        if not personal and owner['role'] == 'admin' and actor.role != 'admin':
+            raise AccessError(403, ADMIN_ONLY)
+        if count >= 20:
+            raise ValidationError({'_form': 'This user already has 20 keys. Revoke one first.'})
+        scope = self.key_scope(owner, body.get('scope', {'access': 'read', 'models': None}))
+        detail = 'Created' if personal else f"Created for {owner['username']}"
+        row, token = self.business.auth.create_key(owner['id'], name.strip(), scope, lambda connection, row: audit(
+            connection, actor.username, 'API keys', row['name'], detail, None, {'user': owner['username'], 'prefix': row['prefix'], 'scope': scope}))
+        return {'key': row, 'token': token}
+
+    def revoke_key(self, actor, key_id, personal=False):
+        def check(connection, row):
+            if not personal and row['role'] == 'admin' and actor.role != 'admin':
+                raise AccessError(403, ADMIN_ONLY)
+            audit(connection, actor.username, 'API keys', row['name'], 'Revoked', {'user': row['username'], 'prefix': row['prefix']}, None)
+        self.business.auth.revoke_key(key_id, actor.id if personal else None, check)
+
+    def my_keys(self, scope, body, user):
+        """/api/_settings/me/keys: a person's own keys. Signed-in sessions only."""
+        path, method = scope['path'].removeprefix('/api/_settings/me/keys'), scope['method']
+        if path == '' and method == 'GET':
+            # The models a key may be narrowed to: the ones this person can read.
+            models = [{'name': name, 'label': getattr(model.Meta, 'label', None) or name} for name, model in self.models().items()
+                      if self.business.policy.allows(user, model, 'read')]
+            return 200, {'items': self.business.auth.keys(user.id), 'models': models}, []
+        if path == '' and method == 'POST':
+            return 201, self.create_key(user, body, personal=True), []
+        match = re.fullmatch(r'/([1-9][0-9]{0,18})', path)
+        if match and method == 'DELETE' and int(match[1]) <= 2**63 - 1:
+            self.revoke_key(user, int(match[1]), personal=True)
+            return 200, {'items': self.business.auth.keys(user.id)}, []
+        raise AccessError(404, NOT_FOUND)
+
     # ---------- state ----------
 
     def state(self, user, scope):
@@ -786,6 +870,12 @@ class Controls:
         apps = self.system.apps()
         failed = self.system.failed_jobs()
         attention = self.system.attention(apps, failed)
+        connectors = self.business.connectors
+        for item in connectors.listing()['items']:
+            if item['status'] == 'error':
+                title = item['account'] or connectors.declared[item['connector']].title
+                attention.append({'tone': 'red', 'icon': 'link', 'page': 'email' if item['account'] else 'connectors',
+                                  'title': f"{title} isn't connected", 'text': 'The last test failed. Check the details and test again.'})
         controls = self.routes.controls
         return {
             'instance': {'name': self.business.application.get('name', 'Evlet') if self.business.application else 'Evlet',
@@ -864,6 +954,24 @@ class Controls:
         match = re.fullmatch(r'/jobs/([1-9][0-9]{0,18})/retry', path)
         if match and method == 'POST' and int(match[1]) <= 2**63 - 1:
             return 200, self.system.retry(user, int(match[1])), []
+        if path == '/connectors' and method == 'GET':
+            return 200, self.business.connectors.listing(), []
+        match = re.fullmatch(r'/connectors/([a-z0-9:_-]{2,72})(/test|/default)?', path)
+        if match:
+            from .connectors import SecretKeyError
+            try:
+                return self.connector(user, method, match[1], match[2], body)
+            except SecretKeyError as exc:
+                raise AccessError(503, str(exc)) from None
+        if path == '/keys':
+            if method == 'GET':
+                return 200, {'items': self.business.auth.keys()}, []
+            if method == 'POST':
+                return 201, self.create_key(user, body), []
+        match = re.fullmatch(r'/keys/([1-9][0-9]{0,18})', path)
+        if match and method == 'DELETE' and int(match[1]) <= 2**63 - 1:
+            self.revoke_key(user, int(match[1]))
+            return 200, {'items': self.business.auth.keys()}, []
         match = re.fullmatch(r'/roles/([a-z][a-z0-9_]{1,30})', path)
         if match and method == 'PATCH':
             self.change_role(user, match[1], body)
