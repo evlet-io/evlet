@@ -211,14 +211,16 @@ renders, 25 edits and 10 batches.
 
 | Case | Median | Budget |
 | --- | ---: | ---: |
-| 1,000-row keyed list, first render (3 bound cells per row) | 34.7 ms | 100 ms |
-| 1,000-line record, edit one quantity: engine, totals and DOM | 3.9 ms | 16 ms |
-| 10,000 cells bound to text nodes, one batch update | 6.0 ms | none set |
+| 1,000-row keyed list, first render (3 bound cells per row) | 49.6 ms | 100 ms |
+| 1,000-line record, edit one quantity: engine, totals and DOM | 4.3 ms | 16 ms |
+| 10,000 cells bound to text nodes, one batch update | 8.1 ms | none set |
 
 The 1,000-line record is the recorded `order` model (Link lookups, a date from a lookup, a
-line amount and two totals). Opening it with its calculation session took 51 ms and its
-first render 39 ms. One quantity edit changed exactly three DOM nodes (the quantity, the
+line amount and two totals). Opening it with its calculation session took 56 ms and its
+first render 50 ms. One quantity edit changed exactly three DOM nodes (the quantity, the
 line amount and the total), measured with a MutationObserver; no row was re-rendered.
+Every dynamic value sits between two comment markers, which costs about 15 ms of the
+first render here; it keeps nested content correct when rows move or branches switch.
 
 jsdom is not a browser. Its DOM operations are slower than a browser's and it does no
 layout or paint, so these numbers bound the framework's own work, not frame times. Browser

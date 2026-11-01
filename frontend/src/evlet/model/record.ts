@@ -55,6 +55,8 @@ export class Field {
   /** For calculated fields: ready, or pending/error with a code such as COMPUTE_INPUT_MISSING. */
   readonly result: Cell<Outcome>;
   readonly calculated: boolean;
+  /** Set by the user in this draft, so an empty value is sent rather than left out. */
+  touched = false;
   private changed?: Derive<boolean>;
   private open?: Derive<boolean>;
 
@@ -121,8 +123,7 @@ export class Row {
       this.tables.set(child.name, table);
       const items: Array<Record<string, any>> = data.children?.[child.name] ?? [];
       // A new record may start with new rows; their _key is kept when it is valid.
-      if (isNew) table.rows.set(items.map(item => new Row(record, table.model, this, child.name,
-        typeof item._key === 'string' && KEY.test(item._key) ? item._key : record.nextKey(), null, true, item)));
+      if (isNew) table.rows.set(items.map(item => new Row(record, table.model, this, child.name, record.claimKey(item._key), null, true, item)));
       else table.replace(items as RecordData[], data.children_pages?.[child.name], {});
     }
   }
@@ -155,17 +156,22 @@ export class Row {
     this.id = typeof data.id === 'number' ? data.id : this.id;
     this.isNew = false;
     for (const field of this.fields.values()) {
-      const value = data[field.name] ?? null;
-      field.server.set(value);
-      field.value.set(value);
+      // A field the response leaves out (for example one this role may no longer read) keeps
+      // its saved value; the draft returns to it.
+      if (Object.prototype.hasOwnProperty.call(data, field.name)) field.server.set(data[field.name] ?? null);
+      field.value.set(field.server.peek());
+      field.touched = false;
       field.error.set(null);
       field.result.set(READY);
     }
-    for (const [name, table] of this.tables) table.replace(data.children?.[name] ?? [], data.children_pages?.[name], rowIds);
+    for (const [name, table] of this.tables) {
+      if (data.children && Object.prototype.hasOwnProperty.call(data.children, name)) table.replace(data.children[name], data.children_pages?.[name], rowIds);
+      else table.revert();
+    }
   }
 
   revert() {
-    for (const field of this.fields.values()) { field.value.set(field.server.peek()); field.error.set(null); field.result.set(READY); }
+    for (const field of this.fields.values()) { field.value.set(field.server.peek()); field.touched = false; field.error.set(null); field.result.set(READY); }
     for (const table of this.tables.values()) table.revert();
   }
 }
@@ -219,7 +225,7 @@ export class Table {
     const record = this.record;
     record.assertEditable();
     const { _key, ...fields } = values;
-    const key = typeof _key === 'string' && KEY.test(_key) ? _key : record.nextKey();
+    const key = record.claimKey(_key);
     return batch(() => {
       const row = new Row(record, this.model, this.owner, this.name, key, null, true, fields);
       record.session?.add(this, row, fields);
@@ -329,6 +335,8 @@ export class RecordStore {
   readonly saving = cell(false, { name: 'record.saving' });
   /** Every row is loaded and calculations are attached: the record can be edited. */
   readonly ready = cell(false, { name: 'record.ready' });
+  /** Set when rows could not be paged in; call loadAll() again to retry. */
+  readonly loadError = cell<ApiError | null>(null, { name: 'record.loadError' });
   /** The draft differs from the saved record. */
   readonly dirty: Derive<boolean>;
   /** The calculation session, when the schema ships a plan. */
@@ -336,6 +344,8 @@ export class RecordStore {
   owner: unknown;
   private current = cell<Row | null>(null, { name: 'record.root' });
   private keys = 0;
+  private claimed = new Set<string>();
+  private opening = 0;
   private readonly stop: () => void;
 
   constructor(options: RecordOptions) {
@@ -369,7 +379,10 @@ export class RecordStore {
 
   /** Load a saved record. By default every row is paged in so the record can be edited. */
   async open(id: number, options: { loadAll?: boolean } = {}) {
+    const ticket = ++this.opening;
     const { data, etag } = await this.api.get(this.meta.name, id);
+    // A later open (or reload) started meanwhile: its answer wins.
+    if (ticket !== this.opening) return;
     this.applyServer(data, etag);
     if (options.loadAll !== false) await this.loadAll();
   }
@@ -388,6 +401,17 @@ export class RecordStore {
 
   /** Page in rows the detail left out (Tables over 100 rows), then attach calculations. */
   async loadAll() {
+    this.loadError.set(null);
+    try {
+      await this.pageIn();
+    } catch (error) {
+      if (error instanceof ApiError) this.loadError.set(error);
+      throw error;
+    }
+    this.attach();
+  }
+
+  private async pageIn() {
     for (let tables = this.partialTables(); tables.length; tables = this.partialTables()) {
       for (const table of tables) {
         let offset = table.rows.peek().length;
@@ -401,7 +425,6 @@ export class RecordStore {
         table.complete();
       }
     }
-    this.attach();
   }
 
   private partialTables(): Table[] {
@@ -443,13 +466,13 @@ export class RecordStore {
     try {
       const response = root.isNew ? await this.api.create(this.meta.name, body) : await this.api.update(this.meta.name, root.id!, body, this.etag.peek());
       this.applyServer(response.data, response.etag);
-      await this.loadAll();
-      return true;
     } catch (error) {
-      return this.refused(error);
-    } finally {
       this.saving.set(false);
+      return this.refused(error);
     }
+    // Saved. If paging the answer fails, loadError says so and loadAll() retries.
+    try { await this.loadAll(); } catch { /* reported in loadError */ } finally { this.saving.set(false); }
+    return true;
   }
 
   /** Run a model action on the saved record. The record must have no unsaved changes. */
@@ -465,18 +488,26 @@ export class RecordStore {
   private async command(send: () => Promise<{ data: any; etag: string | null }>) {
     if (this.dirty.peek()) { this.formError.set('Save or discard your changes first.'); return false; }
     this.saving.set(true);
+    let response: { data: any; etag: string | null };
     try {
-      const response = await send();
+      response = await send();
+    } catch (error) {
+      this.saving.set(false);
+      return this.refused(error);
+    }
+    // Done on the server. Reading the result again can fail; loadError says so.
+    try {
       const data = response.data && 'job' in response.data && 'record' in response.data ? response.data.record : response.data;
       // Routes that answer without an ETag (legacy actions, jobs) are read again to get one.
       if (response.etag) { this.applyServer(data, response.etag); await this.loadAll(); }
       else await this.reload();
-      return true;
     } catch (error) {
-      return this.refused(error);
+      if (!(error instanceof ApiError)) throw error;
+      if (!this.loadError.peek()) this.loadError.set(error);
     } finally {
       this.saving.set(false);
     }
+    return true;
   }
 
   private refused(error: unknown): false {
@@ -530,9 +561,21 @@ export class RecordStore {
 
   // ---------- used by fields and tables ----------
 
-  nextKey() { return `n${++this.keys}`; }
+  /**
+   * A key for a new row: the one asked for when it is valid, unused and not only digits
+   * (digit keys are how saved rows are named), otherwise n1, n2... Unique in the record,
+   * as the server requires.
+   */
+  claimKey(wanted?: unknown): string {
+    let key = typeof wanted === 'string' && KEY.test(wanted) && !/^\d+$/.test(wanted) && !this.claimed.has(wanted) ? wanted : '';
+    while (!key || this.claimed.has(key)) key = `n${++this.keys}`;
+    this.claimed.add(key);
+    return key;
+  }
 
   assertEditable() {
+    const failed = this.loadError.peek();
+    if (failed) throw new Error(`Some rows could not be loaded (${failed.message}). Load them again before editing.`);
     if (!this.ready.peek()) throw new Error('This record is still loading. Load every row before editing it.');
     if (this.saving.peek()) throw new Error('This record is being saved.');
   }
@@ -540,7 +583,11 @@ export class RecordStore {
   write(field: Field, value: unknown) {
     if (field.calculated) throw new Error(`${field.label} is calculated`);
     this.assertEditable();
-    if (field.rules.peek().locked) throw new Error(`${field.label} is locked`);
+    if (field.meta.read_only) throw new Error(`${field.label} is read only`);
+    const rules = field.rules.peek();
+    if (!rules.applies) throw new Error(`${field.label} does not apply here`);
+    if (rules.locked) throw new Error(`${field.label} is locked`);
+    field.touched = true;
     batch(() => {
       field.value.set(value);
       field.error.set(null);

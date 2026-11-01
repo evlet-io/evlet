@@ -61,8 +61,8 @@ export class Session {
   }
 
   set(row: Row, name: string, value: unknown) {
-    if (!this.engine || !row.handle || !this.source(row, name)) return;
-    this.run(doc => doc.set(row.handle!, name, value));
+    if (this.engine && row.handle && this.source(row, name)) this.run(doc => doc.set(row.handle!, name, value));
+    // Any edit is also a chance to retry lookups that failed before.
     this.fetchLookups();
   }
 
@@ -173,17 +173,25 @@ export class Session {
   // Read the Link targets the session is waiting for, then hand their values over. Repeats for
   // multi-step paths (customer.region.grace) until nothing new is wanted.
   private async read(doc: FiniteDocument) {
+    const failed = new Set<string>();
     for (;;) {
-      const wanted = doc.lookupRequests().filter(([model, id]) => !this.tried.has(`${model}:${id}`));
+      const wanted = doc.lookupRequests().filter(([model, id]) => !this.tried.has(`${model}:${id}`) && !failed.has(`${model}:${id}`));
       if (!wanted.length || this.engine !== doc) return;
       await Promise.all(wanted.map(async ([model, id, fields]) => {
         const key = `${model}:${id}`;
         this.tried.add(key);
         let values: Record<string, unknown>;
         try { values = (await this.api.get(model, id)).data; }
-        catch { return; } // Unreadable or missing: the results that need it stay pending.
-        this.lookups.set(key, values);
+        catch {
+          // Unreadable, missing or the network failed: results that need it stay pending,
+          // and the next edit tries again.
+          this.tried.delete(key);
+          failed.add(key);
+          return;
+        }
+        // A session replaced meanwhile (reload) does not take or cache this answer.
         if (this.engine !== doc) return;
+        this.lookups.set(key, values);
         const known = Object.fromEntries(fields.filter(name => name in values).map(name => [name, values[name]]));
         this.run(session => session.setLookups(model, id, known));
       }));
