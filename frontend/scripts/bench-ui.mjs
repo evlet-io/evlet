@@ -266,4 +266,82 @@ function changes(target) {
   ctx.prefs.dispose();
 }
 
+// 8. testCRM (examples/testcrm), from responses recorded from the engine: the deals list with 100
+// deals, a deal opening on 1,000 lines (products looked up, VAT and totals calculated), and one
+// line edit through the grid.
+{
+  const crm = JSON.parse(readFileSync(new URL('../src/evlet/tests/testcrm-fixture.json', import.meta.url), 'utf8'));
+  const { AppClient } = await import('../src/evlet/app/client.ts');
+  const { appRouter, newPageState } = await import('../src/evlet/app/context.ts');
+  const { Prefs } = await import('../src/evlet/app/prefs.ts');
+  const { ListPage } = await import('../src/evlet/app/list-page.ts');
+  const { RecordPage } = await import('../src/evlet/app/record-page.ts');
+  const { SchemaIndex } = await import('../src/evlet/model/schema.ts');
+  const { apiLinks } = await import('../src/evlet/ui/fields.ts');
+  const { scope } = await import('../src/evlet/reactive.ts');
+  const reads = Object.assign({}, ...crm.sara_big);
+  const big = Object.entries(reads).find(([key, value]) => /^GET \/api\/deal\/\d+$/.test(key) && value.body?.children_pages)[1].body;
+  const page = Object.entries(reads).find(([key]) => /\/lines\/lines\?limit=100&offset=100$/.test(key))[1].body.items;
+  const rows = [...big.children.lines, ...page];
+  const lines = Array.from({ length: 1000 }, (_, index) => ({ ...rows[index % rows.length], id: 100000 + index, description: `Site ${index + 1}` }));
+  const detail = { ...big, children: { lines }, line_count: 1000 };
+  delete detail.children_pages;
+  const listed = Object.entries(reads).find(([key]) => key === 'GET /api/deal?limit=50&offset=0')?.[1].body
+    ?? Object.assign({}, ...crm.sara_list)['GET /api/deal?limit=50&offset=0'].body;
+  const deals = Array.from({ length: 100 }, (_, index) => ({ ...listed.items[index % listed.items.length], id: index + 1, title: `Deal ${index + 1}` }));
+  const products = Object.fromEntries(Object.entries(reads).filter(([key]) => /^GET \/api\/(product|organization|contact)\/\d+$/.test(key)).map(([key, value]) => [key.slice(4), value.body]));
+  const reply = body => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json', etag: '"bench"' } });
+  const fetch = async url => {
+    const path = String(url).replace(/^https?:\/\/[^/]+/, '');
+    if (path.startsWith('/api/deal?')) return reply({ items: deals, total: 100, limit: 100, offset: 0 });
+    if (path === '/api/deal/1') return reply(detail);
+    if (products[path]) return reply(products[path]);
+    if (path.includes('/measures')) return reply({ measures: {} });
+    if (path.includes('/aggregate')) return reply({ group_by: ['stage'], measures: ['n'], items: [] });
+    return reply({ items: [], total: 0, limit: 10, offset: 0 });
+  };
+  const api = new AppClient({ fetch });
+  const schema = new SchemaIndex(crm.schemas.sara.body);
+  const router = appRouter({ base: '/ui', window });
+  const session = Object.assign({}, ...crm.sara_big)['GET /api/auth/session'].body;
+  const ctx = { api, router, schema, session, user: session.user, prefs: new Prefs('bench-crm', null),
+    links: apiLinks(api, schema), dev: false, libraryHref: '/evlet.html', ...newPageState(), openPalette() {}, toggleSidebar() {}, async signOut() {} };
+  const wait = async check => { const limit = performance.now() + 5000; while (!check()) { if (performance.now() > limit) throw new Error('testCRM page did not render'); await new Promise(resolve => setTimeout(resolve, 0)); } };
+  const open = async (path, build, ready) => {
+    window.history.replaceState(null, '', path);
+    const stopRouter = router.start();
+    const host = document.createElement('div');
+    document.body.append(host);
+    const start = performance.now();
+    const dispose = scope(() => { host.append(build()); });
+    await wait(() => ready(host));
+    return { time: performance.now() - start, host, close: () => { dispose(); stopRouter(); host.remove(); } };
+  };
+  const lists = [], records = [], edits = [];
+  for (let run = 0; run < 15; run++) {
+    const list = await open('/ui/m/deal', () => ListPage(ctx, 'deal'), host => host.querySelectorAll('tbody tr[data-key]').length > 0);
+    lists.push(list.time); list.close();
+    const record = await open('/ui/m/deal/1?tab=t-lines', () => RecordPage(ctx, 'deal', '1'), host => host.querySelectorAll('.grid tbody tr[data-key]').length > 0);
+    records.push(record.time);
+    if (run === 14) {
+      for (let edit = 0; edit < 25; edit++) {
+        const qty = record.host.querySelectorAll('.grid tbody tr[data-key]')[edit % 10].querySelector('td[data-col="qty"]');
+        qty.click();
+        const input = qty.querySelector('input');
+        input.value = String(2 + (edit % 7));
+        const start = performance.now();
+        input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        edits.push(performance.now() - start);
+        record.host.querySelector('td.editing input')?.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      }
+      console.log(`  testCRM deal after the edits: ${record.host.querySelector('.g-sum')?.textContent}`);
+    }
+    record.close();
+  }
+  report('testCRM deals list, 100 deals: build, load and first render', lists, 50);
+  report('testCRM deal, 1,000 lines: open and first screen', records, 100);
+  report('testCRM deal, 1,000 lines: commit one qty, VAT and totals', edits, 16);
+  ctx.prefs.dispose();
+}
+
 console.log(JSON.stringify({ environment: `jsdom ${JSON.parse(readFileSync(new URL('../node_modules/jsdom/package.json', import.meta.url), 'utf8')).version}, node ${process.version}`, results }));
