@@ -65,7 +65,14 @@ export function openPopover(anchor: HTMLElement, render: (close: () => void) => 
     event.stopPropagation();
     close(true);
   };
-  const resized = () => close(false);
+  // Phones resize the window when the on-screen keyboard opens: keep the panel while the user
+  // types in it, and close it only when its button left the screen.
+  const resized = () => {
+    const box = anchor.getBoundingClientRect();
+    const gone = box.bottom < 0 || box.top > window.innerHeight || box.right < 0 || box.left > window.innerWidth;
+    if (gone && !panel.contains(document.activeElement)) close(false);
+    else place(panel, anchor, options.align ?? 'auto');
+  };
   const view = layer(() => html`<div class=${`pop show ${options.className ?? ''}`} role=${options.role ?? 'menu'} aria-label=${options.label ?? null}>${render(() => close(true))}</div>`);
   const panel = view.node as HTMLElement;
   document.body.append(panel);
@@ -207,7 +214,11 @@ export function closeDialogs() { for (const close of [...stack].reverse()) close
 // ---------- toast ----------
 
 let toasts: HTMLElement | null = null;
-function toastHost() {
+/**
+ * Create the toast region. Call it when the app mounts: a live region that exists before its
+ * first message is announced reliably. toast() creates it too if it is missing.
+ */
+export function mountToasts(): HTMLElement {
   if (toasts?.isConnected) return toasts;
   toasts = html`<div class="toasts" role="region" aria-label="Notifications" aria-live="polite"></div>` as HTMLElement;
   document.body.append(toasts);
@@ -229,10 +240,10 @@ export function toast(text: string, options: ToastOptions = {}): () => void {
     element.classList.add('out');
     setTimeout(() => { view.dispose(); element.remove(); }, 180);
   };
-  const view = layer(() => html`<div class="toast" role="status">${Icon(options.icon ?? 'check', { size: 'sm', className: 'ok' })}<span style="flex:1">${text}</span>${options.undo
+  const view = layer(() => html`<div class="toast">${Icon(options.icon ?? 'check', { size: 'sm', className: 'ok' })}<span style="flex:1">${text}</span>${options.undo
     ? html`<button type="button" on:click=${() => { options.undo!(); dismiss(); }}>Undo</button>` : null}</div>`);
   const element = view.node as HTMLElement;
-  toastHost().append(element);
+  mountToasts().append(element);
   timer = setTimeout(dismiss, options.duration ?? (options.undo ? 5000 : 2800));
   return dismiss;
 }

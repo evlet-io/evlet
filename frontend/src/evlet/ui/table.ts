@@ -113,8 +113,9 @@ export function moveColumn(prefs: Cell<TablePrefs>, all: string[], key: string, 
 }
 
 /** Compare two cell values for sorting: exact for numbers, natural for text, empty last. */
+const isBlank = (value: unknown) => value === null || value === undefined || value === '';
 export function compareValues(a: unknown, b: unknown): number {
-  const blank = (value: unknown) => value === null || value === undefined || value === '';
+  const blank = isBlank;
   if (blank(a) || blank(b)) return blank(a) === blank(b) ? 0 : blank(a) ? 1 : -1;
   if (typeof a === 'number' && typeof b === 'number') return a - b;
   if (typeof a === 'boolean' || typeof b === 'boolean') return Number(a) - Number(b);
@@ -180,8 +181,13 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
     const column = props.columns.find(item => item.key === order.key);
     if (!column) return list;
     const value = column.value ?? ((row: T) => (row as any)[column.key]);
-    const sorted = [...list].sort((a, b) => compareValues(value(a), value(b)));
-    return order.dir === 'desc' ? sorted.reverse() : sorted;
+    // Empty values stay last in both directions.
+    const flip = order.dir === 'desc' ? -1 : 1;
+    return [...list].sort((a, b) => {
+      const x = value(a), y = value(b);
+      if (isBlank(x) || isBlank(y)) return compareValues(x, y);
+      return flip * compareValues(x, y);
+    });
   }, { name: `${props.label} (rows)` });
   // Left offsets of pinned columns, by key.
   const pins: Derive<Map<string, { left: number; last: boolean }>> = derive(() => {
@@ -223,7 +229,7 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
       class:stk-last=${() => Boolean(pin(key).get()?.last)} style:left=${() => pin(key).get() ? `${pin(key).get()!.left}px` : null}
       draggable=${pinned > 0 && columns.get()[0]?.key === key ? 'false' : 'true'}
       aria-sort=${() => sort.get()?.key === key ? (sort.get()!.dir === 'asc' ? 'ascending' : 'descending') : sortable ? 'none' : null}
-      tabindex=${sortable ? '0' : '-1'} data-key=${key}><span>${column().label}</span>${() => sort.get()?.key === key
+      tabindex="0" data-key=${key}><span>${column().label}</span>${() => sort.get()?.key === key
         ? html`<span class="si">${Icon(sort.get()!.dir === 'asc' ? 'arrow-up' : 'arrow-down', { size: 'xs' })}</span>` : null}</th>` as HTMLElement;
     th.append(resizeHandle(key, prefs, { current: () => th.offsetWidth || widthOf(column()), host: () => scroller }));
     const cycle = () => {
