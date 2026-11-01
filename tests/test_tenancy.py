@@ -224,3 +224,12 @@ def test_router_shutdown_stops_each_tenant(tenants):
         return sent
     assert asyncio.run(run()) == ['lifespan.startup.complete', 'lifespan.shutdown.complete']
     assert all(app._stopping.is_set() for app in apps)
+
+
+def test_router_stop_reaches_tenants_created_later(tenants):
+    catalog, router = tenants
+    login(router, 'alpha')
+    stopped = router.stop()
+    assert [app._stopping.is_set() for app in stopped] == [True]
+    login(router, 'beta')
+    assert all(app._stopping.is_set() for _, app in router._apps.values())

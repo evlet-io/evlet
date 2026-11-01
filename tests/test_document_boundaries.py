@@ -469,3 +469,14 @@ def test_module_entry_drops_the_working_directory_from_sys_path(tmp_path):
     result = subprocess.run([sys.executable, '-c', probe], cwd=tmp_path, capture_output=True, text=True,
                             env={**os.environ, 'PYTHONPATH': str(root)})
     assert result.stdout.strip() == 'False', result.stderr
+
+
+def test_source_checkout_playground_loads_without_the_working_directory(tmp_path):
+    import os, subprocess, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    probe = ("import sys; sys.path[:] = [p for p in sys.path if p]; "
+             "from evlet.cli.playground import modules; print(len(modules()))")
+    result = subprocess.run([sys.executable, '-c', probe], cwd=tmp_path, capture_output=True, text=True,
+                            env={**os.environ, 'PYTHONPATH': str(root)})
+    assert result.stdout.strip() == '3', result.stderr

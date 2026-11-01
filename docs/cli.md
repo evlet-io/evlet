@@ -50,7 +50,11 @@ evlet playground --port 8000
 evlet docs --port 8001
 ```
 
-`python -m evlet` accepts the same commands. The original `new`, `login`,
+`python -m evlet` accepts the same commands. It drops the working directory from
+`sys.path` before loading apps, but modules Python imports at startup can still be
+shadowed by files there; run it with `python -P -m evlet` (or set
+`PYTHONSAFEPATH=1`) when working inside an app folder. Project commands that
+delegate to `.venv` already use `-P`. The original `new`, `login`,
 `logout`, `describe` and `mcp` commands retain their existing contracts.
 `evlet dev` selects the sole instance in a project. With several instances it
 asks in a terminal; automation must pass `--instance`. Development rebuilds/reloads

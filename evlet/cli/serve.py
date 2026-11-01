@@ -9,6 +9,7 @@ from uvicorn import Server
 from uvicorn.supervisors.basereload import BaseReload
 
 from ..instances import load_runtime
+from ..tenancy import TenantApplication
 from .project import child, instance_guard
 
 
@@ -83,7 +84,7 @@ class InstanceServer(Server):
         # Uvicorn drains HTTP connections before sending lifespan.shutdown.
         app = self.config.loaded_app
         while app is not None:
-            if isinstance(app, ManagedRuntime):
+            if isinstance(app, (ManagedRuntime, TenantApplication)):
                 app.stop()
                 break
             app = getattr(app, 'app', None)

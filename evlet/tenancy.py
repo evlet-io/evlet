@@ -206,6 +206,15 @@ class TenantApplication:
         self._apps = {}
         self._lock = threading.Lock()
 
+    def stop(self):
+        """End every tenant's live streams; hosts call this when their shutdown drain begins."""
+        with self._lock:
+            self._stopping = True
+            apps = [app for _, app in self._apps.values()]
+        for app in apps:
+            app.stop()
+        return apps
+
     def _application(self, tenant):
         with self._lock:
             if not tenant.database_path.is_file() or tenant.database_path.is_symlink():
@@ -229,6 +238,10 @@ class TenantApplication:
                 raise ValueError('Tenant jobs require the matching tenant namespace')
             app.initialize()
             app.business.tenant = tenant.public()
+            if previous:
+                previous[1].stop()
+            if getattr(self, '_stopping', False):
+                app.stop()
             self._apps[tenant.slug] = (tenant, app)
             return app
 
@@ -239,12 +252,7 @@ class TenantApplication:
                 if event['type'] == 'lifespan.startup':
                     await send({'type': 'lifespan.startup.complete'})
                 elif event['type'] == 'lifespan.shutdown':
-                    # End each tenant's live streams so shutdown does not wait on them.
-                    with self._lock:
-                        apps = [app for _, app in self._apps.values()]
-                    for app in apps:
-                        app.stop()
-                    for app in apps:
+                    for app in self.stop():
                         await asyncio.to_thread(app.database.close)
                     await send({'type': 'lifespan.shutdown.complete'})
                     return

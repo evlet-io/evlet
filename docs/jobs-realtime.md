@@ -285,5 +285,7 @@ A known database failure before a task handler starts, or a graceful stop after
 claiming, returns the job to the queue without consuming an attempt. Handler
 failures still use the task retry policy. A crashed worker retains the existing
 lease recovery and attempt limit. CLI servers end live event streams before
-waiting for graceful shutdown; other ASGI hosts can call `Application.stop()`
-when beginning their shutdown drain.
+waiting for graceful shutdown; other ASGI hosts can call `Application.stop()`, or
+`TenantApplication.stop()` for every tenant, when beginning their shutdown drain.
+Uvicorn drains connections before lifespan shutdown, so call it from the host's
+shutdown hook rather than relying on lifespan.
