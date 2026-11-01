@@ -176,7 +176,7 @@ function dialog(kind: 'modal' | 'drawer', options: ModalOptions): () => void {
   const view = layer(() => kind === 'modal'
     ? html`<div class="scrim show" on:click=${close}></div><div class="modal-wrap show">
         <div class=${`modal ${options.className ?? ''}`} role="dialog" aria-modal="true" aria-labelledby=${titleId} tabindex="-1" on:keydown=${keys}>
-          ${head('Close')}<div class="modal-b" style=${options.narrow ? 'grid-template-columns:1fr' : null}>${options.body(close)}</div>
+          ${head('Close')}<div class="modal-b" style:grid-template-columns=${options.narrow ? '1fr' : null}>${options.body(close)}</div>
           ${options.footer ? html`<div class="modal-f">${options.footer(close)}</div>` : null}</div></div>`
     : html`<div class="scrim show" on:click=${close}></div>
         <aside class=${`drawer show ${options.className ?? ''}`} role="dialog" aria-modal="true" aria-labelledby=${titleId} tabindex="-1" on:keydown=${keys}>

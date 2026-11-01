@@ -17,7 +17,7 @@ export function DocFrame(props: { tint: Tint; main: Child; side?: Child; sidePos
   const position = () => read(props.sidePosition ?? 'right');
   const accent = tint(props.tint);
   return html`<div class="doc" class:no-side=${() => position() === 'off' || !props.side} class:side-left=${() => position() === 'left'}
-    class:compact=${() => read(props.density ?? 'comfortable') === 'compact'} style=${`--acc:var(--t-${accent});--acc-bg:var(--t-${accent}-bg)`}>
+    class:compact=${() => read(props.density ?? 'comfortable') === 'compact'} style:--acc=${`var(--t-${accent})`} style:--acc-bg=${`var(--t-${accent}-bg)`}>
     <div class="doc-main">${props.main}</div>${props.side ? when(() => position() !== 'off', () => html`<aside class="doc-side" aria-label="Side panel">${props.side}</aside>`) : null}</div>` as HTMLElement;
 }
 

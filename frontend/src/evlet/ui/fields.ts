@@ -51,7 +51,7 @@ export function localField(meta: Partial<FieldSchema> & { name: string; type: st
 const edits = new WeakMap<FieldLike, Cell<boolean>>();
 export function edited(field: FieldLike): Cell<boolean> {
   let flag = edits.get(field);
-  if (!flag) edits.set(field, flag = cell(false, { name: `${field.meta.name} (edited)` }));
+  if (!flag) edits.set(field, flag = cell(Boolean((field as { touched?: boolean }).touched), { name: `${field.meta.name} (edited)` }));
   return flag;
 }
 

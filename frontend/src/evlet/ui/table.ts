@@ -285,7 +285,7 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
   const wrap = html`<div class="table-wrap" tabindex="-1">
     <table class="dt fixed" role="grid" aria-label=${props.label} aria-rowcount=${() => String(rows.get().length + 1)} aria-multiselectable=${props.selectable ? 'true' : null}
       style:width=${() => `${total.get()}px`}>
-      <colgroup>${props.selectable ? html`<col style=${`width:${CHECK_WIDTH}px`}>` : null}${each(columns, column => column.key, column => html`<col style:width=${() => `${widthOf(column())}px`}>`)}</colgroup>
+      <colgroup>${props.selectable ? html`<col style:width=${`${CHECK_WIDTH}px`}>` : null}${each(columns, column => column.key, column => html`<col style:width=${() => `${widthOf(column())}px`}>`)}</colgroup>
       <thead><tr role="row" aria-rowindex="1">${props.selectable ? html`<th class="w-check stk" style="left:0" scope="col">${Checkbox({ checked: allOn, mixed: someOn, ariaLabel: 'Select all rows',
         onChange: on => selection.set(on ? new Set(rows.peek().map(props.key)) : new Set()) })}</th>` : null}${each(columns, column => column.key, header)}</tr></thead>
       <tbody>
