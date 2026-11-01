@@ -539,3 +539,13 @@ def test_postgres_sequence_scope_field_can_be_renamed(pg_dsn):
         database.migrate(migrations) if migrate else database.initialize()
         return database
     check_a_scope_field_can_be_renamed(make)
+
+
+def test_postgres_related_records_follow_row_scope(pg_dsn):
+    from tests import test_meaning as meaning
+    meaning.check_related(meaning.serve(PostgreSQLDatabase(pg_dsn, Registry(*meaning.MODELS))))
+
+
+def test_postgres_attachment_limits_from_meta(pg_dsn):
+    from tests import test_meaning as meaning
+    meaning.check_attachment_limits(meaning.serve(PostgreSQLDatabase(pg_dsn, Registry(*meaning.MODELS))))

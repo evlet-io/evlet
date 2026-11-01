@@ -62,7 +62,11 @@ MODELS = (Customer, Invoice, Payment, Audit)
 
 
 def start(tmp_path, *models, attachments=()):
-    db = Database(tmp_path / 'meaning.sqlite3', Registry(*models))
+    return serve(Database(tmp_path / 'meaning.sqlite3', Registry(*models)), attachments=attachments)
+
+
+def serve(db, attachments=()):
+    """An initialized application with an admin account (SQLite or PostgreSQL)."""
     app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
                       attachments=attachments)
     app.initialize()
@@ -201,7 +205,10 @@ def test_schema_exposes_meaning_filtered_by_permissions(tmp_path):
 
 
 def test_related_records_respect_row_scope_order_and_limits(tmp_path):
-    app = start(tmp_path, *MODELS)
+    check_related(start(tmp_path, *MODELS))
+
+
+def check_related(app):
     admin, editor, viewer = client(app), add_user(app, 'editor'), add_user(app, 'viewer')
     editor_id = next(user['id'] for user in admin('GET', '/api/auth/users')[1]['items'] if user['username'] == 'editor')
     customer = admin('POST', '/api/customer', {'name': 'Acme'})[1]['id']
@@ -261,7 +268,10 @@ def test_related_records_need_a_readable_owning_record(tmp_path):
 
 
 def test_attachment_limits_from_meta_are_enforced(tmp_path):
-    app = start(tmp_path, *MODELS)
+    check_attachment_limits(start(tmp_path, *MODELS))
+
+
+def check_attachment_limits(app):
     admin = client(app)
     invoice = admin('POST', '/api/invoice', {'number': 'INV-1'})[1]['id']
     path = f'/api/invoice/{invoice}/attachments'
