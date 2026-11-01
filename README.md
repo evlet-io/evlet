@@ -38,6 +38,8 @@ locks and actions with validated inputs. [Document numbers](docs/sequences.md) d
 measures and their HTTP routes.
 [Model meaning](docs/meaning.md) describes key fields, related records and
 attachment limits.
+[Effects](docs/effects.md) describe the rows a
+document posts to other models when it enters a state.
 
 For virtual environment setup and each step explained, read
 [Your first site](docs/getting-started.md).
