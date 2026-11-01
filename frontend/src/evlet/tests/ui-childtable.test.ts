@@ -1,0 +1,218 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cell } from '../reactive';
+import { ChildTable } from '../ui/childtable';
+import { emptyPrefs } from '../ui/table';
+import { backend, bigOrder, change, cleanup, key, render, watch } from './ui-helpers';
+
+afterEach(cleanup);
+
+const rowsIn = (host: Element) => [...host.querySelectorAll<HTMLElement>('tbody tr[data-key]')];
+const cellOf = (row: Element, col: string) => [...row.querySelectorAll<HTMLElement>('td[data-col]')].find(td => td.dataset.col === col)!;
+const footer = (host: Element) => [...host.querySelectorAll('tfoot td')].map(td => td.textContent!.trim());
+
+describe('ChildTable over a record store', () => {
+  it('renders lines, a locked calculated column and totals from the parent', async () => {
+    const { store } = await bigOrder(3);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'] }));
+    expect(rowsIn(host)).toHaveLength(3);
+    const headers = [...host.querySelectorAll('thead th[data-key]')].map(th => th.textContent!.trim());
+    expect(headers).toEqual(['Product', 'Qty', 'Rate', 'Amount']);
+    expect(host.querySelector('th[data-key="amount"] svg[aria-label="Calculated"]')).not.toBeNull();
+    expect(cellOf(rowsIn(host)[1], 'amount').textContent!.trim()).toBe('AED 5.00');
+    expect(cellOf(rowsIn(host)[1], 'amount').classList.contains('calc')).toBe(true);
+    expect(footer(host)).toEqual(['', 'Total · 3 lines', '', '', 'AED 15.00']);
+    expect(host.querySelector('.g-sum')!.textContent).toContain('AED 15.00');
+    expect(host.querySelector('table')!.getAttribute('role')).toBe('grid');
+    expect(host.querySelector('.g-t .n')!.textContent).toBe('3');
+  });
+
+  it('edits a cell: the line amount and the total update, and nothing else is touched', async () => {
+    const { store } = await bigOrder(3);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'] }));
+    const qty = cellOf(rowsIn(host)[0], 'qty');
+    qty.click();
+    const input = qty.querySelector('input')!;
+    expect(document.activeElement).toBe(input);
+    input.value = '4';
+    const done = watch(host);
+    key(input, 'Enter');
+    const changes = done();
+    expect(store.table('lines').rows.peek()[0].field('qty').value.peek()).toBe('4.0000');
+    expect(store.field('total').value.peek()).toBe('22.50');
+    expect(cellOf(rowsIn(host)[0], 'amount').textContent!.trim()).toBe('AED 10.00');
+    expect(footer(host)[4]).toBe('AED 22.50');
+    // Enter moved to the cell below and started editing it.
+    expect(cellOf(rowsIn(host)[1], 'qty').classList.contains('editing')).toBe(true);
+    // Other rows' cells were not rebuilt.
+    const touched = new Set<Element | null>(changes.map(record => (record.target as Element).closest?.('tr') ?? record.target.parentElement?.closest('tr') ?? null));
+    expect(touched.has(rowsIn(host)[2])).toBe(false);
+  });
+
+  it('moves with Tab and Shift Tab across editable cells, wrapping rows, and Esc cancels', async () => {
+    const { store } = await bigOrder(2);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'rate', 'amount'] }));
+    cellOf(rowsIn(host)[0], 'rate').click();
+    let input = host.querySelector<HTMLInputElement>('td.editing input')!;
+    input.value = '3';
+    key(input, 'Tab');
+    // amount is calculated, so Tab wraps to the next row's qty.
+    expect(cellOf(rowsIn(host)[1], 'qty').classList.contains('editing')).toBe(true);
+    expect(store.table('lines').rows.peek()[0].field('rate').value.peek()).toBe('3.00');
+    input = host.querySelector<HTMLInputElement>('td.editing input')!;
+    key(input, 'Tab', { shiftKey: true });
+    expect(cellOf(rowsIn(host)[0], 'rate').classList.contains('editing')).toBe(true);
+    input = host.querySelector<HTMLInputElement>('td.editing input')!;
+    input.value = '99';
+    key(input, 'Escape');
+    expect(host.querySelector('td.editing')).toBeNull();
+    expect(store.table('lines').rows.peek()[0].field('rate').value.peek()).toBe('3.00');
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[0], 'rate'));
+  });
+
+  it('navigates cells with the arrow keys and starts editing on Enter or typing', async () => {
+    const { store } = await bigOrder(3);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'rate', 'amount'] }));
+    const first = cellOf(rowsIn(host)[0], 'qty');
+    expect(first.getAttribute('tabindex')).toBe('0');
+    first.focus();
+    key(first, 'ArrowDown');
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[1], 'qty'));
+    key(document.activeElement!, 'ArrowRight');
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[1], 'rate'));
+    expect(cellOf(rowsIn(host)[1], 'rate').getAttribute('tabindex')).toBe('0');
+    expect(first.getAttribute('tabindex')).toBe('-1');
+    key(document.activeElement!, '7');
+    const input = host.querySelector<HTMLInputElement>('td.editing input')!;
+    expect(input.value).toBe('7');
+    key(input, 'Enter');
+    expect(store.table('lines').rows.peek()[1].field('rate').value.peek()).toBe('7.00');
+  });
+
+  it('shows a parse error on the cell and keeps editing', async () => {
+    const { store } = await bigOrder(1);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'amount'] }));
+    cellOf(rowsIn(host)[0], 'qty').click();
+    const input = host.querySelector<HTMLInputElement>('td.editing input')!;
+    input.value = 'lots';
+    key(input, 'Enter');
+    const td = cellOf(rowsIn(host)[0], 'qty');
+    expect(td.classList.contains('editing')).toBe(true);
+    expect(td.getAttribute('aria-invalid')).toBe('true');
+    expect(store.table('lines').rows.peek()[0].field('qty').error.peek()).toBe('Enter a number, for example 1250.50');
+  });
+
+  it('adds, duplicates, reorders and removes rows, with Undo', async () => {
+    vi.useFakeTimers();
+    try {
+      const { store } = await bigOrder(2);
+      const lines = store.table('lines');
+      const host = render(() => ChildTable({ table: lines, columns: ['qty', 'rate', 'amount'] }));
+      [...host.querySelectorAll<HTMLButtonElement>('.g-under button')].find(button => button.textContent!.includes('Add row'))!.click();
+      expect(rowsIn(host)).toHaveLength(3);
+      expect(cellOf(rowsIn(host)[2], 'qty').classList.contains('editing')).toBe(true);
+      key(host.querySelector('td.editing input')!, 'Escape');
+      // Alt+ArrowUp moves the active row up.
+      const third = lines.rows.peek()[2];
+      cellOf(rowsIn(host)[2], 'rate').focus();
+      key(cellOf(rowsIn(host)[2], 'rate'), 'ArrowUp', { altKey: true });
+      expect(lines.rows.peek()[1]).toBe(third);
+      // Select the first row, duplicate it, then delete two rows and undo.
+      rowsIn(host)[0].querySelector<HTMLButtonElement>('[role="checkbox"]')!.click();
+      expect(host.querySelector('.g-selinfo')!.textContent).toBe('1 selected');
+      [...host.querySelectorAll<HTMLButtonElement>('.g-bar button')].find(button => button.textContent!.includes('Duplicate'))!.click();
+      expect(lines.rows.peek()).toHaveLength(4);
+      expect(lines.rows.peek()[1].field('qty').value.peek()).toBe(lines.rows.peek()[0].field('qty').value.peek());
+      host.querySelector<HTMLButtonElement>('thead [role="checkbox"]')!.click();
+      expect(host.querySelector('.g-selinfo')!.textContent).toBe('4 selected');
+      [...host.querySelectorAll<HTMLButtonElement>('.g-bar button')].find(button => button.textContent!.includes('Delete'))!.click();
+      expect(lines.rows.peek()).toHaveLength(0);
+      expect(host.querySelector('.g-empty')!.textContent).toContain('No rows yet');
+      expect(store.field('total').value.peek()).toBe('0.00');
+      const toast = [...document.querySelectorAll('.toast')].pop()!;
+      expect(toast.textContent).toContain('Deleted 4 rows');
+      toast.querySelector('button')!.click();
+      expect(lines.rows.peek()).toHaveLength(4);
+      expect(rowsIn(host)).toHaveLength(4);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('locks with the record: no editing, no add, and a plain explanation', async () => {
+    const { store } = await bigOrder(2);
+    const locked = cell(false);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'amount'], locked }));
+    locked.set(true);
+    cellOf(rowsIn(host)[0], 'qty').click();
+    expect(host.querySelector('td.editing')).toBeNull();
+    expect(host.querySelector('.g-lock')!.textContent).toBe('Locked. Lines can’t change after the record is issued.');
+    expect([...host.querySelectorAll('.g-under button')]).toHaveLength(0);
+    expect(cellOf(rowsIn(host)[0], 'qty').getAttribute('aria-readonly')).toBe('true');
+  });
+
+  it('virtualizes 1,000 rows and renders more as it scrolls', async () => {
+    const { store } = await bigOrder(1000);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'rate', 'amount'], height: 380 }));
+    const shown = rowsIn(host).length;
+    expect(shown).toBeGreaterThan(5);
+    expect(shown).toBeLessThan(40);
+    expect(host.querySelector('table')!.getAttribute('aria-rowcount')).toBe('1001');
+    const scroller = host.querySelector<HTMLElement>('.g-scroll')!;
+    scroller.scrollTop = 38 * 500;
+    scroller.dispatchEvent(new Event('scroll'));
+    const numbers = rowsIn(host).map(row => Number(row.querySelector('.g-exp .num')!.textContent));
+    expect(numbers).toContain(501);
+    expect(numbers.length).toBeLessThan(40);
+    expect(footer(host)[1]).toBe('Total · 1000 lines');
+    expect(store.field('total').value.peek()).toBe('4997.50');
+  });
+
+  it('resizes, hides and reorders columns into the prefs cell', async () => {
+    const { store } = await bigOrder(1);
+    const prefs = cell(emptyPrefs());
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'], prefs }));
+    const handle = host.querySelector<HTMLElement>('th[data-key="qty"] .rz')!;
+    handle.dispatchEvent(new PointerEvent('pointerdown', { clientX: 100, bubbles: true }));
+    handle.dispatchEvent(new PointerEvent('pointermove', { clientX: 160, bubbles: true }));
+    handle.dispatchEvent(new PointerEvent('pointerup', { clientX: 160, bubbles: true }));
+    expect(prefs.peek().widths.qty).toBe(170);
+    expect(host.querySelectorAll('col')[2].getAttribute('style')).toContain('170px');
+    handle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(prefs.peek().widths.qty).toBeUndefined();
+    // Columns menu: hide Rate, move Amount up, the first column stays pinned.
+    [...host.querySelectorAll<HTMLButtonElement>('.g-bar button')].find(button => button.textContent!.includes('Columns'))!.click();
+    const menu = document.querySelector('.cols-pop')!;
+    expect(menu.querySelector('.col-eye')!.hasAttribute('disabled')).toBe(true);
+    menu.querySelector<HTMLButtonElement>('[aria-label="Hide Rate"]')!.click();
+    expect(prefs.peek().hidden).toEqual(['rate']);
+    expect([...host.querySelectorAll('thead th[data-key]')].map(th => th.getAttribute('data-key'))).toEqual(['product', 'qty', 'amount']);
+    // Hidden columns keep their place: moving Amount up passes Rate first.
+    document.querySelector<HTMLButtonElement>('.cols-pop [aria-label="Move Amount up"]')!.click();
+    expect(prefs.peek().order).toEqual(['product', 'qty', 'amount', 'rate']);
+    document.querySelector<HTMLButtonElement>('.cols-pop [aria-label="Move Amount up"]')!.click();
+    expect([...host.querySelectorAll('thead th[data-key]')].map(th => th.getAttribute('data-key'))).toEqual(['product', 'amount', 'qty']);
+  });
+
+  it('opens a row in place with every field and closes it with Done', async () => {
+    const { store } = await bigOrder(2);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'amount'] }));
+    const toggle = rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    toggle.click();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const panel = host.querySelector('.g-x')!;
+    expect(panel.textContent).toContain('Row 1 of 2');
+    expect([...panel.querySelectorAll('.fld label')].map(label => label.firstChild!.textContent)).toEqual(['Qty', 'Amount']);
+    [...panel.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Done')!.click();
+    expect(host.querySelector('.g-x')).toBeNull();
+  });
+
+  it('keeps editing out until every row is loaded', async () => {
+    const { store } = backend();
+    await store.open(1, { loadAll: false });
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'amount'] }));
+    cellOf(rowsIn(host)[0], 'qty').click();
+    expect(host.querySelector('td.editing')).toBeNull();
+    await store.loadAll();
+    cellOf(rowsIn(host)[0], 'qty').click();
+    expect(host.querySelector('td.editing')).not.toBeNull();
+  });
+});
