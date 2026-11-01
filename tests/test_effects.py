@@ -4,8 +4,8 @@ from decimal import Decimal as D
 
 import pytest
 
-from evlet import (Boolean, Child, Currency, Database, Decimal, Effect, Integer, Link, Model, Move, Negate, Reference, Registry,
-                   Rule, State, Swap, Table, Text, ValidationError, effects)
+from evlet import (Boolean, Child, Count, Currency, Database, Decimal, Effect, Integer, Link, Model, Move, Negate, Reference, Registry,
+                   Rule, Sequence, State, Sum, Swap, Table, Text, ValidationError, effects)
 from evlet.auth import AccessError
 from evlet.calc import F
 from finite_fixtures import FiniteMeta
@@ -723,3 +723,156 @@ def test_posting_many_rows_costs_one_statement_per_row(tmp_path):
     log.clear()
     assert c('POST', f'{url}/void', {'reason': 'x'}, headers=etag(c, url))[0] == 200
     assert len(log) - 500 < 60, len(log)
+
+
+# Effects beside the phases stacked under them: savepoints and numbers (7), measures (9) and relations (10)
+
+class Office(Model):
+    permissions = ALL
+    name = Text(default='')
+
+    class Meta:
+        # Per record: the postings of an office, read with the caller's row scope on Posting.
+        measures = {'posted': Sum('amount', model='posting', link='office'), 'postings': Count('posting', link='office')}
+
+
+class Posting(Model):
+    # Editors read only their own postings; viewers read none.
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
+                   'editor': Rule(('read',), scope=lambda user: {'owner': user.username}), 'viewer': Rule(())}
+    office = Link(Office)
+    owner = Text(default='')
+    memo = Text(default='')
+    amount = Currency(default=0)
+    source = Reference(index=True)
+    reversal = Boolean(default=False)
+
+    class Meta:
+        measures = {'total': Sum('amount'), 'rows': Count(), 'reversals': Count(where=F('reversal') == True)}  # noqa: E712
+
+
+class Audit(Model):
+    permissions = ALL
+    memo = Text(default='')
+    amount = Currency(default=0)
+    source = Reference()
+    reversal = Boolean(default=False)
+
+    def validate(self):
+        if self.amount is not None and self.amount > 1000:
+            raise ValidationError({'amount': 'Too large to audit'})
+
+
+class Bill(Model):
+    Meta = type('Meta', (FiniteMeta,), {'revisable': True, 'effects': (
+        Effect(Posting, rows='postings', on='issued', reverse=Negate('amount')),
+        Effect(Audit, rows='audits', on='issued', reverse=Negate('amount')))})
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'void', 'revise')),
+                   'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
+    office = Link(Office)
+    owner = Text(default='')
+    amount = Currency(default=0)
+    # Numbered by the same move that posts the effects; the rows can quote the number.
+    number = Sequence('B-{n:03}', assign_on='issued')
+    status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),),
+                   locked=('issued', 'void'), final=('void',), voidable=('issued',))
+
+    def postings(self):
+        return [{'office': self.office, 'owner': self.owner, 'memo': self.number, 'amount': self.amount}]
+
+    def audits(self):
+        return [{'memo': self.number, 'amount': self.amount}]
+
+
+STACKED = (Office, Posting, Audit, Bill)
+
+
+def stacked_books(database):
+    app = start(database)
+    c = client(app)
+    return app, c, c('POST', '/api/office', {'name': 'North'})[1]['id']
+
+
+def bill(c, office, amount='10.00', owner='editor'):
+    status, record, _ = c('POST', '/api/bill', {'office': office, 'amount': amount, 'owner': owner})
+    assert status == 201, record
+    return record['id']
+
+
+def check_a_caught_move_failure_leaves_no_rows_or_number(books):
+    from evlet.auth import User
+    app, c, office = books
+    good, bad, after = bill(c, office), bill(c, office, '5000.00'), bill(c, office)
+    with app.business.context(User(1, 'admin', 'admin')) as context:
+        assert context.move(Bill, good, 'issued')['number'] == 'B-001'
+        # The Posting effect writes its row before the Audit effect refuses the amount; trusted code catches the
+        # failure and commits, so the operation's savepoint must take the posting and the number back.
+        with pytest.raises(ValidationError, match='Too large to audit'):
+            context.move(Bill, bad, 'issued')
+        assert context.move(Bill, after, 'issued')['number'] == 'B-002'
+    assert [(row['memo'], row['source_id']) for row in entries(app, 'posting')] == [('B-001', good), ('B-002', after)]
+    assert [row['source_id'] for row in entries(app, 'audit')] == [good, after]
+    assert c('GET', f'/api/bill/{bad}')[1]['status'] == 'draft' and effects.check(app) == []
+
+
+def check_numbers_and_rows_on_one_move_and_on_revise(books):
+    app, c, office = books
+    url = f'/api/bill/{bill(c, office)}'
+    status, moved, _ = move(c, url, 'issued')
+    # The number is assigned when the move settles, before the record is written; the effects post after the
+    # write, so their rows already see it.
+    assert status == 200 and moved['number'] == 'B-001', moved
+    assert [row['memo'] for row in entries(app, 'posting')] == ['B-001']
+    status, copy, _ = c('POST', f'{url}/revise', {'reason': 'New amount'}, headers=etag(c, url))
+    assert status == 201 and copy['number'] is None, copy
+    original = c('GET', url)[1]
+    assert (original['status'], original['number']) == ('void', 'B-001')
+    copy_url = f"/api/bill/{copy['id']}"
+    assert move(c, copy_url, 'issued')[1]['number'] == 'B-002'
+    # The reversal keeps the original's number and source; the copy posts once more under its own number.
+    assert [(row['memo'], row['amount'], row['source_id'], row['reversal']) for row in entries(app, 'posting')] == [
+        ('B-001', 1000, original['id'], 0), ('B-001', -1000, original['id'], 1), ('B-002', 1000, copy['id'], 0)]
+    assert effects.check(app) == []
+
+
+def check_measures_over_a_target_follow_row_scope(books):
+    app, c, office = books
+    editor, viewer = add_user(app, 'editor'), add_user(app, 'viewer')
+    ids = [bill(c, office, amount, owner) for amount, owner in (('10.00', 'editor'), ('20.00', 'admin'), ('5.00', 'editor'))]
+    for record_id in ids:
+        assert move(c, f'/api/bill/{record_id}', 'issued')[0] == 200
+    voided = ids[0]
+    assert c('POST', f'/api/bill/{voided}/void', {'reason': 'x'}, headers=etag(c, f'/api/bill/{voided}'))[0] == 200
+    # Admin: all rows, the reversal included, so the void nets to zero.
+    assert c('GET', '/api/posting/measures')[1] == {'measures': {'total': '25.00', 'rows': 4, 'reversals': 1}}
+    assert c('GET', f'/api/office/{office}/measures')[1] == {'measures': {'posted': '25.00', 'postings': 4}}
+    # The editor's row scope keeps the admin's posting out of every total.
+    assert editor('GET', '/api/posting/measures')[1] == {'measures': {'total': '5.00', 'rows': 3, 'reversals': 1}}
+    assert editor('GET', f'/api/office/{office}/measures')[1] == {'measures': {'posted': '5.00', 'postings': 3}}
+    grouped = editor('GET', '/api/posting/aggregate?measures=t:sum:amount&group_by=reversal')[1]['items']
+    assert grouped == [{'reversal': False, 't': '15.00'}, {'reversal': True, 't': '-10.00'}]
+    assert viewer('GET', '/api/posting/measures')[0] == 403
+    # Measures read; they never open a write path to read-only rows.
+    assert c('POST', '/api/posting/measures', {})[0] in (404, 405) and c('POST', '/api/posting', {'amount': '1'})[0] == 403
+    # Trusted code reads every row; originals alone are the gross amount posted.
+    assert app.database.measures(Posting, filters={'reversal': False}) == {'total': D('35.00'), 'rows': 3, 'reversals': 0}
+
+
+def check_an_effect_source_is_not_a_relation(books):
+    app, c, office = books
+    models = {model['name']: model for model in c('GET', '/api/schema')[1]['models']}
+    # Relations come from Links only. The Reference back to the posting document is not one: a bill lists its
+    # rows through `_effects` counts, while the office Link on Posting is an ordinary relation of Office.
+    assert [item['name'] for item in models['bill']['relations']] == ['bill.revises']
+    assert [item['name'] for item in models['office']['relations']] == ['bill.office', 'posting.office']
+    url = f'/api/bill/{bill(c, office)}'
+    move(c, url, 'issued')
+    assert c('GET', f'{url}/related/posting.source')[0] == 404
+    related = c('GET', f'/api/office/{office}/related/posting.office')[1]
+    assert related['total'] == 1 and related['items'][0]['memo'] == 'B-001'
+
+
+@pytest.mark.parametrize('check', [check_a_caught_move_failure_leaves_no_rows_or_number, check_numbers_and_rows_on_one_move_and_on_revise,
+                                   check_measures_over_a_target_follow_row_scope, check_an_effect_source_is_not_a_relation])
+def test_effects_beside_numbers_measures_and_relations(tmp_path, check):
+    check(stacked_books(Database(tmp_path / 'stacked.sqlite3', Registry(*STACKED))))

@@ -191,6 +191,27 @@ reads fully: `target`, `on` (null when the role cannot read the State), `balance
 field names, or null) and `reverse` (`{"swap": [...]}` or `{"negate": [...]}`, or null when
 the role cannot read those fields).
 
+## With numbers, measures and related records
+
+* **Document numbers.** When a `Sequence` has `assign_on` set to the state an effect posts
+  on, both happen in the same move: the number is assigned first, when the move settles and
+  before the record is written, and the effects post after the write. The rows method
+  therefore reads the new number. A revision's copy has no number and no rows; it gets both
+  when it enters that state. Reversal rows keep the values of the originals, including a
+  number they copied.
+* **Caught failures.** Each `Context` operation runs in a savepoint. When trusted code
+  catches a failed move, the rows already written by earlier effects of that move are rolled
+  back with it, and the number it took is given back.
+* **Measures.** An effect target is an ordinary model for reads, so it can declare
+  `Meta.measures` and be summed by another model's per-record measures (for example a ledger
+  total per account). Measures and the aggregate route apply the caller's row scope and field
+  rules on the target. Reversal rows are counted like any row; filter or group on `reversal`
+  to separate them.
+* **Related records.** Relations come from Link fields only. The `source` Reference of a
+  target is not a Link, so the posting document has no relation listing its rows; its detail
+  shows `_effects` counts instead. Links on the target (for example an account) are relations
+  of the linked model as usual.
+
 ## Checking effects
 
 ```sh

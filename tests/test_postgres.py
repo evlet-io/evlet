@@ -646,3 +646,10 @@ def test_postgres_reference_index_migrations(pg_dsn):
     third = second + (Migration('0003', RenameField('entry', 'source', 'origin')),)
     PostgreSQLDatabase(pg_dsn, Registry(renamed), migrations=third).migrate(third)
     PostgreSQLDatabase(pg_dsn, Registry(renamed), migrations=third).initialize()
+
+
+@pytest.mark.parametrize('check', ['check_a_caught_move_failure_leaves_no_rows_or_number', 'check_numbers_and_rows_on_one_move_and_on_revise',
+                                   'check_measures_over_a_target_follow_row_scope', 'check_an_effect_source_is_not_a_relation'])
+def test_postgres_effects_beside_numbers_measures_and_relations(pg_dsn, check):
+    from tests import test_effects as effects
+    getattr(effects, check)(effects.stacked_books(PostgreSQLDatabase(pg_dsn, Registry(*effects.STACKED))))

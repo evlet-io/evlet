@@ -771,3 +771,20 @@ Known limitations:
   ledger rows take 524 statements for the move (about 1,500 before) and 518 for the void.
 * Events: `EventStore.publish` inserts into `evlet_events` in the operation's transaction, so an
   event for an effect row is discarded with any rollback, including a savepoint rollback.
+
+Restacked on `model/10-stacked` as `model/06-stacked` (02-11-2026):
+
+* `corrections.reverse_effects()` now writes the mirror rows; `Meta.effects` joins the Meta
+  keys of Phases 9 and 10; the `Reference(index=True)` composite index sits beside the
+  Sequence unique index in `migrations.py` and `postgres_schema.py`; raw `Session` writes
+  refuse effect targets beside the finite document, State and Sequence guards.
+* In `operate()` a Sequence is assigned before the write and effects post after it, so a
+  move into `assign_on` that also posts rows numbers the record first and the rows can read
+  the number.
+* An effect target's `source` Reference is not a relation (relations come from Links).
+* `tests/test_effects.py` adds checks on SQLite and PostgreSQL: a caught move failure rolls
+  back an earlier effect's rows and the number to the savepoint; revise reverses the original
+  and the numbered copy posts again; measures on a target and per-record measures over it
+  follow row scope; the source Reference is not a relation.
+* The amendment Quote keeps its number, measures and key fields and adds the SalesLedger
+  effect. The generated fixtures were regenerated and match the committed files.
