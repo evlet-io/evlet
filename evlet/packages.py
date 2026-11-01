@@ -44,7 +44,7 @@ class Package:
                     yield path
             return
         # Flat apps live at the project root: skip tooling, dotfiles (such as .env) and virtual environments.
-        excluded = {'__pycache__', 'node_modules', 'dist', 'build', 'tests'}
+        excluded = {'__pycache__', 'node_modules'}
         found = []
         for directory, folders, files in os.walk(self.path):
             here = Path(directory)
@@ -53,7 +53,7 @@ class Package:
                 continue
             kept = []
             for name in sorted(folders):
-                if name in excluded or name.startswith('.') or name.endswith('.egg-info'):
+                if name in excluded or name.startswith('.') or name.endswith('.egg-info') or here == self.path and name in ('build', 'dist', 'tests'):
                     continue
                 if (here / name).is_symlink():
                     raise ValueError(f'App source cannot contain symbolic links: {here / name}')

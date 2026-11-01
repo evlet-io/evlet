@@ -243,8 +243,11 @@ of your backup policy. SQL backups alone do not include uploaded file bytes.
 
 The lock records each app's version, source, full Git commit when available, and
 SHA-256 of included source files. Flat apps include their package root; legacy apps
-include `pyproject.toml` and the nested package. Generated caches/VCS/build files
-are excluded. The database stores the actual installed
+include `pyproject.toml` and the nested package. Legacy apps skip only
+`__pycache__` and `.pyc` files, so existing locks stay valid. Flat apps also skip
+dotfiles and dot-folders (such as `.env` and `.git`), `node_modules`, `*.egg-info`,
+folders containing `pyvenv.cfg`, and root-level `build`, `dist` and `tests`.
+Skipped files are neither hashed nor copied into a build, so they cannot be imported. The database stores the actual installed
 manifest separately. Git revisions identify repository sources; the content hash
 also detects uncommitted changes. Reproducing an uncommitted/local app requires
 preserving those exact source files. The lock is not a source-code archive. Local sources use project-relative paths.

@@ -143,8 +143,13 @@ def test_flat_sources_skip_dotfiles_and_virtual_environments(project):
     (venv / 'lib').mkdir(parents=True)
     (venv / 'pyvenv.cfg').write_text('home = /usr/bin')
     (venv / 'lib64').symlink_to(venv / 'lib')
+    (root / 'tests').mkdir()
+    (root / 'tests/test_item.py').write_text('')
+    (root / 'services/build').mkdir(parents=True)
+    (root / 'services/build/steps.py').write_text('')
     files = {str(path.relative_to(root)) for path in read_package(root).source_files()}
-    assert '.env' not in files and not any(name.startswith('venv') for name in files)
+    assert '.env' not in files and not any(name.startswith(('venv', 'tests')) for name in files)
+    assert 'services/build/steps.py' in files
     assert 'models/item.py' in files
 
 
