@@ -303,13 +303,20 @@ mount(document.querySelector('#app')!, () => DocFrame({
 
 - **InlineValue** reads first and edits in place: click or Enter opens the field's input,
   Enter saves (one field, through `record.save()`, no Save button), Esc cancels, leaving the
-  field saves. A refused save keeps the input open with the server's message; a saved one
+  field saves. Focus returns to the value after Enter or Esc; after Tab or a click elsewhere
+  it stays where the user went. Text the user did not change is never written, so a
+  date-time keeps its seconds. A refused save keeps the input open with the server's message;
+  a conflict says "Someone else changed this record. Reload to see their changes." and offers
+  Reload, which reads the record again and keeps the typed value to save again. A saved value
   confirms with a toast that has Undo.
 - **ChildTable** binds to a record `Table`: click or Enter edits a cell, Tab and Shift Tab move
   across editable cells and wrap rows, Enter moves down, Esc cancels, arrow keys move between
-  cells, typing starts editing, Alt and an arrow moves a row. Rows can be added, duplicated,
-  removed (with Undo), opened in place with every field, and the table can take over the
-  view (focus view). The footer and the totals under it come from the parent's calculated
+  cells, typing starts editing, Alt and an arrow moves a row. Rows can be added, duplicated
+  (with their rows of rows, as new rows), removed with Undo (`Table.restore()` brings back
+  the same rows with their ids and rows of rows; Undo is refused with a message while the
+  record saves or the lines are locked), opened in place with every field and their nested
+  tables, and the table can take over the view (focus view). Under 480 px the control column
+  and the first column get narrower. The footer and the totals under it come from the parent's calculated
   sums over the table (`total = lines.sum("amount")`). Only rows in view are in the DOM.
 - **DataTable** sorts (exact for decimals), resizes (double click resets), reorders columns
   (drag a header, or Alt and an arrow), pins the first column, selects rows, moves with the
@@ -317,13 +324,36 @@ mount(document.querySelector('#app')!, () => DocFrame({
   cell the screen saves per user.
 - Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
   first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
-  polite live region. Data is always text: nothing a record holds is parsed as markup.
+  polite live region that the app creates at mount with `mountToasts()`. A popover stays open
+  when a phone keyboard resizes the window while the user types in it. `apiLinks()` forgets
+  record titles when the session ends; `recordOf(field)` gives a field's record store. Data is always text: nothing a record holds is parsed as markup.
 
 The Library page (`ui/library.ts`) lists all 114 components of the design catalog with their
 details and a live demo for each one built here; the rest are marked for the screens phase.
 The development entry (`frontend/evlet.html`, `src/evlet/dev.ts`) runs it against a sample
 order replayed from `api-fixture.json`, so record-bound components work without a server. It
 is not part of the production build.
+
+### Deviations from the mockup
+
+For the owner to review. Small text must meet WCAG AA (4.5:1, design README section 9), so
+these token values differ from `docs/ui-design/reference/styles.css`. Hues are kept; only
+lightness moved.
+
+| Token | Theme | Mockup | Now | Contrast now |
+|---|---|---|---|---|
+| `--fg-3` (secondary text) | light | `#858b99` | `#696f7e` | 5.0:1 on white, 4.6:1 on `--bg-muted` |
+| `--fg-4` (icons, faint marks) | light | `#a9aeb9` | `#868d9c` | 3.3:1 on white (non-text, 3:1) |
+| `--t-blue` | light | `#3466e6` | `#3365e6` | 4.5:1 on its pill |
+| `--t-green` | light | `#159452` | `#128047` | 4.5:1 on its pill |
+| `--t-amber` | light | `#c27a0a` | `#9e6308` | 4.5:1 on its pill |
+| `--t-rose` | light | `#d6435b` | `#cf2d47` | 4.5:1 on its pill |
+| `--t-teal` | light | `#0e8f8a` | `#0c7c78` | 4.5:1 on its pill |
+| `--fg-3` | dark | `#7d8494` | `#7e8595` | 4.5:1 on `--bg-muted` |
+| `--fg-4` | dark | `#5c6270` | `#626978` | 3.0:1 (non-text) |
+
+Text that used `--fg-4` (field hints, grid placeholders, hidden-column labels, the palette
+placeholder, empty quick-access labels) uses `--fg-3` instead.
 
 ## Tests and benchmarks
 
