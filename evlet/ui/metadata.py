@@ -10,6 +10,16 @@ def label_for(name):
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name).replace("_", " ").capitalize()
 
 
+def plural_for(label):
+    """A default plural label by simple English rules; Meta.plural overrides it."""
+    lower = label.lower()
+    if len(lower) > 1 and lower.endswith('y') and lower[-2] not in 'aeiou':
+        return label[:-1] + 'ies'
+    if lower.endswith(('s', 'x', 'z', 'ch', 'sh')):
+        return label + 'es'
+    return label + 's'
+
+
 def view_for(model):
     meta = getattr(model, 'Meta', None)
     allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
@@ -20,7 +30,7 @@ def view_for(model):
     visible = {name: field for name, field in model.__declared_fields__.items() if not field.hidden}
     texts = [name for name, field in visible.items() if isinstance(field, Text) and not isinstance(field, LongText)]
     label = getattr(meta, 'label', label_for(model.__name__))
-    plural = getattr(meta, 'plural', label + 's')
+    plural = getattr(meta, 'plural', plural_for(label))
     description = getattr(meta, 'description', '')
     if any(not isinstance(value, str) for value in (label, plural, description)) or not label or not plural:
         raise ValueError('View labels must be nonempty strings and description must be text')

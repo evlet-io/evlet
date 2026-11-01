@@ -468,7 +468,7 @@ def test_subclasses_apply_inherited_relations_that_point_to_them():
     meaning = Registry(Base, Special, Entry).meaning
     assert [(item.name, item.label) for item in meaning[Base].relations] == [('entry.base', 'Entries')]
     # The inherited Related names Entry.base, which points to Base, so Special keeps the defaults.
-    assert [(item.name, item.label) for item in meaning[Special].relations] == [('entry.special', 'Entrys')]
+    assert [(item.name, item.label) for item in meaning[Special].relations] == [('entry.special', 'Entries')]
     assert meaning[Special].key_fields == ('name',)
 
 

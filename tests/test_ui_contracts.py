@@ -17,3 +17,23 @@ def test_metadata_imports_remain_compatible():
     from evlet.ui import metadata as current
     for name in ('field_schema', 'label_for', 'ui_schema', 'view_for'):
         assert getattr(metadata, name) is getattr(current, name)
+
+
+def test_default_plural_labels_follow_simple_english_rules():
+    from evlet import Model, Text
+    from evlet.ui.metadata import plural_for, view_for
+
+    assert [plural_for(label) for label in ('Ledger entry', 'Key', 'Day', 'Address', 'Box', 'Buzz', 'Branch', 'Wish', 'Invoice', 'Order line')] == [
+        'Ledger entries', 'Keys', 'Days', 'Addresses', 'Boxes', 'Buzzes', 'Branches', 'Wishes', 'Invoices', 'Order lines']
+
+    class LedgerEntry(Model):
+        name = Text()
+
+    class Branch(Model):
+        name = Text()
+
+        class Meta:
+            plural = 'Offices'
+
+    assert view_for(LedgerEntry)['plural'] == 'Ledger entries'
+    assert view_for(Branch)['plural'] == 'Offices'
