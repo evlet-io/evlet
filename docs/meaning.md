@@ -117,7 +117,10 @@ does not have this limit, because it first checks that the caller can read the
 invoice.
 
 **Counts.** `total` on the related route is the count for the caller. The schema
-does not carry counts; measures (Phase 9) will provide them.
+does not carry counts. For a count beside the record, declare a per-record measure
+on the same Link, such as `Count(Payment, link="invoice")` in `Meta.measures`, and
+read `GET /api/invoice/{id}/measures`. It applies the caller's row scope on the
+related model, like the related route (see [measures.md](measures.md)).
 
 ## Attachments
 

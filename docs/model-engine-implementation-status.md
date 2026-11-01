@@ -665,8 +665,9 @@ Branch `model/10-meaning`, stacked on `model/05-void-revise`; restacked on
 
 Known limitations:
 
-* The schema carries no relation counts; Phase 9 measures will provide them. The related
-  route returns `total` for the caller.
+* The schema carries no relation counts. The related route returns `total` for the
+  caller, and a per-record measure on the same Link (`Count(Payment, link="invoice")`)
+  gives the count through `GET /api/{model}/{id}/measures`.
 * Related rows are listed without their owned Table rows, like the list route.
 * The connector, the MCP server and the SolidJS UI do not use these keys yet.
 
@@ -682,3 +683,16 @@ Review fixes (01-11-2026):
   that point to it, instead of failing the registry build.
 * The generated fixtures (`test-business-schema.json`, `ui-fixture.json`) will be
   regenerated after the phase branches are stacked.
+
+Restacked on Phase 9 (01-11-2026):
+
+* `view_for` accepts `measures` beside `key_fields`, `relations` and `attachments`.
+* `GET /api/{model}/{id}/related/{name}` sits beside `/measures`, `/lines/{name}`,
+  `/void`, `/revise` and `/moves/{to}` without overlap; `tests/test_measures.py` hits
+  each on one model, on SQLite and PostgreSQL, and compares a per-record `Count` on the
+  revision Link with the `Revisions` relation total.
+* The amendment Quote keeps its sequence number and measures, and adds key fields and
+  its revisions relation.
+* The generated fixtures were regenerated on the stacked branch with
+  `scripts.generate_ui_fixtures`, `scripts.generate_document_fixtures` and
+  `scripts.generate_finite_fixtures`; they match the committed files.
