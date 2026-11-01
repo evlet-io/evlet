@@ -40,6 +40,8 @@ measures and their HTTP routes.
 attachment limits.
 [Effects](docs/effects.md) describe the rows a
 document posts to other models when it enters a state.
+[The Journal](docs/journal.md) describes each record's append-only
+history, notes and follow ups, and its tamper-evident hash chain.
 
 For virtual environment setup and each step explained, read
 [Your first site](docs/getting-started.md).

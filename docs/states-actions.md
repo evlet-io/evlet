@@ -7,7 +7,8 @@ inputs and may be available only in some states.
 
 This guide covers Phases 4 and 5 of the model handoff: states, moves, actions, and the
 void and revise corrections. Rows a move posts to other models, and their reversal on void,
-are described in [effects.md](effects.md). The Journal (Phase 8) is not implemented yet; see "Not yet" below.
+are described in [effects.md](effects.md). Each move, void and revise is recorded in the
+record's [Journal](journal.md).
 
 ## Declaring a State
 
@@ -350,14 +351,13 @@ reasons above. They never include counts or names.
 
 ## Not yet
 
-* The Journal (Phase 8) will record each move, void and revise. The places that write it are
-  `evlet.states.moved()`, `evlet.corrections.voided()` and `evlet.corrections.revised()`,
-  each called in the operation's transaction.
+* The Journal ([journal.md](journal.md)) records each move, void (with its reason) and
+  revise. `evlet.states.moved()`, `evlet.corrections.voided()` and
+  `evlet.corrections.revised()` write those entries in the operation's transaction.
 * Effects are reversed in `evlet.corrections.reverse_effects()`; see [effects.md](effects.md).
 * Document numbers are described in [sequences.md](sequences.md). A void record keeps its
   number; `evlet.corrections.prepare_copy()` clears the numbers on a revision's copy, which
   is numbered again when it reaches `assign_on`.
-* The void reason is not stored until the Journal exists.
 * Draft previews (`/api/_draft`) do not report the State lock; the save does.
 * The connector and the MCP server do not offer moves, void or revise yet.
 * The current SolidJS form shows the State as a read-only select and does not show
