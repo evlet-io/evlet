@@ -56,14 +56,33 @@ export interface ChildTableProps {
 type Spot = { key: string; col: string } | null;
 const sameSpot = (a: Spot, b: Spot) => a === b || (!!a && !!b && a.key === b.key && a.col === b.col);
 
-/** The parent's calculated sums over a table: { amount: order.total }. */
+/** The parent's calculated sums over every row of a table: { amount: order.total }. A filtered sum
+ * (`lines.where(...).sum("amount")`) is not the column's total, so it never takes the footer. */
 function parentSums(table: Table): Record<string, Field> {
   const sums: Record<string, Field> = {};
   for (const field of table.owner.fields.values()) {
     const compute = field.meta.compute as any;
-    if (compute?.$expr === 'aggregate' && compute.table === table.name && compute.kind === 'sum' && compute.field) sums[compute.field] = field;
+    if (compute?.$expr === 'aggregate' && compute.table === table.name && compute.kind === 'sum' && compute.field && !compute.where
+      && !(compute.field in sums)) sums[compute.field] = field;
   }
   return sums;
+}
+
+/** Fields of the parent calculated only from those sums (total = net + vat): the grand totals under the table. */
+function parentGrandTotals(table: Table, sums: Record<string, Field>): Field[] {
+  const names = new Set(Object.values(sums).map(field => field.meta.name));
+  const refs = (expr: any, found: string[]): string[] => {
+    if (!expr || typeof expr !== 'object') return found;
+    if (expr.$expr === 'ref') found.push(expr.scope === 'self' ? expr.field : '');
+    else if (expr.$expr !== 'literal') Object.values(expr).forEach(value => Array.isArray(value) ? value.forEach(item => refs(item, found)) : refs(value, found));
+    return found;
+  };
+  return [...table.owner.fields.values()].filter(field => {
+    const compute = field.meta.compute as any;
+    if (!compute || compute.$expr === 'aggregate' || names.has(field.meta.name)) return false;
+    const read = refs(compute, []);
+    return read.length > 0 && read.every(name => names.has(name));
+  });
 }
 
 const valueText = (value: FieldLike | Prop<string>): string => {
@@ -91,7 +110,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   const locked = derive(() => Boolean(read(props.locked ?? false)), { name: `${table.name} (locked)` });
   const readOnly = derive(() => locked.get() || !record.ready.get());
   const sums = props.totals ?? parentSums(table);
-  const summary = props.summary ?? Object.entries(sums).map(([key, value], index, all) => ({
+  const grand = props.totals ? [] : parentGrandTotals(table, sums as Record<string, Field>);
+  const summary = props.summary ?? [...Object.entries(sums), ...grand.map(field => [field.meta.name, field] as const)].map(([key, value], index, all) => ({
     label: value && typeof value === 'object' && 'meta' in value ? value.meta.label : allColumns.find(column => column.key === key)?.label ?? key,
     value: () => valueText(value), grand: index === all.length - 1 && all.length > 1,
   }));
