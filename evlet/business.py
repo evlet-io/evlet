@@ -50,6 +50,13 @@ class Download:
     content: bytes
 
 
+def size_text(size):
+    for unit, scale in (('MiB', 1024 * 1024), ('KiB', 1024)):
+        if size % scale == 0:
+            return f'{size // scale} {unit}'
+    return f'{size} bytes'
+
+
 class Business:
     def __init__(self, database, auth, *, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None):
         self.database, self.registry, self.auth = database, database.registry, auth
@@ -78,6 +85,12 @@ class Business:
         actions = (*actions, *declared_actions)
         for model in self.attachments:
             self.registry.name_for(model)
+        # Application(attachments=...) enables the default limits; Meta.attachments enables its own and wins.
+        from .meaning import Attachments
+        self.attachment_limits = {model: Attachments() for model in self.attachments}
+        self.attachment_limits.update({model: meaning.attachments for model, meaning in self.registry.meaning.items()
+                                       if meaning.attachments is not None})
+        self.attachments |= set(self.attachment_limits)
         for action in actions:
             self.registry.name_for(action.model)
             identifier(action.name)
@@ -104,6 +117,15 @@ class Business:
             if self.registry.plan_for(action.model) is not None and not hasattr(getattr(action.model, action.name, None), '__action__'):
                 raise ValueError(f'Legacy Action {action.name!r} would bypass finite-v1 settlement on '
                                  f'{action.model.__name__}; declare it with @action on the model instead')
+        # Rows of a ChildTable are listed as children of their parent, not as related records.
+        self.relations = {}
+        for model, meaning in self.registry.meaning.items():
+            if model in self.child_models and meaning.attachments is not None:
+                raise ValueError(f'{model.__name__} rows belong to a child table; declare attachments on the parent model')
+            declared = {(self.registry.resolve(item.model), item.link) for item in getattr(model.Meta, 'relations', ())}
+            if any(source in self.child_models for source, _ in declared):
+                raise ValueError(f'{model.__name__}: Related names a child table model; its rows are listed as children')
+            self.relations[model] = tuple(item for item in meaning.relations if item.source not in self.child_models)
         if any('children' in model.__fields__ for model in self.registry.models.values()):
             raise ValueError('children is reserved for owned collections')
 
@@ -262,6 +284,14 @@ class Business:
             from .measures import schema as measure_schema
             if self.registry.measures.get(model):
                 entry['measures'] = measure_schema(self, user, model)
+            if entry['attachments']:
+                entry['attachment_limits'] = self.attachment_limits[model].public()
+            meaning = self.registry.meaning[model]
+            if meaning.key_fields:
+                entry['key_fields'] = [name for name in meaning.key_fields if name in readable]
+            relations = [relation.public(self.registry) for relation in self.visible_relations(user, model)]
+            if relations:
+                entry['relations'] = relations
             plan = self.registry.plans.get(model)
             if plan is not None:
                 entry['calculation'] = self.calculation_projection(user, model, plan)
@@ -431,7 +461,7 @@ class Business:
         # Legacy Action registrations keep their own route on document models.
         legacy_action = len(parts) == 6 and parts[4] == 'actions' and not hasattr(getattr(model, parts[5], None), '__action__')
         # Attachments and line pages have their own routes on every model.
-        own_route = len(parts) >= 5 and parts[4] in ('attachments', 'lines')
+        own_route = len(parts) >= 5 and parts[4] in ('attachments', 'lines', 'related')
         if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH') and not legacy_action and not own_route:
             from .documents import Context
             record_id = None
@@ -491,6 +521,10 @@ class Business:
             if method != 'GET':
                 raise AccessError(405, 'Method not allowed')
             return self.lines(scope, user, model, record_id, parts[5:])
+        if len(parts) >= 5 and parts[4] == 'related':
+            if method != 'GET':
+                raise AccessError(405, 'Method not allowed')
+            return self.related(scope, user, model, record_id, parts[5:])
         if len(parts) >= 5 and parts[4] == 'attachments':
             return self.files(user, model, record_id, parts[5:], method, body)
         if len(parts) == 6 and parts[4] == 'actions' and method == 'POST':
@@ -863,6 +897,48 @@ class Business:
                 self.embed(tx, user, child.model, items)
         return 200, {'items': list(items.values()), 'total': total, 'limit': limit, 'offset': offset}, []
 
+    def visible_relations(self, user, model):
+        """Relations whose records this role may read and whose Link it may see."""
+        return [relation for relation in self.relations.get(model, ())
+                if self.policy.allows(user, relation.source, 'read') and relation.link in self.policy.fields(user, relation.source)]
+
+    def related(self, scope, user, model, record_id, path):
+        """GET /api/{model}/{id}/related/{name}: one page of the records whose Link points to a readable record."""
+        relation = next((item for item in self.visible_relations(user, model) if len(path) == 1 and item.name == path[0]), None)
+        if relation is None:
+            raise AccessError(404, 'Relation not found')
+        try:
+            raw = scope.get('query_string', b'')
+            query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=2) if len(raw) <= 256 else None
+            if query is None or set(query) - {'limit', 'offset'} or any(len(values) != 1 for values in query.values()):
+                raise ValueError()
+            limit, offset = query.get('limit', [str(relation.limit)])[0], query.get('offset', ['0'])[0]
+            if not re.fullmatch('[0-9]{1,19}', limit) or not re.fullmatch('[0-9]{1,19}', offset):
+                raise ValueError()
+            limit, offset = int(limit), int(offset)
+            if not 1 <= limit <= ROW_LIMIT or offset > 2**63-1:
+                raise ValueError()
+        except (ValueError, UnicodeError):
+            raise ValidationError({'query': f'Use a limit of 1 to {ROW_LIMIT} rows and a nonnegative offset'})
+        source = relation.source
+        readable = {'id', *self.policy.fields(user, source)}
+        # Ordering by a field the role cannot read would reveal its values.
+        order = [item for item in relation.order if item.lstrip('-') in readable] or ['-id']
+        with self.database._connection() as connection:
+            connection.execute('BEGIN')
+            tx = Session(connection, self.registry)
+            self.policy.record(tx, user, model, record_id)
+            where, values = self.policy.scope_sql(user, source)
+            where += (' AND ' if where else ' WHERE ') + f'record.{identifier(relation.link)} = ?'
+            values = [*values, record_id]
+            table = identifier(self.registry.name_for(source))
+            ordering = SqlQuery(self.registry, source).ordering(order)
+            rows = [source._from_row(row) for row in connection.execute(
+                f'SELECT record.* FROM {table} AS record{where}{ordering} LIMIT ? OFFSET ?', [*values, limit, offset]).fetchall()]
+            total = connection.execute(f'SELECT count(*) FROM {table} AS record{where}', values).fetchone()[0]
+            items = self.policy.serialize_many(tx, user, rows)
+        return 200, {'items': items, 'total': total, 'limit': limit, 'offset': offset}, []
+
     def page(self, scope, user, model):
         self.policy.require(user, model, 'read')
         try:
@@ -927,10 +1003,11 @@ class Business:
                     filename.encode('utf-8')
                 except (ValueError, TypeError, binascii.Error, UnicodeError):
                     raise ValidationError({'attachment': 'Invalid file encoding'})
-                if not 1 <= len(content) <= 1024 * 1024:
-                    raise ValidationError({'attachment': 'Use a nonempty file up to 1 MiB'})
-                if tx.connection.execute('SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=?', args).fetchone()[0] >= 10:
-                    raise ValidationError({'attachment': 'Use at most 10 attachments per record'})
+                limits = self.attachment_limits[model]
+                if not 1 <= len(content) <= limits.max_size:
+                    raise ValidationError({'attachment': f'Use a nonempty file up to {size_text(limits.max_size)}'})
+                if tx.connection.execute('SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=?', args).fetchone()[0] >= limits.max_files:
+                    raise ValidationError({'attachment': f'Use at most {limits.max_files} attachment{"s" if limits.max_files > 1 else ""} per record'})
                 file_id = self.storage.add(tx, *args, filename, content)
                 self.changed(tx, model, record_id)
                 return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []

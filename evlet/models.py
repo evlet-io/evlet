@@ -259,6 +259,9 @@ class Registry:
         self.resources = MappingProxyType(resources)
         for model in models:
             resolve_sources(self, model)
+        # Key fields, reverse Links and attachment limits from each Meta (evlet/meaning.py).
+        from .meaning import meaning_for
+        self.meaning = meaning_for(self)
         from .reactivity import graph
         child_models = {child.model for child in self.children}
         from .calc import compile_plan, formula_hash
