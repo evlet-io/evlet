@@ -633,3 +633,39 @@ Review fixes (01-11-2026):
   through HTTP and `Context` (before, unknown names were 422).
 * `/api/{model}/measures` checks its filters even when no measure is available.
 * `group_by` of the wrong type names the accepted forms.
+
+## Phase 10: model meaning metadata (01-11-2026)
+
+Branch `model/10-meaning`, stacked on `model/05-void-revise`; restacked on
+`model/09-stacked` as `model/10-stacked`. Public API in [meaning.md](meaning.md).
+
+* **Key fields.** `Meta.key_fields`: up to eight distinct visible fields, checked when the
+  registry is built. Schema entries carry `key_fields` (readable fields only) when declared.
+* **Relations.** Every Link on a root model is a relation of its target, named
+  `{model}.{link}`, including several Links from one model and self Links (a revisable
+  model gets `Revisions`). Links on Table rows, on `ChildTable` models and hidden Links
+  are not relations. `Related(model, link, label=, limit=, order=, hidden=)` names,
+  orders, limits or hides one. Schema entries carry `relations` the caller can use (other
+  model and its Link readable). `GET /api/{model}/{id}/related/{name}` lists one page
+  under the caller's row scope after checking the owning record is readable; order
+  fields the caller cannot read are skipped.
+* **Attachments.** `Meta.attachments = Attachments(max_files=, max_size=)` within the
+  existing maximums (10 files, 1 MiB). `Application(attachments=...)` keeps working with
+  the defaults; when a model is in both, the Meta limits apply. Schema entries add
+  `attachment_limits` when attachments are enabled. Upload errors state the limit.
+* **Code.** `evlet/meaning.py` (validation, discovery, `Attachments`, `Related`), called
+  once from `Registry`; `Business` holds per-model limits and visible relations and serves
+  the related route. `view_for` accepts the three keys; its error message now lists the
+  allowed keys from the set, so later phases change one line.
+* **Playground.** The amendment `SalesOrder` declares key fields and a `Work orders`
+  relation; the `Quote` declares key fields and lists its revisions.
+  `tests/test_builds.py` checks both through HTTP.
+* **Fixtures.** `test-business-schema.json` and `ui-fixture.json` gained `relations` and
+  `attachment_limits`. New tests in `tests/test_meaning.py`.
+
+Known limitations:
+
+* The schema carries no relation counts; Phase 9 measures will provide them. The related
+  route returns `total` for the caller.
+* Related rows are listed without their owned Table rows, like the list route.
+* The connector, the MCP server and the SolidJS UI do not use these keys yet.
