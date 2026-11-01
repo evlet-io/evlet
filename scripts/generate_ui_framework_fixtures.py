@@ -199,13 +199,13 @@ def screens():
     names = ['Al Sahra Trading', 'Bayan Medical', 'Corniche Foods', 'Desert Rose Interiors', 'Emirates Glass', 'Falcon Logistics',
              'Gulf Pearl Hotels', 'Hamdan Engineering', 'Ibn Battuta Travel', 'Jumeirah Dental', 'Khalifa Steel', 'Lulu Packaging',
              'Marina Yachts', 'Noor Pharmacy', 'Oasis Water', 'Palm Realty', 'Qasr Events', 'Ras Al Khor Motors', 'Sahara Labs',
-             'Tilal Farms', 'Umm Suqeim Bakery', 'Wadi Textiles', 'Yas Fitness', 'Zabeel Printing', 'Zayed Medical Supplies']
+             'Tilal Farms', 'Umm Suqeim Bakery', 'Wadi Textiles', 'Yas Fitness', 'Zabeel Printing', 'Zayed Medical Supplies'] + [f'Trading house {number}' for number in range(26, 56)]
     for index, name in enumerate(names):
         assert admin('POST', '/api/customer', {'name': name, 'rate': f'{10 + index}.50', 'credit_days': 15 + index})[0] == 201
-    keep('customers_page1', admin('GET', '/api/customer?limit=20&offset=0&order_by=name'))
-    keep('customers_page2', admin('GET', '/api/customer?limit=20&offset=20&order_by=name'))
-    keep('customers_by_rate_desc', admin('GET', '/api/customer?limit=20&offset=0&order_by=-rate'))
-    keep('customers_search', admin('GET', '/api/customer?limit=20&offset=0&q=medical'))
+    keep('customers_page1', admin('GET', '/api/customer?limit=50&offset=0&order_by=name'))
+    keep('customers_page2', admin('GET', '/api/customer?limit=50&offset=50&order_by=name'))
+    keep('customers_by_rate_desc', admin('GET', '/api/customer?limit=50&offset=0&order_by=-rate'))
+    keep('customers_search', admin('GET', '/api/customer?limit=50&offset=0&q=medical'))
     for title, stage in (('Office fit-out', 'open'), ('Annual support', 'won'), ('Warehouse racks', 'open'), ('Fleet tracking', 'lost')):
         status, body, _ = admin('POST', '/api/order', {'title': title, 'stage': stage, 'customer': 1, 'issued': '2026-10-20',
                                                        **({'reason': 'Budget moved'} if stage == 'lost' else {})})
