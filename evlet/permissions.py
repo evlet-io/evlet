@@ -16,18 +16,36 @@ class Rule:
     scope: object = None
 
 
+def child_operations(operations):
+    result = {'read'} & set(operations)
+    if result and {'create', 'update'} & set(operations):
+        result.add('create')
+    if result and 'update' in operations:
+        result |= {'update', 'delete'}
+    return tuple(name for name in ('read', 'create', 'update', 'delete') if name in result)
+
+
 class Policy:
     def __init__(self, registry, *, rules=None):
         self.registry = registry
         self.rules = dict(rules or {})
-        for model in registry.models.values():
-            if getattr(model, '__declaration_mode__', False):
-                permissions = getattr(model, 'permissions', {})
-                owner = next((child.parent for child in registry.children if child.model is model), None)
-                if owner is not None and 'permissions' not in vars(model.__bases__[0]):
-                    permissions = {role: Rule(rule.operations) for role, rule in getattr(owner, 'permissions', {}).items()}
-                for role in ROLES:
-                    self.rules.setdefault((role, model), permissions.get(role, Rule(())))
+        # Only models that declare permissions (or come from a build) deny by default;
+        # computed fields alone must not change legacy permission defaults.
+        owners = {child.model: child.parent for child in registry.children}
+        def governed(model):
+            return 'permissions' in vars(model) or bool(getattr(model, '__resource_id__', None)) or (model in owners and governed(owners[model]))
+        def default(role, model):
+            if (role, model) not in self.rules:
+                if model in owners and 'permissions' not in vars(model):
+                    # Editing a document's lines is an update of that document.
+                    self.rules[role, model] = Rule(child_operations(default(role, owners[model]).operations))
+                else:
+                    self.rules[role, model] = getattr(model, 'permissions', {}).get(role, Rule(()))
+            return self.rules[role, model]
+        self.governed = frozenset(model for model in registry.models.values() if governed(model))
+        for model in self.governed:
+            for role in ROLES:
+                default(role, model)
         for (role, model), rule in self.rules.items():
             registry.name_for(model)
             if role not in ROLES or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete'}:
@@ -55,8 +73,9 @@ class Policy:
         readable = set(model.__declared_fields__ if rule.read_fields is None else rule.read_fields)
         # Links to models that cannot be read must not expose their identifiers.
         readable = {name for name in readable if not isinstance(model.__declared_fields__[name], Link) or self.allows(user, model.__declared_fields__[name].target, 'read')}
-        if getattr(model, '__declaration_mode__', False):
+        if model in self.governed:
             readable = {name for name in readable if not model.__declared_fields__[name].hidden}
+        if getattr(model, '__declaration_mode__', False):
             readable = {name for name in readable if self.derivation_allowed(user, model, name, _visiting)}
         if not write:
             return readable

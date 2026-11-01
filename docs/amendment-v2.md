@@ -183,6 +183,10 @@ it does not promise one SQL query for arbitrary functions or automatic external
 stock subscriptions. Volatile facts are checked again on complete operations.
 
 New declarations deny access without inline `permissions = {role: Rule(...)}`.
+Computed or virtual fields alone do not opt a legacy model into this default.
+Owned children without their own `permissions` follow their document: read
+with document read, create with document create or update, and update/delete
+with document update, because editing lines edits the document.
 Hidden fields and derivations with inaccessible dependencies are withheld from
 client metadata/results. Child row scopes prevent incomplete client aggregates
 from masquerading as authoritative totals. Legacy permissions remain unchanged.

@@ -168,3 +168,37 @@ def test_scheduled_context_preserves_limited_identity_for_effects(tmp_path):
         context.enqueue('send', {}, key='scheduled-intent')
     assert queue.run_one()
     assert identities == [User(0, 'schedule', 'editor')]
+
+
+def test_computed_fields_keep_legacy_permission_defaults():
+    from evlet import Policy
+    class Invoice(Model):
+        qty = Decimal(default='1')
+        rate = Currency(default='0')
+        note = Text(hidden=True)
+        total = Currency(compute='qty * rate')
+    registry = Registry(Invoice)
+    policy = Policy(registry, rules={('viewer', Invoice): Rule(('read',))})
+    assert policy.rule(User(1, 'a', 'admin'), Invoice).operations == ('read', 'create', 'update', 'delete')
+    assert policy.rule(User(2, 'e', 'editor'), Invoice).operations == ('read', 'create', 'update', 'delete')
+    assert 'note' in policy.fields(User(3, 'v', 'viewer'), Invoice)
+
+
+def test_children_follow_their_document_permissions():
+    from evlet import Policy
+    class Order(Model):
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update'))}
+        class Item(Child):
+            qty = Decimal(default='1')
+            amount = Decimal(compute='qty * 2')
+        class Note(Child):
+            body = Text()
+        items = Table(Item)
+        notes = Table(Note)
+    registry = Registry(Order)
+    policy = Policy(registry)
+    editor, viewer = User(2, 'e', 'editor'), User(3, 'v', 'viewer')
+    for child in (table.model for table in registry.children):
+        assert policy.rule(editor, child).operations == ('read', 'create', 'update', 'delete')
+        assert policy.rule(viewer, child).operations == ()
+    assert policy.rule(editor, Order).operations == ('read', 'create', 'update')
