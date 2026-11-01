@@ -38,6 +38,7 @@ records the owner's decision and wins.
 | `State`, `Move`, model `@action` | `Select`, `@action(label, roles)` | Add `State`, `Move`, action `inputs` and `available_when` |
 | `Ref()` field (Phases 2, 5, 6: `revises = Ref()`, `source = Ref()`) | `Ref("parent.x")` already means a path | The field type is `Reference()`; `Ref(path)` keeps its meaning |
 | `locked_when` | none | Decided on the record as saved before the write, so one write cannot unlock and change a field |
+| State locks | none | Block ordinary writes (fields, rows, attachments, deletes). `@action` and `Move(run=)` may change a locked record but obey `locked_when`. Ordinary writes to `editable_when_locked` fields keep the saved calculated values; no stored result may read such a field |
 | `ChildTable` on finite models | legacy child rows skip finite rules | A `ChildTable` whose child uses finite features is rejected; use `Table(Child)` |
 | Void, revise, Effects, Sequence, Journal, Measures, meaning metadata | none | New |
 

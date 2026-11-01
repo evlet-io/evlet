@@ -1,5 +1,5 @@
 """A finite-v1 document: one formula definition for browser previews and server saves."""
-from evlet import Model, Child, Table, Decimal, Currency, Boolean, Text, Rule, Link, Date, Integer, Percent, Select, Tags
+from evlet import Model, Child, Table, Decimal, Currency, Boolean, Text, Rule, Link, Date, Integer, Percent, Tags, State, Move, action
 from evlet.calc import F, days, parent, round, when
 from amendment.models.masters import Company
 
@@ -12,7 +12,14 @@ class Quote(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
     name = Text(required=True)
-    stage = Select(('draft', 'sent', 'won', 'lost'), default='draft')
+    # The stage changes only through its moves. Sent, won and lost quotes are locked against ordinary
+    # edits; a won quote is final. Only an administrator can reopen a sent or lost quote.
+    stage = State(('draft', 'sent', 'won', 'lost'), moves=(
+        Move('draft', 'sent', 'Send', when=F('grand_total') > 0),
+        Move('sent', 'won', 'Mark won'),
+        Move('sent', 'lost', 'Mark lost'),
+        Move(('sent', 'lost'), 'draft', 'Reopen', roles=('admin',)),
+    ), locked=('sent', 'won', 'lost'), final=('won',))
     inclusive = Boolean(default=False)
     company = Link(Company)
     issued_on = Date()
@@ -24,7 +31,8 @@ class Quote(Model):
                                     F('issued_on') + days(F('payment_days'))))
     # Percent is a two-place decimal from 0 to 100. A won quote keeps the discount it was won with.
     discount_rate = Percent(default='0', locked_when=F('stage') == 'won')
-    lost_reason = Text(applies_when=F('stage') == 'lost', required_when=F('stage') == 'lost')
+    # Filled in after a quote is lost, so it stays editable while the quote is locked.
+    lost_reason = Text(applies_when=F('stage') == 'lost', editable_when_locked=True)
     labels = Tags()
 
     class Line(Child):
@@ -47,3 +55,9 @@ class Quote(Model):
     # Quantized to 2 places with Currency's default half-up rounding; no round() needed.
     discount = Currency(compute=net_total * discount_rate / 100)
     payable = Currency(compute=grand_total - discount)
+
+    # An action may change a locked quote; the inputs are validated before it runs.
+    @action('Extend validity', inputs={'extra_days': Integer(required=True, minimum=1, maximum=365)},
+            available_when=F('stage') == 'sent')
+    def extend_validity(self, extra_days):
+        self.payment_days = (self.payment_days or 0) + extra_days

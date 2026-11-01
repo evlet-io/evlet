@@ -448,3 +448,14 @@ def test_postgres_recompute_clears_values_that_do_not_apply(pg_dsn):
 def test_postgres_renaming_a_reference_renames_both_columns(pg_dsn):
     from tests.test_rules_types import check_reference_rename
     check_reference_rename(lambda registry, migrations: PostgreSQLDatabase(pg_dsn, registry, migrations=migrations))
+
+
+def test_postgres_states_moves_locks_and_actions_over_http(pg_dsn):
+    from tests import test_states as states
+    from tests.test_rules_types import start
+    app = states.seed(start(PostgreSQLDatabase(pg_dsn, Registry(*states.MODELS))))
+    states.check_ordinary_writes_cannot_set_the_state(app)
+    states.check_moves_check_state_role_guard_and_revision(app)
+    states.check_a_failing_run_rolls_the_move_back(app)
+    states.check_locked_records_refuse_ordinary_writes_at_every_depth(app)
+    states.check_actions_validate_inputs_and_availability(app)

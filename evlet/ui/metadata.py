@@ -54,6 +54,7 @@ def field_schema(field):
               'hidden': field.hidden, 'read_only': field.read_only,
               **({'stored': field.stored} if field.compute is not None or field.query is not None or not field.stored else {}),
               **({'currency': field.currency} if getattr(field, 'currency', None) is not None else {}),
+              **({'editable_when_locked': True} if getattr(field, 'editable_when_locked', False) else {}),
               'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'callable' if callable(field.default) else 'static'}
     if result['default_kind'] == 'static':
         value = None if field.default is None else field.validate(field.default)

@@ -108,13 +108,34 @@ def test_reference_app_full_public_flow(project):
     url = f"/api/quote/{saved['id']}"
     edit = lambda body: c('PATCH', url, body, headers={b'if-match': c('GET', url)[2][b'etag']})
     assert saved['payment_days'] == 45 and edit({'payment_days': 10})[1]['valid_until'] == '2026-11-11'
-    assert edit({'stage': 'lost'})[1]['fields'] == {'lost_reason': 'This field is required'}
-    assert edit({'stage': 'won', 'lost_reason': 'Ignored', 'labels': ['gold']})[1]['lost_reason'] is None
-    assert edit({'discount_rate': '5'})[1]['fields'] == {'discount_rate': 'This field is locked and cannot be changed now'}
+    # The stage is a State: ordinary writes cannot set it, and the lost reason does not apply to a draft.
+    assert edit({'stage': 'sent'})[1]['fields'] == {'stage': 'This changes only through its moves'}
+    assert edit({'lost_reason': 'Ignored', 'labels': ['gold']})[1]['lost_reason'] is None
     # Row changes: add one line at the top without resending the others.
     kept = [row['id'] for row in c('GET', url)[1]['children']['lines']]
     added = edit({'children': {'lines': {'create': [{'_key': 'c', 'qty': '1', 'rate': '10', 'taxable': False}], 'order': ['c', *kept]}}})[1]
     assert added['grand_total'] == '135.00' and [row['id'] for row in added['children']['lines']] == [added['_row_ids']['c'], *kept]
+    assert [(item['to'], item['allowed']) for item in added['_moves']] == [('sent', True)]
+    move = lambda target, to: c('POST', f'{target}/moves/{to}', {}, headers={b'if-match': c('GET', target)[2][b'etag']})
+    act = lambda body: c('POST', url + '/actions/extend_validity', body, headers={b'if-match': c('GET', url)[2][b'etag']})
+    assert act({'extra_days': 5})[1]['error'] == 'Extend validity is not available: the condition for this action is not met'
+    sent = move(url, 'sent')[1]
+    assert sent['stage'] == 'sent' and [item['to'] for item in sent['_moves']] == ['won', 'lost', 'draft']
+    assert edit({'discount_rate': '5'})[1]['fields'] == {'discount_rate': 'This record is sent, so it is locked'}
+    assert act({'extra_days': 0})[1]['fields'] == {'extra_days': 'Must be at least 1'}
+    extended = act({'extra_days': 5})[1]
+    assert (extended['payment_days'], extended['valid_until']) == (15, '2026-11-16')
+    assert move(url, 'won')[1]['stage'] == 'won' and move(url, 'draft')[0] == 409
+    assert edit({'discount_rate': '5'})[1]['fields'] == {'discount_rate': 'This record is won, so it is locked'}
+    # A lost quote takes a reason while locked; reopening it clears the reason.
+    lost = c('POST', '/api/quote', {'name': 'Q-3', 'children': {'lines': [{'qty': '1', 'rate': '10'}]}})[1]
+    lost_url = f"/api/quote/{lost['id']}"
+    assert move(lost_url, 'sent')[0] == 200 and move(lost_url, 'lost')[1]['stage'] == 'lost'
+    reason = c('PATCH', lost_url, {'lost_reason': 'Price'}, headers={b'if-match': c('GET', lost_url)[2][b'etag']})[1]
+    assert reason['lost_reason'] == 'Price'
+    assert move(lost_url, 'draft')[1]['lost_reason'] is None
+    quote_schema = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')
+    assert quote_schema['state']['final'] == ['won'] and quote_schema['actions'][0]['inputs'][0]['name'] == 'extra_days'
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest

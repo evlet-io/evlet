@@ -104,7 +104,8 @@ def describe(packages):
     from .documents import argument_schema
     for model in registry.models.values():
         for value in vars(model).values():
-            if hasattr(value, '__action__'): argument_schema(value, skip=1)
+            # Actions with declared inputs are validated by their fields; others need typed signatures.
+            if hasattr(value, '__action__') and value.__action__.get('inputs') is None: argument_schema(value, skip=1)
     import inspect
     from typing import get_type_hints
     endpoints = [endpoint for _, definition in definitions for endpoint in definition.apis]

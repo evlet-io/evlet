@@ -3,17 +3,17 @@
 from .app import Application
 from .database import ConflictError, Database, NotFoundError
 from .fields import (Boolean, Currency, Date, DateTime, Decimal, Duration, Email, Integer,
-                     Link, LongText, Percent, Phone, Reference, Select, Tags, Text, Time, URL)
+                     Link, LongText, Percent, Phone, Reference, Select, State, Tags, Text, Time, URL)
 from .migrations import AddField, AddIndex, CreateModel, Migration, Recompute, RenameField, SchemaError
 from .models import Model, Registry, ValidationError, Child
-from .declarations import Ref, Table, Query, action, depends
+from .declarations import Move, Ref, Table, Query, action, depends
 
 __all__ = [
     "AddField", "AddIndex", "Application", "Boolean", "ConflictError", "CreateModel",
     "Currency", "Database", "Date", "DateTime", "Decimal", "Email", "Integer", "Link",
     "LongText", "Migration", "Model", "NotFoundError", "Registry", "RenameField",
     "SchemaError", "Select", "Text", "URL", "ValidationError",
-    "Duration", "Percent", "Phone", "Recompute", "Reference", "Tags", "Time",
+    "Duration", "Percent", "Phone", "Recompute", "Reference", "State", "Tags", "Time",
 ]
 
 from .auth import LocalAuth, User
@@ -56,7 +56,7 @@ __all__ += ["App"]
 from .instances import AppDefinition, Instance, Schedule
 
 __all__ += ["AppDefinition", "Instance", "Schedule"]
-__all__ += ["Child", "Table", "Ref", "Query", "action", "depends"]
+__all__ += ["Child", "Move", "Table", "Ref", "Query", "action", "depends"]
 from .forms import Dialog, Report, Column
 __all__ += ["Dialog", "Report", "Column"]
 from .services import api, cron

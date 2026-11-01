@@ -1,6 +1,9 @@
 """Small authoring declarations shared by documents, dialogs and reports."""
 
 from dataclasses import dataclass
+from types import MappingProxyType
+import copy
+import inspect
 import re
 
 
@@ -100,8 +103,99 @@ def depends(*paths):
     return decorate
 
 
-def action(function=None, *, label=None, roles=('admin', 'editor')):
+NAME = r'[A-Za-z][A-Za-z0-9_]*'
+# Options that make a field calculated or rule-bound; inputs of actions are plain values.
+# Context.action(model, record_id, name, **inputs) takes these names itself.
+RESERVED_INPUTS = ('self', 'model', 'record_id', 'name')
+INPUT_OPTIONS = ('compute', 'query', 'fetch', 'initial', 'applies_when', 'required_when', 'locked_when',
+                 'visible_if', 'required_if', 'read_only_if')
+
+
+def guard_expression(value, name):
+    """`when=` and `available_when=` take a finite Boolean expression (or a Boolean field), never text or a callable."""
+    from .calc import Expr
+    from .fields import Field
+    if value is None or isinstance(value, (Expr, Field)):
+        return value
+    raise ValueError(f"{name} takes a finite expression such as F('total') > 0")
+
+
+def check_roles(roles):
+    from .auth import ROLES
+    if isinstance(roles, str) or not isinstance(roles, (list, tuple)) or not roles or set(roles) - set(ROLES):
+        raise ValueError('roles must name at least one of: ' + ', '.join(ROLES))
+    return tuple(roles)
+
+
+class Move:
+    """A declared change of a State: Move("draft", "issued", "Issue", when=F("total") > 0, run="on_issue").
+
+    The first argument is one state or a tuple of states the move may start from. `when` is a finite
+    Boolean guard decided on the record as saved; `run` names a model method (taking only self) that runs
+    in the same transaction before the record settles.
+    """
+    def __init__(self, from_, to, /, label=None, *, roles=('admin', 'editor'), when=None, run=None):
+        sources = (from_,) if isinstance(from_, str) else from_
+        if not isinstance(sources, (list, tuple)) or not sources or any(not isinstance(item, str) or not item for item in sources) \
+                or len(set(sources)) != len(sources):
+            raise ValueError('A move starts from a state name or a tuple of distinct state names')
+        if not isinstance(to, str) or not to:
+            raise ValueError('A move goes to one state name')
+        if to in sources:
+            raise ValueError('A move must change the state')
+        if label is not None and (not isinstance(label, str) or not label.strip()):
+            raise ValueError('A move label must be nonempty text')
+        if run is not None and (not isinstance(run, str) or not re.fullmatch(NAME, run) or run.startswith('_')):
+            raise ValueError('run names a model method')
+        self.sources, self.to = tuple(sources), to
+        self.label = label or to.replace('_', ' ').capitalize()
+        self.roles, self.when, self.run = check_roles(roles), guard_expression(when, 'when'), run
+
+    def __repr__(self):
+        return f'Move({self.sources!r}, {self.to!r}, {self.label!r})'
+
+
+def action(function=None, *, label=None, roles=('admin', 'editor'), inputs=None, available_when=None):
+    """Declare a model method as an action: @action, @action("Label", inputs={...}, available_when=...).
+
+    With `inputs` (a mapping of names to Field instances) each input is validated by its field and
+    passed as a keyword argument; the method's signature is not read for types. Without `inputs`, the
+    method's annotated scalar parameters (str, int, bool, float) are its inputs.
+    """
+    if isinstance(function, str):
+        label, function = function, None
+    from .fields import Field
+    if inputs is not None:
+        if not isinstance(inputs, dict):
+            raise ValueError('Action inputs are a mapping of names to fields')
+        named = {}
+        for name, field in inputs.items():
+            if not isinstance(name, str) or not re.fullmatch(NAME, name) or name.startswith('evlet_') or '__' in name:
+                raise ValueError(f'Invalid action input name: {name!r}')
+            if name in RESERVED_INPUTS:
+                raise ValueError(f'Action input {name!r} is reserved; Context.action() uses it. Choose another name')
+            if not isinstance(field, Field) or any(getattr(field, option, None) is not None for option in INPUT_OPTIONS) \
+                    or field.filters or not field.stored or getattr(field, 'moves', None) is not None:
+                raise ValueError(f'Action input {name!r} must be a plain field without calculations, rules or fetches')
+            # A copy, so a Field instance shared with a model or another action keeps its own name.
+            field = copy.copy(field)
+            field.name = ''
+            field.__set_name__(None, name)
+            named[name] = field
+        inputs = MappingProxyType(named)
+    roles = check_roles(roles)
+    available_when = guard_expression(available_when, 'available_when')
+
     def decorate(method):
-        method.__action__ = {'label': label or method.__name__.replace('_', ' ').title(), 'roles': tuple(roles)}
+        if inputs is not None:
+            parameters = list(inspect.signature(method).parameters.values())[1:]
+            names = {parameter.name for parameter in parameters if parameter.kind in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY)}
+            variadic = any(parameter.kind is parameter.VAR_KEYWORD for parameter in parameters)
+            needed = {parameter.name for parameter in parameters if parameter.default is parameter.empty
+                      and parameter.kind in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY)}
+            if needed - set(inputs) or (set(inputs) - names and not variadic):
+                raise ValueError(f'{method.__name__} must take exactly its declared inputs as keyword arguments')
+        method.__action__ = {'label': label or method.__name__.replace('_', ' ').title(), 'roles': roles,
+                             'inputs': inputs, 'available_when': available_when}
         return method
     return decorate(function) if function is not None else decorate

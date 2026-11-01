@@ -71,6 +71,8 @@ class Draft:
         if name in self._definition.__declared_fields__:
             if is_finite(self._definition.__declared_fields__[name]):
                 raise ValidationError({name: 'COMPUTED_FIELD_WRITE: this value is calculated'})
+            if name == self._definition.__state__:
+                raise ValidationError({name: 'This changes only through its moves'})
             self._values[name] = value
         elif name in self._definition.__tables__:
             limit = self._definition.__tables__[name].max_rows
@@ -170,6 +172,10 @@ class Context:
     def action(self, model, record_id, name, **arguments):
         return self._write(model, record_id, {}, action=name, arguments=arguments)
 
+    def move(self, model, record_id, to):
+        """Move a record's State to `to` with the same checks as POST /api/{model}/{id}/moves/{to}."""
+        return self._write(model, record_id, {}, move=to)
+
     def delete(self, model, record_id):
         if self.readonly: raise AccessError(403, 'This context is read only')
         model = self._model(model)
@@ -180,6 +186,8 @@ class Context:
         try:
             business, tx, user = self._business, self._tx, self.user
             record = business.policy.record(tx, user, model, record_id, 'delete')
+            from .states import check_delete
+            check_delete(self, model, record)
             before, _ = load_draft(self, model, record_id, {}, preview=True)
             child_changes = {}
             subtree = {}
@@ -208,7 +216,7 @@ class Context:
         finally:
             self._active.pop()
 
-    def _write(self, model, record_id, values, *, action=None, arguments=None):
+    def _write(self, model, record_id, values, *, action=None, arguments=None, move=None):
         if self.readonly:
             raise AccessError(403, 'This context is read only')
         model = self._model(model)
@@ -219,7 +227,7 @@ class Context:
             raise ValidationError({'_form': 'Recursive document change detected'})
         self._active.append(key)
         try:
-            return operate(self, model, record_id, values, action=action, arguments=arguments)
+            return operate(self, model, record_id, values, action=action, arguments=arguments, move=move)
         except ValidationError as exc:
             raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
         finally:
@@ -241,6 +249,8 @@ def load_draft(context, model, record_id, values, *, preview=False):
     business.policy.require(user, model, 'read' if preview and record_id else operation)
     current = business.policy.record(tx, user, model, record_id, 'read' if preview else operation) if record_id else None
     scalars, collections = business.split_body(values)
+    from .states import state_write
+    state_write(model, scalars, current)
     computed_write(business, model, scalars, '')
     business.policy.check_values(tx, user, model, scalars)
     draft = Draft(model, {**(dict(current._values) if current else {}), **scalars}, context=context, record_id=record_id)
@@ -1129,9 +1139,21 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     return tx.get(model, draft.id) if reload else None
 
 
-def operate(context, model, record_id, values, *, action=None, arguments=None):
+def operate(context, model, record_id, values, *, action=None, arguments=None, move=None):
+    """Create, update, run an action or perform a move through the document pipeline, in one transaction.
+
+    Ordinary writes respect a locked State. Actions and moves are declared, role-checked code: they may
+    change a record in a locked state but still obey each field's locked_when and every other rule.
+    """
+    from . import states
     business, tx, user = context._business, context._tx, context.user
+    if (action is not None or move is not None) and not record_id:
+        raise AccessError(404, 'Record not found')
     draft, before = load_draft(context, model, record_id, values)
+    # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
+    locked_write = action is None and move is None and before is not None and states.locked_state(model, before._values) is not None
+    if locked_write and context._recalculate == (model, record_id):
+        states.check_recalculate(context, model, before)
     plan = business.registry.plan_for(model)
     version = business.registry.formula_hashes.get(business.registry.root_of(model))
     if plan is not None and record_id:
@@ -1141,14 +1163,22 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
         if row is not None and row[0] != version and context._recalculate != (model, record_id):
             raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; '
                                    'resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it')
-    outcome = None
-    if action is not None:
+    outcome = declared_move = None
+    if move is not None:
+        declared_move = states.begin_move(context, model, draft, before, move)
+        if declared_move.run is not None:
+            outcome = getattr(model, declared_move.run)(draft)
+    elif action is not None:
         method = getattr(model, action, None)
         declaration = getattr(method, '__action__', None)
         if declaration is None or user.role not in declaration['roles']:
             raise AccessError(403, 'Action is unavailable')
-        outcome = method(draft, **typed_arguments(method, arguments or {}, skip=1))
+        outcome = method(draft, **states.action_arguments(context, model, method, declaration, arguments, before))
+    elif before is not None:
+        states.check_state_lock(context, draft, before)
     settle(context, draft, complete=True, previous=before)
+    if locked_write:
+        states.keep_saved(draft, before)
     prior = before.stored_values() if before else None
     after = draft.stored_values()
     if prior == after:
@@ -1166,7 +1196,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     keys = {}
     child_changes = persist_rows(context, model, draft, before, record.id, keys)
     after = draft.stored_values()
-    change = Change('create' if before is None else 'action' if action else 'update', user,
+    change = Change('create' if before is None else 'move' if move is not None else 'action' if action else 'update', user,
                     freeze(prior) if prior is not None else None, freeze(after),
                     tuple(name for name in model.__fields__ if before is None or before._values.get(name) != draft._values.get(name)),
                     freeze(child_changes))
@@ -1174,6 +1204,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     if reaction is not None:
         freeze_draft(draft)
         reaction(draft, change)
+    if declared_move is not None:
+        states.moved(context, model, record.id, before._values.get(model.__state__), declared_move)
     business.changed(tx, model, record.id)
     result = business.detail(tx, user, tx.get(model, record.id), row_limit=None)
     if keys: result['_row_ids'] = keys

@@ -54,7 +54,7 @@ class Field:
                  label=None, help_text="", placeholder="", hidden=False, read_only=False,
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
-                 initial=None, applies_when=None, required_when=None, locked_when=None):
+                 initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False):
         self.required = required
         self.default = default
         self.unique = unique
@@ -91,6 +91,12 @@ class Field:
             raise ValueError("A field that may not apply cannot be required; use required_when instead")
         if required_when is not None and required_if is not None or locked_when is not None and read_only_if is not None:
             raise ValueError("Use required_when or required_if, and locked_when or read_only_if, not both")
+        if type(editable_when_locked) is not bool:
+            raise ValueError("editable_when_locked must be a boolean")
+        if editable_when_locked and (compute is not None or query is not None):
+            raise ValueError("Calculated fields are read only; editable_when_locked applies to editable fields")
+        # A locked State still lets ordinary writes change this field (for example remarks).
+        self.editable_when_locked = editable_when_locked
         if compute is not None or query is not None:
             self.read_only = True
 
@@ -428,6 +434,56 @@ class Select(Text):
 
     def metadata(self):
         return {**super().metadata(), "choices": list(self.choices)}
+
+
+class State(Select):
+    """A Select whose value changes only through its moves (and, later, engine operations).
+
+    Ordinary writes may create a record in the default state and never set the value. `locked`
+    states refuse ordinary writes to the record and its Table rows, `final` states have no moves
+    out and `voidable` names the states a later void may start from.
+    """
+    OPTIONS = ("label", "help_text", "placeholder", "hidden", "index", "max_length")
+
+    def __init__(self, choices, *, default=MISSING, moves=(), locked=(), final=(), voidable=(), **kwargs):
+        from .declarations import Move
+        if set(kwargs) - set(self.OPTIONS):
+            raise ValueError("State takes choices, default, moves, locked, final, voidable and " + ", ".join(self.OPTIONS))
+        if default is MISSING and isinstance(choices, (list, tuple)) and choices:
+            default = choices[0]
+        super().__init__(choices, default=default, required=True, read_only=True, **kwargs)
+        if default not in self.choices:
+            raise ValueError("A State default must be one of its states")
+        groups = {}
+        for name, value in (("locked", locked), ("final", final), ("voidable", voidable)):
+            if isinstance(value, str) or not isinstance(value, (list, tuple)) or len(set(value)) != len(value):
+                raise ValueError(f"State {name} must be a list of distinct state names")
+            if set(value) - set(self.choices):
+                raise ValueError(f"State {name} names an unknown state: " + ", ".join(sorted(set(value) - set(self.choices))))
+            groups[name] = tuple(value)
+        self.locked, self.final, self.voidable = groups["locked"], groups["final"], groups["voidable"]
+        if set(self.voidable) - set(self.locked) or set(self.voidable) & set(self.final):
+            raise ValueError("Voidable states must be locked and not final")
+        if not isinstance(moves, (list, tuple)) or any(not isinstance(move, Move) for move in moves):
+            raise ValueError("State moves must be a list of Move declarations")
+        self.moves, pairs = tuple(moves), set()
+        for move in self.moves:
+            unknown = {*move.sources, move.to} - set(self.choices)
+            if unknown:
+                raise ValueError(f"Move {move.label!r} names an unknown state: " + ", ".join(sorted(unknown)))
+            if set(move.sources) & set(self.final):
+                raise ValueError(f"Move {move.label!r} leaves a final state; final states have no moves out")
+            for source in move.sources:
+                if (source, move.to) in pairs:
+                    raise ValueError(f"Declare one move from {source} to {move.to}")
+                pairs.add((source, move.to))
+
+    def move(self, current, to):
+        """The declared move from the current state to `to`, or None."""
+        return next((move for move in self.moves if current in move.sources and move.to == to), None)
+
+    def metadata(self):
+        return {**super().metadata(), "state": True}
 
 
 class Email(Text):
