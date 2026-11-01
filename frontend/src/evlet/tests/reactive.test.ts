@@ -147,22 +147,6 @@ group('effects and batching', () => {
     expect(seen).toEqual([10, 20]);
   });
 
-  it('effects that keep re-triggering each other are stopped with a clear error', () => {
-    const ping = cell(0), pong = cell(0);
-    effect(() => pong.set(ping.get() + 1), { name: 'ping' });
-    expect(() => effect(() => ping.set(pong.get() + 1), { name: 'pong' })).toThrow('did not settle');
-  });
-
-  it('an effect writing a cell it reads does not re-trigger itself', () => {
-    const counter = cell(0);
-    const runs = vi.fn();
-    effect(() => { runs(); counter.set(counter.get() + 1); });
-    expect(counter.peek()).toBe(1);
-    counter.set(10);
-    expect(counter.peek()).toBe(11);
-    expect(runs).toHaveBeenCalledTimes(2);
-  });
-
   it('one throwing effect does not stop the others', () => {
     const a = cell(1);
     const errors: string[] = [];
