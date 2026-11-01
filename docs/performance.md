@@ -197,3 +197,30 @@ validating every row and comparing the saved tree), so its time grows with the r
 though its statement count does not. At 1,000 rows that is about 75 ms on this machine.
 A detail reads every readable row to compute its ETag, then embeds the first 100.
 These are local measurements of one workload, not capacity guarantees.
+
+## UI framework
+
+`cd frontend && npm run bench:ui` runs `frontend/scripts/bench-ui.mjs`: the framework's
+TypeScript sources in Node with jsdom, no extra dependencies, production checks off. Budgets
+come from [handoff-plan.md](handoff-plan.md).
+
+### Local results, 1 November 2026
+
+Apple M3, 8 CPU cores, 16 GiB RAM, macOS 27.0.1, Node 24.16.0, jsdom 30.1.3. Medians of 15
+renders, 25 edits and 10 batches.
+
+| Case | Median | Budget |
+| --- | ---: | ---: |
+| 1,000-row keyed list, first render (3 bound cells per row) | 34.7 ms | 100 ms |
+| 1,000-line record, edit one quantity: engine, totals and DOM | 3.9 ms | 16 ms |
+| 10,000 cells bound to text nodes, one batch update | 6.0 ms | none set |
+
+The 1,000-line record is the recorded `order` model (Link lookups, a date from a lookup, a
+line amount and two totals). Opening it with its calculation session took 51 ms and its
+first render 39 ms. One quantity edit changed exactly three DOM nodes (the quantity, the
+line amount and the total), measured with a MutationObserver; no row was re-rendered.
+
+jsdom is not a browser. Its DOM operations are slower than a browser's and it does no
+layout or paint, so these numbers bound the framework's own work, not frame times. Browser
+timings (first screen, 60 fps scrolling) are measured against testCRM in phase
+`ui/04-testcrm`.
