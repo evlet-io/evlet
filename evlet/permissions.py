@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from .auth import AccessError, ROLES
 from .fields import Link
-from .models import ValidationError, identifier
+from .models import Model, ValidationError, identifier
 from .query import Query, OPERATORS
 
 
@@ -29,18 +29,25 @@ class Policy:
     def __init__(self, registry, *, rules=None):
         self.registry = registry
         self.rules = dict(rules or {})
-        # Only models that declare permissions (or come from a build) deny by default;
-        # computed fields alone must not change legacy permission defaults.
+        # Declared permissions, build resources, tables and sources deny by default;
+        # computed fields or actions alone keep legacy permission defaults.
         owners = {child.model: child.parent for child in registry.children}
+        def declared(model):
+            # Registry wraps each Table child in a generated subclass of the author's class.
+            base = model.__bases__[0] if model in owners else model
+            return base, any('permissions' in vars(cls) for cls in base.__mro__ if issubclass(cls, Model) and cls.__module__ != Model.__module__)
         def governed(model):
-            return 'permissions' in vars(model) or bool(getattr(model, '__resource_id__', None)) or (model in owners and governed(owners[model]))
+            if declared(model)[1]: return True
+            if model in owners: return governed(owners[model])
+            return bool(vars(model).get('__resource_id__') or model.__tables__ or model.__sources__)
         def default(role, model):
             if (role, model) not in self.rules:
-                if model in owners and 'permissions' not in vars(model):
+                base, own = declared(model)
+                if model in owners and not own:
                     # Editing a document's lines is an update of that document.
                     self.rules[role, model] = Rule(child_operations(default(role, owners[model]).operations))
                 else:
-                    self.rules[role, model] = getattr(model, 'permissions', {}).get(role, Rule(()))
+                    self.rules[role, model] = getattr(base, 'permissions', {}).get(role, Rule(()))
             return self.rules[role, model]
         self.governed = frozenset(model for model in registry.models.values() if governed(model))
         for model in self.governed:

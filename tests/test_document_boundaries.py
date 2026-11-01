@@ -220,6 +220,8 @@ def test_draft_returns_only_source_outputs_used_by_readable_fields(tmp_path):
     assert status == 200, result
     assert result['values']['_sources'] == {'stock': {'qty': '5.0000'}}
     assert 'margin' not in result['values'] and '12.34' not in str(result)
+    order = next(model for model in client(app)('GET', '/api/schema')[1]['models'] if model['name'] == 'order')
+    assert set(order['sources']['stock']) == {'qty'}
 
 
 def test_legacy_child_table_under_document_parent_saves(tmp_path):
@@ -264,3 +266,31 @@ def test_action_on_model_without_permissions_runs(tmp_path):
     status, result, _ = c('POST', f"/api/ticket/{ticket['id']}/actions/close", {'note': 'now'}, headers={b'if-match': headers[b'etag']})
     assert status == 200, result
     assert result['name'] == 'closed now'
+
+
+def test_child_and_inherited_permissions_are_kept():
+    from evlet import Policy
+    admin, editor, viewer = User(1, 'a', 'admin'), User(2, 'e', 'editor'), User(3, 'v', 'viewer')
+    class Order(Model):
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'viewer': Rule(('read',))}
+        class Secret(Child):
+            permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+            note = Text()
+        secrets = Table(Secret)
+    class Base(Model):
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read',))}
+    class Invoice(Base):
+        y = Text(hidden=True)
+    class Sheet(Model):
+        class Line(Child):
+            qty = Decimal()
+        lines = Table(Line)
+    registry = Registry(Order, Invoice, Sheet)
+    policy = Policy(registry)
+    secret = next(table.model for table in registry.children if table.name == 'secrets')
+    line = next(table.model for table in registry.children if table.name == 'lines')
+    assert policy.rule(viewer, secret).operations == () and policy.rule(editor, secret).operations == ()
+    assert policy.rule(admin, secret).operations == ('read', 'create', 'update', 'delete')
+    assert policy.rule(editor, Invoice).operations == ('read',) and policy.rule(viewer, Invoice).operations == ()
+    assert 'y' not in policy.fields(editor, Invoice)
+    assert policy.rule(admin, Sheet).operations == () and policy.rule(admin, line).operations == ()
