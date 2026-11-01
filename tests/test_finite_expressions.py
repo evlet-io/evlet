@@ -697,7 +697,7 @@ def test_review_regressions_for_engine_edges():
     from decimal import Decimal as PyDecimal
     from evlet.calc import Expr, to_decimal
     qty = Decimal()
-    assert isinstance(qty == 1, Expr) and isinstance(qty != None, Expr)  # noqa: E711
+    assert isinstance(qty == 1, Expr) and (qty != None) is True and isinstance(F('qty') == None, Expr)  # noqa: E711
     assert (qty == qty) is True and (qty == Decimal()) is False
     with pytest.raises(CalcError, match='COMPUTE_RANGE_ERROR'):
         parse(PyDecimal('1E+5000'))

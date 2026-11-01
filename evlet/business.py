@@ -383,7 +383,7 @@ class Business:
                 self.check_calculation(model, calculation)
                 recalculate = calculation.get('recalculate', False)
             with self.context(user) as context:
-                context._recalculate = recalculate
+                context._recalculate = (model, record_id) if recalculate and record_id else None
                 if record_id:
                     record = self.policy.record(context._tx, user, model, record_id, 'update')
                     if b'if-match' not in dict(scope.get('headers', [])):

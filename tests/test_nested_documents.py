@@ -232,9 +232,34 @@ def test_shipped_plans_omit_unreadable_fields_and_field_checks_stay_pythonic(tmp
     assert set(calculation['plan']['tables']['$root']['fields']) == {'title', 'discount', 'net'}
     assert '1234.56' not in str(calculation) and 'Supplier' not in str(calculation)
     fields = list(Quote.__declared_fields__.values())
-    assert None not in fields and Quote.title not in ('a',) and not bool(Quote.title == None)  # noqa: E711
+    assert None not in fields and (Quote.title == None) is False and Quote.title in fields  # noqa: E711
     with pytest.raises(TypeError):
         sorted(fields)
+    from evlet.calc import CalcError
+    with pytest.raises(CalcError, match='EXPRESSION_TRUTH_TEST'):
+        (Quote.discount == 1) and Quote.title
+    with pytest.raises(CalcError, match='EXPRESSION_TRUTH_TEST'):
+        not (Quote.discount == 1)
+
+
+def test_row_cap_counts_each_row_once_and_unversioned_records_adopt_the_plan(tmp_path):
+    app = application(tmp_path, Plan)
+    c = client(app)
+    tree = [{'_key': f's{s}', 'children': {'tasks': [{'_key': f's{s}t{t}', 'hours': '1'} for t in range(70)]}} for s in range(10)]
+    status, created, headers = c('POST', '/api/plan', {'children': {'stages': tree}})
+    assert status == 201, created
+    _, current, headers = c('GET', f"/api/plan/{created['id']}")
+    resubmit = {'children': {'stages': [{'id': stage['id'], 'children': {'tasks': [{'id': task['id']} for task in stage['children']['tasks']]}}
+                                        for stage in current['children']['stages']]}}
+    assert c('POST', '/api/_draft/plan', {'id': created['id'], 'values': resubmit})[0] == 200
+    status, result, headers = c('PATCH', f"/api/plan/{created['id']}", resubmit, headers={b'if-match': headers[b'etag']})
+    assert status == 200, result
+    with app.database.transaction() as tx:
+        with tx.maintenance():
+            record = tx.create(Plan, title='repair')
+    _, loaded, headers = c('GET', f'/api/plan/{record.id}')
+    status, result, _ = c('PATCH', f'/api/plan/{record.id}', {'title': 'fixed'}, headers={b'if-match': headers[b'etag']})
+    assert status == 200 and result['total'] == '0.00'
 
 
 def test_nested_review_regressions(tmp_path):

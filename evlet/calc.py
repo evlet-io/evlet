@@ -34,6 +34,10 @@ class CalcError(ValueError):
         super().__init__(f'{code}: {message}')
 
 
+class TruthTestError(CalcError, TypeError):
+    """Truth-testing an expression; also a TypeError so sorting fields fails as before."""
+
+
 # Exact numbers: (coefficient, scale) with value coefficient * 10**-scale.
 
 @dataclass(frozen=True)
@@ -178,7 +182,7 @@ class Expr:
         raise CalcError('UNSUPPORTED_EXPRESSION', f'Expressions have no attribute {name!r}; use a named field or relay')
 
     def __bool__(self):
-        raise CalcError('EXPRESSION_TRUTH_TEST', 'Calculations cannot use Python if/and/or/not or chained comparisons; use &, |, ~ and safe functions')
+        raise TruthTestError('EXPRESSION_TRUTH_TEST', 'Calculations cannot use Python if/and/or/not or chained comparisons; use &, |, ~ and safe functions')
 
     def __repr__(self):
         return f'Expr({self.op!r}, {self.args!r}, {self.meta!r})'
@@ -222,21 +226,8 @@ def lift(value):
     raise CalcError('UNSUPPORTED_EXPRESSION', f'Unsupported calculation operand {type(value).__name__}; use D("1.5") for decimals')
 
 
-class FieldComparison(Expr):
-    """`field == value` inside a formula, which still behaves like Python identity
-    equality when ordinary code truth-tests it (e.g. `None in fields`)."""
-    __slots__ = ()
-
-    def __bool__(self):
-        if self.op == 'eq': return False
-        if self.op == 'ne': return True
-        raise TypeError(f"'{self.op}' is not supported between a field and a value outside a calculation")
-
-
 def operand(op, left, right=None):
     """Field descriptors build expressions through these operators."""
-    if op in ('eq', 'ne', 'lt', 'lte', 'gt', 'gte'):
-        return FieldComparison(op, (lift(left), lift(right)))
     return Expr(op, (lift(left),) if right is None else (lift(left), lift(right)))
 
 

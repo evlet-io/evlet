@@ -65,8 +65,9 @@ valid inside `.where(...)`. There is no `parent.parent`, row indexing, string fo
 comparisons on expressions raise `EXPRESSION_TRUTH_TEST`.
 
 Field-to-field equality stays identity based so fields remain safe dictionary keys.
-Compare two fields with `F("a") == F("b")`; `qty == 1` builds an expression. Outside a
-formula, truth-testing `field == value` keeps Python's answer (`None in fields` is False).
+Compare two fields with `F("a") == F("b")` and test for null with `F("a") == None`;
+`qty == 1` builds an expression. A field compared with another field, `None` or `MISSING`
+keeps Python identity semantics, so `None in fields` still works.
 
 Rounded shares are not reconciled automatically. Expose the difference as a named field
 and validate or display it:
@@ -135,7 +136,8 @@ All ordinary writes settle the document in the existing transaction:
 
 Reading a saved record never recalculates or rewrites it. Each saved finite-v1 document
 records the plan it was calculated with (`evlet_calculation_versions`, created at startup
-for apps with finite plans). Writing a document saved under another plan is a 409
+for apps with finite plans; a document with no recorded plan adopts the active one on its
+next write). Writing a document saved under another plan is a 409
 `SCHEMA_VERSION_MISMATCH` until the client resubmits with
 `"_calculation": {"model_schema_hash": <active>, "recalculate": true}`. Actions, dialogs
 and services that write such a document get the same 409; recalculate it through the

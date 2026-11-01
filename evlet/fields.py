@@ -68,10 +68,11 @@ class Field:
     __hash__ = object.__hash__
 
     def __eq__(self, other):
-        return self is other if isinstance(other, Field) or other is MISSING else _expr('eq', self, other)
+        # Identity for fields, None and MISSING keeps containment checks (`None in fields`) working.
+        return self is other if isinstance(other, Field) or other is MISSING or other is None else _expr('eq', self, other)
 
     def __ne__(self, other):
-        return self is not other if isinstance(other, Field) or other is MISSING else _expr('ne', self, other)
+        return self is not other if isinstance(other, Field) or other is MISSING or other is None else _expr('ne', self, other)
 
     def __add__(self, other): return _expr('add', self, other)
     def __radd__(self, other): return _expr('add', other, self)

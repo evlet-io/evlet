@@ -112,7 +112,7 @@ class Context:
         self._business, self._tx, self.user = business, tx, user
         self.readonly = readonly
         self._active = [] if active is None else active
-        self._recalculate = False  # Explicit opt-in to recalculate a document saved under another plan.
+        self._recalculate = None  # (model, record_id) explicitly allowed to recalculate under the active plan.
 
     def read_context(self):
         return Context(self._business, self._tx, self.user, readonly=True, active=self._active)
@@ -252,8 +252,9 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
     loaded = [0] if loaded is None else loaded
 
     def count(rows):
+        # Each existing row once (draft side) plus each new submitted row.
         loaded[0] += rows
-        if loaded[0] > 2 * LIMITS['document_rows']:
+        if loaded[0] > LIMITS['document_rows']:
             raise ValidationError({'children': 'This document exceeds the owned row limit'})
     if set(collections) - {child.name for child in business.children.values() if child.parent is model}:
         raise ValidationError({prefix + 'children': 'Unknown child collection'})
@@ -269,19 +270,19 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             try: business.policy.record(tx, user, child.model, row.id)
             except AccessError: hidden.add(row.id)
 
-        def stored(row, owner):
+        def stored(row, owner, counter):
             item = Draft(child.model, row._values, context=context, parent=owner, record_id=row.id)
-            load_rows(context, child.model, item, None, row.id, {}, True, prefix + child.name + '.' + item.key + '.', set(), loaded)
+            load_rows(context, child.model, item, None, row.id, {}, True, prefix + child.name + '.' + item.key + '.', set(), counter)
             return item
         if old is not None:
-            old._rows[child.name] = [stored(row, old) for row in existing]
+            old._rows[child.name] = [stored(row, old, [0]) for row in existing]
         if child.name not in collections:
-            draft._rows[child.name] = [stored(row, draft) for row in existing]
+            draft._rows[child.name] = [stored(row, draft, loaded) for row in existing]
             continue
         rows = collections[child.name]
         if not isinstance(rows, list) or len(rows) > 100:
             raise ValidationError({prefix + child.name: 'Use at most 100 rows'})
-        count(len(rows))
+        count(sum(1 for value in rows if isinstance(value, dict) and value.get('id') is None))
         kept, keys, merged = set(), set(), []
         for index, value in enumerate(rows):
             if not isinstance(value, dict):
@@ -314,10 +315,10 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
         for row_id in originals.keys() - kept - hidden:
             if not preview:
                 # Removing a row removes its whole subtree: every descendant must be deletable too.
-                for _, item in walk(stored(originals[row_id], draft)):
+                for _, item in walk(stored(originals[row_id], draft, [0])):
                     try: business.policy.record(tx, user, item._definition, item.id, 'delete')
                     except AccessError: raise AccessError(403, 'You do not have permission for this operation') from None
-        merged.extend(stored(originals[row_id], draft) for row_id in sorted(hidden))
+        merged.extend(stored(originals[row_id], draft, loaded) for row_id in sorted(hidden))
         if len(merged) > 100: raise ValidationError({prefix + child.name: 'Use at most 100 rows'})
         draft._rows[child.name] = merged
 
@@ -604,7 +605,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     if plan is not None and record_id:
         row = tx.connection.execute('SELECT plan_hash FROM evlet_calculation_versions WHERE resource=? AND record_id=?',
                                     (business.registry.name_for(model), record_id)).fetchone()
-        if (row is None or row[0] != plan['model_schema_hash']) and not context._recalculate:
+        # No recorded version (saved outside the pipeline or before tracking) adopts the active plan.
+        if row is not None and row[0] != plan['model_schema_hash'] and context._recalculate != (model, record_id):
             raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; '
                                    'resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it')
     outcome = None
@@ -618,7 +620,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     prior = before.stored_values() if before else None
     after = draft.stored_values()
     if prior == after:
-        if plan is not None and context._recalculate:
+        if plan is not None:
             record_plan(tx, business.registry.name_for(model), record_id, plan)
         result = business.detail(tx, user, tx.get(model, record_id))
         if outcome is not None: result['_outcome'] = outcome
