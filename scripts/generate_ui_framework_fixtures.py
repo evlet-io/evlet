@@ -1,7 +1,8 @@
 """Record real authenticated ASGI responses for the browser UI framework tests.
 
-Writes frontend/src/evlet/tests/api-fixture.json. The API client and record store tests replay
-these responses through a fetch stub, so they consume the shapes the backend really sends.
+Writes frontend/src/evlet/tests/api-fixture.json and screens-fixture.json. The API client, record
+store and screen tests replay these responses through a fetch stub, so they consume the shapes the
+backend really sends.
 Run from the repository root: .venv/bin/python -m scripts.generate_ui_framework_fixtures
 """
 
@@ -11,14 +12,15 @@ from pathlib import Path
 import tempfile
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
-                   Date, Link, Rule, ValidationError, Select, action, Attachments, Boolean, Count, Effect, Move, Reference,
-                   Related, Sequence, State, Sum, Swap)
+                   Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
+                   Move, Reference, Related, Sequence, State, Sum, Swap)
 from evlet.calc import D, F, round, days
 
 PASSWORD = 'a sufficiently long fixture password'
 FULL = Rule(('read', 'create', 'update', 'delete'))
 ALL = {'admin': FULL, 'editor': FULL, 'viewer': Rule(('read',))}
 OUTPUT = Path(__file__).resolve().parent.parent / 'frontend/src/evlet/tests/api-fixture.json'
+SCREENS = OUTPUT.with_name('screens-fixture.json')
 
 
 class FiniteMeta:
@@ -72,6 +74,22 @@ class Order(Model):
     @action
     def close(self, note: str = ''):
         self.stage = 'won'
+
+
+class Contact(Model):
+    """For the screens: field permissions per role, an action, attachments."""
+    permissions = {'admin': FULL, 'editor': FULL, 'viewer': Rule(('read',), read_fields=('name', 'email'))}
+    name = Text(required=True)
+    email = Email()
+    phone = Text()
+    notes = LongText()
+
+    class Meta:
+        list_fields = ('name', 'email', 'phone')
+
+    @action(label='Mark contacted')
+    def contacted(self, note: str = ''):
+        self.notes = note
 
 
 class LedgerEntry(Model):
@@ -291,5 +309,67 @@ def documents(out):
     keep('invoice_revised_original', editor('GET', url))
 
 
+def screens():
+    """Responses the generated screens consume: first-run setup, list paging, search, sorting and
+    filters, field permissions per role, and attachments."""
+    folder = Path(tempfile.mkdtemp())
+    database = Database(folder / 'screens.sqlite3', Registry(Customer, Product, Order, Contact))
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    app = Application(database, auth=auth, attachments=(Contact,))
+    app.initialize()
+    out = {}
+
+    def keep(name, response):
+        status, payload, headers = response
+        if isinstance(payload, dict) and isinstance(payload.get('csrf'), str):
+            payload['csrf'] = 'fixture-csrf-token'
+        out[name] = {'status': status, 'body': payload, 'etag': headers.get(b'etag', b'').decode() or None}
+        return payload
+
+    keep('session_setup', http(app, 'GET', '/api/auth/session'))
+    keep('setup', http(app, 'POST', '/api/auth/setup', {'username': 'owner', 'password': PASSWORD}))
+
+    def login(username):
+        status, data, headers = http(app, 'POST', '/api/auth/login', {'username': username, 'password': PASSWORD})
+        assert status == 200, data
+        cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
+        return lambda method, path, body=None, **kwargs: http(app, method, path, body, cookie=cookie, csrf=csrf, **kwargs)
+
+    admin = login('owner')
+    keep('schema', admin('GET', '/api/schema'))
+    names = ['Al Sahra Trading', 'Bayan Medical', 'Corniche Foods', 'Desert Rose Interiors', 'Emirates Glass', 'Falcon Logistics',
+             'Gulf Pearl Hotels', 'Hamdan Engineering', 'Ibn Battuta Travel', 'Jumeirah Dental', 'Khalifa Steel', 'Lulu Packaging',
+             'Marina Yachts', 'Noor Pharmacy', 'Oasis Water', 'Palm Realty', 'Qasr Events', 'Ras Al Khor Motors', 'Sahara Labs',
+             'Tilal Farms', 'Umm Suqeim Bakery', 'Wadi Textiles', 'Yas Fitness', 'Zabeel Printing', 'Zayed Medical Supplies']
+    for index, name in enumerate(names):
+        assert admin('POST', '/api/customer', {'name': name, 'rate': f'{10 + index}.50', 'credit_days': 15 + index})[0] == 201
+    keep('customers_page1', admin('GET', '/api/customer?limit=20&offset=0&order_by=name'))
+    keep('customers_page2', admin('GET', '/api/customer?limit=20&offset=20&order_by=name'))
+    keep('customers_by_rate_desc', admin('GET', '/api/customer?limit=20&offset=0&order_by=-rate'))
+    keep('customers_search', admin('GET', '/api/customer?limit=20&offset=0&q=medical'))
+    for title, stage in (('Office fit-out', 'open'), ('Annual support', 'won'), ('Warehouse racks', 'open'), ('Fleet tracking', 'lost')):
+        status, body, _ = admin('POST', '/api/order', {'title': title, 'stage': stage, 'customer': 1, 'issued': '2026-10-20',
+                                                       **({'reason': 'Budget moved'} if stage == 'lost' else {})})
+        assert status == 201, body
+    keep('orders_open', admin('GET', '/api/order?limit=20&offset=0&filters=%7B%22stage%22%3A%22open%22%7D'))
+    contact = keep('contact_create', admin('POST', '/api/contact', {'name': 'Mariam Haddad', 'email': 'mariam@example.com',
+                                                                   'phone': '+971 4 555 0101', 'notes': 'Prefers email.'}))
+    url = f"/api/contact/{contact['id']}"
+    keep('contact_detail', admin('GET', url))
+    # This base refuses uploads to models with declarations (permissions, actions...) with 405;
+    # the record view shows that refusal. Listing works.
+    keep('attachment_upload', admin('POST', f'{url}/attachments', {'name': 'brief.txt', 'content': 'SGVsbG8='}))
+    keep('attachments', admin('GET', f'{url}/attachments'))
+    keep('contacts', admin('GET', '/api/contact?limit=20&offset=0'))
+    auth.create_user(username='viewer', password=PASSWORD, role='viewer')
+    viewer = login('viewer')
+    keep('viewer_session', viewer('GET', '/api/auth/session'))
+    keep('viewer_schema', viewer('GET', '/api/schema'))
+    keep('viewer_contact_detail', viewer('GET', url))
+    keep('viewer_contacts', viewer('GET', '/api/contact?limit=20&offset=0'))
+    SCREENS.write_text(json.dumps(out, indent=1, sort_keys=True) + '\n')
+
+
 if __name__ == '__main__':
     main()
+    screens()
