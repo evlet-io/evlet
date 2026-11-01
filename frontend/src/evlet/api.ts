@@ -49,6 +49,8 @@ export interface ClientOptions {
   fetch?: typeof fetch;
   /** Prefix for every path, for example a test server origin. */
   base?: string;
+  /** Where the API is served (api in the page's config block); paths under /api are sent there. */
+  api?: string;
   /** The current page's signal (router.signal): requests are aborted when the page changes. */
   signal?: () => AbortSignal | undefined;
   /** Called when a request is refused because the session ended (401). */
@@ -127,6 +129,13 @@ export class ApiClient {
     this.fetcher = options.fetch ?? ((...args) => fetch(...args));
   }
 
+  /** The address of an API path, such as a file to link to. */
+  url(path: string): string {
+    const api = this.options.api;
+    const routed = api && (path === '/api' || path.startsWith('/api/')) ? api + path.slice(4) : path;
+    return (this.options.base ?? '') + routed;
+  }
+
   async request<T>(method: string, path: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (method !== 'GET') {
@@ -136,7 +145,7 @@ export class ApiClient {
     if (options.body !== undefined) headers['Content-Type'] = 'application/json';
     if (options.ifMatch) headers['If-Match'] = options.ifMatch;
     const query = Object.entries(options.query ?? {}).filter(([, value]) => value !== undefined && value !== '');
-    const url = (this.options.base ?? '') + path + (query.length ? '?' + new URLSearchParams(query.map(([key, value]) => [key, String(value)])) : '');
+    const url = this.url(path) + (query.length ? '?' + new URLSearchParams(query.map(([key, value]) => [key, String(value)])) : '');
     const { signal, release } = anySignal([options.signal, this.options.signal?.()]);
     try {
       return await this.send<T>(method, path, url, headers, options, signal);
