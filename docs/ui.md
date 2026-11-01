@@ -9,6 +9,10 @@ the database, child tasks, actions, jobs and private attachments. These are sepa
 examples. The demo keeps the approved light sidebar, blue active state, fixed top
 bar, independent list/preview scroll areas and expanded summary cards.
 
+Evlet's own UI framework, which replaces SolidJS in later phases, is described in
+[ui-framework.md](ui-framework.md). It lives in `frontend/src/evlet/` beside the current
+frontend and is not yet used by its screens.
+
 ## Build and run
 
 From the repository:
