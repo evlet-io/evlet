@@ -233,17 +233,19 @@ def record(app, out):
     refused = omar.write('POST', f'{url}/moves/proposal', {}, read=url)
     assert refused['status'] == 409, refused
     omar.record_page('deal', deal)
-    assert omar.write('POST', f'{url}/moves/lost', {}, read=url)['status'] == 200
+    # Mark lost asks for the reason; then the reason is edited in place on the locked deal.
+    assert omar.write('POST', f'{url}/moves/lost', {'lost_reason': 'Budget moved'}, read=url)['status'] == 200
     omar.record_page('deal', deal)
     assert omar.write('PATCH', url, {'lost_reason': 'Budget moved to next year'})['status'] == 200
     omar.record_page('deal', deal)
     out['omar_lost'] = omar.dump()
 
-    # The handoff's lead reason rule refuses Mark lost (see docs/testcrm.md).
+    # A lead's Mark lost asks for the reason too: refused without it, done with it.
     sara = Scenario(app, 'sara')
     lead = ids(sara, 'lead', name='Majid Obaid')
     sara.record_page('lead', lead)
     assert sara.write('POST', f'/api/lead/{lead}/moves/lost', {}, read=f'/api/lead/{lead}')['status'] == 422
+    assert sara.write('POST', f'/api/lead/{lead}/moves/lost', {'lost_reason': 'No budget this year'}, read=f'/api/lead/{lead}')['status'] == 200
     sara.record_page('lead', lead)
     out['sara_lead_lost'] = sara.dump()
 

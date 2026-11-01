@@ -148,9 +148,9 @@ class Deal(Model):
                                                       when(F('stage') == 'lead', D('10'), D('0')))))))
     payment_days = Integer(initial=F('organization.payment_days'), minimum=0, maximum=180)
     vat_rate = Percent(default=5)
-    # Shown once the deal is lost and still editable after it is locked. It is not required: a move
-    # takes no values, so a field required in the target state would block the move (see Lead).
-    lost_reason = Text(applies_when=F('stage') == 'lost', editable_when_locked=True, max_length=200)
+    # Shown once the deal is lost, required then and still editable after it is locked. Mark lost asks for it.
+    lost_reason = Text(applies_when=F('stage') == 'lost', required_when=F('stage') == 'lost', editable_when_locked=True,
+                       max_length=200)
     next_step = Text(max_length=200, editable_when_locked=True)
     follow_up_on = Date()
     won_on = Date()
@@ -271,8 +271,7 @@ class Lead(Model):
         Move(('new', 'qualified'), 'lost', 'Mark lost'),
         Move('lost', 'new', 'Reopen'),
     ), locked=('lost',))
-    # The reason rule as the handoff writes it. Today it blocks Mark lost: the field does not apply
-    # before the move, so it is empty, and the move cannot carry a value (docs/testcrm.md, gaps).
+    # Mark lost asks for the reason: the move carries it and checks it in the same transaction.
     lost_reason = Text(applies_when=F('status') == 'lost', required_when=F('status') == 'lost',
                        editable_when_locked=True, max_length=200)
     deal = Link(Deal)

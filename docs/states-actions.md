@@ -128,6 +128,24 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
 
 `POST /api/{model}/{id}/moves/{to}` with an empty JSON object performs a move.
 
+A move may carry values for the fields its target state brings in. A move *asks* for a root
+field when the field's `applies_when` or `required_when` reads the State, is false in a source
+state of the move, and is true (or depends on other values) in the target state. Only fields the
+role may write are asked for.
+
+```python
+lost_reason = Text(applies_when=F("stage") == "lost", required_when=F("stage") == "lost")
+# POST /api/deal/7/moves/lost  {"lost_reason": "Chose another vendor"}
+context.move(Deal, 7, "lost", lost_reason="Chose another vendor")
+```
+
+* The values are applied with the move and checked by the same rules, validation and permissions
+  in its transaction. A required value that is missing fails the move with a field error (422)
+  and nothing changes.
+* Any other key is a field error: `This move does not take this value`.
+* `_moves` and the schema's `state.moves` list the asked fields as `asks` (field names in
+  declaration order). A move that asks for nothing has no `asks` key.
+
 * It requires `If-Match` with the record's current ETag, like other document writes:
   428 without it, 409 when it is stale.
 * The checks run in this order. Update permission and row scope come first, as for any
@@ -192,7 +210,8 @@ Detail responses of a model with a State, or with an action that declares
   "_moves": [
     {"to": "issued", "label": "Issue", "allowed": false,
      "reason": "The condition for this move needs values that are not filled in yet"},
-    {"to": "paid", "label": "Mark paid", "allowed": false, "reason": "Your role cannot use this move"}
+    {"to": "paid", "label": "Mark paid", "allowed": false, "reason": "Your role cannot use this move"},
+    {"to": "cancelled", "label": "Cancel", "allowed": true, "asks": ["cancel_reason"]}
   ],
   "_actions": [
     {"name": "record_payment", "label": "Record payment", "allowed": false,
@@ -341,7 +360,8 @@ reasons above. They never include counts or names.
   gain `void` (and `revise` when revisable), for roles that can read the State. Other entries
   are unchanged. The `revises` field is listed with the other fields (type `link`, read only).
 * `state`: `field`, `states`, `default`, `locked`, `final`, `voidable` and `moves`, each
-  with `from`, `to`, `label`, `roles`, `guarded` and `when`. `when` is the serialized
+  with `from`, `to`, `label`, `roles`, `guarded`, `when` and, when the move asks for values,
+  `asks`. `when` is the serialized
   finite-v1 expression when the role can read every value it reads, otherwise `null`.
 * Each model action gains `roles`, `inputs` (field schemas, as in `fields`),
   `available_when` (the same readability rule), `guarded`, and `arguments` in the scalar

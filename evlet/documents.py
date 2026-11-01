@@ -188,9 +188,10 @@ class Context:
     def action(self, model, record_id, name, **arguments):
         return self._write(model, record_id, {}, action=name, arguments=arguments)
 
-    def move(self, model, record_id, to):
-        """Move a record's State to `to` with the same checks as POST /api/{model}/{id}/moves/{to}."""
-        return self._write(model, record_id, {}, move=to)
+    def move(self, model, record_id, to, **values):
+        """Move a record's State to `to` with the same checks as POST /api/{model}/{id}/moves/{to}. `values` fill
+        the fields the move asks for (see states.move_asks), checked with the move."""
+        return self._write(model, record_id, values, move=to)
 
     def void(self, model, record_id, reason):
         """Void a record with a reason; the same checks as POST /api/{model}/{id}/void."""
@@ -1233,6 +1234,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     business, tx, user = context._business, context._tx, context.user
     if (action is not None or move is not None) and not record_id:
         raise AccessError(404, 'Record not found')
+    if move is not None:
+        states.check_move_values(context, model, record_id, move, values)
     draft, before = load_draft(context, model, record_id, values)
     # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
     locked_write = action is None and move is None and before is not None and states.locked_state(model, before._values) is not None

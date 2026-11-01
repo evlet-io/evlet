@@ -46,7 +46,7 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 | Deal | `Sequence` (`DL-{year}-{n:04}`), `State` with guarded moves (`when=`), a role-limited move, locked, final and voidable states, `Meta.revisable`, `run=` on a move, `@action` with `inputs` and `available_when`, `applies_when` and `editable_when_locked`, `initial=` through a Link, a calculated `Percent` through nested `when()`, `round()`, `days()`, `coalesce()`, `today()` in a virtual result, a `Table` of up to 1,000 lines, `sum`, `count` and `where(row.recurring == True)` aggregates, an `Effect` with `Negate`, model and per-record measures, `key_fields`, `relations`, `Attachments`, a row scope and field lists per role |
 | Deal line | `initial=` from the product (description, rate, taxable), a discount `Percent`, an auto-rounded amount, VAT through `when()` and `parent.vat_rate` |
 | Task | `Time`, `Duration` with `applies_when`, a virtual `Boolean` from `today()`, Links to Deal and Contact |
-| Lead | `State` with a guard on the score, `applies_when` with `required_when` (see Gaps), an action that creates other records |
+| Lead | `State` with a guard on the score, `applies_when` with `required_when` on a reason that Mark lost asks for, an action that creates other records |
 
 ### Permissions
 
@@ -71,8 +71,8 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 
 | Where | How | What |
 |---|---|---|
-| `tests/test_testcrm.py` | The installed app, real SQLite, authenticated ASGI requests | Sign in; schema per role; list sort, search, filter, paging and measures; field edits; line change sets (add from a product, edit, reorder, remove) and totals; 150 lines with paging; the lost reason rule; guarded moves and their reasons; win: task, customer, booking, revise and its reversal; actions; the row scope and hidden fields for sales and viewers; two sessions editing one deal; the journal of a won deal, notes and follow ups |
-| `frontend/src/evlet/tests/testcrm-*.test.ts` | The real screens in jsdom over responses recorded from testCRM (`testcrm-fixture.json`) | Sign in and the sidebar; list search, saved views per stage, sorting; the board moved with the keyboard; the command palette; lines edited, added from a product, reordered, saved and removed with instant totals; moves to won with the lock, the posting and the created task; a blocked move; lost with the reason edited in place; 150 lines paged in and one edit saved as a change set; a conflict and Reload; another person's deal; a viewer and an admin; the Activity tab and a note |
+| `tests/test_testcrm.py` | The installed app, real SQLite, authenticated ASGI requests | Sign in; schema per role; list sort, search, filter, paging and measures; field edits; line change sets (add from a product, edit, reorder, remove) and totals; 150 lines with paging; the lost reason that Mark lost asks for; guarded moves and their reasons; win: task, customer, booking, revise and its reversal; actions; the row scope and hidden fields for sales and viewers; two sessions editing one deal; the journal of a won deal, notes and follow ups |
+| `frontend/src/evlet/tests/testcrm-*.test.ts` | The real screens in jsdom over responses recorded from testCRM (`testcrm-fixture.json`) | Sign in and the sidebar; list search, saved views per stage, sorting; the board moved with the keyboard; the command palette; lines edited, added from a product, reordered, saved and removed with instant totals; moves to won with the lock, the posting and the created task; a blocked move; Mark lost with its reason dialog, then the reason edited in place; the lead's reason checked in the dialog; 150 lines paged in and one edit saved as a change set; a conflict and Reload; another person's deal; a viewer and an admin; the Activity tab and a note |
 | `npm run bench:ui` | jsdom | The 100-deal list, the 1,000-line deal and one line edit ([performance.md](performance.md)) |
 
 Regenerate the recordings with `.venv/bin/python -m scripts.generate_testcrm_fixtures` and
@@ -93,12 +93,6 @@ screen test opens the same deal on its Activity tab and adds a note through the 
 
 ## Gaps found
 
-- **A field required in a state blocks the move into it.** Lead's `lost_reason` uses
-  `applies_when` and `required_when` on `lost`, as in the handoff. Before the move the field does
-  not apply, so it is empty, and a move takes no values, so `Mark lost` always answers 422
-  `lost_reason: This field is required`. The screen only says "Mark lost did not run". Deal keeps
-  `applies_when` without `required_when` so it can be lost. Moves need inputs (like actions) or a
-  rule that is checked after the move.
 - **Owner is typed.** A row scope can compare a field with the user (`{'owner': user.username}`),
   but nothing fills it with the current user, so a sales person types their own username on a new
   deal. A default from the signed-in user is missing.

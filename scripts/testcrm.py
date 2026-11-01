@@ -156,13 +156,12 @@ def seed(app, password, *, big_lines=150):
             target = 'negotiation' if stage == 'won' else stage
             for step in STAGE_PATH[1:STAGE_PATH.index(target) + 1] if target in STAGE_PATH else ():
                 context.move(m['Deal'], deal, step)
-            if stage in ('won', 'lost'):
+            if stage == 'won':
                 context.move(m['Deal'], deal, stage)
+            elif stage == 'lost':
+                # Mark lost asks for the reason.
+                context.move(m['Deal'], deal, stage, lost_reason='Chose to wait for the e-invoicing rules')
             deals.append(deal)
-    with app.business.context(users['rahul']) as context:
-        # A lost deal says why.
-        lost = deals[[item[0] for item in DEALS].index('VAT and e-invoicing readiness')]
-        context.update(m['Deal'], lost, lost_reason='Chose to wait for the e-invoicing rules')
     with app.business.context(admin) as context:
         context.update(m['Deal'], deals[0], internal_notes='Partner sign-off needed for any discount above 5%.')
     for name, company, email, phone, source, score, owner, status in LEADS:

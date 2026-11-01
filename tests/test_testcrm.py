@@ -162,8 +162,11 @@ def test_rules_lost_reason(crm):
     assert sara('GET', url)[1]['lost_reason'] is None
     # Before the deal is lost the reason does not apply, so a value sent now is cleared.
     assert sara.write('PATCH', url, {'lost_reason': 'Too early'})[1]['lost_reason'] is None
-    lost = sara.write('POST', url + '/moves/lost', {})
+    assert {move['to']: move.get('asks') for move in sara('GET', url)[1]['_moves']}['lost'] == ['lost_reason']
+    assert sara.write('POST', url + '/moves/lost', {})[1]['fields'] == {'lost_reason': 'This field is required'}
+    lost = sara.write('POST', url + '/moves/lost', {'lost_reason': 'Budget moved to next year'})
     assert lost[0] == 200 and lost[1]['stage'] == 'lost' and lost[1]['_locked'] is True
+    assert lost[1]['lost_reason'] == 'Budget moved to next year'
     # Locked, but the reason stays editable.
     assert sara.write('PATCH', url, {'title': 'x'})[1]['fields'] == {'title': 'This record is lost, so it is locked'}
     assert sara.write('PATCH', url, {'lost_reason': 'Chose another vendor'})[1]['lost_reason'] == 'Chose another vendor'
@@ -173,15 +176,15 @@ def test_rules_lost_reason(crm):
     assert reopened['stage'] == 'lead' and reopened['lost_reason'] is None
 
 
-def test_lead_reason_rule_blocks_mark_lost(crm):
-    """Known gap: Lead declares lost_reason with applies_when and required_when on lost, as the handoff
-    writes it. A move carries no values and the field is cleared while it does not apply, so the move
-    into lost always fails. When moves can take inputs, this test should flip to a successful move."""
+def test_lead_mark_lost_carries_the_reason(crm):
+    """Lead declares lost_reason with applies_when and required_when on lost. Mark lost asks for it."""
     sara = login(crm, 'sara')
     url = '/api/lead/' + str(find(sara, 'lead', name='Majid Obaid')['id'])
     refused = sara.write('POST', url + '/moves/lost', {})
     assert refused[0] == 422 and refused[1]['fields'] == {'lost_reason': 'This field is required'}
     assert sara('GET', url)[1]['status'] == 'new'
+    lost = sara.write('POST', url + '/moves/lost', {'lost_reason': 'No budget this year'})
+    assert lost[0] == 200 and (lost[1]['status'], lost[1]['lost_reason']) == ('lost', 'No budget this year')
 
 
 def test_moves_guards_and_blocked_reasons(crm):

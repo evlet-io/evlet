@@ -182,12 +182,27 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     if (!move) return `This record cannot move from ${humanize(stateValue())} to ${humanize(to)}`;
     return move.allowed ? null : move.reason ?? `${move.label} is not available now`;
   };
-  const runMove = async (to: string) => {
-    const label = extras.peek()._moves?.find(item => item.to === to)?.label ?? humanize(to);
-    const ok = await store.move(to);
-    if (!ok) { toast(store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`, { icon: 'info' }); return; }
+  const moved = (to: string, label: string) => {
     const number = sequence && has(sequence.name) ? store.field(sequence.name).value.peek() : null;
     toast(number && sequence?.name !== undefined && (sequence as any).sequence?.assign_on === to ? `${label} done. Number ${number}.` : `Moved to ${humanize(to)}`);
+  };
+  const runMove = async (to: string) => {
+    const move = extras.peek()._moves?.find(item => item.to === to);
+    const label = move?.label ?? humanize(to);
+    // A move that asks for fields (a reason required once lost, say) collects them first.
+    const asked = (move?.asks ?? []).map(field => model.fields.find(meta => meta.name === field)).filter(meta => meta !== undefined);
+    if (asked.length) {
+      const inputs = asked.map(meta => ({ ...meta, read_only: false, required: Boolean(meta.required || meta.required_when), applies_when: null, required_when: null, locked_when: null }));
+      ActionDialog({ name: to, label } as ActionMeta, inputs, async values => {
+        if (await store.move(to, values)) { moved(to, label); return null; }
+        const errors = Object.fromEntries(asked.map(meta => [meta.name, store.field(meta.name).error.peek()]).filter(([, error]) => error));
+        return Object.keys(errors).length ? errors : store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`;
+      });
+      return;
+    }
+    const ok = await store.move(to);
+    if (!ok) { toast(store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`, { icon: 'info' }); return; }
+    moved(to, label);
   };
   const actions = (): ActionMeta[] => {
     const declared = model.actions ?? [];
@@ -445,8 +460,9 @@ function actionInputs(action: ActionMeta): FieldSchema[] {
     required: argument.required, read_only: false, default: argument.default }) as FieldSchema);
 }
 
-/** Small dialog that collects an action's inputs, checks them in place and runs it. */
-export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (values: Record<string, unknown>) => Promise<string | null>) {
+/** Small dialog that collects an action's (or a move's) inputs, checks them in place and runs it. `run`
+ * answers null when done, a message, or field errors by input name. */
+export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (values: Record<string, unknown>) => Promise<string | Record<string, string> | null>) {
   const fields = inputs.map(meta => localField(meta as any, meta.default ?? (meta.type === 'boolean' ? false : null)));
   const note = cell<string>('');
   let busy = false;
@@ -461,7 +477,8 @@ export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (va
     const values = Object.fromEntries(fields.filter(field => field.value.peek() !== null && field.value.peek() !== '').map(field => [field.meta.name, field.value.peek()]));
     const problem = await run(values);
     busy = false;
-    if (problem) { note.set(problem); return; }
+    if (typeof problem === 'string') { note.set(problem); return; }
+    if (problem) { for (const field of fields) if (problem[field.meta.name]) field.error.set(problem[field.meta.name]); return; }
     close();
   };
   let closeDialog = () => {};

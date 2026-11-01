@@ -121,8 +121,15 @@ describe('testCRM: a deal and its lines', () => {
     // The lost reason applies only once the deal is lost.
     expect(field(host, 'lost_reason')!.hidden).toBe(true);
     run.skip(1);
+    // Mark lost asks for the reason in a small dialog and sends it with the move.
     click(button(host, 'Mark lost'));
+    const dialog = document.querySelector('.modal')!;
+    expect(text(dialog.querySelector('h2'))).toBe('Mark lost');
+    typeInto(dialog.querySelector('input')!, 'Budget moved');
+    click(byText(dialog, '.modal-f button', 'Mark lost'));
     await until(() => expect(current(host)).toBe('Lost'));
+    expect(run.writes.at(-1)!.body).toEqual({ lost_reason: 'Budget moved' });
+    expect(document.querySelector('.modal')).toBeNull();
     expect(field(host, 'lost_reason')!.hidden).toBe(false);
     // Locked, but the reason stays editable in place.
     expect([...host.querySelectorAll('.fs .ff')].filter(item => item.querySelector('button.fval, .fval:not(.ro)')).map(item => item.getAttribute('data-field')))
@@ -141,17 +148,28 @@ describe('testCRM: a deal and its lines', () => {
     expect(run.misses).toEqual([]);
   });
 
-  it('known gap: the lead reason rule refuses Mark lost, and the screen does not say why', async () => {
+  it('asks for the lead reason before Mark lost and shows the server check in the dialog', async () => {
     const run = scenario('sara_lead_lost');
     const id = idOf('sara_lead_lost', 'lead', 'Majid Obaid');
     const { host } = run.start(`/app/lead/${id}?tab=details`);
     await until(() => expect(button(host, 'Mark lost')).not.toBeNull());
     click(button(host, 'Mark lost'));
-    await until(() => expect(run.writes).toHaveLength(1));
-    await until(() => expect(lastToast()).toBe('Mark lost did not run'));
+    const dialog = document.querySelector('.modal')!;
+    const submit = () => click(byText(dialog, '.modal-f button', 'Mark lost'));
+    // Required in the target state: checked in the dialog before anything is sent.
+    submit();
+    expect(text(dialog)).toContain('Lost reason is required');
+    expect(run.writes).toHaveLength(0);
+    // The recording's first answer is the server's 422; its message lands on the field.
+    typeInto(dialog.querySelector('input')!, 'No budget this year');
+    submit();
+    await until(() => expect(text(dialog)).toContain('This field is required'));
     expect(current(host)).toBe('New');
-    // The server's reason (lost_reason: This field is required) is on a field that does not apply yet.
-    expect(field(host, 'lost_reason')!.hidden).toBe(true);
+    submit();
+    await until(() => expect(current(host)).toBe('Lost'));
+    expect(run.writes.map(sent => sent.body)).toEqual([{ lost_reason: 'No budget this year' }, { lost_reason: 'No budget this year' }]);
+    await until(() => expect(text(field(host, 'lost_reason'))).toContain('No budget this year'));
+    expect(run.misses).toEqual([]);
   });
 });
 
