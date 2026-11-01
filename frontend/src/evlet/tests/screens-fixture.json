@@ -1,12 +1,37 @@
 {
- "attachment_upload": {
+ "attachment_refused": {
   "body": {
-   "error": "Method not allowed"
+   "error": "Validation failed",
+   "fields": {
+    "attachment": "Use a nonempty file up to 1 MiB"
+   }
   },
   "etag": null,
-  "status": 405
+  "status": 422
+ },
+ "attachment_upload": {
+  "body": {
+   "id": 1,
+   "name": "brief.txt",
+   "size": 5
+  },
+  "etag": null,
+  "status": 201
  },
  "attachments": {
+  "body": {
+   "items": [
+    {
+     "id": 1,
+     "name": "brief.txt",
+     "size": 5
+    }
+   ]
+  },
+  "etag": null,
+  "status": 200
+ },
+ "attachments_empty": {
   "body": {
    "items": []
   },
@@ -886,6 +911,18 @@
       "update": true
      },
      "plural": "Customers",
+     "relations": [
+      {
+       "label": "Orders",
+       "limit": 10,
+       "link": "customer",
+       "model": "order",
+       "name": "order.customer",
+       "order": [
+        "-id"
+       ]
+      }
+     ],
      "resource": "customer",
      "search_fields": [
       "name"
@@ -994,8 +1031,15 @@
          "type": "str"
         }
        ],
+       "available_when": null,
+       "guarded": false,
+       "inputs": [],
        "label": "Close",
-       "name": "close"
+       "name": "close",
+       "roles": [
+        "admin",
+        "editor"
+       ]
       }
      ],
      "attachments": false,
@@ -1895,10 +1939,21 @@
          "type": "str"
         }
        ],
+       "available_when": null,
+       "guarded": false,
+       "inputs": [],
        "label": "Mark contacted",
-       "name": "contacted"
+       "name": "contacted",
+       "roles": [
+        "admin",
+        "editor"
+       ]
       }
      ],
+     "attachment_limits": {
+      "max_files": 10,
+      "max_size": 1048576
+     },
      "attachments": true,
      "behavior": {
       "email": {},
@@ -2430,6 +2485,18 @@
       "update": false
      },
      "plural": "Customers",
+     "relations": [
+      {
+       "label": "Orders",
+       "limit": 10,
+       "link": "customer",
+       "model": "order",
+       "name": "order.customer",
+       "order": [
+        "-id"
+       ]
+      }
+     ],
      "resource": "customer",
      "search_fields": [
       "name"
@@ -3417,6 +3484,10 @@
     },
     {
      "actions": [],
+     "attachment_limits": {
+      "max_files": 10,
+      "max_size": 1048576
+     },
      "attachments": true,
      "behavior": {
       "email": {},

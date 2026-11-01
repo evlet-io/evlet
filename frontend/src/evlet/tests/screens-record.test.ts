@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adminRoutes, byText, click, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
+import { copy } from './server';
 
 afterEach(() => { vi.useRealTimers(); stopAll(); });
 
@@ -154,24 +155,35 @@ describe('permission-driven screens', () => {
     expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['name', 'email']);
     expect(host.querySelector('.fs button.fval')).toBeNull();
     expect(byText(host, '.doc-head button', 'Mark contacted')).toBeNull();
-    expect(text(byText(host, '.side-sec', /^Files/))).toContain('No files yet.');
+    // The viewer reads the file an administrator attached, and cannot add one.
+    await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('brief.txt'));
     expect(host.querySelector('.ev-upload')).toBeNull();
   });
 
   it('the admin of the same records gets every field, the action and an upload; a refused upload says why', async () => {
+    let uploaded = false;
     const { host, sent } = start([...adminRoutes(),
       ['GET', /\/api\/contact\/1$/, screen.contact_detail],
-      ['GET', /\/api\/contact\/1\/attachments$/, screen.attachments],
-      ['POST', /\/api\/contact\/1\/attachments$/, screen.attachment_upload],
+      ['GET', /\/api\/contact\/1\/attachments$/, () => copy(uploaded ? screen.attachments : screen.attachments_empty)],
+      ['POST', /\/api\/contact\/1\/attachments$/, sent => {
+        if (sent.body.name !== 'brief.txt') return copy(screen.attachment_refused);
+        uploaded = true;
+        return copy(screen.attachment_upload);
+      }],
     ], '/ui/m/contact/1');
     await until(() => expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['name', 'email', 'phone', 'notes']));
     expect(host.querySelectorAll('.fs button.fval').length).toBe(4);
     expect(byText(host, '.doc-head button', 'Mark contacted')).not.toBeNull();
     const upload = host.querySelector<HTMLInputElement>('.ev-upload input')!;
-    Object.defineProperty(upload, 'files', { value: [new File(['Hello'], 'brief.txt', { type: 'text/plain' })] });
+    Object.defineProperty(upload, 'files', { value: [new File(['Hello'], 'brief.txt', { type: 'text/plain' })], configurable: true });
     upload.dispatchEvent(new Event('change', { bubbles: true }));
     await until(() => expect(requests(sent, 'POST', /attachments$/)).toHaveLength(1));
     expect(requests(sent, 'POST', /attachments$/)[0].body).toEqual({ name: 'brief.txt', content: 'SGVsbG8=' });
-    await until(() => expect(lastToast()).toBe('Not attached: Method not allowed'));
+    await until(() => expect(lastToast()).toBe('brief.txt attached'));
+    await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('brief.txt'));
+    const again = host.querySelector<HTMLInputElement>('.ev-upload input')!;
+    Object.defineProperty(again, 'files', { value: [new File(['%PDF'], 'scan.pdf', { type: 'application/pdf' })], configurable: true });
+    again.dispatchEvent(new Event('change', { bubbles: true }));
+    await until(() => expect(lastToast()).toBe('Not attached: Use a nonempty file up to 1 MiB'));
   });
 });

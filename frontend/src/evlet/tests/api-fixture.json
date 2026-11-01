@@ -4775,14 +4775,14 @@
     "lines": [
      {
       "amount": "2500.00",
-      "id": 1,
+      "id": 5,
       "item": "Support hours",
       "qty": "10.0000",
       "rate": "250.00"
      },
      {
       "amount": "180.00",
-      "id": 2,
+      "id": 6,
       "item": "Licence",
       "qty": "2.0000",
       "rate": "90.00"
@@ -4791,8 +4791,8 @@
    },
    "customer": 1,
    "due_on": "2026-12-01",
-   "id": 1,
-   "number": "INV-2026-00001",
+   "id": 3,
+   "number": "INV-2026-00003",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "Paid 500.00 on 2026-11-10",
@@ -4801,7 +4801,7 @@
    "status": "issued",
    "total": "2680.00"
   },
-  "etag": "\"724ab3941f1cd6f16412e1b8763842e0d4b6b3a2e08afdb3518201fb25141736\"",
+  "etag": "\"e78be22ba00659bdfeeb56054faaa63a1ef93c56936fa17eb2dfd98e6679a35a\"",
   "status": 200
  },
  "invoice_aggregate_by_status": {
@@ -4828,6 +4828,45 @@
    ]
   },
   "etag": null,
+  "status": 200
+ },
+ "invoice_attachment_locked": {
+  "body": {
+   "error": "This record is issued, so it is locked, so its attachments cannot change"
+  },
+  "etag": null,
+  "status": 409
+ },
+ "invoice_attachment_upload": {
+  "body": {
+   "id": 1,
+   "name": "signed-copy.pdf",
+   "size": 5
+  },
+  "etag": null,
+  "status": 201
+ },
+ "invoice_attachments": {
+  "body": {
+   "items": [
+    {
+     "id": 1,
+     "name": "signed-copy.pdf",
+     "size": 5
+    }
+   ]
+  },
+  "etag": null,
+  "status": 200
+ },
+ "invoice_customer": {
+  "body": {
+   "credit_days": 30,
+   "id": 1,
+   "name": "Al Sahra Trading",
+   "rate": "0.00"
+  },
+  "etag": "\"b9f1c99aac55a18173c24fec0410cb1ffe5af9fb0186f3e11cabbad4ec7e84ef\"",
   "status": 200
  },
  "invoice_draft": {
@@ -4872,14 +4911,14 @@
     "lines": [
      {
       "amount": "2500.00",
-      "id": 1,
+      "id": 5,
       "item": "Support hours",
       "qty": "10.0000",
       "rate": "250.00"
      },
      {
       "amount": "180.00",
-      "id": 2,
+      "id": 6,
       "item": "Licence",
       "qty": "2.0000",
       "rate": "90.00"
@@ -4888,7 +4927,7 @@
    },
    "customer": 1,
    "due_on": "2026-12-01",
-   "id": 1,
+   "id": 3,
    "number": null,
    "outstanding": "0.00",
    "posting_date": "2026-11-01",
@@ -4898,7 +4937,7 @@
    "status": "draft",
    "total": "2680.00"
   },
-  "etag": "\"2715e62670fe6cc2eb2dfd6b166975cea9b3887cf957ebb7e7209755e5afbe64\"",
+  "etag": "\"5fa91e06c671c1308f8edeb66e8a1e964fb90b8fd24be76cf3b479b2d2a31c59\"",
   "status": 200
  },
  "invoice_draft_blocked": {
@@ -4945,7 +4984,7 @@
    },
    "customer": 1,
    "due_on": "2026-12-01",
-   "id": 1,
+   "id": 3,
    "number": null,
    "outstanding": "0.00",
    "posting_date": "2026-11-01",
@@ -4955,7 +4994,7 @@
    "status": "draft",
    "total": "0.00"
   },
-  "etag": "\"20cf86767e2cd30c69ff55a2ba49311c567ec796ec5246a14e59d7409de5f99d\"",
+  "etag": "\"574bed9d9b1e9f16c7ccc95f5b0492c19f88a7364a49ad23b9de8c5717121024\"",
   "status": 200
  },
  "invoice_issued": {
@@ -5002,14 +5041,14 @@
     "lines": [
      {
       "amount": "2500.00",
-      "id": 1,
+      "id": 5,
       "item": "Support hours",
       "qty": "10.0000",
       "rate": "250.00"
      },
      {
       "amount": "180.00",
-      "id": 2,
+      "id": 6,
       "item": "Licence",
       "qty": "2.0000",
       "rate": "90.00"
@@ -5018,8 +5057,8 @@
    },
    "customer": 1,
    "due_on": "2026-12-01",
-   "id": 1,
-   "number": "INV-2026-00001",
+   "id": 3,
+   "number": "INV-2026-00003",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
@@ -5028,7 +5067,7 @@
    "status": "issued",
    "total": "2680.00"
   },
-  "etag": "\"6f47bf50cb1c1a32f4b8831f62eea9d6e074d4f04bef8e00fbffa0d871820cb3\"",
+  "etag": "\"cc8058a888f81ac58b4a1dc56af36a2a9423b448c80233c9ac133f9446281a41\"",
   "status": 200
  },
  "invoice_issued_detail": {
@@ -5071,14 +5110,14 @@
     "lines": [
      {
       "amount": "2500.00",
-      "id": 1,
+      "id": 5,
       "item": "Support hours",
       "qty": "10.0000",
       "rate": "250.00"
      },
      {
       "amount": "180.00",
-      "id": 2,
+      "id": 6,
       "item": "Licence",
       "qty": "2.0000",
       "rate": "90.00"
@@ -5087,8 +5126,8 @@
    },
    "customer": 1,
    "due_on": "2026-12-01",
-   "id": 1,
-   "number": "INV-2026-00001",
+   "id": 3,
+   "number": "INV-2026-00003",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
@@ -5097,7 +5136,7 @@
    "status": "issued",
    "total": "2680.00"
   },
-  "etag": "\"6f47bf50cb1c1a32f4b8831f62eea9d6e074d4f04bef8e00fbffa0d871820cb3\"",
+  "etag": "\"cc8058a888f81ac58b4a1dc56af36a2a9423b448c80233c9ac133f9446281a41\"",
   "status": 200
  },
  "invoice_lines_page": {
@@ -5105,7 +5144,7 @@
    "items": [
     {
      "amount": "180.00",
-     "id": 2,
+     "id": 6,
      "item": "Licence",
      "qty": "2.0000",
      "rate": "90.00"
@@ -5128,12 +5167,32 @@
   "etag": null,
   "status": 200
  },
+ "invoice_measures_issued": {
+  "body": {
+   "measures": {
+    "count": 1,
+    "outstanding": "2680.00"
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
  "invoice_move_refused": {
   "body": {
    "error": "Issue is not available: the condition for this move is not met"
   },
   "etag": null,
   "status": 409
+ },
+ "invoice_payment": {
+  "body": {
+   "amount": "500.00",
+   "id": 1,
+   "invoice": 3,
+   "paid_on": "2026-11-10"
+  },
+  "etag": "\"ee4a634e163054bdbae5c649b362453d1faa5ff35d1a0a38110e2c96104b5269\"",
+  "status": 200
  },
  "invoice_record_measures": {
   "body": {
@@ -5151,7 +5210,7 @@
     {
      "amount": "500.00",
      "id": 1,
-     "invoice": 1,
+     "invoice": 3,
      "paid_on": "2026-11-10"
     }
    ],
@@ -5170,6 +5229,71 @@
    "total": 0
   },
   "etag": null,
+  "status": 200
+ },
+ "invoice_revise_before": {
+  "body": {
+   "_actions": [
+    {
+     "allowed": true,
+     "label": "Record payment",
+     "name": "record_payment"
+    }
+   ],
+   "_effects": [
+    {
+     "balanced": true,
+     "reversals": 0,
+     "rows": 3,
+     "target": "ledgerentry"
+    }
+   ],
+   "_locked": true,
+   "_moves": [
+    {
+     "allowed": false,
+     "label": "Mark paid",
+     "reason": "Your role cannot use this move",
+     "to": "paid"
+    }
+   ],
+   "_revise": {
+    "allowed": true
+   },
+   "_void": {
+    "allowed": true
+   },
+   "children": {
+    "lines": [
+     {
+      "amount": "2500.00",
+      "id": 3,
+      "item": "Support hours",
+      "qty": "10.0000",
+      "rate": "250.00"
+     },
+     {
+      "amount": "180.00",
+      "id": 4,
+      "item": "Licence",
+      "qty": "2.0000",
+      "rate": "90.00"
+     }
+    ]
+   },
+   "customer": 1,
+   "due_on": "2026-12-01",
+   "id": 2,
+   "number": "INV-2026-00002",
+   "outstanding": "2680.00",
+   "posting_date": "2026-11-01",
+   "remarks": "",
+   "revised_by": null,
+   "revises": null,
+   "status": "issued",
+   "total": "2680.00"
+  },
+  "etag": "\"083d9e663c22d534a3108689a3ff39f118d036941ce7bd5d7d70a98912586f8f\"",
   "status": 200
  },
  "invoice_revised_original": {
@@ -5208,14 +5332,14 @@
     "lines": [
      {
       "amount": "2500.00",
-      "id": 1,
+      "id": 3,
       "item": "Support hours",
       "qty": "10.0000",
       "rate": "250.00"
      },
      {
       "amount": "180.00",
-      "id": 2,
+      "id": 4,
       "item": "Licence",
       "qty": "2.0000",
       "rate": "90.00"
@@ -5224,17 +5348,17 @@
    },
    "customer": 1,
    "due_on": "2026-12-01",
-   "id": 1,
-   "number": "INV-2026-00001",
+   "id": 2,
+   "number": "INV-2026-00002",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
-   "remarks": "Paid 500.00 on 2026-11-10",
+   "remarks": "",
    "revised_by": 4,
    "revises": null,
    "status": "void",
    "total": "2680.00"
   },
-  "etag": "\"9d5db92f383a9aa52fce362f6a2166fd0b929f90097f323c10002f260ae07d32\"",
+  "etag": "\"94776d842d14011669676047bf992b980fb5dea30642b4da872e740cd7495659\"",
   "status": 200
  },
  "invoice_revision": {
@@ -5271,7 +5395,7 @@
      "to": "issued"
     }
    ],
-   "_original": 1,
+   "_original": 2,
    "_revise": {
     "allowed": false,
     "reason": "This record cannot be revised in its current state"
@@ -5304,13 +5428,13 @@
    "number": null,
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
-   "remarks": "Paid 500.00 on 2026-11-10",
+   "remarks": "",
    "revised_by": null,
-   "revises": 1,
+   "revises": 2,
    "status": "draft",
    "total": "2680.00"
   },
-  "etag": "\"cd9de6a793e218d9caf89508dca8cca2484939ce1806fd5391335525fa3af306\"",
+  "etag": "\"879406ce688f9db9735f7c8c42e2562c4c255ba9257aeb0876a54487453f70cd\"",
   "status": 201
  },
  "invoice_schema": {
@@ -5437,7 +5561,7 @@
        ]
       },
       {
-       "label": "Ledger entrys",
+       "label": "Ledger entries",
        "limit": 10,
        "link": "customer",
        "model": "ledgerentry",
@@ -5635,7 +5759,7 @@
       "delete": false,
       "update": false
      },
-     "plural": "Ledger entrys",
+     "plural": "Ledger entries",
      "resource": "ledgerentry",
      "search_fields": [
       "memo"
@@ -6816,14 +6940,14 @@
     "lines": [
      {
       "amount": "2500.00",
-      "id": 5,
+      "id": 1,
       "item": "Support hours",
       "qty": "10.0000",
       "rate": "250.00"
      },
      {
       "amount": "180.00",
-      "id": 6,
+      "id": 2,
       "item": "Licence",
       "qty": "2.0000",
       "rate": "90.00"
@@ -6832,8 +6956,8 @@
    },
    "customer": 1,
    "due_on": "2026-12-01",
-   "id": 3,
-   "number": "INV-2026-00002",
+   "id": 1,
+   "number": "INV-2026-00001",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
@@ -6842,7 +6966,72 @@
    "status": "void",
    "total": "2680.00"
   },
-  "etag": "\"8de0612137f3a16148d9bd1ae2d4877cdc775921fa64d470d253e5a4a3cf959c\"",
+  "etag": "\"91e8bcd17a661d90a51edb7d7f74e043e52be1c7a56860f7c1535dcf38205afb\"",
+  "status": 200
+ },
+ "invoice_void_before": {
+  "body": {
+   "_actions": [
+    {
+     "allowed": true,
+     "label": "Record payment",
+     "name": "record_payment"
+    }
+   ],
+   "_effects": [
+    {
+     "balanced": true,
+     "reversals": 0,
+     "rows": 3,
+     "target": "ledgerentry"
+    }
+   ],
+   "_locked": true,
+   "_moves": [
+    {
+     "allowed": false,
+     "label": "Mark paid",
+     "reason": "Your role cannot use this move",
+     "to": "paid"
+    }
+   ],
+   "_revise": {
+    "allowed": true
+   },
+   "_void": {
+    "allowed": true
+   },
+   "children": {
+    "lines": [
+     {
+      "amount": "2500.00",
+      "id": 1,
+      "item": "Support hours",
+      "qty": "10.0000",
+      "rate": "250.00"
+     },
+     {
+      "amount": "180.00",
+      "id": 2,
+      "item": "Licence",
+      "qty": "2.0000",
+      "rate": "90.00"
+     }
+    ]
+   },
+   "customer": 1,
+   "due_on": "2026-12-01",
+   "id": 1,
+   "number": "INV-2026-00001",
+   "outstanding": "2680.00",
+   "posting_date": "2026-11-01",
+   "remarks": "",
+   "revised_by": null,
+   "revises": null,
+   "status": "issued",
+   "total": "2680.00"
+  },
+  "etag": "\"6f47bf50cb1c1a32f4b8831f62eea9d6e074d4f04bef8e00fbffa0d871820cb3\"",
   "status": 200
  },
  "invoice_void_reason_missing": {
@@ -6862,18 +7051,6 @@
      "customer": 1,
      "due_on": "2026-12-01",
      "id": 3,
-     "number": "INV-2026-00002",
-     "outstanding": "2680.00",
-     "posting_date": "2026-11-01",
-     "remarks": "",
-     "revises": null,
-     "status": "void",
-     "total": "2680.00"
-    },
-    {
-     "customer": 1,
-     "due_on": "2026-12-01",
-     "id": 2,
      "number": null,
      "outstanding": "0.00",
      "posting_date": "2026-11-01",
@@ -6885,13 +7062,25 @@
     {
      "customer": 1,
      "due_on": "2026-12-01",
+     "id": 2,
+     "number": "INV-2026-00002",
+     "outstanding": "2680.00",
+     "posting_date": "2026-11-01",
+     "remarks": "",
+     "revises": null,
+     "status": "issued",
+     "total": "2680.00"
+    },
+    {
+     "customer": 1,
+     "due_on": "2026-12-01",
      "id": 1,
      "number": "INV-2026-00001",
      "outstanding": "2680.00",
      "posting_date": "2026-11-01",
-     "remarks": "Paid 500.00 on 2026-11-10",
+     "remarks": "",
      "revises": null,
-     "status": "issued",
+     "status": "void",
      "total": "2680.00"
     }
    ],
