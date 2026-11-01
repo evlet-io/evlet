@@ -12,7 +12,6 @@ from fractions import Fraction
 import json
 import math
 import re
-import sqlite3
 from urllib.parse import parse_qs
 
 from .auth import AccessError
@@ -22,7 +21,10 @@ from .query import SqlQuery
 
 FUNCTIONS = ('count', 'count_distinct', 'sum', 'min', 'max')
 MAX_GROUP_FIELDS, MAX_MEASURES, MAX_GROUPS = 4, 8, 500
-MAX_STORED = 2**63 - 1
+MAX_STORED, MIN_STORED = 2**63 - 1, -2**63
+# Sums add high and low halves of each value separately, so no running total can overflow
+# and the result depends only on the final total, never on row order.
+SPLIT = 2**32
 NAME = re.compile(r'[a-z][a-z0-9_]{0,62}')
 FIELD = re.compile(r'[A-Za-z][A-Za-z0-9_]{0,62}')
 UNAVAILABLE = 'Measure field is unavailable'
@@ -154,8 +156,8 @@ class Compiled:
     link: str | None      # Link on target back to owner, for per-record measures
     where: dict | None    # finite-v1 IR
     reads: frozenset      # target fields the where expression reads
-    sql: str              # aggregate over the alias "record"
-    values: tuple
+    sql: tuple            # aggregate columns over the alias "record"
+    values: tuple         # parameters, in column order
 
 
 @dataclass(frozen=True)
@@ -188,11 +190,15 @@ def compile_measure(registry, owner, name, measure):
     ir, reads, predicate, values = compile_where(registry, target, measure.where)
     column = None if measure.field is None else f'"record".{identifier(measure.field)}'
     if measure.function == 'count':
-        sql = 'count(*)' if predicate is None else f'count(CASE WHEN {predicate} = 1 THEN 1 END)'
+        sql = ('count(*)' if predicate is None else f'count(CASE WHEN {predicate} = 1 THEN 1 END)',)
     else:
         value = column if predicate is None else f'CASE WHEN {predicate} = 1 THEN {column} END'
-        sql = {'count_distinct': 'count(DISTINCT {})', 'sum': 'sum({})', 'min': 'min({})', 'max': 'max({})'}[measure.function].format(value)
-    return Compiled(name, measure.function, owner, target, measure.field, link, ir, reads, sql, tuple(values))
+        if measure.function == 'sum':
+            # Integer division and remainder truncate toward zero in SQLite and PostgreSQL alike.
+            sql = (f'sum(({value}) / {SPLIT})', f'sum(({value}) % {SPLIT})')
+        else:
+            sql = ({'count_distinct': 'count(DISTINCT {})', 'min': 'min({})', 'max': 'max({})'}[measure.function].format(value),)
+    return Compiled(name, measure.function, owner, target, measure.field, link, ir, reads, sql, tuple(values) * len(sql))
 
 
 def compile_where(registry, model, where):
@@ -278,7 +284,7 @@ def comparison(model, op, left, right, values, reads):
                 return f'(CASE WHEN {a} IS NULL THEN {int(op == "ne")} ELSE {int(op == "ne")} END)'
             op, exact = ('lte', math.floor(exact)) if op in ('lt', 'lte') else ('gte', math.ceil(exact))
         value = int(exact)
-        if abs(value) > MAX_STORED:
+        if not MIN_STORED <= value <= MAX_STORED:
             raise ValueError('where: the number is outside the range of stored values')
     values.append(value)
     if op == 'eq':
@@ -314,17 +320,25 @@ def declared(registry, model):
     return list(getattr(registry, 'measures', {}).get(model, {}).values())
 
 
-def groups_for(model, group_by):
+def group_items(group_by):
+    """The group entries as a tuple; a ValidationError for the wrong shape or too many entries."""
     if group_by is None:
-        group_by = ()
+        return ()
     if isinstance(group_by, (str, DatePart)):
         group_by = (group_by,)
-    if not isinstance(group_by, (tuple, list)) or len(group_by) > MAX_GROUP_FIELDS:
+    shape = 'Use a field name, Day(), Month() or Year(), or a tuple or list of them'
+    if not isinstance(group_by, (tuple, list)) or any(not isinstance(item, (str, DatePart)) for item in group_by):
+        raise ValidationError({'group_by': shape})
+    if len(group_by) > MAX_GROUP_FIELDS:
         raise ValidationError({'group_by': f'Use at most {MAX_GROUP_FIELDS} group fields'})
+    return tuple(group_by)
+
+
+def groups_for(model, group_by):
     result = []
-    for item in group_by:
+    for item in group_items(group_by):
         name = item.field if isinstance(item, DatePart) else item
-        field = model.__fields__.get(name) if isinstance(name, str) else None
+        field = model.__fields__.get(name)
         if field is None:
             raise ValidationError({'group_by': f'Unknown field: {name}'})
         column = f'"record".{identifier(name)}'
@@ -345,7 +359,7 @@ def groups_for(model, group_by):
 def prepare(registry, model, measures, group_by):
     """Compiled measures and groups for an aggregate over `model`; ValidationError on bad input."""
     if not isinstance(measures, dict) or not 1 <= len(measures) <= MAX_MEASURES:
-        raise ValidationError({'measures': f'Use one to {MAX_MEASURES} measures'})
+        raise ValidationError({'measures': f'Use a dict of one to {MAX_MEASURES} measures'})
     known = getattr(registry, 'measures', {}).get(model, {})
     compiled = []
     for name, measure in measures.items():
@@ -379,7 +393,7 @@ def combine(where, values, extra, extra_values):
 
 def execute(connection, registry, model, compiled, groups, where, values):
     """Run one aggregate statement and convert the results. Groups are sorted with empty keys first."""
-    columns = [group.sql for group in groups] + [item.sql for item in compiled]
+    columns = [group.sql for group in groups] + [column for item in compiled for column in item.sql]
     parameters = [value for item in compiled for value in item.values]
     sql = (f'SELECT {", ".join(f"{column} AS {identifier(f"c{index}")}" for index, column in enumerate(columns))} '
            f'FROM {identifier(registry.name_for(model))} AS "record"{where}')
@@ -387,12 +401,7 @@ def execute(connection, registry, model, compiled, groups, where, values):
     if groups:
         sql += ' GROUP BY ' + ', '.join(str(index + 1) for index in range(len(groups))) + ' LIMIT ?'
         parameters.append(MAX_GROUPS + 1)
-    try:
-        rows = connection.execute(sql, parameters).fetchall()
-    except sqlite3.OperationalError as exc:
-        if 'integer overflow' in str(exc):
-            raise ValidationError({'measures': OVERFLOW}) from None
-        raise
+    rows = connection.execute(sql, parameters).fetchall()
     if len(rows) > MAX_GROUPS:
         raise ValidationError({'group_by': f'The result has more than {MAX_GROUPS} groups; add filters or group by fewer fields'})
     result = []
@@ -402,8 +411,10 @@ def execute(connection, registry, model, compiled, groups, where, values):
             raw = row[index]
             field = model.__fields__[group.field]
             item[group.key] = None if raw is None else int(raw) if group.part == 'year' else raw if group.part == 'month' else field.from_storage(raw)
-        for index, measure in enumerate(compiled, len(groups)):
-            item[measure.name] = value(measure, row[index])
+        index = len(groups)
+        for measure in compiled:
+            item[measure.name] = value(measure, [row[index + offset] for offset in range(len(measure.sql))])
+            index += len(measure.sql)
         result.append(item)
     result.sort(key=lambda item: tuple((item[group.key] is not None, item[group.key]) for group in groups))
     return result
@@ -411,16 +422,17 @@ def execute(connection, registry, model, compiled, groups, where, values):
 
 def value(measure, raw):
     if measure.function in ('count', 'count_distinct'):
-        return int(raw or 0)
+        return int(raw[0] or 0)
     field = measure.target.__fields__[measure.field]
     if measure.function == 'sum':
-        # SQLite sums integers exactly or fails; PostgreSQL returns an exact numeric.
-        if raw is None:
-            raw = 0
-        if isinstance(raw, float) or int(raw) != raw or abs(int(raw)) > MAX_STORED:
+        # Exact halves (integers, or PostgreSQL numerics) recombined in Python; only the final total is checked.
+        high, low = (0 if part is None else part for part in raw)
+        if isinstance(high, float) or isinstance(low, float) or int(high) != high or int(low) != low:
             raise ValidationError({'measures': OVERFLOW})
-        raw = int(raw)
-    return None if raw is None else field.from_storage(raw)
+        raw = [int(high) * SPLIT + int(low)]
+        if not MIN_STORED <= raw[0] <= MAX_STORED:
+            raise ValidationError({'measures': OVERFLOW})
+    return None if raw[0] is None else field.from_storage(raw[0])
 
 
 def aggregate(tx, model, measures, group_by=(), filters=None):
@@ -435,9 +447,10 @@ def values_for(tx, model, items, record_id=None, filters=None, scope_for=None):
     """Declared measure values: model-level over the filtered records, or per record over related rows."""
     scope_for = scope_for or (lambda target: ('', ()))
     if record_id is None:
+        # Filters are checked even when no measure is available.
+        where, values = SqlQuery(tx.registry, model).where(filters)
         if not items:
             return {}
-        where, values = SqlQuery(tx.registry, model).where(filters)
         where, values = combine(where, values, *scope_for(model))
         return execute(tx.connection, tx.registry, model, items, [], where, values)[0]
     if filters:
@@ -462,35 +475,60 @@ def measures(tx, model, record_id=None, filters=None):
 
 # Permission-aware use: Context and HTTP.
 
+def visible(policy, user, model, name, readable):
+    """Whether a field may feed a measure: readable, and not a Link to a model this role reads under a row
+    scope (counting or comparing such links would reveal linked records the role cannot see)."""
+    field = model.__fields__.get(name)
+    return name in readable and not (isinstance(field, Link) and policy.rule(user, field.target).scope is not None)
+
+
 def allowed(policy, user, item):
-    """Whether this role may read every field a measure reads: its field, its link and its where inputs."""
+    """Whether this role may read every field a measure reads: its field, its link and its where inputs.
+
+    The link of a per-record measure only matches the one record the caller may read, so a row scope on
+    that record's model does not hide anything; it needs only to be readable."""
     if not policy.allows(user, item.target, 'read'):
         return False
-    needed = {*item.reads, *(name for name in (item.field, item.link) if name is not None)}
-    return needed <= policy.fields(user, item.target)
+    readable = policy.fields(user, item.target)
+    names = {*item.reads, *([item.field] if item.field is not None else [])}
+    return all(visible(policy, user, item.target, name, readable) for name in names) and (item.link is None or item.link in readable)
+
+
+def expression_names(node):
+    """Field names an authoring expression refers to (the head of a Link path)."""
+    from .calc import Expr
+    from .fields import Field
+    if isinstance(node, Field):
+        return {node.name}
+    if not isinstance(node, Expr):
+        return set()
+    names = set()
+    if node.op == 'ref':
+        field = node.meta.get('field')
+        names.add(field.name if field is not None else (node.meta.get('name') or '').split('.')[0])
+    for child in (*node.args, node.meta.get('where')):
+        names |= expression_names(child)
+    return names
 
 
 def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=None):
     policy, registry = business.policy, business.registry
     policy.require(user, model, 'read')
     readable = policy.fields(user, model)
-    # Readability is checked on names first, so unknown and unreadable fields look the same.
+    # Names are checked before anything is compiled, so unknown and unreadable fields, and unknown and
+    # unreadable declared measures, give the same 403.
     for measure in (measures.values() if isinstance(measures, dict) else ()):
         if isinstance(measure, str):
             item = getattr(registry, 'measures', {}).get(model, {}).get(measure)
-            if item is not None and item.link is None and not allowed(policy, user, item):
+            if item is None or item.link is not None or not allowed(policy, user, item):
                 raise AccessError(403, UNAVAILABLE)
-        elif isinstance(measure, Measure) and measure.field is not None and measure.link is None and measure.field not in readable:
-            raise AccessError(403, UNAVAILABLE)
-    if isinstance(group_by, (tuple, list)) and len(group_by) > MAX_GROUP_FIELDS:
-        groups_for(model, group_by)  # The shape error comes before field checks.
-    for item in ((group_by,) if isinstance(group_by, (str, DatePart)) else group_by or ()):
-        name = item.field if isinstance(item, DatePart) else item
-        if not isinstance(name, str) or name not in readable:
-            raise AccessError(403, UNAVAILABLE)
-        field = model.__fields__.get(name)
-        if isinstance(field, Link) and policy.rule(user, field.target).scope is not None:
-            # Group keys would list identifiers of linked records this role may not see.
+        elif isinstance(measure, Measure) and measure.link is None:
+            names = expression_names(measure.where) | ({measure.field} if measure.field is not None else set())
+            if not all(visible(policy, user, model, name, readable) for name in names):
+                raise AccessError(403, UNAVAILABLE)
+    for item in group_items(group_by):
+        # Group keys of a Link to a row-scoped model would list records this role may not see.
+        if not visible(policy, user, model, item.field if isinstance(item, DatePart) else item, readable):
             raise AccessError(403, UNAVAILABLE)
     compiled, groups = prepare(registry, model, measures, group_by)
     if any(not allowed(policy, user, item) for item in compiled):

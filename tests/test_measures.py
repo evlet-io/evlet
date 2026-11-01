@@ -54,6 +54,7 @@ class Invoice(Model):
             'outstanding': Sum('outstanding', where=F('status') == 'issued'),
             'count': Count(),
             'hidden_total': Sum('secret'),
+            'customers': CountDistinct('customer'),
             'payments': Count('payment', link='invoice'),
             'paid': Sum('amount', model='payment', link='invoice'),
             'last_payment': Max('paid_on', model='payment', link='invoice'),
@@ -114,6 +115,29 @@ def test_exact_sums_over_many_rows_and_large_values(app):
     # Count, Min and Max are unaffected by the large values.
     assert total(app, measures={'n': Count(), 'low': Min('total'), 'high': Max('total')}, filters={'owner': 'big'}) == [
         {'n': 5, 'low': D_('-0.01'), 'high': D_('46116860184273879.04')}]
+
+
+def test_sums_depend_only_on_the_final_total(app):
+    big = 2**62
+    # The running total passes 2^63 in one order and not in the other; both give the same exact result.
+    insert(app, Invoice, [{'units': big, 'owner': 'up'}, {'units': big, 'owner': 'up'}, {'units': -big, 'owner': 'up'},
+                          {'units': -big, 'owner': 'down'}, {'units': big, 'owner': 'down'}, {'units': big, 'owner': 'down'}])
+    for owner in ('up', 'down'):
+        assert total(app, measures={'s': Sum('units')}, filters={'owner': owner}) == [{'s': big}]
+    assert total(app, measures={'s': Sum('units')}, group_by='owner') == [{'owner': 'down', 's': big}, {'owner': 'up', 's': big}]
+    # The smallest stored integer sums, compares and bounds like any other value.
+    insert(app, Invoice, [{'units': -2**63, 'owner': 'low'}])
+    assert total(app, measures={'s': Sum('units'), 'lo': Min('units'), 'n': Count(where=F('units') == D(str(-2**63)))},
+                 filters={'owner': 'low'}) == [{'s': -2**63, 'lo': -2**63, 'n': 1}]
+    with pytest.raises(ValidationError, match='outside the range'):
+        total(app, measures={'n': Count(where=F('units') < D(str(-2**63 - 1)))})
+    insert(app, Invoice, [{'units': -1, 'owner': 'low'}])
+    with pytest.raises(ValidationError) as error:
+        total(app, measures={'s': Sum('units')}, filters={'owner': 'low'})
+    assert error.value.errors == {'measures': 'A sum is outside the exact range of stored numbers; narrow the filters'}
+    # One group out of range fails the whole request.
+    with pytest.raises(ValidationError):
+        total(app, measures={'s': Sum('units')}, group_by='owner')
 
 
 def test_empty_results_and_nulls(app):
@@ -188,11 +212,17 @@ def test_limits_and_invalid_requests(app):
         ({'measures': {'status': Count()}, 'group_by': 'status'}, 'measures'),
         ({'measures': {'n': Count()}, 'filters': {'nothing': 1}}, 'nothing'),
         ({'measures': {'n': Count()}, 'filters': {'total__gt': 'x'}}, 'total__gt'),
+        ({'measures': {'n': Count()}, 'group_by': 5}, 'group_by'),
+        ({'measures': {'n': Count()}, 'group_by': ('status', 5)}, 'group_by'),
+        ({'measures': [('n', Count())]}, 'measures'),
     ]
     for query, key in cases:
         with pytest.raises(ValidationError) as error:
             total(app, **query)
         assert key in error.value.errors, (query, error.value.errors)
+    with pytest.raises(ValidationError) as error:
+        total(app, measures={'n': Count()}, group_by=5)
+    assert error.value.errors == {'group_by': 'Use a field name, Day(), Month() or Year(), or a tuple or list of them'}
     with pytest.raises(ValueError, match='CountDistinct'):
         Count('payment')
     with pytest.raises(ValueError, match='both model= and link='):
@@ -308,7 +338,7 @@ def test_meta_measures_are_checked_at_registration():
             declare(measures, Customer)
     with pytest.raises(ValueError, match='does not belong'):
         declare({'n': Count(Payment, link='invoice')})
-    assert set(Registry(*MODELS).measures[Invoice]) == {'outstanding', 'count', 'hidden_total', 'payments', 'paid', 'last_payment'}
+    assert set(Registry(*MODELS).measures[Invoice]) == {'outstanding', 'count', 'hidden_total', 'customers', 'payments', 'paid', 'last_payment'}
 
 
 # Permissions, Context and per-record measures
@@ -337,7 +367,7 @@ def test_permission_aware_aggregates_apply_row_scope_and_field_rules(app):
             {'status': 'draft', 's': D_('20.00'), 'n': 1, 'open': D_('0.00')},
             {'status': 'issued', 's': D_('150.00'), 'n': 2, 'open': D_('110.00')},
             {'status': 'paid', 's': D_('5.00'), 'n': 1, 'open': D_('0.00')}]
-        assert context.measures(Invoice) == {'outstanding': D_('110.00'), 'count': 4, 'hidden_total': D_('6.00')}
+        assert context.measures(Invoice) == {'outstanding': D_('110.00'), 'count': 4, 'hidden_total': D_('6.00'), 'customers': 2}
         assert context.measures('invoice', invoices[0]) == {'payments': 3, 'paid': D_('40.10'), 'last_payment': date(2025, 3, 1)}
     with app.business.context(editor, readonly=True) as context:
         # The editor sees only its own invoices and its own payments.
@@ -348,11 +378,18 @@ def test_permission_aware_aggregates_apply_row_scope_and_field_rules(app):
         assert context.measures(Invoice, invoices[0]) == {'payments': 2, 'paid': D_('25.10'), 'last_payment': date(2025, 2, 1)}
         denied = [{'measures': {'s': Sum('secret')}}, {'measures': {'s': 'hidden_total'}}, {'measures': {'s': CountDistinct('notes')}},
                   {'measures': {'n': Count(where=F('secret') > 0)}}, {'measures': {'n': Count()}, 'group_by': 'secret'},
-                  {'measures': {'n': Count()}, 'group_by': 'customer'}, {'measures': {'n': Count()}, 'filters': {'secret__gt': 0}}]
+                  {'measures': {'n': Count()}, 'group_by': 'customer'}, {'measures': {'n': Count()}, 'filters': {'secret__gt': 0}},
+                  # Customers are row scoped for the editor: no measure may count or compare their links.
+                  {'measures': {'n': CountDistinct('customer')}}, {'measures': {'n': Count(where=F('customer') == None)}},  # noqa: E711
+                  {'measures': {'n': Count(where=F('customer.name') == 'x')}}, {'measures': {'n': 'customers'}},
+                  # Unknown fields and declared measures look exactly like unreadable ones.
+                  {'measures': {'n': Count(where=F('nothing') > 0)}}, {'measures': {'n': 'not_declared'}},
+                  {'measures': {'n': 'payments'}}, {'measures': {'n': Sum('nothing')}}, {'measures': {'n': Count()}, 'group_by': 'nothing'}]
         for request in denied:
             with pytest.raises(AccessError) as error:
                 context.aggregate(Invoice, **request)
-            assert error.value.status == 403, request
+            assert (error.value.status, error.value.message) == (403, 'Measure field is unavailable') or (
+                'filters' in request and error.value.status == 403), request
         with pytest.raises(AccessError) as error:
             context.measures(Invoice, invoices[1])
         assert error.value.status == 404
@@ -366,7 +403,8 @@ def test_permission_aware_aggregates_apply_row_scope_and_field_rules(app):
             context.aggregate(Invoice, measures={'o': 'outstanding'})
     # Trusted database calls see everything.
     assert app.database.measures(Invoice, invoices[3]) == {'payments': 0, 'paid': D_('0.00'), 'last_payment': None}
-    assert app.database.measures(Invoice, filters={'owner': 'other'}) == {'outstanding': D_('50.00'), 'count': 2, 'hidden_total': D_('2.00')}
+    assert app.database.measures(Invoice, filters={'owner': 'other'}) == {'outstanding': D_('50.00'), 'count': 2, 'hidden_total': D_('2.00'),
+                                                                          'customers': 1}
     with pytest.raises(NotFoundError):
         app.database.measures(Invoice, 999)
     with pytest.raises(ValidationError):
@@ -399,9 +437,9 @@ def test_http_endpoints(app):
     assert viewer('GET', aggregate_url('n:count', 'status'))[1]['items'] == [
         {'status': 'draft', 'n': 1}, {'status': 'issued', 'n': 2}, {'status': 'paid', 'n': 1}]
     # Model-level declared measures for a list page, with the list filters.
-    assert admin('GET', '/api/invoice/measures')[1] == {'measures': {'outstanding': '110.00', 'count': 4, 'hidden_total': '6.00'}}
+    assert admin('GET', '/api/invoice/measures')[1] == {'measures': {'outstanding': '110.00', 'count': 4, 'hidden_total': '6.00', 'customers': 2}}
     assert admin('GET', '/api/invoice/measures?filters=' + quote(json.dumps({'status': 'draft'})))[1] == {
-        'measures': {'outstanding': '0.00', 'count': 1, 'hidden_total': '3.00'}}
+        'measures': {'outstanding': '0.00', 'count': 1, 'hidden_total': '3.00', 'customers': 1}}
     assert editor('GET', '/api/invoice/measures')[1] == {'measures': {'outstanding': '60.00', 'count': 2}}
     assert viewer('GET', '/api/invoice/measures')[1] == {'measures': {'count': 4}}
     # Per-record measures over the related payments.
@@ -415,11 +453,18 @@ def test_http_endpoints(app):
     assert admin('GET', '/api/invoice/999/measures')[0] == 404
     # Unreadable fields are rejected with one generic message, whether or not they exist.
     for url in (aggregate_url('s:sum:secret'), aggregate_url('s:sum:nothing'), aggregate_url('hidden_total'),
+                aggregate_url('c:count_distinct:customer'), aggregate_url('customers'), aggregate_url('nothing'), aggregate_url('payments'),
                 aggregate_url('n:count', 'secret'), aggregate_url('n:count', 'customer'), aggregate_url('n:count', None, {'secret': 1})):
         status, body, _ = editor('GET', url)
         assert status == 403 and body['error'] in ('Measure field is unavailable', 'Query field is unavailable'), (url, body)
     assert viewer('GET', aggregate_url('n:count', 'owner')) [1] == {'error': 'Measure field is unavailable'}
     assert viewer('GET', aggregate_url('outstanding'))[0] == 403
+    # Declared measures leave out what the role cannot use, including Links to row-scoped models.
+    editor_schema = next(model for model in editor('GET', '/api/schema')[1]['models'] if model['name'] == 'invoice')
+    assert 'customers' not in [item['name'] for item in editor_schema['measures']]
+    # Filters are checked even when the model declares no measure the role may read.
+    assert admin('GET', '/api/payment/measures?filters=' + quote(json.dumps({'amount__gt': 'x'})))[0] == 422
+    assert admin('GET', '/api/payment/measures')[1] == {'measures': {}}
 
 
 def test_http_rejects_malformed_parameters(app):
@@ -434,8 +479,6 @@ def test_http_rejects_malformed_parameters(app):
         '/api/invoice/aggregate?measures=n:count,n:count',
         '/api/invoice/aggregate?measures=N:count',
         '/api/invoice/aggregate?measures=n:sum:total:extra',
-        '/api/invoice/aggregate?measures=payments',
-        '/api/invoice/aggregate?measures=nothing',
         '/api/invoice/aggregate?measures=n:sum:owner',
         '/api/invoice/aggregate?measures=n:count&group_by=posting_date:week',
         '/api/invoice/aggregate?measures=n:count&group_by=owner:month',
@@ -471,8 +514,9 @@ def test_schema_lists_readable_declared_measures(app):
                                     'model': None, 'link': None, 'where': {'$expr': 'eq', 'args': [
                                         {'$expr': 'ref', 'scope': 'self', 'field': 'status'},
                                         {'$expr': 'literal', 'type': 'text', 'value': 'issued'}]}}
-    assert [item['name'] for item in entry['measures']] == ['outstanding', 'count', 'hidden_total', 'payments', 'paid', 'last_payment']
-    assert entry['measures'][3] == {'name': 'payments', 'function': 'count', 'field': None, 'where': None, 'per_record': True,
+    assert [item['name'] for item in entry['measures']] == ['outstanding', 'count', 'hidden_total', 'customers', 'payments', 'paid',
+                                                           'last_payment']
+    assert entry['measures'][4] == {'name': 'payments', 'function': 'count', 'field': None, 'where': None, 'per_record': True,
                                     'model': 'payment', 'link': 'invoice'}
     shown = next(model for model in viewer('GET', '/api/schema')[1]['models'] if model['name'] == 'invoice')
     assert [item['name'] for item in shown['measures']] == ['count']

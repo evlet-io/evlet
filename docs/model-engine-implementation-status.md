@@ -619,3 +619,17 @@ Known limitations:
   time; there is no batched list form yet (Phase 10 relation counts may need one).
 * Text minimums and maximums and grouping `DateTime` fields by part are not offered.
 * The connector, the MCP server and the SolidJS screens do not use measures yet.
+
+Review fixes (01-11-2026):
+
+* A Link to a model with a row scope for the caller is refused as a measure field,
+  `where=` input or group field (ad hoc, declared and `Context`); `CountDistinct` of such
+  a link counted hidden records before. The Link of a per-record measure is exempt.
+* Sums add the high and low 32-bit halves of each value separately and recombine them
+  in Python, so only the final total is checked. SQLite no longer fails on an
+  intermediate overflow that PostgreSQL accepted. The stored range is now
+  -2^63 to 2^63 - 1 for sums and `where=` literals.
+* Unknown and unreadable `where=` fields and declared measure names give the same 403
+  through HTTP and `Context` (before, unknown names were 422).
+* `/api/{model}/measures` checks its filters even when no measure is available.
+* `group_by` of the wrong type names the accepted forms.
