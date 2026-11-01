@@ -57,6 +57,186 @@
   "body": {
    "items": [
     {
+     "credit_days": 69,
+     "id": 55,
+     "name": "Trading house 55",
+     "rate": "64.50"
+    },
+    {
+     "credit_days": 68,
+     "id": 54,
+     "name": "Trading house 54",
+     "rate": "63.50"
+    },
+    {
+     "credit_days": 67,
+     "id": 53,
+     "name": "Trading house 53",
+     "rate": "62.50"
+    },
+    {
+     "credit_days": 66,
+     "id": 52,
+     "name": "Trading house 52",
+     "rate": "61.50"
+    },
+    {
+     "credit_days": 65,
+     "id": 51,
+     "name": "Trading house 51",
+     "rate": "60.50"
+    },
+    {
+     "credit_days": 64,
+     "id": 50,
+     "name": "Trading house 50",
+     "rate": "59.50"
+    },
+    {
+     "credit_days": 63,
+     "id": 49,
+     "name": "Trading house 49",
+     "rate": "58.50"
+    },
+    {
+     "credit_days": 62,
+     "id": 48,
+     "name": "Trading house 48",
+     "rate": "57.50"
+    },
+    {
+     "credit_days": 61,
+     "id": 47,
+     "name": "Trading house 47",
+     "rate": "56.50"
+    },
+    {
+     "credit_days": 60,
+     "id": 46,
+     "name": "Trading house 46",
+     "rate": "55.50"
+    },
+    {
+     "credit_days": 59,
+     "id": 45,
+     "name": "Trading house 45",
+     "rate": "54.50"
+    },
+    {
+     "credit_days": 58,
+     "id": 44,
+     "name": "Trading house 44",
+     "rate": "53.50"
+    },
+    {
+     "credit_days": 57,
+     "id": 43,
+     "name": "Trading house 43",
+     "rate": "52.50"
+    },
+    {
+     "credit_days": 56,
+     "id": 42,
+     "name": "Trading house 42",
+     "rate": "51.50"
+    },
+    {
+     "credit_days": 55,
+     "id": 41,
+     "name": "Trading house 41",
+     "rate": "50.50"
+    },
+    {
+     "credit_days": 54,
+     "id": 40,
+     "name": "Trading house 40",
+     "rate": "49.50"
+    },
+    {
+     "credit_days": 53,
+     "id": 39,
+     "name": "Trading house 39",
+     "rate": "48.50"
+    },
+    {
+     "credit_days": 52,
+     "id": 38,
+     "name": "Trading house 38",
+     "rate": "47.50"
+    },
+    {
+     "credit_days": 51,
+     "id": 37,
+     "name": "Trading house 37",
+     "rate": "46.50"
+    },
+    {
+     "credit_days": 50,
+     "id": 36,
+     "name": "Trading house 36",
+     "rate": "45.50"
+    },
+    {
+     "credit_days": 49,
+     "id": 35,
+     "name": "Trading house 35",
+     "rate": "44.50"
+    },
+    {
+     "credit_days": 48,
+     "id": 34,
+     "name": "Trading house 34",
+     "rate": "43.50"
+    },
+    {
+     "credit_days": 47,
+     "id": 33,
+     "name": "Trading house 33",
+     "rate": "42.50"
+    },
+    {
+     "credit_days": 46,
+     "id": 32,
+     "name": "Trading house 32",
+     "rate": "41.50"
+    },
+    {
+     "credit_days": 45,
+     "id": 31,
+     "name": "Trading house 31",
+     "rate": "40.50"
+    },
+    {
+     "credit_days": 44,
+     "id": 30,
+     "name": "Trading house 30",
+     "rate": "39.50"
+    },
+    {
+     "credit_days": 43,
+     "id": 29,
+     "name": "Trading house 29",
+     "rate": "38.50"
+    },
+    {
+     "credit_days": 42,
+     "id": 28,
+     "name": "Trading house 28",
+     "rate": "37.50"
+    },
+    {
+     "credit_days": 41,
+     "id": 27,
+     "name": "Trading house 27",
+     "rate": "36.50"
+    },
+    {
+     "credit_days": 40,
+     "id": 26,
+     "name": "Trading house 26",
+     "rate": "35.50"
+    },
+    {
      "credit_days": 39,
      "id": 25,
      "name": "Zayed Medical Supplies",
@@ -177,9 +357,9 @@
      "rate": "15.50"
     }
    ],
-   "limit": 20,
+   "limit": 50,
    "offset": 0,
-   "total": 25
+   "total": 55
   },
   "etag": null,
   "status": 200
@@ -306,11 +486,191 @@
      "id": 20,
      "name": "Tilal Farms",
      "rate": "29.50"
+    },
+    {
+     "credit_days": 40,
+     "id": 26,
+     "name": "Trading house 26",
+     "rate": "35.50"
+    },
+    {
+     "credit_days": 41,
+     "id": 27,
+     "name": "Trading house 27",
+     "rate": "36.50"
+    },
+    {
+     "credit_days": 42,
+     "id": 28,
+     "name": "Trading house 28",
+     "rate": "37.50"
+    },
+    {
+     "credit_days": 43,
+     "id": 29,
+     "name": "Trading house 29",
+     "rate": "38.50"
+    },
+    {
+     "credit_days": 44,
+     "id": 30,
+     "name": "Trading house 30",
+     "rate": "39.50"
+    },
+    {
+     "credit_days": 45,
+     "id": 31,
+     "name": "Trading house 31",
+     "rate": "40.50"
+    },
+    {
+     "credit_days": 46,
+     "id": 32,
+     "name": "Trading house 32",
+     "rate": "41.50"
+    },
+    {
+     "credit_days": 47,
+     "id": 33,
+     "name": "Trading house 33",
+     "rate": "42.50"
+    },
+    {
+     "credit_days": 48,
+     "id": 34,
+     "name": "Trading house 34",
+     "rate": "43.50"
+    },
+    {
+     "credit_days": 49,
+     "id": 35,
+     "name": "Trading house 35",
+     "rate": "44.50"
+    },
+    {
+     "credit_days": 50,
+     "id": 36,
+     "name": "Trading house 36",
+     "rate": "45.50"
+    },
+    {
+     "credit_days": 51,
+     "id": 37,
+     "name": "Trading house 37",
+     "rate": "46.50"
+    },
+    {
+     "credit_days": 52,
+     "id": 38,
+     "name": "Trading house 38",
+     "rate": "47.50"
+    },
+    {
+     "credit_days": 53,
+     "id": 39,
+     "name": "Trading house 39",
+     "rate": "48.50"
+    },
+    {
+     "credit_days": 54,
+     "id": 40,
+     "name": "Trading house 40",
+     "rate": "49.50"
+    },
+    {
+     "credit_days": 55,
+     "id": 41,
+     "name": "Trading house 41",
+     "rate": "50.50"
+    },
+    {
+     "credit_days": 56,
+     "id": 42,
+     "name": "Trading house 42",
+     "rate": "51.50"
+    },
+    {
+     "credit_days": 57,
+     "id": 43,
+     "name": "Trading house 43",
+     "rate": "52.50"
+    },
+    {
+     "credit_days": 58,
+     "id": 44,
+     "name": "Trading house 44",
+     "rate": "53.50"
+    },
+    {
+     "credit_days": 59,
+     "id": 45,
+     "name": "Trading house 45",
+     "rate": "54.50"
+    },
+    {
+     "credit_days": 60,
+     "id": 46,
+     "name": "Trading house 46",
+     "rate": "55.50"
+    },
+    {
+     "credit_days": 61,
+     "id": 47,
+     "name": "Trading house 47",
+     "rate": "56.50"
+    },
+    {
+     "credit_days": 62,
+     "id": 48,
+     "name": "Trading house 48",
+     "rate": "57.50"
+    },
+    {
+     "credit_days": 63,
+     "id": 49,
+     "name": "Trading house 49",
+     "rate": "58.50"
+    },
+    {
+     "credit_days": 64,
+     "id": 50,
+     "name": "Trading house 50",
+     "rate": "59.50"
+    },
+    {
+     "credit_days": 65,
+     "id": 51,
+     "name": "Trading house 51",
+     "rate": "60.50"
+    },
+    {
+     "credit_days": 66,
+     "id": 52,
+     "name": "Trading house 52",
+     "rate": "61.50"
+    },
+    {
+     "credit_days": 67,
+     "id": 53,
+     "name": "Trading house 53",
+     "rate": "62.50"
+    },
+    {
+     "credit_days": 68,
+     "id": 54,
+     "name": "Trading house 54",
+     "rate": "63.50"
+    },
+    {
+     "credit_days": 69,
+     "id": 55,
+     "name": "Trading house 55",
+     "rate": "64.50"
     }
    ],
-   "limit": 20,
+   "limit": 50,
    "offset": 0,
-   "total": 25
+   "total": 55
   },
   "etag": null,
   "status": 200
@@ -349,9 +709,9 @@
      "rate": "34.50"
     }
    ],
-   "limit": 20,
-   "offset": 20,
-   "total": 25
+   "limit": 50,
+   "offset": 50,
+   "total": 55
   },
   "etag": null,
   "status": 200
@@ -372,7 +732,7 @@
      "rate": "11.50"
     }
    ],
-   "limit": 20,
+   "limit": 50,
    "offset": 0,
    "total": 2
   },
