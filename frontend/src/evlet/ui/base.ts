@@ -20,20 +20,28 @@ export type IconSize = 'xs' | 'sm' | 'md' | 'lg';
 
 /** A Lucide line icon at 12, 14, 16 or 18 px. Decorative unless given a label. */
 export function Icon(name: string, options: { size?: IconSize; tint?: Tint; label?: string; className?: string } = {}): SVGSVGElement {
-  const svg = document.createElementNS(SVG, 'svg');
   const size = options.size && options.size !== 'md' ? ` ${options.size}` : '';
-  svg.setAttribute('class', `i${size}${options.tint ? ` c-${tint(options.tint)}` : ''}${options.className ? ` ${options.className}` : ''}`);
-  for (const [key, value] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }))
-    svg.setAttribute(key, value);
-  if (options.label) { svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', options.label); }
-  else svg.setAttribute('aria-hidden', 'true');
-  for (const [tag, attributes] of ICONS[name] ?? ICONS['circle-help']) {
-    const shape = document.createElementNS(SVG, tag);
-    for (const [key, value] of Object.entries(attributes)) shape.setAttribute(key, value);
-    svg.append(shape);
+  const className = `i${size}${options.tint ? ` c-${tint(options.tint)}` : ''}${options.className ? ` ${options.className}` : ''}`;
+  // Each icon is built once and cloned after that.
+  let svg = built.get(name);
+  if (!svg) {
+    svg = document.createElementNS(SVG, 'svg');
+    for (const [key, value] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }))
+      svg.setAttribute(key, value);
+    for (const [tag, attributes] of ICONS[name] ?? ICONS['circle-help']) {
+      const shape = document.createElementNS(SVG, tag);
+      for (const [key, value] of Object.entries(attributes)) shape.setAttribute(key, value);
+      svg.append(shape);
+    }
+    built.set(name, svg);
   }
-  return svg;
+  const icon = svg.cloneNode(true) as SVGSVGElement;
+  icon.setAttribute('class', className);
+  if (options.label) { icon.setAttribute('role', 'img'); icon.setAttribute('aria-label', options.label); }
+  else icon.setAttribute('aria-hidden', 'true');
+  return icon;
 }
+const built = new Map<string, SVGSVGElement>();
 
 /** Icon on a soft tinted square, 22 to 44 px. */
 export function IconTile(name: string, options: { tint?: Tint; size?: number } = {}): HTMLElement {
