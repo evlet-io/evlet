@@ -24,7 +24,7 @@ class HTTPError(Exception):
 
 
 class Application:
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=()):
         from .ui import ViewRegistry
         if isinstance(hosts, (str, bytes)):
             raise ValueError("Pass a collection of explicit Host header values")
@@ -44,6 +44,12 @@ class Application:
         self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
             self.business.application = {"name": name, "playground": name == "Evlet Playground"}
+            from .forms import Forms
+            self.business.forms = Forms(self.business, reports)
+            self.business.apis = tuple(apis)
+            self.business.ui = self.ui
+        elif reports or apis:
+            raise ValueError('Reports and APIs require authentication')
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -257,13 +263,18 @@ class Application:
         self._stopping.set()
 
     async def _lifespan(self, receive, send):
+        generation = None
         while True:
             event = await receive()
             if event["type"] == "lifespan.startup":
                 self._stopping = asyncio.Event()
                 try:
+                    from .instances import activate_generation
+                    generation = activate_generation(self)
+                    generation.__enter__()
                     await asyncio.to_thread(self.initialize)
                 except Exception:
+                    if generation: generation.__exit__(None, None, None)
                     logger.exception("Database initialization failed")
                     await send({"type": "lifespan.startup.failed", "message": "Database initialization failed"})
                     return
@@ -271,5 +282,6 @@ class Application:
             elif event["type"] == "lifespan.shutdown":
                 self.stop()
                 await asyncio.to_thread(self.database.close)
+                if generation: generation.__exit__(None, None, None)
                 await send({"type": "lifespan.shutdown.complete"})
                 return

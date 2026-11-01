@@ -50,6 +50,7 @@ import type { User, UIDocument, ModelSchema } from "./runtime/types";
 import Docs from "./views/Docs";
 import ModelList from "./views/ModelList";
 import RecordForm from "./views/RecordForm";
+import ReportView from './views/ReportView';
 const Accounts = lazy(() => import("./views/Accounts"));
 registerLazyComponent("ProjectsDemo", async () => {
   const { default: Projects } = await import("./demos/ProjectsDemo");
@@ -311,6 +312,8 @@ function Workspace(props: {
     if (ui.version !== 1) throw new Error("Unsupported UI schema version.");
     return {
       models,
+      reports: schema.reports || [],
+      nativePanels: schema.native_panels || [],
       ui: ui as UIDocument,
       capabilities: schema.capabilities || {},
     };
@@ -362,10 +365,12 @@ function Workspace(props: {
         )
       : { kind: "docs", params: {} };
   const currentTitle = () =>
+    report()?.label ||
     route().model?.plural ||
     route().view?.title ||
     (route().kind === "accounts" ? "Accounts" : "Docs");
   const pages = () => data()?.ui.views.filter((v) => v.route) || [];
+  const report = () => data()?.reports.find((report: any) => props.router.location().split('?')[0] === '/reports/' + report.name);
   const links = () => [
     { value: "/docs", label: "Overview" },
     { value: "/docs/getting-started", label: "Getting started" },
@@ -391,6 +396,7 @@ function Workspace(props: {
     notify,
     refresh: revision,
     capabilities: data()!.capabilities,
+    nativePanels: data()!.nativePanels,
     applicationState,
   });
   return (
@@ -498,6 +504,10 @@ function Workspace(props: {
                         },
                       ]}
                     />
+                  </Show>
+                  <Show when={data()!.reports.length}>
+                    <NavigationGroup title="Reports" value={navValue()} onChange={navigate}
+                      items={data()!.reports.map((report: any) => ({value: '/reports/' + report.name, label: report.label}))} />
                   </Show>
                 </>
               }
@@ -611,6 +621,7 @@ function Workspace(props: {
             <Show when={props.router.location().split("?")[0]} keyed>
               {(path) => (
                 <Switch>
+                  <Match when={report()}><ReportView report={report()} /></Match>
                   <Match when={route().kind === "docs"}>
                     <Docs path={path} />
                   </Match>

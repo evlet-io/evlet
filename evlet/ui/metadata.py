@@ -3,6 +3,7 @@
 import re
 
 from ..fields import LongText, MISSING, Text
+from ..declarations import Ref
 
 
 def label_for(name):
@@ -15,7 +16,7 @@ def view_for(model):
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
             raise ValueError('Model.Meta supports label, plural, description, title_field, list_fields, search_fields, and layout')
-    visible = {name: field for name, field in model.__fields__.items() if not field.hidden}
+    visible = {name: field for name, field in model.__declared_fields__.items() if not field.hidden}
     texts = [name for name, field in visible.items() if isinstance(field, Text) and not isinstance(field, LongText)]
     label = getattr(meta, 'label', label_for(model.__name__))
     plural = getattr(meta, 'plural', label + 's')
@@ -50,7 +51,8 @@ def field_schema(field):
     result = {**field.metadata(), 'label': field.label or label_for(field.name),
               'help_text': field.help_text, 'placeholder': field.placeholder,
               'hidden': field.hidden, 'read_only': field.read_only,
-              'default_kind': 'none' if field.default is MISSING else 'callable' if callable(field.default) else 'static'}
+              **({'stored': field.stored} if field.compute is not None or field.query is not None or not field.stored else {}),
+              'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'callable' if callable(field.default) else 'static'}
     if result['default_kind'] == 'static':
         value = None if field.default is None else field.validate(field.default)
         result['default'] = field.serialize(value)
@@ -59,6 +61,24 @@ def field_schema(field):
 
 def ui_schema(registry):
     return {'version': 1, 'ui_version': 1, 'models': [
-        {'name': name, **view_for(model), 'fields': [field_schema(field) for field in model.__fields__.values()]}
+        {'name': name, **view_for(model), 'fields': [field_schema(field) for field in model.__declared_fields__.values()],
+         **behavior(model, registry)}
         for name, model in registry.models.items()
     ]}
+
+
+def behavior(model, registry):
+    if not getattr(model, '__declaration_mode__', False):
+        return {}
+    from ..reactivity import plans, serialized, graph
+    nodes, order = ({}, []) if any(child.model is model for child in registry.children) else graph(registry, model)
+    fields = plans(model)
+    return {'document_version': 1, 'resource': getattr(model, '__resource_id__', registry.name_for(model)),
+            'behavior': {name: {key: {field: serialized(value) for field, value in item.items()} if key == 'filters' else serialized(item)
+                                for key, item in entry.items()} for name, entry in fields.items()},
+            'order': order, 'sources': source_schema(model)}
+
+
+def source_schema(model):
+    return {name: {key: {'type': field.kind, **({'scale': field.scale} if hasattr(field, 'scale') else {})} for key, field in source.fields.items()}
+            for name, source in model.__sources__.items()}

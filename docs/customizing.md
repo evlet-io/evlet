@@ -6,6 +6,10 @@ you do not need to copy or modify the framework.
 
 ## Models, forms and lists
 
+This walkthrough uses the supported `evlet app notes --legacy` scaffold.
+For the default flat package and declarative features, use the
+[declarative app guide](amendment-v2.md).
+
 Open `apps/notes/notes/models/__init__.py`. Add a field to the existing model:
 
 ```python

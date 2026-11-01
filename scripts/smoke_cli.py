@@ -83,7 +83,7 @@ def main():
             stream = urlopen(Request(url + '/api/_events/stream', headers={'Cookie':client.cookie}), timeout=10)
             assert stream.readline().startswith(b'id:')
             reload_started = time.monotonic()
-            model = root / 'apps/notes/notes/models/__init__.py'
+            model = root / 'apps/notes/models/item.py'
             model.write_text(model.read_text().replace("plural = 'Items'", "plural = 'Reloaded notes'"))
             for _ in range(80):
                 try:

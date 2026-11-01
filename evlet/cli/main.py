@@ -17,13 +17,18 @@ def parser():
     result = argparse.ArgumentParser(prog='evlet', description=__doc__)
     result.add_argument('--project', help='Project path; also accepted after the command')
     commands = result.add_subparsers(dest='command', required=True)
-    setup = commands.add_parser('setup', help='Create a project with apps/ and instances/ only')
+    setup = commands.add_parser('setup', help='Create apps/, instances/ and an isolated .venv')
     setup.add_argument('directory')
+    setup.add_argument('--framework', help='Reviewed local framework wheel or source for offline/development setup')
     app = commands.add_parser('app', help='Create, fetch or list reusable apps')
     app.add_argument('name', nargs='?')
+    app.add_argument('--legacy', action='store_true', help='Create the supported nested AppDefinition scaffold')
+    app.add_argument('--trust', action='store_true', help='Trust acquired application and dependency build code')
     group = app.add_mutually_exclusive_group()
-    group.add_argument('--get', metavar='GIT_URL', help='Fetch and validate without executing app code')
+    group.add_argument('--get', metavar='GIT_URL', help='Statically fetch, then prepare and build after explicit trust')
     group.add_argument('--list', action='store_true')
+    build = commands.add_parser('build', help='Build a versioned application generation without activating or migrating it')
+    build.add_argument('--trust', action='store_true', help='Trust application imports and build code')
     instance = commands.add_parser('instance', help='Create or list isolated instances')
     instance.add_argument('name', nargs='?')
     instance.add_argument('--list', action='store_true')
@@ -41,6 +46,7 @@ def parser():
             command.add_argument('--jobs', action='store_true', help='Run the existing short-task queue in this process')
         else:
             command.add_argument('--instance', help='Required when the project has several instances')
+            command.add_argument('--watch', action='store_true', help='Rebuild and reload when app source or assets change')
         command.add_argument('--debug', action='store_true', help='Show tracebacks for expected startup errors')
         command.add_argument('--host', default='127.0.0.1')
         command.add_argument('--port', type=int, default=8000)
@@ -67,7 +73,7 @@ def main(argv=None):
         if args.command == 'setup':
             from .setup import setup
             directory = Path(args.project) / args.directory if args.project else args.directory
-            print(f'Project created: {setup(directory)}')
+            print(f'Project created: {setup(directory, framework=args.framework)}')
             return
         if args.command in ('docs', 'playground'):
             if args.command == 'docs':
@@ -78,6 +84,9 @@ def main(argv=None):
                 playground(port=args.port)
             return
         root = project_root(args.project)
+        if argv is None:
+            from .setup import delegate
+            delegate(root, values)
         if args.command == 'app':
             from .app import create_app, fetch_app
             if args.name and (args.get or args.list):
@@ -89,11 +98,28 @@ def main(argv=None):
                         package = read_package(path)
                         print(f'{package.name}\t{package.version}\t{package.title}')
             elif args.get:
-                print(fetch_app(root, args.get))
+                package = fetch_app(root, args.get, return_package=True)
+                print(f'Fetched {package.name} {package.version} at {package.locked()["commit"]}; no app code has run')
+                from .app import prepare_dependencies
+                from ..builds import prepare
+                names = [package.name]
+                if not args.trust and not confirm('Trust and prepare ' + package.name + ' from ' + args.get + ' and its declared dependencies?'):
+                    raise ValueError('Fetched but not built: review source, then run evlet build --trust')
+                _, manifest = prepare(root, prepare_dependencies(root, names))
+                print('Built generation: ' + manifest['fingerprint'])
             elif args.name:
-                print(f'App created: {create_app(root, args.name)}')
+                print(f'App created: {create_app(root, args.name, legacy=args.legacy)}')
             else:
                 raise ValueError('Provide an app name, --get URL, or --list')
+        elif args.command == 'build':
+            from .app import prepare_dependencies
+            from ..builds import prepare
+            names = [path.name for path in sorted((root / 'apps').iterdir()) if path.is_dir() and not path.name.startswith('.')]
+            if not args.trust and not confirm('Trust and build these local applications: ' + ', '.join(names) + '?'):
+                raise ValueError('Build requires explicit trust; review source, then use --trust')
+            packages = prepare_dependencies(root, names)
+            _, manifest = prepare(root, packages)
+            print('Built generation: ' + manifest['fingerprint'])
         elif args.command == 'instance':
             from .instance import create_instance
             if args.list:

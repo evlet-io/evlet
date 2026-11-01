@@ -1,7 +1,7 @@
 """Mutable authoring objects. Compilation produces an immutable snapshot."""
 
 from copy import deepcopy
-from .expressions import ExecuteAction
+from .expressions import ExecuteAction, model_key
 
 
 class Component:
@@ -216,7 +216,7 @@ class View:
     ):
         self.model = model
         self.name = name or (
-            model.__name__.lower() + "." + self.kind if model else None
+            model_key(model) + "." + self.kind if model else None
         )
         self.route = route
         self.title = title or (model.__name__ if model else self.name)

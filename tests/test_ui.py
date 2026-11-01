@@ -378,3 +378,14 @@ def test_rendered_deployment_preserves_browser_security_headers():
     caddy = deployment_files(['app.example.com'])['Caddyfile']
     assert f'Content-Security-Policy "{CSP}"' in caddy
     assert 'frame-ancestors' in caddy and 'Strict-Transport-Security' in caddy
+
+
+def test_view_overrides_use_the_model_storage_name():
+    class SalesOrder(Model):
+        storage_name = "sales_orders"
+        name = ModelText()
+
+    ui = ViewRegistry([ListView(model=SalesOrder, title="Custom Orders")])
+    schema = Registry(SalesOrder).ui_schema()
+    ui.validate(schema)
+    assert ui.resolve("/app/sales_orders", schema)["view"]["title"] == "Custom Orders"

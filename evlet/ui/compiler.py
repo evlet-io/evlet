@@ -5,7 +5,7 @@ import json
 import math
 import re
 from .definitions import Component, View
-from .expressions import Expression, Binding, Operation, state_path
+from .expressions import Expression, Binding, Operation, state_path, model_key
 from .contracts import COMMON, default_components
 
 IDENTIFIER = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,159}$")
@@ -289,7 +289,7 @@ class SchemaCompiler:
             "subtitle": view.subtitle,
             "icon": view.icon,
             "section": view.section,
-            "model": view.model.__name__.lower() if view.model else None,
+            "model": model_key(view.model) if view.model else None,
             "layout": layout,
             "state": state,
             "computed": computed,

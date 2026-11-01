@@ -14,7 +14,9 @@ class Field:
     sql_type = "TEXT"
 
     def __init__(self, *, required=False, default=MISSING, unique=False, index=False, validator=None,
-                 label=None, help_text="", placeholder="", hidden=False, read_only=False):
+                 label=None, help_text="", placeholder="", hidden=False, read_only=False,
+                 compute=None, stored=True, query=None, fetch=None, filters=None,
+                 visible_if=None, required_if=None, read_only_if=None):
         self.required = required
         self.default = default
         self.unique = unique
@@ -29,6 +31,19 @@ class Field:
             raise ValueError("hidden and read_only must be booleans")
         self.label, self.help_text, self.placeholder = label, help_text, placeholder
         self.hidden, self.read_only = hidden, read_only
+        self.compute, self.stored, self.query, self.fetch = compute, stored, query, fetch
+        self.filters = dict(filters or {})
+        self.visible_if, self.required_if, self.read_only_if = visible_if, required_if, read_only_if
+        if type(stored) is not bool or (not stored and (index or unique)):
+            raise ValueError('Virtual fields cannot have database indexes')
+        if compute is not None and query is not None:
+            raise ValueError('Choose compute or query for a field')
+        if fetch is not None and (not isinstance(fetch, str) or len(fetch.split('.')) != 2 or compute is not None or query is not None):
+            raise ValueError('Fetch uses link_field.target_field and cannot also compute/query')
+        if query is not None and (not callable(query) or not hasattr(query, '__depends__') or stored):
+            raise ValueError('Queries require @depends and stored=False')
+        if compute is not None or query is not None:
+            self.read_only = True
 
     def __set_name__(self, owner, name):
         if self.name and self.name != name:
@@ -38,7 +53,7 @@ class Field:
     def __get__(self, instance, owner=None):
         if instance is None:
             return self
-        return instance._values[self.name]
+        return instance._values.get(self.name)
 
     def __set__(self, instance, value):
         raise AttributeError("Records are snapshots; use Database.update() to save changes")
@@ -330,4 +345,5 @@ class Link(Integer):
         self.target = target
 
     def metadata(self):
-        return {**super().metadata(), "target": self.target.__name__.lower()}
+        target = self.target if isinstance(self.target, str) else getattr(self.target, 'storage_name', self.target.__name__.lower())
+        return {**super().metadata(), "target": target}

@@ -36,6 +36,7 @@ class Task:
     handler: object
     max_attempts: int = 3
     retry_delay: int = 30
+    external: bool = False
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,7 @@ class JobQueue:
         self.tasks = {}
         for task in tasks:
             name(task.name)
+            if type(task.external) is not bool: raise ValueError('Task external mode must be a boolean')
             if task.name in self.tasks or not callable(task.handler) or type(task.max_attempts) is not int or not 1 <= task.max_attempts <= 10 or type(task.retry_delay) is not int or not 1 <= task.retry_delay <= 86400:
                 raise ValueError('Invalid or duplicate task')
             self.tasks[task.name] = task
@@ -83,17 +85,19 @@ class JobQueue:
                 run_at INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER,
                 lease TEXT, lease_until INTEGER, dedupe TEXT UNIQUE, error TEXT)''')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_jobs_due ON evlet_jobs(state,run_at)')
+            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_identities (job_id INTEGER PRIMARY KEY, role TEXT NOT NULL)')
             tx.connection.execute('''CREATE TABLE IF NOT EXISTS evlet_schedules (
                 name TEXT PRIMARY KEY, task TEXT NOT NULL, payload TEXT NOT NULL, actor INTEGER,
                 model TEXT, record_id INTEGER, interval INTEGER NOT NULL, next_run INTEGER NOT NULL,
                 enabled INTEGER NOT NULL DEFAULT 1)''')
+            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_calendar_schedules (name TEXT PRIMARY KEY, expression TEXT NOT NULL, timezone TEXT NOT NULL)')
 
     def _bound(self, tx):
         row = tx.connection.execute('SELECT tenant FROM evlet_job_namespace WHERE id=1').fetchone()
         if not self.database.owns(tx) or not row or row[0] != self.tenant:
             raise ValueError('Job transaction belongs to another tenant database')
 
-    def enqueue(self, tx, task, payload, *, user=None, target=None, run_at=None, key=None):
+    def enqueue(self, tx, task, payload, *, user=None, target=None, run_at=None, key=None, system_role=None):
         self._bound(tx)
         definition = self.tasks.get(task)
         if definition is None:
@@ -111,13 +115,18 @@ class JobQueue:
         now = int(time.time())
         due = now if run_at is None else timestamp(run_at)
         actor = None if user is None else user.id
+        if system_role is not None and (user is not None or system_role not in ('admin', 'editor', 'viewer')):
+            raise ValueError('System jobs require an explicit supported role and no browser actor')
         if key is not None:
             old = tx.connection.execute('SELECT * FROM evlet_jobs WHERE dedupe=?', (key,)).fetchone()
             if old:
+                identity = tx.connection.execute('SELECT role FROM evlet_job_identities WHERE job_id=?', (old['id'],)).fetchone()
+                if (identity[0] if identity else None) != system_role: raise ValueError('Idempotency key was already used for another execution identity')
                 if (old['task'], old['payload'], old['actor'], old['model'], old['record_id']) != (task, encoded, actor, model, record_id):
                     raise ValueError('Idempotency key was already used for another job')
                 return JobReceipt(old['id'], old['state'])
         job_id = tx.connection.execute('INSERT INTO evlet_jobs(task,payload,actor,model,record_id,state,max_attempts,run_at,created_at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)', (task, encoded, actor, model, record_id, 'queued', definition.max_attempts, due, now, key)).lastrowid
+        if system_role is not None: tx.connection.execute('INSERT INTO evlet_job_identities(job_id,role) VALUES (?,?)', (job_id, system_role))
         return JobReceipt(job_id, 'queued')
 
     def schedule(self, schedule, task, payload, *, every, start_at=None, user=None, target=None):
@@ -156,7 +165,12 @@ class JobQueue:
                     continue
                 key = f"schedule:{row['name']}:{row['next_run']}"
                 tx.connection.execute('INSERT OR IGNORE INTO evlet_jobs(task,payload,actor,model,record_id,state,max_attempts,run_at,created_at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)', (row['task'], row['payload'], row['actor'], row['model'], row['record_id'], 'queued', definition.max_attempts, now, now, key))
-                next_run = row['next_run'] + ((now - row['next_run']) // row['interval'] + 1) * row['interval']
+                calendar = tx.connection.execute('SELECT expression,timezone FROM evlet_calendar_schedules WHERE name=?', (row['name'],)).fetchone()
+                if calendar:
+                    from .services import Calendar
+                    next_run = Calendar(calendar['expression'], calendar['timezone']).next(now)
+                else:
+                    next_run = row['next_run'] + ((now - row['next_run']) // row['interval'] + 1) * row['interval']
                 tx.connection.execute('UPDATE evlet_schedules SET next_run=? WHERE name=?', (next_run, row['name']))
             return len(rows)
 
@@ -197,20 +211,33 @@ class JobQueue:
                     if account is None:
                         raise AccessError(403, 'The requesting account is inactive')
                     user = User(*account)
-                    if row['model']:
-                        model = self.database.registry.models.get(row['model'])
-                        if model is None:
-                            raise NotFoundError()
-                        self.policy.record(tx, user, model, row['record_id'], 'update')
+                else:
+                    identity = tx.connection.execute('SELECT role FROM evlet_job_identities WHERE job_id=?', (job_id,)).fetchone()
+                    if identity: user = User(0, 'schedule', identity[0])
+                if user is not None and row['model']:
+                    model = self.database.registry.models.get(row['model'])
+                    if model is None: raise NotFoundError()
+                    self.policy.record(tx, user, model, row['record_id'], 'update')
                 namespace = tx.connection.execute('SELECT namespace FROM evlet_job_namespace WHERE id=1').fetchone()[0]
                 stable_key = hashlib.sha256((namespace + ':' + (row['dedupe'] or f'job:{job_id}')).encode()).hexdigest()
                 context = JobContext(job_id, self.tenant, row['attempts'], user, stable_key)
                 payload = json.loads(row['payload'])
                 started = True
-                task.handler(tx, context, payload)
-                tx.connection.execute("UPDATE evlet_jobs SET state='succeeded',completed_at=?,lease=NULL,lease_until=NULL WHERE id=? AND lease=?", (int(time.time()), job_id, token))
-                if self.events and row['model']:
-                    self.events.publish(tx, self.database.registry.models[row['model']], row['record_id'])
+                tx._business = getattr(self, 'business', None)
+                if not task.external:
+                    task.handler(tx, context, payload)
+                    tx.connection.execute("UPDATE evlet_jobs SET state='succeeded',completed_at=?,lease=NULL,lease_until=NULL WHERE id=? AND lease=?", (int(time.time()), job_id, token))
+                    if self.events and row['model']:
+                        self.events.publish(tx, self.database.registry.models[row['model']], row['record_id'])
+            if task.external:
+                # No open database transaction or supplied Session during external I/O.
+                task.handler(context, payload)
+                with self.database.transaction() as tx:
+                    self._bound(tx)
+                    completed = tx.connection.execute("UPDATE evlet_jobs SET state='succeeded',completed_at=?,lease=NULL,lease_until=NULL WHERE id=? AND state='running' AND lease=? AND lease_until>?", (int(time.time()), job_id, token, int(time.time()))).rowcount
+                    if not completed: return False
+                    if self.events and row['model']:
+                        self.events.publish(tx, self.database.registry.models[row['model']], row['record_id'])
             return True
         except Exception as exc:
             logger.exception('Background task %s failed', job_id)

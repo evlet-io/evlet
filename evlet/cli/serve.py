@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from uvicorn import Server
+from uvicorn.supervisors.basereload import BaseReload
 
 from ..instances import load_runtime
 from .project import child, instance_guard
@@ -35,9 +36,13 @@ class ManagedRuntime:
         try:
             with self.guard() if self.guard else nullcontext():
                 self.app = self.factory()
+                from ..instances import activate_generation
+                generation = activate_generation(self.app)
+                generation.__enter__()
                 try:
                     await asyncio.to_thread(self.app.initialize)
                 except Exception:
+                    generation.__exit__(None, None, None)
                     self.app.database.close()
                     raise
                 self.stopped = asyncio.Event()
@@ -51,6 +56,7 @@ class ManagedRuntime:
                     if worker:
                         await worker
                     self.app.database.close()
+                    generation.__exit__(None, None, None)
                 await send({'type': 'lifespan.shutdown.complete'})
         except Exception as exc:
             logger = logging.getLogger(__name__)
@@ -84,15 +90,40 @@ class InstanceServer(Server):
         await super().shutdown(sockets=sockets)
 
 
+class SourceReload(BaseReload):
+    """Watch all build inputs, including additions and deletions, without extra dependencies."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.reloader_name = 'Evlet source watcher'
+        self.snapshot = self.inputs()
+
+    def inputs(self):
+        result = {}
+        excluded = {'.git', '.venv', '.evlet', '__pycache__', 'node_modules', 'dist', 'build'}
+        for root in self.config.reload_dirs:
+            for path in Path(root).rglob('*'):
+                if any(part in excluded for part in path.relative_to(root).parts): continue
+                if path.suffix in ('.py', '.toml', '.json', '.ts', '.tsx', '.js', '.jsx', '.css') and path.is_file():
+                    stat = path.stat()
+                    result[path] = (stat.st_mtime_ns, stat.st_size)
+        return result
+
+    def should_restart(self):
+        self.pause()
+        current = self.inputs()
+        changes = [path for path in current.keys() | self.snapshot.keys() if current.get(path) != self.snapshot.get(path)]
+        self.snapshot = current
+        return changes or None
+
+
 def run_server(application, **options):
     from uvicorn import Config
-    from uvicorn.supervisors import ChangeReload
     config = Config(application, **options)
     server = InstanceServer(config)
     if config.should_reload:
         sock = config.bind_socket()
         try:
-            ChangeReload(config, target=server.run, sockets=[sock]).run()
+            SourceReload(config, target=server.run, sockets=[sock]).run()
         finally:
             sock.close()
     else:

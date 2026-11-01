@@ -13,6 +13,7 @@ export interface ApplicationContext {
   refresh: Accessor<number>;
   applicationState?: Record<string, any>;
   capabilities: { events?: boolean; jobs?: boolean };
+  nativePanels?: any[];
 }
 export const AppContext = createContext<ApplicationContext>();
 export function useApp() {

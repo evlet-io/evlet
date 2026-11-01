@@ -1,7 +1,9 @@
 import { createMemo } from "solid-js";
 import { createStore } from "solid-js/store";
+import { DecimalValue, decimalOperation } from './DecimalValue';
 export type StateScope = "component" | "view" | "record" | "application";
 const valid = /^(component|view|record|application)\.([A-Za-z][A-Za-z0-9_]*)$/;
+const truthy = (value: any) => value instanceof DecimalValue ? value.coefficient !== 0n : !!value;
 export function evaluate(value: any, read: (path: string) => any): any {
   if (Array.isArray(value)) return value.map((item) => evaluate(item, read));
   if (!value || typeof value !== "object") return value;
@@ -10,7 +12,23 @@ export function evaluate(value: any, read: (path: string) => any): any {
       Object.entries(value).map(([key, item]) => [key, evaluate(item, read)]),
     );
   if (value.$expr === "ref") return read(value.args[0]);
+  if (value.$expr === 'choose') return evaluate(value.args[truthy(evaluate(value.args[0], read)) ? 1 : 2], read);
+  if (value.$expr === 'and') return truthy(evaluate(value.args[0], read)) && truthy(evaluate(value.args[1], read));
+  if (value.$expr === 'or') return truthy(evaluate(value.args[0], read)) || truthy(evaluate(value.args[1], read));
   const [a, b, c] = value.args.map((arg: any) => evaluate(arg, read));
+  if (['add', 'sub', 'mul', 'div', 'neg'].includes(value.$expr)) return decimalOperation(value.$expr, a, b);
+  if (['sum', 'min', 'max', 'count'].includes(value.$expr)) {
+    if (!Array.isArray(a)) throw new Error('Aggregates require a table field');
+    if (value.$expr === 'count') return a.length;
+    if (value.$expr === 'sum') return a.reduce((sum, item) => decimalOperation('add', sum, item), DecimalValue.from(0));
+    return a.length ? a.map(DecimalValue.from).reduce((x, y) => (x.compare(y) < 0) === (value.$expr === 'min') ? x : y) : null;
+  }
+  if ((a instanceof DecimalValue || b instanceof DecimalValue) && a != null && b != null) {
+    const comparison = DecimalValue.from(a).compare(b);
+    return ({eq: comparison === 0, ne: comparison !== 0, lt: comparison < 0, lte: comparison <= 0, gt: comparison > 0, gte: comparison >= 0} as any)[value.$expr];
+  }
+  // Match the server: ordering against a missing value is false, not a comparison with 0.
+  if (['lt', 'lte', 'gt', 'gte'].includes(value.$expr) && (a == null || b == null)) return false;
   switch (value.$expr) {
     case "eq":
       return a === b;
@@ -29,7 +47,7 @@ export function evaluate(value: any, read: (path: string) => any): any {
     case "or":
       return !!a || !!b;
     case "not":
-      return !a;
+      return !truthy(a);
     case "choose":
       return a ? b : c;
     case "contains":

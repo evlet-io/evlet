@@ -62,6 +62,25 @@ class Account(Model):
     revision = Integer(default=0)
 
 
+def test_declarative_documents_preview_revision_and_child_rollback(pg_dsn):
+    from tests.test_documents import Order
+    from evlet import Application
+    db = PostgreSQLDatabase(pg_dsn, Registry(Order))
+    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
+    app.initialize()
+    assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
+    c = client(app)
+    payload = {'title': 'PostgreSQL', 'children': {'items': [{'_key': 'pg-row', 'qty': '3', 'rate': '0.10'}]}}
+    assert c('POST', '/api/_draft/order', {'values': payload})[1]['values']['total'] == '0.30'
+    status, record, headers = c('POST', '/api/order', payload)
+    assert status == 201, record
+    assert record['total'] == '0.30'
+    assert c('PATCH', '/api/order/1', {'title': 'no revision'})[0] == 428
+    payload['children']['items'][0]['qty'] = '0'
+    assert c('PATCH', '/api/order/1', payload, headers={b'if-match': headers[b'etag']})[0] == 422
+    assert c('GET', '/api/order/1')[1]['children']['items'][0]['qty'] == '3.0000'
+
+
 class Entry(Model):
     account = Link(Account, required=True, index=True)
     amount = Currency(required=True)

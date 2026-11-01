@@ -10,7 +10,7 @@ from ..packages import read_package, validate_url
 from .project import child, valid_name
 
 
-def create_app(root, name):
+def create_app(root, name, *, legacy=False):
     valid_name(name)
     target = child(root, 'apps', name)
     if target.exists():
@@ -18,7 +18,7 @@ def create_app(root, name):
     with tempfile.TemporaryDirectory(prefix='.create-', dir=root / 'apps') as directory:
         stage = Path(directory) / name
         stage.mkdir()
-        templates = files('evlet.resources').joinpath('templates/app')
+        templates = files('evlet.resources').joinpath('templates/app' if legacy else 'templates/app_flat')
         for template in templates.rglob('*.tpl'):
             relative = str(template.relative_to(templates)).removesuffix('.tpl').replace('__app__', name)
             destination = stage / relative
@@ -29,7 +29,7 @@ def create_app(root, name):
     return target
 
 
-def fetch_app(root, url):
+def fetch_app(root, url, *, return_package=False):
     validate_url(url)
     with tempfile.TemporaryDirectory(prefix='.fetch-', dir=root / 'apps') as directory:
         stage = Path(directory) / 'source'
@@ -48,4 +48,51 @@ def fetch_app(root, url):
         revision = package.locked()['commit']
         os.rename(stage, target)
     dependencies = ', '.join(map(str, package.dependencies)) or 'none'
+    if return_package: return read_package(target)
     return f'Fetched {package.name} {package.version} at {revision}\nDeclared dependencies: {dependencies}\nStatic validation passed; no app code was run. Install only code you trust.'
+
+
+def prepare_dependencies(root, names):
+    """Run reviewed package hooks only in this project's environment."""
+    import sys
+    from importlib import metadata
+    from packaging.utils import canonicalize_name
+    from .setup import python_in
+    if Path(sys.prefix).resolve() != (root / '.venv').resolve():
+        # Existing projects keep their explicit environment; never pip into it implicitly.
+        from ..packages import resolve_packages
+        return resolve_packages(root, names)
+    available = {canonicalize_name(path.name): path for path in (root / 'apps').iterdir() if path.is_dir() and not path.name.startswith('.')}
+    packages, requirements, visiting = {}, {}, set()
+    def visit(name):
+        if name in visiting: raise ValueError('Circular app dependency involving ' + name)
+        if name in packages: return
+        visiting.add(name)
+        package = read_package(root / 'apps' / name)
+        for requirement in package.dependencies:
+            if requirement.marker and not requirement.marker.evaluate(): continue
+            normalized = canonicalize_name(requirement.name)
+            if normalized in available:
+                visit(available[normalized].name)
+            elif normalized != 'evlet':
+                from ..packages import check_extras
+                try:
+                    if not requirement.specifier.contains(metadata.version(requirement.name), prereleases=True): raise ValueError('Version mismatch')
+                    check_extras(requirement)
+                except (metadata.PackageNotFoundError, ValueError): requirements[str(requirement)] = requirement
+        visiting.remove(name)
+        packages[name] = package
+    for name in names: visit(name)
+    with tempfile.TemporaryDirectory(prefix='.dependencies-', dir=root / '.venv') as directory:
+        constraints = Path(directory) / 'constraints.txt'
+        constraints.write_text('evlet==' + metadata.version('evlet') + '\n')
+        if requirements:
+            result = subprocess.run([str(python_in(root)), '-m', 'pip', 'install', '--disable-pip-version-check', '-c', str(constraints), *requirements], capture_output=True, text=True)
+            if result.returncode: raise ValueError('Project dependency preparation failed: ' + result.stderr.strip())
+        for package in packages.values():
+            from ..packages import owned_distribution
+            if owned_distribution(package.name, package.path) and metadata.version(package.name) == package.version: continue
+            result = subprocess.run([str(python_in(root)), '-m', 'pip', 'install', '--disable-pip-version-check', '--no-deps', '-e', str(package.path)], capture_output=True, text=True)
+            if result.returncode: raise ValueError('App package preparation failed: ' + result.stderr.strip())
+    from ..packages import resolve_packages
+    return resolve_packages(root, names)

@@ -25,7 +25,11 @@ stop and restart it.
 An **app** contains reusable Python code. An **instance** is a site with its own
 database, accounts and files. You can install the same app on several instances.
 The package includes the browser UI, Playground and offline guides. Node is not
-needed to create or serve apps.
+needed to create or serve Python-only apps. App-owned native TS/JS extensions
+need Node 24 when building their assets.
+
+The [declarative app guide](docs/amendment-v2.md) covers flat app packages,
+owned child tables, reactive fields, dialogs, reports, services and native additions.
 
 For virtual environment setup and each step explained, read
 [Your first site](docs/getting-started.md).

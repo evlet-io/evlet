@@ -4,6 +4,7 @@ import hashlib
 import json
 import base64
 import binascii
+from contextlib import contextmanager
 from dataclasses import dataclass
 import re
 from urllib.parse import parse_qs, quote
@@ -49,6 +50,7 @@ class Business:
         self.tenant = None
         self.application = None
         self.jobs, self.events = jobs, events
+        if jobs is not None: jobs.business = self
         if any(service is not None and service.database is not database for service in (jobs, events)):
             raise ValueError('Jobs and events must use the application database')
         if auth.database is not database:
@@ -59,6 +61,15 @@ class Business:
         self.actions, self.children, self.child_models = {}, {}, set()
         self.attachments = set(attachments)
         self.storage = storage if storage is not None else SQLiteStorage()
+        children = (*children, *self.registry.children)
+        declared_actions = []
+        for model in self.registry.models.values():
+            for name in dir(model):
+                method = getattr(model, name)
+                declaration = getattr(method, '__action__', None)
+                if declaration is not None:
+                    declared_actions.append(Action(model, name, declaration['label'], method, declaration['roles']))
+        actions = (*actions, *declared_actions)
         for model in self.attachments:
             self.registry.name_for(model)
         for action in actions:
@@ -84,8 +95,15 @@ class Business:
     def initialize(self):
         self.auth.initialize()
         self.storage.initialize(self.database)
+        if getattr(self, 'forms', None) and (self.forms.dialogs or self.forms.reports):
+            self.forms.initialize()
         if self.events:
             self.events.initialize()
+        if getattr(self, 'ui', None):
+            from .auth import User
+            for role in ROLES:
+                user = User(0, 'schema', role)
+                self.ui.compile(self.schema(user), user)
         if self.jobs:
             self.jobs.policy = self.policy
             self.jobs.initialize()
@@ -97,6 +115,12 @@ class Business:
     def changed(self, tx, model, record_id, *, deleted=False):
         if self.events:
             self.events.publish(tx, model, record_id, deleted=deleted)
+
+    @contextmanager
+    def context(self, user, *, readonly=False):
+        from .documents import Context
+        with self.database.transaction() as tx:
+            yield Context(self, tx, user, readonly=readonly)
 
     def event_page(self, scope):
         if self.events is None or scope['method'] != 'GET':
@@ -119,6 +143,14 @@ class Business:
 
     def schema(self, user):
         result = self.registry.ui_schema()
+        if getattr(self, 'forms', None) and self.forms.reports:
+            result['reports'] = self.forms.catalog(user)
+        if getattr(self, 'build_manifest', None) and self.build_manifest.get('native', {}).get('panels'):
+            result['native_panels'] = []
+            from .native import can_access
+            for panel in self.build_manifest['native']['panels']:
+                if can_access(self, panel['target'], user):
+                    result['native_panels'].append({**panel, 'url': '/assets/apps/' + self.build_manifest['fingerprint'] + '/' + panel['app'] + '/' + panel['file']})
         if self.events or self.jobs:
             result['capabilities'] = {'events': self.events is not None, 'jobs': self.jobs is not None}
         if self.tenant:
@@ -128,6 +160,38 @@ class Business:
         for entry in result['models']:
             model = self.registry.models[entry['name']]
             readable, writable = self.policy.fields(user, model), self.policy.fields(user, model, write=True)
+            if 'behavior' in entry:
+                from .reactivity import references, plans
+                available_behavior = {}
+                for name, behavior in entry['behavior'].items():
+                    if name not in readable: continue
+                    # References to protected inputs stay private, including defaults and conditions.
+                    allowed = {}
+                    for key, value in behavior.items():
+                        original = plans(model)[name][key]
+                        dependencies = set().union(*(references(item) for item in original.values())) if key == 'filters' else references(original)
+                        def available(path):
+                            parts = path.split('.')
+                            if len(parts) == 1: return path in readable
+                            if len(parts) == 2 and parts[0] == 'parent':
+                                owner = next((child.parent for child in self.children.values() if child.model is model), None)
+                                return owner is not None and parts[1] in self.policy.fields(user, owner)
+                            return False
+                        if all(available(path) for path in dependencies):
+                            allowed[key] = value
+                        elif key == 'compute' and self.policy.derivation_allowed(user, model, name):
+                            allowed[key] = value
+                        elif key == 'filters':
+                            allowed['filters_blocked'] = True
+                    available_behavior[name] = allowed
+                entry['behavior'] = available_behavior
+                from .reactivity import references
+                used_sources = {}
+                for path in (path for name in readable for path in references(plans(model)[name].get('compute'))):
+                    if path.count('.') == 1: used_sources.setdefault(path.split('.')[0], set()).add(path.split('.')[1])
+                entry['sources'] = {name: {key: value for key, value in outputs.items() if key in used_sources[name]}
+                                    for name, outputs in entry.get('sources', {}).items() if name in used_sources}
+                entry['order'] = [key for key in entry.get('order', []) if key.split('.')[0] in readable or key.split('.')[0] in model.__tables__]
             entry['fields'] = [{**field, 'read_only': field['name'] not in writable} for field in entry['fields'] if field['name'] in readable]
             entry['list_fields'] = [name for name in entry['list_fields'] if name == 'id' or name in readable]
             entry['search_fields'] = [name for name in entry['search_fields'] if name in readable]
@@ -137,8 +201,15 @@ class Business:
             entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
             entry['child_only'] = model in self.child_models
             entry['children'] = [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label} for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
-            entry['actions'] = [{'name': action.name, 'label': action.label} for action in self.actions.values() if action.model is model and user.role in action.roles and self.policy.allows(user, model, 'update')]
+            from .documents import argument_schema
+            entry['actions'] = [{'name': action.name, 'label': action.label,
+                                 **({'arguments': argument_schema(getattr(model, action.name), skip=1)} if hasattr(getattr(model, action.name, None), '__action__') else {})}
+                                for action in self.actions.values() if action.model is model and user.role in action.roles and self.policy.allows(user, model, 'update')]
             entry['attachments'] = model in self.attachments
+            if getattr(self, 'forms', None):
+                for (owner, name), definition in self.forms.dialogs.items():
+                    if owner is model and self.policy.allows(user, model, 'update'):
+                        entry['actions'].append({'name': name, 'label': definition.title or name, 'dialog': True})
         return result
 
     def dispatch(self, scope, body):
@@ -163,6 +234,41 @@ class Business:
             payload, headers = self.auth.login(scope, body)
             return 200, payload, headers
         user, csrf = self.auth.session(scope)
+        if path.startswith('/api/_services/'):
+            from .services import dispatch
+            return dispatch(self, scope, body, user)
+        if getattr(self, 'forms', None) and path.startswith(('/api/_reports/', '/api/_dialogs/')):
+            return self.forms.dispatch(scope, body, user)
+        if path.startswith('/api/_draft/') and method == 'POST':
+            from .documents import load_draft, settle, source_values
+            model = self.registry.resolve(path.removeprefix('/api/_draft/'))
+            if not getattr(model, '__declaration_mode__', False) or model in self.child_models:
+                raise AccessError(404, 'Draft evaluation is unavailable')
+            if set(body) - {'id', 'values', 'revision'} or not isinstance(body.get('values', {}), dict):
+                raise ValidationError({'draft': 'Invalid draft request'})
+            with self.context(user, readonly=True) as context:
+                draft, previous = load_draft(context, model, body.get('id'), body.get('values', {}), preview=True)
+                errors, states = settle(context, draft, complete=False, previous=previous)
+                def values(item):
+                    allowed = self.policy.fields(user, item._definition)
+                    return {'id': item.id, '_key': item.key, '_sources': source_values(item, allowed), **{name: field.serialize(item._values.get(name))
+                            for name, field in item._definition.__declared_fields__.items() if name in allowed and not name.startswith('evlet_')}}
+                result = values(draft)
+                result['children'] = {}
+                for child in self.children.values():
+                    if child.parent is model and self.policy.allows(user, child.model, 'read'):
+                        rows = []
+                        for row in draft._rows.get(child.name, []):
+                            if row.id:
+                                try: self.policy.record(context._tx, user, child.model, row.id)
+                                except AccessError: continue
+                            rows.append(values(row))
+                        result['children'][child.name] = rows
+                allowed_errors = {name for name in result if name not in ('children', '_key', 'id')}
+                allowed_errors |= {table + '.' + row['_key'] + '.' + name for table, rows in result['children'].items() for row in rows for name in row if name not in ('_key', 'id')}
+                errors = {key: value for key, value in errors.items() if key in allowed_errors}
+                states = {key: value for key, value in states.items() if key in allowed_errors}
+            return 200, {'values': result, 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
         if path == '/api/auth/logout' and method == 'POST':
             return 204, None, self.auth.logout(scope)
         if path.startswith('/api/auth/users'):
@@ -186,6 +292,34 @@ class Business:
         model = self.registry.models.get(parts[2]) if len(parts) >= 3 and parts[:2] == ['', 'api'] else None
         if model is None or model in self.child_models:
             raise AccessError(404, 'Route not found')
+        if getattr(model, '__declaration_mode__', False) and method == 'DELETE' and len(parts) == 4:
+            if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
+            with self.context(user) as context:
+                record = self.policy.record(context._tx, user, model, int(parts[3]), 'delete')
+                if b'if-match' not in dict(scope.get('headers', [])): raise AccessError(428, 'A current If-Match revision is required')
+                self.check_revision(scope, context._tx, user, record)
+                context.delete(model, record.id)
+            return 204, None, []
+        # Legacy Action registrations keep their own route on document models.
+        legacy_action = len(parts) == 6 and parts[4] == 'actions' and not hasattr(getattr(model, parts[5], None), '__action__')
+        if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH') and not legacy_action:
+            from .documents import Context
+            record_id = None
+            if len(parts) >= 4:
+                if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1:
+                    raise AccessError(404, 'Record not found')
+                record_id = int(parts[3])
+            action = parts[5] if len(parts) == 6 and parts[4] == 'actions' and method == 'POST' else None
+            if not ((len(parts) == 3 and method == 'POST') or (len(parts) == 4 and method == 'PATCH') or action):
+                raise AccessError(405, 'Method not allowed')
+            with self.context(user) as context:
+                if record_id:
+                    record = self.policy.record(context._tx, user, model, record_id, 'update')
+                    if b'if-match' not in dict(scope.get('headers', [])):
+                        raise AccessError(428, 'A current If-Match revision is required')
+                    self.check_revision(scope, context._tx, user, record)
+                result = context._write(model, record_id, {} if action else body, action=action, arguments=body if action else None)
+            return (201 if record_id is None else 200), result, [(b'etag', self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome')}))]
         if len(parts) == 3 and method == 'GET':
             return self.page(scope, user, model)
         if len(parts) == 3 and method == 'POST':
@@ -212,6 +346,8 @@ class Business:
                 raise ValidationError({'_form': 'This action takes no arguments'})
             with self.database.transaction() as tx:
                 record = self.policy.record(tx, user, model, record_id, 'update')
+                if getattr(model, '__declaration_mode__', False) and b'if-match' not in dict(scope.get('headers', [])):
+                    raise AccessError(428, 'A current If-Match revision is required')
                 self.check_revision(scope, tx, user, record)
                 outcome = action.handler(tx, user, record)
                 self.changed(tx, model, record_id)
@@ -338,7 +474,7 @@ class Business:
                 continue
             if tx.count(child.model, filters={child.link: record.id}) > 100:
                 raise ValidationError({'children': 'This collection exceeds the 100-row editor limit'})
-            rows = tx.list(child.model, filters={child.link: record.id}, limit=100, order_by=('id',))
+            rows = tx.list(child.model, filters={child.link: record.id}, limit=100, order_by=('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',))
             children[child.name] = []
             for row in rows:
                 try:
@@ -347,6 +483,7 @@ class Business:
                     continue
                 value = self.policy.serialize(tx, user, row)
                 value.pop(child.link, None)
+                value.pop('evlet_position', None)
                 children[child.name].append(value)
         if children:
             result['children'] = children

@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 import hashlib
+import json
+import os
 from importlib import metadata
 from pathlib import Path, PureWindowsPath
 import re
@@ -9,6 +11,7 @@ import subprocess
 import sys
 import tomllib
 from urllib.parse import urlsplit
+from urllib.request import url2pathname
 
 from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
@@ -23,18 +26,53 @@ class Package:
     version: str
     title: str
     dependencies: tuple
+    layout: str = 'legacy'
+
+    @property
+    def source_root(self):
+        return self.path if self.layout == 'flat' else self.path / self.name
+
+    def source_files(self):
+        if self.layout == 'legacy':
+            # Keep the original selection so existing apps.lock digests stay valid.
+            for path in [self.path / 'pyproject.toml', *sorted(self.source_root.rglob('*'))]:
+                if '__pycache__' in path.parts or path.suffix == '.pyc':
+                    continue
+                if path.is_symlink():
+                    raise ValueError(f'App source cannot contain symbolic links: {path}')
+                if path.is_file():
+                    yield path
+            return
+        # Flat apps live at the project root: skip tooling, dotfiles (such as .env) and virtual environments.
+        excluded = {'__pycache__', 'node_modules'}
+        found = []
+        for directory, folders, files in os.walk(self.path):
+            here = Path(directory)
+            if here != self.path and 'pyvenv.cfg' in files:
+                folders[:] = []
+                continue
+            kept = []
+            for name in sorted(folders):
+                if name in excluded or name.startswith('.') or name.endswith('.egg-info') or here == self.path and name in ('build', 'dist', 'tests'):
+                    continue
+                if (here / name).is_symlink():
+                    raise ValueError(f'App source cannot contain symbolic links: {here / name}')
+                kept.append(name)
+            folders[:] = kept
+            for name in files:
+                path = here / name
+                if name.startswith('.') or path.suffix in ('.pyc', '.pyo'):
+                    continue
+                if path.is_symlink():
+                    raise ValueError(f'App source cannot contain symbolic links: {path}')
+                found.append(path)
+        yield from sorted(found)
 
     def locked(self):
         digest = hashlib.sha256()
-        files = [self.path / 'pyproject.toml', *sorted((self.path / self.name).rglob('*'))]
-        for path in files:
-            if '__pycache__' in path.parts or path.suffix == '.pyc':
-                continue
-            if path.is_symlink():
-                raise ValueError(f'App source cannot contain symbolic links: {path}')
-            if path.is_file():
-                digest.update(str(path.relative_to(self.path)).encode() + b'\0')
-                digest.update(hashlib.sha256(path.read_bytes()).digest())
+        for path in self.source_files():
+            digest.update(str(path.relative_to(self.path)).encode() + b'\0')
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
         source, commit = 'apps/' + self.name, None
         if (self.path / '.git').exists():
             commit = git(self.path, 'rev-parse', 'HEAD').strip()
@@ -73,6 +111,23 @@ def validate_url(url):
     return url
 
 
+def owned_distribution(name, path):
+    """Only the same editable checkout may occupy an app's import name."""
+    distributions = metadata.packages_distributions().get(name, ())
+    for distribution_name in distributions:
+        distribution = metadata.distribution(distribution_name)
+        try:
+            direct = json.loads(distribution.read_text('direct_url.json') or '{}')
+            parsed = urlsplit(direct.get('url', ''))
+            if (not direct.get('dir_info', {}).get('editable') or parsed.scheme != 'file'
+                    or parsed.netloc not in ('', 'localhost')
+                    or Path(url2pathname(parsed.path)).resolve() != path):
+                return False
+        except (ValueError, TypeError):
+            return False
+    return bool(distributions)
+
+
 def read_package(path):
     from .cli.project import valid_name
     path = Path(path).resolve()
@@ -94,7 +149,7 @@ def read_package(path):
         raise ValueError('Unknown tool.evlet option; supported options are app and title')
     name = valid_name(project.get('name'))
     reserved = {'evlet', 'uvicorn', 'packaging', 'psycopg', 'psycopg_pool', 'boto3', 'botocore'}
-    if name in reserved or name in sys.stdlib_module_names or name in metadata.packages_distributions():
+    if name in reserved or name in sys.stdlib_module_names or (name in metadata.packages_distributions() and not owned_distribution(name, path)):
         raise ValueError('Application name conflicts with the framework, Python standard library or an installed Python package')
     version = project.get('version')
     if not isinstance(version, str):
@@ -119,19 +174,22 @@ def read_package(path):
                 raise ValueError(f'{name} requires {requirement}; installed Evlet is {metadata.version("evlet")}')
     if (path / name).is_symlink():
         raise ValueError('App package directory cannot be a symbolic link')
-    for relative in (f'{name}/__init__.py', f'{name}/hooks.py'):
+    layout = 'flat' if (path / '__init__.py').is_file() else 'legacy'
+    if layout == 'flat' and (path / name / '__init__.py').exists():
+        raise ValueError('Ambiguous app layout: use one package root')
+    for relative in (('__init__.py',) if layout == 'flat' else (f'{name}/__init__.py', f'{name}/hooks.py')):
         target = path / relative
         if not target.is_file() or target.is_symlink() or not target.resolve().is_relative_to(path):
             raise ValueError(f'App is missing a regular {relative}')
     title = options.get('title', name)
     if not isinstance(title, str) or not title.strip():
         raise ValueError('App title must be nonempty text')
-    package = Package(path, name, version, title, requirements)
+    package = Package(path, name, version, title, requirements, layout)
     package.locked()  # Inspect source paths without importing Python.
     return package
 
 
-def resolve_packages(root, names):
+def resolve_packages(root, names, *, check_installed=True):
     """Resolve local apps in dependency order and check installed Python dependencies."""
     from .cli.project import child
     available = {}
@@ -158,6 +216,7 @@ def resolve_packages(root, names):
                     raise ValueError('Optional extras on local app dependencies are not supported')
                 version = visit(available[normalized]).version
             else:
+                if not check_installed and normalized != 'evlet': continue
                 try:
                     version = metadata.version(requirement.name)
                 except metadata.PackageNotFoundError:

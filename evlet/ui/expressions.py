@@ -3,6 +3,12 @@
 from dataclasses import dataclass
 import re
 
+
+def model_key(model):
+    """Schema and route name of a model, which honours storage_name."""
+    return getattr(model, "storage_name", model.__name__.lower())
+
+
 SCOPES = ("component", "view", "record", "application")
 
 
@@ -93,15 +99,15 @@ class Navigate:
 
     @staticmethod
     def to_list(model):
-        return Navigate.to("/app/" + model.__name__.lower())
+        return Navigate.to("/app/" + model_key(model))
 
     @staticmethod
     def to_record(model, record_id):
-        return Navigate.to("/app/" + model.__name__.lower() + "/" + str(record_id))
+        return Navigate.to("/app/" + model_key(model) + "/" + str(record_id))
 
     @staticmethod
     def to_new(model):
-        return Navigate.to("/app/" + model.__name__.lower() + "/new")
+        return Navigate.to("/app/" + model_key(model) + "/new")
 
     @staticmethod
     def back():
