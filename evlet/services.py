@@ -7,6 +7,7 @@ import hashlib
 import inspect
 import json
 import re
+import time
 from urllib.parse import parse_qs
 
 from .auth import AccessError, User
@@ -14,11 +15,13 @@ from .documents import Context, typed_arguments
 from .models import ValidationError
 
 
-def api(function=None, *, method='POST', permission=None, name=None):
-    if method not in ('GET', 'POST') or permission is None:
+def api(function=None, *, method='POST', permission=None, name=None, public=False):
+    """public=True lets anyone call the endpoint without signing in. It runs as the 'public' role,
+    so its permission needs a Rule for ('public', Model), and each address gets 30 calls a minute, 300 an hour."""
+    if method not in ('GET', 'POST') or permission is None or type(public) is not bool:
         raise ValueError('APIs require GET/POST and an explicit resource permission')
     def decorate(callable):
-        callable.__api__ = {'method': method, 'permission': permission, 'name': name}
+        callable.__api__ = {'method': method, 'permission': permission, 'name': name, 'public': public}
         return callable
     return decorate(function) if function is not None else decorate
 
@@ -40,6 +43,27 @@ class Endpoint:
     function: object
     method: str
     permission: tuple
+    public: bool = False
+
+
+# Calls per window for each client address on public endpoints: (seconds, limit).
+PUBLIC_LIMITS = ((60, 30), (3600, 300))
+
+
+def public_limit(business, scope):
+    """Count a public call for the client address; refuse with 429 past either window."""
+    from .auth import client_network
+    now = int(time.time())
+    client = hashlib.sha256(('public:' + client_network((scope.get('client') or ('unknown',))[0])).encode()).hexdigest()
+    with business.database.transaction() as tx:
+        tx.connection.execute('DELETE FROM evlet_public_limits WHERE resets<=?', (now,))
+        for window, limit in PUBLIC_LIMITS:
+            row = tx.connection.execute('SELECT calls FROM evlet_public_limits WHERE client=? AND period=?', (client, window)).fetchone()
+            if row and row['calls'] >= limit:
+                raise AccessError(429, 'Too many requests. Try again later.')
+        for window, _ in PUBLIC_LIMITS:
+            tx.connection.execute('INSERT INTO evlet_public_limits VALUES (?,?,1,?) ON CONFLICT(client, period) DO UPDATE SET calls=evlet_public_limits.calls+1',
+                                  (client, window, now + window))
 
 
 @dataclass(frozen=True)
@@ -127,7 +151,7 @@ def collect_service(package, module):
                 raise ValueError('GET endpoints require a read capability')
             alias = declaration['name'] or identity.removeprefix(package.name + '.')
             if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.]*', alias): raise ValueError('Invalid endpoint name')
-            endpoints.append(Endpoint(package.name + '.' + alias, function, declaration['method'], declaration['permission']))
+            endpoints.append(Endpoint(package.name + '.' + alias, function, declaration['method'], declaration['permission'], declaration.get('public', False)))
         declaration = getattr(function, '__cron__', None)
         if declaration:
             identity = package.name + '.' + declaration['name'] if declaration['name'] else identity
@@ -143,11 +167,19 @@ def collect_service(package, module):
     return endpoints, tasks, schedules
 
 
+def endpoint_for(business, path):
+    return next((item for item in business.apis if item.name == path.removeprefix('/api/_services/')), None)
+
+
 def dispatch(business, scope, body, user):
-    name = scope['path'].removeprefix('/api/_services/')
-    endpoint = next((item for item in business.apis if item.name == name), None)
+    """Run an endpoint for the signed-in user. Public endpoints always run as the public role."""
+    endpoint = endpoint_for(business, scope['path'])
     if endpoint is None: raise AccessError(404, 'Endpoint is unavailable')
     if scope['method'] != endpoint.method: raise AccessError(405, 'Method not allowed')
+    if endpoint.public:
+        public_limit(business, scope)
+        from .auth import PUBLIC
+        user = User(0, 'public', PUBLIC)
     permission_model, operation = endpoint.permission
     model = business.registry.resolve(permission_model)
     business.policy.require(user, model, operation)
