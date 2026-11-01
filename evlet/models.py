@@ -60,7 +60,7 @@ class ModelType(type):
         cls.__fields__ = MappingProxyType({key: value for key, value in fields.items() if value.stored})
         cls.__tables__ = MappingProxyType(tables)
         cls.__sources__ = MappingProxyType(sources)
-        if sources or tables or 'permissions' in namespace or any(field.compute is not None or not field.stored for field in fields.values()):
+        if sources or tables or 'permissions' in namespace or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored for field in fields.values()):
             cls.__declaration_mode__ = True
         if getattr(cls, '__declaration_mode__', False) and (set(fields) | set(tables) | set(sources)) & {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}:
             raise ValueError('A document field conflicts with its draft interface')

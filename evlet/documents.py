@@ -216,14 +216,14 @@ def load_draft(context, model, record_id, values, *, preview=False):
     current = business.policy.record(tx, user, model, record_id, 'read' if preview else operation) if record_id else None
     scalars, collections = business.split_body(values)
     business.policy.check_values(tx, user, model, scalars)
-    if set(collections) - set(model.__tables__):
+    if set(collections) - {child.name for child in business.children.values() if child.parent is model}:
         raise ValidationError({'children': 'Unknown child collection'})
     draft = Draft(model, {**(dict(current._values) if current else {}), **scalars}, context=context, record_id=record_id)
     object.__setattr__(draft, '_submitted', frozenset(scalars))
     old = Draft(model, dict(current._values), context=context, record_id=record_id) if current else None
     for child in business.children.values():
         if child.parent is not model: continue
-        existing = tx.list(child.model, filters={child.link: record_id}, limit=100, order_by=('evlet_position', 'id')) if record_id else []
+        existing = tx.list(child.model, filters={child.link: record_id}, limit=100, order_by=('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',)) if record_id else []
         if record_id and tx.count(child.model, filters={child.link: record_id}) > 100:
             raise ValidationError({'children': 'This collection exceeds the 100-row editor limit'})
         originals = {row.id: row for row in existing}
@@ -259,7 +259,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
                 business.policy.require(user, child.model, 'create')
             row = Draft(child.model, {**(dict(originals[row_id]._values) if row_id else {}), **value}, context=context, parent=draft, record_id=row_id)
             object.__setattr__(row, '_submitted', frozenset(value))
-            row._values['evlet_position'] = index
+            if 'evlet_position' in child.model.__fields__: row._values['evlet_position'] = index
             if temporary is not None: object.__setattr__(row, 'key', temporary)
             merged.append(row)
         for row_id in originals.keys() - kept - hidden:
@@ -276,9 +276,14 @@ def settle(context, draft, *, complete, previous=None):
     errors, states = {}, {}
     source_cache = {}
     all_drafts = [('', draft)] + [(name + '.' + row.key + '.', row) for name, rows in draft._rows.items() for row in rows]
+    # Owner links of legacy child tables are set from the saved parent at write time.
+    owner_links = {child.model: child.link for child in context._business.children.values() if child.parent is draft._definition}
+    def internal(item):
+        names = set(getattr(item._definition, '__internal_fields__', ()))
+        return names | {owner_links[item._definition]} if item is not draft and item._definition in owner_links else names
     for prefix, item in all_drafts:
         for name, field in item._definition.__declared_fields__.items():
-            if name in getattr(item._definition, '__internal_fields__', ()): continue
+            if name in internal(item): continue
             value = item._values.get(name, MISSING)
             if value is MISSING and item.id is None:
                 if isinstance(field.default, Ref): value = item.read(field.default.path)
@@ -375,7 +380,7 @@ def settle(context, draft, *, complete, previous=None):
     if not complete:
         for prefix, item in all_drafts:
             for name, field in item._definition.__declared_fields__.items():
-                if name in getattr(item._definition, '__internal_fields__', ()): continue
+                if name in internal(item): continue
                 try:
                     required = field.required or field.required_if is not None and evaluate(plans(item._definition)[name]['required_if'], item.read)
                     if required and item._values.get(name) in (None, ''): states[prefix + name] = 'required-input'
@@ -389,7 +394,7 @@ def settle(context, draft, *, complete, previous=None):
     if complete:
         for prefix, item in reversed(all_drafts):
             for name, field in item._definition.__declared_fields__.items():
-                if name in getattr(item._definition, '__internal_fields__', ()): continue
+                if name in internal(item): continue
                 try:
                     old = previous if item is draft else next((row for rows in (previous._rows.values() if previous else ()) for row in rows if row.id is not None and row.id == item.id and row._definition is item._definition), None)
                     if name in item._submitted and field.read_only_if is not None and evaluate(plans(item._definition)[name]['read_only_if'], item.read):

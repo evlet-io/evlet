@@ -220,3 +220,47 @@ def test_draft_returns_only_source_outputs_used_by_readable_fields(tmp_path):
     assert status == 200, result
     assert result['values']['_sources'] == {'stock': {'qty': '5.0000'}}
     assert 'margin' not in result['values'] and '12.34' not in str(result)
+
+
+def test_legacy_child_table_under_document_parent_saves(tmp_path):
+    from evlet import Link, Integer
+    from evlet.business import ChildTable
+    class Parent(Model):
+        permissions = ALL
+        name = Text()
+    class Line(Model):
+        permissions = ALL
+        owner = Link(Parent, required=True)
+        qty = Integer()
+    db = Database(tmp_path / 'db.sqlite3', Registry(Parent, Line))
+    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
+                      children=(ChildTable(Parent, 'lines', Line, 'owner', 'Lines'),))
+    app.initialize()
+    http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
+    c = client(app)
+    status, created, _ = c('POST', '/api/parent', {'name': 'p', 'children': {'lines': [{'qty': 1}, {'qty': 2}]}})
+    assert status == 201, created
+    assert [row['qty'] for row in created['children']['lines']] == [1, 2]
+    _, current, headers = c('GET', f"/api/parent/{created['id']}")
+    status, updated, _ = c('PATCH', f"/api/parent/{created['id']}", {'name': 'q', 'children': {'lines': [current['children']['lines'][1]]}},
+                           headers={b'if-match': headers[b'etag']})
+    assert status == 200, updated
+    assert updated['name'] == 'q' and [row['qty'] for row in updated['children']['lines']] == [2]
+    with db.transaction() as tx:
+        assert [line.owner for line in tx.list(Line)] == [created['id']]
+
+
+def test_action_on_model_without_permissions_runs(tmp_path):
+    from evlet import action
+    class Ticket(Model):
+        name = Text()
+        @action
+        def close(self, note: str = ''):
+            self.name = 'closed ' + note
+    app = application(tmp_path, Ticket)
+    c = client(app)
+    _, ticket, _ = c('POST', '/api/ticket', {'name': 'open'})
+    _, _, headers = c('GET', f"/api/ticket/{ticket['id']}")
+    status, result, _ = c('POST', f"/api/ticket/{ticket['id']}/actions/close", {'note': 'now'}, headers={b'if-match': headers[b'etag']})
+    assert status == 200, result
+    assert result['name'] == 'closed now'
