@@ -208,3 +208,19 @@ def test_factory_cannot_share_database_or_storage(tenants):
         app.business.storage.root = other.files_path
         return app
     assert call(TenantApplication(catalog, bad_storage), 'alpha.localhost:8000')[0] == 503
+
+
+def test_router_shutdown_stops_each_tenant(tenants):
+    catalog, router = tenants
+    login(router, 'alpha'); login(router, 'beta')
+    apps = [app for _, app in router._apps.values()]
+    assert len(apps) == 2 and not any(app._stopping.is_set() for app in apps)
+    async def run():
+        events = iter([{'type': 'lifespan.startup'}, {'type': 'lifespan.shutdown'}])
+        sent = []
+        async def receive(): return next(events)
+        async def send(message): sent.append(message['type'])
+        await router({'type': 'lifespan'}, receive, send)
+        return sent
+    assert asyncio.run(run()) == ['lifespan.startup.complete', 'lifespan.shutdown.complete']
+    assert all(app._stopping.is_set() for app in apps)

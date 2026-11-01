@@ -239,6 +239,13 @@ class TenantApplication:
                 if event['type'] == 'lifespan.startup':
                     await send({'type': 'lifespan.startup.complete'})
                 elif event['type'] == 'lifespan.shutdown':
+                    # End each tenant's live streams so shutdown does not wait on them.
+                    with self._lock:
+                        apps = [app for _, app in self._apps.values()]
+                    for app in apps:
+                        app.stop()
+                    for app in apps:
+                        await asyncio.to_thread(app.database.close)
                     await send({'type': 'lifespan.shutdown.complete'})
                     return
         elif scope['type'] == 'websocket':

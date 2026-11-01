@@ -78,6 +78,8 @@ class Query:
                     if not isinstance(field, Text) or not isinstance(value, str):
                         raise ValueError('Text matching requires a text field and string')
                     value.encode('utf-8')
+                    if '\x00' in value:
+                        raise ValueError('Text matching must not contain NUL characters')
                     if operator == 'startswith':
                         clauses.append(f'substr({column}, 1, length(?)) = ?')
                         values.extend([value, value])
@@ -98,6 +100,8 @@ class Query:
             search.encode('utf-8')
             search = search.strip()
             if search:
+                if '\x00' in search:
+                    raise ValueError('Search must not contain NUL characters')
                 from .ui.metadata import view_for
                 matches = ['CAST("record"."id" AS TEXT) = ?']
                 values.append(search.removeprefix('#'))

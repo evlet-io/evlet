@@ -446,3 +446,26 @@ def test_legacy_child_errors_do_not_name_hidden_child_fields(tmp_path):
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
     status, result, _ = client(app)('POST', '/api/parent', {'name': 'p', 'children': {'lines': [{'qty': '1'}]}})
     assert status == 422 and 'cost' not in str(result) and 'margin' not in str(result)
+
+
+def test_text_matching_rejects_nul_like_postgresql(tmp_path):
+    class Note(Model):
+        title = Text()
+    app = application(tmp_path, Note)
+    c = client(app)
+    from urllib.parse import quote
+    for query in ('title__contains=' + quote('a\x00'), 'title__startswith=' + quote('\x00'), 'q=' + quote('a\x00b')):
+        status, result, _ = c('GET', '/api/note?' + query)
+        assert status == 422, (query, result)
+
+
+def test_module_entry_drops_the_working_directory_from_sys_path(tmp_path):
+    import os, subprocess, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    # Emulate `python -m evlet` started inside an app folder, then report sys.path.
+    probe = ("import os, sys, runpy, evlet.cli; sys.path[:] = [os.getcwd()] + [p for p in sys.path if p]; "
+             "evlet.cli.main = lambda: print(os.getcwd() in sys.path or '' in sys.path); runpy.run_module('evlet', run_name='__main__')")
+    result = subprocess.run([sys.executable, '-c', probe], cwd=tmp_path, capture_output=True, text=True,
+                            env={**os.environ, 'PYTHONPATH': str(root)})
+    assert result.stdout.strip() == 'False', result.stderr
