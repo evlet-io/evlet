@@ -5,8 +5,8 @@ table. Dispatch, the allowed browser origins and `evlet routes` all read that ta
 It is never cached to disk.
 
 An instance with no `routes.py` serves the same URLs as before: the desk shell at
-`/`, `/login`, `/docs`, `/app/...`, `/settings/accounts`, `/reports/<name>`,
-`/assets/...` and the registered Python page routes.
+`/`, `/login`, `/docs`, `/app/...`, `/reports/<name>`, `/assets/...` and the
+registered Python page routes. `/settings/accounts` redirects (301) to `/controls/users`.
 
 ## Frontends
 
@@ -76,8 +76,9 @@ build runs at `/customer-portal` on the primary host and at `/` on a sub-host. `
 the host's realm, which decides the session cookie: a portal frontend also mounted on
 the primary host reports `desk` there.
 
-`evlet.controls` answers 404 for now, and `evlet.settings` serves only
-`/settings/accounts`. Flat-layout apps cannot register frontends yet.
+`evlet.controls` serves Controls ([controls.md](controls.md)), and `evlet.settings`
+only redirects `/settings/accounts` to `/controls/users`. Flat-layout apps cannot
+register frontends yet.
 
 ## Sub-hosts, realms and API scopes
 
