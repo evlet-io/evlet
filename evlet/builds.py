@@ -34,9 +34,10 @@ def module_names(package):
         if path.suffix != '.py' or not path.is_relative_to(package.source_root):
             continue
         relative = path.relative_to(package.source_root)
-        if relative.parts[0] not in AREAS:
-            continue
         parts = list(relative.with_suffix('').parts)
+        # An area is a package (models/) or, for a small app, a single module (models.py).
+        if parts[0] not in AREAS:
+            continue
         if parts[-1] == '__init__':
             parts.pop()
         if any(not part.isidentifier() for part in parts):

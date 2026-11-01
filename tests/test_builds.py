@@ -46,6 +46,17 @@ def test_flat_scaffold_discovery_and_atomic_build(project, monkeypatch, tmp_path
     assert not list((project / '.evlet/builds').glob('.build-*'))
 
 
+def test_flat_app_with_a_single_models_module(project, monkeypatch, tmp_path):
+    # A small app needs only models.py beside __init__.py; it is discovered like models/.
+    package = read_package(create_app(project, 'notes'))
+    shutil.rmtree(package.path / 'models')
+    (package.path / 'models.py').write_text('from evlet import Model, Rule, Text\n\n\nclass Note(Model):\n'
+                                            "    permissions = {'admin': Rule(('read',))}\n    title = Text()\n")
+    monkeypatch.chdir(tmp_path)
+    _, manifest = prepare(project, resolve_packages(project, ['notes']))
+    assert [model['resource'] for model in manifest['models']] == ['notes.Note']
+
+
 def test_hashes_ignore_generated_files_and_reject_links(project, tmp_path):
     package = read_package(create_app(project, 'notes'))
     before = package.locked()
