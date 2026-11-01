@@ -206,10 +206,35 @@ def test_schema_projects_calculation_capabilities_without_hidden_inputs(tmp_path
     with app.database.transaction() as tx:
         tx.connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('viewer',?,'viewer')", (password_hash(PASSWORD),))
     admin = next(model for model in client(app)('GET', '/api/schema')[1]['models'] if model['name'] == 'deal')['calculation']
-    assert set(admin['capabilities'].values()) == {'local_universal'} and admin['plan']['model_schema_hash'] == admin['model_schema_hash']
+    assert set(admin['capabilities'].values()) == {'local_universal'} and admin['plan']['source_plan_hash'] == admin['model_schema_hash']
+    from evlet.calc import Document
+    assert Document(admin['plan'], {'children': {'lines': [{'cost': '2', 'price': '5'}]}}).snapshot()['profit'] == '3.00'
     viewer = next(model for model in client(app, 'viewer')('GET', '/api/schema')[1]['models'] if model['name'] == 'deal')['calculation']
     assert viewer['capabilities'] == {'lines[*].margin': 'unavailable', 'revenue': 'local_universal', 'profit': 'unavailable'}
     assert 'plan' not in viewer and 'cost' not in str(viewer)
+
+
+def test_shipped_plans_omit_unreadable_fields_and_field_checks_stay_pythonic(tmp_path):
+    from evlet.auth import password_hash
+    class Quote(Model):
+        Meta = FiniteMeta
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
+                       'viewer': Rule(('read',), read_fields=('title', 'discount', 'net'))}
+        title = Text(default='')
+        discount = Currency(default=0)
+        floor_price = Currency(default='1234.56')
+        supplier_note = Text(default='Supplier X', hidden=True)
+        net = Currency(compute=0 - discount)
+    app = application(tmp_path, Quote)
+    with app.database.transaction() as tx:
+        tx.connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('viewer',?,'viewer')", (password_hash(PASSWORD),))
+    calculation = next(model for model in client(app, 'viewer')('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
+    assert set(calculation['plan']['tables']['$root']['fields']) == {'title', 'discount', 'net'}
+    assert '1234.56' not in str(calculation) and 'Supplier' not in str(calculation)
+    fields = list(Quote.__declared_fields__.values())
+    assert None not in fields and Quote.title not in ('a',) and not bool(Quote.title == None)  # noqa: E711
+    with pytest.raises(TypeError):
+        sorted(fields)
 
 
 def test_nested_review_regressions(tmp_path):
@@ -253,3 +278,45 @@ def test_nested_review_regressions(tmp_path):
 
     with pytest.raises(ValueError, match='finite-v1 document'):
         app.database.delete(task, created['_row_ids']['b1'])
+
+
+def test_formula_changes_never_silently_rewrite_saved_documents(tmp_path):
+    app = application(tmp_path, globals()['Plan'])
+    c = client(app)
+    status, created, headers = c('POST', '/api/plan', {'children': {'stages': stages()}})
+    assert status == 201 and created['total'] == '900.00'
+
+    class Task(Child):
+        title = Text(default='')
+        hours = Decimal(default=0, minimum='0')
+        amount = Currency(compute=round(hours * parent.hourly_rate * 2, 2))
+
+    class Stage(Child):
+        name = Text(default='')
+        hourly_rate = Currency(compute=parent.hourly_rate, stored=False)
+        tasks = Table(Task)
+        total = Currency(compute=tasks.sum('amount'))
+
+    class Plan(Model):  # Same model, one formula changed.
+        Meta = FiniteMeta
+        permissions = ALL
+        title = Text(default='Plan')
+        hourly_rate = Currency(default=100)
+        stages = Table(Stage)
+        total = Currency(compute=stages.sum('total'))
+    database = Database(tmp_path / 'db.sqlite3', Registry(Plan))
+    upgraded = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+    upgraded.initialize()
+    c = client(upgraded)
+    url = f"/api/plan/{created['id']}"
+    status, loaded, headers = c('GET', url)
+    assert status == 200 and loaded['total'] == '900.00'
+    status, result, _ = c('PATCH', url, {'title': 'renamed'}, headers={b'if-match': headers[b'etag']})
+    assert status == 409 and 'SCHEMA_VERSION_MISMATCH' in result['error']
+    assert c('GET', url)[1]['total'] == '900.00'
+    active = upgraded.registry.plans[Plan]['model_schema_hash']
+    status, result, _ = c('PATCH', url, {'title': 'renamed', '_calculation': {'model_schema_hash': active, 'recalculate': True}},
+                          headers={b'if-match': headers[b'etag']})
+    assert status == 200 and result['total'] == '1800.00'
+    _, current, headers = c('GET', url)
+    assert c('PATCH', url, {'title': 'again'}, headers={b'if-match': headers[b'etag']})[0] == 200

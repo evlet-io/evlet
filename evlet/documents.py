@@ -112,6 +112,7 @@ class Context:
         self._business, self._tx, self.user = business, tx, user
         self.readonly = readonly
         self._active = [] if active is None else active
+        self._recalculate = False  # Explicit opt-in to recalculate a document saved under another plan.
 
     def read_context(self):
         return Context(self._business, self._tx, self.user, readonly=True, active=self._active)
@@ -181,6 +182,8 @@ class Context:
                 for row in rows: delete_tree(business, tx, child.model, row.id)
             with tx.maintenance():
                 tx.delete(model, record.id)
+            if business.registry.plan_for(model) is not None:
+                tx.connection.execute('DELETE FROM evlet_calculation_versions WHERE resource=? AND record_id=?', (business.registry.name_for(model), record.id))
             tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (business.registry.name_for(model), record_id))
             reaction = getattr(model, 'changed', None)
             if reaction:
@@ -228,7 +231,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
     draft = Draft(model, {**(dict(current._values) if current else {}), **scalars}, context=context, record_id=record_id)
     object.__setattr__(draft, '_submitted', frozenset(scalars))
     old = Draft(model, dict(current._values), context=context, record_id=record_id) if current else None
-    load_rows(context, model, draft, old, record_id, collections, preview, '', set())
+    load_rows(context, model, draft, old, record_id, collections, preview, '', set(), [0])
     if business.registry.plan_for(model) is not None and sum(1 for _ in walk(draft)) - 1 > LIMITS['document_rows']:
         raise ValidationError({'children': 'This document exceeds the owned row limit'})
     return draft, old
@@ -243,9 +246,15 @@ def computed_write(business, model, values, prefix):
         raise ValidationError({prefix + name: 'COMPUTED_FIELD_WRITE: this value is calculated' for name in written})
 
 
-def load_rows(context, model, draft, old, record_id, collections, preview, prefix, keys_seen):
+def load_rows(context, model, draft, old, record_id, collections, preview, prefix, keys_seen, loaded=None):
     """Merge submitted child collections at every depth, keeping hidden rows."""
     business, tx, user = context._business, context._tx, context.user
+    loaded = [0] if loaded is None else loaded
+
+    def count(rows):
+        loaded[0] += rows
+        if loaded[0] > 2 * LIMITS['document_rows']:
+            raise ValidationError({'children': 'This document exceeds the owned row limit'})
     if set(collections) - {child.name for child in business.children.values() if child.parent is model}:
         raise ValidationError({prefix + 'children': 'Unknown child collection'})
     for child in business.children.values():
@@ -253,6 +262,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
         existing = tx.list(child.model, filters={child.link: record_id}, limit=100, order_by=('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',)) if record_id else []
         if record_id and tx.count(child.model, filters={child.link: record_id}) > 100:
             raise ValidationError({prefix + 'children': 'This collection exceeds the 100-row editor limit'})
+        count(len(existing))
         originals = {row.id: row for row in existing}
         hidden = set()
         for row in existing:
@@ -261,7 +271,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
 
         def stored(row, owner):
             item = Draft(child.model, row._values, context=context, parent=owner, record_id=row.id)
-            load_rows(context, child.model, item, None, row.id, {}, True, prefix + child.name + '.' + item.key + '.', set())
+            load_rows(context, child.model, item, None, row.id, {}, True, prefix + child.name + '.' + item.key + '.', set(), loaded)
             return item
         if old is not None:
             old._rows[child.name] = [stored(row, old) for row in existing]
@@ -271,6 +281,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
         rows = collections[child.name]
         if not isinstance(rows, list) or len(rows) > 100:
             raise ValidationError({prefix + child.name: 'Use at most 100 rows'})
+        count(len(rows))
         kept, keys, merged = set(), set(), []
         for index, value in enumerate(rows):
             if not isinstance(value, dict):
@@ -298,7 +309,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             object.__setattr__(row, '_submitted', frozenset(value))
             if 'evlet_position' in child.model.__fields__: row._values['evlet_position'] = index
             if temporary is not None: object.__setattr__(row, 'key', temporary)
-            load_rows(context, child.model, row, None, row_id, nested, preview, prefix + child.name + '.' + row.key + '.', keys_seen)
+            load_rows(context, child.model, row, None, row_id, nested, preview, prefix + child.name + '.' + row.key + '.', keys_seen, loaded)
             merged.append(row)
         for row_id in originals.keys() - kept - hidden:
             if not preview:
@@ -589,6 +600,13 @@ def write_snapshot(tx, draft):
 def operate(context, model, record_id, values, *, action=None, arguments=None):
     business, tx, user = context._business, context._tx, context.user
     draft, before = load_draft(context, model, record_id, values)
+    plan = business.registry.plan_for(model)
+    if plan is not None and record_id:
+        row = tx.connection.execute('SELECT plan_hash FROM evlet_calculation_versions WHERE resource=? AND record_id=?',
+                                    (business.registry.name_for(model), record_id)).fetchone()
+        if (row is None or row[0] != plan['model_schema_hash']) and not context._recalculate:
+            raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; '
+                                   'resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it')
     outcome = None
     if action is not None:
         method = getattr(model, action, None)
@@ -600,10 +618,14 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     prior = before.stored_values() if before else None
     after = draft.stored_values()
     if prior == after:
+        if plan is not None and context._recalculate:
+            record_plan(tx, business.registry.name_for(model), record_id, plan)
         result = business.detail(tx, user, tx.get(model, record_id))
         if outcome is not None: result['_outcome'] = outcome
         return result
     record = write_snapshot(tx, draft)
+    if plan is not None:
+        record_plan(tx, business.registry.name_for(model), record.id, plan)
     context._active[-1] = (model, record.id)
     business.policy.record(tx, user, model, record.id, 'update' if before else 'create')
     keys = {}
@@ -622,6 +644,12 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     if keys: result['_row_ids'] = keys
     if outcome is not None: result['_outcome'] = outcome
     return result
+
+
+def record_plan(tx, resource, record_id, plan):
+    tx.connection.execute('INSERT INTO evlet_calculation_versions(resource,record_id,plan_hash) VALUES (?,?,?) '
+                          'ON CONFLICT(resource, record_id) DO UPDATE SET plan_hash=excluded.plan_hash',
+                          (resource, record_id, plan['model_schema_hash']))
 
 
 def persist_rows(context, model, draft, before, owner_id, keys):

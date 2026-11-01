@@ -65,7 +65,16 @@ valid inside `.where(...)`. There is no `parent.parent`, row indexing, string fo
 comparisons on expressions raise `EXPRESSION_TRUTH_TEST`.
 
 Field-to-field equality stays identity based so fields remain safe dictionary keys.
-Compare two fields with `F("a") == F("b")`; `qty == 1` builds an expression.
+Compare two fields with `F("a") == F("b")`; `qty == 1` builds an expression. Outside a
+formula, truth-testing `field == value` keeps Python's answer (`None in fields` is False).
+
+Rounded shares are not reconciled automatically. Expose the difference as a named field
+and validate or display it:
+
+```python
+allocated = Currency(compute=round(parent.amount * weight / parent.weights, 2))  # on the row
+residual = Currency(compute=amount - shares.sum("allocated"))                    # on the document
+```
 
 ## Writers, scales and storage
 
@@ -124,8 +133,13 @@ All ordinary writes settle the document in the existing transaction:
   `with tx.maintenance():` for an audited repair. The caller must restore calculated
   values afterwards; maintenance does not recompute them.
 
-Reading a saved record never recalculates or rewrites it. Changing a formula or profile
-does not backfill stored totals.
+Reading a saved record never recalculates or rewrites it. Each saved finite-v1 document
+records the plan it was calculated with (`evlet_calculation_versions`, created at startup
+for apps with finite plans). Writing a document saved under another plan is a 409
+`SCHEMA_VERSION_MISMATCH` until the client resubmits with
+`"_calculation": {"model_schema_hash": <active>, "recalculate": true}`. Actions, dialogs
+and services that write such a document get the same 409; recalculate it through the
+route first. Formula changes never backfill stored totals on their own.
 
 ## Permissions and the browser plan
 
@@ -133,7 +147,10 @@ A calculated result is readable only when every input it reads is readable and e
 collection it aggregates is complete for that user (no child row scope). Otherwise the
 result is withheld. `/api/schema` reports, per finite root, the plan hash and a capability
 per field (`local_universal` or `unavailable`). The plan is included only when every
-calculated field is local for that user, so hidden inputs are never shipped.
+calculated field is local for that user. A shipped plan lists only fields that user can
+read (no hidden names, bounds or defaults); it carries its own hash and
+`source_plan_hash`, the active plan's hash. The existing SolidJS form previews finite
+results through `/api/_draft`; it does not edit nested tables below the first level.
 
 ## Browser engine
 

@@ -100,6 +100,10 @@ class Business:
     def initialize(self):
         self.auth.initialize()
         self.storage.initialize(self.database)
+        if self.registry.plans:
+            with self.database.transaction() as tx:
+                # The plan each saved finite-v1 document was calculated with (history guard).
+                tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_calculation_versions (resource TEXT NOT NULL, record_id INTEGER NOT NULL, plan_hash TEXT NOT NULL, PRIMARY KEY (resource, record_id))')
         if getattr(self, 'forms', None) and (self.forms.dialogs or self.forms.reports):
             self.forms.initialize()
         if self.events:
@@ -372,10 +376,14 @@ class Business:
             if not ((len(parts) == 3 and method == 'POST') or (len(parts) == 4 and method == 'PATCH') or action):
                 raise AccessError(405, 'Method not allowed')
             plan = self.registry.plan_for(model)
+            recalculate = False
             if plan is not None and '_calculation' in body:
                 body = dict(body)
-                self.check_calculation(model, body.pop('_calculation'))
+                calculation = body.pop('_calculation')
+                self.check_calculation(model, calculation)
+                recalculate = calculation.get('recalculate', False)
             with self.context(user) as context:
+                context._recalculate = recalculate
                 if record_id:
                     record = self.policy.record(context._tx, user, model, record_id, 'update')
                     if b'if-match' not in dict(scope.get('headers', [])):
@@ -471,13 +479,24 @@ class Business:
         result = {'language': plan['language'], 'numeric_profile': plan['numeric_profile'],
                   'model_schema_hash': plan['model_schema_hash'], 'capabilities': capabilities}
         if all(value == 'local_universal' for value in capabilities.values()):
-            result['plan'] = plan
+            # Ship only fields this role can read: no hidden names, bounds or defaults.
+            from copy import deepcopy
+            from .calc import fingerprint
+            projected = deepcopy(dict(plan))
+            for entry in projected['tables'].values():
+                target = models.get(tuple(entry['path']))
+                readable = self.policy.fields(user, target) if target is not None else set()
+                entry['fields'] = {name: meta for name, meta in entry['fields'].items() if name in readable}
+            projected['source_plan_hash'] = plan['model_schema_hash']
+            projected['model_schema_hash'] = fingerprint(projected)
+            result['plan'] = projected
         return result
 
     def check_calculation(self, model, calculation):
         """A finite-v1 client names the plan it previewed; a different active plan is a conflict."""
         plan = self.registry.plan_for(model)
-        if plan is None or not isinstance(calculation, dict) or set(calculation) - {'language', 'model_schema_hash', 'client_revision'}:
+        if plan is None or not isinstance(calculation, dict) or set(calculation) - {'language', 'model_schema_hash', 'client_revision', 'recalculate'} \
+                or type(calculation.get('recalculate', False)) is not bool:
             raise ValidationError({'calculation': 'Invalid calculation metadata'})
         if calculation.get('language', plan['language']) != plan['language'] or calculation.get('model_schema_hash') != plan['model_schema_hash']:
             raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this document uses a newer calculation plan; reload it')

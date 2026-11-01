@@ -1,6 +1,7 @@
 """Backend model, field, and row rules. Python database sessions remain trusted."""
 
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from .auth import AccessError, ROLES
 from .fields import Link
@@ -53,6 +54,8 @@ class Policy:
         for model in self.governed:
             for role in ROLES:
                 default(role, model)
+        # Rules are fixed per policy, so cached finite derivation checks cannot go stale.
+        self.rules = MappingProxyType(self.rules)
         for (role, model), rule in self.rules.items():
             registry.name_for(model)
             if role not in ROLES or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete'}:

@@ -163,7 +163,7 @@ export default function RecordForm(props: {
         const response = await request('/api/_draft/' + model.name, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: isNew ? null : recordId, values: payload.data, revision})});
         if (!alive || revision !== draftRevision || response.revision !== revision) return;
         setQuerySources(response.values._sources || {});
-        for (const field of model.fields) if ((!hydrating || field.stored === false) && ['query', 'compute', 'fetch'].some(kind => model.behavior?.[field.name]?.[kind]) || isNew && field.default_kind === 'callable' && !dirty().has(field.name)) state.write('record.' + field.name, response.values[field.name]);
+        for (const field of model.fields) if ((!hydrating || field.stored === false) && ['query', 'compute', 'fetch', 'finite'].some(kind => model.behavior?.[field.name]?.[kind]) || isNew && field.default_kind === 'callable' && !dirty().has(field.name)) state.write('record.' + field.name, response.values[field.name]);
         setCollections(current => Object.fromEntries(Object.entries(current).map(([name, rows]) => {
           const table = model.children?.find(table => table.name === name);
           const definition = app.models.find(item => item.name === table?.model);
@@ -171,7 +171,7 @@ export default function RecordForm(props: {
             const resolved = response.values.children?.[name]?.find((candidate: any) => row.id ? candidate.id === row.id : candidate._key === row._key);
             if (!resolved) return row;
             const next = {...row, _sources: resolved._sources || {}};
-            for (const field of definition?.fields || []) if ((!hydrating || field.stored === false) && ['query', 'compute', 'fetch'].some(kind => definition?.behavior?.[field.name]?.[kind])) next[field.name] = resolved[field.name];
+            for (const field of definition?.fields || []) if ((!hydrating || field.stored === false) && ['query', 'compute', 'fetch', 'finite'].some(kind => definition?.behavior?.[field.name]?.[kind])) next[field.name] = resolved[field.name];
             return next;
           })];
         })));

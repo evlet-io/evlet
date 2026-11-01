@@ -222,8 +222,21 @@ def lift(value):
     raise CalcError('UNSUPPORTED_EXPRESSION', f'Unsupported calculation operand {type(value).__name__}; use D("1.5") for decimals')
 
 
+class FieldComparison(Expr):
+    """`field == value` inside a formula, which still behaves like Python identity
+    equality when ordinary code truth-tests it (e.g. `None in fields`)."""
+    __slots__ = ()
+
+    def __bool__(self):
+        if self.op == 'eq': return False
+        if self.op == 'ne': return True
+        raise TypeError(f"'{self.op}' is not supported between a field and a value outside a calculation")
+
+
 def operand(op, left, right=None):
     """Field descriptors build expressions through these operators."""
+    if op in ('eq', 'ne', 'lt', 'lte', 'gt', 'gte'):
+        return FieldComparison(op, (lift(left), lift(right)))
     return Expr(op, (lift(left),) if right is None else (lift(left), lift(right)))
 
 

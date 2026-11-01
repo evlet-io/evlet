@@ -41,27 +41,44 @@ Nothing was merged, reset, deployed or published. No customer database was touch
 | W2 Python compiler/numbers | Done | `tests/test_finite_expressions.py` (independent `decimal` reference, cycles, scopes, types, states). |
 | W3 browser evaluator | Done | `FiniteEngine.ts`, `frontend/src/tests/finite-engine.test.ts` replaying Python fixtures; fingerprint parity. |
 | W4 graph and batches | Done | Row handles, membership/filter edges, incremental settle with equality pruning, nested batches, rollback, one publication, reentrancy guard, explain, disposal; randomized incremental-vs-full checks. |
-| W5 nested storage | Done (SQLite) | `tests/test_nested_documents.py`: create/reload/update/delete, owner links, rollback, hidden rows, subtree permissions. PostgreSQL relies on CI. |
-| W6 security/versions | Done | Computed-write guards, legacy action refusal, raw-write guard, plan pinning, derivation permissions, schema projection. External `Query` sources in finite roots are deferred. |
-| W7 UI bridge | Not started | Deferred by the user: Evlet UI becomes its own framework next. Current SolidJS screens keep working; finite fields preview through `/api/_draft`. |
+| W5 nested storage | Done (SQLite) | `tests/test_nested_documents.py`: create/reload/update/delete, owner links, rollback, hidden rows, subtree permissions, formula-upgrade guard. **PostgreSQL is not covered**: `tests/test_postgres.py` has no finite or nested cases yet. |
+| W6 security/versions | Done, with limits | Computed-write guards, legacy action refusal, raw-write guard, per-record plan versions (409 + explicit `recalculate`), derivation permissions, field-filtered plan projection. Client plan pinning is optional and the SolidJS client does not send it. External `Query` sources in finite roots are deferred. |
+| W7 UI bridge | Minimal | Deferred by the user: Evlet UI becomes its own framework next. The SolidJS form copies finite results from `/api/_draft` previews (two-line change, covered only by existing form tests, not browser-verified); nested tables below the first level are not editable there. `FiniteEngine.ts` is not wired into screens. |
 | W8 native controls | Not started | Same as W7. |
 | W9 native parity | Not started | Same as W7. |
-| W10 package/perf | Done for the engine | Wheel built and installed outside the checkout with Node off PATH; `scripts/smoke_finite.py` saved a nested document over real HTTP and loaded local assets. Added to CI. |
+| W10 package/perf | Done for the engine | Wheel built locally and installed in a clean venv outside the checkout; with Node off PATH, `scripts/smoke_finite.py` saved a nested document over real HTTP via uvicorn and loaded local assets. `check_package.py`, `smoke_cli.py` and `check_flat_package.py` also passed locally. The smoke step was added to CI (not yet run there). |
 
 Gates: **engine completion** is met for SQLite with the limitations below. **Native UI
 cutover** is not started.
 
 ## Tests actually run
 
+Final run on the branch head (macOS arm64, Python 3.12.16, Node 24.16.0):
+
 ```
-.venv/bin/python -m pytest            -> see the final report for the last count
-cd frontend && npm test && npm run build
-.venv/bin/python -m build --no-isolation
-python -I scripts/check_package.py   (installed wheel, clean venv)
-env -i PATH=/usr/bin:/bin python -I scripts/smoke_finite.py   (installed wheel)
+.venv/bin/python -m pytest                       -> 510 passed, 35 skipped (PostgreSQL DSN unset)
+cd frontend && npm test                          -> 265 passed, 1 skipped (opt-in benchmark)
+cd frontend && npm run build                     -> typecheck and build passed
+.venv/bin/python -m build --no-isolation         -> wheel and sdist built
+python -I scripts/check_package.py               -> passed (installed wheel, clean venv)
+python -I scripts/smoke_cli.py                   -> passed (installed wheel)
+env -i PATH=/usr/bin:/bin python -I scripts/smoke_finite.py -> passed, Node absent
+python scripts/check_flat_package.py dist/*.whl  -> passed
 ```
 
-PostgreSQL tests were skipped locally (no DSN); CI runs them.
+PostgreSQL tests were skipped locally; CI's PostgreSQL jobs run the existing suite, which
+has no finite-v1 or nested cases.
+
+## Migration effects
+
+* No app table, migration or checksum changed. Formula-only changes do not alter
+  migration definitions.
+* Apps with finite-v1 plans get one framework table, `evlet_calculation_versions`,
+  created with `CREATE TABLE IF NOT EXISTS` at startup.
+* Existing finite-v1 records saved before that table existed (none outside this branch)
+  would need one explicit `recalculate` write.
+* Nested tables create new child tables (`<parent storage>_<table>`) through the usual
+  explicit migrations.
 
 ## Performance (pure engine, no database)
 
@@ -89,4 +106,10 @@ limits, which plans refuse by design; it was not run.
 * Client plan projection is all-or-nothing per root; partial plans are not produced.
 * Hidden rows that fail calculation block saves for users who cannot see them; the error
   is reported only as a generic form error.
+* Rounded allocations are not reconciled; expose a named residual field (documented).
+* Nested documents load one query batch per row: a 100 x 9 tree costs about 2,200 SQL
+  statements per GET and 8,600 per title-only PATCH (bounded by the 1,000-row cap).
+* Acceptance items still missing or only partial: T21 handled by documentation, T26/A58
+  (UI), A37/A51/A52 (browser save-mapping and async-reply flows), and partial T10, T24,
+  T27, T28, A03, A06, A13, A30, A55, A56, A60.
 * No native UI integration (W7-W9).

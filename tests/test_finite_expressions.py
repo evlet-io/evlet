@@ -720,3 +720,20 @@ def test_review_regressions_for_engine_edges():
     assert doc.snapshot()['grand_total'] == '1.05'
     with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
         doc.observe(root, 'missing', lambda result: None)
+
+
+def test_allocation_residuals_are_explicit_not_silently_lost():
+    class Share(Child):
+        weight = Decimal(default=1)
+        allocated = Currency(compute=round(parent.amount * weight / parent.weights, 2))
+
+    class Allocation(Model):
+        Meta = FiniteMeta
+        amount = Currency(default='0.01')
+        shares = Table(Share)
+        weights = Decimal(compute=shares.sum('weight'))
+        allocated_total = Currency(compute=shares.sum('allocated'))
+        residual = Currency(compute=amount - allocated_total)
+    snap = document(Allocation, {'children': {'shares': [{'_key': k} for k in 'abc']}}).snapshot()
+    assert [row['allocated'] for row in snap['children']['shares']] == ['0.00', '0.00', '0.00']
+    assert (snap['allocated_total'], snap['residual']) == ('0.00', '0.01')
