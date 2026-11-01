@@ -12,7 +12,7 @@ describe('sign in, setup and Docs', () => {
       ['GET', /\/api\/auth\/session$/, () => signedIn ? recorded.session : recorded.session_anonymous],
       ['POST', /\/api\/auth\/login$/, sent => sent.body.password === 'right password' ? (signedIn = true, recorded.login) : recorded.login_failed],
       ['GET', /\/api\/schema$/, screen.schema],
-    ], '/ui/');
+    ], '/');
     await until(() => expect(host.querySelector('h1')?.textContent).toBe('Welcome back'));
     typeInto(host.querySelector<HTMLInputElement>('#ev-username')!, 'admin');
     typeInto(host.querySelector<HTMLInputElement>('#ev-password')!, 'wrong');
@@ -22,14 +22,14 @@ describe('sign in, setup and Docs', () => {
 
     typeInto(host.querySelector<HTMLInputElement>('#ev-password')!, 'right password');
     submit(host);
-    await until(() => expect(location.pathname).toBe('/ui/docs'));
+    await until(() => expect(location.pathname).toBe('/docs'));
     await until(() => expect(text(host.querySelector('.ph h1'))).toBe('Build with Evlet'));
     const login = requests(sent, 'POST', /\/api\/auth\/login$/).pop()!;
     expect(login.body).toEqual({ username: 'admin', password: 'right password' });
     expect(login.headers['x-evlet-request']).toBe('1');
     // The aside lists every root model the role can read, linking to its list; Table rows are not listed.
     const links = [...host.querySelectorAll<HTMLAnchorElement>('.ev-doc-aside li a')].map(link => [text(link), link.getAttribute('href')]);
-    expect(links).toEqual([['Customers', '/ui/m/customer'], ['Products', '/ui/m/product'], ['Orders', '/ui/m/order'], ['Contacts', '/ui/m/contact']]);
+    expect(links).toEqual([['Customers', '/app/customer'], ['Products', '/app/product'], ['Orders', '/app/order'], ['Contacts', '/app/contact']]);
   });
 
   it('first-run setup creates the administrator and signs in with it', async () => {
@@ -39,7 +39,7 @@ describe('sign in, setup and Docs', () => {
       ['POST', /\/api\/auth\/setup$/, () => { ready = true; return screen.setup; }],
       ['POST', /\/api\/auth\/login$/, recorded.login],
       ['GET', /\/api\/schema$/, screen.schema],
-    ], '/ui/login');
+    ], '/login');
     await until(() => expect(text(host.querySelector('h1'))).toBe('Set up Evlet'));
     expect(text(host.querySelector('.ev-login-card > p'))).toBe('Create the first administrator account.');
     const password = host.querySelector<HTMLInputElement>('#ev-password')!;
@@ -48,27 +48,51 @@ describe('sign in, setup and Docs', () => {
     typeInto(host.querySelector<HTMLInputElement>('#ev-username')!, 'owner');
     typeInto(password, 'a sufficiently long password');
     submit(host);
-    await until(() => expect(location.pathname).toBe('/ui/docs'));
+    await until(() => expect(location.pathname).toBe('/docs'));
     const order = sent.filter(item => item.method === 'POST').map(item => new URL(item.url, 'http://x').pathname);
     expect(order).toEqual(['/api/auth/setup', '/api/auth/login']);
     expect(requests(sent, 'POST', /setup$/)[0].body).toEqual({ username: 'owner', password: 'a sufficiently long password' });
   });
 
   it('keeps a deep link through sign-in and opens Docs topics', async () => {
-    const { host } = start(adminRoutes(), '/ui/docs/screens');
+    const { host } = start(adminRoutes(), '/docs/screens');
     await until(() => expect(text(host.querySelector('.ph h1'))).toBe('Screens and routes'));
-    expect(host.querySelector('.crumbs a')!.getAttribute('href')).toBe('/ui/docs');
+    expect(host.querySelector('.crumbs a')!.getAttribute('href')).toBe('/docs');
     expect(text(host.querySelector('.crumbs .cur'))).toBe('Screens and routes');
     click(byText(host, '.ev-docs .tabs a', 'Troubleshooting'));
-    await until(() => expect(location.pathname).toBe('/ui/docs/troubleshooting'));
+    await until(() => expect(location.pathname).toBe('/docs/troubleshooting'));
     expect(text(host.querySelector('.ph h1'))).toBe('Troubleshooting');
     expect(byText(host, 'h2', 'A record changed before I saved')).not.toBeNull();
   });
 });
 
+describe('addresses the Python server serves', () => {
+  it('opens a record from the older /app/model/id/view link', async () => {
+    const { host } = start([...adminRoutes(),
+      ['GET', /\/api\/contact\/1$/, screen.contact_detail],
+      ['GET', /\/api\/contact\/1\/attachments$/, screen.attachments_empty],
+    ], '/app/contact/1/view');
+    await until(() => expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['name', 'email', 'phone', 'notes']));
+    expect(location.pathname).toBe('/app/contact/1/view');
+  });
+
+  it.each([['/settings/accounts', 'Accounts are not managed in this interface'], ['/reports/sales', 'Reports are not shown in this interface']])(
+    '%s says the screen is not part of this interface', async (path, title) => {
+      const { host } = start(adminRoutes(), path);
+      await until(() => expect(text(host.querySelector('.page .empty h3'))).toBe(title));
+      click(byText(host, '.page button', 'Open Docs'));
+      await until(() => expect(location.pathname).toBe('/docs'));
+    });
+
+  it('an address that matches no route, such as a Python page, opens Docs', async () => {
+    start(adminRoutes(), '/demo/projects');
+    await until(() => expect(location.pathname).toBe('/docs'));
+  });
+});
+
 describe('app shell', () => {
   it('groups models in the sidebar, marks the current one and offers New for creatable models', async () => {
-    const { host } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, screen.customers_page1]], '/ui/m/customer');
+    const { host } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, screen.customers_page1]], '/app/customer');
     await until(() => expect(host.querySelector('.sidebar')).not.toBeNull());
     const groups = [...host.querySelectorAll('.nav-group')].map(group => [text(group.querySelector('.nav-label')), [...group.querySelectorAll('.nav-item .lbl')].map(text)]);
     expect(groups).toEqual([['Documents', ['Orders']], ['Records', ['Customers', 'Products', 'Contacts']]]);
@@ -104,11 +128,11 @@ describe('app shell', () => {
     click(byText(document.body, '.pop [role="menuitem"]', 'Sign out'));
     await until(() => expect(text(host.querySelector('h1'))).toBe('Welcome back'));
     expect(requests(sent, 'POST', /logout$/)).toHaveLength(1);
-    expect(location.pathname).toBe('/ui/login');
+    expect(location.pathname).toBe('/login');
   });
 
   it('shows the keyboard shortcuts with ? and a page that is not available', async () => {
-    const { host } = start(adminRoutes(), '/ui/m/order_lines');
+    const { host } = start(adminRoutes(), '/app/order_lines');
     await until(() => expect(text(host.querySelector('.empty h3'))).toBe('This page is not available'));
     press(document.body, '?');
     expect(text(document.querySelector('.modal h2'))).toBe('Keyboard shortcuts');

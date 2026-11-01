@@ -17,12 +17,12 @@ function customers(sent: Sent) {
 
 describe('generated list page', () => {
   it('shows the list fields with the title pinned first, the total and pages through the server', async () => {
-    const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, customers]], '/ui/m/customer');
+    const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, customers]], '/app/customer');
     await until(() => expect(text(host.querySelector('.ev-list .summary'))).toBe('55 customers'));
     expect([...host.querySelectorAll('thead th')].map(text)).toEqual(['', 'Name', 'Rate', 'Credit days']);
     expect(host.querySelector('thead th[data-key="name"]')!.classList.contains('stk')).toBe(true);
     expect(rowTitles(host)[0]).toBe('Al Sahra Trading');
-    expect(host.querySelector<HTMLAnchorElement>('tbody tr[data-key="1"] a.ev-row-link')!.getAttribute('href')).toBe('/ui/m/customer/1');
+    expect(host.querySelector<HTMLAnchorElement>('tbody tr[data-key="1"] a.ev-row-link')!.getAttribute('href')).toBe('/app/customer/1');
     expect(text(host.querySelector('.ev-pager span'))).toBe('1–50 of 55');
     expect(listCalls(sent, 'customer')[0]).toMatchObject({ limit: '50', offset: '0' });
 
@@ -34,7 +34,7 @@ describe('generated list page', () => {
   });
 
   it('sorts on the server by clicking a header and keeps the order in the address', async () => {
-    const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, customers]], '/ui/m/customer');
+    const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, customers]], '/app/customer');
     await until(() => expect(rowTitles(host).length).toBeGreaterThan(0));
     const rate = host.querySelector<HTMLElement>('thead th[data-key="rate"]')!;
     click(rate);
@@ -47,7 +47,7 @@ describe('generated list page', () => {
   });
 
   it('searches as you type, after a short pause, with / to focus the search', async () => {
-    const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, customers]], '/ui/m/customer');
+    const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, customers]], '/app/customer');
     await until(() => expect(rowTitles(host).length).toBeGreaterThan(0));
     press(document.body, '/');
     const input = host.querySelector<HTMLInputElement>('.toolbar input')!;
@@ -60,7 +60,7 @@ describe('generated list page', () => {
   });
 
   it('filters by a choice field with a chip that clears it', async () => {
-    const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/order\?/, sent => query(sent).filters ? screen.orders_open : recorded.list]], '/ui/m/order');
+    const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/order\?/, sent => query(sent).filters ? screen.orders_open : recorded.list]], '/app/order');
     await until(() => expect(rowTitles(host)).toEqual(['Big order']));
     click(byText(host, '.ph-actions button', 'Filter'));
     click(byText(document.body, '.pop [role="menuitem"]', 'Open'));
@@ -75,7 +75,7 @@ describe('generated list page', () => {
   });
 
   it('a link to a filtered list opens it as it was', async () => {
-    const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/order\?/, screen.orders_open]], '/ui/m/order?f=%7B%22stage%22%3A%22open%22%7D');
+    const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/order\?/, screen.orders_open]], '/app/order?f=%7B%22stage%22%3A%22open%22%7D');
     await until(() => expect(text(host.querySelector('.filter-chip'))).toBe('Stage: Open'));
     expect(JSON.parse(listCalls(sent, 'order')[0].filters)).toEqual({ stage: 'open' });
   });
@@ -88,7 +88,7 @@ describe('generated list page', () => {
       ['GET', /\/api\/customer\/\d+$/, sent => ({ status: 200, etag: `"rev-${sent.url.split('/').pop()}"`,
         body: screen.customers_page1.body.items.find((row: { id: number }) => row.id === Number(sent.url.split('/').pop())) })],
       ['DELETE', /\/api\/customer\/\d+$/, sent => { deleted.push(Number(sent.url.split('/').pop())); return { status: 204, etag: null, body: null }; }],
-    ], '/ui/m/customer');
+    ], '/app/customer');
     await until(() => expect(rowTitles(host).length).toBeGreaterThan(0));
     click(host.querySelector('tbody tr[data-key="1"] [role="checkbox"]'));
     click(host.querySelector('tbody tr[data-key="2"] [role="checkbox"]'));
@@ -116,7 +116,7 @@ describe('board and saved views (recorded State fixtures)', () => {
   const draftId = invoice.invoice_draft.body.id, issuedNumber = invoice.invoice_revise_before.body.number;
 
   it('shows saved views per state with counts, and the declared measures', async () => {
-    const { host, sent } = start(routes(), '/ui/m/invoice');
+    const { host, sent } = start(routes(), '/app/invoice');
     await until(() => expect([...host.querySelectorAll('.ev-list [role="tab"]')].map(text)).toEqual(['All invoices3', 'Draft1', 'Issued1', 'Paid0', 'Void1']));
     await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => text(item.querySelector('span')) + '=' + text(item.querySelector('b')))).toEqual(['Outstanding=AED 2,680.00', 'Count=3']));
     expect(query(requests(sent, 'GET', /aggregate/)[0])).toMatchObject({ measures: 'n:count,outstanding', group_by: 'status' });
@@ -131,7 +131,7 @@ describe('board and saved views (recorded State fixtures)', () => {
     const { host, sent } = start([...routes(),
       ['GET', new RegExp(`/api/invoice/${draftId}$`), invoice.invoice_draft],
       ['POST', new RegExp(`/api/invoice/${draftId}/moves/issued$`), invoice.invoice_issued],
-    ], '/ui/m/invoice?view=board');
+    ], '/app/invoice?view=board');
     await until(() => expect(host.querySelectorAll('.board .card').length).toBe(3));
     const column = (label: string) => byText(host, '.col-k', new RegExp(`^${label}`))!;
     expect([...host.querySelectorAll('.col-h .pill')].map(text)).toEqual(['Draft', 'Issued', 'Paid', 'Void']);
@@ -153,7 +153,7 @@ describe('board and saved views (recorded State fixtures)', () => {
     const { host } = start([...routes(),
       ['GET', new RegExp(`/api/invoice/${draftId}$`), invoice.invoice_draft_blocked],
       ['POST', new RegExp(`/api/invoice/${draftId}/moves/issued$`), invoice.invoice_move_refused],
-    ], '/ui/m/invoice?view=board');
+    ], '/app/invoice?view=board');
     await until(() => expect(host.querySelectorAll('.board .card').length).toBe(3));
     const draft = byText(host, '.col-k', /^Draft/)!;
     press(draft.querySelector('.card')!, 'ArrowRight', { altKey: true });

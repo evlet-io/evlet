@@ -21,7 +21,7 @@ def main():
     compiled = SchemaCompiler().compile(PageView("example", route="/example", layout=Column(children=[UIText("Ready")])))
     assert compiled.to_dict()["layout"]["slots"]["children"][0]["props"]["text"] == "Ready"
     response = static_response("/docs")
-    assert response and b'<div id="root">' in response[1].content
+    assert response and b'<div id="evlet-app">' in response[1].content
     assert list((Path(evlet.__file__).parent / "ui/static/assets").glob("*.js"))
 
     from evlet import PostgreSQLDatabase

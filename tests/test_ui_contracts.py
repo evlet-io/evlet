@@ -12,6 +12,14 @@ def test_shared_ui_and_record_fixtures_match_http_contracts():
         assert json.loads((fixtures / name).read_text()) == actual, name
 
 
+def test_ui_framework_fixtures_match_http_contracts():
+    """The production UI's tests replay these recorded responses; they must stay what the server sends."""
+    from scripts.generate_ui_framework_fixtures import generate as framework
+    fixtures = Path(__file__).resolve().parents[1] / 'frontend/src/evlet/tests'
+    for name, actual in framework().items():
+        assert json.loads((fixtures / name).read_text()) == actual, name
+
+
 def test_metadata_imports_remain_compatible():
     from evlet import metadata
     from evlet.ui import metadata as current

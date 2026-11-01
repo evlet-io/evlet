@@ -2,7 +2,7 @@
 
 Writes frontend/src/evlet/tests/api-fixture.json and screens-fixture.json. The API client, record
 store and screen tests replay these responses through a fetch stub, so they consume the shapes the
-backend really sends.
+backend really sends. tests/test_ui_contracts.py records them again and compares.
 Run from the repository root: .venv/bin/python -m scripts.generate_ui_framework_fixtures
 """
 
@@ -11,7 +11,7 @@ import base64
 import json
 from pathlib import Path
 from urllib.parse import quote
-import tempfile
+from tempfile import TemporaryDirectory
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
@@ -188,8 +188,7 @@ def http(app, method, path, data=None, cookie='', csrf='', headers=None):
     return asyncio.run(run())
 
 
-def main():
-    folder = Path(tempfile.mkdtemp())
+def record_api(folder):
     database = Database(folder / 'fixture.sqlite3', Registry(Customer, Product, Order))
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
     app.initialize()
@@ -241,15 +240,15 @@ def main():
     keep('action', c('POST', f'{url}/actions/close', {'note': 'done'}, headers={b'if-match': etag}))
     keep('not_found', c('GET', '/api/order/999999'))
     keep('logout', c('POST', '/api/auth/logout'))
-    documents(out)
-    OUTPUT.write_text(json.dumps(out, indent=1, sort_keys=True) + '\n')
+    documents(out, folder)
+    database.close()
+    return out
 
 
-def documents(out):
+def documents(out, folder):
     """Responses of the document routes, recorded as an editor: a move refused by its condition, a move,
     an action, void, revise, per-record and model measures, related records, line pages and details
     carrying _moves, _actions, _void, _revise and _effects, with the schema's state, key_fields and relations."""
-    folder = Path(tempfile.mkdtemp())
     database = Database(folder / 'documents.sqlite3', Registry(Customer, LedgerEntry, Invoice, Payment))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
     app = Application(database, auth=auth)
@@ -323,12 +322,12 @@ def documents(out):
     # Revising voids the issued invoice and opens a draft copy.
     keep('invoice_revision', write('POST', revised, '/revise', {'reason': 'Wrong quantity on line 2'}))
     keep('invoice_revised_original', editor('GET', revised))
+    database.close()
 
 
-def screens():
+def record_screens(folder):
     """Responses the generated screens consume: first-run setup, list paging, search, sorting and
     filters, field permissions per role, and attachments."""
-    folder = Path(tempfile.mkdtemp())
     database = Database(folder / 'screens.sqlite3', Registry(Customer, Product, Order, Contact))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
     app = Application(database, auth=auth, attachments=(Contact,))
@@ -384,9 +383,21 @@ def screens():
     keep('viewer_schema', viewer('GET', '/api/schema'))
     keep('viewer_contact_detail', viewer('GET', url))
     keep('viewer_contacts', viewer('GET', '/api/contact?limit=20&offset=0'))
-    SCREENS.write_text(json.dumps(out, indent=1, sort_keys=True) + '\n')
+    database.close()
+    return out
+
+
+def generate():
+    """Both fixtures, recorded from fresh databases."""
+    with TemporaryDirectory() as directory:
+        return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: record_screens(Path(directory))}
+
+
+def main():
+    for name, value in generate().items():
+        OUTPUT.with_name(name).write_text(json.dumps(value, indent=1, sort_keys=True) + '\n')
+        print('Updated', name)
 
 
 if __name__ == '__main__':
     main()
-    screens()

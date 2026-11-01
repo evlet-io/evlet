@@ -2,7 +2,7 @@
 // record view for every model the role can read, and the command palette. It needs no per-app
 // frontend code: everything comes from /api/schema, record details and the list routes.
 //
-//   const router = appRouter({ base: '/ui' });
+//   const router = appRouter();
 //   router.start();
 //   mount(document.getElementById('app')!, () => App({ router }));
 
@@ -174,13 +174,24 @@ function page(ctx: AppContext): Child {
     case 'home': case 'login': case 'docs': return DocsPage(ctx);
     case 'topic': return DocsPage(ctx, route.params.topic);
     case 'list': return known(route.params.model) ? ListPage(ctx, route.params.model) : unavailable(ctx);
-    case 'record': return known(route.params.model) ? RecordPage(ctx, route.params.model, route.params.id) : unavailable(ctx);
+    case 'record': case 'view': return known(route.params.model) ? RecordPage(ctx, route.params.model, route.params.id) : unavailable(ctx);
     case 'create': {
       const model = known(route.params.model);
       return model && model.permissions?.create !== false ? RecordPage(ctx, model.name, 'new') : unavailable(ctx);
     }
+    case 'accounts': return notHere(ctx, 'Accounts', 'Accounts are not managed in this interface',
+      'Administrators manage accounts through the /api/auth/users routes. Your role and permissions are unchanged.');
+    case 'report': return notHere(ctx, 'Reports', 'Reports are not shown in this interface',
+      'Python reports keep their API and permissions. Model lists, boards and measures cover the data in this interface.');
     default: return unavailable(ctx);
   }
+}
+
+/** An address the server still serves for a screen this interface does not have. */
+function notHere(ctx: AppContext, crumb: string, title: string, text: string): HTMLElement {
+  ctx.crumbs.set([{ label: crumb }]);
+  return html`<div class="page">${EmptyState({ icon: 'info', tint: 'slate', title, text,
+    action: Button({ label: 'Open Docs', onClick: () => void ctx.router.go('docs', {}) }) })}</div>` as HTMLElement;
 }
 
 function unavailable(ctx: AppContext): HTMLElement {

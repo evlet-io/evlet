@@ -9,15 +9,21 @@ import type { LinkSource } from '../ui/fields';
 import type { AppClient } from './client';
 import type { Prefs } from './prefs';
 
-/** The route table. /m/:model/new comes before /m/:model/:id so "new" is never taken for an id. */
+/** The route table. These are the paths the Python server serves the app for (evlet/ui/routes.py).
+ * /app/:model/new comes before /app/:model/:id so "new" is never taken for an id. /app/:model/:id/view
+ * is an older link to a record and opens the record. Accounts and reports are not part of this UI;
+ * their addresses still open and say so. */
 export const ROUTES = {
   home: '/',
   login: '/login',
   docs: '/docs',
   topic: '/docs/:topic',
-  create: '/m/:model/new',
-  record: '/m/:model/:id',
-  list: '/m/:model',
+  create: '/app/:model/new',
+  record: '/app/:model/:id',
+  view: '/app/:model/:id/view',
+  list: '/app/:model',
+  accounts: '/settings/accounts',
+  report: '/reports/:report',
 } as const;
 export type Routes = typeof ROUTES;
 export type AppRouter = Router<Routes>;
