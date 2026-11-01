@@ -389,3 +389,60 @@ def test_storage_names_must_be_lowercase_routes():
         name = Text()
     with pytest.raises(ValueError, match='lowercase'):
         Registry(SalesOrder)
+
+
+def test_source_outputs_follow_the_behaviours_each_route_exposes():
+    from types import SimpleNamespace
+    from evlet.documents import Draft, source_values
+    @depends('item')
+    def stock_of(doc):
+        return {'qty': D(5), 'cost': D('12.34')}
+    class Order(Model):
+        permissions = ALL
+        item = Text()
+        stock = Query(stock_of, fields={'qty': Decimal(), 'cost': Currency()})
+        note = Text(visible_if='stock.qty > 0')
+    Registry(Order)
+    draft = Draft(Order, {'item': 'A'})
+    draft._sources['stock'] = SimpleNamespace(qty=D(5), cost=D('12.34'))
+    assert source_values(draft, {'item', 'note'}) == {}
+    dialog_behaviours = ('compute', 'visible_if', 'required_if', 'read_only_if', 'default_ref', 'filters')
+    assert source_values(draft, {'item', 'note'}, dialog_behaviours) == {'stock': {'qty': '5.0000'}}
+
+
+def test_tampered_storage_types_return_a_json_error(tmp_path):
+    from evlet import Integer
+    class Item(Model):
+        name = Text()
+        count = Integer()
+    app = application(tmp_path, Item)
+    c = client(app)
+    _, item, _ = c('POST', '/api/item', {'name': 'a', 'count': 1})
+    with app.database._connection() as connection:
+        connection.execute('UPDATE item SET count=? WHERE id=?', (b'\x00raw', item['id']))
+        connection.commit()
+    for path in ('/api/item', f"/api/item/{item['id']}"):
+        status, result, headers = c('GET', path)
+        assert status == 500 and result == {'error': 'Internal server error'}
+        assert headers[b'content-type'] == b'application/json; charset=utf-8'
+
+
+def test_legacy_child_errors_do_not_name_hidden_child_fields(tmp_path):
+    from evlet import Link, Policy
+    from evlet.business import ChildTable
+    class Parent(Model):
+        name = Text()
+    class Line(Model):
+        owner = Link(Parent, required=True)
+        qty = Decimal(default='1')
+        cost = Currency(default='4.25')
+        def validate(self):
+            raise ValidationError({'cost': 'Cost 4.25 is above margin'})
+    db = Database(tmp_path / 'db.sqlite3', Registry(Parent, Line))
+    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
+                      children=(ChildTable(Parent, 'lines', Line, 'owner', 'Lines'),))
+    app.initialize()
+    app.business.policy = Policy(db.registry, rules={('admin', Line): Rule(('read', 'create', 'update', 'delete'), read_fields=('owner', 'qty'))})
+    http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
+    status, result, _ = client(app)('POST', '/api/parent', {'name': 'p', 'children': {'lines': [{'qty': '1'}]}})
+    assert status == 422 and 'cost' not in str(result) and 'margin' not in str(result)

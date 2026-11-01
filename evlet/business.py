@@ -4,7 +4,7 @@ import hashlib
 import json
 import base64
 import binascii
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 import re
 from urllib.parse import parse_qs, quote
@@ -301,29 +301,30 @@ class Business:
         """Hide error keys that name unreadable fields or rows the user cannot see."""
         tables = {child.name: child.model for child in self.children.values() if child.parent is model}
         readable = self.policy.fields(user, model)
+        checks = ExitStack()
         def row_visible(child, key):
+            nonlocal tx
             if not re.fullmatch('[1-9][0-9]{0,18}', key) or int(key) > 2**63-1:
                 return True  # A client's temporary row key.
+            if tx is None:
+                tx = checks.enter_context(self.database.transaction())  # One lookup transaction, opened only if needed.
             try:
-                if tx is not None:
-                    self.policy.record(tx, user, child, int(key))
-                else:
-                    with self.database.transaction() as check:
-                        self.policy.record(check, user, child, int(key))
+                self.policy.record(tx, user, child, int(key))
             except AccessError:
                 return False
             return True
         visible, hidden = {}, False
-        for key, message in errors.items():
-            parts = key.split('.', 2)
-            if len(parts) == 3 and parts[0] in tables:
-                child, field = tables[parts[0]], parts[2]
-                shown = (self.policy.allows(user, child, 'read') and row_visible(child, parts[1])
-                         and (field not in child.__declared_fields__ or field in self.policy.fields(user, child)))
-            else:
-                shown = parts[0] not in model.__declared_fields__ or parts[0] in readable
-            if shown: visible[key] = message
-            else: hidden = True
+        with checks:
+            for key, message in errors.items():
+                parts = key.split('.', 2)
+                if len(parts) == 3 and parts[0] in tables:
+                    child, field = tables[parts[0]], parts[2]
+                    shown = (self.policy.allows(user, child, 'read') and row_visible(child, parts[1])
+                             and (field not in child.__declared_fields__ or field in self.policy.fields(user, child)))
+                else:
+                    shown = parts[0] not in model.__declared_fields__ or parts[0] in readable
+                if shown: visible[key] = message
+                else: hidden = True
         if hidden: visible.setdefault('_form', 'One or more values are invalid')
         return visible
 
@@ -462,7 +463,13 @@ class Business:
         try:
             self._save_children(tx, user, parent, collections)
         except ValidationError as exc:
-            raise ValidationError({'children': str(exc)}) from exc
+            # Child validate() errors may name child fields this user cannot read.
+            models = [child.model for child in self.children.values() if child.parent is type(parent)]
+            errors = {key: value for key, value in exc.errors.items()
+                      if not any(key in model.__declared_fields__ and key not in self.policy.fields(user, model) for model in models)}
+            parts = [str(ValidationError(errors))] if errors else []
+            if len(errors) < len(exc.errors): parts.append('One or more values are invalid')
+            raise ValidationError({'children': '; '.join(parts)}) from None
 
     def _save_children(self, tx, user, parent, collections):
         for name, rows in collections.items():

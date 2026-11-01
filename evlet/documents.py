@@ -450,7 +450,7 @@ def freeze_draft(draft):
     object.__setattr__(draft, '_readonly', True)
 
 
-def source_values(draft, allowed=None):
+def source_values(draft, allowed=None, behaviors=('compute',)):
     from .reactivity import references
     sources = draft._definition.__sources__
     used = {name: set(source.fields) for name, source in sources.items()}
@@ -458,7 +458,11 @@ def source_values(draft, allowed=None):
         # Return only the outputs that readable fields use; others may feed hidden fields.
         used = {}
         for name in allowed:
-            for path in references(plans(draft._definition)[name].get('compute')):
+            entry = plans(draft._definition)[name]
+            # Record schemas expose only computes over sources; dialogs also use conditions and filters.
+            expressions = [entry.get(key) for key in behaviors if key != 'filters']
+            expressions += list(entry.get('filters', {}).values()) if 'filters' in behaviors else []
+            for path in set().union(*(references(expression) for expression in expressions)):
                 parts = path.split('.')
                 if len(parts) == 2 and parts[0] in sources and parts[1] in sources[parts[0]].fields:
                     used.setdefault(parts[0], set()).add(parts[1])
