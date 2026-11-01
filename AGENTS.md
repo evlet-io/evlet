@@ -1,10 +1,12 @@
 # Working on Evlet
 
 Read `docs/specification.md` and `docs/architecture.md` before changing the public API.
-The current scope is the native SolidJS UI and Python UI contracts. Preserve
-the completed backend milestones and the approved Projects demo. Keep login,
-Docs after sign-in, Demo Pages and generated model screens working. Read
-`docs/ui.md` for the public UI API and migration boundaries. Read
+The browser interface is Evlet's own UI framework (`frontend/src/evlet/`); SolidJS,
+the Vue harness, the Projects demo and the Python page renderer were removed from it.
+Preserve the completed backend milestones and the Python UI contracts (`/api/ui`,
+native panels), which stay tested but are not rendered. Keep login, Docs after sign-in
+and generated model screens working. Read `docs/ui.md` and `docs/ui-framework.md` for
+the routes, the public UI API and its boundaries. Read
 `docs/business-capabilities.md`, `docs/finite-calculations.md`, `docs/tenancy-deployment.md`,
 `docs/jobs-realtime.md`, and `docs/connector.md` for public APIs and permission
 boundaries. Read `docs/postgresql.md`, `docs/performance.md`, and
@@ -17,9 +19,10 @@ never bypass account, tenant, row, field, or action checks.
 - Prefer the standard library. Justify every dependency. No mandatory Redis,
   Docker, external database, ORM, or background worker.
 - Keep public APIs explicit, small, and readable. Use snake_case in Python,
-  PascalCase for model and Solid component names. Do not create unused modules.
+  PascalCase for model and UI component names. Do not create unused modules.
 - `evlet/` contains the framework; `examples/playground/` is a consumer using only
-  public exports; `frontend/` is the native SolidJS Playground; `frontend/legacy` is a test-only regression harness; `tests/` covers the
+  public exports; `frontend/` is the browser interface built on Evlet's own UI framework, with
+  no runtime dependencies; `tests/` covers the
   core, SQLite integration, and ASGI interface.
 - Parameterize SQL values and validate SQL identifiers. Validate on the backend.
   Preserve transaction boundaries, exact currency values, and foreign keys.

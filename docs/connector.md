@@ -22,8 +22,8 @@ list/search metadata. It uses public framework exports, persists in `.data/`, an
 starts with local authentication. No account or password is generated.
 
 Run `npm --prefix frontend run dev` from the framework checkout in another terminal.
-Open `http://127.0.0.1:5173`, create your administrator, and add an Item. The existing
-Vue renderer discovers the new model without a custom component. Ports 8000 and
+Open `http://127.0.0.1:5173`, create your administrator, and add an Item. The browser
+interface discovers the new model without a custom component. Ports 8000 and
 5173 must be available. This starter is for local development; its exact loopback
 origins, setup endpoint, and non-Secure cookies are not deployment configuration.
 

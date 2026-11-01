@@ -121,7 +121,8 @@ uses the bounded pool and includes the same continuous reader/paced writer workl
 
 The frontend assets total 756,380 bytes, or 167,723 bytes when each asset is gzipped.
 These figures exclude the HTML shell and HTTP headers. Distribution validation and
-final test counts are recorded below.
+final test counts are recorded below. Those figures are from 29 October 2026; see
+"Frontend bundle after removing SolidJS" for the current bundle.
 
 ## Release checks
 
@@ -197,6 +198,21 @@ validating every row and comparing the saved tree), so its time grows with the r
 though its statement count does not. At 1,000 rows that is about 75 ms on this machine.
 A detail reads every readable row to compute its ETag, then embeds the first 100.
 These are local measurements of one workload, not capacity guarantees.
+
+## Frontend bundle after removing SolidJS
+
+Measured on 2 November 2026 with the same method (`frontend/dist/assets`, each file
+gzipped on its own, HTML shell excluded):
+
+| Build | Files | Bytes | Gzipped |
+| --- | ---: | ---: | ---: |
+| SolidJS interface (`ui/03-screens`) | 7 | 318,257 | 93,097 |
+| Evlet UI framework (`ui/05-remove-solid`) | 3 | 321,392 | 97,079 |
+
+The SolidJS build split Accounts and the Projects demo into chunks loaded on demand. The
+new build is one script and one stylesheet, loaded together. The stylesheet still carries
+the Library page's styles, which only the development page uses. The frontend's installed
+npm packages fell from 193 to 73, and its direct dependencies from 14 to 4.
 
 ## UI framework
 

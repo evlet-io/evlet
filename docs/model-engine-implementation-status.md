@@ -24,8 +24,8 @@ Nothing was merged, reset, deployed or published. No customer database was touch
 | Selection | `Meta.calculation_language`/`numeric_profile`, or any expression compute in the root tree. Mixed legacy and finite formulas in one root are rejected. |
 | Field equality | Field-to-field `==` stays identity based (dictionary safety); field-to-literal builds an expression; compare two fields with `F()`. |
 | Virtual precision | Only `Decimal(scale=None, stored=False, compute=...)`. |
-| Module layout | One public module `evlet/calc.py` (authoring, compiler, numbers, evaluator, session) and `frontend/src/runtime/FiniteEngine.ts`. Integration lives in existing `models`, `documents`, `business`, `permissions`, `database`. |
-| Numeric kernel in the browser | A HALF_UP kernel in `FiniteEngine.ts` beside the legacy HALF_EVEN `DecimalValue.ts`, which is unchanged so legacy previews keep their behaviour. |
+| Module layout | One public module `evlet/calc.py` (authoring, compiler, numbers, evaluator, session) and `frontend/src/evlet/model/finite.ts` (first `frontend/src/runtime/FiniteEngine.ts`). Integration lives in existing `models`, `documents`, `business`, `permissions`, `database`. |
+| Numeric kernel in the browser | A HALF_UP kernel in `FiniteEngine.ts` beside the legacy HALF_EVEN `DecimalValue.ts`, which is unchanged so legacy previews keep their behaviour. `DecimalValue.ts` was removed with SolidJS in `ui/05`. |
 | Nesting | Allowed only under finite-v1 roots, depth 8. Legacy roots keep one level. |
 | Wire metadata | `_calculation` in POST/PATCH bodies, `calculation` in `/api/_draft`; mismatch is 409. |
 | `_key` scope | Unique across the whole document so the flat `_row_ids` map cannot collide. |
@@ -39,11 +39,11 @@ Nothing was merged, reset, deployed or published. No customer database was touch
 | W0 baseline | Done | This ledger. |
 | W1 contracts | Done | `evlet/calc.py`, this ADR, `docs/finite-calculations.md`. |
 | W2 Python compiler/numbers | Done | `tests/test_finite_expressions.py` (independent `decimal` reference, cycles, scopes, types, states). |
-| W3 browser evaluator | Done | `FiniteEngine.ts`, `frontend/src/tests/finite-engine.test.ts` replaying Python fixtures; fingerprint parity. |
+| W3 browser evaluator | Done | `FiniteEngine.ts`, `frontend/src/evlet/tests/finite-engine.test.ts` replaying Python fixtures; fingerprint parity. |
 | W4 graph and batches | Done | Row handles, membership/filter edges, incremental settle with equality pruning, nested batches, rollback, one publication, reentrancy guard, explain, disposal; randomized incremental-vs-full checks. |
 | W5 nested storage | Done (SQLite) | `tests/test_nested_documents.py`: create/reload/update/delete, owner links, rollback, hidden rows, subtree permissions, formula-upgrade guard. **PostgreSQL is not covered**: `tests/test_postgres.py` has no finite or nested cases yet. |
 | W6 security/versions | Done, with limits | Computed-write guards, legacy action refusal, raw-write guard, per-record plan versions (409 + explicit `recalculate`), derivation permissions, field-filtered plan projection. Client plan pinning is optional and the SolidJS client does not send it. External `Query` sources in finite roots are deferred. |
-| W7 UI bridge | Minimal | Deferred by the user: Evlet UI becomes its own framework next. The SolidJS form copies finite results from `/api/_draft` previews (two-line change, covered only by existing form tests, not browser-verified); nested tables below the first level are not editable there. `FiniteEngine.ts` is not wired into screens. |
+| W7 UI bridge | Minimal | Deferred by the user: Evlet UI becomes its own framework next. The SolidJS form copies finite results from `/api/_draft` previews (two-line change, covered only by existing form tests, not browser-verified); nested tables below the first level are not editable there. `FiniteEngine.ts` is not wired into screens. Superseded: the Evlet UI framework's record view runs the engine, and SolidJS was removed in `ui/05`. |
 | W8 native controls | Not started | Same as W7. |
 | W9 native parity | Not started | Same as W7. |
 | W10 package/perf | Done for the engine | Wheel built locally and installed in a clean venv outside the checkout; with Node off PATH, `scripts/smoke_finite.py` saved a nested document over real HTTP via uvicorn and loaded local assets. `check_package.py`, `smoke_cli.py` and `check_flat_package.py` also passed locally. The smoke step was added to CI (not yet run there). |

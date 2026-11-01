@@ -69,9 +69,10 @@ intentional source change. Use `serve --jobs` to enable the short-task queue in
 that process. No worker is mandatory.
 
 `playground` works outside a project, uses temporary demo data, and removes that
-data on exit. It runs the existing framework examples, layouts and Projects demo.
+data on exit. It runs the existing framework examples with their generated screens.
 It does not read `EVLET_DATABASE`, create an app or touch customer instances.
-The Projects demo retains its separate browser-local storage behavior.
+Its Python pages (the Projects demo and the Layouts page) are registered in `/api/ui`
+but not rendered by the browser interface.
 `docs` serves this installed version's guides locally without a login or database.
 `effects check` recomputes the rows records post to other models and reports differences.
 It reads one snapshot without writing or taking the write lock, so it may run beside a server;

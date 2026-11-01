@@ -1,10 +1,9 @@
 # Evlet UI framework
 
-Status: core, component library and generated screens in place (phases `ui/01-core`,
-`ui/02-components` and `ui/03-screens` of [handoff-plan.md](handoff-plan.md)). The switch away
-from SolidJS follows in a later phase. The code lives in
-`frontend/src/evlet/` and imports nothing from SolidJS, the current views or
-`frontend/legacy`. It has no dependencies of its own.
+Status: the production browser interface (phases `ui/01-core` to `ui/03-screens` and
+`ui/05-remove-solid` of [handoff-plan.md](handoff-plan.md)). `frontend/index.html` loads it,
+`npm run build` bundles it and the Python package serves it. The code lives in
+`frontend/src/evlet/`. It has no runtime dependencies; SolidJS and the Vue harness are gone.
 
 | Module | What it does |
 |---|---|
@@ -16,6 +15,7 @@ from SolidJS follows in a later phase. The code lives in
 | `model/session.ts` | Calculation session: the finite-v1 engine bound to a record's cells |
 | `model/changes.ts` | Save bodies and Table change sets |
 | `model/format.ts` | AED money, DD-MM-YYYY dates, GST time |
+| `model/finite.ts` | The finite-v1 evaluator, the browser twin of `evlet/calc.py` |
 | `model/schema.ts` | Types for `GET /api/schema` |
 | `ui/` | Components, their stylesheet and the Library page (see Components) |
 
@@ -208,7 +208,7 @@ await record.save();                       // the server's answer replaces the d
   lists by `row.key`: rows keep their objects (and DOM) across saves, including new rows,
   which are matched through the `_row_ids` the server returns.
 - When the schema ships a calculation plan, a `FiniteDocument` session
-  (`frontend/src/runtime/FiniteEngine.ts`, the same evaluator as the server's fixtures)
+  (`frontend/src/evlet/model/finite.ts`, the same evaluator as the server's fixtures)
   computes calculated fields, `initial` values and the field rules. Results flow into the
   cells; a lock is decided on the record as saved, as the server enforces it. The store
   supplies `today()` as the date in GST and reads Link lookups (`customer.credit_days`)
@@ -362,9 +362,10 @@ placeholder, empty quick-access labels) uses `--fg-3` instead.
 `frontend/src/evlet/app/` is a model-driven app: sign in, Docs, and a list and a record view for
 every model the role can read. It needs no per-app frontend code. Everything it shows comes from
 `/api/schema`, record details and the list routes, so a model-only application (a `models.py`)
-gets all of its screens. Run it with `npm run dev` and open `/ui` (the backend runs on the port
-in `EVLET_BACKEND_PORT`, 8000 by default). It is not in the production build yet; the SolidJS app
-stays the installed UI until the switch.
+gets all of its screens. The Python server serves it for every UI route. In development run
+`npm run dev` and open http://127.0.0.1:5173 (the backend runs on the port in
+`EVLET_BACKEND_PORT`, 8000 by default); `/evlet.html` there is the component Library, which is
+not part of the build.
 
 | Module | What it does |
 |---|---|
@@ -378,9 +379,12 @@ stays the installed UI until the switch.
 | `meta.ts` | What the screens read from the schema, with the optional keys of later phases |
 | `prefs.ts` | Per-user preferences |
 
-Routes, under `/ui`: `/docs` and `/docs/:topic`, `/m/:model` (list), `/m/:model/new` (a new
-record; field values in the query fill it, `?customer=4`), `/m/:model/:id` (a record; `?tab=`
-keeps the tab). A list keeps its search, sort, page, view, saved view and filters in the query, so
+Routes are the paths the Python server serves (`evlet/ui/routes.py`): `/docs` and
+`/docs/:topic`, `/app/:model` (list), `/app/:model/new` (a new record; field values in the query
+fill it, `?customer=4`), `/app/:model/:id` (a record; `?tab=` keeps the tab) and the older
+`/app/:model/:id/view`, which opens the record. `/settings/accounts` and `/reports/:report` say
+that screen is not part of this interface; any other address opens Docs. The earlier
+development paths `/ui/...` and `/m/:model` are gone. A list keeps its search, sort, page, view, saved view and filters in the query, so
 a link opens the same list. A record with unsaved changes asks before the page changes or the
 tab closes. Signing in keeps the address the user opened.
 
@@ -429,7 +433,7 @@ Signing out ends the local session only after the server confirms it (or answers
 session had already ended). If the request fails, the user stays signed in and a dialog says so,
 with Try again.
 
-A create link (`/m/{model}/new?field=value`) fills only fields the form shows and the role can
+A create link (`/app/{model}/new?field=value`) fills only fields the form shows and the role can
 write: hidden, read-only (including fields the role cannot write), calculated, State and
 Sequence fields are ignored.
 
@@ -444,14 +448,16 @@ The tests in `frontend/src/evlet/tests/` run in jsdom with `npm test`. API and r
 tests replay responses recorded from the real ASGI routes in `api-fixture.json`, and the
 screen tests also those in `screens-fixture.json` (regenerate both with
 `.venv/bin/python -m scripts.generate_ui_framework_fixtures` and review the
-diff). The record store also replays the shared finite-v1 scenarios through its public API.
+diff; `tests/test_ui_contracts.py` records both again and compares). The finite engine and the
+record store replay the shared finite-v1 scenarios (`finite-fixtures.json`).
 `npm run bench:ui` measures the budgets; see "UI framework" in
 [performance.md](performance.md).
 
 ## Limits of this phase
 
-- The installed UI still runs on SolidJS; the generated screens run from `/ui` in development.
-  Home, reports, the notification panel, the layout control and Doc layout page are not built.
+- Home, accounts, reports, form dialogs, the notification panel, the layout control and Doc
+  layout page are not built. Python pages (`evlet.ui` PageView), native panels and custom
+  components are not rendered (owner decision); their Python APIs remain.
 - Bulk moves and deletes read each record first, one request per record.
 - The board loads the first 100 records of the filter. Column counts and totals come from the
   server; the aggregate route has no search, so while searching columns count the loaded cards
