@@ -30,6 +30,8 @@ TABLE = ('CREATE TABLE IF NOT EXISTS evlet_journal (id INTEGER PRIMARY KEY AUTOI
          'record_id INTEGER NOT NULL, kind TEXT NOT NULL, actor TEXT NOT NULL, at TEXT NOT NULL, data TEXT NOT NULL, '
          'prev_hash TEXT, hash TEXT)')
 INDEX = 'CREATE INDEX IF NOT EXISTS evlet_journal_record ON evlet_journal (model, record_id, id)'
+# Models that have declared tamper_evident=True; verify() treats their unhashed entries as breaks.
+HASHED = 'CREATE TABLE IF NOT EXISTS evlet_journal_hashed (model TEXT PRIMARY KEY)'
 APPEND_ONLY = 'The journal is append only'
 # Kinds the engine writes; `effects` is written by effects_posted() once Effects exist.
 ENGINE_KINDS = ('created', 'changed', 'moved', 'voided', 'revised', 'number', 'file', 'deleted', 'effects')
@@ -79,10 +81,17 @@ def compile_journals(models, child_models):
     return MappingProxyType(result)
 
 
-def ensure_table(connection, *, postgres=False):
-    """Create the table, its index and the triggers that refuse UPDATE and DELETE."""
+def ensure_table(connection, *, postgres=False, hashed=()):
+    """Create the table, its index and the triggers that refuse UPDATE and DELETE (and, on SQLite, an
+    INSERT OR REPLACE over an existing entry), and record the tamper-evident models `hashed`.
+
+    Every statement is idempotent, so a database created by an earlier release gets new guards on start.
+    """
     connection.execute(TABLE)
     connection.execute(INDEX)
+    connection.execute(HASHED)
+    for name in hashed:
+        connection.execute('INSERT INTO evlet_journal_hashed (model) VALUES (?) ON CONFLICT (model) DO NOTHING', (name,))
     if postgres:
         connection.execute("CREATE OR REPLACE FUNCTION evlet_journal_append_only() RETURNS trigger LANGUAGE plpgsql AS "
                            f"$$ BEGIN RAISE EXCEPTION '{APPEND_ONLY}'; END $$")
@@ -95,6 +104,10 @@ def ensure_table(connection, *, postgres=False):
         for event in ('UPDATE', 'DELETE'):
             connection.execute(f'CREATE TRIGGER IF NOT EXISTS evlet_journal_no_{event.lower()} BEFORE {event} ON evlet_journal '
                                f"BEGIN SELECT RAISE(ABORT, '{APPEND_ONLY}'); END")
+        # REPLACE deletes the old row without firing DELETE triggers, so an insert may not reuse an id.
+        connection.execute('CREATE TRIGGER IF NOT EXISTS evlet_journal_no_replace BEFORE INSERT ON evlet_journal '
+                           'WHEN EXISTS (SELECT 1 FROM evlet_journal WHERE id = NEW.id) '
+                           f"BEGIN SELECT RAISE(ABORT, '{APPEND_ONLY}'); END")
 
 
 # Writing
@@ -246,6 +259,10 @@ def clean_text(values, name, *, required=False, limit=TEXT_LENGTH):
     if not isinstance(value, str) or not value.strip():
         raise ValidationError({name: 'Write some text' if required else 'Use text or leave it out'})
     value = value.strip()
+    try:
+        value.encode('utf-8')
+    except UnicodeError:
+        raise ValidationError({name: 'Expected valid Unicode text'}) from None
     if len(value) > limit:
         raise ValidationError({name: f'Use at most {limit} characters'})
     if '\x00' in value:
@@ -322,10 +339,24 @@ def post(context, model, record_id, kind, **values):
 
     The model must journal (404), the caller must read the record within its row scope (403 or 404)
     and hold the `journal` operation (403). A follow up is completed once (409)."""
-    business, tx, user = context._business, context._tx, context.user
     if context.readonly:
         raise AccessError(403, 'This context is read only')
     model = context._model(model)
+    # Like other document operations: refused inside an operation on the same record, and all or
+    # nothing in its own savepoint even when trusted code catches a failure.
+    key = (model, record_id)
+    if key in context._active or len(context._active) >= 16:
+        raise ValidationError({'_form': 'Recursive document change detected'})
+    context._active.append(key)
+    try:
+        with context._savepoint():
+            return add(context, model, record_id, kind, values)
+    finally:
+        context._active.pop()
+
+
+def add(context, model, record_id, kind, values):
+    business, tx, user = context._business, context._tx, context.user
     if model not in business.journals:
         raise AccessError(404, 'This record has no journal')
     business.policy.record(tx, user, model, record_id)
@@ -437,7 +468,8 @@ def present(business, user, model, row, visibility, done):
     partial = False
     if kind in ('created', 'changed', 'moved'):
         shown, partial = shown_changes(business, user, model, data, visibility)
-        if 'action' in data:
+        # Which action ran says something about the state it was available in.
+        if 'action' in data and (model.__state__ is None or state_shown):
             shown['action'] = data['action']
         if kind == 'moved':
             if state_shown:
@@ -551,13 +583,22 @@ def route(business, scope, body, user, model, record_id):
 
 # Verification
 
-def verify_connection(connection, *, batch=1000):
+def hashed_models(connection, columns):
+    """Names of the models that have declared tamper_evident=True, as recorded at startup."""
+    if 'model' not in columns(connection, 'evlet_journal_hashed'):
+        return set()
+    return {row[0] for row in connection.execute('SELECT model FROM evlet_journal_hashed').fetchall()}
+
+
+def verify_connection(connection, *, hashed=(), batch=1000):
     """(entries checked, breaks) for every hash chain, read on this connection (in one snapshot).
 
     A break is (entry id, model, record id, message). Per record, an entry with a hash must name the
-    previous entry's hash and match its own content; once a record has a hashed entry, a later entry
-    without one is a break too. Entries of models that never turned tamper_evident on are skipped.
+    previous entry's hash and match its own content. An entry without a hash is a break when its model
+    is in `hashed` (tamper evident) or when an earlier entry of the record has one. Other unhashed
+    entries are skipped.
     """
+    hashed = set(hashed)
     last, breaks, checked, after = {}, [], 0, 0
     while True:
         rows = connection.execute('SELECT id, model, record_id, kind, actor, at, data, prev_hash, hash FROM evlet_journal '
@@ -568,7 +609,9 @@ def verify_connection(connection, *, batch=1000):
             key = (row['model'], row['record_id'])
             previous = last.get(key)
             if row['hash'] is None:
-                if previous is not None:
+                if row['model'] in hashed:
+                    breaks.append((row['id'], *key, 'this entry has no hash, but its model is tamper evident'))
+                elif previous is not None:
                     breaks.append((row['id'], *key, 'this entry has no hash, but earlier entries of the record do'))
                 last[key] = None
                 continue
@@ -582,9 +625,12 @@ def verify_connection(connection, *, batch=1000):
 
 
 def verify(database):
-    """verify_connection() over a database (SQLite or PostgreSQL) in one read snapshot."""
+    """verify_connection() over a database (SQLite or PostgreSQL) in one read snapshot. Tamper-evident
+    models are those its registry declares plus those recorded in the database."""
+    declared = {database.registry.name_for(model) for model, journal in getattr(database.registry, 'journals', {}).items()
+                if journal.tamper_evident}
     with database._connection() as connection:
         if 'id' not in database.columns(connection, 'evlet_journal'):
             return 0, []
         connection.execute('BEGIN')
-        return verify_connection(connection)
+        return verify_connection(connection, hashed=declared | hashed_models(connection, database.columns))

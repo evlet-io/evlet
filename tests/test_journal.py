@@ -72,8 +72,16 @@ class Memo(Model):
 
 
 class Ticket(Model):
-    """A Rule names 'journal', so only admin and the viewer may post; the editor may not."""
+    """A Rule names 'journal' for the viewer, which adds it to admin and the editor (read and update)."""
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update')),
+                   'viewer': Rule(('read', 'journal'))}
+    title = Text(default='')
+    status = State(('open', 'closed'), moves=(Move('open', 'closed', 'Close'),))
+
+
+class Notice(Model):
+    """The editor only reads, so only admin may post; naming 'journal' for the viewer never removes admin."""
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read',)),
                    'viewer': Rule(('read', 'journal'))}
     title = Text(default='')
     status = State(('open', 'closed'), moves=(Move('open', 'closed', 'Close'),))
@@ -93,7 +101,7 @@ class Silent(Model):
     status = State(('open', 'closed'), moves=(Move('open', 'closed', 'Close'),))
 
 
-MODELS = (Account, Invoice, Memo, Ticket, Plain, Silent)
+MODELS = (Account, Invoice, Memo, Ticket, Notice, Plain, Silent)
 
 
 @pytest.fixture
@@ -150,7 +158,7 @@ def test_journal_declarations_defaults_and_rules():
     with pytest.raises(ValueError, match='True or False'):
         Journal(tamper_evident='yes')
     registry = Registry(*MODELS)
-    assert set(registry.journals) == {Invoice, Memo, Ticket}
+    assert set(registry.journals) == {Invoice, Memo, Ticket, Notice}
     assert registry.journals[Invoice].tamper_evident and not registry.journals[Memo].tamper_evident
     assert Memo.__declaration_mode__
     with pytest.raises(ValueError, match='Journal'):
@@ -163,7 +171,8 @@ def test_journal_declarations_defaults_and_rules():
     policy = Policy(registry)
     roles = lambda model: {role for role in ('admin', 'editor', 'viewer') if policy.allows(User(1, role, role), model, 'journal')}
     assert roles(Invoice) == roles(Memo) == {'admin', 'editor'}
-    assert roles(Ticket) == {'admin', 'viewer'} and roles(Plain) == roles(Silent) == set()
+    assert roles(Ticket) == {'admin', 'editor', 'viewer'} and roles(Notice) == {'admin', 'viewer'}
+    assert roles(Plain) == roles(Silent) == set()
 
 
 # Engine entries
@@ -283,6 +292,11 @@ def check_reading(app):
     _, theirs = new_invoice(c, owner=1)
     assert editor('GET', theirs + '/journal')[0] == 404
     assert editor('POST', theirs + '/journal', {'kind': 'note', 'text': 'Hi'})[0] == 404
+    # An action's name is left out for roles that cannot read the State.
+    renamed, renamed_url = new_invoice(c)
+    assert post(c, renamed_url, 'actions/rename', {'title': 'Renamed'})[0] == 200
+    assert history(viewer, renamed_url)['items'][0]['data'] == {'fields': {'name': {'old': 'First', 'new': 'Renamed'}}}
+    assert history(c, renamed_url)['items'][0]['data']['action'] == 'rename'
     # Removed rows are hidden under a row scope, since they can no longer be checked against it.
     draft, draft_url = new_invoice(c)
     lines = {row['qty']: row['id'] for row in draft['children']['lines']}
@@ -358,11 +372,20 @@ def check_user_entries(app):
               for role, who in (('editor', editor), ('viewer', viewer))}
     assert schema['editor']['kinds'] == ['note', 'message', 'call', 'follow_up', 'follow_up_done'] and schema['viewer']['kinds'] == []
     assert schema['viewer']['tamper_evident'] is True
-    # A Rule naming 'journal' decides who may post.
+    # A Rule naming 'journal' adds roles; an editor that only reads may not post.
     ticket = c('POST', '/api/ticket', {'title': 'T'})[1]
     ticket_url = f"/api/ticket/{ticket['id']}"
     assert viewer('POST', ticket_url + '/journal', {'kind': 'note', 'text': 'Seen'})[0] == 201
-    assert editor('POST', ticket_url + '/journal', {'kind': 'note', 'text': 'Seen'})[0] == 403
+    assert editor('POST', ticket_url + '/journal', {'kind': 'note', 'text': 'Seen'})[0] == 201
+    notice = c('POST', '/api/notice', {'title': 'N'})[1]
+    notice_url = f"/api/notice/{notice['id']}"
+    assert editor('POST', notice_url + '/journal', {'kind': 'note', 'text': 'Seen'})[0] == 403
+    assert c('POST', notice_url + '/journal', {'kind': 'note', 'text': 'Seen'})[0] == 201
+    assert viewer('POST', notice_url + '/journal', {'kind': 'note', 'text': 'Seen'})[0] == 201
+    # Text must be valid Unicode, like record fields.
+    for body in ({'kind': 'note', 'text': 'a\ud800b'}, {'kind': 'message', 'text': 'x', 'party': '\udfff'}):
+        status, error, _ = write(body)
+        assert status == 422 and list(error['fields'].values()) == ['Expected valid Unicode text'], error
 
 
 def test_user_entries_are_validated_and_append_only(app):
@@ -433,13 +456,58 @@ def check_append_only_and_chain(app):
     assert [(entry, message) for entry, _, _, message in breaks] == [
         (invoice[2]['id'], 'the previous hash does not match the entry before it'),
         (invoice[3]['id'], 'the hash does not match the entry'),
-        (invoice[5]['id'], 'this entry has no hash, but earlier entries of the record do')]
+        (invoice[5]['id'], 'this entry has no hash, but its model is tamper evident')]
     assert {(model, record_id) for _, model, record_id, _ in breaks} == {('invoice', invoice[0]['record_id'])}
+    # Stripping every hash of a record of a tamper-evident model is reported too.
+    _, other = new_invoice(c)
+    other_id = int(other.rsplit('/', 1)[1])
+    with app.database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_journal SET hash=NULL, prev_hash=NULL WHERE model=? AND record_id=?', ('invoice', other_id))
+    stripped = [entry for entry in journal_module.verify(app.database)[1] if entry[2] == other_id]
+    assert [message for *_, message in stripped] == ['this entry has no hash, but its model is tamper evident']
     assert memo['id']
 
 
 def test_entries_are_append_only_and_tampering_is_detected(app):
     check_append_only_and_chain(app)
+
+
+def test_insert_or_replace_cannot_overwrite_an_entry_and_old_databases_get_the_guard(app):
+    c = client(app)
+    _, url = new_invoice(c)
+    first = stored(app)[0]
+    with pytest.raises(ConflictError):
+        with app.database.transaction() as tx:
+            tx.connection.execute("INSERT OR REPLACE INTO evlet_journal (id, model, record_id, kind, actor, at, data) "
+                                  "VALUES (?, 'invoice', 1, 'note', '1', 'x', '{}')", (first['id'],))
+    assert stored(app)[0] == first
+    # A database created before the guard existed gets it on the next start.
+    with app.database.transaction() as tx:
+        tx.connection.execute('DROP TRIGGER evlet_journal_no_replace')
+    app.initialize()
+    with app.database.transaction() as tx:
+        assert tx.connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_journal_no_replace'").fetchone()
+    assert journal_module.verify(app.database)[1] == []
+
+
+def test_post_runs_in_its_own_savepoint_with_the_recursion_guard(app, monkeypatch):
+    c = client(app)
+    record, url = new_invoice(c)
+    real = journal_module.shown
+    def fail(*args):
+        raise RuntimeError('reading the entry back failed')
+    with app.business.context(User(2, 'editor', 'editor')) as context:
+        monkeypatch.setattr(journal_module, 'shown', fail)
+        with pytest.raises(RuntimeError):
+            journal_module.post(context, Invoice, record['id'], 'note', text='Lost')
+        monkeypatch.setattr(journal_module, 'shown', real)
+        journal_module.post(context, Invoice, record['id'], 'note', text='Kept')
+        # Posting to the record an operation is changing is refused, like any recursive change.
+        context._active.append((Invoice, record['id']))
+        with pytest.raises(Exception, match='Recursive'):
+            journal_module.post(context, Invoice, record['id'], 'note', text='Inner')
+        context._active.pop()
+    assert [item['data'].get('text') for item in history(c, url)['items']] == ['Kept', None]
 
 
 def test_verify_command_reports_breaks(app, tmp_path, capsys):
@@ -538,8 +606,9 @@ def test_a_journaled_patch_of_a_1000_row_document_costs_a_bounded_number_of_stat
         headers = etag(c, url)
         (status, saved, _), counts[name] = counted(c, 'PATCH', url, body, headers=headers)
         assert status == 200 and saved['total'] == '5000.00'
-    # The previous hash, the entry, and the `_journal` summary of the response.
-    assert counts['bighashed'] <= counts['bigquiet'] + 3, counts
+    # The previous hash, the entry, the SQLite guard trigger that runs with the insert (traced as its
+    # own statement, one primary key lookup), and the `_journal` summary of the response.
+    assert counts['bighashed'] <= counts['bigquiet'] + 4, counts
     entry = history(c, url)['items'][0]
     assert len(entry['data']['rows']['lines']['updated']) == 1000 and entry['data']['fields']['total']['new'] == '5000.00'
     assert journal_module.verify(app.database)[1] == []

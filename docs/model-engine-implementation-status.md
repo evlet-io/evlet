@@ -813,8 +813,7 @@ Branch `model/08-journal`, stacked on `model/10-stacked`. Guide: [journal.md](jo
 * **User entries.** `POST /api/{model}/{id}/journal` and `journal.post()`: `note`, `message`
   (logged, nothing is sent), `call`, `follow_up` (text, due date, assignee who can read the
   record) and `follow_up_done` (once per follow up, 409 after). A new `journal` operation in
-  `Rule`: admin and editor by default; when a Rule of the model names it, admin and the
-  naming roles. `Policy.journalers` holds the result.
+  `Rule` (defaults changed by the review fixes below). `Policy.journalers` holds the result.
 * **Reading.** `GET /api/{model}/{id}/journal` and `journal.entries()`: paged, newest first,
   read access and row scope required. Every entry is listed; unreadable fields, unreadable or
   out-of-scope rows (all removed rows under a row scope) and Link values to hidden records are
@@ -847,3 +846,20 @@ Known limitations:
 * The hash chain does not detect a deliberate rewrite of every hash or the removal of a
   record's latest entries.
 * The connector, the MCP server and the SolidJS screens do not show the journal yet.
+
+Review fixes (02-11-2026):
+
+* A SQLite trigger refuses inserts that reuse an id, since `INSERT OR REPLACE` replaced an entry
+  without firing the DELETE trigger. It is created idempotently, so older databases get it.
+* Journal text with a lone surrogate is a 422 (`Expected valid Unicode text`), not a 500.
+* `journal.post()` runs in the per-operation savepoint with the recursion guard.
+* Owner decision: admin always keeps the `journal` operation (when it reads the model), the
+  editor has it when its Rule reads and updates the model, and a Rule naming `journal` only adds
+  roles, like void and revise.
+* `verify` knows the tamper-evident models (from the registry and `evlet_journal_hashed`,
+  written at startup) and reports their unhashed entries. The CLI falls back to a
+  `query_only` connection when a WAL database cannot be opened read only; tenant and
+  PostgreSQL databases use `journal.verify(database)`.
+* An action's name is left out of entries for roles that cannot read the State. The guide
+  documents what stays visible of hidden changes and the request size limit.
+* The 1,000-row PATCH budget is four statements (the SQLite guard trigger is traced as one).

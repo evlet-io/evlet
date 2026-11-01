@@ -15,12 +15,28 @@ def verify_instance(root, name):
     database = path / 'data/database.sqlite3'
     if not database.is_file():
         raise ValueError(f'Instance {name} has no database yet')
-    with closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)) as connection:
+    with closing(connect(database)) as connection:
         connection.row_factory = sqlite3.Row
-        if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evlet_journal'").fetchone() is None:
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if 'evlet_journal' not in tables:
             return 0, []
         connection.execute('BEGIN')
         try:
-            return verify_connection(connection)
+            # The first read starts the snapshot both statements share.
+            hashed = {row[0] for row in connection.execute('SELECT model FROM evlet_journal_hashed')} if 'evlet_journal_hashed' in tables else set()
+            return verify_connection(connection, hashed=hashed)
         finally:
             connection.rollback()
+
+
+def connect(database):
+    """A read-only connection. A WAL database whose shared memory file cannot be created read only
+    (no -shm file next to it yet) is opened normally with writes refused instead."""
+    try:
+        connection = sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)
+        connection.execute('SELECT count(*) FROM sqlite_master').fetchone()
+        return connection
+    except sqlite3.OperationalError:
+        connection = sqlite3.connect(database.resolve(), timeout=5)
+        connection.execute('PRAGMA query_only = ON')
+        return connection

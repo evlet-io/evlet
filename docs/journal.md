@@ -52,8 +52,12 @@ evlet_journal(id, model, record_id, kind, actor, at, data, prev_hash, hash)
 * `prev_hash` and `hash` are set only with `tamper_evident=True`.
 
 Database triggers refuse `UPDATE` and `DELETE` on the table (and `TRUNCATE` on PostgreSQL),
-so even raw SQL in trusted code cannot change an entry by mistake. The table is not a model:
-no `Session`, HTTP route, connector or MCP tool can write or change it.
+so even raw SQL in trusted code cannot change an entry by mistake. On SQLite a third trigger
+refuses an insert that reuses an existing id, because `INSERT OR REPLACE` deletes the old row
+without firing DELETE triggers. The triggers are created with `IF NOT EXISTS` (or checked by
+name on PostgreSQL) at every start, so an older database gets new ones. The table is not a
+model: no `Session`, HTTP route, connector or MCP tool can write or change it. Someone with
+direct database access can still drop the triggers; see "Tamper evidence".
 
 Record ids are never reused, so the entries of a deleted record stay with it.
 
@@ -116,8 +120,12 @@ People add these through `POST /api/{model}/{id}/journal`, with `kind` and its v
 | `follow_up_done` | `follow_up` (the follow up entry's id), `text` |
 
 * `text` is required except for `follow_up_done`. Text is trimmed, at most 10,000
-  characters (200 for `subject` and `party`) and must not contain NUL characters. Unknown
-  values are refused with 422.
+  characters (200 for `subject` and `party`), must be valid Unicode (a lone surrogate is
+  `Expected valid Unicode text`, as for record fields) and must not contain NUL characters.
+  Unknown values are refused with 422.
+* Requests are limited to 64 KiB of JSON, so 10,000 characters always fit as plain text, but
+  a client that escapes non-ASCII characters (`\u00e9` is six bytes) can pass the request
+  limit first and get 413.
 * A `message` is a logged message. Evlet does not send email.
 * The `assignee` must be an active user who can read the record (row scopes included).
 * A follow up is completed by appending `follow_up_done` that names it. A follow up of
@@ -137,7 +145,10 @@ with app.business.context(user) as context:
     page = journal.entries(context, Invoice, 4, limit=20)
 ```
 
-Both apply the same checks as HTTP.
+Both apply the same checks as HTTP. `post()` runs in its own savepoint like other document
+operations: a failure caught by trusted code leaves no entry, and posting to a record whose
+own operation is running (from its `changed()` reaction, say) is refused as a recursive
+change.
 
 ## Permissions
 
@@ -152,10 +163,11 @@ permissions = {
 }
 ```
 
-* By default admin and editor may post, when their Rule lets them read the model; viewers
-  may not.
-* When any Rule of the model names `journal`, admin and the roles that name it may post. So
-  the Rule above lets the viewer post and stops the editor.
+* Admin may always post when its Rule reads the model. The editor may post when its Rule
+  reads and updates the model (row scopes apply to both). Viewers, and editors that only
+  read, may not.
+* A Rule naming `journal` adds that role, like `void` and `revise`; naming a role never
+  removes admin or the editor. So the Rule above lets the viewer post as well.
 * A Rule naming `journal` on a model without a journal fails at startup.
 
 ## Reading the history
@@ -191,6 +203,12 @@ cannot read is removed, and the entry is marked `"partial": true`:
   states and numbers private, as the rest of the API does.
 
 Row and Link checks run in batches: one statement per model and chunk of ids for the page.
+
+What stays visible of a change the caller cannot read: the entry itself, as a `partial`
+`changed` entry with its actor and time, and the actor's user name in `users`. So a reader can
+tell that someone changed something hidden, and when, but not what. The record's change events
+already tell readers the same. An action's name is shown only to roles that can read the State
+(or on models without one), since which action ran says something about the state.
 
 ## Details, schema and events
 
@@ -231,26 +249,34 @@ Entry 2 (invoice 1): the hash does not match the entry
 ```
 
 A break is an entry whose content no longer matches its hash, whose `prev_hash` does not match
-the entry before it (an entry was removed or reordered), or an entry without a hash after
-hashed entries of the same record. For a PostgreSQL database, call
-`evlet.journal.verify(database)` from Python; it returns `(entries checked, breaks)`.
+the entry before it (an entry was removed or reordered), or an entry without a hash when its
+model is tamper evident (hashes stripped) or follows hashed entries of the same record. The
+models that declared `tamper_evident=True` are recorded in `evlet_journal_hashed` at startup,
+so the command knows them without loading the apps.
+
+The command reads one instance's SQLite database. If the database uses WAL and its shared
+memory file cannot be created read only, it opens the database normally with
+`PRAGMA query_only`, which still refuses every write. For a PostgreSQL database, or a tenant
+database of a `TenantRegistry`, call `evlet.journal.verify(database)` from Python with that
+database; it returns `(entries checked, breaks)` and also uses the registry's declarations.
 
 What it does not do:
 
 * Someone who can write the database can recompute every hash. The chain shows accidental or
   careless edits; to detect a deliberate rewrite, keep a copy of recent hashes elsewhere.
 * Removing a record's latest entries, or all of them, leaves a valid shorter chain.
-* Turning `tamper_evident` on later starts each record's chain at its next entry. Turning it
-  off later makes `verify` report the unhashed entries that follow hashed ones.
+* Turn `tamper_evident` on before a model has entries: once declared, every unhashed entry of
+  the model is reported, including older ones. Turning it off later keeps the model recorded,
+  so `verify` reports the unhashed entries written after.
 
 ## Limits
 
-* `RenameModel` and `RenameField` migrations do not rewrite stored entries: older entries keep
-  the old names (and old field names are then left out of reads, since they are no longer
-  readable fields).
+* `RenameField` migrations do not rewrite stored entries: older entries keep the old field
+  name, which is then left out of reads, since it is no longer a readable field. Evlet has no
+  model rename migration.
 * A create or update of a large document stores every changed row in one entry; a
   1,000-row document gives an entry of that size. A PATCH of a 1,000-row document costs at
-  most three more statements with a hashed journal than without one (the previous hash, the
-  entry and the `_journal` summary).
+  most four more statements with a hashed journal than without one (the previous hash, the
+  entry, the SQLite insert guard trigger and the `_journal` summary).
 * The connector, the MCP server and the SolidJS screens do not show the journal yet; the
   new UI will.

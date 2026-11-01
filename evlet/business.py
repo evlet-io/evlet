@@ -152,7 +152,8 @@ class Business:
         if self.journals:
             from .journal import ensure_table
             with self.database.transaction() as tx:
-                ensure_table(tx.connection, postgres=getattr(self.database, 'driver', None) is not None)
+                ensure_table(tx.connection, postgres=getattr(self.database, 'driver', None) is not None,
+                             hashed=[self.registry.name_for(model) for model, journal in self.journals.items() if journal.tamper_evident])
         if getattr(self, 'forms', None) and (self.forms.dialogs or self.forms.reports):
             self.forms.initialize()
         if self.events:

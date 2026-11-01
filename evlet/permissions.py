@@ -102,15 +102,19 @@ class Policy:
                     named.add('admin')
                 corrections[model, operation] = frozenset(named)
         self.corrections = MappingProxyType(corrections)
-        # Journal entries (notes, messages, calls, follow ups): admin and editor when they can read the
-        # model, unless a Rule of the model names 'journal'; then admin and the roles that name it.
+        # Journal entries (notes, messages, calls, follow ups): admin when its Rule reads the model, the
+        # editor when its Rule reads and updates it, and every role whose Rule names 'journal'. Naming a
+        # role only adds it, like void and revise.
         journalers = {}
         for model in registry.journals:
             operations = {role: self.rules.get((role, model), Rule(('read',) if role == 'viewer' else ('read', 'create', 'update', 'delete'))).operations
                           for role in ROLES}
             named = {role for role in ROLES if 'journal' in operations[role]}
-            defaults = {'admin'} if named else {'admin', 'editor'}
-            journalers[model] = frozenset(named | {role for role in defaults if 'read' in operations[role]})
+            if 'read' in operations['admin']:
+                named.add('admin')
+            if {'read', 'update'} <= set(operations['editor']):
+                named.add('editor')
+            journalers[model] = frozenset(named)
         self.journalers = MappingProxyType(journalers)
 
     def rule(self, user, model):
