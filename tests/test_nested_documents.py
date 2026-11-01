@@ -210,3 +210,36 @@ def test_schema_projects_calculation_capabilities_without_hidden_inputs(tmp_path
     viewer = next(model for model in client(app, 'viewer')('GET', '/api/schema')[1]['models'] if model['name'] == 'deal')['calculation']
     assert viewer['capabilities'] == {'lines[*].margin': 'unavailable', 'revenue': 'local_universal', 'profit': 'unavailable'}
     assert 'plan' not in viewer and 'cost' not in str(viewer)
+
+
+def test_nested_review_regressions(tmp_path):
+    from evlet.auth import password_hash
+    app = application(tmp_path, Plan)
+    stage = next(child.model for child in app.registry.children if child.name == 'stages')
+    task = next(child.model for child in app.registry.children if child.name == 'tasks')
+    with app.database.transaction() as tx:
+        tx.connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('editor',?,'editor')", (password_hash(PASSWORD),))
+    c = client(app)
+    status, created, headers = c('POST', '/api/plan', {'children': {'stages': stages()}})
+    assert status == 201
+    status, result, _ = c('POST', '/api/plan', {'children': {'stages': [{'_key': 'x', 'children': {'tasks': [{'_key': 'x'}]}}]}})
+    assert status == 422 and 'distinct within the document' in str(result)
+
+    app.business.policy = Policy(app.registry, rules={('editor', stage): Rule(('read', 'create', 'update', 'delete')),
+                                                      ('editor', task): Rule(('read',))})
+    editor = client(app, 'editor')
+    _, current, headers = editor('GET', f"/api/plan/{created['id']}")
+    status, result, _ = editor('PATCH', f"/api/plan/{created['id']}", {'children': {'stages': []}}, headers={b'if-match': headers[b'etag']})
+    assert status == 403
+    with app.database.transaction() as tx:
+        assert tx.count(task) == 3
+
+    hidden_task = created['_row_ids']['a1']
+    app.business.policy = Policy(app.registry, rules={('editor', task): Rule(('read', 'create', 'update', 'delete'), scope=lambda user: {'id__ne': hidden_task})})
+    from evlet import User
+    errors = app.business.visible_errors(User(2, 'editor', 'editor'), Plan,
+                                         {f"stages.{created['_row_ids']['A']}.tasks.{hidden_task}.amount": 'COMPUTE_DIVISION_BY_ZERO'})
+    assert errors == {'_form': 'One or more values are invalid'}
+
+    with pytest.raises(ValueError, match='finite-v1 document'):
+        app.database.delete(task, created['_row_ids']['b1'])

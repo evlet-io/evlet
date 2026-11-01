@@ -198,6 +198,7 @@ class Session:
         return self.get(model, record_id)
 
     def delete(self, model, record_id):
+        self._guard(model)
         self.get(model, record_id)
         table = identifier(self.registry.name_for(model))
         self.connection.execute(f'DELETE FROM {table} WHERE "id" = ?', (record_id,))

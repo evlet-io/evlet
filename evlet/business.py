@@ -316,7 +316,6 @@ class Business:
 
     def visible_errors(self, user, model, errors, tx=None):
         """Hide error keys that name unreadable fields or rows the user cannot see."""
-        tables = {child.name: child.model for child in self.children.values() if child.parent is model}
         readable = self.policy.fields(user, model)
         checks = ExitStack()
         def row_visible(child, key):
@@ -333,13 +332,18 @@ class Business:
         visible, hidden = {}, False
         with checks:
             for key, message in errors.items():
-                parts = key.split('.', 2)
-                if len(parts) == 3 and parts[0] in tables:
-                    child, field = tables[parts[0]], parts[2]
-                    shown = (self.policy.allows(user, child, 'read') and row_visible(child, parts[1])
-                             and (field not in child.__declared_fields__ or field in self.policy.fields(user, child)))
-                else:
-                    shown = parts[0] not in model.__declared_fields__ or parts[0] in readable
+                # Walk table.<row>.field segments at any depth; each row must be visible.
+                owner, rest, shown = model, key, True
+                while shown:
+                    parts = rest.split('.', 2)
+                    owned = {child.name: child.model for child in self.children.values() if child.parent is owner}
+                    if len(parts) == 3 and parts[0] in owned:
+                        owner, rest = owned[parts[0]], parts[2]
+                        shown = self.policy.allows(user, owner, 'read') and row_visible(owner, parts[1])
+                        continue
+                    name = parts[0]
+                    shown = name not in owner.__declared_fields__ or name in (readable if owner is model else self.policy.fields(user, owner))
+                    break
                 if shown: visible[key] = message
                 else: hidden = True
         if hidden: visible.setdefault('_form', 'One or more values are invalid')

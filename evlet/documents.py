@@ -179,7 +179,8 @@ class Context:
                 rows = before._rows.get(child.name, [])
                 child_changes[child.name] = {'added': [], 'updated': [], 'removed': [row.id for row in rows], 'reordered': False}
                 for row in rows: delete_tree(business, tx, child.model, row.id)
-            tx.delete(model, record.id)
+            with tx.maintenance():
+                tx.delete(model, record.id)
             tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (business.registry.name_for(model), record_id))
             reaction = getattr(model, 'changed', None)
             if reaction:
@@ -227,7 +228,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
     draft = Draft(model, {**(dict(current._values) if current else {}), **scalars}, context=context, record_id=record_id)
     object.__setattr__(draft, '_submitted', frozenset(scalars))
     old = Draft(model, dict(current._values), context=context, record_id=record_id) if current else None
-    load_rows(context, model, draft, old, record_id, collections, preview, '')
+    load_rows(context, model, draft, old, record_id, collections, preview, '', set())
     if business.registry.plan_for(model) is not None and sum(1 for _ in walk(draft)) - 1 > LIMITS['document_rows']:
         raise ValidationError({'children': 'This document exceeds the owned row limit'})
     return draft, old
@@ -242,7 +243,7 @@ def computed_write(business, model, values, prefix):
         raise ValidationError({prefix + name: 'COMPUTED_FIELD_WRITE: this value is calculated' for name in written})
 
 
-def load_rows(context, model, draft, old, record_id, collections, preview, prefix):
+def load_rows(context, model, draft, old, record_id, collections, preview, prefix, keys_seen):
     """Merge submitted child collections at every depth, keeping hidden rows."""
     business, tx, user = context._business, context._tx, context.user
     if set(collections) - {child.name for child in business.children.values() if child.parent is model}:
@@ -260,7 +261,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
 
         def stored(row, owner):
             item = Draft(child.model, row._values, context=context, parent=owner, record_id=row.id)
-            load_rows(context, child.model, item, None, row.id, {}, True, prefix + child.name + '.' + item.key + '.')
+            load_rows(context, child.model, item, None, row.id, {}, True, prefix + child.name + '.' + item.key + '.', set())
             return item
         if old is not None:
             old._rows[child.name] = [stored(row, old) for row in existing]
@@ -277,9 +278,10 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             value = dict(value)
             row_id = value.pop('id', None)
             temporary = value.pop('_key', None)
-            if temporary is not None and (not isinstance(temporary, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', temporary) or temporary in keys):
-                raise ValidationError({prefix + child.name: 'Row keys must be distinct strings of at most 64 letters, digits, hyphens or underscores'})
+            if temporary is not None and (not isinstance(temporary, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', temporary) or temporary in keys or temporary in keys_seen):
+                raise ValidationError({prefix + child.name: 'Row keys must be distinct within the document and use at most 64 letters, digits, hyphens or underscores'})
             keys.add(temporary) if temporary is not None else None
+            keys_seen.add(temporary) if temporary is not None else None
             value, nested = business.split_body(value)
             computed_write(business, child.model, value, prefix + child.name + '.')
             business.policy.check_values(tx, user, child.model, value)
@@ -294,10 +296,14 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             object.__setattr__(row, '_submitted', frozenset(value))
             if 'evlet_position' in child.model.__fields__: row._values['evlet_position'] = index
             if temporary is not None: object.__setattr__(row, 'key', temporary)
-            load_rows(context, child.model, row, None, row_id, nested, preview, prefix + child.name + '.' + row.key + '.')
+            load_rows(context, child.model, row, None, row_id, nested, preview, prefix + child.name + '.' + row.key + '.', keys_seen)
             merged.append(row)
         for row_id in originals.keys() - kept - hidden:
-            if not preview: business.policy.record(tx, user, child.model, row_id, 'delete')
+            if not preview:
+                # Removing a row removes its whole subtree: every descendant must be deletable too.
+                for _, item in walk(stored(originals[row_id], draft)):
+                    try: business.policy.record(tx, user, item._definition, item.id, 'delete')
+                    except AccessError: raise AccessError(403, 'You do not have permission for this operation') from None
         merged.extend(stored(originals[row_id], draft) for row_id in sorted(hidden))
         if len(merged) > 100: raise ValidationError({prefix + child.name: 'Use at most 100 rows'})
         draft._rows[child.name] = merged
@@ -648,11 +654,13 @@ def persist_rows(context, model, draft, before, owner_id, keys):
 
 
 def delete_tree(business, tx, model, record_id):
+    """Document-pipeline deletion; callers have checked permissions for the whole subtree."""
     for child in business.children.values():
         if child.parent is model:
             for row in tx.list(child.model, filters={child.link: record_id}, limit=100):
                 delete_tree(business, tx, child.model, row.id)
-    tx.delete(model, record_id)
+    with tx.maintenance():
+        tx.delete(model, record_id)
 
 
 def typed_arguments(function, values, *, skip=0):
