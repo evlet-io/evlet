@@ -33,7 +33,7 @@ INDEX = 'CREATE INDEX IF NOT EXISTS evlet_journal_record ON evlet_journal (model
 # Models that have declared tamper_evident=True; verify() treats their unhashed entries as breaks.
 HASHED = 'CREATE TABLE IF NOT EXISTS evlet_journal_hashed (model TEXT PRIMARY KEY)'
 APPEND_ONLY = 'The journal is append only'
-# Kinds the engine writes; `effects` is written by effects_posted() once Effects exist.
+# Kinds the engine writes; `effects` is written by effects_posted() after a move posts or a void reverses effect rows.
 ENGINE_KINDS = ('created', 'changed', 'moved', 'voided', 'revised', 'number', 'file', 'deleted', 'effects')
 # Kinds people write through HTTP (or journal.post), and the values each takes.
 USER_KINDS = ('note', 'message', 'call', 'follow_up', 'follow_up_done')
@@ -57,11 +57,11 @@ class Journal:
             raise ValueError('Journal(tamper_evident=...) is True or False')
 
 
-def compile_journals(models, child_models):
-    """{model: Journal} for root models that journal: declared with Meta.journal, or by default a State.
+def compile_journals(models, child_models, effects=()):
+    """{model: Journal} for root models that journal: declared with Meta.journal, or by default those
+    with a State or Effects (`effects` holds the models that declare Meta.effects).
 
-    Effects (Phase 6) will also turn the journal on by default. Table rows are journaled with their
-    document, so a Meta.journal on a row model is an error.
+    Table rows are journaled with their document, so a Meta.journal on a row model is an error.
     """
     result = {}
     for model in models:
@@ -75,7 +75,7 @@ def compile_journals(models, child_models):
                 raise ValueError(f'{model.__name__}: Meta.journal is for root documents; Table rows are journaled with their document')
             continue
         if not declared:
-            value = Journal() if model.__state__ is not None else None
+            value = Journal() if model.__state__ is not None or model in effects else None
         if value is not None:
             result[model] = value
     return MappingProxyType(result)
@@ -241,13 +241,14 @@ def file(business, tx, user, model, record_id, action, attachment):
         append(business, tx, user, model, record_id, 'file', {'action': action, **attachment})
 
 
-def effects_posted(context, model, record_id, data):
-    """`effects` once Effects (Phase 6) post or reverse rows for a record; not called yet.
+def effects_posted(context, model, record_id, targets):
+    """`effects` after a move posted effect rows or a void wrote their mirror rows, in the same transaction.
 
-    `data` is JSON (for example {"posted": [...]} or {"reversed": [...]}). Readers see the entry only
-    when they can read the State, like moves."""
-    if journals(context, model):
-        append(context._business, context._tx, context.user, model, record_id, 'effects', data)
+    `targets` lists, per target model that received rows, {"target", "rows", "reversal"} and, for a
+    balanced effect, "balanced" (see `evlet.effects.journal_item`). Nothing is written without rows.
+    Readers see the targets they read fully and only when they can read the State (see `present`)."""
+    if targets and journals(context, model):
+        append(context._business, context._tx, context.user, model, record_id, 'effects', {'targets': list(targets)})
 
 
 # User entries
@@ -457,6 +458,26 @@ def shown_changes(business, user, model, data, visibility):
     return result, partial
 
 
+def shown_effects(business, user, model, data):
+    """The targets of an `effects` entry the caller reads fully (read access without a row scope, as
+    for `_effects` in details), with `balanced` only when it reads both balanced fields."""
+    from .effects import readable
+    policy, targets, partial = business.policy, [], False
+    bounds = {business.registry.name_for(bound.target): bound for bound in business.registry.effects.get(model, ())}
+    for item in data.get('targets', ()):
+        target = business.registry.models.get(item.get('target'))
+        if target is None or not readable(business, user, target):
+            partial = True
+            continue
+        item = dict(item)
+        bound = bounds.get(item['target'])
+        if 'balanced' in item and (bound is None or bound.balanced is None or not set(bound.balanced) <= policy.fields(user, target)):
+            del item['balanced']
+            partial = True
+        targets.append(item)
+    return {'targets': targets}, partial
+
+
 def present(business, user, model, row, visibility, done):
     """One entry as the caller sees it. Values the caller cannot read are removed and the entry is
     marked `partial`; entries about the State (moves, voids, revisions, effects) and numbers the
@@ -482,6 +503,10 @@ def present(business, user, model, row, visibility, done):
             kind, partial = 'changed', True
         elif kind == 'revised' and not visibility(model, data['copy']):
             shown['copy'], partial = None, True
+        elif kind == 'effects':
+            shown, partial = shown_effects(business, user, model, data)
+            if not shown['targets']:
+                kind, shown = 'changed', {}
     elif kind == 'number':
         shown = data if data['field'] in readable else {}
         if data['field'] not in readable:

@@ -20,9 +20,10 @@ REASON_LENGTH = 1000
 # Hooks for later phases. Each is called once per operation, inside its transaction.
 
 def reverse_effects(context, model, record_id, previous):
-    """Called when a record is voided, after its state changed: the effects write their mirror rows."""
+    """Called when a record is voided, after its state changed: the effects write their mirror rows.
+    Returns the Journal items of the targets that received them."""
     from .effects import reverse
-    reverse(context, model, record_id)
+    return reverse(context, model, record_id)
 
 
 def prepare_copy(context, model, original, copy):
@@ -184,7 +185,7 @@ def void_record(context, model, record, reason):
     business, tx, user = context._business, context._tx, context.user
     name, previous = model.__state__, record._values.get(model.__state__)
     tx.connection.execute(f'UPDATE {identifier(business.registry.name_for(model))} SET {identifier(name)}=? WHERE id=?', (VOID, record.id))
-    reverse_effects(context, model, record.id, previous)
+    reversed_rows = reverse_effects(context, model, record.id, previous)
     reaction = getattr(model, 'changed', None)
     if reaction is not None:
         after, _ = load_draft(context, model, record.id, {}, preview=True)
@@ -192,6 +193,8 @@ def void_record(context, model, record, reason):
         freeze_draft(after)
         reaction(after, Change('void', user, freeze({**values, name: previous}), freeze(values), (name,), freeze({})))
     voided(context, model, record.id, previous, reason)
+    from . import journal
+    journal.effects_posted(context, model, record.id, reversed_rows)
     business.changed(tx, model, record.id)
 
 

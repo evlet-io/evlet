@@ -299,7 +299,7 @@ class Registry:
         self.effects, self.effect_targets = compile_effects(self, models, child_models)
         # Record histories: {model: Journal} (evlet/journal.py).
         from .journal import compile_journals
-        self.journals = compile_journals(models, child_models)
+        self.journals = compile_journals(models, child_models, self.effects)
 
     def root_of(self, model):
         owners = {child.model: child.parent for child in self.children}

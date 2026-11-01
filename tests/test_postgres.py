@@ -663,3 +663,14 @@ def test_postgres_journal(pg_dsn, monkeypatch, check):
     # The table, its index and its triggers are created once and kept on a restart.
     app.initialize()
     getattr(journal, check)(*((app, monkeypatch) if check == 'check_rollback' else (app,)))
+
+
+def test_postgres_journal_records_effects(pg_dsn):
+    effects, books = effect_books(pg_dsn)
+    effects.check_the_journal_records_postings_and_reversals(books)
+
+
+def test_postgres_rolled_back_move_leaves_no_effects_entry(pg_dsn, monkeypatch):
+    from tests import test_effects as effects
+    effects.check_a_rolled_back_move_leaves_no_effects_entry(effects.stacked_books(PostgreSQLDatabase(pg_dsn, Registry(*effects.STACKED))),
+                                                             monkeypatch)

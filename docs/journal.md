@@ -24,7 +24,7 @@ class Invoice(Model):
 
 | `Meta.journal` | Result |
 |---|---|
-| left out | on for a model with a `State`, off otherwise |
+| left out | on for a model with a `State` or `Meta.effects`, off otherwise |
 | `Journal()` or `Journal(tamper_evident=True)` | on |
 | `None` | off, also for a model with a `State` |
 
@@ -32,7 +32,8 @@ There is one way to turn it off: `journal = None`. Any other value is an error w
 registry is built. `Journal()` on a model without a State makes it a document, so every write
 goes through the document pipeline (like a `Sequence` does). Table rows have no journal of
 their own: their changes are part of their document's entries, and a `Meta.journal` on a row
-model is an error. Effects (Phase 6) will also turn the journal on by default.
+model is an error. A model with `Meta.effects` journals by default too (an effect needs a
+State, so this changes nothing for valid models today, but the rule names both).
 
 ## Storage
 
@@ -77,7 +78,7 @@ commits, no entry is left behind.
 | `number` | a Sequence number is assigned | `field` and `number` |
 | `file` | an attachment is added or removed | `action` (`added` or `removed`), `id`, `name`, and `size` when added |
 | `deleted` | the record is deleted | `{}` |
-| `effects` | Effects post or reverse rows (Phase 6, not written yet) | set by Effects |
+| `effects` | a move posted [effect](effects.md) rows, or a void wrote their mirror rows | `targets` |
 
 `fields` maps each changed stored field to its old and new values in their HTTP form:
 
@@ -99,6 +100,18 @@ commits, no entry is left behind.
 
 A removed row lists its last values and its own removed rows. `reordered` is set when rows
 that stayed changed their order. A create lists every value that is not empty.
+
+An `effects` entry follows the `moved` or `voided` entry of the same operation and lists
+each target model that received rows:
+
+```json
+{"targets": [{"target": "ledgerentry", "rows": 3, "reversal": false, "balanced": true},
+             {"target": "stockmove", "rows": 2, "reversal": false}]}
+```
+
+`rows` counts the rows written, `reversal` is true for the mirror rows of a void, and
+`balanced` is present for an effect that declares a balanced pair. Targets that received no
+rows are left out, and no entry is written when no rows were written.
 
 Not in `fields`: the row link to the parent, row positions, and Sequence numbers (each
 assignment is its own `number` entry). A move's `fields` leave out the State, since `from`
@@ -201,6 +214,10 @@ cannot read is removed, and the entry is marked `"partial": true`:
   entries are shown as `changed` with only the readable field and row changes. A `number`
   entry for a field the caller cannot read is shown as `changed` with no data. This keeps
   states and numbers private, as the rest of the API does.
+* In an `effects` entry, targets the caller does not read fully (read permission and no row
+  scope, as for `_effects` in details) are left out, and so is `balanced` when the caller
+  cannot read both balanced fields. When no target is left, the entry is shown as `changed`
+  with no data.
 
 Row and Link checks run in batches: one statement per model and chunk of ids for the page.
 

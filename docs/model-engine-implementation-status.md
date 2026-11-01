@@ -791,7 +791,8 @@ Restacked on `model/10-stacked` as `model/06-stacked` (02-11-2026):
 
 ## Phase 8: the Journal (02-11-2026)
 
-Branch `model/08-journal`, stacked on `model/10-stacked`. Guide: [journal.md](journal.md).
+Branch `model/08-journal`, stacked on `model/10-stacked`; restacked on `model/06-stacked` as
+`model/08-stacked`. Guide: [journal.md](journal.md).
 
 * **Declaration.** `Meta.journal = Journal(tamper_evident=False)`, exported from `evlet`.
   Left out, it is on for models with a State and off otherwise; `journal = None` is the one
@@ -863,3 +864,21 @@ Review fixes (02-11-2026):
 * An action's name is left out of entries for roles that cannot read the State. The guide
   documents what stays visible of hidden changes and the request size limit.
 * The 1,000-row PATCH budget is four statements (the SQLite guard trigger is traced as one).
+
+Restacked on `model/06-stacked` as `model/08-stacked` (02-11-2026):
+
+* `Meta.journal` joins `Meta.effects` among the Meta keys; `Business.availability` returns
+  `_effects` and `_journal` together; the CLI has both `evlet effects check` and
+  `evlet journal verify`. The amendment Quote keeps its SalesLedger effect and declares
+  `Journal(tamper_evident=True)`.
+* Effects write to the Journal. `effects.post()` and `effects.reverse()` return one item per
+  target that received rows (`target`, `rows`, `reversal`, and `balanced` for a balanced
+  effect). `documents.operate()` calls `journal.effects_posted()` after `states.moved()`, and
+  `corrections.void_record()` after `voided()`, so the `effects` entry follows the `moved` or
+  `voided` entry in the same savepoint. No entry is written when no rows were written.
+* Readers see the targets they read fully; `balanced` needs both balanced fields; a reader of
+  no target sees a `partial` `changed` entry with no data, as for other hidden entries.
+* `compile_journals()` turns the journal on by default for models with a State or Effects.
+* Tests in `tests/test_effects.py` (posting, void reversal, hidden targets per role, a caught
+  failure after the entry leaves nothing, default journaling with Effects, `journal = None`)
+  and PostgreSQL variants in `tests/test_postgres.py`.
