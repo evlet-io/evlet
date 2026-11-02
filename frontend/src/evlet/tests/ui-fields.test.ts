@@ -43,7 +43,7 @@ describe('field types: parsing and display', () => {
     expect(parse('duration', '2d 4h')).toBe('P2DT4H');
     expect(KINDS.duration.format('PT1H30M', meta('duration'))).toBe('1h 30m');
     expect(durationText(0)).toBe('0m');
-    expect(fails('duration', 'soon')).toBe('Type a length of time such as 1h 30m');
+    expect(fails('duration', 'soon')).toBe('Type a length of time such as 1h 30m, 1:30, 1.30 or 90m');
   });
 
   it('checks email, URL and phone like the server', () => {

@@ -105,7 +105,7 @@ function isoDuration(seconds: number): string {
 /** '1h 30m', '90m', '1:30', '1.5h' or '2d 4h' to seconds. A bare number is minutes (dateparse.ts). */
 export function parseDuration(text: string): number {
   const seconds = parseLength(text);
-  if (seconds === null) throw new InputError('Type a length of time such as 1h 30m');
+  if (seconds === null) throw new InputError('Type a length of time such as 1h 30m, 1:30, 1.30 or 90m');
   return seconds;
 }
 

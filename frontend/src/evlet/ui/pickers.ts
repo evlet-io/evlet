@@ -9,7 +9,7 @@
 import { html, when, type Child } from '../dom';
 import { cell, derive, untrack, type Cell } from '../reactive';
 import { formatDate, todayGst } from '../model/format';
-import { dateOrder, parseDay } from './dateparse';
+import { parseDay } from './dateparse';
 import { Icon } from './base';
 import { read, uid } from './core';
 import { openPopover } from './layers';
@@ -461,13 +461,14 @@ export function DateRangePanel(props: DateRangePanelProps): HTMLElement {
     on:change=${(event: Event) => {
       const input = event.target as HTMLInputElement, text = input.value.trim();
       const day = text ? parseDay(text) : null;
-      if (text && !day) { typedError.set(`Enter a date as ${({ DMY: 'DD-MM-YYYY', MDY: 'MM/DD/YYYY', YMD: 'YYYY-MM-DD' })[dateOrder()]}`); return; }
-      typedError.set(null);
+      // Text that can't be read empties that end and says what was typed.
+      typedError.set(text && !day ? `Couldn't read ${text} as a date` : null);
       (end === 'from' ? from : to).set(day);
       const first = from.peek(), last = to.peek();
       if (first && last && last < first) { from.set(last); to.set(first); }
       input.value = day ? formatDate((end === 'from' ? from : to).peek() ?? day) : '';
     }}
+    on:input=${() => typedError.set(null)}
     on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); (event.target as HTMLInputElement).dispatchEvent(new Event('change')); } }}>`;
   return html`<div class="pick pick-range">
     <div class="range-presets" role="group" aria-label="Ranges">${presets.map(preset => html`<button type="button" class="mi" class:on=${() => same(preset.range)}

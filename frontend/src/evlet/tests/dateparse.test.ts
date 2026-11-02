@@ -3,6 +3,7 @@ import { DEFAULT_REGION, setRegion } from '../model/format';
 import { clockText, dateOrder, fullYear, parseClock, parseDay, parseDayTime, parseLength } from '../ui/dateparse';
 import { KINDS } from '../ui/kinds';
 import { BaseField, localField } from '../ui/fields';
+import { DateRangePanel } from '../ui/pickers';
 import { change, cleanup, key, render } from './ui-helpers';
 
 afterEach(() => { setRegion(DEFAULT_REGION); cleanup(); });
@@ -78,13 +79,33 @@ describe('typed date-times', () => {
 });
 
 describe('typed lengths of time', () => {
-  it.each([['1h 30m', 5400], ['1h30m', 5400], ['90m', 5400], ['90', 5400], ['1:30', 5400], ['1.5h', 5400], ['2d 4h', 187200], ['45s', 45], ['2 hours', 7200], ['15 min', 900]])(
-    '%s is %i seconds', (text, seconds) => expect(parseLength(text)).toBe(seconds));
-  it.each(['soon', '1:75', 'h', '1.33333h', '-5', ''])('%s is not read', text => expect(parseLength(text)).toBeNull());
+  it.each([
+    // A whole number without a unit is minutes.
+    ['90', 5400], ['0', 0], ['5', 300],
+    // h:mm and h:mm:ss, with : or a dot followed by exactly two digits from 00 to 59.
+    ['1:30', 5400], ['1.30', 5400], ['1.05', 3900], ['0.45', 2700], ['10:00', 36000], ['1:30:20', 5420], ['1.30.20', 5420],
+    // Units, with or without spaces, short or in words.
+    ['1h 30m', 5400], ['1h30m', 5400], ['30m', 1800], ['20s', 20], ['2d 4h', 187200], ['1 h 30 min', 5400], ['1hr 30mins', 5400],
+    ['2 hours', 7200], ['45 sec', 45], ['1 hour 5 minutes 10 seconds', 3910], ['3 days', 259200],
+    // A fraction of a unit: an h number is always a decimal fraction of an hour.
+    ['1.5h', 5400], ['2.25h', 8100], ['1.30h', 4680], ['1.62h', 5832], ['1.5m', 90], ['0.5 hours', 1800], ['1.5h 10m', 6000],
+  ])('%s is %i seconds', (text, seconds) => expect(parseLength(text)).toBe(seconds));
+
+  it.each([
+    // A dot without a unit is only hours.minutes with two minute digits.
+    '1.5', '1.62', '1.300', '1.5.', '.30', '1.', '1:75', '1:5', '1.30.2', '1:30.20',
+    // A fraction that is not whole seconds, a unit twice or an unknown word.
+    '1.33333h', '0.001m', '1.5s', '1h 2h', '5 weeks', 'h', 'soon', '-5', '', '1h-30m',
+  ])('%s is not read', text => expect(parseLength(text)).toBeNull());
+
+  it('says how to type a duration', () => {
+    expect(() => KINDS.duration.parse!('1.62', { name: 'd', type: 'duration', label: 'D', required: false, read_only: false }))
+      .toThrow('Type a length of time such as 1h 30m, 1:30, 1.30 or 90m');
+  });
 });
 
 describe('date fields read typed text when they commit', () => {
-  it('normalises on blur and Enter, and keeps unreadable text with the error', () => {
+  it('normalises on blur and Enter', () => {
     const field = localField({ name: 'due', type: 'date', label: 'Due' }, null);
     const host = render(() => BaseField({ field }));
     const input = host.querySelector('input')!;
@@ -94,10 +115,36 @@ describe('date fields read typed text when they commit', () => {
     input.value = '1/6/27';
     key(input, 'Enter');
     expect(input.value).toBe('01-06-2027');
-    change(input, '31/02/2027');
-    expect(input.value).toBe('31/02/2027');
-    expect(field.error.peek()).toBe('Enter a date as DD-MM-YYYY');
-    expect(field.value.peek()).toBe('2027-06-01');
+  });
+
+  it.each([
+    ['date', '31-02-2027', '2027-06-01', "Couldn't read 31-02-2027 as a date"],
+    ['date', 'abc', '2027-06-01', "Couldn't read abc as a date"],
+    ['datetime', '12/06/2027 25:00', '2027-06-12T05:00:00Z', "Couldn't read 12/06/2027 25:00 as a date and time"],
+    ['time', '9.5', '09:00:00', "Couldn't read 9.5 as a time"],
+    ['duration', '1.62', 'PT1H', "Couldn't read 1.62 as a duration"],
+  ])('empties a %s it cannot read (%s), says why, and clears the message on the next edit', (type, typed, before, message) => {
+    const field = localField({ name: 'value', type, label: 'Value' }, before);
+    const host = render(() => BaseField({ field }));
+    const input = host.querySelector('input')!;
+    input.value = typed;
+    key(input, 'Enter');
+    expect([input.value, field.value.peek(), field.error.peek()]).toEqual(['', null, message]);
+    expect(host.querySelector('.err')!.textContent).toBe(message);
+    change(input, typed);
+    expect([input.value, field.value.peek(), field.error.peek()]).toEqual(['', null, message]);
+    input.value = '1';
+    input.dispatchEvent(new Event('input'));
+    expect(field.error.peek()).toBeNull();
+  });
+
+  it('leaves a required field empty with the message, and the required rule applies on the next commit', () => {
+    const field = localField({ name: 'due', type: 'date', label: 'Due', required: true }, '2027-06-01');
+    const input = render(() => BaseField({ field })).querySelector('input')!;
+    change(input, 'abc');
+    expect([field.value.peek(), field.error.peek()]).toEqual([null, "Couldn't read abc as a date"]);
+    change(input, '');
+    expect(field.error.peek()).toBe('Due is required');
   });
 
   it('reads times and date-times the same way', () => {
@@ -111,5 +158,23 @@ describe('date fields read typed text when they commit', () => {
     expect(when.value.peek()).toBe('2027-06-12T08:35:00Z');
     expect(host.querySelector<HTMLInputElement>('[data-field="when"] input')!.value).toBe('12-06-2027 12:35');
     expect(KINDS.duration.parse!('90m', { name: 'd', type: 'duration', label: 'D', required: false, read_only: false })).toBe('PT1H30M');
+  });
+});
+
+describe('typed range ends', () => {
+  it('reads both ends, swaps them when needed and empties an end it cannot read', () => {
+    const applied: unknown[] = [];
+    render(() => DateRangePanel({ value: () => null, onApply: range => applied.push(range) }));
+    const [first, last] = document.querySelectorAll<HTMLInputElement>('.range-typed input');
+    change(first, '1/6/27');
+    change(last, '120627');
+    expect([first.value, last.value]).toEqual(['01-06-2027', '12-06-2027']);
+    change(last, '31/02/2027');
+    expect(last.value).toBe('');
+    expect(document.querySelector('.range-note')!.textContent).toBe("Couldn't read 31/02/2027 as a date");
+    change(last, '20/05/27');
+    expect([first.value, last.value]).toEqual(['20-05-2027', '01-06-2027']);
+    [...document.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === 'Apply')!.click();
+    expect(applied).toEqual([['2027-05-20', '2027-06-01']]);
   });
 });

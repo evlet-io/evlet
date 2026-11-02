@@ -180,7 +180,7 @@ describe('date pickers', () => {
     expect(field.value.peek()).toBe('2027-04-03');
     input.value = '31-02-2027';
     input.dispatchEvent(new Event('change'));
-    expect(field.error.peek()).toBe('Enter a date as DD-MM-YYYY');
+    expect([input.value, field.value.peek(), field.error.peek()]).toEqual(['', null, "Couldn't read 31-02-2027 as a date"]);
   });
 
   it('offers Today, and Clear only for optional dates', () => {

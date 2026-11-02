@@ -17,6 +17,11 @@ say what to change. Evlet is not production ready.
 - **Typed dates and times** are read the forgiving way: `120627`, `1/6/27`, `1206`, `today`,
   `+3`, `935`, `12.35pm`, `9am`, `120627 1235`, `90m`, in the day, month and year order of the
   person's date format. Impossible dates are refused, never guessed ([docs/ui-framework.md](docs/ui-framework.md#typing-dates-and-times)).
+- **Durations** also take `1.30` and `1:30:20` (hours, minutes, seconds), decimal units such as
+  `1.5h` or `1.5m`, and words such as `1 hr 30 mins`. A dot without a unit needs two minute digits,
+  so `1.5` is refused.
+- **Unreadable dates, times and durations empty the field** on blur or Enter and say what was typed
+  ("Couldn't read 1.62 as a duration"). The API keeps accepting only the stored forms.
 - Integer and Decimal fields show their `suffix` after the value at rest too (`5.00%`).
 - The Link field's record mark no longer stretches across the input.
 - **Form fields** are 40 px tall with a soft focus ring, a 14 px label and a blue required

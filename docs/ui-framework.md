@@ -286,8 +286,15 @@ records, such as action dialogs.
 Date, date-time, time and duration inputs read typed text the forgiving way Frappe does, through
 one pure module, `ui/dateparse.ts` (`parseDay`, `parseClock`, `parseDayTime`, `parseLength`). The
 text is read on blur and on Enter, and the input then shows the value in the person's format at
-once. Text that can't be read, or names a day that doesn't exist (31-02), stays as typed with the
-field's error; nothing is guessed. The server validates again.
+once. Text that can't be read, or names a day that doesn't exist (31-02), empties the field: the
+value becomes empty (not the previous value) and the input is cleared. The field's error says what
+was typed, "Couldn't read 1.62 as a duration", and goes with the next edit; a required field then
+gets its usual required error. Nothing is guessed.
+
+These forms are a browser convenience only. The API takes the stored forms and nothing else:
+`YYYY-MM-DD` dates, ISO date-times with a time zone, `HH:MM` or `HH:MM:SS` times, and ISO 8601
+durations (`PT1H30M`) or whole seconds. Anything else sent to it directly (`2027-02-31`, `120627`,
+`25:00`, `9am`, `1.62`, `1.5`, `1h 30m`) is a validation error, never coerced.
 
 | Typed (day first) | Reads as (today 02-11-2026) |
 | --- | --- |
@@ -308,7 +315,16 @@ Times: `1235` is 12:35, `120627` 12:06:27, `935` 09:35, `9` 09:00; `12:35`, `12.
 `12.35pm`, `12:35 pm`, `2:05 p.m.`. `12am` is 00:00 and `12pm` 12:00. Minutes always have two
 digits, so `9.5` is refused rather than guessed. A date-time is a date, then a time after a space,
 a comma or `T` (`120627 1235`, `12/06/27 9am`, `today 14:30`); a date alone is midnight.
-Durations take `1h 30m`, `1h30m`, `90m`, `1:30`, `1.5h`, `2d 4h`, `45s` or a number of minutes.
+Durations:
+
+- A whole number without a unit is minutes: `90` is 1h 30m.
+- `h:mm` or `h:mm:ss` is hours, minutes and seconds, with a colon or a dot: `1:30`, `1.30`
+  (1h 30m), `1.05` (1h 5m), `1:30:20`, `1.30.20`. A dot without a unit must be followed by exactly
+  two digits from 00 to 59, so `1.5`, `1.62`, `1.300` and `1.5.` are refused.
+- With units, spaces and words are fine: `1h 30m`, `1h30m`, `1 h 30 min`, `1hr 30mins`, `2 hours`,
+  `45 sec`, `2d 4h`. A number with a unit may be a decimal fraction of that unit: `1.5h` is 1h 30m,
+  `1.30h` is 1h 18m, `1.62h` is 1h 37m 12s, `1.5m` is 1m 30s. A total that is not a whole number of
+  seconds is refused.
 The date range filter's From and To boxes read days the same way.
 
 ### Form fields

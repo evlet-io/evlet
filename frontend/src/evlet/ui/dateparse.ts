@@ -159,20 +159,39 @@ export function parseDayTime(text: string, options: DayOptions = {}): DayTime | 
   return day ? { day, hours: 0, minutes: 0, seconds: 0 } : null;
 }
 
+const UNITS: Array<[RegExp, number]> = [[/^d(?:ays?)?$/, 86400], [/^h(?:ours?|rs?)?$/, 3600], [/^m(?:in(?:ute)?s?)?$/, 60], [/^s(?:ec(?:ond)?s?)?$/, 1]];
+
 /**
- * A typed length of time in seconds, or null: 1h 30m, 90m, 2d 4h, 45s, 1:30 (hours and minutes),
- * 1.5h, or a bare number of minutes (90).
+ * A typed length of time in whole seconds, or null.
+ * - Without a unit: a whole number is minutes (90 is 1h 30m); h:mm or h:mm:ss with : or . is
+ *   hours, minutes and seconds (1:30, 1.30, 1.05, 1:30:20, 1.30.20). After a dot without a unit
+ *   only two digits from 00 to 59 are read, so 1.5, 1.62 and 1.300 are refused, never guessed.
+ * - With units, each number may have a fraction of its unit: 1h 30m, 1hr 30mins, 1 h 30 min,
+ *   2 hours, 45 sec, 2d 4h, 1.5h (1h 30m), 1.30h (1h 18m), 2.25h, 1.5m (1m 30s). A total that is
+ *   not a whole number of seconds is refused.
  */
 export function parseLength(text: string): number | null {
   const value = text.trim().toLowerCase();
   if (!value) return null;
-  const clock = /^(\d+):([0-5]\d)$/.exec(value);
-  if (clock) return Number(clock[1]) * 3600 + Number(clock[2]) * 60;
   if (/^\d+$/.test(value)) return Number(value) * 60;
-  const decimalHours = /^(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?$/.exec(value);
-  if (decimalHours) { const seconds = Number(decimalHours[1]) * 3600; return Number.isInteger(seconds) ? seconds : null; }
-  const parts = /^(?:(\d+)\s*d(?:ays?)?)?\s*(?:(\d+)\s*h(?:ours?|rs?)?)?\s*(?:(\d+)\s*m(?:in(?:utes?|s)?)?)?\s*(?:(\d+)\s*s(?:ec(?:onds?|s)?)?)?$/.exec(value);
-  if (!parts || !parts.slice(1).some(Boolean)) return null;
-  const [, days, hours, minutes, seconds] = parts.map(part => Number(part ?? 0));
-  return ((days * 24 + hours) * 60 + minutes) * 60 + seconds;
+  const clock = /^(\d+)([:.])([0-5]\d)(?:\2([0-5]\d))?$/.exec(value);
+  if (clock) return Number(clock[1]) * 3600 + Number(clock[3]) * 60 + Number(clock[4] ?? 0);
+  // Units: "1.5 h 30 min" is the tokens 1.5 h, 30 min. Each unit once.
+  const tokens = [...value.matchAll(/(\d+)(?:\.(\d+))?\s*([a-z]+)\s*/g)];
+  if (!tokens.length || tokens.map(token => token[0]).join('') !== value.replace(/^\s+/, '')) return null;
+  let total = 0n, scale = 1n;
+  const seen = new Set<number>();
+  for (const [, whole, fraction = '', word] of tokens) {
+    const unit = UNITS.find(([pattern]) => pattern.test(word))?.[1];
+    if (!unit || seen.has(unit)) return null;
+    seen.add(unit);
+    // Exact: whole.fraction × unit seconds, kept as an integer over a power of ten.
+    const places = 10n ** BigInt(fraction.length);
+    const amount = (BigInt(whole) * places + BigInt(fraction || '0')) * BigInt(unit);
+    total = total * places + amount * scale;
+    scale *= places;
+  }
+  if (total % scale !== 0n) return null;
+  const seconds = total / scale;
+  return seconds > BigInt(Number.MAX_SAFE_INTEGER) ? null : Number(seconds);
 }

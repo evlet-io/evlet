@@ -381,14 +381,25 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
     let value: unknown;
     try { value = kind.parse ? kind.parse(input.value, meta) : input.value; }
     catch (error) {
-      if (error instanceof InputError) { field.error.set(error.message); return false; }
-      throw error;
+      if (!(error instanceof InputError)) throw error;
+      if (kind.picker) return unreadable();
+      field.error.set(error.message);
+      return false;
     }
     const ok = writeValue(field, value);
     // Show the value as the field formats it, even when it did not change (2.5 -> 2.50).
     if (ok) input.value = untrack(shown);
     if (ok) done();
     return ok;
+  };
+  // A date, time or duration that can't be read empties the field (never the old value, never the
+  // bad text) and says what was typed; the message goes with the next edit.
+  const unreadable = (): boolean => {
+    const typed = input.value.trim();
+    input.value = '';
+    try { if (!isEmpty(untrack(() => field.value.get()))) { field.set(null); edited(field).set(true); } } catch { /* a locked field keeps its value */ }
+    field.error.set(`Couldn't read ${typed} as ${PICKED[kind.picker!]}`);
+    return false;
   };
   const onChange = () => { if (options.commitOn !== 'manual') commit(); };
   const onKey = (event: KeyboardEvent) => {
@@ -401,7 +412,8 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
     : html`<input class=${`input${kind.align === 'right' ? ' num r' : ''}`} id=${id} prop:value=${shown} disabled=${disabled}
         inputmode=${kind.inputMode ?? null} placeholder=${meta.placeholder || kind.placeholder || null} autocomplete="off"
         aria-invalid=${invalid} aria-required=${required} aria-describedby=${options.describedBy ?? null} aria-label=${options.label ?? null}
-        maxlength=${meta.max_length ?? null} on:change=${onChange} on:keydown=${onKey}>`) as HTMLInputElement;
+        maxlength=${meta.max_length ?? null} on:change=${onChange} on:keydown=${onKey}
+        on:input=${() => { if (kind.picker && field.error.peek()) field.error.set(null); }}>`) as HTMLInputElement;
   // A Currency field's side box follows its currency source (a field of the record, say).
   const prefix: Child = meta.type === 'currency' ? currencyFor(field, options.links) : kind.prefix?.(meta), suffix = kind.suffix?.(meta);
   let element: HTMLElement = input;
@@ -416,6 +428,9 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
 }
 
 // ---------- pickers ----------
+
+/** What each picker kind reads, for "Couldn't read 1.62 as a duration". */
+const PICKED = { date: 'a date', datetime: 'a date and time', time: 'a time', duration: 'a duration' };
 
 const pad = (number: number) => String(number).padStart(2, '0');
 
