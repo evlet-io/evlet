@@ -619,6 +619,28 @@ upgrade, people who had a connected assistant keep it. Turning it off signs out 
 assistants at once. Changes are audited under Users. **Tool log** lists every tool call from
 MCP clients and the API, with redacted inputs, for 90 days ([tools.md](tools.md)).
 
+### Eva
+
+Eva is off unless config.py turns it on ([eva.md](eva.md)); these settings then apply. Each
+person also needs **Allow Eva** (`PATCH /api/_controls/users/<id>` with `{"allow_eva"}`).
+
+| Key | File value | Rule |
+|---|---|---|
+| `eva.enabled` | false | Only when config.py turns AI on. Off hides Eva from everyone and stops scheduled tasks. |
+| `eva.model`, `eva.choose_model` | first model, false | A model named in config.py; whether people may pick another. |
+| `eva.confirm` | create and update never, confirm and action ask | `ask` or `never` per kind of change. Cancelling, reopening and deleting always ask. |
+| `eva.instance_limit`, `eva.user_limit`, `eva.person_limits` | no limit | `{amount, unit: aed, tokens or requests, period: day, week or month}`. |
+| `eva.task_reserve` | 10 | Percent of the instance allowance kept for scheduled tasks, 0 to 50. |
+| `eva.max_steps`, `eva.max_tools`, `eva.max_seconds` | 12, 30, 120 | Per answer. |
+| `eva.rates` | none | AED per million tokens per model: input, cached and output. |
+| `eva.disabled_tools` | `[]` | Tools Eva may not call. |
+
+A stored Eva value that no longer validates fails closed: Eva turns off, every change asks,
+allowances become AED 0, limits drop to their minimum and an unreadable tool list disables
+every tool. `GET /api/_controls/eva` reports whether config.py turned AI on (never the key)
+and `GET /api/_controls/eva/usage?period=month|last_month|7d|YYYY-MM` the usage by day, person
+and conversation (owner and number only, never titles).
+
 ### MCP
 
 People connect AI assistants (MCP clients such as Claude) to the instance. Remote clients
@@ -632,7 +654,7 @@ Tool Engine, API routes and permission checks as the browser.
 | `mcp.allow_writes` | false | The page asks before turning it on. Write tools need it on, and each write still needs the user's permission. |
 | `mcp.rate` | 60 | Tool calls a minute per client, 1 to 60. The framework cap stays at 60. |
 | `mcp.disabled_tools` | `[]` | Tool names. A disabled tool isn't listed and is refused. |
-| `mcp.hidden_models` | `[]` | Model names. Hidden models (and their child rows) never reach an AI client, even an admin's. |
+| `mcp.hidden_models` | `[]` | Model names. Hidden models (and their child rows) never reach an AI client or Eva, even an admin's. |
 
 A stored value that no longer validates fails closed: the switches turn off, the rate becomes
 1, and a list that isn't a list disables every tool or hides every model. Changes are audited
@@ -697,7 +719,7 @@ newest first, 50 rows at a time.
 | `POST /api/_controls/connectors/<id>/test`, `POST .../default` | Test within 10 seconds; make an outgoing account the default |
 | `GET /api/_controls/mcp`, `DELETE /api/_controls/mcp/<id>` | MCP address, connected clients, 24-hour totals; sign a client out |
 | `GET /api/_controls/tools?origin=&outcome=&tool=&q=&before=` | The Tool log, newest first, 50 rows a page |
-| `PATCH /api/_controls/users/<id>` with `{"allow_mcp"}` | Allow MCP, on its own, saved at once |
+| `PATCH /api/_controls/users/<id>` with `{"allow_eva"}` or `{"allow_mcp"}` | Allow Eva or Allow MCP, on its own, saved at once |
 | `GET/POST /api/_controls/keys`, `DELETE /api/_controls/keys/<id>` | API keys: list, create `{"name", "user", "scope"}` (the key is in this reply only), revoke |
 | `GET/POST/PATCH/DELETE /api/_settings/me/mailbox` | The person's own mailbox: read, connect with a password, change options, disconnect. Sessions only |
 | `POST /api/_settings/me/mailbox/oauth`, `POST .../sync` | Start a Microsoft 365 or Google sign-in (`{"provider"}`, answers `{"url"}`); sync now |
