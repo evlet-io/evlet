@@ -822,12 +822,10 @@ class Controls:
             return 200, export(self, params(scope, 'kind', 'key')), []
         if path == '/audit' and method == 'GET':
             return 200, self.system.audit(params(scope, 'area', 'q', 'before')), []
-        if path == '/apps/migrate' and method == 'POST':
-            return 200, self.system.migrate(user), []
         if path == '/routing' and method == 'GET':
             return 200, self.system.routing(), []
         if path == '/routing/check' and method == 'POST':
-            return 200, self.system.check_hosts(), []
+            return 200, self.system.check_hosts(user), []
         if path == '/jobs' and method == 'GET':
             return 200, self.system.jobs(), []
         match = re.fullmatch(r'/jobs/schedules/([a-z][a-z0-9_]{0,63})(/run)?', path)

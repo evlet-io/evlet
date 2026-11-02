@@ -1,21 +1,35 @@
-"""Controls system pages: installed apps and migrate, routing, jobs, the attention list and the audit log."""
+"""Controls system pages: installed apps, routing, jobs, the attention list and the audit log."""
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as Late
+import inspect
 import json
 import re
 import socket
 import ssl
-import subprocess
-import sys
+from threading import Lock
+import time
 
 from .auth import AccessError, User
 from .models import ValidationError
 
 PAGE = 50
-ADMIN_MIGRATE = 'Only an admin can migrate. It runs the new app code on this server.'
 PROXY_LATER = 'Proxy config and host checks arrive with sub-hosts. Until then, use evlet routes on the server.'
-IN_USE = ("The running server holds this instance, and Evlet never swaps the database under a running server. "
-          "Stop the server, then run evlet migrate {name} on the server. It takes a backup first.")
+LOOKUP_SECONDS = 5
+CHECK_SECONDS = 10
 DNS = ('points here', 'points elsewhere', 'no A or AAAA record')
+
+
+def bounded(resolve):
+    """A DNS lookup that gives up after LOOKUP_SECONDS, so a slow resolver can't hold a request."""
+    def lookup(host, port, **options):
+        pool = ThreadPoolExecutor(1)
+        try:
+            return pool.submit(resolve, host, port, **options).result(LOOKUP_SECONDS)
+        except Late:
+            raise OSError(f'{host} did not resolve within {LOOKUP_SECONDS} seconds') from None
+        finally:
+            pool.shutdown(wait=False)
+    return lookup
 
 
 def certificate(host, timeout=5):
@@ -32,6 +46,7 @@ class System:
     def __init__(self, controls):
         self.controls = controls
         self.path, self.started = None, {}
+        self.checked, self.check_lock = {}, Lock()
 
     def load(self, path):
         """The instance folder (instances/<name>) and the apps.lock this process started with."""
@@ -83,33 +98,6 @@ class System:
                           | {'source': source, 'frontends': frontends} | updates.get(app['id'], {'update': None, 'restart': False}))
         return result
 
-    def migrate(self, actor):
-        """Back up and migrate through the existing evlet migrate command, in its own process."""
-        if actor.role != 'admin':
-            raise AccessError(403, ADMIN_MIGRATE)
-        if self.path is None:
-            raise AccessError(409, "This instance isn't managed by evlet install, so there is nothing to migrate here.")
-        waiting = {name: item['update'] for name, item in self.updates().items() if item['update']}
-        if not waiting:
-            raise AccessError(409, 'No app is waiting for a migration.')
-        root, name = self.path.parent.parent, self.path.name
-        try:
-            done = subprocess.run([sys.executable, '-m', 'evlet', 'migrate', name, '--trust', '--project', str(root)],
-                                  cwd=root, capture_output=True, text=True, timeout=900)
-        except subprocess.TimeoutExpired:
-            raise AccessError(409, f'The migration took more than 15 minutes and was stopped. Check it with evlet migrate {name} on the server.') from None
-        if done.returncode:
-            reason = (done.stderr.strip().splitlines() or ['No reason was given.'])[-1]
-            raise AccessError(409, IN_USE.format(name=name) if reason.startswith('Instance is in use') else f'The migration stopped: {reason}')
-        lines = dict(line.split(': ', 1) for line in done.stdout.splitlines() if ': ' in line)
-        applied = lines.get('Applied migrations', '')
-        migrations = [] if applied.startswith('none') else [item for item in applied.split(', ') if item]
-        backup = lines.get('Backup', '').rsplit('/', 1)[-1] or None
-        targets = ', '.join(f"{app} {item['to']}" for app, item in waiting.items())
-        self.write_audit(actor.username, 'Apps', targets, f'Backed up and migrated · {len(migrations)} migration' + ('' if len(migrations) == 1 else 's')
-                         + (f' · backup {backup}' if backup else ''), None, {'migrations': migrations})
-        return {'migrations': migrations, 'backup': backup}
-
     # ---------- routing ----------
 
     @staticmethod
@@ -140,13 +128,19 @@ class System:
                 result['proxy_error'] = str(exc)
         return result
 
-    def check_hosts(self):
+    def check_hosts(self, actor):
         """The evlet proxy --check DNS report per host, and the certificate of each host that points here."""
         proxy, routes = self.proxy(), self.controls.routes
         if proxy is None:
             raise AccessError(409, PROXY_LATER)
+        with self.check_lock:
+            now = time.monotonic()
+            if now - self.checked.get(actor.id, -CHECK_SECONDS) < CHECK_SECONDS:
+                raise AccessError(429, 'Hosts were just checked. Try again in a few seconds.')
+            self.checked[actor.id] = now
+        options = {'resolve': bounded(socket.getaddrinfo)} if 'resolve' in inspect.signature(proxy.check).parameters else {}
         try:
-            report, ok = proxy.check(routes)
+            report, ok = proxy.check(routes, **options)
         except ValueError as exc:
             raise AccessError(409, str(exc)) from None
         lines, hosts = report.splitlines(), []
@@ -183,8 +177,10 @@ class System:
             pass
 
     def failed_jobs(self):
-        jobs = self.controls.business.jobs
-        return 0 if jobs is None else sum(row['state'] == 'failed' for row in jobs.recent())
+        if self.controls.business.jobs is None:
+            return 0
+        with self.controls.database._connection() as connection:
+            return connection.execute("SELECT count(*) FROM evlet_jobs WHERE state='failed'").fetchone()[0]
 
     def jobs(self):
         jobs = self.controls.business.jobs
@@ -218,6 +214,8 @@ class System:
             row = tx.connection.execute('SELECT * FROM evlet_schedules WHERE name=?', (name,)).fetchone()
             if row is None:
                 raise AccessError(404, 'Schedule not found')
+            if not row['enabled']:
+                raise AccessError(409, f'{name} is paused. Resume it first.')
             model = self.controls.registry.models.get(row['model']) if row['model'] else None
             try:
                 receipt = jobs.enqueue(tx, row['task'], json.loads(row['payload']), user=None if row['actor'] is None else User(row['actor'], '', ''),
@@ -259,7 +257,8 @@ class System:
             if app['update'] and app['update']['error']:
                 add('package', 'apps', f"The {app['title']} app can't be read", app['update']['error'])
             elif app['update']:
-                add('package', 'apps', f"{app['title']} {app['update']['to']} is waiting to be migrated", 'Back up and migrate from Apps.')
+                add('package', 'apps', f"{app['title']} {app['update']['to']} is waiting to be migrated",
+                    f'Stop the server, then run evlet migrate {self.instance_name()} on the server. It takes a backup first.')
             elif app['restart']:
                 add('package', 'apps', f"Restart the server to load the new {app['title']}",
                     f"The database is migrated. The server still runs {app['version']}, the version it started with.")
@@ -291,7 +290,9 @@ class System:
     def audit(self, query):
         """A page of the audit log, newest first: area, a search over who, what and the detail, and ids before a cursor."""
         area, text, before = query.get('area', ''), query.get('q', '').strip().lower(), query.get('before')
-        if len(area) > 40 or len(text) > 100:
+        if len(area) > 40:
+            raise ValidationError({'area': 'Choose an area from the list.'})
+        if len(text) > 100:
             raise ValidationError({'q': 'Search with at most 100 characters.'})
         clauses, values = [], []
         if area:
@@ -302,7 +303,7 @@ class System:
             clauses.append("(lower(actor) LIKE ? ESCAPE '\\' OR lower(target) LIKE ? ESCAPE '\\' OR lower(detail) LIKE ? ESCAPE '\\')")
             values += [like] * 3
         if before is not None:
-            if not re.fullmatch(r'[1-9][0-9]{0,18}', before):
+            if not re.fullmatch(r'[1-9][0-9]{0,18}', before) or int(before) > 2**63 - 1:
                 raise ValidationError({'before': 'Use the next value from the previous page.'})
             clauses.append('id < ?')
             values.append(int(before))

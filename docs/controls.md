@@ -172,30 +172,31 @@ name. Try it shows which series a record would use and its name; it never change
 
 ## Apps
 
-Read only, apart from migrate. Each app shows its version, source, models, frontends,
+Read only. Each app shows its version, source, models, frontends,
 connectors, schedules and number of permission rules. Apps are installed from the server shell
 (`evlet install <app> --instance <name>`), never from the browser.
 
-When an app's source no longer matches `apps.lock`, it is waiting to be migrated. "Back up and
-migrate" (admins only) runs the existing `evlet migrate <name> --trust` in its own process: a
-backup into `data/backups/`, then the migrations. Evlet never swaps the database under a running
-server, so while `evlet serve` holds the instance the request is refused with the shell command
-to run after stopping it. After a migration the page says to restart, since the server keeps
-running the version it started with.
+When an app's source no longer matches `apps.lock`, it is waiting to be migrated. The page and
+Needs attention show the command; migrations never run from the browser. Stop the server first,
+since Evlet never changes the database under a running server, then run `evlet migrate <name>`
+on the server. It takes a backup into `data/backups/` before the migrations. If a server still
+runs the version it started with, the page says to restart it.
 
 ## Routing
 
 Read only. The route table (`RouteTable.rows()`) with each row's source and locked state, and
 the hosts. Proxy config and the host check (DNS, the same report as `evlet proxy --check`, and
 the certificate of each host that points here) use `evlet proxy`, which arrives with sub-hosts;
-until then the page says so. Change routes in the instance's `routes.py`.
+until then the page says so. Each person can check hosts once every 10 seconds, and each DNS
+lookup gives up after 5 seconds. Change routes in the instance's `routes.py`.
 
 ## Jobs
 
 Schedules from the apps, and the last 50 jobs. Pausing a schedule saves at once as the setting
 override `schedule.<name>.active = false` and is applied with `set_schedule_active`; resuming
 resets it. A pause for a schedule no app declares any more is listed under Needs attention.
-Run now enqueues one job like the schedule would. Retry works on failed jobs only, and the job
+Run now enqueues one job like the schedule would; a paused schedule must be resumed first.
+The failed count in the menu and Needs attention covers every failed job. Retry works on failed jobs only, and the job
 keeps its idempotency key.
 
 ## Overrides
@@ -210,7 +211,7 @@ they are removed on the Models page.
 | Kind | File | Code |
 |---|---|---|
 | `perm` | `apps/<app>/<package>/permissions.py` | `rules = {("editor", Lead): Rule(operations=..., read_fields=..., write_fields=..., scope=...)}` |
-| `field`, `custom`, `naming` | `apps/<app>/<package>/models.py` | The field lines as models.py writes them, with the changes merged in, and `Meta.naming = Naming(...)`. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. |
+| `field`, `custom`, `naming` | The file that declares the model, such as `apps/notes/models/item.py` | The field lines as models.py writes them, with the changes merged in, and `Meta.naming = Naming(...)`. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. Arguments set in code, such as a callable default or validator, are written as `...` with a comment to copy them from models.py, so the code always compiles. |
 | `layout`, `list` | `apps/<app>/<package>/views/__init__.py` | `FormView(model=..., layout=Column(children=[FormLayout(...)]))`, `ListView(model=..., columns=..., page_size=..., order_by=...)` |
 | `setting` | `instances/<name>/routes.py` or `config.py` | `ControlsAccess(allow_ips=...)`; `Security(...)`, which config.py does not read yet; a comment for a paused schedule |
 
@@ -235,7 +236,6 @@ detail, filters by area and pages newest first, 50 rows at a time.
 | `GET/POST /api/_controls/naming/<Model>/counters` | Counters; set one with `{prefix, value, note}` |
 | `POST /api/_controls/naming/<Model>/try` | `{values, series?}`: the matching series and name, and a check of each draft series. No counter changes |
 | `GET /api/_controls/overrides/export?kind=&key=` | Export as code: `[{file, code}]` |
-| `POST /api/_controls/apps/migrate` | Back up and migrate (admins): `{migrations, backup}` |
 | `GET /api/_controls/routing`, `POST /api/_controls/routing/check` | Route table, hosts and proxy config; DNS and certificate check |
 | `GET /api/_controls/jobs` | Schedules and recent jobs |
 | `POST /api/_controls/jobs/schedules/<name>` | `{active}`: pause or resume |

@@ -202,7 +202,12 @@
 .ctl-app:hover{border-color:var(--border-strong)}
 .ctl-app .ctl-line{flex-wrap:wrap}
 .ctl-gap{margin-bottom:16px}
+.ctl-codefile{min-width:0}
 .ctl-codefile .ctl-line{margin-bottom:6px}
+.ctl-review .ctl-form{min-width:0}
+.ctl-review .ctl-code{max-width:100%}
+.ctl-ovrow td{white-space:normal}
+.ctl-ovrow .mono{word-break:break-word}
 /* naming */
 .ctl-ser{display:flex;gap:12px;align-items:flex-start;padding:12px 18px;border-bottom:1px solid var(--divider)}
 .ctl-ser.hit{background:var(--t-green-bg)}

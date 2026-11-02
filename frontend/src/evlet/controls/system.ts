@@ -1,5 +1,5 @@
-// Apps, Routing, Jobs, Overrides and the Audit log. Apps and Routing are read only (apart from
-// migrate); schedule pauses, Run now and Retry save at once; Reset goes through the change bar.
+// Apps, Routing, Jobs, Overrides and the Audit log. Apps and Routing are read only: migrations run
+// from the server shell. Schedule pauses, Run now and Retry save at once; Reset goes through the change bar.
 
 import { html, when, type Child } from '../dom';
 import { cell, derive } from '../reactive';
@@ -8,7 +8,7 @@ import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
 import type { AppInfo, AuditRow, CodeFile, HostCheck, Jobs, OverrideItem, Routing } from './client';
 import { describe, idOf } from './drafts';
-import { isAdmin, message, Select } from './people';
+import { message, Select } from './people';
 
 const copy = (text: string) => void navigator.clipboard?.writeText(text).then(() => toast('Copied'), () => toast('Copy it by hand', { icon: 'info' }));
 const CodeBlock = (file: string, code: string) => html`<div class="ctl-codefile"><div class="ctl-line"><span class="mono muted ctl-small grow">${file}</span>
@@ -50,26 +50,14 @@ export function AppsPage(ctx: ControlsContext): HTMLElement {
 }
 
 function openApp(ctx: ControlsContext, app: AppInfo) {
-  const busy = cell(false), error = cell('');
   const slug = ctx.state.peek().instance.slug ?? '<instance>';
-  const migrate = async () => {
-    busy.set(true);
-    error.set('');
-    try {
-      const result = await ctx.api.migrate();
-      toast(`${plural(result.migrations.length, 'migration')} applied${result.backup ? '. Backup saved.' : ''}`);
-      await ctx.reload();
-    } catch (failure) { error.set(message(failure)); } finally { busy.set(false); }
-  };
   openDrawer({ title: `${app.title} ${app.version}`, icon: 'package', tint: 'blue', className: 'ctl-drawer',
     body: () => html`<div class="ctl-form">
       <p class="mono muted ctl-small">${app.source}</p>
-      ${app.update?.error ? Callout('err', 'info', app.update.error) : app.update ? html`<div>
-        ${Callout('warn', 'info', `Version ${app.update.to} is waiting. A backup is taken first, then its migrations run. Restart the server afterwards to load it.`)}
-        ${when(error, () => Callout('err', 'info', error))}
-        ${isAdmin(ctx) ? html`<div class="ctl-line"><span class="grow"></span>${Button({ label: () => busy.get() ? 'Backing up…' : 'Back up and migrate', icon: 'download',
-          variant: 'primary', disabled: busy, onClick: () => void migrate() })}</div>` : Callout('info', 'lock', 'Only an admin can migrate.')}
-        <p class="muted ctl-small">From the server shell it is <code>evlet migrate ${slug}</code>.</p></div>`
+      ${app.update?.error ? Callout('err', 'info', app.update.error) : app.update ? html`<div class="ctl-form">
+        ${Callout('warn', 'info', `Version ${app.update.to} is waiting to be migrated. Migrations run from the server shell, never from the browser. Stop the server first: Evlet never changes the database under a running server.`)}
+        ${Command(`evlet migrate ${slug}`)}
+        <p class="muted ctl-small">It takes a backup into data/backups first, then runs the migrations. Start the server again afterwards.</p></div>`
         : app.restart ? Callout('info', 'info', 'The database is migrated. Restart the server to load the new version.') : null}
       <section class="ctl-section"><h3>Models</h3>${app.models.length ? html`<div class="ctl-chips">${app.models.map(name =>
         html`<a class="ctl-chip" href=${ctx.router.href('models', {}, { model: name })}>${name}</a>`)}</div>` : html`<p class="muted ctl-small">None.</p>`}</section>

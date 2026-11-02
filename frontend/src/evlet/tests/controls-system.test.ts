@@ -10,12 +10,12 @@ const settings = { 'security.password_min': { file: 15, value: 15 }, 'security.s
   'security.two_step_roles': { file: ['admin'], value: ['admin'] }, 'security.controls_ips': { file: [], value: [] } };
 const notes = { id: 'notes', title: 'Notes', version: '0.1.0', source: 'apps/notes', models: ['NotesItem'], connectors: [], permissions: 2, schedules: ['nightly'],
   frontends: [{ name: 'notes.desk', path: '/notes', host: 'localhost', realm: 'desk' }], update: { from: '0.1.0', to: '0.2.0', error: null }, restart: false };
-const state = (migrated = false) => ({
+const state = () => ({
   instance: { name: 'Acme', host: 'localhost', evlet: '0.1.3', version: 2, slug: 'acme', managed: true },
-  me: { id: 1, username: 'owner', role: 'admin' }, apps: [migrated ? { ...notes, update: null, restart: true } : notes], jobs: { failed: 1 },
+  me: { id: 1, username: 'owner', role: 'admin' }, apps: [notes], jobs: { failed: 1 },
   roles: [{ id: 'admin', kind: 'framework', base: null, realm: 'desk', opens_controls: true, description: '', users: 1, app: null, declared: true }],
   models: [], scopes: { '': 'All records' }, settings, controls: { allow_ips: [], require_two_step: false },
-  attention: [{ tone: 'amber', icon: 'package', page: 'apps', title: 'Notes 0.2.0 is waiting to be migrated', text: 'Back up and migrate from Apps.' }],
+  attention: [{ tone: 'amber', icon: 'package', page: 'apps', title: 'Notes 0.2.0 is waiting to be migrated', text: 'Stop the server, then run evlet migrate acme on the server. It takes a backup first.' }],
   overrides: 2, users: { active: 1, total: 1 }, audit: [], two_step: false, links: false, client: '127.0.0.1', remove_fields: null, instance_fields: true,
 });
 const overrides = { version: 2, problems: [], items: [
@@ -37,14 +37,12 @@ afterEach(() => { running.splice(0).forEach(stop => stop()); stopAll(); });
 
 function open(path: string) {
   window.history.replaceState(null, '', path);
-  let migrated = false;
   const stub = server([
     ['GET', /\/api\/auth\/session$/, () => reply({ user: { id: 1, username: 'owner', role: 'admin' }, csrf: 'token' })],
-    ['GET', /\/api\/_controls\/state$/, () => reply(state(migrated))],
+    ['GET', /\/api\/_controls\/state$/, () => reply(state())],
     ['GET', /\/api\/_controls\/overrides$/, () => reply(overrides)],
     ['GET', /\/api\/_controls\/overrides\/export/, (sent: Sent) => reply(sent.url.includes('kind=') ? [{ file: 'apps/notes/notes/hooks.py', code: '# nightly is paused\n' }]
       : [{ file: 'instances/acme/config.py', code: 'security = Security(lockout=5)\n' }, { file: 'apps/notes/notes/hooks.py', code: '# nightly is paused\n' }])],
-    ['POST', /\/api\/_controls\/apps\/migrate$/, () => { migrated = true; return reply({ migrations: ['app5_notes__0002_done'], backup: '20261102.sqlite3' }); }],
     ['GET', /\/api\/_controls\/routing$/, () => reply({ rows: [{ host: 'localhost', path: '/controls', serves: 'evlet.controls', realm: 'control', source: 'locked', locked: true },
       { host: 'localhost', path: '/notes', serves: 'notes.desk', realm: 'desk', source: 'app notes', locked: false }],
       planned: ['/report', '/print'], hosts: [{ host: 'localhost', primary: false, realm: 'desk' }], primary: null, proxy: null,
@@ -59,14 +57,22 @@ function open(path: string) {
   const stop = router.start();
   const host = document.createElement('div');
   document.body.append(host);
-  const dispose = mount(host, () => Controls({ router, api: new ControlsClient({ fetch: stub.fetch }) }));
+  // The server refuses a POST or PATCH that is not JSON (evlet/app.py), so the stub does too.
+  const strict = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const type = Object.entries(init.headers ?? {}).find(([key]) => key.toLowerCase() === 'content-type')?.[1];
+    if (['POST', 'PATCH'].includes(init.method ?? 'GET') && type !== 'application/json') {
+      return new Response(JSON.stringify({ error: 'Send application/json' }), { status: 415, headers: { 'content-type': 'application/json' } });
+    }
+    return stub.fetch(input, init);
+  }) as typeof fetch;
+  const dispose = mount(host, () => Controls({ router, api: new ControlsClient({ fetch: strict }) }));
   running.push(() => { dispose(); stop(); });
   return { host, sent: stub.sent };
 }
 
 describe('Controls system pages', () => {
-  it('shows a waiting migration and backs up and migrates from the app drawer', async () => {
-    const { host, sent } = open('/controls/apps');
+  it('shows a waiting migration with the shell command and no browser migrate', async () => {
+    const { host } = open('/controls/apps');
     await until(() => expect(byText(host, '.ctl-app', /Notes/)).toBeTruthy());
     expect(text(byText(host, '.ctl-nav-item', /^Apps/))).toBe('Apps 1');
     expect(text(host.querySelector('.ctl-app'))).toContain('Migration waiting');
@@ -74,12 +80,10 @@ describe('Controls system pages', () => {
     await until(() => expect(text(document.querySelector('.modal'))).toContain('evlet install <app> --instance acme --trust'));
     click(byText(document.body, '.modal button', 'Got it'));
     click(host.querySelector('.ctl-app'));
-    await until(() => expect(text(document.querySelector('.drawer'))).toContain('Version 0.2.0 is waiting'));
-    expect(text(document.querySelector('.drawer'))).toContain('evlet migrate acme');
-    click(byText(document.body, '.drawer button', 'Back up and migrate'));
-    await until(() => expect(lastToast()).toBe('1 migration applied. Backup saved.'));
-    expect(requests(sent, 'POST', /apps\/migrate$/)).toHaveLength(1);
-    await until(() => expect(text(host.querySelector('.ctl-app'))).toContain('Restart to load'));
+    await until(() => expect(text(document.querySelector('.drawer'))).toContain('Version 0.2.0 is waiting to be migrated'));
+    expect(text(document.querySelector('.drawer pre'))).toBe('evlet migrate acme');
+    expect(text(document.querySelector('.drawer'))).toContain('Stop the server first');
+    expect(byText(document.body, '.drawer button', /migrate/i)).toBeNull();
   });
 
   it('lists routes read only and waits for the proxy command', async () => {
