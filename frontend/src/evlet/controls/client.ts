@@ -114,7 +114,7 @@ export interface CreatedKey { key: ApiKeyRow; token: string }
 /** The key routes a keys page needs: Controls (every user) or a person's own. */
 export interface KeysApi {
   keys(): Promise<{ items: ApiKeyRow[]; models?: Array<{ name: string; label: string }> }>;
-  createKey(body: { name: string; scope: KeyScope; user?: string }): Promise<CreatedKey>;
+  createKey(body: { name: string; scope: KeyScope; user?: string; password?: string; code?: string }): Promise<CreatedKey>;
   revokeKey(id: number): Promise<unknown>;
 }
 

@@ -98,8 +98,8 @@ With two-step sign-in on, the code is asked only:
   change again. Reading Controls never asks. An admin setting someone else's password counts as
   a Controls change. Only a verified session can be refreshed this way;
 - **before changing your own password**, together with the current password;
-- **for sensitive personal settings**: turning it off, making new backup codes and changing the
-  email ask only a current code or a backup code, not the password.
+- **for sensitive personal settings**: turning it off, making new backup codes, changing the
+  email and creating a personal API key ask only a current code or a backup code, not the password.
 
 Without two-step sign-in on, those personal settings and starting the set-up ask for the password
 instead, and Controls changes ask for nothing more.
@@ -217,7 +217,7 @@ sign-in, appearance and the other pages answer 404.
 | `POST /api/_settings/me/two-step`, `.../two-step/confirm`, `.../two-step/codes`, `.../two-step/off` | Start (`{"password"}`), confirm with `{"code"}`, new backup codes and turn off (`{"code"}`) |
 | `POST /api/_settings/me/two-step/verify` | `{"code"}`: a fresh code for this verified session, so changes in Controls need none for 10 minutes. Answers `{"verified", "until"}` |
 | `DELETE /api/_settings/me/sessions[/<id>]` | Sign out one other session, or every other one |
-| `GET/POST /api/_settings/me/keys`, `DELETE /api/_settings/me/keys/<id>` | Your API keys: list (with the models you can read), create `{"name", "scope"}` (the key is in this reply only), revoke. Desk sessions only |
+| `GET/POST /api/_settings/me/keys`, `DELETE /api/_settings/me/keys/<id>` | Your API keys: list (with the models you can read), create `{"name", "scope", "code"}` with two-step on or `{"name", "scope", "password"}` without (the key is in this reply only), revoke. Desk sessions only |
 | `GET /api/_settings/app/<app>` | Sections with values and defaults, `can_edit`, and the person's preferences |
 | `PATCH /api/_settings/app/<app>` | `{"values": {key: value or null}}`, editors only; one invalid value saves none |
 | `PATCH /api/_settings/me/app/<app>` | The person's preferences in that app |

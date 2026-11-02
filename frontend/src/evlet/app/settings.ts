@@ -163,7 +163,7 @@ export function SettingsView(ctx: SettingsContext, page: string): HTMLElement {
     }}</nav>`;
   const options: Array<[string, string]> = [...me.pages.map(id => [id, PAGES[id][0]] as [string, string]), ...me.apps.map(app => [`app/${app.id}`, `${app.title} settings`] as [string, string])];
   const content = page.startsWith('app/') ? AppSettingsPage(ctx, page.slice(4)) : ({ profile: ProfilePage, appearance: AppearancePage, security: SecurityPage,
-    notifications: NotificationsPage, email: EmailPage, ai: AiPage, keys: (ctx: SettingsContext) => later(async () => (await import('../settings/keys')).MyKeysPage({ api: ctx.api })) } as Record<string, (ctx: SettingsContext) => Node>)[page]?.(ctx) ?? null;
+    notifications: NotificationsPage, email: EmailPage, ai: AiPage, keys: (ctx: SettingsContext) => later(async () => (await import('../settings/keys')).MyKeysPage({ api: ctx.api, twoStep: ctx.me.peek().security.two_step.on })) } as Record<string, (ctx: SettingsContext) => Node>)[page]?.(ctx) ?? null;
   return html`<div class="set-wrap">${nav}<div class="set-main">${select(page, options, value => ctx.go(value), 'Settings page')}${content}</div></div>` as HTMLElement;
 }
 

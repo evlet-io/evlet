@@ -882,6 +882,10 @@ class Controls:
                       if self.business.policy.allows(user, model, 'read')]
             return 200, {'items': self.business.auth.keys(user.id), 'models': models}, []
         if path == '' and method == 'POST':
+            # A new key is a sensitive personal setting: a current code with two-step on, the password without.
+            body = dict(body) if isinstance(body, dict) else {}
+            proof = {key: body.pop(key) for key in ('password', 'code') if key in body}
+            self.business.settings.reauthenticate(scope, user, proof)
             return 201, self.create_key(user, body, personal=True), []
         match = re.fullmatch(r'/([1-9][0-9]{0,18})', path)
         if match and method == 'DELETE' and int(match[1]) <= 2**63 - 1:

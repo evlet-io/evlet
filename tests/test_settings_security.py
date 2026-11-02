@@ -366,3 +366,14 @@ def test_a_code_cannot_be_used_twice_by_requests_that_race(settled):
     # A second request that read the profile before the first one wrote it still loses.
     with app.database.transaction() as tx:
         assert settings._use_code(tx.connection, editor_id, stale, code) is False
+
+
+def test_a_new_personal_api_key_asks_a_code_when_two_step_is_on(settled):
+    app = settled
+    editor, raw, codes = enrol(app, 'editor')
+    body = {'name': 'Script', 'scope': {'access': 'read', 'models': None}}
+    enter_code = {'code': 'Enter a current code from your app, or a backup code.'}
+    assert editor('POST', '/api/_settings/me/keys', {**body, 'password': PASSWORD})[1]['fields'] == enter_code
+    assert editor('POST', '/api/_settings/me/keys', {**body, 'code': '000000'})[1]['fields'] == enter_code
+    status, created, _ = editor('POST', '/api/_settings/me/keys', {**body, 'code': codes[0]})
+    assert status == 201 and created['token'].startswith('evk_')

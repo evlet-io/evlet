@@ -177,8 +177,33 @@ describe('API keys', () => {
     await until(() => expect(document.querySelector('#ctl-k-name')).toBeTruthy());
     expect(document.querySelector('#ctl-k-user')).toBeNull();
     typeInto(document.querySelector<HTMLInputElement>('#ctl-k-name')!, 'Power BI export');
+    // Without two-step sign-in a new key asks for the password.
+    expect(document.querySelector('#ctl-k-code')).toBeNull();
+    click(byText(document.body, '.modal button', 'Create key'));
+    await until(() => expect(text(document.querySelector('.modal'))).toContain('Enter your password.'));
+    typeInto(document.querySelector<HTMLInputElement>('#ctl-k-password')!, 'my password');
     click(byText(document.body, '.modal button', 'Create key'));
     await until(() => expect(text(document.querySelector('.modal'))).toContain('evk_aaaa1111_yyy'));
-    expect(stub.sent.find(item => item.method === 'POST')!.body).toEqual({ name: 'Power BI export', scope: { access: 'read', models: null } });
+    expect(stub.sent.find(item => item.method === 'POST')!.body).toEqual({ name: 'Power BI export', scope: { access: 'read', models: null }, password: 'my password' });
+  });
+
+  it('asks only for a code before a new personal key when two-step sign-in is on', async () => {
+    const stub = server([
+      ['GET', /\/api\/_settings\/me\/keys$/, () => reply({ items: [], models: [] })],
+      ['POST', /\/api\/_settings\/me\/keys$/, (request: Sent) => reply({ key: { id: 1, user_id: 1, username: 'owner', role: 'admin', name: request.body.name,
+        prefix: 'evk_aaaa1111', scope: request.body.scope, created_at: 1790000000, last_used: null }, token: 'evk_aaaa1111_' + 'y'.repeat(43) }, 201)],
+    ] as any);
+    const host = document.createElement('div');
+    document.body.append(host);
+    running.push(mount(host, () => MyKeysPage({ api: new MyKeysClient({ fetch: stub.fetch }), twoStep: true })));
+    await until(() => expect(byText(host, 'button', 'Create key')).toBeTruthy());
+    click(byText(host, 'button', 'Create key'));
+    await until(() => expect(document.querySelector('#ctl-k-name')).toBeTruthy());
+    expect(document.querySelector('#ctl-k-password')).toBeNull();
+    typeInto(document.querySelector<HTMLInputElement>('#ctl-k-name')!, 'Script');
+    typeInto(document.querySelector<HTMLInputElement>('#ctl-k-code')!, '123456');
+    click(byText(document.body, '.modal button', 'Create key'));
+    await until(() => expect(text(document.querySelector('.modal'))).toContain('evk_aaaa1111_yyy'));
+    expect(stub.sent.find(item => item.method === 'POST')!.body).toEqual({ name: 'Script', scope: { access: 'read', models: null }, code: '123456' });
   });
 });
