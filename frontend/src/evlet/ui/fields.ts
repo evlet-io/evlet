@@ -278,6 +278,7 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
 
   if (kind.control === 'link') return LinkControl(field, id, options);
   if (kind.control === 'tags') return TagsControl(field, id, options);
+  if (kind.control === 'multiselect') return MultiSelectControl(field, id, options);
 
   // Text-like inputs: text, numbers, money, dates, times, durations, email, url, phone, long text.
   const textarea = kind.control === 'textarea';
@@ -404,6 +405,19 @@ function TagsControl(field: FieldLike, id: string, options: ControlOptions): Con
   return { element, commit: () => { const ok = add(input.value); if (ok) input.value = ''; return ok; }, focus: () => input.focus() };
 }
 
+// MultiSelect: one chip per choice; pressing a chip adds or removes it. Saved in the order of the choices.
+function MultiSelectControl(field: FieldLike, id: string, options: ControlOptions): Control {
+  const chosen = () => (field.value.get() as string[] | null) ?? [];
+  const toggle = (choice: string) => {
+    const now = untrack(chosen), next = (field.meta.choices ?? []).filter(item => item === choice ? !now.includes(item) : now.includes(item));
+    if (writeValue(field, next.length ? next : null)) options.onCommit?.();
+  };
+  const element = html`<div class="chips in-multi" id=${id} role="group" aria-label=${options.label ?? field.meta.label} aria-describedby=${options.describedBy ?? null}>${(field.meta.choices ?? []).map(choice =>
+    html`<button type="button" class="chip" class:on=${() => chosen().includes(choice)} aria-pressed=${() => String(chosen().includes(choice))}
+      disabled=${() => !field.editable.get()} on:click=${() => toggle(choice)}>${() => chosen().includes(choice) ? Icon('check', { size: 'xs' }) : null}${humanize(choice)}</button>`)}</div>` as HTMLElement;
+  return { element, commit: () => true, focus: () => element.querySelector<HTMLButtonElement>('button')?.focus() };
+}
+
 // ---------- BaseField and the field types ----------
 
 export interface FieldProps {
@@ -457,6 +471,7 @@ export const EmailField = typed('email');
 export const URLField = typed('url');
 export const PhoneField = typed('phone');
 export const TagsField = typed('tags');
+export const MultiSelectField = typed('multiselect');
 export const StateField = typed('state');
 export const SequenceField = typed('sequence');
 export const ReferenceField = typed('reference');

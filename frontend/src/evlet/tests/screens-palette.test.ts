@@ -54,10 +54,10 @@ describe('command palette', () => {
     start(routes());
     await until(() => expect(document.querySelector('.app')).not.toBeNull());
     press(document.body, 'k', { ctrlKey: true });
-    typeInto(input(), 'theme');
-    await until(() => expect(text(palette()!.querySelector('.pal-sec[aria-label="Preferences"] .lbl'))).toBe('Switch to dark theme'));
+    typeInto(input(), 'sidebar');
+    await until(() => expect(text(palette()!.querySelector('.pal-sec[aria-label="Preferences"] .lbl'))).toBe('Toggle sidebar'));
     press(input(), 'Enter');
-    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.querySelector('.app')!.classList.contains('collapsed')).toBe(true);
     press(document.body, 'k', { ctrlKey: true });
     typeInto(input(), 'new order');
     await until(() => expect(text(palette()!.querySelector('.pal-sec[aria-label="Pages and actions"] .pal-it'))).toBe('New orderCreate'));

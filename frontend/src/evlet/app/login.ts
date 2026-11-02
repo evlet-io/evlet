@@ -4,6 +4,7 @@ import { html, when } from '../dom';
 import { cell, type Cell } from '../reactive';
 import type { Session } from '../api';
 import { Button } from '../ui/base';
+import { TwoStepSetup } from './settings';
 
 export interface LoginProps {
   session: Session | null;
@@ -53,6 +54,37 @@ export function LoginScreen(props: LoginProps): HTMLElement {
     </main>
     <p class="ev-login-foot">Evlet · Python applications, thoughtfully put together.</p>
   </div>` as HTMLElement;
+}
+
+/** What login answers when the account needs a second step. */
+export interface Challenge { two_step: 'code' | 'setup'; ticket: string; secret?: string; uri?: string }
+
+/** The second step of signing in: a code from the authenticator app (or a backup code), or setting the app up. */
+export function TwoStepScreen(props: { session: Session | null; challenge: Challenge; error: Cell<string>; busy: Cell<boolean>; onSubmit: (code: string) => void; onCancel: () => void }): HTMLElement {
+  const code = cell(''), local = cell('');
+  const setup = props.challenge.two_step === 'setup';
+  const submit = (event: Event) => {
+    event.preventDefault();
+    if (props.busy.peek()) return;
+    const value = code.peek().trim();
+    if (setup && !/^\d{6}$/.test(value)) { local.set('Enter the 6 digits from the app.'); return; }
+    if (!value) { local.set('Enter the code from your authenticator app.'); return; }
+    props.onSubmit(value);
+  };
+  const message = () => local.get() || props.error.get();
+  return html`<div class="ev-login">
+    <div class="ev-login-brand">${Logo()}<strong>evlet</strong><span>${props.session?.application?.name || 'Your workspace'}</span></div>
+    <main class="ev-login-card" aria-labelledby="ev-login-title">
+      <h1 id="ev-login-title">${setup ? 'Set up two-step sign-in' : 'Two-step sign-in'}</h1>
+      <p>${setup ? 'Your role needs a code from an authenticator app, on top of your password.' : 'Enter the 6-digit code from your authenticator app, or one of your backup codes.'}</p>
+      <form on:submit=${submit}>
+        ${setup ? TwoStepSetup(props.challenge.secret ?? '', code, local) : html`<label for="tfa-code">Code</label><input id="tfa-code" class="input" autocomplete="one-time-code" maxlength="9"
+          prop:value=${code} disabled=${props.busy} on:input=${(event: Event) => { code.set((event.target as HTMLInputElement).value); local.set(''); }}>`}
+        ${when(() => Boolean(message()) && !(setup && local.get()), () => html`<p class="ev-error" role="alert">${message}</p>`)}
+        ${Button({ label: () => props.busy.get() ? 'Checking…' : setup ? 'Turn on and sign in' : 'Sign in', variant: 'primary', type: 'submit', icon: 'arrow-right', disabled: props.busy, className: 'ev-login-submit' })}
+      </form>
+      <button type="button" class="link" on:click=${props.onCancel}>Use another account</button>
+    </main></div>` as HTMLElement;
 }
 
 /** Shown while the session is read. */

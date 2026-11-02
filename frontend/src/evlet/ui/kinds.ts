@@ -5,7 +5,7 @@
 // dates, date-times in UTC, times as HH:MM:SS, durations as ISO 8601 (PT1H30M), tags as lists.
 
 import { parse as parseNumber, quantize, text as numberText } from '../model/finite';
-import { formatDate, formatDateTime, formatMoney, formatNumber, GST_OFFSET_MINUTES, parseDate } from '../model/format';
+import { formatDate, formatDateTime, formatMoney, formatNumber, parseDate, plainNumber, wallToUtc } from '../model/format';
 import type { FieldSchema } from '../model/schema';
 
 /** A message for the user when typed text is not a valid value. */
@@ -24,7 +24,7 @@ export interface Kind {
   inputMode?: string;
   placeholder?: string;
   /** How the control is built: a text input (default) or a dedicated control. */
-  control?: 'textarea' | 'switch' | 'select' | 'link' | 'tags' | 'readonly';
+  control?: 'textarea' | 'switch' | 'select' | 'link' | 'tags' | 'multiselect' | 'readonly';
 }
 
 const empty = (value: unknown) => value === null || value === undefined || value === '';
@@ -43,7 +43,7 @@ function bounds(value: number | string, meta: FieldSchema, show: (value: string)
 
 function decimal(scale: (meta: FieldSchema) => number) {
   return (text: string, meta: FieldSchema) => {
-    const clean = text.replace(/[,\s]/g, '').replace(/%$/, '').replace(/^[A-Z]{3}/, '');
+    const clean = plainNumber(text).replace(/%$/, '').replace(/^[A-Z]{3}/, '');
     if (!clean) return null;
     if (!/^-?(\d+\.?\d*|\.\d+)$/.test(clean)) throw new InputError('Enter a number, for example 1250.50');
     const places = (clean.split('.')[1] ?? '').length, allowed = scale(meta);
@@ -108,15 +108,15 @@ export function parseDuration(text: string): number {
 
 const pad = (number: number) => String(number).padStart(2, '0');
 
-/** 'DD-MM-YYYY HH:MM' in GST to a UTC ISO timestamp. */
+/** 'DD-MM-YYYY HH:MM' (or the person's date format) in their time zone to a UTC ISO timestamp. */
 export function parseDateTime(text: string): string {
-  const match = /^(\d{1,2}[-/.]\d{1,2}[-/.]\d{4})(?:[ T,]+(\d{1,2})[:.](\d{2}))?$/.exec(text.trim());
+  const match = /^(\d{1,2}[-/.]\d{1,2}[-/.]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]{3}\s+\d{4})(?:[ T,]+(\d{1,2})[:.](\d{2}))?$/.exec(text.trim());
   const day = match ? parseDate(match[1]) : null;
   if (!match || !day) throw new InputError('Enter a date and time as DD-MM-YYYY HH:MM');
   const hours = Number(match[2] ?? 0), minutes = Number(match[3] ?? 0);
   if (hours > 23 || minutes > 59) throw new InputError('Enter a time from 00:00 to 23:59');
   const [year, month, date] = day.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, date, hours, minutes) - GST_OFFSET_MINUTES * 60000).toISOString().replace('.000Z', 'Z');
+  return wallToUtc(year, month, date, hours, minutes).toISOString().replace('.000Z', 'Z');
 }
 
 /** '14:05', '2:05 pm' or '14:05:30' to 'HH:MM:SS'. */
@@ -162,7 +162,7 @@ export const KINDS: Record<string, Kind> = {
     format: value => empty(value) ? '' : formatNumber(String(value), 0),
     edit: value => empty(value) ? '' : String(value),
     parse: (input, meta) => {
-      const clean = input.replace(/[,\s]/g, '');
+      const clean = plainNumber(input);
       if (!clean) return null;
       if (!/^-?\d+$/.test(clean)) throw new InputError('Enter a whole number');
       const value = Number(clean);
@@ -171,12 +171,12 @@ export const KINDS: Record<string, Kind> = {
       return value;
     },
     align: 'right', inputMode: 'numeric',
-    suffix: meta => (meta as any).unit ?? null,
+    suffix: meta => meta.suffix || ((meta as any).unit ?? null),
   },
   decimal: {
     format: (value, meta) => empty(value) ? '' : formatNumber(value as string, scaleOf(meta, 2)),
     edit: (value, meta) => empty(value) ? '' : formatNumber(value as string, scaleOf(meta, 2)),
-    parse: decimal(meta => scaleOf(meta, 2)), align: 'right', inputMode: 'decimal',
+    parse: decimal(meta => scaleOf(meta, 2)), align: 'right', inputMode: 'decimal', suffix: meta => meta.suffix || null,
   },
   currency: {
     format: (value, meta) => empty(value) ? '' : formatMoney(value as string, { currency: currencyOf(meta), scale: scaleOf(meta, 2) }),
@@ -244,6 +244,7 @@ export const KINDS: Record<string, Kind> = {
     },
   },
   tags: { format: value => Array.isArray(value) ? value.join(', ') : '', control: 'tags' },
+  multiselect: { format: value => Array.isArray(value) ? value.map(item => humanize(String(item))).join(', ') : '', control: 'multiselect' },
   state: { format: value => empty(value) ? '' : humanize(String(value)), control: 'readonly' },
   sequence: { format: value => empty(value) ? '' : String(value), control: 'readonly' },
   reference: {

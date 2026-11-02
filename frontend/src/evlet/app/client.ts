@@ -2,7 +2,7 @@
 // cell per record holding its last detail, so the availability keys of a detail (_moves,
 // _actions, _locked, _void, _revise, _effects, revised_by) are at hand next to the record store.
 
-import { ApiClient, type ApiResponse, type ClientOptions, type Page, type RecordData, type RequestOptions } from '../api';
+import { ApiClient, type ApiResponse, type ClientOptions, type Page, type RecordData, type RequestOptions, type Session } from '../api';
 import { cell, type Cell } from '../reactive';
 
 const DETAIL = /^\/api\/([A-Za-z][A-Za-z0-9_]*)\/(\d+)(?:\/(?:moves\/[^/]+|actions\/[^/]+|void|revise))?$/;
@@ -35,6 +35,13 @@ export class AppClient extends ApiClient {
   }
 
   forget() { this.details.clear(); }
+
+  /** Finish a two-step sign-in with the ticket from login and a code. */
+  async secondStep(ticket: string, code: string): Promise<Session & { backup_codes?: string[] }> {
+    const { data } = await this.request<Session & { backup_codes?: string[] }>('POST', '/api/auth/login', { body: { ticket, code } });
+    this.csrf = data.csrf ?? '';
+    return data;
+  }
 
   /** First-run setup: the first administrator account. */
   async setup(username: string, password: string) {

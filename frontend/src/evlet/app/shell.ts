@@ -4,11 +4,12 @@
 
 import { html, listen, when, type Child } from '../dom';
 import { cell, derive, effect } from '../reactive';
-import { Avatar, Icon, IconButton, Key } from '../ui/base';
+import { Icon, IconButton, Key } from '../ui/base';
 import { tooltip } from '../ui/tooltip';
 import { MenuButton, mountToasts, openModal, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
-import { applyTheme, type Theme } from './prefs';
-import { docsOn, type AppContext } from './context';
+import { applyTheme } from './prefs';
+import { docsOn, goSettings, type AppContext } from './context';
+import { displayName, PersonMark } from './settings';
 import { groupOf, identity, rootModels, type ScreenModel } from './meta';
 
 const PHONE = '(max-width: 760px)';
@@ -16,7 +17,7 @@ const isPhone = () => { try { return Boolean(window.matchMedia?.(PHONE)?.matches
 
 export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const { prefs, router } = ctx;
-  const collapsed = prefs.collapsed, theme = prefs.theme;
+  const collapsed = prefs.collapsed;
   const mobileOpen = cell(false, { name: 'shell.mobileOpen' });
   const route = router.route;
   const models = rootModels(ctx.schema);
@@ -24,7 +25,8 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const appName = application.playground ? 'Playground' : application.name || 'Evlet';
   const tenant = (ctx.session.tenant as { label?: string; name?: string } | undefined);
   const workspace = tenant?.label ?? tenant?.name ?? 'Workspace';
-  effect(() => applyTheme(theme.get()));
+  // Light only for now; a dark theme comes in a later release.
+  applyTheme('light');
   // Close the drawer and any menu when the page changes.
   effect(() => { route.get(); mobileOpen.set(false); closePopover(); });
 
@@ -38,27 +40,40 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     return item;
   };
   const groups = ['Documents', 'Records'].map(name => [name, models.filter(model => groupOf(model) === name)] as const).filter(([, list]) => list.length);
+  // Record counts beside each model, when the person turned them on in Settings.
+  const counts = cell<Record<string, number>>({});
+  effect(() => {
+    if (!ctx.me.get()?.prefs.counts) return;
+    for (const model of models) void ctx.api.list(model.name, { limit: 1 }).then(page => counts.set({ ...counts.peek(), [model.name]: page.total }), () => {});
+  });
   const modelItem = (model: ScreenModel) => {
     const { icon, tint } = identity(model);
-    return navItem({ href: router.href('list', { model: model.name }), icon, tint, label: model.plural, active: () => activeModel.get() === model.name });
+    const count = () => ctx.me.get()?.prefs.counts && counts.get()[model.name] !== undefined
+      ? html`<span class="count">${(n => n > 999 ? `${(n / 1000).toFixed(1)}k` : String(n))(counts.get()[model.name])}</span>` : null;
+    return navItem({ href: router.href('list', { model: model.name }), icon, tint, label: model.plural, active: () => activeModel.get() === model.name, count });
   };
   const recents = derive(() => prefs.recentRecords.get().filter(item => models.some(model => model.name === item.model)).slice(0, 5));
 
-  const themeItems = (): MenuItem[] => ([['system', 'Use system theme', 'monitor'], ['light', 'Light theme', 'sun'], ['dark', 'Dark theme', 'moon']] as Array<[Theme, string, string]>)
-    .map(([value, label, icon]) => ({ label: theme.peek() === value ? `${label} (on)` : label, icon: icon === 'monitor' ? 'settings' : icon, onSelect: () => theme.set(value) }));
-  const userMenu = (anchor: HTMLElement) => openPopover(anchor, close => Menu([
-    { heading: `${ctx.user.username} · ${ctx.user.role}` },
-    ...themeItems(),
-    'separator',
-    { label: prefs.density.peek() === 'compact' ? 'Comfortable density' : 'Compact density', icon: 'rows-3', onSelect: () => prefs.density.set(prefs.density.peek() === 'compact' ? 'comfortable' : 'compact') },
-    'separator',
-    { label: 'Sign out', icon: 'log-out', onSelect: () => void ctx.signOut() },
-  ], close), { label: 'Account' });
-  const isDark = () => theme.get() === 'dark' || (theme.get() === 'system' && (() => { try { return window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ?? false; } catch { return false; } })());
+  // The one account area, at the bottom of the sidebar. Its menu follows the Settings design order.
+  const settings = ctx.me;
+  const fullName = () => settings.get()?.profile.full_name || ctx.user.username;
+  const userMenu = (anchor: HTMLElement) => openPopover(anchor, close => {
+    const me = settings.peek();
+    const page = (label: string, icon: string, target: string): MenuItem => ({ label, icon, onSelect: () => void goSettings(router, target) });
+    const items: MenuItem[] = me ? [
+      page('Your profile', 'user', 'profile'), ...(me.portal ? [] : [page('Appearance', 'sun', 'appearance')]), page('Sign-in & security', 'lock', 'security'),
+      'separator', page('All settings', 'settings', me.last_page || 'profile'),
+      ...(me.controls ? ['separator' as const, { label: 'Controls', icon: 'sliders-horizontal', hint: '↗', onSelect: () => { window.open('/controls', '_blank', 'noopener'); } }] : []),
+      'separator',
+    ] : [];
+    return html`<div class="me-head">${PersonMark(fullName, () => Boolean(settings.get()?.profile.photo), ctx.photo, 'lg')}<span><strong>${fullName}</strong>
+      <small>${() => settings.get()?.profile.email || ctx.user.role}</small></span></div>${Menu([...items, { label: 'Sign out', icon: 'log-out', onSelect: () => void ctx.signOut() }], close)}`;
+  }, { label: 'Account' });
 
   const me = html`<button type="button" class="me" aria-haspopup="menu" aria-expanded="false" aria-label=${`Account: ${ctx.user.username}`}
-    on:click=${(event: MouseEvent) => userMenu(event.currentTarget as HTMLElement)}>${Avatar({ name: ctx.user.username, size: 'md' })}
-    <div style="min-width:0"><div class="n">${ctx.user.username}</div><div class="e">${ctx.user.role}</div></div></button>` as HTMLElement;
+    on:click=${(event: MouseEvent) => userMenu(event.currentTarget as HTMLElement)}>${PersonMark(() => displayName(settings.get(), ctx.user.username), () => Boolean(settings.get()?.profile.photo), ctx.photo)}
+    <div style="min-width:0"><div class="n">${() => displayName(settings.get(), ctx.user.username)}</div><div class="e">${() => settings.get()?.profile.title || ctx.user.role}</div></div>
+    ${Icon('chevrons-up-down', { size: 'xs', className: 'me-chev' })}</button>` as HTMLElement;
 
   const sidebar = html`<aside class="sidebar" id="ev-sidebar" aria-label="Main navigation">
     <div class="ws"><div class="ws-btn"><span class="logo">${appName.slice(0, 1).toUpperCase()}</span><span class="ws-text" style="min-width:0;flex:1">
@@ -78,7 +93,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
       </nav>
       ${ctx.dev ? html`<div class="side-bottom"><a class="nav-item" href=${ctx.libraryHref} rel="external" ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? 'Library' : null, 'right')}>
         ${Icon('layers', { tint: 'violet' })}<span class="lbl">Library</span></a></div>` : null}
-      <div class="side-foot">${me}${IconButton({ icon: 'moon', tip: () => isDark() ? 'Light theme' : 'Dark theme', onClick: () => theme.set(isDark() ? 'light' : 'dark') })}</div>
+      <div class="side-foot">${me}</div>
     </div></aside>` as HTMLElement;
 
   const creatable = models.filter(model => model.permissions?.create !== false);
@@ -98,7 +113,8 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
           onSelect: () => void router.go('create', { model: model.name }) })) })] : null}
     </div></header>` as HTMLElement;
 
-  const shell = html`<div class="app" class:collapsed=${collapsed} class:mobile-open=${mobileOpen} class:compact=${() => prefs.density.get() === 'compact'}>
+  const shell = html`<div class="app" class:collapsed=${collapsed} class:mobile-open=${mobileOpen} class:compact=${() => (ctx.me.get()?.prefs.density ?? prefs.density.get()) === 'compact'}
+    class:large=${() => ctx.me.get()?.prefs.text === 'large'}>
     ${sidebar}<div class="main">${topbar}<main class="view" id="ev-view" tabindex="-1">${view}</main></div>
     <div class="scrim ev-side-scrim" class:show=${mobileOpen} on:click=${() => mobileOpen.set(false)}></div></div>` as HTMLElement;
   listen(document, 'keydown', event => keys(ctx, event as KeyboardEvent));
