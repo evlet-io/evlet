@@ -107,7 +107,8 @@ class Exporter:
         if value in SCOPES:
             return f'SCOPES[{value!r}]'
         if value == 'own_customer':
-            return 'own_customer()'
+            # permissions.own_customer, as Controls compiles the preset: the customer model scopes its own id.
+            return "own_customer(field='id')" if self.registry.name_for(model) == 'customer' else 'own_customer()'
         return literal(self.controls.scopes.get(value))
 
     def perm(self, key, value):

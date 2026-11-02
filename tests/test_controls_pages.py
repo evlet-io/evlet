@@ -10,7 +10,7 @@ from evlet.cli.install import install
 from evlet.ui import ViewRegistry
 from test_business import client, hashed, secured  # noqa: F401
 from test_cli_lifecycle import change_model, environment_stub, project, runtime  # noqa: F401
-from test_controls import add_user, password, save  # noqa: F401
+from test_controls import DESK, add_user, hosts, on_host, password, save  # noqa: F401
 from test_customization import build, models
 
 UNBUILT = {'error': 'UI assets are not built. Run the frontend production build.'}
@@ -148,6 +148,73 @@ def test_routing_uses_evlet_proxy_when_it_is_installed(secured, monkeypatch):
         {'host': '127.0.0.1', 'records': '127.0.0.1', 'dns': 'points here', 'certificate': 'valid', 'expires': 1800000000},
         {'host': 'localhost', 'records': '', 'dns': 'no A or AAAA record', 'certificate': None, 'expires': None},
         {'host': 'portal.localhost', 'records': '', 'dns': 'no A or AAAA record', 'certificate': None, 'expires': None}]}
+
+
+# ---------- with sub-hosts and realms ----------
+
+def test_routing_finds_evlet_proxy_and_lists_sub_hosts_with_their_sign_in(hosts):
+    import evlet.cli.proxy
+    from evlet.controls_system import System
+    assert System.proxy() is evlet.cli.proxy
+    admin = on_host(hosts, 'admin', DESK)
+    routing = admin('GET', '/api/_controls/routing')[1]
+    assert routing['hosts'] == [{'host': '127.0.0.1', 'primary': False, 'sub': False, 'realm': 'desk'},
+                                {'host': 'localhost', 'primary': False, 'sub': False, 'realm': 'desk'},
+                                {'host': 'portal.localhost', 'primary': False, 'sub': True, 'realm': 'portal'}]
+    assert {row['realm'] for row in routing['rows'] if row['host'] == 'portal.localhost'} == {'portal'}
+    # Without a primary host the proxy refuses, and the page says why.
+    assert routing['proxy'] is None and routing['proxy_error'].startswith('Set a primary host')
+
+
+def test_routing_writes_the_proxy_config_and_checks_hosts_with_evlet_proxy(hosts, monkeypatch):
+    import evlet.cli.proxy as proxy
+    import evlet.controls_system as system
+    from evlet import AppDefinition, Frontend, Host
+    from evlet.routing import resolve_routes
+    portal = Frontend('portal', kind='static', dist='dist', path='/portal', auth='portal')
+    routes = resolve_routes([('shop', AppDefinition(frontends=(portal,)))], None,
+                            {'primary': Host('erp.acme.com'), 'hosts': (Host('portal.acme.com', root=portal),)})
+    controls = hosts.business.controls
+    monkeypatch.setattr(controls, 'routes', routes)
+    routing = controls.system.routing()
+    assert routing['hosts'] == [{'host': 'erp.acme.com', 'primary': True, 'sub': False, 'realm': 'desk'},
+                                {'host': 'portal.acme.com', 'primary': False, 'sub': True, 'realm': 'portal'}]
+    assert routing['proxy_error'] is None and routing['proxy'] == {'caddy': proxy.caddy(routes, routes.port, '<name>'),
+                                                                   'nginx': proxy.nginx(routes, routes.port, '<name>')}
+    # Controls and Docs stay on the primary host: the sub-host block refuses them.
+    assert routing['proxy']['caddy'].count('respond @primary_only 404') == 1
+    records = {'erp.acme.com': '9.9.9.9', 'portal.acme.com': '1.1.1.1'}
+    monkeypatch.setattr(proxy, 'server_addresses', lambda: {'9.9.9.9'})
+    monkeypatch.setattr(system, 'bounded', lambda resolve: lambda host, port, **options: [(2, 1, 6, '', (records[host], 0))])
+    monkeypatch.setattr(system, 'certificate', lambda host: {'certificate': 'valid', 'expires': 1800000000})
+    checked = controls.system.check_hosts(types.SimpleNamespace(id=1))
+    assert checked == {'ok': False, 'notes': [], 'hosts': [
+        {'host': 'erp.acme.com', 'records': '9.9.9.9', 'dns': 'points here', 'certificate': 'valid', 'expires': 1800000000},
+        {'host': 'portal.acme.com', 'records': '1.1.1.1', 'dns': 'points elsewhere', 'certificate': None, 'expires': None}]}
+
+
+def test_export_writes_the_own_customer_preset_with_the_public_function(hosts):
+    from evlet import own_customer
+    from evlet.auth import User
+    from examples.playground.models import Customer, Project
+    admin = on_host(hosts, 'admin', DESK)
+    value = {'ops': ['read'], 'read': None, 'write': None, 'scope': 'own_customer'}
+    assert save(admin, ('perm', 'editor|Project', value), ('perm', 'editor|Customer', value))[0] == 200
+    code = next(item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1] if item['file'].endswith('permissions.py'))
+    assert "('editor', Project): Rule(operations=('read',), read_fields=None, write_fields=None, scope=own_customer())," in code
+    assert "('editor', Customer): Rule(operations=('read',), read_fields=None, write_fields=None, scope=own_customer(field='id'))," in code
+    names = {**{key: getattr(evlet, key) for key in evlet.__all__}, 'Customer': Customer, 'Project': Project}
+    loaded = {}
+    exec(code, names, loaded)
+    # The exported scopes are the ones Controls applies, over the user's links.
+    user = User(5, 'rep', 'editor', links=(('customer', 7),))
+    for model in (Project, Customer):
+        assert loaded['rules'][('editor', model)].scope(user) == controls_scope(hosts, model)(user) != {}
+    assert own_customer()(user) == {'customer__in': [7]}
+
+
+def controls_scope(app, model):
+    return app.business.controls.compile_scope('own_customer', model)
 
 
 # ---------- apps ----------

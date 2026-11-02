@@ -217,11 +217,13 @@ runs the version it started with, the page says to restart it.
 
 ## Routing
 
-Read only. The route table (`RouteTable.rows()`) with each row's source and locked state, and
-the hosts. Proxy config and the host check (DNS, the same report as `evlet proxy --check`, and
-the certificate of each host that points here) use `evlet proxy`, which arrives with sub-hosts;
-until then the page says so. Each person can check hosts once every 10 seconds, and each DNS
-lookup gives up after 5 seconds. Change routes in the instance's `routes.py`.
+Read only. The route table (`RouteTable.rows()`) with each row's sign-in realm, source and
+locked state, and the hosts: the primary host, each sub-host and the sign-in realm it serves
+(`RouteTable.realm`). Proxy config and the host check (DNS, the same report as
+`evlet proxy --check`, and the certificate of each host that points here) use `evlet proxy`.
+Both need a primary host (`routes.py` or `Instance.domain`); without one the page shows why.
+Each person can check hosts once every 10 seconds, and each DNS lookup gives up after 5 seconds.
+Change routes in the instance's `routes.py`.
 
 ## Jobs
 
@@ -243,7 +245,7 @@ they are removed on the Models page.
 
 | Kind | File | Code |
 |---|---|---|
-| `perm` | `apps/<app>/<package>/permissions.py` | `rules = {("editor", Lead): Rule(operations=..., read_fields=..., write_fields=..., scope=...)}` |
+| `perm` | `apps/<app>/<package>/permissions.py` | `rules = {("editor", Lead): Rule(operations=..., read_fields=..., write_fields=..., scope=...)}`. The `own_customer` preset is written as the public `own_customer()`, or `own_customer(field='id')` on the customer model |
 | `field`, `custom`, `naming` | The file that declares the model, such as `apps/notes/models/item.py` | The field lines as models.py writes them, with the changes merged in, and `Meta.naming = Naming(...)`. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. Arguments set in code, such as a callable default or validator, are written as `...` with a comment to copy them from models.py, so the code always compiles. |
 | `layout`, `list` | `apps/<app>/<package>/views/__init__.py` | `FormView(model=..., layout=Column(children=[FormLayout(...)]))`, `ListView(model=..., columns=..., page_size=..., order_by=...)` |
 | `setting` | `instances/<name>/routes.py` or `config.py` | `ControlsAccess(allow_ips=...)`; `Security(...)`, which config.py does not read yet; a comment for a paused schedule |

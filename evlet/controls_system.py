@@ -112,12 +112,12 @@ class System:
     def routing(self):
         from .routing import PLANNED, RESERVED
         routes, proxy = self.controls.routes, self.proxy()
-        realm = getattr(routes, 'realm', lambda host: 'desk')
+        subs = routes.sub_hosts()
         result = {
             'rows': [{'host': row.host, 'path': row.path, 'serves': row.serves, 'realm': row.realm, 'source': row.source, 'locked': row.locked}
                      for row in routes.rows()],
             'planned': ['/' + name for name, status in RESERVED.items() if status == PLANNED],
-            'hosts': [{'host': host, 'primary': host == routes.primary, 'realm': realm(host)} for host in routes.hosts()],
+            'hosts': [{'host': host, 'primary': host == routes.primary, 'sub': host in subs, 'realm': routes.realm(host)} for host in routes.hosts()],
             'primary': routes.primary, 'proxy': None, 'proxy_error': None if proxy else PROXY_LATER,
         }
         if proxy is not None:

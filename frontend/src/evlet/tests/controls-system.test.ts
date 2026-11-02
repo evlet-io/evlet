@@ -45,8 +45,8 @@ function open(path: string) {
       : [{ file: 'instances/acme/config.py', code: 'security = Security(lockout=5)\n' }, { file: 'apps/notes/notes/hooks.py', code: '# nightly is paused\n' }])],
     ['GET', /\/api\/_controls\/routing$/, () => reply({ rows: [{ host: 'localhost', path: '/controls', serves: 'evlet.controls', realm: 'control', source: 'locked', locked: true },
       { host: 'localhost', path: '/notes', serves: 'notes.desk', realm: 'desk', source: 'app notes', locked: false }],
-      planned: ['/report', '/print'], hosts: [{ host: 'localhost', primary: false, realm: 'desk' }], primary: null, proxy: null,
-      proxy_error: 'Proxy config and host checks arrive with sub-hosts. Until then, use evlet routes on the server.' })],
+      planned: ['/report', '/print'], hosts: [{ host: 'erp.acme.com', primary: true, sub: false, realm: 'desk' }, { host: 'portal.acme.com', primary: false, sub: true, realm: 'portal' }],
+      primary: 'erp.acme.com', proxy: { caddy: 'portal.acme.com {\n\trespond @primary_only 404\n}', nginx: 'server_name erp.acme.com portal.acme.com;' }, proxy_error: null })],
     ['GET', /\/api\/_controls\/jobs$/, () => reply(jobs())],
     ['POST', /\/api\/_controls\/jobs\/schedules\/nightly$/, () => reply({ ...jobs(), schedules: [{ ...jobs().schedules[0], active: true, paused: false }] })],
     ['POST', /\/api\/_controls\/jobs\/schedules\/nightly\/run$/, () => reply({ ...jobs(), job: 8 })],
@@ -86,14 +86,17 @@ describe('Controls system pages', () => {
     expect(byText(document.body, '.drawer button', /migrate/i)).toBeNull();
   });
 
-  it('lists routes read only and waits for the proxy command', async () => {
+  it('lists routes read only, the sub-hosts with their sign-in and the proxy config', async () => {
     const { host } = open('/controls/routing');
     await until(() => expect(byText(host, 'tr', /\/notes/)).toBeTruthy());
     expect(text(byText(host, 'tr', /\/controls/))).toContain('Locked');
     expect(text(byText(host, 'tr', /\/notes/))).toContain('App notes');
-    expect(text(host)).toContain('Proxy config and host checks arrive with sub-hosts.');
-    expect(byText<HTMLButtonElement>(host, 'button', 'Check hosts')!.disabled).toBe(true);
+    expect(text(byText(host, 'tr', /erp\.acme\.com/))).toContain('Primary');
+    expect(text(byText(host, 'tr', /portal\.acme\.com/))).toMatch(/Sub-host\s*portal/);
+    expect(byText<HTMLButtonElement>(host, 'button', 'Check hosts')!.disabled).toBe(false);
     expect(text(byText(host, 'tr', /Reserved/))).toContain('/report, /print');
+    click(byText(host, 'button', 'Proxy config'));
+    await until(() => expect(text(document.querySelector('.modal pre'))).toContain('respond @primary_only 404'));
   });
 
   it('pauses and resumes schedules, runs one now and retries failed jobs only', async () => {

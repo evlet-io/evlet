@@ -57,7 +57,7 @@ export interface AppInfo {
 }
 export interface RouteRow { host: string; path: string; serves: string; realm: string; source: string; locked: boolean }
 export interface Routing {
-  rows: RouteRow[]; planned: string[]; hosts: Array<{ host: string; primary: boolean; realm: string }>; primary: string | null;
+  rows: RouteRow[]; planned: string[]; hosts: Array<{ host: string; primary: boolean; sub: boolean; realm: string }>; primary: string | null;
   proxy: { caddy: string; nginx: string } | null; proxy_error: string | null;
 }
 export interface HostCheck { host: string; records: string; dns: string | null; certificate: 'valid' | 'missing' | null; expires: number | null }

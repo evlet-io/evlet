@@ -115,8 +115,8 @@ export function RoutingPage(ctx: ControlsContext): HTMLElement {
     ${() => { const value = routing.get(); if (!value) return html`<div class="ctl-empty">Loading routes…</div>`; return [
       value.proxy_error ? Callout('warn', 'info', value.proxy_error) : null,
       html`<section class="ctl-card ctl-gap"><div class="ctl-card-head"><div><h2>Hosts</h2><p>Each host must point at this server before a certificate is issued</p></div></div>
-        <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Host</th><th>Serves</th><th>DNS</th><th>Certificate</th><th>Points to</th><th>Renews</th></tr></thead><tbody>
-        ${value.hosts.map(host => html`<tr><td class="strong">${host.host}</td><td>${host.primary ? StatusPill({ label: 'Primary', tint: 'violet' }) : html`<span>${host.realm}</span>`}</td>
+        <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Host</th><th>Kind</th><th>Sign-in</th><th>DNS</th><th>Certificate</th><th>Points to</th><th>Renews</th></tr></thead><tbody>
+        ${value.hosts.map(host => html`<tr><td class="strong">${host.host}</td><td>${host.primary ? StatusPill({ label: 'Primary', tint: 'violet' }) : host.sub ? StatusPill({ label: 'Sub-host', tint: 'teal' }) : html`<span class="muted">Local</span>`}</td><td>${host.realm}</td>
           <td>${() => dns(checks.get().get(host.host))}</td><td>${() => cert(checks.get().get(host.host))}</td>
           <td class="mono">${() => checks.get().get(host.host)?.records || ''}</td><td class="muted num">${() => stamp(checks.get().get(host.host)?.expires)}</td></tr>`)}
         </tbody></table></div>${() => notes.get().map(note => html`<p class="muted ctl-small ctl-pad">${note}</p>`)}</section>`,
