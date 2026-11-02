@@ -13,9 +13,9 @@ from examples.playground.models import Customer, Invoice, Project, registry
 from test_business import client, hashed, http, secured
 
 
-def with_key(app, token, method, path, data=None, **headers):
+def with_key(app, token, method, path, data=None, client='127.0.0.1'):
     # No cookie, no CSRF token and no request header: the key alone authenticates.
-    return http(app, method, path, data, headers={b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b'', **headers})
+    return http(app, method, path, data, headers={b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b''}, client=client)
 
 
 def create(c, name='Script', scope=None, user=None, personal=False):
@@ -136,3 +136,53 @@ def test_key_requests_are_rate_limited(secured, monkeypatch):
     monkeypatch.setattr(auth_module, 'KEY_FAILURES', 2)
     bad = token[:-2] + 'zz'
     assert [with_key(secured, bad, 'GET', '/api/customer', client='10.9.9.9')[0] for _ in range(3)] == [401, 401, 429]
+
+
+def test_a_valid_key_is_never_throttled_by_other_keys_failures(secured, monkeypatch):
+    monkeypatch.setattr(auth_module, 'KEY_FAILURES', 3)
+    token = create(client(secured))[1]['token']
+    prefix = token.split('_')[1]
+    wrong = f'evk_{prefix}_' + 'A' * 43
+    assert [with_key(secured, wrong, 'GET', '/api/customer', client='10.1.1.1')[0] for _ in range(4)] == [401, 401, 401, 429]
+    assert with_key(secured, token, 'GET', '/api/customer', client='10.1.1.1')[0] == 200
+    # Failures count per network and prefix: another prefix from the same network is still answered.
+    assert with_key(secured, 'evk_zzzzzzzz_' + 'A' * 43, 'GET', '/api/customer', client='10.1.1.1')[0] == 401
+    # The trusted proxy reading of the client address is used when the auth has one.
+    secured.business.auth.client_address = lambda scope: '10.1.1.1'
+    assert with_key(secured, wrong, 'GET', '/api/customer', client='10.7.7.7')[0] == 429
+
+
+def test_only_a_well_formed_key_skips_the_request_header(secured):
+    status, payload, _ = http(secured, 'POST', '/api/customer', {'name': 'x'}, headers={b'authorization': b'Bearer junk', b'x-evlet-request': b''})
+    assert (status, payload) == (403, {'error': 'Missing request protection header'})
+
+
+def test_jobs_queued_with_a_key_keep_its_scope_and_stop_when_it_is_revoked(secured, monkeypatch):
+    from evlet import Task
+    seen = []
+    jobs = secured.business.jobs
+    monkeypatch.setitem(jobs.tasks, 'project_progress', Task('project_progress', lambda tx, job, payload: seen.append(job.user)))
+    admin = client(secured)
+    project = admin('POST', '/api/project', {'name': 'Keyed'})[1]
+    created = create(admin, 'Worker', {'access': 'write', 'models': ['Project']})[1]
+    token = created['token']
+    assert with_key(secured, token, 'POST', f"/api/project/{project['id']}/actions/refresh_progress")[0] == 202
+    assert jobs.run_one()
+    assert seen[0].access is not None and seen[0].access.write and {model.__name__ for model in seen[0].access.models} >= {'Project'}
+    assert not secured.business.policy.allows(seen[0], Customer, 'read')
+    assert with_key(secured, token, 'POST', f"/api/project/{project['id']}/actions/refresh_progress")[0] == 202
+    assert admin('DELETE', f"/api/_controls/keys/{created['key']['id']}")[0] == 200
+    assert jobs.run_one() and len(seen) == 1
+    with secured.database._connection() as connection:
+        row = connection.execute('SELECT state, error FROM evlet_jobs ORDER BY id DESC LIMIT 1').fetchone()
+    assert tuple(row) == ('failed', 'The API key that queued this job was revoked.')
+
+
+def test_guard_checks_are_cached_per_key_scope(secured):
+    from types import SimpleNamespace
+    from evlet.auth import KeyAccess, User
+    from evlet.states import readable
+    guard = SimpleNamespace(reads=(('self', Customer, 'name'),))
+    policy = secured.business.policy
+    assert readable(policy, User(2, 'editor', 'editor'), guard)
+    assert not readable(policy, User(2, 'editor', 'editor', access=KeyAccess(True, frozenset({Project}))), guard)

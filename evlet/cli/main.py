@@ -257,9 +257,11 @@ def main(argv=None):
             from ..instances import read_instance
             path = child(root, 'instances', args.instance)
             read_instance(path)
-            count = rotate(path / 'data/database.sqlite3', SecretKey(path / 'secret.key'))
+            count, failed = rotate(path / 'data/database.sqlite3', SecretKey(path / 'secret.key'))
             print(f'New secret key written to instances/{args.instance}/secret.key. Re-encrypted {count} connector' + ('' if count == 1 else 's') + '.')
-            print('Restart the instance so it uses the new key.')
+            if failed:
+                print(f"Could not read the secrets of {', '.join(failed)}. They were left as they are and the old key was kept. Enter them again in Controls, then rotate again.")
+            print('Running instances use the new key straight away.')
         elif args.command == 'effects':
             from .effects import check_instance
             from ..effects import describe

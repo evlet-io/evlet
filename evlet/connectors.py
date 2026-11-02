@@ -8,6 +8,7 @@ import base64
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import make_msgid
+from collections import deque
 import hashlib
 import imaplib
 import ipaddress
@@ -23,6 +24,7 @@ import ssl
 import stat
 import threading
 import time
+from urllib.parse import quote, quote_plus
 
 from .auth import ROLE_ID, AccessError
 from .models import ValidationError
@@ -35,6 +37,16 @@ ID = re.compile(r'[a-z][a-z0-9_]{1,30}')
 ROW_ID = re.compile(r'([a-z][a-z0-9_]{1,30})(?::([a-z0-9][a-z0-9_-]{0,39}))?')
 ADDRESS = re.compile(r'[^@\s<>,;"]{1,64}@[^@\s<>,;"]{1,190}\.[^@\s<>,;".]{2,63}')
 UNREADABLE = 'Saved secrets could not be read. The secret key changed or the stored data was altered. Enter them again.'
+# One message for unreachable, silent and confused servers, so a test can't map ports.
+UNREACHABLE = "Couldn't connect to the service. Check the server, port and security, and try again."
+NOT_ALLOWED = "This server address is not allowed. Use the service's public address, or None with a mail server on this machine."
+BUSY = 'Two connection tests are already running. Try again in a moment.'
+AGAIN = 'Enter the {label} again. The server details changed, so the saved one is not used.'
+TEST_RATE = 10  # connection tests per person per minute
+# Settings that say where a secret is sent: changing one drops the saved secrets.
+IDENTIFYING = re.compile(r'url|host|server|port|user|address|account|endpoint|gateway|issuer|domain|tenant|region|bucket|security')
+# Cloud metadata services outside the link-local ranges.
+METADATA = tuple(ipaddress.ip_network(net) for net in ('fd00:ec2::254/128', '100.100.100.200/32'))
 
 
 class ConnectionFailed(Exception):
@@ -54,8 +66,12 @@ class ConnectorField:
     default: object = None
     required: bool = True
     help: str = ''
+    # Whether the field says where secrets go (a host, URL, port or username). None: decided by its name.
+    identifies: bool | None = None
 
     def __post_init__(self):
+        if self.identifies is None:
+            object.__setattr__(self, 'identifies', self.type != 'secret' and bool(IDENTIFYING.search(self.name)))
         if not isinstance(self.name, str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,39}', self.name) or self.name == 'default':
             raise ValueError(f'Connector field names are lowercase identifiers other than default: {self.name!r}')
         if self.type not in TYPES:
@@ -81,6 +97,8 @@ class Connector:
     description: str = ''
     category: str = 'Other'
     accounts: bool = False
+    # Ports a "port" field may use, unless the connection stays on this machine.
+    ports: tuple = ()
 
     def __post_init__(self):
         if not isinstance(self.id, str) or not ID.fullmatch(self.id):
@@ -199,23 +217,33 @@ def rotate(database_path, key):
     """Re-encrypt every saved secret of a SQLite instance under a new key file.
 
     The old key stays in the file, after the new one, until every row is re-encrypted, so a
-    crash at any point leaves every secret readable. Returns how many connectors were re-encrypted.
+    crash at any point leaves every secret readable. A row that can't be read is skipped and
+    reported, and the old key is then kept for it. Returns (re-encrypted count, unreadable ids).
     """
     import sqlite3
     if key.from_environment:
         raise SecretKeyError(f'{KEY_ENV} is set, so the key is kept outside Evlet. Rotation works on a secret.key file.')
+    if not Path(database_path).is_file():
+        raise ValueError('This instance has no database yet, so there is nothing to rotate.')
     old = key.keys()
     if not old:
-        return 0
+        return 0, []
     key.write([secrets.token_bytes(32), *old])
-    connection = sqlite3.connect(database_path, isolation_level=None)
+    connection = sqlite3.connect(Path(database_path).as_uri() + '?mode=rw', uri=True, isolation_level=None)
+    done, failed = 0, []
     try:
         connection.execute('BEGIN IMMEDIATE')
         exists = connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_connectors'").fetchone()
         rows = connection.execute('SELECT id, secrets FROM evlet_connectors WHERE secrets IS NOT NULL').fetchall() if exists else []
         for row_id, blob in rows:
             context = row_context(row_id)
-            connection.execute('UPDATE evlet_connectors SET secrets=? WHERE id=?', (key.encrypt(key.decrypt(blob, context), context), row_id))
+            try:
+                plain = key.decrypt(blob, context)
+            except SecretKeyError:
+                failed.append(row_id)
+                continue
+            connection.execute('UPDATE evlet_connectors SET secrets=? WHERE id=?', (key.encrypt(plain, context), row_id))
+            done += 1
         connection.execute('COMMIT')
     except BaseException:
         if connection.in_transaction:
@@ -223,8 +251,9 @@ def rotate(database_path, key):
         raise
     finally:
         connection.close()
-    key.write(key.keys()[:1])
-    return len(rows)
+    if not failed:
+        key.write(key.keys()[:1])
+    return done, failed
 
 
 def row_context(row_id):
@@ -243,6 +272,66 @@ def _loopback(host):
         return False
 
 
+def safe_address(host, port, *, local=False):
+    """Resolve host once and refuse link-local, metadata, multicast, unspecified and reserved addresses.
+
+    Loopback is allowed only for a local connection, and a local connection only reaches loopback.
+    Returns the (address, port) to connect to, so the checked address is the one used.
+    """
+    try:
+        found = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except (OSError, UnicodeError, ValueError):
+        raise ConnectionFailed(UNREACHABLE) from None
+    chosen = None
+    for *_, sockaddr in found:
+        address = ipaddress.ip_address(sockaddr[0].split('%')[0])
+        if address.version == 6 and address.ipv4_mapped:
+            address = address.ipv4_mapped
+        if (address.is_link_local or address.is_multicast or address.is_unspecified or address.is_reserved
+                or any(address in network for network in METADATA) or address.is_loopback != local):
+            raise ConnectionFailed(NOT_ALLOWED)
+        chosen = chosen or (sockaddr[0], port)
+    if chosen is None:
+        raise ConnectionFailed(UNREACHABLE)
+    return chosen
+
+
+class _SMTP(smtplib.SMTP):
+    def __init__(self, address, host, port, timeout):
+        self._address = address
+        super().__init__(host, port, timeout=timeout)
+
+    def _get_socket(self, host, port, timeout):
+        return socket.create_connection(self._address, timeout)
+
+
+class _SMTPSSL(smtplib.SMTP_SSL):
+    def __init__(self, address, host, port, timeout, context):
+        self._address = address
+        super().__init__(host, port, timeout=timeout, context=context)
+
+    def _get_socket(self, host, port, timeout):
+        return self.context.wrap_socket(socket.create_connection(self._address, timeout), server_hostname=self._host)
+
+
+class _IMAP(imaplib.IMAP4):
+    def __init__(self, address, host, port, timeout):
+        self._address = address
+        super().__init__(host, port, timeout=timeout)
+
+    def _create_socket(self, timeout=None):
+        return socket.create_connection(self._address, timeout)
+
+
+class _IMAPSSL(imaplib.IMAP4_SSL):
+    def __init__(self, address, host, port, timeout, context):
+        self._address = address
+        super().__init__(host, port, ssl_context=context, timeout=timeout)
+
+    def _create_socket(self, timeout=None):
+        return self.ssl_context.wrap_socket(socket.create_connection(self._address, timeout), server_hostname=self.host)
+
+
 def _mail_fields(port):
     return (ConnectorField('address', 'Email address'), ConnectorField('host', 'Server'),
             ConnectorField('port', 'Port', 'number', default=port),
@@ -252,29 +341,25 @@ def _mail_fields(port):
 
 def _plain(exc, values):
     """A plain message for a mail failure, never including a secret."""
-    host = f"{values.get('host')}:{values.get('port')}"
     if isinstance(exc, smtplib.SMTPAuthenticationError):
         return 'The server rejected the username or password.'
     if isinstance(exc, smtplib.SMTPNotSupportedError) or 'STARTTLS' in str(exc).upper() and isinstance(exc, (smtplib.SMTPException, imaplib.IMAP4.error)):
         return "The server doesn't offer STARTTLS. Choose SSL/TLS, or check the port."
     if isinstance(exc, ssl.SSLError):
         return 'The secure connection failed. Check the security setting and the port.'
-    if isinstance(exc, (socket.timeout, TimeoutError)) or 'timed out' in str(exc):
-        return f"{host} didn't answer in time."
     if isinstance(exc, (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused)):
         return 'The server refused the sender or recipient address.'
-    if isinstance(exc, OSError):
-        return f"Couldn't reach {host}. Check the server and port."
-    return 'The server answered with an error. Check the details and try again.'
+    return UNREACHABLE
 
 
 def _smtp(values):
     host, port, security = values['host'], int(values['port']), values['security']
     context = ssl.create_default_context()
+    address = safe_address(host, port, local=security == 'none')
     if security == 'ssl':
-        client = smtplib.SMTP_SSL(host, port, timeout=TIMEOUT, context=context)
+        client = _SMTPSSL(address, host, port, TIMEOUT, context)
     else:
-        client = smtplib.SMTP(host, port, timeout=TIMEOUT)
+        client = _SMTP(address, host, port, TIMEOUT)
     try:
         client.ehlo()
         if security == 'starttls':
@@ -297,11 +382,12 @@ def check_smtp(values):
 
 def check_imap(values):
     host, port, security = values['host'], int(values['port']), values['security']
+    address = safe_address(host, port, local=security == 'none')
     try:
         if security == 'ssl':
-            client = imaplib.IMAP4_SSL(host, port, ssl_context=ssl.create_default_context(), timeout=TIMEOUT)
+            client = _IMAPSSL(address, host, port, TIMEOUT, ssl.create_default_context())
         else:
-            client = imaplib.IMAP4(host, port, timeout=TIMEOUT)
+            client = _IMAP(address, host, port, TIMEOUT)
     except (OSError, imaplib.IMAP4.error) as exc:
         raise ConnectionFailed(_plain(exc, values)) from None
     try:
@@ -322,9 +408,9 @@ def check_imap(values):
         raise
 
 
-SMTP = Connector('smtp', title='Email sending', fields=_mail_fields(587), test=check_smtp, category='Email', accounts=True,
+SMTP = Connector('smtp', title='Email sending', fields=_mail_fields(587), test=check_smtp, category='Email', accounts=True, ports=(25, 465, 587),
                  description='Sends framework and app emails over SMTP.')
-IMAP = Connector('imap', title='Email receiving', fields=_mail_fields(993), test=check_imap, category='Email', accounts=True,
+IMAP = Connector('imap', title='Email receiving', fields=_mail_fields(993), test=check_imap, category='Email', accounts=True, ports=(143, 993),
                  description='Reads mailboxes over IMAP so apps can act on new mail.')
 FRAMEWORK = (SMTP, IMAP)
 
@@ -338,6 +424,9 @@ class Connectors:
         self.business, self.database = business, business.database
         self.declared, self.app_of = {}, {}
         self.key = SecretKey()
+        # Connection tests run on at most two threads; an abandoned test keeps its slot until it ends.
+        self.slots = threading.BoundedSemaphore(2)
+        self.recent, self.recent_lock = {}, threading.Lock()
         for connector in FRAMEWORK:
             self.register('evlet', connector)
 
@@ -414,6 +503,11 @@ class Connectors:
     # ---------- checking values ----------
 
     def clean(self, connector, account, body, saved_settings, saved_secrets, *, partial):
+        """Check settings and new secrets. Returns (settings, new secrets, saved secret names still usable).
+
+        Saved secrets are usable only while every identifying setting (host, URL, port, username...)
+        is unchanged, so a saved password is never sent to a different server.
+        """
         if not isinstance(body, dict) or set(body) - {'settings', 'secrets'}:
             raise ValidationError({'_form': 'Send settings and secrets.'})
         given, replaced = body.get('settings', {}), body.get('secrets', {})
@@ -430,25 +524,32 @@ class Connectors:
         settings, new_secrets = {}, {}
         roles = self.business.controls.roles or self.business.auth.roles()
         for field in connector.fields:
-            if field.name in errors:
-                continue
-            if field.type == 'secret':
-                if field.name in replaced:
-                    value = replaced[field.name]
-                    if not isinstance(value, str) or not value.strip():
-                        errors[field.name] = 'Paste a new value, or leave it out to keep the saved one.'
-                    elif len(value) > 4096:
-                        errors[field.name] = 'Use at most 4096 characters.'
-                    else:
-                        new_secrets[field.name] = value
-                elif field.required and field.name not in saved_secrets and not partial:
-                    errors[field.name] = f'Enter the {field.label.lower()}.'
+            if field.name in errors or field.type == 'secret':
                 continue
             value = given.get(field.name, saved_settings.get(field.name, field.default))
             try:
                 settings[field.name] = self.check_value(field, value, roles)
             except ValueError as exc:
                 errors[field.name] = str(exc)
+        moved = bool(saved_settings) and any(field.identifies and field.name in settings and settings[field.name] != saved_settings.get(field.name)
+                                             for field in connector.fields)
+        kept = set() if moved else set(saved_secrets)
+        for field in connector.fields:
+            if field.name in errors or field.type != 'secret':
+                continue
+            if field.name in replaced:
+                value = replaced[field.name]
+                if not isinstance(value, str) or not value.strip():
+                    errors[field.name] = 'Paste a new value, or leave it out to keep the saved one.'
+                elif len(value) > 4096:
+                    errors[field.name] = 'Use at most 4096 characters.'
+                else:
+                    new_secrets[field.name] = value
+            elif field.required and field.name not in kept and not partial:
+                errors[field.name] = AGAIN.format(label=field.label.lower()) if field.name in saved_secrets else f'Enter the {field.label.lower()}.'
+        if connector.ports and 'port' in settings and settings.get('security') != 'none' and settings['port'] not in connector.ports:
+            *head, last = (str(port) for port in connector.ports)
+            errors['port'] = f"Use port {', '.join(head)} or {last}." if head else f'Use port {last}.'
         if connector in FRAMEWORK and not errors:
             if not ADDRESS.fullmatch(settings['address']):
                 errors['address'] = 'Enter a valid email address.'
@@ -456,7 +557,7 @@ class Connectors:
                 errors['security'] = 'Without encryption the mail server must be on this machine. Choose STARTTLS or SSL/TLS.'
         if errors:
             raise ValidationError(errors)
-        return settings, new_secrets
+        return settings, new_secrets, kept
 
     @staticmethod
     def check_value(field, value, roles):
@@ -495,17 +596,18 @@ class Connectors:
             existing = self.row(connection, row_id)
         saved_settings = {} if existing is None else json.loads(existing['settings'])
         saved_names = set(json.loads(saved_settings.pop('_secrets', '[]')))
-        settings, replaced = self.clean(connector, account, body, saved_settings, saved_names, partial=False)
+        settings, replaced, kept = self.clean(connector, account, body, saved_settings, saved_names, partial=False)
         with self.database.transaction() as tx:
             current = self.row(tx.connection, row_id)
             if (current is None) != (existing is None):
                 raise AccessError(409, 'Someone else changed this connector. Open it again.')
             secret_values = {}
-            if current is not None and current['secrets'] is not None and saved_names - replaced.keys():
+            if current is not None and current['secrets'] is not None and kept - replaced.keys():
                 try:
                     secret_values = json.loads(self.key.decrypt(current['secrets'], row_context(row_id)))
                 except SecretKeyError:
-                    raise ValidationError({name: UNREADABLE for name in saved_names - replaced.keys()}) from None
+                    raise ValidationError({name: UNREADABLE for name in kept - replaced.keys()}) from None
+                secret_values = {name: value for name, value in secret_values.items() if name in kept}
             secret_values.update(replaced)
             default = bool(saved_settings.get('default')) if current is not None else (
                 connector is SMTP and not tx.connection.execute("SELECT 1 FROM evlet_connectors WHERE id LIKE 'smtp:%'").fetchone())
@@ -570,6 +672,14 @@ class Connectors:
         connector, account = self.resolve(row_id)
         if connector.test is None:
             raise AccessError(404, 'This connector has no test')
+        with self.recent_lock:
+            now = time.monotonic()
+            times = self.recent.setdefault(actor.id, deque())
+            while times and times[0] < now - 60:
+                times.popleft()
+            if len(times) >= TEST_RATE:
+                raise AccessError(429, 'Too many connection tests. Try again in a minute.')
+            times.append(now)
         body = dict(body or {})
         to = body.pop('to', None)
         if to is not None and (connector is not SMTP or not isinstance(to, str) or not ADDRESS.fullmatch(to)):
@@ -579,21 +689,19 @@ class Connectors:
         saved = {} if row is None else json.loads(row['settings'])
         names = set(json.loads(saved.pop('_secrets', '[]')))
         saved.pop('default', None)
-        settings, replaced = self.clean(connector, account, body, saved, names, partial=False)
+        settings, replaced, kept = self.clean(connector, account, body, saved, names, partial=False)
         values = dict(settings)
-        if row is not None and row['secrets'] is not None and names - replaced.keys():
+        if row is not None and row['secrets'] is not None and kept - replaced.keys():
             try:
-                values.update(json.loads(self.key.decrypt(row['secrets'], row_context(row_id))))
+                values.update({name: value for name, value in json.loads(self.key.decrypt(row['secrets'], row_context(row_id))).items() if name in kept})
             except SecretKeyError as exc:
                 return {'ok': False, 'error': str(exc)}
         values.update(replaced)
         hidden = [value for name, value in values.items() if isinstance(value, str) and name in {field.name for field in connector.fields if field.type == 'secret'}]
         check = connector.test if to is None else lambda values: self.deliver(values, to, 'Test email from Evlet', 'This is a test email from Evlet. The account works.')
-        started = time.monotonic()
-        result = run_with_timeout(check, values)
-        elapsed = round((time.monotonic() - started) * 1000)
+        result = run_with_timeout(check, values, self.slots)
         if result is None:
-            outcome = {'ok': True, 'message': 'Sent. Check the inbox in a minute.' if to else f'Connected. The service answered in {elapsed} ms.'}
+            outcome = {'ok': True, 'message': 'Sent. Check the inbox in a minute.' if to else 'Connected.'}
         else:
             outcome = {'ok': False, 'error': scrub(result, hidden)}
         # A test of exactly the saved values sets the status Controls shows.
@@ -652,14 +760,25 @@ class Connectors:
 
 
 def scrub(message, hidden):
+    """Remove secrets from a message: as written, quoted, escaped, URL-encoded, and long leading parts."""
     for value in hidden:
-        if value:
-            message = message.replace(value, '••••')
+        if not value:
+            continue
+        forms = {value, repr(value)[1:-1], json.dumps(value)[1:-1], quote(value, safe=''), quote_plus(value, safe=''), quote(value)}
+        for form in sorted(forms, key=len, reverse=True):
+            message = message.replace(form, '••••')
+            for length in range(len(form) - 1, 7, -1):
+                if form[:length] in message:
+                    message = message.replace(form[:length], '••••')
+                    break
     return message
 
 
-def run_with_timeout(check, values):
-    """None when check(values) passes; a plain error otherwise. A check still running after TIMEOUT is abandoned."""
+def run_with_timeout(check, values, slots):
+    """None when check(values) passes; a plain error otherwise. A check still running after TIMEOUT is
+    abandoned but keeps its slot until it ends, so at most as many test threads as slots ever run."""
+    if not slots.acquire(blocking=False):
+        raise AccessError(429, BUSY)
     outcome = []
 
     def run():
@@ -672,10 +791,16 @@ def run_with_timeout(check, values):
             # Only the type is logged: an exception message may quote a secret.
             logger.warning('Connector test failed with %s', type(exc).__name__)
             outcome.append('The test failed. Check the details and try again.')
+        finally:
+            slots.release()
 
     worker = threading.Thread(target=run, name='evlet-connector-test', daemon=True)
-    worker.start()
+    try:
+        worker.start()
+    except BaseException:
+        slots.release()
+        raise
     worker.join(TIMEOUT)
     if worker.is_alive() or not outcome:
-        return f"The service didn't answer within {TIMEOUT} seconds. Check the address and try again."
+        return UNREACHABLE
     return outcome[0]

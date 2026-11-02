@@ -207,7 +207,7 @@ def test_rotation_re_encrypts_every_secret_under_a_new_key(app, tmp_path, mail_s
     admin('PUT', '/api/_controls/connectors/smtp:notifications', account(mail_servers[0].server_address[1]))
     key_file = tmp_path / 'secret.key'
     before = key_file.read_text()
-    assert rotate(app.database.path, SecretKey(key_file)) == 2
+    assert rotate(app.database.path, SecretKey(key_file)) == (2, [])
     after = key_file.read_text()
     assert after != before and len(after.split()) == 1 and stat.S_IMODE(os.stat(key_file).st_mode) == 0o600
     assert app.business.connectors.values('whatsapp')['api_key'] == SECRET
@@ -286,7 +286,7 @@ def test_a_connector_test_that_hangs_ends_cleanly_at_the_time_limit(app, monkeyp
     started = time.monotonic()
     status, result, _ = admin('POST', '/api/_controls/connectors/slow/test', {'settings': {'url': 'https://slow.example.test'}})
     assert time.monotonic() - started < 3
-    assert status == 200 and result == {'ok': False, 'error': "The service didn't answer within 1 seconds. Check the address and try again."}
+    assert status == 200 and result == {'ok': False, 'error': module.UNREACHABLE}
 
 
 def test_a_mail_server_that_never_answers_times_out(app, monkeypatch):
@@ -298,7 +298,7 @@ def test_a_mail_server_that_never_answers_times_out(app, monkeypatch):
         started = time.monotonic()
         status, result, _ = client(app)('POST', '/api/_controls/connectors/smtp:silent/test', account(silent.getsockname()[1]))
         assert time.monotonic() - started < 3
-        assert status == 200 and not result['ok'] and "didn't answer" in result['error']
+        assert status == 200 and result == {'ok': False, 'error': module.UNREACHABLE}
     finally:
         silent.close()
 
