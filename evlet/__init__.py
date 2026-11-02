@@ -76,3 +76,6 @@ __all__ += ["SCOPES"]
 from .connectors import ConnectionFailed, Connector, ConnectorField
 
 __all__ += ["ConnectionFailed", "Connector", "ConnectorField"]
+from .mailboxes import Mail
+
+__all__ += ["Mail"]

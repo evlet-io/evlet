@@ -8,19 +8,21 @@ import hashlib
 from email.message import EmailMessage
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import logging
 import re
 import socket
 import socketserver
 import threading
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 
-from evlet import Application, Database, Email, Integer, JobQueue, LocalAuth, Model, PostgreSQLDatabase, Registry, Rule, Text
+from evlet import Application, Database, Email, Integer, JobQueue, LocalAuth, Mail, Model, PostgreSQLDatabase, Registry, Rule, Text
 from evlet import connectors as connectors_module
 from evlet.auth import AccessError, User
 from evlet import mailboxes as module
+from test_assistants import send
 from test_business import PASSWORD, client, http
 from test_postgres import pg_dsn  # noqa: F401 - fixture
 
@@ -34,6 +36,9 @@ class Customer(Model):
     name = Text(default='')
     email = Email()
 
+    class Meta:
+        mail = Mail(match=('email',), kind='customer')
+
 
 class Contact(Model):
     permissions = {'admin': ALL, 'editor': Rule(('read', 'create', 'update'), scope=OWN), 'viewer': Rule(('read',), scope=OWN)}
@@ -41,16 +46,31 @@ class Contact(Model):
     email = Email()
     owner = Integer(default=0)
 
+    class Meta:
+        mail = Mail(match=('email',), kind='contact')
+
 
 class Lead(Model):
     permissions = {'admin': ALL, 'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',), read_fields=('name',))}
     name = Text(default='')
     email = Email()
 
+    class Meta:
+        mail = Mail(match='email', kind='lead')
+
 
 class Supplier(Model):
     permissions = {'admin': ALL, 'editor': Rule(('read',)), 'viewer': Rule(('read',))}
     name = Text(default='')
+    email = Email()
+
+    class Meta:
+        mail = Mail(match=('email',))
+
+
+class Partner(Model):
+    """Has an Email field but doesn't opt in, so mail never matches it."""
+    permissions = {'admin': ALL, 'editor': Rule(('read',)), 'viewer': Rule(('read',))}
     email = Email()
 
 
@@ -59,7 +79,7 @@ class Deal(Model):
     title = Text(default='')
 
 
-MODELS = (Customer, Contact, Lead, Supplier, Deal)
+MODELS = (Customer, Contact, Lead, Supplier, Partner, Deal)
 
 
 # ---------- fake servers ----------
@@ -188,6 +208,11 @@ class _Provider(BaseHTTPRequestHandler):
         server.requests.append(form)
         reply = lambda status, body: (self.send_response(status), self.send_header('Content-Type', 'application/json'), self.end_headers(),
                                       self.wfile.write(json.dumps(body).encode()))
+        if self.path == '/revoke':
+            server.revoked.add(form.get('token'))
+            return reply(200, {})
+        if server.client_error:
+            return reply(401, {'error': server.client_error})
         if (form.get('client_id'), form.get('client_secret')) != ('client-1', 'provider-secret-3a9'):
             return reply(401, {'error': 'invalid_client'})
         if form.get('grant_type') == 'authorization_code':
@@ -226,7 +251,7 @@ def mail():
         server.logins, server.tokens = {('editor@acme.test', APP_PASSWORD), ('viewer@acme.test', APP_PASSWORD)}, tokens
     imap.mail, imap.log, imap.bodies, imap.validity, smtp.messages = [], [], [], 7, []
     provider.tokens, provider.codes, provider.refresh, provider.revoked, provider.requests = tokens, {}, set(), set(), []
-    provider.issued, provider.expires_in = 0, 3600
+    provider.issued, provider.expires_in, provider.client_error = 0, 3600, None
     yield imap, smtp, provider
     for server in (imap, smtp, provider):
         server.shutdown()
@@ -253,6 +278,7 @@ def build(database):
             'lead': tx.create(Lead, name='Lina', email='lina@lead.test').id,
             'supplier': tx.create(Supplier, name='Parts', email='sales@parts.test').id,
             'deal': tx.create(Deal, title='Big order').id,
+            'partner': tx.create(Partner, email='hello@partner.test').id,
         }
     return app
 
@@ -372,9 +398,9 @@ def test_app_password_connect_sync_matching_and_privacy(app, mail):
 
     # With "only customers and leads" off, addresses on any model the person can read match too.
     assert editor('PATCH', '/api/_settings/me/email', {'only_crm': False})[1]['mailbox']['only_crm'] is False
-    imap.mail += [message(7, 'sales@parts.test', 'Second offer'), message(8, 'stranger@nowhere.test', 'Still not')]
-    editor('POST', '/api/_settings/me/email/sync')
-    drain(app)
+    imap.mail += [message(7, 'sales@parts.test', 'Second offer'), message(8, 'stranger@nowhere.test', 'Still not'), message(9, 'hello@partner.test', 'Not opted in')]
+    # A second Sync now in the same minute is the same job; the schedule picks the mailbox up.
+    app.business.mailboxes.run_job(None, {})
     assert [(model, data['subject']) for model, _, data in links(app)[3:]] == [('supplier', 'Second offer')]
     assert editor('PATCH', '/api/_settings/me/email', {'only_crm': 'no'})[0] == 422
 
@@ -458,7 +484,7 @@ def test_sending_as_the_person_or_the_shared_account_and_replies_link_to_the_rec
 
 def provider_settings(provider, imap, smtp, **extra):
     base = f'http://127.0.0.1:{provider.server_address[1]}'
-    return {'settings': {'client_id': 'client-1', 'authorize_url': base + '/authorize', 'token_url': base + '/token',
+    return {'settings': {'client_id': 'client-1', 'authorize_url': base + '/authorize', 'token_url': base + '/token', 'revoke_url': base + '/revoke',
                          'imap_host': '127.0.0.1', 'imap_port': imap.server_address[1], 'smtp_host': '127.0.0.1', 'smtp_port': smtp.server_address[1], **extra},
             'secrets': {'client_secret': 'provider-secret-3a9'}}
 
@@ -472,9 +498,20 @@ def sign_in(app, person, provider, *, approve=True):
     code = 'code-' + params['state'][:8]
     provider.codes[code] = {'redirect_uri': params['redirect_uri'], 'challenge': params['code_challenge']}
     query = f"code={code}&state={params['state']}" if approve else f"error=access_denied&state={params['state']}"
-    status, _, headers = http(app, 'GET', f'/_/mail/callback?{query}', cookie=person.cookie, headers={b'sec-fetch-site': b'cross-site'})
+    return come_back(app, person, query), params['state']
+
+
+def come_back(app, person, query):
+    """The provider's cross-site redirect arrives without the SameSite=Strict cookie; the page then posts from this origin, with it."""
+    status, page, headers = send(app, 'GET', f'/_/mail/callback?{query}', headers={b'sec-fetch-site': b'cross-site'})
+    assert status == 200 and headers[b'content-type'].startswith(b'text/html') and b"script-src 'self'" in headers[b'content-security-policy']
+    assert b'<script>' not in page and b'src="/_/mail/continue.js"' in page
+    fields = dict(re.findall(r'name="(\w+)" value="([^"]*)"', page.decode()))
+    status, _, headers = send(app, 'POST', '/_/mail/callback', urlencode(fields).encode(), {
+        b'content-type': b'application/x-www-form-urlencoded', b'cookie': person.cookie.encode(), b'origin': b'http://127.0.0.1:8000',
+        b'sec-fetch-site': b'same-origin'})
     assert status == 302
-    return headers[b'location'].decode(), params['state']
+    return headers[b'location'].decode()
 
 
 def test_oauth_with_pkce_sealed_tokens_refresh_and_revocation(app, mail):
@@ -489,11 +526,18 @@ def test_oauth_with_pkce_sealed_tokens_refresh_and_revocation(app, mail):
     location, state = sign_in(app, editor, provider)
     assert location == '/settings/email?mail=connected'
     # The state is single use, and another person can't finish someone else's sign-in.
-    assert http(app, 'GET', f'/_/mail/callback?code=x&state={state}', cookie=editor.cookie)[2][b'location'] == b'/settings/email?mail=expired'
+    assert come_back(app, editor, f'code=x&state={state}') == '/settings/email?mail=expired'
+    # Another person's attempt neither finishes nor burns the state; a post from elsewhere is refused.
     viewer = client(app, 'viewer')
     url = urlsplit(editor('POST', '/api/_settings/me/email/oauth', {'provider': 'google'})[1]['url'])
     other_state = parse_qs(url.query)['state'][0]
-    assert http(app, 'GET', f'/_/mail/callback?code=x&state={other_state}', cookie=viewer.cookie)[2][b'location'] == b'/settings/email?mail=expired'
+    assert come_back(app, viewer, f'code=x&state={other_state}') == '/settings/email?mail=expired'
+    with app.database._connection() as connection:
+        assert connection.execute('SELECT count(*) FROM evlet_mail_states').fetchone()[0] == 1
+    forged = send(app, 'POST', '/_/mail/callback', urlencode({'code': 'x', 'state': other_state}).encode(), {
+        b'content-type': b'application/x-www-form-urlencoded', b'cookie': editor.cookie.encode(), b'origin': b'https://evil.test'})
+    assert forged[0] == 403
+    assert send(app, 'GET', '/_/mail/continue.js')[1] == b'document.forms[0].submit();\n'
 
     exchange = next(item for item in provider.requests if item['grant_type'] == 'authorization_code')
     assert len(exchange['code_verifier']) >= 43 and exchange['redirect_uri'] == 'http://127.0.0.1:8000/_/mail/callback'
@@ -604,6 +648,216 @@ def test_secret_rotation_covers_mailboxes(app, mail, tmp_path, monkeypatch):
     imap.mail.append(message(1, 'buyer@acme.test', 'After rotation'))
     drain(app)
     assert len(links(app)) == 1
+
+
+# ---------- review findings ----------
+
+def mailbox_id(app):
+    with app.database._connection() as connection:
+        return connection.execute("SELECT id FROM evlet_mailboxes WHERE address='editor@acme.test'").fetchone()[0]
+
+
+def page_of(app, role='editor'):
+    return client(app, role)('GET', '/api/_settings/me/email')[1]['mailbox']
+
+
+def test_unreadable_messages_are_skipped_and_nothing_reaches_the_logs(app, mail, caplog, monkeypatch):
+    imap, smtp, _ = mail
+    caplog.set_level(logging.DEBUG)
+    switch(app, True)
+    poison = (b'From: x@stranger.test ' + b'(' * 5000 + b')' * 5000 + b'\r\nTo: editor@acme.test\r\nSubject: Stranger poison\r\n'
+              b'Message-ID: <p1@x.test>\r\n\r\nbody\r\n')
+    deep = b''.join(b'Content-Type: multipart/mixed; boundary="b%d"\r\n\r\n--b%d\r\n' % (i, i) for i in range(3000)) + b'Content-Type: text/plain\r\n\r\nhi\r\n'
+    nested = (b'From: buyer@acme.test\r\nTo: editor@acme.test\r\nSubject: Deep parts\r\nMessage-ID: <p2@x.test>\r\nMIME-Version: 1.0\r\n' + deep)
+    imap.mail += [(1, poison), (2, nested), message(3, 'buyer@acme.test', 'Legit after poison')]
+    client(app, 'editor')('POST', '/api/_settings/me/email', mailbox(imap, smtp))
+    drain(app)
+    app.business.mailboxes.run_job(None, {})
+    assert sorted(data['subject'] for _, _, data in links(app)) == ['Deep parts', 'Legit after poison']
+    assert page_of(app)['status'] == 'connected'
+    # A whole run that fails is recorded on the mailbox, never raised, and logged by type only.
+    imap.mail.append(message(4, 'buyer@acme.test', 'Another'))
+    monkeypatch.setattr(module.Mailboxes, 'match', lambda *args: (_ for _ in ()).throw(ValueError('buyer@acme.test Secret subject')))
+    assert app.business.mailboxes.sync(mailbox_id(app)) == 0
+    assert (page_of(app)['status'], page_of(app)['error']) == ('error', module.FAILED)
+    for leaked in ('stranger', 'Stranger poison', 'Secret subject', 'buyer@acme.test', 'Legit'):
+        assert leaked not in caplog.text
+    assert 'Mailbox' in caplog.text and 'ValueError' in caplog.text
+
+
+def test_a_server_that_sends_too_much_or_too_slowly_is_cut_off(app, mail, monkeypatch):
+    imap, smtp, _ = mail
+    switch(app, True)
+    client(app, 'editor')('POST', '/api/_settings/me/email', mailbox(imap, smtp))
+    drain(app)
+    monkeypatch.setattr(connectors_module._Limits, 'LITERAL', 10_000)
+    imap.mail.append(message(1, 'buyer@acme.test', 'Huge', body='A' * 50_000))
+    assert app.business.mailboxes.sync(mailbox_id(app)) == 0 and page_of(app)['status'] == 'error'
+
+    class Drip(socketserver.StreamRequestHandler):
+        def handle(self):
+            self.wfile.write(b'* OK [CAPABILITY IMAP4rev1] fake\r\n')
+            self.rfile.readline()
+            for byte in b'* CAPABILITY IMAP4rev1 ' + b'X' * 200:
+                time.sleep(0.2)
+                try:
+                    self.wfile.write(bytes([byte]))
+                except OSError:
+                    return
+
+    drip = serve(Drip)
+    monkeypatch.setattr(module, 'RUN_SECONDS', 2)
+    try:
+        with app.database.transaction() as tx:
+            settings = json.loads(tx.connection.execute('SELECT settings FROM evlet_mailboxes').fetchone()[0])
+            settings['imap']['port'] = drip.server_address[1]
+            tx.connection.execute('UPDATE evlet_mailboxes SET settings=?', (json.dumps(settings),))
+        started = time.monotonic()
+        assert app.business.mailboxes.sync(mailbox_id(app)) == 0
+        assert time.monotonic() - started < 5 and page_of(app)['status'] == 'error'
+    finally:
+        drip.shutdown()
+        drip.server_close()
+
+
+def test_a_hidden_email_field_is_not_shown_as_the_party(app, mail):
+    imap, smtp, _ = mail
+    switch(app, True)
+    imap.mail.append(message(1, 'lina@lead.test', 'Lead mail'))
+    client(app, 'editor')('POST', '/api/_settings/me/email', mailbox(imap, smtp))
+    drain(app)
+    path = f"/api/lead/{app.records['lead']}/messages"
+    assert client(app, 'editor')('GET', path)[1]['items'][0]['party'] == 'lina@lead.test'
+    item = client(app, 'viewer')('GET', path)[1]['items'][0]
+    assert item['party'] is None and item['subject'] == 'Lead mail'
+
+
+def test_send_only_and_failing_mailboxes_do_not_hold_up_the_others(app, mail):
+    imap, smtp, _ = mail
+    switch(app, True)
+    client(app, 'editor')('POST', '/api/_settings/me/email', mailbox(imap, smtp))
+    drain(app)
+    closed = socket.socket()
+    closed.bind(('127.0.0.1', 0))
+    port = closed.getsockname()[1]
+    closed.close()
+    with app.database.transaction() as tx:
+        base = json.loads(tx.connection.execute('SELECT settings FROM evlet_mailboxes').fetchone()[0])
+        for index in range(50):
+            user_id = tx.connection.execute("INSERT INTO evlet_users(username,password,role) VALUES (?, 'x', 'viewer')", (f'u{index}',)).lastrowid
+            sending_only = index < 25
+            settings = {**base, 'link_replies': not sending_only, 'imap': {**base['imap'], 'port': port}}
+            tx.connection.execute("INSERT INTO evlet_mailboxes(user_id,provider,address,settings,secrets,status,linking,created_at) VALUES (?,'imap',?,?,?,'connected',?,0)",
+                                  (user_id, f'u{index}@x.test', json.dumps(settings), module.seal(app.business, {'password': 'x'}, connectors_module.mailbox_context(user_id)),
+                                   int(not sending_only)))
+    imap.mail.append(message(1, 'buyer@acme.test', 'Should sync'))
+    for _ in range(2):
+        app.business.mailboxes.run_job(None, {})
+    assert [data['subject'] for _, _, data in links(app)] == ['Should sync']
+
+
+def test_only_a_revoked_grant_ends_a_sign_in(app, mail):
+    imap, smtp, provider = mail
+    switch(app, True)
+    client(app)('PUT', '/api/_controls/connectors/mail_google', provider_settings(provider, imap, smtp))
+    editor = client(app, 'editor')
+    provider.expires_in = 60
+    sign_in(app, editor, provider)
+    drain(app)
+    provider.client_error = 'invalid_client'
+    imap.mail.append(message(1, 'buyer@acme.test', 'While misconfigured'))
+    app.business.mailboxes.sync(mailbox_id(app))
+    page = page_of(app)
+    assert page['status'] == 'error' and 'Ask an admin' in page['error'] and links(app) == []
+    with app.database._connection() as connection:
+        assert connection.execute('SELECT secrets FROM evlet_mailboxes').fetchone()[0] is not None
+    provider.client_error = None
+    app.business.mailboxes.sync(mailbox_id(app))
+    assert [data['subject'] for _, _, data in links(app)] == ['While misconfigured'] and page_of(app)['status'] == 'connected'
+    # Disconnecting also revokes the sign-in at the provider.
+    editor('DELETE', '/api/_settings/me/email')
+    assert any(token.startswith('refresh-') for token in provider.revoked if token)
+
+
+def test_an_id_token_without_an_audience_is_refused(app, mail, monkeypatch):
+    imap, smtp, provider = mail
+    switch(app, True)
+    client(app)('PUT', '/api/_controls/connectors/mail_google', provider_settings(provider, imap, smtp))
+    monkeypatch.setattr(module, 'claims', lambda token: {'email': 'editor@acme.test'})
+    assert sign_in(app, client(app, 'editor'), provider)[0] == '/settings/email?mail=failed'
+
+
+def test_replies_link_to_the_record_they_answer_and_reused_ids_keep_both(app, mail):
+    imap, smtp, _ = mail
+    switch(app, True)
+    client(app, 'editor')('POST', '/api/_settings/me/email', mailbox(imap, smtp))
+    drain(app)
+    person = User(app.ids['editor'], 'editor', 'editor')
+    sent = app.business.mailboxes.send_mail(person, 'new.person@nowhere.test', 'Quote', 'Here.', record=(Deal, app.records['deal']))
+    imap.mail.append(message(1, 'new.person@nowhere.test', 'Re: Quote', reply_to=sent))
+    # A message linked by someone else to another record doesn't pull this one there.
+    with app.database.transaction() as tx:
+        module.link_message(tx, User(app.ids['admin'], 'admin', 'admin'), 'supplier', app.records['supplier'], module.key_of('<admin@acme.test>'),
+                            {'text': 'x', 'subject': 'x', 'party': 'x', 'direction': 'out'})
+    imap.mail.append(message(2, 'buyer@acme.test', 'Hi', reply_to='<admin@acme.test>'))
+    first, second = message(3, 'buyer@acme.test', 'First'), message(4, 'buyer@acme.test', 'Second, same id')
+    imap.mail += [first, (4, second[1].replace(b'<m4@mail.test>', b'<m3@mail.test>'))]
+    client(app, 'editor')('POST', '/api/_settings/me/email/sync')
+    drain(app)
+    subjects = sorted((model, data['subject']) for model, _, data in links(app) if model != 'supplier')
+    assert subjects == [('customer', 'First'), ('customer', 'Hi'), ('customer', 'Second, same id'), ('deal', 'Quote'), ('deal', 'Re: Quote')]
+
+
+def test_sync_now_is_one_job_a_minute_and_throttled(app, mail):
+    imap, smtp, _ = mail
+    switch(app, True)
+    editor = client(app, 'editor')
+    editor('POST', '/api/_settings/me/email', mailbox(imap, smtp))
+    for _ in range(3):
+        editor('POST', '/api/_settings/me/email/sync')
+    with app.database._connection() as connection:
+        assert connection.execute("SELECT count(*) FROM evlet_jobs WHERE dedupe LIKE 'mail:%:now:%'").fetchone()[0] == 1
+    statuses = [editor('POST', '/api/_settings/me/email/sync')[0] for _ in range(10)]
+    assert 429 in statuses
+
+
+def test_linking_needs_update_and_keys_follow_their_scope(app, mail):
+    imap, smtp, _ = mail
+    switch(app, True)
+    imap.mail.append(message(1, 'buyer@acme.test', 'Hello'))
+    client(app, 'editor')('POST', '/api/_settings/me/email', mailbox(imap, smtp))
+    drain(app)
+    with pytest.raises(AccessError):
+        app.business.mailboxes.send_mail(User(app.ids['editor'], 'editor', 'editor'), 'a@b.test', 'Hi', 'x', record=(Supplier, app.records['supplier']))
+    admin = client(app)
+    token = admin('POST', '/api/_controls/keys', {'name': 'Deals only', 'user': 'editor', 'scope': {'access': 'read', 'models': ['Deal']}})[1]['token']
+    headers = {b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b''}
+    assert http(app, 'GET', f"/api/customer/{app.records['customer']}/messages", headers=headers)[0] in (403, 404)
+    token = admin('POST', '/api/_controls/keys', {'name': 'All', 'user': 'editor', 'scope': {'access': 'read', 'models': None}})[1]['token']
+    headers = {b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b''}
+    assert http(app, 'GET', f"/api/customer/{app.records['customer']}/messages", headers=headers)[1]['total'] == 1
+
+
+def test_matching_splits_long_address_lists(app):
+    wanted = {f'person{index}@example.test' for index in range(40_000)} | {'buyer@acme.test'}
+    found = app.business.mailboxes.match(User(app.ids['editor'], 'editor', 'editor'), wanted, True)
+    assert found == {'buyer@acme.test': [(Customer, app.records['customer'], 'email')]}
+
+
+def test_mail_declarations_are_checked(tmp_path):
+    with pytest.raises(ValueError, match='kind'):
+        Mail(match=('email',), kind='vendor')
+
+    class Wrong(Model):
+        permissions = {'admin': ALL}
+        name = Text(default='')
+
+        class Meta:
+            mail = Mail(match=('name',), kind='customer')
+
+    database = Database(tmp_path / 'wrong.sqlite3', Registry(Wrong))
+    with pytest.raises(ValueError, match='stored Email fields'):
+        Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
 
 
 # ---------- PostgreSQL ----------

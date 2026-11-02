@@ -78,7 +78,6 @@ class Business:
         self.controls = Controls(self)
         self.connectors = Connectors(self)
         self.assistants = Assistants(self)
-        self.mailboxes = Mailboxes(self)
         self.actions, self.children, self.child_models = {}, {}, set()
         self.attachments = set(attachments)
         self.storage = storage if storage is not None else SQLiteStorage()
@@ -138,6 +137,7 @@ class Business:
             self.relations[model] = tuple(item for item in meaning.relations if item.source not in self.child_models)
         if any('children' in model.__fields__ for model in self.registry.models.values()):
             raise ValueError('children is reserved for owned collections')
+        self.mailboxes = Mailboxes(self)
 
     def initialize(self):
         self.auth.initialize()
