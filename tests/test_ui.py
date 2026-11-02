@@ -284,6 +284,17 @@ def test_static_ui_preserves_unknown_routes_and_api_authentication(secured):
     assert http(secured, "GET", "/api/customer")[0] == 401
 
 
+def test_tables_fill_a_frame_wider_than_their_columns():
+    from evlet.ui.serving import STATIC
+    styles = [path for path in (STATIC / "assets").glob("*.css")]
+    if not styles:
+        pytest.skip("Build browser assets before checking the stylesheet")
+    css = "\n".join(path.read_text() for path in styles)
+    # List and child tables are as wide as their set columns; in a wider frame the last column takes the rest.
+    assert "min-width:100%" in css.split(".dt.fixed,table.g{", 1)[1].split("}", 1)[0]
+    assert "width:auto!important" in css.split(".dt.fixed col:last-child,table.g col:last-child{", 1)[1].split("}", 1)[0]
+
+
 def test_fonts_are_bundled_and_served_from_assets(secured):
     import re
     from evlet.ui.serving import STATIC
