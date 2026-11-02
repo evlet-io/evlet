@@ -12,6 +12,8 @@ from .controls import SCHEDULE, SCOPES, SETTINGS
 
 PROPS = ('label', 'help_text', 'placeholder', 'hidden', 'required', 'read_only', 'default')
 UNKNOWN = '...'
+# Setting prefixes other than security, as config.py names and what they cover.
+GROUPS = {'mcp': ('assistants', 'AI assistant settings (Controls, MCP and AI)'), 'mail': ('mail', 'Email settings (Controls, Email)')}
 
 
 def literal(value):
@@ -157,10 +159,17 @@ class Exporter:
         """Security settings for config.py, allowed networks for routes.py and paused schedules beside the app's schedules."""
         instance = f'instances/{self.controls.system.instance_name() or "<name>"}'
         blocks = []
-        security = {key.split('.', 1)[1]: value for key, value in values.items() if key in SETTINGS and key != 'security.controls_ips'}
+        security = {key.split('.', 1)[1]: value for key, value in values.items()
+                    if key in SETTINGS and key.startswith('security.') and key != 'security.controls_ips'}
         if security:
             blocks.append((f'{instance}/config.py', "# Security() is not read from config.py yet. Keep these overrides until it is.\n"
                            f"security = {call('Security', (), {key: tuple(value) if isinstance(value, list) else value for key, value in security.items()})}"))
+        # Other settings keep their full keys, one block per prefix, since no config class takes them yet.
+        for prefix, (name, what) in GROUPS.items():
+            group = {key: value for key, value in values.items() if key in SETTINGS and key.startswith(prefix + '.')}
+            if group:
+                blocks.append((f'{instance}/config.py', f'# {what} are not read from config.py yet. Keep these overrides until they are.\n'
+                               f'{name} = {literal(group)}'))
         if 'security.controls_ips' in values:
             access = self.controls.routes.controls
             options = {'allow_ips': tuple(values['security.controls_ips'])} | ({'require_two_step': True} if access.require_two_step else {})
