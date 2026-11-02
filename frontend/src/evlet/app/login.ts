@@ -15,7 +15,8 @@ export interface LoginProps {
   onRetry: () => void;
 }
 
-const Logo = () => html`<span class="ev-logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6h12M6 12h9M6 18h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span>`;
+/** The Evlet mark: three bars on the accent square. Shared by sign-in and the sidebar. */
+export const Logo = () => html`<span class="ev-logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6h12M6 12h9M6 18h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span>`;
 
 export function LoginScreen(props: LoginProps): HTMLElement {
   const application = props.session?.application ?? {};
