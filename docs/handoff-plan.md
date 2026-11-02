@@ -66,6 +66,31 @@ Each phase is a branch stacked on the previous one and a draft PR against it.
 | 14 | `ui/04-testcrm` | `examples/testcrm/models.py`, launcher, browser end-to-end tests, performance budgets |
 | 15 | `ui/05-remove-solid` | Remove SolidJS, the Vue harness, the Projects demo and the page renderer; docs |
 
+## Phase 15 scope (`ui/05-remove-solid`)
+
+Done on this branch:
+
+- `frontend/index.html` loads the Evlet UI framework app; `npm run build` bundles it and
+  `scripts/install-ui.mjs` installs it in `evlet/ui/static`. `evlet.html` (Library) stays a
+  development page.
+- The app's routes follow the server's: `/app/<model>`, `/app/<model>/new`,
+  `/app/<model>/<id>` and `/app/<model>/<id>/view` (opens the record). The development-only
+  `/ui/...` and `/m/<model>` paths are gone. `/settings/accounts` and `/reports/<name>` show
+  a notice; other unmatched addresses (Python page routes) open Docs.
+- Removed: the SolidJS app, components and views, the Projects demo, `ViewRenderer` and the
+  runtime files only Solid used, `frontend/legacy` and its tests, and the packages solid-js,
+  vite-plugin-solid, @solidjs/testing-library, vue, @vitejs/plugin-vue, @vue/test-utils,
+  primevue, @primeuix/themes, @testing-library/jest-dom, prettier and @types/node.
+- The finite engine moved to `frontend/src/evlet/model/finite.ts`. Fixtures only Python reads
+  moved to `tests/fixtures`. The framework's recorded fixtures are now compared with fresh
+  ASGI responses in `tests/test_ui_contracts.py`.
+- Kept and documented as not rendered: the `evlet.ui` page API with `/api/ui` and
+  `/api/ui/resolve`, native panels, the Playground's Python pages, reports and form dialogs,
+  and account management (the `/api/auth/users` routes).
+
+Open for the owner: the browser has no Accounts screen, so adding users needs the HTTP
+routes until one is built on the framework.
+
 ## Quality gates for every phase
 
 1. **Implementation** with tests at public boundaries: real SQLite, authenticated

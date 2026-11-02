@@ -16,7 +16,8 @@ Status: implemented foundation, not a production business application framework.
 ## Milestone 1 baseline (historical)
 
 This section records the original foundation. Later sections and [Evlet UI](ui.md)
-describe the current implementation; the Vue renderer has been replaced.
+describe the current implementation; the Vue renderer was replaced by SolidJS, and
+SolidJS by Evlet's own UI framework.
 
 1. **A dependency-free Python core.** Small field descriptors and a metaclass
    collect model fields; an explicit `Registry` owns each application's models.
@@ -66,23 +67,27 @@ extra adds pytest (tests) and build (distribution checks).
 setuptools is the packaging build backend. `requirements-dev.lock` pins the
 resolved Python setup dependencies and their transitive dependencies with hashes.
 
-The active frontend uses SolidJS for rendering and first-party Evlet components.
-Vite, its Solid plugin, TypeScript, Vitest and jsdom support development and tests.
-Vue, PrimeVue and Vue Test Utils remain dev-only dependencies for the preserved
-migration regression harness. They are not imported by the production entry point.
-`package-lock.json` pins the complete tree. No backend runtime dependency was added.
+The browser interface is Evlet's own UI framework (`frontend/src/evlet/`, see
+[ui-framework.md](ui-framework.md)). It has no runtime dependencies: the production
+bundle contains only first-party code. Development uses four packages: Vite (dev
+server and production build), TypeScript (type checks), Vitest (tests) and jsdom (the
+DOM for tests and `npm run bench:ui`). SolidJS, Vue, PrimeVue and their plugins and
+test libraries were removed with the earlier interfaces. `package-lock.json` pins the
+complete tree. No backend runtime dependency was added.
 
 ## API and data flow
 
-`Model` definitions → `Registry` → `Database` → `Application` → JSON API → Solid.
+`Model` definitions → `Registry` → `Database` → `Application` → JSON API → Evlet UI
+(generated screens from `/api/schema` and the record routes).
 
 `evlet.ui` definitions → `ViewRegistry` → `SchemaCompiler` → version 1 UI schemas
-→ registered Solid renderers. `/api/ui` is separate from the existing model schema.
+→ `/api/ui` and `/api/ui/resolve`. The browser interface does not render these
+pages. `/api/ui` is separate from the existing model schema.
 See [Evlet UI](ui.md) for state, extension order, route resolution, and packaging.
 `evlet/ui/routes.py` owns UI HTTP routes and browser fallbacks;
 `evlet/ui/metadata.py` owns model screen metadata. The old `evlet.metadata` imports
-remain supported. Shared page, record and event fixtures are checked against real
-HTTP responses and used by browser tests.
+remain supported. Recorded API, screen, page, record and event fixtures are checked
+against real HTTP responses; the browser tests replay the API and screen fixtures.
 
 - `GET /health`: executes a database probe and returns `{"status":"ok"}`.
 - `GET /api/schema`: returns schema version 1 and registered model metadata.
@@ -136,7 +141,8 @@ changes do not affect database snapshots or migration history. `Model.Meta` and
 field display options remain Python-owned and contain no renderer component names.
 The HTTP schema adds UI version 1 while retaining schema version 1.
 
-The native Solid renderer builds navigation, lists, forms, and details from that contract.
+The browser renderer (first SolidJS, now Evlet's own UI framework) builds navigation,
+lists, forms, and details from that contract.
 A new Project model exercises the same components as the original three models.
 Forms omit untouched defaults on creation and send only changed values on edits.
 Callable defaults run only when the backend creates a record. Read-only fields

@@ -223,7 +223,7 @@ storage are not implemented.
 
 ## Layout metadata
 
-`Model.Meta.layout` groups visible fields without referring to Vue components:
+`Model.Meta.layout` groups visible fields without referring to browser components:
 
 ```python
 class Meta:

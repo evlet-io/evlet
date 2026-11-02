@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # testCRM launcher for macOS and Linux: a disposable project with examples/testcrm installed and
-# seeded, its backend and the /ui development server, all on loopback. The data is removed on exit.
+# seeded, its backend and the UI development server, all on loopback. The data is removed on exit.
 set -euo pipefail
 
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -94,7 +94,7 @@ for attempt in range(150):
     time.sleep(0.1)
 else:
     raise SystemExit('testCRM did not become ready.')
-print(f'testCRM is ready at http://127.0.0.1:{port}/ui. Press Control-C to stop.')
+print(f'testCRM is ready at http://127.0.0.1:{port}/. Press Control-C to stop.')
 PY
 then
   tail -n 30 "$project/backend.log" "$project/frontend.log" >&2

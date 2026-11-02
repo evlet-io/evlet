@@ -1,17 +1,38 @@
 # Evlet UI
 
-Evlet UI is the native SolidJS frontend. A local session opens Docs after sign-in.
-Demo Pages contains the Projects Explorer View and a page built with the Python UI
-API. Models contains generated screens backed by the existing authenticated API.
+The browser interface is built on Evlet's own UI framework, described in
+[ui-framework.md](ui-framework.md). Its code lives in `frontend/src/evlet/`. It has no
+runtime dependencies. A session opens Docs after sign-in. Every model the role can read
+gets a list and a record view, built from `/api/schema`, record details and the list
+routes, so a model-only application needs no frontend code.
 
-Projects under Demo Pages is browser-local sample data. Projects under Models uses
-the database, child tasks, actions, jobs and private attachments. These are separate
-examples. The demo keeps the approved light sidebar, blue active state, fixed top
-bar, independent list/preview scroll areas and expanded summary cards.
+The previous SolidJS interface and the Vue regression harness have been removed.
 
-Evlet's own UI framework, which replaces SolidJS in later phases, is described in
-[ui-framework.md](ui-framework.md). It lives in `frontend/src/evlet/` beside the current
-frontend and is not yet used by its screens.
+## What this interface renders
+
+- Sign-in and first-run setup (the first administrator account).
+- Docs after sign-in, with its topics.
+- The shell: sidebar with the models, recent records, search palette and New menu.
+- Generated model screens: lists, boards for models with a State, record views, new
+  records, actions, moves, void and revise, child tables, measures, related records and
+  files.
+
+Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
+`layout`, `key_fields`, `relations` and `measures`. See "What the model decides" in
+[ui-framework.md](ui-framework.md).
+
+## Not rendered by this interface
+
+These keep their Python APIs, HTTP routes, permission checks and tests. The browser
+interface does not show them (owner decision 3 in [handoff-plan.md](handoff-plan.md)):
+
+| Python API | Status |
+| --- | --- |
+| Python pages: `PageView`, `ListView`, `FormView`, layouts, `ViewRegistry` extensions and `CustomComponent` | Compiled and served by `GET /api/ui` and `GET /api/ui/resolve`. A page route opens Docs in the browser. Use generated screens and `Meta` options instead |
+| The Playground's Projects demo and Layouts page (`examples/playground/ui.py`) | Registered as Python pages, so not rendered |
+| Native TS/JS panels (`evlet/native.py`, `views/` modules in an app) | Built, hashed and served from `/assets/apps/...` for signed-in users as before. No screen mounts them |
+| Reports and form dialogs (`dialog: true` actions) | Run through their existing routes. `/reports/<name>` shows a notice |
+| Account management | `/api/auth/users` routes are unchanged. `/settings/accounts` shows a notice |
 
 ## Build and run
 
@@ -22,8 +43,10 @@ bash scripts/playground.sh --setup
 ```
 
 Open http://127.0.0.1:5173. Keep the launcher running. Python source changes reload
-the backend; Solid source changes update through Vite. Set `EVLET_RELOAD=0` to turn
+the backend; browser source changes update through Vite. Set `EVLET_RELOAD=0` to turn
 off backend reload. The launcher uses loopback and does not replace an occupied port.
+In development, http://127.0.0.1:5173/evlet.html opens the component Library. It is
+not part of the production build.
 
 Build the bundled UI before building a Python distribution:
 
@@ -33,10 +56,34 @@ npm --prefix frontend run build
 .venv/bin/python -m build --no-isolation
 ```
 
-The frontend build copies assets into `evlet/ui/static/`. The wheel serves them
-through `Application`, including direct URLs and browser refresh. Installed Python
-applications do not require Node for ordinary development. Node is needed when
-changing the browser renderer or building from source.
+`npm run build` type checks, builds `frontend/index.html` into `frontend/dist` and copies
+it into `evlet/ui/static/`. The wheel serves those files through `Application`,
+including direct URLs and browser refresh. Installed Python applications do not need
+Node. Node is needed when changing the browser code or building from source.
+
+The production page loads no external fonts or scripts, so it works under the server's
+content security policy (`default-src 'self'`). It uses the system font stack.
+
+## Routes
+
+The Python server returns the app for these paths (`evlet/ui/routes.py`); anything else
+outside `/api/` is a 404.
+
+| Path | Screen |
+| --- | --- |
+| `/`, `/login` | Sign-in, or Docs when signed in |
+| `/docs`, `/docs/<topic>` | Docs |
+| `/app/<model>` | List (and board). Search, sort, page, view and filters are in the query |
+| `/app/<model>/new` | New record. Query values fill writable fields: `?customer=4` |
+| `/app/<model>/<id>` | Record view. `?tab=` keeps the tab |
+| `/app/<model>/<id>/view` | Older record link; opens the record view |
+| `/settings/accounts` | Notice: accounts are not managed in this interface |
+| `/reports/<name>` | Notice: reports are not shown in this interface |
+| Registered Python page routes | Served, then open Docs |
+
+The development-only `/ui` and `/m/<model>` paths of the earlier preview are gone.
+Signing in keeps the address the user opened. A record with unsaved changes asks
+before the page changes or the tab closes.
 
 ## A small application
 
@@ -51,9 +98,9 @@ app = App(name="notes", models=[Note])
 ```
 
 Run `uvicorn app:app --host 127.0.0.1 --port 8000 --reload`. Open
-http://127.0.0.1:8000, create the first administrator, then sign in. Notes has a list,
-a create form, an editor and read-only detail. Search, filters, sort and pagination
-run through the model query API. Role, field and record permissions stay on the server.
+http://127.0.0.1:8000, create the first administrator, then sign in. Notes has a list
+and a record view. Search, filters, sort and paging run through the model query API.
+Role, field and record permissions stay on the server.
 
 `App` is a local convenience entry point. Its default database is `.data/notes.sqlite3`;
 its default authentication allows initial setup and insecure cookies only on exact
@@ -61,7 +108,20 @@ loopback origins on port 8000. A deployed site must supply its database and expl
 `LocalAuth` configuration. Existing `Application(database, auth=..., ...)` consumers
 can pass `views=[...]` or `ui=ViewRegistry(...)` without changing model APIs.
 
-## Two ways to define a page
+## Records and concurrency
+
+Authenticated record GET/PATCH responses include ETag headers. The record view sends
+If-Match on edits, deletes, moves and actions. A stale revision returns 409 and keeps
+the draft. Clients without If-Match keep their behavior. Revision comparison happens
+inside the same transaction as the mutation and includes permitted child rows.
+Currency and decimal values stay exact strings.
+
+## Python page API
+
+This part documents the Python page API. It compiles and validates pages and serves
+them through `/api/ui`; the browser interface does not render them.
+
+### Two ways to define a page
 
 ```python
 from evlet.ui import PageView, Column, Card, Text, Button, Navigate
@@ -99,51 +159,22 @@ can change positional IDs; explicit IDs remain stable. Duplicate IDs, reused or
 cyclic nodes, unsupported props/events/slots, unsafe values and missing event
 targets are rejected with errors identifying the component.
 
-## Contracts and rendering
+### Contracts
 
 `ComponentDefinition` declares name, category, property types, defaults, events,
 slots, bindings, accessibility notes, renderer name and compatibility version.
-`ui.components.catalog()` returns inspectable metadata. Docs uses that same catalog
-for examples and property tables. Only implemented components are registered.
+`ui.components.catalog()` returns inspectable metadata.
 
 `/api/schema` retains model schema version 1 and UI metadata version 1.
 `/api/ui` provides the separate version 1 component/view schema. Both endpoints
 are authenticated when the application uses authentication. Generated UI metadata
 is filtered by the same model and field policy as the existing schema endpoint.
 Custom pages can specify `roles=("admin",)` and `requires=(Customer,)`.
-A page’s UI visibility is not a replacement for server-side authorization.
-
-## Prompts and errors
-
-Confirmations and action errors use Evlet dialogs. Cancelling navigation or a
-record reload keeps the unsaved draft. Back and Forward use the same confirmation.
-Validation errors use an Evlet dialog and return focus to the first invalid field;
-field errors also stay next to their inputs. Loading and background errors remain
-in the relevant view so they do not interrupt editing.
-
-Custom Solid components use `useApp().dialogs.confirm({title, message,
-confirmLabel, cancelLabel})`, which resolves to a boolean, or
-`useApp().dialogs.error(message, title)`. Await confirmation before changing data.
-Dialogs support keyboard focus, Escape, cancellation and queued requests. Do not
-call `window.alert`, `window.confirm` or `window.prompt` in application code.
-
-Closing or reloading a dirty page retains the browser's unsaved-change warning.
-Browsers do not permit a custom interactive dialog during tab unload.
-
-## Input controls
-
-Select and MultiSelect use searchable dropdowns with keyboard navigation. Type to
-filter choices, use the arrow keys and Enter to select, and Escape to close.
-Record links search the server and keep paginated choices inside the dropdown.
-Disabled choices stay unavailable, and a missing linked record keeps its ID until
-the user chooses a replacement. Controls share the same anchored popup behavior
-as date pickers, including inside dialogs.
+A page's UI visibility is not a replacement for server-side authorization.
 
 `TextInput`, `NumberInput`, `CurrencyInput` and model `Field` definitions accept
 `prefix` and `suffix`. These are display labels; they do not alter stored values
-or convert currency. Currency and decimal values remain exact strings. The
-Playground explicitly configures AED for its currency fields; the framework does
-not assume a currency. Number controls have no spinner arrows.
+or convert currency.
 
 ```python
 CurrencyInput(label="Amount", prefix="AED", bindings={"value": Bind("amount")})
@@ -151,83 +182,24 @@ TextInput(label="Website", prefix="https://", bindings={"value": Bind("domain")}
 view.field("budget").prefix = "AED"
 ```
 
-List selection counts and bulk actions replace the existing toolbar content,
-keeping the table in place. Solid consumers use the `selection` slot on `ListToolbar` with
-`selectionInToolbar` on `RecordList`; standalone lists retain their inline
-selection summary by default.
-
-## Editable dates and times
-
-`DatePicker`, `TimePicker` and `DateTimePicker` use the same custom controls in
-Python views, generated forms and the component explorer. Click the input or its
-icon to open the picker. The input remains editable while the picker is open.
-
-- `101226`, `10/12/26` and `10 Dec 2026` display as `10 Dec 2026` and store
-  `2026-12-10`. Numeric dates use day-month-year; two-digit years mean 2000–2099.
-- `6.30pm`, `630pm` and `18:30` display and store `18:30`.
-- Enter or leaving the field normalizes a valid entry. An invalid entry remains
-  visible with an error and prevents form submission.
-- Date/time values retain their stored timezone offset, seconds and fractional
-  seconds. A new value without an offset uses the browser's local timezone.
-- Alt+Down opens the picker with keyboard focus; arrow keys move between dates
-  or time options. Escape closes it and returns focus to the input.
-
-The popup follows its input while scrolling, flips above when needed and stays
-within the viewport. It also works inside a dialog. Focus thickens and colors the
-existing field border without adding an outer ring.
-
-The component explorer has independent scroll areas for its component list and
-details. Selecting another component resets only the details pane to the top.
-
-## Layout vocabulary
-
-The outer layout is separate from the active page:
-
-| Area | Responsibility |
-| --- | --- |
-| AppShell | Viewport, sidebar, top bar, view host and overlay ownership |
-| Sidebar | BrandArea, WorkspaceSwitcher, NavigationGroup, SavedViews, SidebarFooter |
-| TopBar | Leading, center and trailing slots |
-| ViewHost | Current page and its scroll areas |
-| StatusBar | Supporting page status and actions |
-| OverlayLayer | Menus, dialogs and notifications |
-
-The list alternative is **Explorer View**:
-
-| Area | Responsibility |
-| --- | --- |
-| PageHeader | Title, subtitle, badge, primary actions and trailing content |
-| SummaryRow | Summary cards; no automatic collapse |
-| ViewBar | Category tabs and view switcher |
-| ListToolbar | Search, filters, sorting and column controls |
-| RecordList | Rows, columns, selection and row actions |
-| ListFooter | Pagination and result counts |
-| RecordPreview | Icon, identifier, title, badge, metadata, tabs and footer |
-
-One primary action is a button. Multiple primary actions use a dropdown. Category
-tabs can use any select field. Each Solid area accepts its own classes, styles,
-standard element attributes and content slots; element references are forwarded.
-The full preview card scrolls in its own area. The shell does not scroll off-screen.
-
 Python layouts include Row, Column, Grid, Stack, Container, Section, Card, Split,
 Panel and FormLayout. A FormLayout uses 12 columns; a Field can set `width=6` or
-`width=12`. Layouts adapt to narrow screens. Shell slots are a typed Solid extension
-surface; Python applications use the standard shell automatically.
+`width=12`.
 
-## Routes
+### Page routes
 
-Generated routes are `/app/note`, `/app/note/new`, `/app/note/123` and
-`/app/note/123/view`. Explicit pages use their registered routes. Custom parameters
+Generated page names keep the routes `/app/note`, `/app/note/new`, `/app/note/123`
+and `/app/note/123/view`. Explicit pages use their registered routes. Custom parameters
 use `/orders/{reference}` or `/orders/{id:int}` and are available in view state.
 The route resolver rejects ambiguous routes. The namespaces `/api`, `/app`,
 `/assets`, `/docs`, `/login`, `/settings` and `/health` are reserved.
 
-Use `Navigate.to`, `to_list`, `to_record`, `to_new` or `back`. Browser history and
-direct links work. `GET /api/ui/resolve?path=/app/note/123` resolves only views
-available to the authenticated user. Record loading still performs record-level
-checks through the existing API.
+`Navigate.to`, `to_list`, `to_record`, `to_new` and `back` are page operations.
+`GET /api/ui/resolve?path=/app/note/123` resolves only views available to the
+authenticated user. Record loading still performs record-level checks through the
+existing API.
 
-## State and events
+### State and events
 
 ```python
 from evlet.ui import Bind, When, Select, TextInput
@@ -242,36 +214,23 @@ page.add(TextInput(
 ))
 ```
 
-View state is local to a mounted view. Record state belongs to the document
-controller. Component state is local to each rendered component; event payloads
-are available as `When.state("value", scope="component")`. Application state is
-shared for the signed-in workspace and cleared on sign-out. Session identity and
-tenant fields are read-only in declarative state.
+View state is local to a view, record state to its document and component state to
+each component; event payloads are available as
+`When.state("value", scope="component")`. Application state is shared for the
+signed-in workspace. Session identity and tenant fields are read-only in declarative
+state.
 
 Expressions support equality, inequality, ordering, contains, `&`, `|`, `~` and
 conditional values with `.otherwise(yes, no)`. Use `When.field("status")` for
 record values. `view.computed` maps scoped paths to expressions; circular
-computed dependencies fail compilation. The compiler emits the dependency index;
-Solid tracks the specific state reads for updates.
+computed dependencies fail compilation. The compiler emits the dependency index.
 
 Events use registered operations: Navigate, Refresh, SetValue, ResetValue,
 OpenDialog, CloseDialog, ShowNotification, ExecuteAction and SubmitForm. A handler
 can contain an ordered list. Model actions go through authenticated server routes.
-UI-required or hidden fields never relax the server’s validation rules.
+UI-required or hidden fields never relax the server's validation rules.
 
-## Generated records
-
-The existing model metadata controls field types, default values, labels,
-read-only fields and permissions. Typed native inputs preserve decimal/currency
-strings and omit untouched server defaults. Link choices use paginated, searched
-server queries. Child collections preserve separate create/update/delete rights.
-Attachments remain private, with the existing file size and count limits.
-
-Lists support server queries, category tabs, list/gallery presentations, column
-visibility and ordering, selection, bulk delete and saved filters. Preferences
-are stored per browser, tenant, user and model; they do not grant access to data.
-Filters, order, search, page size and offset are represented in the URL. Bulk
-deletes report individual failures and do not claim an all-or-nothing operation.
+### Model views
 
 ```python
 from evlet.ui import ListView, FormView, FormLayout, Field
@@ -286,14 +245,12 @@ customer_form = FormView(
 )
 ```
 
-Authenticated record GET/PATCH responses include ETag headers. The new editor
-sends If-Match on edits, deletes and record actions. A stale revision returns 409
-and preserves the draft. Existing clients without If-Match retain their behavior.
-Revision comparison happens inside the same transaction as the mutation and
-includes permitted child rows. Live updates do not overwrite dirty forms. Leaving
-an unsaved form asks whether to discard it.
+Model views keep their generated name and route. Use PageView for a custom route.
+Generated forms preserve the model's named layout groups. The first group has
+ID `main_details`; later groups use `section_2`, `section_3`, and so on. The browser
+interface reads `Model.Meta` for its screens, not these views.
 
-## Extensions
+### Extensions
 
 ```python
 from evlet.ui import ViewRegistry, Card, Text
@@ -309,15 +266,12 @@ def customer_help(view):
 ```
 
 Order: framework defaults, application definitions, application extensions, site
-extensions, browser user preferences. Extensions run in registration order within
-each layer. Repeated names in the same layer/target, missing targets and duplicate
-component IDs fail explicitly. A later assignment to a property intentionally
-overrides the earlier value. Applied extension metadata is inspectable in `/api/ui`.
+extensions. Extensions run in registration order within each layer. Repeated names
+in the same layer/target, missing targets and duplicate component IDs fail
+explicitly. A later assignment to a property intentionally overrides the earlier
+value. Applied extension metadata is inspectable in `/api/ui`.
 
-## Custom frontend components
-
-Register a serializable Python contract, then register the renderer in the
-browser bundle using `registerComponent` or `registerLazyComponent`:
+### Custom components
 
 ```python
 from evlet.ui import ComponentDefinition, CustomComponent
@@ -329,35 +283,9 @@ ui.components.register(ComponentDefinition(
 page.add(CustomComponent("Schedule", compact=True))
 ```
 
-```typescript
-registerLazyComponent("Schedule", () => import("./Schedule"), 1);
-```
-
-The renderer implements `RendererProps`, including the node contract and runtime
-state/event context. Unsupported compatibility versions produce a visible error.
-Custom code must use the existing authenticated data client. ProjectsDemo shows
-this boundary in `examples/playground/ui.py` and `frontend/src/demos/`.
-
-## Compatibility and current boundaries
-
-No model, database or existing JSON API was replaced. The active bundle uses Solid
-and the first-party components only. `frontend/legacy` keeps the original Vue
-screens as a test-only parity harness. Vue, PrimeVue and their test tools are dev
-dependencies and are absent from the production dependency graph.
-
-The implemented catalog covers the working pages and generated CRUD flow. It does
-not claim every widget in the broader design document. Tree, calendar, autocomplete,
-visual filter composition beyond the native query controls, remote preference
-sync, SSO and a visual editor remain separate work. A custom renderer can provide
-specialized screens without changing Python models or permission rules.
-
-Run backend tests, frontend tests/type checks, production build and the isolated
-wheel check before shipping. Browser tests use a disposable database; preserve the
-user’s working database, accounts, attachments and existing migration history.
-
-Model views keep their generated name and route. Use PageView for a custom route.
-Generated forms preserve the model’s named layout groups. The first group has
-ID `main_details`; later groups use `section_2`, `section_3`, and so on.
+The contract is validated and appears in `/api/ui`. The browser renderer registry
+(`registerComponent`, `registerLazyComponent`) belonged to the SolidJS interface and
+has been removed; no browser code renders custom components now.
 
 ## Work across the UI boundary
 
@@ -367,19 +295,20 @@ routes through one dispatch hook; record operations, authentication, permissions
 storage and jobs remain with their existing services. Imports from
 `evlet.metadata` remain supported through a compatibility re-export.
 
-The shared fixtures under `frontend/src/tests/` cover:
+Recorded contracts, each compared with fresh authenticated ASGI responses by
+`tests/test_ui_contracts.py`:
 
-- `ui-fixture.json`: the Playground's `/api/ui` response and model schema.
-- `record-fixture.json`: a paginated record list, a record with child rows, and an
-  event page. Only the opaque random cursor value is normalized; its format and
-  the rest of the response are checked.
+- `frontend/src/evlet/tests/api-fixture.json` and `screens-fixture.json`: the responses
+  the browser tests replay (generator `scripts/generate_ui_framework_fixtures.py`).
+- `tests/fixtures/ui-fixture.json`: the Playground's `/api/ui` response and model schema.
+- `tests/fixtures/record-fixture.json`: a paginated record list, a record with child
+  rows, and an event page. Only the opaque random cursor value is normalized.
 
-The generator runs the actual authenticated ASGI routes against a temporary
-SQLite database. Python compares the responses with committed fixtures, and the
-browser tests render or consume the same payloads. For an intentional contract
-change, run from the repository root:
+The generators run the actual authenticated routes against a temporary SQLite
+database. For an intentional contract change, run from the repository root:
 
 ```sh
+.venv/bin/python -m scripts.generate_ui_framework_fixtures
 .venv/bin/python -m scripts.generate_ui_fixtures
 .venv/bin/python -m pytest tests/test_ui_contracts.py tests/test_ui.py
 npm --prefix frontend test
@@ -389,6 +318,8 @@ Review the fixture diff before accepting it. A failed comparison should not be
 fixed by silently regenerating a contract the other side cannot consume.
 
 For features that span both sides, agree the response shape and fixture first,
-then implement and test both producers and consumers. Link titles, aggregate
-queries, server-checked field rules, filtered link choices and printing need this
-process before implementation. These notes do not add those features.
+then implement and test both producers and consumers.
+
+Run backend tests, frontend tests and type checks, the production build and the
+isolated wheel check before shipping. Browser tests use a disposable database;
+preserve the user's working database, accounts, attachments and migration history.

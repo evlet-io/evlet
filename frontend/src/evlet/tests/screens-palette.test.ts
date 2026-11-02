@@ -26,7 +26,7 @@ describe('command palette', () => {
     press(input(), 'ArrowRight');
     expect(text(palette()!.querySelector('.qa-tile.on'))).toBe('Products');
     press(input(), 'Enter');
-    await until(() => expect(location.pathname).toBe('/ui/m/product'));
+    await until(() => expect(location.pathname).toBe('/app/product'));
     expect(palette()).toBeNull();
   });
 
@@ -41,7 +41,7 @@ describe('command palette', () => {
     expect(searched.map(url => url.pathname).sort()).toEqual(['/api/contact', '/api/customer', '/api/order', '/api/product']);
     expect(searched.every(url => url.searchParams.get('limit') === '5')).toBe(true);
     press(input(), 'Enter');
-    await until(() => expect(location.pathname).toBe('/ui/m/customer/25'));
+    await until(() => expect(location.pathname).toBe('/app/customer/25'));
 
     press(document.body, 'k', { metaKey: true });
     expect([...palette()!.querySelectorAll('.pal-sec')][0].querySelector('.pal-sh')!.textContent).toContain('Recent');

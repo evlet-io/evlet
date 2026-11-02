@@ -1,12 +1,21 @@
 # Browser UI work
 
-This area owns Solid components, generated model screens, browser navigation,
-state, API and event clients, styles and browser tests. `legacy/` is only a Vue
-regression harness; it shares the active API, event and schema helpers.
+This area is the browser interface, built on Evlet's own UI framework in
+`src/evlet/`: the reactive core, DOM templates, router, API client, model runtime,
+the finite engine (`model/finite.ts`), the component library (`ui/`) and the
+generated screens (`app/`). See `docs/ui-framework.md` and `docs/ui.md`. There is no
+SolidJS, Vue or legacy harness, and the framework has no runtime dependencies. Do
+not add one without a written justification.
 
-Keep the approved Projects demo, login, Docs landing page and generated screens
-working. UI changes must continue to enforce backend permissions and consume
-Python JSON contracts rather than importing business rules into the browser.
+`index.html` is the production entry. `evlet.html` (the component Library) is a
+development page and is not built. The app's routes must match the paths
+`evlet/ui/routes.py` serves.
+
+Keep login, the Docs landing page and generated screens working. Python pages,
+native panels, reports and account management are not rendered here; do not
+reintroduce a renderer for them without an owner decision. UI changes must continue
+to enforce backend permissions and consume Python JSON contracts rather than
+importing business rules into the browser.
 
 For UI-only work, leave database adapters, migrations, authentication, jobs,
 storage, the CLI and application business code unchanged. A task that explicitly
@@ -16,14 +25,15 @@ Before implementing a feature that needs new backend data, define and review its
 JSON shape and shared fixture. Implement the backend response and browser consumer
 against that same contract. Do not infer a new API from a browser mock.
 
-`src/tests/ui-fixture.json` contains the Playground page and model contracts.
-`src/tests/record-fixture.json` contains list, detail-with-children and event
-responses. Python compares them against actual authenticated ASGI responses;
-browser tests render or consume them. Generate intentional updates from the repo
-root with `.venv/bin/python -m scripts.generate_ui_fixtures`, then inspect the diff.
+`src/evlet/tests/api-fixture.json` and `screens-fixture.json` hold responses
+recorded from the real ASGI routes; the tests replay them and
+`tests/test_ui_contracts.py` checks them against fresh responses. Regenerate
+intentional updates from the repo root with
+`.venv/bin/python -m scripts.generate_ui_framework_fixtures`, then inspect the diff.
+`src/evlet/tests/finite-fixtures.json` comes from `scripts/generate_finite_fixtures.py`.
 A failing fixture is evidence of a contract change, not a reason to regenerate it
 without review.
 
 Run `npm test` and `npm run build` here. For shared contract changes, also run
 `.venv/bin/python -m pytest tests/test_ui_contracts.py tests/test_ui.py` from the
-repo root. The production build uses Solid; the Vue plugin belongs only to tests.
+repo root.

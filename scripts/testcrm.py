@@ -7,7 +7,7 @@ database. The data is fictional.
     .venv/bin/python -m scripts.testcrm build DIRECTORY    # project, instance, install and seed
     EVLET_TESTCRM_PROJECT=DIRECTORY uvicorn scripts.testcrm:create_app --factory
 
-scripts/testcrm.sh does both and starts the /ui development server.
+scripts/testcrm.sh does both and starts the UI development server.
 """
 
 import argparse
@@ -117,7 +117,7 @@ def build(project, *, frontend_port=5173):
 
 
 def load(project, *, frontend_port=5173):
-    """The instance's application. Its origin is the /ui development server, which proxies /api here."""
+    """The instance's application. Its origin is the UI development server, which proxies /api here."""
     from evlet.instances import load_runtime
     return load_runtime(Path(project), INSTANCE, port=frontend_port, development=True)
 

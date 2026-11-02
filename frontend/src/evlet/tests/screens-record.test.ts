@@ -18,7 +18,7 @@ const cellOf = (row: Element, col: string) => [...row.querySelectorAll<HTMLEleme
 
 describe('generated record view', () => {
   it('lays out the header, summary, Details sections and a tab per Table from the schema', async () => {
-    const { host } = start(orderRoutes(), '/ui/m/order/1');
+    const { host } = start(orderRoutes(), '/app/order/1');
     await until(() => expect(text(host.querySelector('.doc-head .eyebrow'))).toBe('Order'));
     expect(text(host.querySelector('.doc-head h1'))).toContain('Big order');
     expect(text(host.querySelector('.crumbs .cur'))).toBe('Big order');
@@ -37,7 +37,7 @@ describe('generated record view', () => {
   });
 
   it('saves one field in place with the record revision and offers Undo', async () => {
-    const { host, sent } = start(orderRoutes(), '/ui/m/order/1');
+    const { host, sent } = start(orderRoutes(), '/app/order/1');
     await until(() => expect(field(host, 'title')?.querySelector('button.fval')).toBeTruthy());
     click(field(host, 'title')!.querySelector('button.fval'));
     const input = field(host, 'title')!.querySelector('input')!;
@@ -52,7 +52,7 @@ describe('generated record view', () => {
   });
 
   it('keeps the draft and offers Reload when the record changed elsewhere', async () => {
-    const { host } = start(orderRoutes(recorded.stale_if_match), '/ui/m/order/1');
+    const { host } = start(orderRoutes(recorded.stale_if_match), '/app/order/1');
     await until(() => expect(field(host, 'title')?.querySelector('button.fval')).toBeTruthy());
     click(field(host, 'title')!.querySelector('button.fval'));
     const input = field(host, 'title')!.querySelector('input')!;
@@ -64,7 +64,7 @@ describe('generated record view', () => {
   });
 
   it('edits a line in the Lines tab, then saves the change set from the save bar', async () => {
-    const { host, sent } = start(orderRoutes(), '/ui/m/order/1?tab=t-lines');
+    const { host, sent } = start(orderRoutes(), '/app/order/1?tab=t-lines');
     await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
     await until(() => expect(text(host.querySelector('.g-t .n'))).toBe('120'));
     const qty = cellOf(rowsIn(host)[1], 'qty');
@@ -82,7 +82,7 @@ describe('generated record view', () => {
   });
 
   it('asks before leaving with unsaved lines, and stays when asked to keep editing', async () => {
-    const { host, router } = start(orderRoutes(), '/ui/m/order/1?tab=t-lines');
+    const { host, router } = start(orderRoutes(), '/app/order/1?tab=t-lines');
     await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
     const qty = cellOf(rowsIn(host)[0], 'qty');
     click(qty);
@@ -94,16 +94,16 @@ describe('generated record view', () => {
     await until(() => expect(text(document.querySelector('.modal h2'))).toBe('Discard unsaved changes?'));
     click(byText(document.body, '.modal-f button', 'Cancel'));
     expect(await leaving).toBe(false);
-    expect(location.pathname).toBe('/ui/m/order/1');
+    expect(location.pathname).toBe('/app/order/1');
     const again = router.go('docs', {});
     await until(() => expect(document.querySelector('.modal')).not.toBeNull());
     click(byText(document.body, '.modal-f button', 'Discard changes'));
     expect(await again).toBe(true);
-    await until(() => expect(location.pathname).toBe('/ui/docs'));
+    await until(() => expect(location.pathname).toBe('/docs'));
   });
 
   it('runs an action with its scalar arguments through the action dialog', async () => {
-    const { host, sent } = start([...orderRoutes(), ['POST', /\/api\/order\/1\/actions\/close$/, recorded.action]], '/ui/m/order/1');
+    const { host, sent } = start([...orderRoutes(), ['POST', /\/api\/order\/1\/actions\/close$/, recorded.action]], '/app/order/1');
     await until(() => expect(byText(host, '.doc-head button', 'Close')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Close'));
     const dialog = document.querySelector('.modal')!;
@@ -120,14 +120,14 @@ describe('generated record view', () => {
     const { host, sent } = start([...adminRoutes(),
       ['POST', /\/api\/customer$/, created],
       ['GET', /\/api\/customer\/56$/, { ...created, status: 200 }],
-    ], '/ui/m/customer/new?name=Acme%20Trading');
+    ], '/app/customer/new?name=Acme%20Trading');
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New customer'));
     const name = host.querySelector<HTMLInputElement>('.fld[data-field="name"] input')!;
     expect(name.value).toBe('Acme Trading');
     expect(host.querySelector('.doc-side')).toBeNull();
     typeInto(host.querySelector<HTMLInputElement>('.fld[data-field="credit_days"] input')!, '30');
     click(byText(host, '.ev-savebar button', 'Create customer'));
-    await until(() => expect(location.pathname).toBe('/ui/m/customer/56'));
+    await until(() => expect(location.pathname).toBe('/app/customer/56'));
     expect(requests(sent, 'POST', /customer$/)[0].body).toMatchObject({ name: 'Acme Trading', credit_days: 30 });
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toContain('Acme Trading'));
     expect(lastToast()).toContain('Customer created');
@@ -144,7 +144,7 @@ describe('permission-driven screens', () => {
   ];
 
   it('a viewer sees only readable fields, no New, no actions, and nothing editable', async () => {
-    const { host } = start(viewer(), '/ui/m/contact');
+    const { host } = start(viewer(), '/app/contact');
     await until(() => expect([...host.querySelectorAll('thead th')].map(text)).toEqual(['Name', 'Email']));
     expect(byText(host, '.ph-actions button', /New contact/)).toBeNull();
     expect(host.querySelector('.topbar .btn.primary')).toBeNull();
@@ -170,7 +170,7 @@ describe('permission-driven screens', () => {
         uploaded = true;
         return copy(screen.attachment_upload);
       }],
-    ], '/ui/m/contact/1');
+    ], '/app/contact/1');
     await until(() => expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['name', 'email', 'phone', 'notes']));
     expect(host.querySelectorAll('.fs button.fval').length).toBe(4);
     expect(byText(host, '.doc-head button', 'Mark contacted')).not.toBeNull();

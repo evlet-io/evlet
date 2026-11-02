@@ -15,8 +15,9 @@ may change them with the relevant backend tests. Never bypass record, field,
 action or tenant checks to make a screen work.
 
 Agree the JSON shape and shared fixture before adding a feature across Python and
-the browser. Existing fixtures live in `frontend/src/tests`; the generator is
-`scripts/generate_ui_fixtures.py`. Python checks real authenticated HTTP output,
+the browser. Page and record fixtures live in `tests/fixtures` (generator
+`scripts/generate_ui_fixtures.py`); the UI framework's recorded responses live in
+`frontend/src/evlet/tests` (generator `scripts/generate_ui_framework_fixtures.py`). Python checks real authenticated HTTP output,
 and browser tests use the same payloads. Review fixture diffs before accepting a
 contract change, and keep older public imports working.
 

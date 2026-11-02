@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tests'))
 from finite_fixtures import collect
 
-PATH = Path(__file__).resolve().parents[1] / 'frontend/src/tests/finite-fixtures.json'
+PATH = Path(__file__).resolve().parents[1] / 'frontend/src/evlet/tests/finite-fixtures.json'
 
 
 def main():

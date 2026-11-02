@@ -1,5 +1,4 @@
-// The Docs landing page after sign-in: the developer guide that the SolidJS Docs view carries,
-// with its topics, examples and the models of this workspace. The Python page renderer and the
+// The Docs landing page after sign-in: the developer guide, with its topics, examples and the models of this workspace. The Python page renderer and the
 // Projects demo are not rendered by this interface (docs/handoff-plan.md, decision 3), so their
 // topics point to the Python APIs instead of live demos.
 
@@ -102,8 +101,8 @@ const TOPICS: Topic[] = [
       table([['Sidebar', 'Workspace, app bar, models, recent records, account, theme.'], ['Top bar', 'Sidebar toggle, breadcrumbs, search, shortcuts, New.'],
         ['View', 'The page: a list, a board, a record or these docs.'], ['Layers', 'Menus, dialogs, drawers, toasts and the search palette.']]))}
     ${section('From a model to its screens', p('Lists show Meta.list_fields (up to eight), with the title pinned. A model with a State also gets a board and saved views per state. A record shows the title, the State as steps with its moves, a summary strip, a Details tab built from Meta.layout, one tab per Table and the side panel.'), code(screensCode))}
-    ${section('Routes', p('Every model has /m/model, /m/model/new and /m/model/123. Lists keep their search, sort, page and view in the address, so a link opens the same list. A record keeps its tab: /m/invoice/42?tab=lines.'),
-      p('Python pages (PageView) keep their Python API; this interface renders model screens and docs.'), code(pageCode))}
+    ${section('Routes', p('Every model has /app/model, /app/model/new and /app/model/123. Lists keep their search, sort, page and view in the address, so a link opens the same list. A record keeps its tab: /app/invoice/42?tab=lines.'),
+      p('This interface renders model screens and these docs. Python pages (PageView), reports and native panels keep their Python API but are not rendered here.'), code(pageCode))}
   </article>` },
   { id: 'state', title: 'Rules and actions', render: () => html`<article class="ev-doc-article">
     ${section('The model decides; the screen explains', p('Calculated values show their rule. Rules hide and clear fields, make them required, or lock them, and say why in place. The browser evaluates the same finite rules as the server, and the server checks every write again.'), code(rulesCode))}

@@ -14,7 +14,7 @@
 // When the schema ships a calculation plan, a Session (session.ts) computes calculated
 // fields, initial values and the applies/required/locked rules into the field cells.
 
-import { compare, parse, type FiniteDocument } from '../../runtime/FiniteEngine';
+import { compare, parse, type FiniteDocument } from './finite';
 import { ApiError, ConflictError, ValidationError, type ApiClient, type DraftResult, type FieldErrors, type RecordData } from '../api';
 import { batch, cell, derive, getOwner, runWithOwner, scope, type Cell, type Derive } from '../reactive';
 import { buildChanges, findField } from './changes';

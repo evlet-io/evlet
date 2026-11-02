@@ -1,4 +1,4 @@
-// Helpers for the screen tests: the whole app mounted on jsdom's location, its router under /ui,
+// Helpers for the screen tests: the whole app mounted on jsdom's location, its router at the site root,
 // and a fetch stub that replays responses recorded from the real ASGI routes (api-fixture.json,
 // screens-fixture.json).
 import { vi } from 'vitest';
@@ -34,11 +34,11 @@ export const adminRoutes = (): Route[] => [
   ['GET', /\/api\/schema$/, screen.schema],
 ];
 
-export function start(routes: Route[], path = '/ui/docs', options: { storage?: Storage | null } = {}) {
+export function start(routes: Route[], path = '/docs', options: { storage?: Storage | null } = {}) {
   window.history.replaceState(null, '', path);
   const stub = server(routes.map(([method, pattern, reply]) => [method, pattern, typeof reply === 'function' ? reply : () => copy(reply)]) as any);
   const api = new AppClient({ fetch: stub.fetch });
-  const router: AppRouter = appRouter({ base: '/ui' });
+  const router: AppRouter = appRouter();
   const stopRouter = router.start();
   const host = document.createElement('div');
   host.id = 'evlet-app';
