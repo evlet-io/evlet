@@ -4215,6 +4215,7 @@
           "model": "projecttask",
           "link": "project",
           "label": "Tasks",
+          "row_changes": false,
           "min_rows": 0,
           "max_rows": 100
         }

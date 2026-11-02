@@ -391,7 +391,10 @@ class Business:
             entry['permissions'].update(corrections)
             entry['child_only'] = model in self.child_models
             from .documents import row_bounds
+            # row_changes: the parent's save takes {create, update, delete, order} change sets (document route);
+            # otherwise it takes only full row lists without _key (legacy ChildTable on a plain model).
             entry['children'] = [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label,
+                                  'row_changes': bool(getattr(model, '__declaration_mode__', False)),
                                   **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child)))}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
             from .states import action_schema, state_schema

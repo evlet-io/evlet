@@ -6662,7 +6662,8 @@
        "max_rows": 1000,
        "min_rows": 0,
        "model": "invoice_lines",
-       "name": "lines"
+       "name": "lines",
+       "row_changes": true
       }
      ],
      "description": "",
@@ -8390,7 +8391,8 @@
        "max_rows": 1000,
        "min_rows": 0,
        "model": "invoice_lines",
-       "name": "lines"
+       "name": "lines",
+       "row_changes": true
       }
      ],
      "description": "",
@@ -10630,7 +10632,8 @@
        "max_rows": 1000,
        "min_rows": 0,
        "model": "order_lines",
-       "name": "lines"
+       "name": "lines",
+       "row_changes": true
       }
      ],
      "description": "",
@@ -10976,7 +10979,8 @@
        "max_rows": 9,
        "min_rows": 0,
        "model": "order_lines_parts",
-       "name": "parts"
+       "name": "parts",
+       "row_changes": true
       }
      ],
      "description": "",
