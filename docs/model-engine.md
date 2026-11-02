@@ -45,7 +45,7 @@ class Contact(Model):
 ### More field types
 
 ```python
-from evlet import Currency, Duration, Model, Percent, Phone, Reference, Tags, Text, Time
+from evlet import Currency, Duration, Integer, Model, MultiSelect, Percent, Phone, Reference, Tags, Text, Time
 
 class Visit(Model):
     phone = Phone()                       # "+971 50 123 4567" is stored as "+971501234567"
@@ -53,6 +53,8 @@ class Visit(Model):
     starts = Time()                       # "09:30" or "09:30:00", no timezone
     length = Duration(default=0)          # "PT1H30M" or 5400; returned as "PT1H30M"
     labels = Tags()                       # ["vip", "north"]
+    days = MultiSelect(["mon", "tue", "wed"], default=["mon"])  # ["mon", "wed"], in the order of the choices
+    nights = Integer(default=1, suffix="nights")  # suffix: a unit shown after the input
     about = Reference()                   # {"model": "customer", "id": 4}, any registered model
     fee = Currency(currency="AED")        # or currency="code_field" naming a text field
     code_field = Text(default="AED")
@@ -65,9 +67,13 @@ class Visit(Model):
 | `Time` | TEXT `HH:MM:SS` | no timezone, whole seconds | equality and order |
 | `Duration` | INTEGER seconds | ISO 8601 days, hours, minutes and seconds (`P1DT2H`, `PT90M`) or whole seconds, 0 or more | number filters; values in either form |
 | `Tags` | TEXT JSON array | at most 20 distinct tags (ignoring case) of 1 to 40 characters, without quotes, backslashes, commas or control characters; a text value is split on commas | `contains` matches one whole tag exactly, including case (duplicates are detected ignoring case); equality matches the whole list |
+| `MultiSelect` | TEXT JSON array, like `Tags` | some of its choices, each once, saved in the order of the choices | `contains` matches one choice; equality matches the whole list |
 | `Reference` | two columns `<name>_model`, `<name>_id`, no SQL foreign key; `index=True` indexes both columns together (not `unique`) | a registered model and a record that exists, checked when the value changes | equality with `{"model", "id"}` and `isnull` |
 | `State` | TEXT like `Select` | one of its states; set only to the default on create, then changed only by its `Move`s; at most one per root document; see [states-actions.md](states-actions.md) | text filters |
 | `Sequence` | TEXT, null until assigned, unique with its scope fields | a document number such as `INV-{year}-{n:05}` written only by the engine on create or when a move enters `assign_on`; root documents only; see [sequences.md](sequences.md) | text filters |
+
+Every field takes `suffix=` (at most 20 characters), a unit the forms show after the input,
+such as `"%"` or `"days"`. It is display metadata only, like `prefix` on a UI control.
 
 Any editable field may declare `editable_when_locked=True` so that ordinary writes can still
 change it while its document is in a locked State (for example remarks).

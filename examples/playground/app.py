@@ -14,6 +14,7 @@ from evlet import (Action, ApiScope, AppDefinition, Application, ChildTable, Eve
 from evlet.routing import resolve_routes
 from .models import Customer, Invoice, Project, ProjectTask, registry
 from .migrate import configured_database
+from .settings import ProjectPreferences, ProjectSettings
 from .ui import playground_ui
 
 portal = Frontend('portal', kind='static', dist='portal', path='/portal', title='Customer portal', auth='portal', api=('playground.portal',))
@@ -67,9 +68,12 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None):
     jobs = JobQueue(database, (Task('project_progress', refresh_progress),), tenant=tenant, events=events, policy=policy)
     def queue_progress(tx, user, project):
         return jobs.enqueue(tx, 'project_progress', {'project_id': project.id}, user=user, target=(Project, project.id))
-    return Application(database, name="Evlet Playground", playground=True, ui=playground_ui(), auth=auth, policy=policy, routes=routes,
-                       storage=storage, jobs=jobs, events=events, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
-                       actions=(Action(Project, 'start', 'Start project', start_project),
-                                Action(Project, 'complete', 'Complete project', complete_project),
-                                Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress)),
-                       attachments=(Project,))
+    app = Application(database, name="Evlet Playground", playground=True, ui=playground_ui(), auth=auth, policy=policy, routes=routes,
+                      storage=storage, jobs=jobs, events=events, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
+                      actions=(Action(Project, 'start', 'Start project', start_project),
+                               Action(Project, 'complete', 'Complete project', complete_project),
+                               Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress)),
+                      attachments=(Project,))
+    # Settings > Projects: people who can read projects see it; editors and admins change it.
+    app.business.settings.register('projects', ProjectSettings, ProjectPreferences, (Project,))
+    return app

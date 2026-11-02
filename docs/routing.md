@@ -76,8 +76,8 @@ build runs at `/customer-portal` on the primary host and at `/` on a sub-host. `
 the host's realm, which decides the session cookie: a portal frontend also mounted on
 the primary host reports `desk` there.
 
-`evlet.controls` serves Controls ([controls.md](controls.md)), and `evlet.settings`
-only redirects `/settings/accounts` to `/controls/users`. Flat-layout apps cannot
+`evlet.controls` serves Controls ([controls.md](controls.md)), and `evlet.settings` serves
+Settings ([settings.md](settings.md)) and redirects `/settings/accounts` to `/controls/users`. Flat-layout apps cannot
 register frontends yet.
 
 ## Sub-hosts, realms and API scopes
@@ -96,7 +96,10 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
 - A sub-host serves its root frontend at `/`. That frontend leaves the primary host
   unless `also_on_primary=True`. Sub-hosts serve `static` and `server` frontends; the
   framework pages (`/controls`, `/docs`, `/app`, `/settings` and the other reserved
-  paths except `/assets`, `/login` and `/logout`) answer 404 there.
+  paths except `/assets`, `/login` and `/logout`) answer 404 there. A portal host also
+  serves the portal subset of `/settings` (profile, password, notifications) and
+  `/api/_settings/me/...`, and loads the framework's own assets when its root frontend has
+  no file of that name.
 - In development, sub-hosts are `.localhost` names, such as `portal.localhost`, served
   over the development port. With a primary host they are public names on HTTPS.
 - **Realms.** A host's realm is `desk` on the primary host and the root frontend's
