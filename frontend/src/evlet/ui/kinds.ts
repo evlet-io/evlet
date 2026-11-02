@@ -5,7 +5,8 @@
 // dates, date-times in UTC, times as HH:MM:SS, durations as ISO 8601 (PT1H30M), tags as lists.
 
 import { parse as parseNumber, quantize, text as numberText } from '../model/finite';
-import { decimalMark, formatDate, formatDateTime, formatMoney, formatNumber, parseDate, plainNumber as plain, wallToUtc } from '../model/format';
+import { decimalMark, formatDate, formatDateTime, formatMoney, formatNumber, plainNumber as plain, wallToUtc } from '../model/format';
+import { clockText, dateOrder, parseClock, parseDay, parseDayTime, parseLength } from './dateparse';
 
 /** Typed number text as a plain decimal, or an error that names the person's decimal mark. */
 function plainNumber(text: string): string {
@@ -32,6 +33,8 @@ export interface Kind {
   placeholder?: string;
   /** How the control is built: a text input (default) or a dedicated control. */
   control?: 'textarea' | 'switch' | 'select' | 'link' | 'tags' | 'multiselect' | 'readonly';
+  /** A picker next to the text input (pickers.ts). */
+  picker?: 'date' | 'datetime' | 'time' | 'duration';
 }
 
 const empty = (value: unknown) => value === null || value === undefined || value === '';
@@ -62,8 +65,9 @@ function decimal(scale: (meta: FieldSchema) => number) {
 }
 
 const scaleOf = (meta: FieldSchema, fallback: number) => typeof meta.scale === 'number' ? meta.scale : fallback;
+/** The fixed currency code of a Currency field (AED unless the schema names one). */
 export const currencyOf = (meta: FieldSchema) => {
-  const code = (meta as any).currency;
+  const code = meta.currency;
   return typeof code === 'string' && /^[A-Z]{3}$/.test(code) ? code : 'AED';
 };
 
@@ -98,43 +102,40 @@ function isoDuration(seconds: number): string {
   return days || clock ? `P${days ? `${days}D` : ''}${clock ? `T${clock}` : ''}` : 'PT0S';
 }
 
-/** '1h 30m', '90m', '1:30' or '2d 4h' to seconds. A bare number is minutes. */
+/** '1h 30m', '90m', '1:30', '1.5h' or '2d 4h' to seconds. A bare number is minutes (dateparse.ts). */
 export function parseDuration(text: string): number {
-  const clean = text.trim().toLowerCase();
-  const clock = /^(\d+):([0-5]\d)$/.exec(clean);
-  if (clock) return Number(clock[1]) * 3600 + Number(clock[2]) * 60;
-  if (/^\d+$/.test(clean)) return Number(clean) * 60;
-  const parts = clean.replace(/\s+/g, '').match(/^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
-  if (!parts || !clean) throw new InputError('Type a length of time such as 1h 30m');
-  const [, days, hours, minutes, seconds] = parts;
-  if (![days, hours, minutes, seconds].some(Boolean)) throw new InputError('Type a length of time such as 1h 30m');
-  return ((Number(days ?? 0) * 24 + Number(hours ?? 0)) * 60 + Number(minutes ?? 0)) * 60 + Number(seconds ?? 0);
+  const seconds = parseLength(text);
+  if (seconds === null) throw new InputError('Type a length of time such as 1h 30m, 1:30, 1.30 or 90m');
+  return seconds;
 }
 
 // ---------- dates and times ----------
 
 const pad = (number: number) => String(number).padStart(2, '0');
 
-/** 'DD-MM-YYYY HH:MM' (or the person's date format) in their time zone to a UTC ISO timestamp. */
-export function parseDateTime(text: string): string {
-  const match = /^(\d{1,2}[-/.]\d{1,2}[-/.]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]{3}\s+\d{4})(?:[ T,]+(\d{1,2})[:.](\d{2}))?$/.exec(text.trim());
-  const day = match ? parseDate(match[1]) : null;
-  if (!match || !day) throw new InputError('Enter a date and time as DD-MM-YYYY HH:MM');
-  const hours = Number(match[2] ?? 0), minutes = Number(match[3] ?? 0);
-  if (hours > 23 || minutes > 59) throw new InputError('Enter a time from 00:00 to 23:59');
-  const [year, month, date] = day.split('-').map(Number);
-  return wallToUtc(year, month, date, hours, minutes).toISOString().replace('.000Z', 'Z');
+/** The person's date format, as typed in a message: DD-MM-YYYY, MM/DD/YYYY or YYYY-MM-DD. */
+const dayHint = () => ({ DMY: 'DD-MM-YYYY', MDY: 'MM/DD/YYYY', YMD: 'YYYY-MM-DD' })[dateOrder()];
+
+/** A typed date (12062027, 12/6/27, today, +3: see dateparse.ts) as YYYY-MM-DD. */
+export function parseDateText(text: string): string {
+  const value = parseDay(text);
+  if (!value) throw new InputError(`Enter a date as ${dayHint()}`);
+  return value;
 }
 
-/** '14:05', '2:05 pm' or '14:05:30' to 'HH:MM:SS'. */
+/** A typed date and time ('12062027 1235', '12/06/27 9am', 'today 14:30') in the person's zone to a UTC ISO timestamp. */
+export function parseDateTime(text: string): string {
+  const value = parseDayTime(text);
+  if (!value) throw new InputError(`Enter a date and time as ${dayHint()} HH:MM`);
+  const [year, month, date] = value.day.split('-').map(Number);
+  return wallToUtc(year, month, date, value.hours, value.minutes).toISOString().replace('.000Z', 'Z');
+}
+
+/** '14:05', '1405', '935', '2:05 pm', '12am' or '14:05:30' to 'HH:MM:SS'. */
 export function parseTime(text: string): string {
-  const match = /^(\d{1,2})(?:[:.](\d{2}))?(?::(\d{2}))?\s*(am|pm)?$/i.exec(text.trim());
-  if (!match) throw new InputError('Enter a time as HH:MM, for example 14:30');
-  let hours = Number(match[1]);
-  const minutes = Number(match[2] ?? 0), seconds = Number(match[3] ?? 0), half = match[4]?.toLowerCase();
-  if (half) { if (hours < 1 || hours > 12) throw new InputError('Enter a time as HH:MM, for example 14:30'); hours = hours % 12 + (half === 'pm' ? 12 : 0); }
-  if (hours > 23 || minutes > 59 || seconds > 59) throw new InputError('Enter a time from 00:00 to 23:59');
-  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  const value = parseClock(text);
+  if (!value) throw new InputError('Enter a time as HH:MM, for example 14:30');
+  return clockText(value);
 }
 
 const timeText = (value: unknown) => {
@@ -197,24 +198,19 @@ export const KINDS: Record<string, Kind> = {
   },
   date: {
     format: value => formatDate(value as string),
-    parse: input => {
-      if (!input.trim()) return null;
-      const value = parseDate(input);
-      if (!value) throw new InputError('Enter a date as DD-MM-YYYY');
-      return value;
-    },
-    placeholder: 'DD-MM-YYYY', inputMode: 'numeric',
+    parse: input => input.trim() ? parseDateText(input) : null,
+    placeholder: 'DD-MM-YYYY', picker: 'date',
   },
   datetime: {
     format: value => formatDateTime(value as string),
     parse: input => input.trim() ? parseDateTime(input) : null,
-    placeholder: 'DD-MM-YYYY HH:MM',
+    placeholder: 'DD-MM-YYYY HH:MM', picker: 'datetime',
   },
-  time: { format: timeText, parse: input => input.trim() ? parseTime(input) : null, placeholder: 'HH:MM', inputMode: 'numeric' },
+  time: { format: timeText, parse: input => input.trim() ? parseTime(input) : null, placeholder: 'HH:MM', picker: 'time' },
   duration: {
     format: value => { const seconds = durationSeconds(value); return seconds === null ? '' : durationText(seconds); },
     parse: input => input.trim() ? isoDuration(parseDuration(input)) : null,
-    placeholder: '1h 30m',
+    placeholder: '1h 30m', picker: 'duration',
   },
   boolean: { format: value => value === true ? 'Yes' : value === false ? 'No' : '', control: 'switch' },
   select: { format: value => empty(value) ? '' : humanize(String(value)), control: 'select' },

@@ -2,6 +2,9 @@
 
 from evlet import Boolean, Currency, Date, DateTime, Decimal, Integer, Link, LongText, Model, Registry, Select, Text
 
+# Currencies the Playground records may use. A Currency field only shows the code; it never converts.
+CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
+
 
 class Customer(Model):
     class Meta:
@@ -12,6 +15,7 @@ class Customer(Model):
     name = Text(required=True, max_length=120)
     email = Text(max_length=254)
     active = Boolean(required=True, default=True)
+    currency = Select(CURRENCIES, required=True, default='AED', help_text='Invoices for this customer show amounts in it.')
     notes = LongText()
 
 
@@ -21,11 +25,15 @@ class Invoice(Model):
         list_fields = ('reference', 'customer', 'total', 'status', 'posting_date')
 
     customer = Link(Customer, required=True)
-    reference = Text(required=True, unique=True, max_length=40)
-    total = Currency(required=True, minimum="0.01")
+    # help_text reads under the input; tooltip sits behind a ? icon at its right end.
+    reference = Text(required=True, unique=True, max_length=40, help_text="The number printed on the invoice.",
+                     tooltip="Use the customer's purchase order number if they ask for one.")
+    # The currency comes from the customer the invoice is for.
+    total = Currency(required=True, minimum="0.01", currency='customer.currency')
     posting_date = Date()
     status = Select(["draft", "sent"], required=True, default="draft")
-    tax_rate = Decimal(scale=4, minimum="0", maximum="100", default="0.0000", label="Tax rate (%)", help_text="Recorded separately; this does not calculate the total.")
+    # suffix='%' puts a % box after the input, as Percent fields have.
+    tax_rate = Decimal(scale=4, minimum="0", maximum="100", default="0.0000", label="Tax rate", suffix="%", help_text="Recorded separately; this does not calculate the total.")
 
 
 class Payment(Model):
@@ -34,7 +42,9 @@ class Payment(Model):
 
     invoice = Link(Invoice, required=True)
     reference = Text(required=True, unique=True, max_length=40)
-    amount = Currency(required=True, minimum="0.01")
+    # The currency is a field on the payment itself.
+    currency = Select(CURRENCIES, required=True, default='AED')
+    amount = Currency(required=True, minimum="0.01", currency='currency')
     received_at = DateTime()
 
 
@@ -47,8 +57,9 @@ class Project(Model):
     name = Text(required=True, max_length=120)
     customer = Link(Customer)
     status = Select(['planned', 'active', 'done'], required=True, default='planned', read_only=True)
-    budget = Currency(minimum='0', default='0.00')
-    progress = Integer(minimum=0, maximum=100, default=0, label='Progress (%)')
+    # The currency is the Projects app setting "Project currency" (Settings, Projects).
+    budget = Currency(minimum='0', default='0.00', currency='settings.projects.currency')
+    progress = Integer(minimum=0, maximum=100, default=0, label='Progress', suffix='%')
     starts_on = Date()
     notes = LongText()
 

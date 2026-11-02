@@ -9,6 +9,7 @@ import { formatDate, formatDateTime, setRegion, type DateFormat, type NumberForm
 import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Checkbox, Icon, Switch } from '../ui/base';
 import { DialogFooter, copyText, openModal, toast } from '../ui/layers';
+import { Dropdown } from '../ui/pickers';
 import { humanize, InputError, kindOf } from '../ui/kinds';
 import './settings.css';
 
@@ -100,11 +101,10 @@ const row = (title: Child, text: Child, control: Child, badge: Child = null) =>
   html`<div class="set-row"><div class="set-row-t"><strong>${title}${badge}</strong>${text ? html`<p>${text}</p>` : null}</div><div class="set-row-c">${control}</div></div>`;
 const callout = (tone: 'info' | 'warn', icon: string, text: Child) => html`<div class=${`set-callout ${tone}`}>${Icon(icon, { size: 'sm' })}<span>${text}</span></div>`;
 const badge = (label: string, tone = '') => html`<span class=${`set-badge ${tone}`}>${label}</span>`;
-function select(value: string, options: Array<[string, string]>, onChange: (value: string) => void, label: string): HTMLSelectElement {
-  const element = html`<select class="input set-select" aria-label=${label} on:change=${(event: Event) => onChange((event.target as HTMLSelectElement).value)}>
-    ${options.map(([key, text]) => html`<option value=${key}>${text}</option>`)}</select>` as HTMLSelectElement;
-  element.value = value;
-  return element;
+function select(value: string, options: Array<[string, string]>, onChange: (value: string) => void, label: string): HTMLButtonElement {
+  const chosen = cell(value);
+  return Dropdown({ label, ariaLabel: label, className: 'set-select', value: () => chosen.get(), choices: () => options.map(([key, text]) => ({ value: key, label: text })),
+    onChange: next => { if (next === null) return; chosen.set(next); onChange(next); } });
 }
 const choice = (on: () => boolean, title: string, text: string, pick: () => void, disabled = false) =>
   html`<button type="button" class="set-choice" class:on=${on} aria-pressed=${() => String(on())} disabled=${disabled} on:click=${pick}>
@@ -611,10 +611,9 @@ function Mine(ctx: SettingsContext, app: string, current: AppState): Node {
 function Control(field: AppField, value: () => unknown, change: (value: unknown) => void, readOnly: boolean): Node {
   if (field.type === 'boolean') return Switch({ on: () => value() === true, ariaLabel: field.label, disabled: readOnly, onChange: change });
   if (field.type === 'select') {
-    const element = html`<select class="input set-select" aria-label=${field.label} disabled=${readOnly} on:change=${(event: Event) => change((event.target as HTMLSelectElement).value)}>
-      ${(field.choices ?? []).map(item => html`<option value=${item}>${humanize(item)}</option>`)}</select>` as HTMLSelectElement;
-    queueMicrotask(() => { element.value = String(untrack(value) ?? ''); });
-    return html`${() => { element.value = String(value() ?? ''); return element; }}`;
+    return Dropdown({ label: field.label, ariaLabel: field.label, className: 'set-select', disabled: readOnly,
+      value: () => value() === null || value() === undefined ? null : String(value()),
+      choices: () => (field.choices ?? []).map(item => ({ value: item, label: humanize(item) })), onChange: next => { if (next !== null) change(next); } });
   }
   if (field.type === 'multiselect') {
     const chosen = () => (value() as string[] | null) ?? [];

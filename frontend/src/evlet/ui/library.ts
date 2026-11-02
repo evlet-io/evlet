@@ -21,6 +21,7 @@ import { BaseField, displayValue, localField, type FieldLike } from './fields';
 import { FormSection, InlineValue, KeyValueList } from './inline';
 import { DialogFooter, Menu, MenuButton, openDrawer, openModal, openPopover, toast } from './layers';
 import { Board, BoardCard, BulkBar, Filters, ListSummary, PageHeader, Toolbar, type ActiveFilter } from './list';
+import { DateRangePanel, rangePresets, rangeText, type DateRange } from './pickers';
 import { DataTable, type Column } from './table';
 import { tooltip, TooltipSample } from './tooltip';
 
@@ -28,14 +29,19 @@ interface Entry { cat: string; id: string; name: string; level: string; desc: st
 
 const LEVELS = catalog.levels as Record<string, Tint>;
 const GROUPS = catalog.groups as Array<[string, string, string, Tint]>;
-/** The catalog, with ReferenceField added for the Reference() field type. */
+/** The catalog, with ReferenceField added for the Reference() field type and the date range picker after the date fields. */
 export const ENTRIES: Entry[] = (() => {
   const list = catalog.components as Entry[];
   const at = list.findIndex(entry => entry.id === 'sequence-field');
   const reference: Entry = { cat: 'inputs', id: 'reference-field', name: 'ReferenceField', level: 'Element', model: 'Reference()',
     desc: 'A link to a record of any model, such as the record a payment settles. Shows the model and the record.',
     props: [['…BaseField', '', 'All BaseField properties'], ['model', 'field', 'Reference()']], from: ['base-field'], used: ['Details tab', 'Side panel'], variants: [] };
-  return [...list.slice(0, at + 1), reference, ...list.slice(at + 1)];
+  const range: Entry = { cat: 'inputs', id: 'date-range', name: 'DateRangePanel', level: 'Element',
+    desc: 'Picks a first and a last day: a preset such as This month or Last 30 days, or two days on the calendar. Lists filter dates with it.',
+    props: [['value', 'accessor', '[first, last] or null'], ['onApply', 'function', 'Called with the range, or null to clear']], from: ['date-field'], used: ['List filters'], variants: [] };
+  const withReference = [...list.slice(0, at + 1), reference, ...list.slice(at + 1)];
+  const dates = withReference.findIndex(entry => entry.id === 'duration-field');
+  return [...withReference.slice(0, dates + 1), range, ...withReference.slice(dates + 1)];
 })();
 
 const WIDE = new Set(['data-table', 'summary-strip', 'tabs', 'toolbar', 'page-header', 'banner']);
@@ -122,6 +128,11 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     'base-field': () => stack(BaseField({ field: localField({ name: 'label', type: 'text', label: 'Label' }, 'Value') }), BaseField({ field: missing }), BaseField({ field: lockedField })),
     'text-field': field(f.text), 'longtext-field': field(f.longtext), 'integer-field': field(f.integer), 'decimal-field': field(f.decimal),
     'currency-field': field(f.currency), 'percent-field': field(f.percent), 'date-field': field(f.date), 'datetime-field': field(f.datetime),
+    'date-range': () => {
+      const chosen = cell<DateRange | null>(rangePresets()[4].range);
+      return stack(html`<div class="lib-static pop show" style="padding:10px">${DateRangePanel({ value: () => chosen.get(), onApply: range => chosen.set(range) })}</div>`,
+        html`<span class="muted">${() => chosen.get() ? rangeText(chosen.get()!) : 'No range'}</span>`);
+    },
     'time-field': field(f.time), 'duration-field': field(f.duration), 'boolean-field': field(f.boolean), 'select-field': field(f.select),
     'link-field': onRecord(store => BaseField({ field: store.field('customer') }), field(f.link)),
     'email-field': field(f.email), 'url-field': field(f.url), 'phone-field': field(f.phone), 'tags-field': field(f.tags), 'state-field': field(f.state),

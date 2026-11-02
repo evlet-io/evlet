@@ -55,6 +55,30 @@ export function change(input: HTMLInputElement | HTMLTextAreaElement | HTMLSelec
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+/** Open a Dropdown's list and pick the choice with this value. */
+export function choose(button: HTMLElement, value: string) {
+  button.click();
+  const option = document.querySelector<HTMLElement>(`.pop [role="option"][data-value="${CSS.escape(value)}"]`);
+  if (!option) throw new Error(`No choice ${value}`);
+  option.click();
+}
+
+/** The values a Dropdown offers, in order (opens and closes its list). */
+export function choiceValues(button: HTMLElement): string[] {
+  button.click();
+  const values = [...document.querySelectorAll<HTMLElement>('.pop [role="option"]')].map(option => option.dataset.value!);
+  button.click();
+  return values;
+}
+
+/** Open a Select's list and pick the choice with this label. */
+export function pick(button: HTMLElement, label: string) {
+  button.click();
+  const option = [...document.querySelectorAll<HTMLElement>('.pop [role="option"]')].find(item => item.textContent?.trim() === label);
+  if (!option) throw new Error(`No choice ${label}`);
+  option.click();
+}
+
 export const schema = responses.schema.body as AppSchema;
 
 /** The recorded order backend: a 120-line order, its customer and product. */

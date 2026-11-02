@@ -190,11 +190,11 @@ describe('Library page', () => {
     const { store } = backend();
     await store.open(1);
     const host = render(() => LibraryPage({ record: store }));
-    expect(ENTRIES).toHaveLength(114);
-    expect(host.querySelectorAll('[data-libcard]')).toHaveLength(114);
+    expect(ENTRIES).toHaveLength(115);
+    expect(host.querySelectorAll('[data-libcard]')).toHaveLength(115);
     const live = builtIds(store);
     expect(live.length).toBeGreaterThan(70);
-    for (const id of ['icon', 'button', 'tooltip', 'base-field', 'reference-field', 'inline-value', 'popover', 'modal', 'drawer', 'toast', 'data-table', 'child-table', 'doc-header', 'status-flow', 'board'])
+    for (const id of ['icon', 'button', 'tooltip', 'base-field', 'reference-field', 'date-range', 'inline-value', 'popover', 'modal', 'drawer', 'toast', 'data-table', 'child-table', 'doc-header', 'status-flow', 'board'])
       expect(live).toContain(id);
     expect(host.querySelector('#libc-child-table .grid')).not.toBeNull();
     host.querySelector<HTMLButtonElement>('#libc-currency-field .lib-foot')!.click();

@@ -305,11 +305,9 @@ class Registry:
                     field.target = target
                 if isinstance(field, Link) and field.target not in models:
                     raise ValueError(f"Link target for {model.__name__}.{field.name} is not registered")
-                code = getattr(field, 'currency', None)
-                if code is not None and not re.fullmatch('[A-Z]{3}', code):
-                    holder = model.__declared_fields__.get(code)
-                    if holder is None or holder.kind not in ('text', 'select'):
-                        raise ValueError(f'{model.__name__}.{field.name}: currency must be an ISO 4217 code or a text field on the same model')
+        for model in models:
+            for field in model.__declared_fields__.values():
+                check_currency_source(model, field)
         from .ui.metadata import view_for
         for model in models:
             view_for(model)
@@ -418,6 +416,23 @@ class Registry:
 
 class Child(Model):
     """Owned row definition. Register it through a parent's Table declaration."""
+
+
+def check_currency_source(model, field):
+    """A Currency field's currency names a Text or Select field: on the record, or behind one of its Links."""
+    source = field.currency_source() if hasattr(field, 'currency_source') else None
+    if source is None or 'code' in source or 'setting' in source:
+        return
+    owner = model
+    if 'link' in source:
+        link = model.__declared_fields__.get(source['link'])
+        if not isinstance(link, Link) or not isinstance(link.target, type):
+            raise ValueError(f'{model.__name__}.{field.name}: currency {field.currency} must start with a Link field of {model.__name__}')
+        owner = link.target
+    holder = owner.__declared_fields__.get(source['field'])
+    if holder is None or holder.kind not in ('text', 'select'):
+        raise ValueError(f'{model.__name__}.{field.name}: currency must be an ISO 4217 code or a Text or Select field '
+                         f'({field.currency} is not one on {owner.__name__})')
 
 
 def resolve_sources(registry, definition):

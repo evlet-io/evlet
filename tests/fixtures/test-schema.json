@@ -11,6 +11,7 @@
             "name",
             "email",
             "active",
+            "currency",
             "notes"
           ]
         }
@@ -71,6 +72,28 @@
           "read_only": false,
           "default_kind": "static",
           "default": true
+        },
+        {
+          "name": "currency",
+          "type": "select",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "AED",
+            "SAR",
+            "USD",
+            "EUR",
+            "INR"
+          ],
+          "label": "Currency",
+          "help_text": "Invoices for this customer show amounts in it.",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "AED"
         },
         {
           "name": "notes",
@@ -144,7 +167,8 @@
           "index": false,
           "max_length": 40,
           "label": "Reference",
-          "help_text": "",
+          "help_text": "The number printed on the invoice.",
+          "tooltip": "Use the customer's purchase order number if they ask for one.",
           "placeholder": "",
           "hidden": false,
           "read_only": false,
@@ -164,6 +188,10 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "currency_source": {
+            "link": "customer",
+            "field": "currency"
+          },
           "default_kind": "none"
         },
         {
@@ -207,9 +235,10 @@
           "scale": 4,
           "minimum": "0",
           "maximum": "100",
-          "label": "Tax rate (%)",
+          "label": "Tax rate",
           "help_text": "Recorded separately; this does not calculate the total.",
           "placeholder": "",
+          "suffix": "%",
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
@@ -225,6 +254,7 @@
           "fields": [
             "invoice",
             "reference",
+            "currency",
             "amount",
             "received_at"
           ]
@@ -238,11 +268,12 @@
         "id",
         "invoice",
         "reference",
-        "amount",
-        "received_at"
+        "currency",
+        "amount"
       ],
       "search_fields": [
-        "reference"
+        "reference",
+        "currency"
       ],
       "fields": [
         {
@@ -276,6 +307,28 @@
           "default_kind": "none"
         },
         {
+          "name": "currency",
+          "type": "select",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "AED",
+            "SAR",
+            "USD",
+            "EUR",
+            "INR"
+          ],
+          "label": "Currency",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "AED"
+        },
+        {
           "name": "amount",
           "type": "currency",
           "required": true,
@@ -289,6 +342,9 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "currency_source": {
+            "field": "currency"
+          },
           "default_kind": "none"
         },
         {
@@ -412,6 +468,12 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "currency_source": {
+            "setting": {
+              "app": "projects",
+              "key": "currency"
+            }
+          },
           "default_kind": "static",
           "default": "0.00"
         },
@@ -423,9 +485,10 @@
           "index": false,
           "minimum": 0,
           "maximum": 100,
-          "label": "Progress (%)",
+          "label": "Progress",
           "help_text": "",
           "placeholder": "",
+          "suffix": "%",
           "hidden": false,
           "read_only": false,
           "default_kind": "static",

@@ -23,8 +23,8 @@ from .database import ConflictError
 from .models import ValidationError, identifier
 from .ui.metadata import label_for, view_for
 
-PROPS = ('label', 'help_text', 'placeholder', 'hidden', 'required', 'read_only', 'default', 'options_add', 'options_hidden')
-DISPLAY = ('label', 'help_text', 'placeholder', 'hidden')
+PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default', 'options_add', 'options_hidden')
+DISPLAY = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden')
 OPTION = re.compile(r'[a-z][a-z0-9_]{0,39}')
 FIELD_NAME = re.compile(r'x_[a-z0-9_]{1,38}')
 FRAMEWORK_COLUMNS = ('id', 'created_by', 'created_at', 'modified_by', 'modified_at', 'tenant', 'revision')
@@ -49,7 +49,7 @@ def sqlite_version(connection):
 def build_field(definition, registry):
     """The Field for an instance field definition. Instance fields are never required at the field level:
     app code that does not know them keeps working; Controls asks for them on API writes."""
-    kind, options = definition['type'], {'label': definition['label'], 'help_text': definition.get('help_text', '')}
+    kind, options = definition['type'], {'label': definition['label'], 'help_text': definition.get('help_text', ''), 'tooltip': definition.get('tooltip', '')}
     if kind == 'Text':
         field = Text(**options)
     elif kind == 'LongText':
@@ -124,7 +124,7 @@ def shown_default(field):
 
 
 def file_field(field, name):
-    return {'label': field.label or label_for(name), 'help_text': field.help_text, 'placeholder': field.placeholder,
+    return {'label': field.label or label_for(name), 'help_text': field.help_text, 'tooltip': field.tooltip, 'placeholder': field.placeholder,
             'hidden': field.hidden, 'required': field.required or bool(getattr(field, 'instance', {}).get('required')), 'read_only': field.read_only,
             'default': shown_default(field), 'options': list(field.choices) if isinstance(field, Select) else None}
 
@@ -225,11 +225,11 @@ class Customization:
         field = model.__declared_fields__[name]
         file = file_field(field, name)
         if not isinstance(value, dict) or not value or set(value) - set(PROPS):
-            raise ValueError('Send label, help_text, placeholder, hidden, required, read_only, default, options_add or options_hidden.')
+            raise ValueError('Send label, help_text, tooltip, placeholder, hidden, required, read_only, default, options_add or options_hidden.')
         if set(value) - set(DISPLAY) and not self.editable(model, name, field):
-            raise ValueError(f'{name} is filled by the app or the server, so only its label, help text, placeholder and hidden can change.')
+            raise ValueError(f'{name} is filled by the app or the server, so only its label, help text, tooltip, placeholder and hidden can change.')
         out = {}
-        for prop in ('label', 'help_text', 'placeholder'):
+        for prop in ('label', 'help_text', 'tooltip', 'placeholder'):
             if prop in value:
                 text = value[prop]
                 if not isinstance(text, str) or len(text) > (80 if prop == 'label' else 200):
@@ -447,7 +447,7 @@ class Customization:
             changed = props.get(field['name'])
             if not changed:
                 continue
-            for prop in ('label', 'help_text', 'placeholder', 'hidden', 'required'):
+            for prop in ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required'):
                 if prop in changed:
                     field[prop] = changed[prop]
             if 'default' in changed:
@@ -507,8 +507,8 @@ class Customization:
         return target.name
 
     def check_new(self, model, body):
-        if not isinstance(body, dict) or set(body) - {'name', 'type', 'label', 'help_text', 'required', 'default', 'options', 'target'}:
-            raise ValidationError({'_form': 'Use name, type, label, help_text, required, default, options and target.'})
+        if not isinstance(body, dict) or set(body) - {'name', 'type', 'label', 'help_text', 'tooltip', 'required', 'default', 'options', 'target'}:
+            raise ValidationError({'_form': 'Use name, type, label, help_text, tooltip, required, default, options and target.'})
         errors = {}
         raw = body.get('name')
         name = raw if isinstance(raw, str) and raw.startswith('x_') else 'x_' + raw if isinstance(raw, str) else ''
@@ -529,9 +529,13 @@ class Customization:
         help_text = body.get('help_text', '')
         if not isinstance(help_text, str) or len(help_text) > 200:
             errors['help_text'] = 'Use at most 200 characters.'
+        tooltip = body.get('tooltip', '')
+        if not isinstance(tooltip, str) or len(tooltip) > 200:
+            errors['tooltip'] = 'Use at most 200 characters.'
         if type(body.get('required', False)) is not bool:
             errors['required'] = 'Use true or false.'
         definition = {'type': kind, 'label': label.strip() if isinstance(label, str) else '', 'help_text': help_text.strip() if isinstance(help_text, str) else '',
+                      **({'tooltip': tooltip.strip()} if isinstance(tooltip, str) and tooltip.strip() else {}),
                       'required': body.get('required', False), 'default': None}
         if kind == 'Select':
             options = body.get('options')
