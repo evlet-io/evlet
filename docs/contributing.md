@@ -183,7 +183,8 @@ This is a development preview, not a deployment recipe.
   The Playground uses them; a bare `Application(database)` stays unauthenticated
   for compatibility. Keep development servers on loopback. SSO and email recovery
   remain outside the implemented scope.
-- Currency has two decimal places and no currency-code conversion. The Playground
+- Currency has two decimal places and no currency-code conversion; `currency=` only says
+  which code to show ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)). The Playground
   is a persistence example, not a ledger or payment processor.
 - Email is a bounded text field; browser email validation is convenience only.
 - Lists, counts, search, filters, and relationship choices use bounded server queries.

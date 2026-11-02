@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import threading
 import base64
 import binascii
@@ -20,6 +21,8 @@ from .query import SqlQuery
 from .storage import SQLiteStorage
 from .jobs import JobReceipt
 from .discovery import Discovery
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -282,6 +285,31 @@ class Business:
             raise ValidationError({'cursor': 'Invalid event cursor'})
         return self.events.page(user, self.policy, after=cursor)
 
+    def currency_for(self, user, model, field, readable):
+        """A Currency field's source for this user: a setting becomes its code, a field they can't read is left out."""
+        source = field.pop('currency_source', None)
+        if source is None:
+            return field
+        if 'setting' in source:
+            from .settings import _default
+            app, key = source['setting']['app'], source['setting']['key']
+            try:
+                # Before the instance is initialized (no settings table yet) the declared default applies.
+                code = self.settings.values.get(app, key) if self.controls.ready else _default(self.settings.declared(app, 'settings').__fields__[key])
+            except KeyError:
+                logger.warning('%s.%s: no setting %s.%s for its currency', model.__name__, field['name'], app, key)
+                code = None
+            if isinstance(code, str) and re.fullmatch('[A-Z]{3}', code):
+                field['currency'] = code
+            return field
+        if 'link' in source:
+            link = model.__declared_fields__[source['link']]
+            if source['link'] in readable and self.policy.allows(user, link.target, 'read') and source['field'] in self.policy.fields(user, link.target):
+                field['currency_source'] = {**source, 'model': self.registry.name_for(link.target)}
+        elif source['field'] in readable:
+            field['currency_source'] = source
+        return field
+
     def schema(self, user):
         result = self.registry.ui_schema()
         if getattr(self, 'forms', None) and self.forms.reports:
@@ -348,6 +376,7 @@ class Business:
             entry['fields'] = [{**field, 'read_only': field['name'] not in writable, 'stored': model.__declared_fields__[field['name']].stored,
                                 **expressions.get(field['name'], EMPTY_EXPRESSIONS)}
                                for field in entry['fields'] if field['name'] in readable]
+            entry['fields'] = [self.currency_for(user, model, field, readable) for field in entry['fields']]
             entry['list_fields'] = [name for name in entry['list_fields'] if name == 'id' or name in readable]
             entry['search_fields'] = [name for name in entry['search_fields'] if name in readable]
             entry['layout'] = [{**group, 'fields': [name for name in group['fields'] if name in readable]} for group in entry.get('layout', [])]

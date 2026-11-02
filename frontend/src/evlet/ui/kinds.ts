@@ -32,6 +32,8 @@ export interface Kind {
   placeholder?: string;
   /** How the control is built: a text input (default) or a dedicated control. */
   control?: 'textarea' | 'switch' | 'select' | 'link' | 'tags' | 'multiselect' | 'readonly';
+  /** A picker next to the text input (pickers.ts). */
+  picker?: 'date' | 'datetime' | 'time' | 'duration';
 }
 
 const empty = (value: unknown) => value === null || value === undefined || value === '';
@@ -62,8 +64,9 @@ function decimal(scale: (meta: FieldSchema) => number) {
 }
 
 const scaleOf = (meta: FieldSchema, fallback: number) => typeof meta.scale === 'number' ? meta.scale : fallback;
+/** The fixed currency code of a Currency field (AED unless the schema names one). */
 export const currencyOf = (meta: FieldSchema) => {
-  const code = (meta as any).currency;
+  const code = meta.currency;
   return typeof code === 'string' && /^[A-Z]{3}$/.test(code) ? code : 'AED';
 };
 
@@ -203,18 +206,18 @@ export const KINDS: Record<string, Kind> = {
       if (!value) throw new InputError('Enter a date as DD-MM-YYYY');
       return value;
     },
-    placeholder: 'DD-MM-YYYY', inputMode: 'numeric',
+    placeholder: 'DD-MM-YYYY', inputMode: 'numeric', picker: 'date',
   },
   datetime: {
     format: value => formatDateTime(value as string),
     parse: input => input.trim() ? parseDateTime(input) : null,
-    placeholder: 'DD-MM-YYYY HH:MM',
+    placeholder: 'DD-MM-YYYY HH:MM', picker: 'datetime',
   },
-  time: { format: timeText, parse: input => input.trim() ? parseTime(input) : null, placeholder: 'HH:MM', inputMode: 'numeric' },
+  time: { format: timeText, parse: input => input.trim() ? parseTime(input) : null, placeholder: 'HH:MM', inputMode: 'numeric', picker: 'time' },
   duration: {
     format: value => { const seconds = durationSeconds(value); return seconds === null ? '' : durationText(seconds); },
     parse: input => input.trim() ? isoDuration(parseDuration(input)) : null,
-    placeholder: '1h 30m',
+    placeholder: '1h 30m', picker: 'duration',
   },
   boolean: { format: value => value === true ? 'Yes' : value === false ? 'No' : '', control: 'switch' },
   select: { format: value => empty(value) ? '' : humanize(String(value)), control: 'select' },

@@ -263,7 +263,8 @@ system fonts (`system-ui`, `ui-monospace` and the rest of the stack) until they 
 | `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, Stat, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
 | `tooltip.ts` | `tooltip(element, text)`: one page-wide tooltip on hover and focus, never on touch |
 | `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `openModal`, `openDrawer`, `toast` (with Undo), `copyText` |
-| `fields.ts`, `kinds.ts` | BaseField and one component per field type, `FieldControl`, `displayValue`, `localField`, Link search |
+| `fields.ts`, `kinds.ts` | BaseField and one component per field type, `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
+| `pickers.ts` | ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table` |
@@ -279,6 +280,49 @@ a lock hint says why ("Locked when Stage is won"), a calculated value shows its 
 GST date-times, exact decimals, `1h 30m` durations) and a wrong value stays in the input with
 a message that says how to fix it. `localField()` makes the same cells for forms that are not
 records, such as action dialogs.
+
+### Pickers
+
+No field uses a browser control for picking (no native `<select>`, no `type="date"`). The
+pickers open in a popover (`openPopover`), close on Esc or a click outside and give focus back
+to the field. Every value they pick goes through the same parsing as typed text, and the server
+checks it again.
+
+- **Select** is a button that shows the choice (or "Choose one"). Click, Down or Up opens the
+  list with the current choice ticked (`aria-selected`). Up and Down move, Home and End jump,
+  Enter or Space picks, a letter jumps to the next choice that starts with it. From 8 choices
+  the list has a search box. Clear shows when the field is optional and set. A retired choice is
+  listed, disabled, only on the record that still holds it. Typing a letter on the closed
+  button opens the list at it.
+- **Date** keeps its DD-MM-YYYY input (or the person's date format) and adds a calendar button.
+  Clicking the input or the button opens a month grid (weeks start on Monday, today is marked);
+  Down or Alt+Down opens it and moves focus to the chosen day. Arrows move by day and week, Page
+  Up and Page Down by month (with Shift by year), Home and End to the week's ends, Enter picks.
+  The title opens a month grid, and its title a 12-year grid. Today and Clear (optional fields)
+  sit below. Picking a day writes it and closes; in an InlineValue it saves at once, like Enter.
+- **Date-time** adds hour and minute steppers (`role="spinbutton"`; arrows move by 1, the
+  buttons move minutes by 5) and Now, Clear and Done. Times are the person's zone (GST by
+  default); the value is stored in UTC.
+- **Time** has the steppers, common times (09:00, 12:00, 13:00, 17:00), Now, Clear and Done.
+- **Duration** has hour and minute steppers and common lengths (15m to 8h).
+- **Date range** (`DateRangePanel`) offers presets (Today, Yesterday, This week, Last 7 days,
+  This month, Last month, Last 30 days, This quarter, This year, Last year) or a first and last
+  day on the calendar, in either order, with the days between shaded. Apply reports
+  `[first, last]`. List pages use it to filter a date field: the filter is sent as
+  `<field>__gte` and `<field>__lte` and kept in the address as `{"gte", "lte"}`.
+
+### Side boxes
+
+A Currency field shows its code in a box before the input, a Percent field `%` after it, and an
+Integer or Decimal its `suffix` after it (and after the value at rest: `5.00%`, `8 hours`). The
+currency code comes from the schema: `currency` when it is fixed (on the field, or an app
+setting the server read), or `currency_source` when it lives on the record (`{"field"}`) or on a
+linked record (`{"link", "field", "model"}`). `currencyFor(field)` follows the source as it
+changes, so picking another customer changes the box from AED to USD. Linked records are read
+through `LinkSource.record()`, batched with Link titles (one list request per model). Lists use
+`currencyIn(meta, value)` with the row's values. An empty or unreadable source shows AED.
+
+The Link field's record mark is the 20 px `org-mark`; it never stretches.
 
 A screen composed by hand from a record store:
 
@@ -487,7 +531,8 @@ record store replay the shared finite-v1 scenarios (`finite-fixtures.json`).
   and show no totals.
 - Postings show what each target received (rows, reversals, balance); listing the posted rows
   waits for a filter by source on the target's list route.
-- Date fields take typed DD-MM-YYYY text; there is no calendar picker yet. Reference fields
-  are read only until the schema lists the models they may point to.
+- Reference fields are read only until the schema lists the models they may point to.
+- The Settings and Controls pages build their own selects and still use the browser's
+  `<select>`; the field pickers are used by model forms, dialogs and the Library.
 - State metadata (`record.state`) is read when the schema sends it.
 - Lookups that a role cannot read stay pending; their saved results keep showing.

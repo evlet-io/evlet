@@ -376,16 +376,39 @@ class Decimal(Field):
                 "maximum": None if self.maximum is None else str(self.maximum)}
 
 
+CURRENCY_SOURCE = re.compile(r"[A-Z]{3}|[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?|settings\.[a-z][a-z0-9_]{0,62}\.[a-z][a-z0-9_]{0,40}")
+
+
 class Currency(Decimal):
     kind = "currency"
     default_rounding = "half_up"
 
     def __init__(self, *, currency=None, **kwargs):
         super().__init__(scale=2, **kwargs)
-        # Display metadata only: an ISO 4217 code or the name of a field holding the code. No conversion.
-        if currency is not None and (not isinstance(currency, str) or not re.fullmatch(r"[A-Z]{3}|[A-Za-z][A-Za-z0-9_]*", currency)):
-            raise ValueError("currency takes an ISO 4217 code such as 'AED' or the name of a field holding the code")
+        # Display metadata only, never a conversion. Where the code comes from:
+        #   "AED"                            an ISO 4217 code
+        #   "currency"                       a Text or Select field on the same record
+        #   "company.company_currency"       a Text or Select field of the record a Link points at
+        #   "settings.billing.currency"      an app setting ("For everyone"), read when the UI loads
+        if currency is not None and (not isinstance(currency, str) or not CURRENCY_SOURCE.fullmatch(currency)):
+            raise ValueError("currency takes an ISO 4217 code such as 'AED', a field name, link.field "
+                             "or settings.app.key")
         self.currency = currency
+
+    def currency_source(self):
+        """The currency source as the UI schema sends it: {'code'}, {'field'}, {'link', 'field'} or {'setting'}."""
+        code = self.currency
+        if code is None:
+            return None
+        if re.fullmatch("[A-Z]{3}", code):
+            return {"code": code}
+        if code.startswith("settings.") and code.count(".") == 2:
+            _, app, key = code.split(".")
+            return {"setting": {"app": app, "key": key}}
+        if "." in code:
+            link, field = code.split(".")
+            return {"link": link, "field": field}
+        return {"field": code}
 
 
 class Percent(Decimal):

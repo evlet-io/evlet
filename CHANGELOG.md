@@ -3,6 +3,20 @@
 Evlet is pre-1.0. A minor version (0.2, 0.3) may change public APIs; the notes below
 say what to change. Evlet is not production ready.
 
+## Unreleased
+
+- **Pickers.** Select fields open Evlet's own list (current choice ticked, search for long
+  lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
+  duration fields keep their typed input and add a calendar or steppers. List pages filter
+  date fields by range, with presets.
+- **Where a Currency field's code comes from.** `Currency(currency=...)` also takes
+  `"link.field"` (a field of a linked record) and `"settings.app.key"` (an app setting). In
+  `/api/schema`, `currency` now only ever holds a code; a field on the record (`"code_field"`)
+  is sent as `currency_source: {"field": "code_field"}` instead of `currency: "code_field"`.
+  A client that read the field name from `currency` should read `currency_source`.
+- Integer and Decimal fields show their `suffix` after the value at rest too (`5.00%`).
+- The Link field's record mark no longer stretches across the input.
+
 ## 0.2.0 (02-11-2026)
 
 This release replaces the browser interface with Evlet's own UI framework, adds the

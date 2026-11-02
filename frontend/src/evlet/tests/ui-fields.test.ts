@@ -5,7 +5,7 @@ import { apiLinks, BaseField, ComputedField, CurrencyField, fieldFor, localField
 import { durationText, InputError, KINDS, parseDateTime, parseDuration, parseTime } from '../ui/kinds';
 import { SchemaIndex } from '../model/schema';
 import { tipText } from '../ui/tooltip';
-import { backend, bigOrder, change, cleanup, key, render, schema, watch } from './ui-helpers';
+import { backend, bigOrder, change, cleanup, key, pick, render, schema, watch } from './ui-helpers';
 
 afterEach(() => { setLinkSource(null); cleanup(); });
 const meta = (type: string, extra: Partial<FieldSchema> = {}): FieldSchema => ({ name: type, type, label: type, required: false, read_only: false, ...extra });
@@ -123,7 +123,8 @@ describe('BaseField', () => {
     expect(host.querySelector('img')).toBeNull();
     expect(host.textContent).toContain(XSS);
     expect(host.querySelector('[data-field="boolean"] [role="switch"]')).not.toBeNull();
-    expect(host.querySelector('[data-field="select"] select')).not.toBeNull();
+    expect(host.querySelector('[data-field="select"] button.in-select[aria-haspopup="listbox"]')).not.toBeNull();
+    expect(host.querySelector('select')).toBeNull();
     expect(host.querySelector('[data-field="state"]')!.textContent).toContain('changes through moves');
   });
 
@@ -152,7 +153,7 @@ describe('fields bound to the record store', () => {
     const host = render(() => ['stage', 'reason', 'remark'].map(name => BaseField({ field: store.field(name) })));
     const reason = host.querySelector<HTMLElement>('[data-field="reason"]')!, remark = host.querySelector<HTMLElement>('[data-field="remark"]')!;
     expect(reason.hidden).toBe(true);
-    change(host.querySelector<HTMLSelectElement>('[data-field="stage"] select')!, 'lost');
+    pick(host.querySelector<HTMLElement>('[data-field="stage"] .in-select')!, 'Lost');
     expect(store.field('stage').value.peek()).toBe('lost');
     expect(reason.hidden).toBe(false);
     expect(reason.querySelector('.req')).not.toBeNull();

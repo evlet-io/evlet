@@ -7,15 +7,17 @@
 // says where it came from until the user edits it.
 
 import { html, when, type Child } from '../dom';
-import { cell, derive, effect, untrack, type Cell, type Readable } from '../reactive';
+import { cell, derive, untrack, type Cell, type Readable } from '../reactive';
 import type { ApiClient, RecordData } from '../api';
 import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '../model/record';
 import type { FieldSchema, SchemaIndex } from '../model/schema';
 import { Chip, Icon, IconButton, RecordMark, StatusPill, Switch } from './base';
 import { read, tintFor, uid, type Prop, type Tint } from './core';
 import { formula, labeller, phrase, source } from './explain';
-import { checkTag, humanize, InputError, kindOf } from './kinds';
+import { checkTag, currencyOf, durationText, humanize, InputError, kindOf, parseDuration, parseTime } from './kinds';
 import { copyText, openPopover } from './layers';
+import { ChoiceList, DatePanel, DateTimePanel, DurationPanel, focusCalendar, TimePanel, type DateTimeValue } from './pickers';
+import { formatDate, formatMoney, parseDate, zoneOffset } from '../model/format';
 import { tooltip } from './tooltip';
 
 // ---------- the field contract ----------
@@ -81,6 +83,8 @@ export interface LinkSource {
   /** The title of a record, as a cell that fills in once it is read. */
   title(model: string, id: number): Readable<string | null>;
   remember?(model: string, id: number, title: string): void;
+  /** A record's readable fields, as a cell that fills in once it is read (null until then, or when it can't be read). */
+  record?(model: string, id: number): Readable<RecordData | null>;
   /** Forget everything read so far (on sign-out). */
   clear?(): void;
 }
@@ -91,14 +95,16 @@ type LinkApi = ApiClient & { reading?(model: string, id: number): Promise<{ data
 /**
  * A LinkSource over the API: list search with ?q=, and titles read in batches: the titles a page asks
  * for in one turn are read with one list request per target model (`id__in`), unless the record is
- * already being read or was read.
+ * already being read or was read. record() reads the same way and keeps the whole record (a Currency
+ * field reads its linked currency from it).
  * Titles are kept for the signed-in session and forgotten when it ends.
  */
 export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
   let titles = new Map<string, Cell<string | null>>();
   let wanted = new Map<string, Set<number>>();
+  let records = new Map<string, Cell<RecordData | null>>();
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const clear = () => { titles = new Map(); wanted = new Map(); };
+  const clear = () => { titles = new Map(); wanted = new Map(); records = new Map(); };
   if (typeof window !== 'undefined') window.addEventListener('evlet-session-ended', clear);
   const titleOf = (model: string, data: Record<string, unknown>) => {
     const field = schema.model(model).title_field;
@@ -108,6 +114,16 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
     const key = `${model}:${id}`;
     if (titles.has(key)) titles.get(key)!.set(title); else titles.set(key, cell<string | null>(title));
   };
+  const keep = (model: string, id: number, data: RecordData | null) => {
+    records.get(`${model}:${id}`)?.set(data);
+    remember(model, id, data ? titleOf(model, data) : `#${id}`);
+  };
+  const want = (model: string, id: number) => {
+    if (!wanted.has(model)) wanted.set(model, new Set());
+    wanted.get(model)!.add(id);
+    // Everything asked for in this turn goes in one request per model.
+    timer ??= setTimeout(flush, 0);
+  };
   const flush = () => {
     timer = null;
     const batch = wanted;
@@ -116,8 +132,8 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
       const rest: number[] = [];
       for (const id of ids) {
         const known = api.detail?.(model, id).peek(), reading = api.reading?.(model, id);
-        if (known) remember(model, id, titleOf(model, known));
-        else if (reading) reading.then(response => remember(model, id, titleOf(model, response.data)), () => remember(model, id, `#${id}`));
+        if (known) keep(model, id, known);
+        else if (reading) reading.then(response => keep(model, id, response.data), () => keep(model, id, null));
         else rest.push(id);
       }
       rest.sort((a, b) => a - b);
@@ -125,9 +141,9 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
         const part = rest.slice(start, start + 100);
         // Records this user cannot read are left out of the answer and show their number.
         api.list(model, { filters: { id__in: part }, limit: part.length }).then(page => {
-          const found = new Map(page.items.map(item => [item.id as number, titleOf(model, item)]));
-          for (const id of part) remember(model, id, found.get(id) ?? `#${id}`);
-        }, () => { for (const id of part) remember(model, id, `#${id}`); });
+          const found = new Map(page.items.map(item => [item.id as number, item]));
+          for (const id of part) keep(model, id, found.get(id) ?? null);
+        }, () => { for (const id of part) keep(model, id, null); });
       }
     }
   };
@@ -142,17 +158,23 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
       if (!title) {
         const known = api.detail?.(model, id).peek();
         titles.set(key, title = cell<string | null>(known ? titleOf(model, known) : null));
-        if (!known) {
-          if (!wanted.has(model)) wanted.set(model, new Set());
-          wanted.get(model)!.add(id);
-          // Everything asked for in this turn goes in one request per model.
-          timer ??= setTimeout(flush, 0);
-        }
+        if (!known) want(model, id);
       }
       return title;
     },
     remember,
     clear,
+    record(model, id) {
+      const key = `${model}:${id}`;
+      let record = records.get(key);
+      if (!record) {
+        const known = api.detail?.(model, id).peek() ?? null;
+        records.set(key, record = cell<RecordData | null>(known));
+        // Read through the list route, so the person's row and field permissions apply.
+        if (!known) want(model, id);
+      }
+      return record;
+    },
   };
 }
 
@@ -170,6 +192,34 @@ const STATE_TINTS: Record<string, Tint> = {
 };
 /** The tint of a state: known names get the design's colour, others a stable one. */
 export const stateTint = (state: string): Tint => STATE_TINTS[String(state).toLowerCase()] ?? tintFor(state);
+
+// ---------- currency ----------
+
+const CODE = /^[A-Z]{3}$/;
+
+/**
+ * The currency code a Currency field shows. The schema sends a fixed code (a code on the field or
+ * an app setting, read on the server) or a source on the record: a field of the record, or a
+ * field of the record one of its Links points at. Follows the source as it changes; AED when it
+ * is empty or can't be read.
+ */
+export function currencyFor(field: FieldLike, links: LinkSource | null = defaultLinks): () => string {
+  const meta = field.meta;
+  if (!meta.currency_source || !(field instanceof Field)) return () => currencyOf(meta);
+  const row = field.row;
+  return () => currencyIn(meta, name => row.fields.get(name)?.value.get(), links);
+}
+
+/** The currency code of a Currency field for one record's values (a list row, say): see currencyFor. */
+export function currencyIn(meta: FieldSchema, value: (name: string) => unknown, links: LinkSource | null = defaultLinks): string {
+  const source = meta.currency_source, fallback = currencyOf(meta);
+  const code = (found: unknown) => typeof found === 'string' && CODE.test(found) ? found : fallback;
+  if (!source) return fallback;
+  if (!source.link) return code(value(source.field));
+  const id = value(source.link);
+  if (id === null || id === undefined || id === '' || !source.model || !links?.record) return fallback;
+  return code(links.record(source.model, Number(id)).get()?.[source.field]);
+}
 
 // ---------- display at rest ----------
 
@@ -195,8 +245,14 @@ export function displayValue(field: FieldLike, options: { links?: LinkSource | n
         return html`<span class="cell-flex">${RecordMark({ name: () => title.get() || '?' })}<span class="tx">${() => title.get() || 'Loading'}</span></span>`;
       }, blank);
   }
+  if (meta.type === 'currency' && meta.currency_source) {
+    const currency = currencyFor(field, links);
+    return when(() => !isEmpty(value()), () => html`<span class="tx num">${() => formatMoney(value() as string, { currency: currency(), scale: typeof meta.scale === 'number' ? meta.scale : 2 })}</span>`, blank);
+  }
   const numeric = kind.align === 'right';
-  return when(() => !isEmpty(value()), () => html`<span class=${numeric ? 'tx num' : 'tx'}>${() => kind.format(value(), meta)}</span>`, blank);
+  // A unit declared with suffix= reads after the number at rest too: 5.00%, 8 hours.
+  const unit = (meta.type === 'integer' || meta.type === 'decimal') && meta.suffix ? (meta.suffix === '%' ? '%' : ` ${meta.suffix}`) : '';
+  return when(() => !isEmpty(value()), () => html`<span class=${numeric ? 'tx num' : 'tx'}>${() => kind.format(value(), meta) + unit}</span>`, blank);
 }
 
 // ---------- hints ----------
@@ -241,6 +297,8 @@ export interface ControlOptions {
   commitOn?: 'change' | 'manual';
   /** Called after a value was written. */
   onCommit?: () => void;
+  /** Called after a value was picked and the picker closed (a day, or Done), so the caller can save it. */
+  onPicked?: () => void;
   links?: LinkSource | null;
   label?: string;
 }
@@ -303,18 +361,7 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
     return { element, commit: () => true, focus: () => element.focus() };
   }
 
-  if (kind.control === 'select') {
-    const choices = meta.choices ?? [];
-    const element = html`<select class="input" id=${id} disabled=${disabled} aria-invalid=${invalid} aria-required=${required}
-      aria-describedby=${options.describedBy ?? null} aria-label=${options.label ?? null}
-      on:change=${(event: Event) => { const raw = (event.target as HTMLSelectElement).value; if (writeValue(field, raw === '' ? null : raw)) done(); }}>
-      <option value="">Choose one</option>${choices.map(choice => html`<option value=${choice}>${humanize(choice)}</option>`)}
-      ${(meta.retired_choices ?? []).map(choice => html`<option value=${choice} disabled>${humanize(choice)}</option>`)}</select>` as HTMLSelectElement;
-    // Keep the selection in step with the cell (options exist before the value is applied).
-    effect(() => { const value = field.value.get(); element.value = isEmpty(value) ? '' : String(value); });
-    return { element, commit: () => true, focus: () => element.focus() };
-  }
-
+  if (kind.control === 'select') return SelectControl(field, id, options);
   if (kind.control === 'link') return LinkControl(field, id, options);
   if (kind.control === 'tags') return TagsControl(field, id, options);
   if (kind.control === 'multiselect') return MultiSelectControl(field, id, options);
@@ -354,19 +401,131 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
         inputmode=${kind.inputMode ?? null} placeholder=${meta.placeholder || kind.placeholder || null} autocomplete="off"
         aria-invalid=${invalid} aria-required=${required} aria-describedby=${options.describedBy ?? null} aria-label=${options.label ?? null}
         maxlength=${meta.max_length ?? null} on:change=${onChange} on:keydown=${onKey}>`) as HTMLInputElement;
-  const prefix = kind.prefix?.(meta), suffix = kind.suffix?.(meta);
+  // A Currency field's side box follows its currency source (a field of the record, say).
+  const prefix: Child = meta.type === 'currency' ? currencyFor(field, options.links) : kind.prefix?.(meta), suffix = kind.suffix?.(meta);
   let element: HTMLElement = input;
-  if (prefix || suffix || meta.type === 'email') {
+  const picker = kind.picker && !textarea ? PickerButton(field, input, kind.picker, commit, () => options.onPicked?.()) : null;
+  if (prefix || suffix || meta.type === 'email' || picker) {
     const copy = meta.type === 'email' ? when(() => !isEmpty(field.value.get()), () => IconButton({ icon: 'copy', tip: 'Copy email', size: 'small',
       onClick: () => copyText(String(field.value.peek()), String(field.value.peek())) })) : null;
-    element = html`<div class="in-affix">${prefix ? html`<span>${prefix}</span>` : null}${input}${suffix ? html`<span>${suffix}</span>` : null}${copy}</div>` as HTMLElement;
+    element = html`<div class="in-affix" class:in-pick=${Boolean(picker)}>${prefix ? html`<span class="in-box">${prefix}</span>` : null}${input}${suffix ? html`<span class="in-box">${suffix}</span>` : null}${copy}${picker}</div>` as HTMLElement;
+    picker?.attach(element);
   }
   return { element, commit, focus: () => { input.focus(); input.select?.(); } };
+}
+
+// ---------- pickers ----------
+
+const pad = (number: number) => String(number).padStart(2, '0');
+
+// Now in the person's zone, as a day and a time of day.
+function wallNow(): DateTimeValue {
+  const now = Date.now(), local = new Date(now + zoneOffset(now) * 60000);
+  return { day: `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`, hours: local.getUTCHours(), minutes: local.getUTCMinutes() };
+}
+
+// The day and time typed in a date-time input ('01-11-2026 14:05'), or null.
+function typedDateTime(text: string): DateTimeValue | null {
+  const match = /^(.+?)[ T,]+(\d{1,2})[:.](\d{2})$/.exec(text.trim());
+  const day = parseDate(match ? match[1] : text);
+  if (!day) return null;
+  return { day, hours: match ? Math.min(23, Number(match[2])) : 0, minutes: match ? Math.min(59, Number(match[3])) : 0 };
+}
+
+function typedTime(text: string): { hours: number; minutes: number } | null {
+  try { const value = parseTime(text); return { hours: Number(value.slice(0, 2)), minutes: Number(value.slice(3, 5)) }; } catch { return null; }
+}
+
+function typedSeconds(text: string): number | null {
+  try { return text.trim() ? parseDuration(text) : null; } catch { return null; }
+}
+
+/**
+ * The button at the end of a date, date-time, time or duration input that opens its picker.
+ * Clicking the input opens it too; Alt+Down or Down opens it and moves into it. A picked value
+ * is written as typed text and committed, so it goes through the same parsing as typing.
+ */
+function PickerButton(field: FieldLike, input: HTMLInputElement, picker: 'date' | 'datetime' | 'time' | 'duration', commit: () => boolean, picked: () => void) {
+  const meta = field.meta;
+  let anchor: HTMLElement = input, close: (() => void) | null = null, panel: HTMLElement | null = null;
+  const clearable = () => !untrack(() => field.rules.get().required);
+  const put = (text: string) => { input.value = text; return commit(); };
+  const finish = () => { close?.(); input.focus(); if (commit()) picked(); };
+  const render = (done: () => void): Node => {
+    if (picker === 'date') return DatePanel({ label: `Choose ${meta.label.toLowerCase()}`, clearable: clearable(),
+      value: () => parseDate(input.value), onPick: day => { done(); input.focus(); if (put(day ? formatDate(day) : '')) picked(); } });
+    if (picker === 'datetime') return DateTimePanel({ label: `Choose ${meta.label.toLowerCase()}`, clearable: clearable(), now: wallNow, onDone: finish,
+      value: () => typedDateTime(input.value), onChange: value => put(value ? `${formatDate(value.day)} ${pad(value.hours)}:${pad(value.minutes)}` : '') });
+    if (picker === 'time') return TimePanel({ clearable: clearable(), now: wallNow, onDone: finish, value: () => typedTime(input.value),
+      onChange: value => put(value ? `${pad(value.hours)}:${pad(value.minutes)}` : '') });
+    return DurationPanel({ clearable: clearable(), onDone: finish, value: () => typedSeconds(input.value),
+      onChange: seconds => put(seconds === null ? '' : durationText(seconds)) });
+  };
+  const open = (move = false) => {
+    if (close || !field.editable.peek()) { if (move && panel) moveIn(); return; }
+    close = openPopover(anchor, done => { panel = render(done) as HTMLElement; return panel; },
+      { role: 'dialog', label: `Choose ${meta.label}`, className: 'pick-pop', align: 'left', onClose: () => { close = null; panel = null; } });
+    if (move) queueMicrotask(moveIn);
+  };
+  const moveIn = () => {
+    if (!panel) return;
+    if (panel.querySelector('.cal-day')) focusCalendar(panel); else panel.querySelector<HTMLElement>('[role="spinbutton"],button')?.focus();
+  };
+  const button = html`<button type="button" class="in-pick-btn" tabindex="-1" aria-label=${`Choose ${meta.label.toLowerCase()}`}
+    disabled=${() => !field.editable.get()} on:click=${() => { if (close) close(); else { open(); input.focus(); } }}>${Icon(picker === 'date' || picker === 'datetime' ? 'calendar' : 'clock', { size: 'sm' })}</button>` as HTMLButtonElement & { attach(wrapper: HTMLElement): void };
+  input.setAttribute('aria-haspopup', 'dialog');
+  input.setAttribute('aria-expanded', 'false');
+  input.addEventListener('click', () => open());
+  input.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' && (event.altKey || picker !== 'duration')) { event.preventDefault(); open(true); }
+  });
+  // Leaving the input for somewhere other than its picker closes the picker.
+  input.addEventListener('focusout', event => {
+    const next = event.relatedTarget as Node | null;
+    if (close && !(next && (panel?.contains(next) || anchor.contains(next)))) close();
+  });
+  button.attach = wrapper => {
+    // The whole field is the anchor, so the panel lines up with it and a click inside it is not "outside".
+    anchor = wrapper;
+    wrapper.tabIndex = -1;
+    wrapper.addEventListener('focus', () => input.focus());
+    const sync = new MutationObserver(() => input.setAttribute('aria-expanded', wrapper.getAttribute('aria-expanded') ?? 'false'));
+    sync.observe(wrapper, { attributes: true, attributeFilter: ['aria-expanded'] });
+  };
+  return button;
 }
 
 function grow(area: HTMLTextAreaElement) {
   area.style.height = 'auto';
   area.style.height = `${area.scrollHeight}px`;
+}
+
+// A Select: a button showing the choice; a popover lists the choices with the current one ticked,
+// a search box when there are many, and Clear when the field is not required.
+function SelectControl(field: FieldLike, id: string, options: ControlOptions): Control {
+  const meta = field.meta, choices = meta.choices ?? [], retired = meta.retired_choices ?? [];
+  const current = () => { const value = field.value.get(); return isEmpty(value) ? null : String(value); };
+  const button = html`<button type="button" class="in-select input" id=${id} disabled=${() => !field.editable.get()} aria-haspopup="listbox" aria-expanded="false"
+    aria-invalid=${() => field.error.get() ? 'true' : null} aria-required=${() => field.rules.get().required ? 'true' : null}
+    aria-describedby=${options.describedBy ?? null} aria-label=${options.label ?? null}>${() => current() === null
+      ? html`<span class="tx muted">${meta.placeholder || 'Choose one'}</span>` : html`<span class="tx">${humanize(current()!)}</span>`}${Icon('chevron-down', { size: 'sm' })}</button>` as HTMLButtonElement;
+  const choose = (value: string | null) => { if (writeValue(field, value)) options.onCommit?.(); };
+  const open = (typed = '') => openPopover(button, close => ChoiceList({
+    // Retired choices are listed only for the record that still holds one, and can't be picked again.
+    choices: [...choices.map(value => ({ value, label: humanize(value) })),
+      ...retired.filter(value => value === untrack(current)).map(value => ({ value, label: `${humanize(value)} (retired)`, disabled: true }))],
+    current, label: meta.label, clearable: !untrack(() => field.rules.get().required), typed,
+    onPick: value => { close(); choose(value); },
+  }), { role: 'dialog', label: `Choose ${meta.label}`, className: 'select-pop', align: 'left' });
+  button.addEventListener('click', () => open());
+  button.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); open(); }
+    // Typing a letter opens the list at it (or searches a long list).
+    else if (event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey && field.editable.peek()) {
+      event.preventDefault(); event.stopPropagation(); open(event.key);
+    }
+  });
+  return { element: button, commit: () => true, focus: () => button.focus(), type: text => { if (field.editable.peek()) open(text); } };
 }
 
 // A Link: the chosen record's mark and title; a popover searches records of the target model.
@@ -490,7 +649,7 @@ export function BaseField(props: FieldProps): HTMLElement {
   const control = FieldControl(field, { id, describedBy: errorId, links: props.links, onCommit: props.onCommit });
   const star = html`<span class="req" aria-hidden="true">*</span>` as HTMLElement;
   if (meta.required_when) tooltip(star, `Required when ${phrase(meta.required_when, labelsOf(field))}`);
-  const labelled = ['switch', 'link'].includes(kindOf(meta.type).control ?? '') || control.element.tagName !== 'DIV' || control.element.classList.contains('in-affix') || control.element.classList.contains('in-tags');
+  const labelled = ['switch', 'link', 'select'].includes(kindOf(meta.type).control ?? '') || control.element.tagName !== 'DIV' || control.element.classList.contains('in-affix') || control.element.classList.contains('in-tags');
   return html`<div class="fld" class:full=${Boolean(props.full) || meta.type === 'longtext'} class:invalid=${() => Boolean(field.error.get())}
     hidden=${() => !field.rules.get().applies} data-field=${meta.name}>
     <label for=${labelled ? id : null} id=${`${id}-label`}>${label}${when(() => field.rules.get().required && !field.calculated, () => star)}${FieldHints(field)}${props.hint ?? null}</label>

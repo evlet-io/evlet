@@ -55,6 +55,14 @@ export function change(input: HTMLInputElement | HTMLTextAreaElement | HTMLSelec
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+/** Open a Select's list and pick the choice with this label. */
+export function pick(button: HTMLElement, label: string) {
+  button.click();
+  const option = [...document.querySelectorAll<HTMLElement>('.pop [role="option"]')].find(item => item.textContent?.trim() === label);
+  if (!option) throw new Error(`No choice ${label}`);
+  option.click();
+}
+
 export const schema = responses.schema.body as AppSchema;
 
 /** The recorded order backend: a 120-line order, its customer and product. */
