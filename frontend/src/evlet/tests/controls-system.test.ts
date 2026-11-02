@@ -5,6 +5,7 @@ import { Controls, controlsRouter } from '../controls/app';
 import { ControlsClient } from '../controls/client';
 import { server, type Sent } from './server';
 import { byText, click, lastToast, requests, stopAll, text, typeInto, until } from './screens-helpers';
+import { choose } from './ui-helpers';
 
 const settings = { 'security.password_min': { file: 15, value: 15 }, 'security.session_hours': { file: 12, value: 12 }, 'security.lockout': { file: 5, value: 4 },
   'security.two_step_roles': { file: ['admin'], value: ['admin'] }, 'security.controls_ips': { file: [], value: [] } };
@@ -142,9 +143,7 @@ describe('Controls system pages', () => {
     expect(requests(sent, 'GET', /audit\?before=9$/)).toHaveLength(1);
     typeInto(host.querySelector<HTMLInputElement>('input[aria-label="Search changes"]')!, 'lockout');
     await until(() => expect(requests(sent, 'GET', /audit\?q=lockout$/)).toHaveLength(1));
-    const area = host.querySelector<HTMLSelectElement>('select[aria-label="Area"]')!;
-    area.value = 'Security';
-    area.dispatchEvent(new Event('change', { bubbles: true }));
+    choose(host.querySelector<HTMLElement>('button[aria-label="Area"]')!, 'Security');
     await until(() => expect(requests(sent, 'GET', /audit\?q=lockout&area=Security$/)).toHaveLength(1));
   });
 

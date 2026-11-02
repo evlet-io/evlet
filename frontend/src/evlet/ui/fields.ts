@@ -16,7 +16,7 @@ import { read, tintFor, uid, type Prop, type Tint } from './core';
 import { formula, labeller, phrase, source } from './explain';
 import { checkTag, currencyOf, durationText, humanize, InputError, kindOf, parseDuration, parseTime } from './kinds';
 import { copyText, openPopover } from './layers';
-import { ChoiceList, DatePanel, DateTimePanel, DurationPanel, focusCalendar, TimePanel, type DateTimeValue } from './pickers';
+import { DatePanel, DateTimePanel, Dropdown, DurationPanel, focusCalendar, TimePanel, type DateTimeValue } from './pickers';
 import { formatDate, formatMoney, parseDate, zoneOffset } from '../model/format';
 import { tooltip } from './tooltip';
 
@@ -505,27 +505,14 @@ function grow(area: HTMLTextAreaElement) {
 function SelectControl(field: FieldLike, id: string, options: ControlOptions): Control {
   const meta = field.meta, choices = meta.choices ?? [], retired = meta.retired_choices ?? [];
   const current = () => { const value = field.value.get(); return isEmpty(value) ? null : String(value); };
-  const button = html`<button type="button" class="in-select input" id=${id} disabled=${() => !field.editable.get()} aria-haspopup="listbox" aria-expanded="false"
-    aria-invalid=${() => field.error.get() ? 'true' : null} aria-required=${() => field.rules.get().required ? 'true' : null}
-    aria-describedby=${options.describedBy ?? null} aria-label=${options.label ?? null}>${() => current() === null
-      ? html`<span class="tx muted">${meta.placeholder || 'Choose one'}</span>` : html`<span class="tx">${humanize(current()!)}</span>`}${Icon('chevron-down', { size: 'sm' })}</button>` as HTMLButtonElement;
-  const choose = (value: string | null) => { if (writeValue(field, value)) options.onCommit?.(); };
-  const open = (typed = '') => openPopover(button, close => ChoiceList({
+  const button = Dropdown({ id, label: meta.label, ariaLabel: options.label, placeholder: meta.placeholder || undefined, describedBy: options.describedBy,
+    value: current, disabled: () => !field.editable.get(), invalid: () => Boolean(field.error.get()), required: () => field.rules.get().required,
+    clearable: () => !field.rules.peek().required,
     // Retired choices are listed only for the record that still holds one, and can't be picked again.
-    choices: [...choices.map(value => ({ value, label: humanize(value) })),
-      ...retired.filter(value => value === untrack(current)).map(value => ({ value, label: `${humanize(value)} (retired)`, disabled: true }))],
-    current, label: meta.label, clearable: !untrack(() => field.rules.get().required), typed,
-    onPick: value => { close(); choose(value); },
-  }), { role: 'dialog', label: `Choose ${meta.label}`, className: 'select-pop', align: 'left' });
-  button.addEventListener('click', () => open());
-  button.addEventListener('keydown', event => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); open(); }
-    // Typing a letter opens the list at it (or searches a long list).
-    else if (event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey && field.editable.peek()) {
-      event.preventDefault(); event.stopPropagation(); open(event.key);
-    }
-  });
-  return { element: button, commit: () => true, focus: () => button.focus(), type: text => { if (field.editable.peek()) open(text); } };
+    choices: () => [...choices.map(value => ({ value, label: humanize(value) })),
+      ...retired.filter(value => value === current()).map(value => ({ value, label: `${humanize(value)} (retired)`, disabled: true }))],
+    onChange: value => { if (writeValue(field, value)) options.onCommit?.(); } });
+  return { element: button, commit: () => true, focus: () => button.focus(), type: text => button.open(text) };
 }
 
 // A Link: the chosen record's mark and title; a popover searches records of the target model.

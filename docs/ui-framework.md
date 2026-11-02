@@ -264,7 +264,7 @@ system fonts (`system-ui`, `ui-monospace` and the rest of the stack) until they 
 | `tooltip.ts` | `tooltip(element, text)`: one page-wide tooltip on hover and focus, never on touch |
 | `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `openModal`, `openDrawer`, `toast` (with Undo), `copyText` |
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type, `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
-| `pickers.ts` | ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
+| `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table` |
@@ -301,7 +301,8 @@ pickers open in a popover (`openPopover`), close on Esc or a click outside and g
 to the field. Every value they pick goes through the same parsing as typed text, and the server
 checks it again.
 
-- **Select** is a button that shows the choice (or "Choose one"). Click, Down or Up opens the
+- **Select** is a `Dropdown`: a button that shows the choice (or "Choose one"). Settings and
+  Controls use the same `Dropdown`, so no page shows the browser's `<select>`. Click, Down or Up opens the
   list with the current choice ticked (`aria-selected`). Up and Down move, Home and End jump,
   Enter or Space picks, a letter jumps to the next choice that starts with it. From 8 choices
   the list has a search box. Clear shows when the field is optional and set. A retired choice is
@@ -545,7 +546,5 @@ record store replay the shared finite-v1 scenarios (`finite-fixtures.json`).
 - Postings show what each target received (rows, reversals, balance); listing the posted rows
   waits for a filter by source on the target's list route.
 - Reference fields are read only until the schema lists the models they may point to.
-- The Settings and Controls pages build their own selects and still use the browser's
-  `<select>`; the field pickers are used by model forms, dialogs and the Library.
 - State metadata (`record.state`) is read when the schema sends it.
 - Lookups that a role cannot read stay pending; their saved results keep showing.

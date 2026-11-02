@@ -4,10 +4,10 @@ import { RecordStore } from '../model/record';
 import { SchemaIndex, type AppSchema, type FieldSchema } from '../model/schema';
 import { apiLinks, BaseField, currencyIn, displayValue, localField, setLinkSource } from '../ui/fields';
 import { InlineValue } from '../ui/inline';
-import { addMonths, Calendar, DateRangePanel, rangePresets, rangeText, type DateRange } from '../ui/pickers';
+import { addMonths, Calendar, DateRangePanel, Dropdown, rangePresets, rangeText, type DateRange } from '../ui/pickers';
 import { cell } from '../reactive';
 import { server } from './server';
-import { backend, cleanup, key, pick, render } from './ui-helpers';
+import { backend, choiceValues, choose, cleanup, key, pick, render } from './ui-helpers';
 
 afterEach(() => { setLinkSource(null); cleanup(); });
 
@@ -96,6 +96,31 @@ describe('Select', () => {
     pick(host.querySelector<HTMLElement>('.in-select')!, 'Lost');
     await flush();
     expect(sent.find(item => item.method === 'PATCH')!.body.stage).toBe('lost');
+  });
+});
+
+describe('Dropdown', () => {
+  it('shows the chosen label, lists choices by value and reports a pick', () => {
+    const value = cell<string | null>('8');
+    const picked: Array<string | null> = [];
+    const host = render(() => Dropdown({ label: 'Session length', ariaLabel: 'Session length', value: () => value.get(),
+      choices: () => ['1', '4', '8'].map(hours => ({ value: hours, label: `${hours} hours` })), onChange: next => { picked.push(next); value.set(next); } }));
+    const button = host.querySelector<HTMLButtonElement>('button.in-select')!;
+    expect(button.textContent).toContain('8 hours');
+    expect(choiceValues(button)).toEqual(['1', '4', '8']);
+    choose(button, '4');
+    expect(picked).toEqual(['4']);
+    expect(button.textContent).toContain('4 hours');
+    // Picking the current choice again changes nothing.
+    choose(button, '4');
+    expect(picked).toEqual(['4']);
+    expect(document.querySelector('select')).toBeNull();
+  });
+
+  it('stays closed while disabled', () => {
+    const host = render(() => Dropdown({ label: 'Role', value: () => 'admin', disabled: true, choices: () => [{ value: 'admin', label: 'admin' }], onChange: () => {} }));
+    host.querySelector<HTMLButtonElement>('button')!.click();
+    expect(document.querySelector('.pop')).toBeNull();
   });
 });
 

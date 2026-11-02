@@ -10,7 +10,8 @@ import { html, when, type Child } from '../dom';
 import { cell, derive, untrack, type Cell } from '../reactive';
 import { formatDate, todayGst } from '../model/format';
 import { Icon } from './base';
-import { uid } from './core';
+import { read, uid } from './core';
+import { openPopover } from './layers';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -108,7 +109,7 @@ export function ChoiceList(props: ChoiceListProps): HTMLElement {
   };
   const list = html`<div class="choice-list" role="listbox" id=${listId} aria-label=${props.label} tabindex=${searchable ? null : '0'}
     aria-activedescendant=${() => shown.get().length ? optionId(active.get()) : null} on:keydown=${(event: KeyboardEvent) => { if (!searchable) keys(event); }}>${() => shown.get().map((choice, index) => html`<div
-      class="mi" class:on=${() => active.get() === index} class:off=${Boolean(choice.disabled)} role="option" id=${optionId(index)}
+      class="mi" class:on=${() => active.get() === index} class:off=${Boolean(choice.disabled)} role="option" id=${optionId(index)} data-value=${choice.value}
       aria-selected=${() => String(props.current() === choice.value)} aria-disabled=${choice.disabled ? 'true' : null}
       on:pointerdown=${(event: Event) => event.preventDefault()} on:click=${() => pick(index)} on:mouseenter=${() => { if (!choice.disabled) active.set(index); }}>
       <span class="ck">${() => props.current() === choice.value ? Icon('check', { size: 'sm' }) : null}</span><span class="grow">${choice.label}</span></div>`)}</div>` as HTMLElement;
@@ -123,6 +124,59 @@ export function ChoiceList(props: ChoiceListProps): HTMLElement {
   });
   return html`<div class="choice-pick">${search}${list}${when(() => searchable && !shown.get().length, () => html`<div class="muted link-status" role="status">No matches</div>`)}${props.clearable
     ? when(() => props.current() !== null, () => html`<hr><button type="button" class="mi" on:click=${() => props.onPick(null)}>${Icon('x', { size: 'sm' })}<span>Clear</span></button>`) : null}</div>` as HTMLElement;
+}
+
+// ---------- dropdown ----------
+
+export interface DropdownProps {
+  /** The chosen value, or null for none. */
+  value: () => string | null;
+  /** The choices, read each time the list opens. */
+  choices: () => Choice[];
+  onChange: (value: string | null) => void;
+  /** Names the list. Without it, the text of the <label for> the button's id. */
+  label?: string;
+  id?: string;
+  /** Labels the button when no <label for> does. */
+  ariaLabel?: string;
+  disabled?: boolean | (() => boolean);
+  /** Shown while nothing is chosen (default "Choose one"). */
+  placeholder?: string;
+  clearable?: boolean | (() => boolean);
+  invalid?: () => boolean;
+  required?: () => boolean;
+  describedBy?: string;
+  className?: string;
+}
+
+/**
+ * Evlet's select: a button showing the chosen choice that opens a ChoiceList. Click, Down or Up
+ * opens it; a letter opens it at that letter. Form fields, Settings and Controls all use it, so
+ * no page shows the browser's own menu.
+ */
+export function Dropdown(props: DropdownProps): HTMLButtonElement & { open(typed?: string): void } {
+  const labelOf = (value: string) => untrack(props.choices).find(choice => choice.value === value)?.label ?? value;
+  const off = () => Boolean(read(props.disabled ?? false));
+  const button = html`<button type="button" class=${`in-select input${props.className ? ` ${props.className}` : ''}`} id=${props.id ?? null}
+    disabled=${off} aria-haspopup="listbox" aria-expanded="false" aria-label=${props.ariaLabel ?? null}
+    aria-invalid=${() => props.invalid?.() ? 'true' : null} aria-required=${() => props.required?.() ? 'true' : null} aria-describedby=${props.describedBy ?? null}
+    >${() => props.value() === null
+      ? html`<span class="tx muted">${props.placeholder ?? 'Choose one'}</span>` : html`<span class="tx">${labelOf(props.value()!)}</span>`}${Icon('chevron-down', { size: 'sm' })}</button>` as HTMLButtonElement & { open(typed?: string): void };
+  const name = () => props.label || button.labels?.[0]?.textContent?.trim() || props.ariaLabel || 'an option';
+  button.open = (typed = '') => {
+    if (off()) return;
+    openPopover(button, close => ChoiceList({ choices: untrack(props.choices), current: props.value, label: name(), typed,
+      clearable: Boolean(read(props.clearable ?? false)), onPick: value => { close(); if (value !== untrack(props.value)) props.onChange(value); } }),
+    { role: 'dialog', label: `Choose ${name().toLowerCase()}`, className: 'select-pop', align: 'left' });
+  };
+  button.addEventListener('click', () => button.open());
+  button.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); button.open(); }
+    else if (event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault(); event.stopPropagation(); button.open(event.key);
+    }
+  });
+  return button;
 }
 
 // ---------- calendar ----------

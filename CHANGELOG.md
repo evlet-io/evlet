@@ -5,7 +5,7 @@ say what to change. Evlet is not production ready.
 
 ## Unreleased
 
-- **Pickers.** Select fields open Evlet's own list (current choice ticked, search for long
+- **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
   lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
   duration fields keep their typed input and add a calendar or steppers. List pages filter
   date fields by range, with presets.
