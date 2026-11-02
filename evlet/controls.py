@@ -24,7 +24,10 @@ SETTINGS = MappingProxyType({
     'security.password_min': 15, 'security.session_hours': 8, 'security.lockout': 10,
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
     'mcp.enabled': True, 'mcp.allow_writes': False, 'mcp.rate': 60, 'mcp.disabled_tools': [], 'mcp.hidden_models': [],
+    'mail.personal': False,
 })
+# Audit areas of setting overrides by key prefix; other settings are Security.
+SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email'}
 NOT_FOUND = 'Route not found'
 AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming'}
 # A paused schedule is a setting override: schedule.<name>.active = false.
@@ -154,7 +157,7 @@ def _networks(values):
 def strictest(key, value, roles):
     """The strictest safe value of a stored setting that no longer validates."""
     number = type(value) is int
-    if key in ('mcp.enabled', 'mcp.allow_writes'):
+    if key in ('mcp.enabled', 'mcp.allow_writes', 'mail.personal'):
         return False
     if key == 'mcp.rate':
         return min(max(value, 1), 60) if number else 1
@@ -508,7 +511,7 @@ class Controls:
                 except ValueError:
                     raise ValueError(f"{item} isn't an IP address or range.") from None
             value = list(dict.fromkeys(networks))
-        if key in ('mcp.enabled', 'mcp.allow_writes') and type(value) is not bool:
+        if key in ('mcp.enabled', 'mcp.allow_writes', 'mail.personal') and type(value) is not bool:
             raise ValueError('Use on or off.')
         if key == 'mcp.rate' and not (number and 1 <= value <= 60):
             raise ValueError('Use 1 to 60 tool calls a minute. The framework allows at most 60.')
@@ -610,7 +613,7 @@ class Controls:
                 if schedule:
                     audit(connection, user.username, 'Jobs', schedule[1], 'Resumed' if value is None else 'Paused', before, value)
                 else:
-                    audit(connection, user.username, 'MCP' if key.startswith('mcp.') else AREAS[kind], key.replace('|', ' · '), 'Reset to the file value' if value is None else 'Changed', before, value)
+                    audit(connection, user.username, SETTING_AREAS.get(key.split('.')[0], 'Security') if kind == 'setting' else AREAS[kind], key.replace('|', ' · '), 'Reset to the file value' if value is None else 'Changed', before, value)
                 if key == 'security.session_hours':
                     # Sessions keep their start: a shorter length ends the ones already older than it.
                     shorter = self.settings[key] - (SETTINGS[key] if value is None else value)

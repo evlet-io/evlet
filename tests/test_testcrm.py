@@ -366,3 +366,34 @@ def test_activity_journal_records_moves_the_win_and_what_people_add(crm):
     assert vera('POST', url + '/journal', {'kind': 'note', 'text': 'Seen'})[0] == 403
     # Another sales person cannot read the deal or its history.
     assert login(crm, 'omar')('GET', url + '/journal?limit=50&offset=0')[0] == 404
+
+
+def test_an_email_from_a_contact_appears_in_its_activity(crm):
+    """Meta.mail on Contact and Lead: a salesperson's own mailbox puts a matching message in the record's Activity."""
+    from test_mailboxes import _IMAP, _SMTP, APP_PASSWORD, mailbox, message, serve
+    imap, smtp = serve(_IMAP), serve(_SMTP)
+    try:
+        for server in (imap, smtp):
+            server.logins, server.tokens = {('sara@acme.test', APP_PASSWORD)}, set()
+        imap.mail, imap.log, imap.bodies, imap.validity, smtp.messages = [], [], [], 7, []
+        admin, sara = login(crm, 'admin'), login(crm, 'sara')
+        assert admin('POST', '/api/_controls/overrides', {'changes': [{'kind': 'setting', 'key': 'mail.personal', 'value': True}]})[0] == 200
+        contact = find(sara, 'contact', name='Khalid Al Mansoori')
+        imap.mail += [message(1, contact['email'], 'Payment terms for Q3', to='sara@acme.test', body='Can we move to 45 days?'),
+                      message(2, 'someone@unknown.test', 'Not a customer', to='sara@acme.test')]
+        status, payload, _ = sara('POST', '/api/_settings/me/mailbox', mailbox(imap, smtp, address='sara@acme.test'))
+        assert status == 200, payload
+        while crm.business.jobs.run_one():
+            pass
+        page = sara('GET', f"/api/contact/{contact['id']}/journal")[1]
+        found = [item for item in page['items'] if item['kind'] == 'message']
+        assert len(found) == 1 and found[0]['data']['subject'] == 'Payment terms for Q3' and found[0]['data']['direction'] == 'in'
+        assert page['users'][str(found[0]['actor'])] == 'sara' and found[0]['data']['party'] == contact['email']
+        assert 'Not a customer' not in json.dumps(page)
+        # Viewers read the record, so they see the message too.
+        assert login(crm, 'vera')('GET', f"/api/contact/{contact['id']}/journal?kind=message")[1]['total'] == 1
+        sara('DELETE', '/api/_settings/me/mailbox')
+    finally:
+        for server in (imap, smtp):
+            server.shutdown()
+            server.server_close()

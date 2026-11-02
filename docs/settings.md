@@ -20,7 +20,7 @@ person used, kept on the server: `GET /settings` redirects to `/settings/<last p
 | `/settings/appearance` | Theme (light; dark is shown as coming later), density, text size, start page, sidebar counts, language (Arabic is right-to-left), time zone, date format, number format, first day of the week | Instantly |
 | `/settings/security` | Password, two-step sign-in, where you are signed in | On submit |
 | `/settings/notifications` | Event by channel (in Evlet, email), quiet hours | Instantly |
-| `/settings/email` | Personal mailboxes come in a later release; this page says so | |
+| `/settings/email` | Your own mailbox: connect Microsoft 365, Google or another mailbox, send from it, link replies to records, sync and disconnect ([controls.md](controls.md#personal-mailboxes)). Desk only | Instantly |
 | `/settings/ai` | Remote AI assistants: the `/_/mcp` address, your connected assistants with "Can make changes" and Disconnect, the apps they can use and your recent requests ([controls.md](controls.md#mcp-and-ai)); and, under On this computer, the command line steps (`evlet login`, then `evlet mcp`) with the sessions signed in that way. Desk only | Instantly |
 | `/settings/keys` | Your API keys for scripts: create (shown once), scope and revoke ([controls.md](controls.md#api-keys)). Desk only | Instantly |
 | `/settings/app/<app>` | An app's settings: "For everyone" and "Just for you" | Save bar; instantly |

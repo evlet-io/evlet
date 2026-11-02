@@ -1,5 +1,5 @@
 """The instance's secret key and sealed secrets (AES-GCM): one key for connector secrets,
-two-step secrets, backup codes and sign-ins in progress.
+two-step secrets, backup codes, sign-ins in progress and personal mailboxes.
 
 Keys come from EVLET_SECRET_KEY (comma-separated) or from instances/<name>/secret.key: one
 32-byte key per line in URL-safe base64, mode 0600, owned by the server's user, never a link.
@@ -194,6 +194,8 @@ SEALED = (
     ('evlet_user_profile', 'two_step_pending', 'user_id', 'user_id', 'two_step_pending:', False, 'two-step set-up of user {}'),
     ('evlet_user_profile', 'backup_codes', 'user_id', 'user_id', 'backup_codes:', True, 'backup codes of user {}'),
     ('evlet_two_step_tickets', 'secret', 'token_hash', 'user_id', 'two_step_ticket:', False, 'a sign-in in progress of user {}'),
+    ('evlet_mailboxes', 'secrets', 'user_id', 'user_id', 'evlet-mailbox:', False, 'the mailbox of user {}'),
+    ('evlet_mail_states', 'secrets', 'hash', 'hash', 'evlet-mail-state:', False, 'a mailbox sign-in in progress ({})'),
 )
 
 

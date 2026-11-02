@@ -279,6 +279,8 @@ class Application:
 
     def _internal(self, scope, raw):
         self.business.controls.refresh()
+        if scope['path'] in ('/_/mail/callback', '/_/mail/continue.js'):
+            return self.business.mailboxes.callback(scope, raw)
         return self.business.assistants.dispatch(scope, raw)
 
     def _dispatch(self, scope, body):

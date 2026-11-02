@@ -206,6 +206,9 @@ def test_keys_are_for_desk_users_on_desk_hosts(portal):
     assert http(portal, 'GET', '/api/customer', headers={**bearer, b'host': DESK})[0] == 401
     _, _, buyer = sign_in(portal, 'buyer', PORTAL)
     assert buyer('GET', '/api/_settings/me/keys')[0] == 404
+    # Personal assistants and mailboxes are desk only too.
+    assert buyer('GET', '/api/_settings/me/mailbox')[0] == 404
+    assert buyer('GET', '/api/_settings/me/ai')[0] == 404
 
 
 def test_a_key_follows_controls_overrides_and_custom_roles(secured):

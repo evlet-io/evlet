@@ -8,6 +8,7 @@ import { Button, Icon, StatusPill, Switch } from '../ui/base';
 import { DialogFooter, openDrawer, toast } from '../ui/layers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
 import type { ConnectorBody, ConnectorField, ConnectorInfo, ConnectorRow, TestResult } from './client';
+import { idOf } from './drafts';
 import { ask, field, message, Select } from './people';
 
 type Listing = { connectors: ConnectorInfo[]; items: ConnectorRow[] };
@@ -171,8 +172,17 @@ export function EmailPage(ctx: ControlsContext): HTMLElement {
           : html`<button type="button" class="ctl-link" on:click=${(event: MouseEvent) => { event.stopPropagation(); void makeDefault(row); }}>Make default</button>`}</td></tr>`)
         : html`<tr><td colspan="5"><div class="ctl-empty">${() => listing.get() === null ? 'Loading accounts…' : 'No email accounts yet.'}</div></td></tr>`}</tbody></table></div>
     <p class="muted ctl-small ctl-after">Apps pick an account by name. If an app doesn't name one, the default outgoing account is used.</p>
+    ${() => ctx.drafts.item(PERSONAL) ? html`<section class="ctl-card"><div class="ctl-card-head"><div><h2>People's own mailboxes</h2></div></div>
+      <div class="ctl-setrow"><div class="grow"><strong>Let people connect their own mailbox ${() => ctx.drafts.overridden(PERSONAL) ? html`<span class="ctl-tag">Changed</span>` : null}</strong>
+        <p>People can send from records as themselves and see replies on records. Admins can't read their mailboxes.
+          Only emails with addresses on records are copied, and only people who can see the record see them.</p>
+        ${() => ctx.drafts.errors.get().has(PERSONAL) ? html`<span class="ctl-err">${ctx.drafts.errors.get().get(PERSONAL)}</span>` : null}</div>
+        <div class="ctl-setctl">${Switch({ on: () => ctx.drafts.value<boolean>(PERSONAL), ariaLabel: 'Let people connect their own mailbox',
+          onChange: next => ctx.drafts.set(PERSONAL, next) })}</div></div></section>` : null}
   </div>` as HTMLElement;
 }
+
+const PERSONAL = idOf('setting', 'mail.personal');
 
 function openAccount(ctx: ControlsContext, info: (id: string) => ConnectorInfo, row: ConnectorRow | undefined, reload: () => Promise<void>) {
   const direction = cell(row?.connector ?? 'smtp'), name = cell(row?.account ?? ''), to = cell(''), sent = cell<TestResult | 'running' | null>(null);

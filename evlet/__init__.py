@@ -81,3 +81,6 @@ __all__ += ["AppSettings", "UserPreferences"]
 from .connectors import ConnectionFailed, Connector, ConnectorField
 
 __all__ += ["ConnectionFailed", "Connector", "ConnectorField"]
+from .mailboxes import Mail
+
+__all__ += ["Mail"]

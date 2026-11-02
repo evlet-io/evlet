@@ -117,6 +117,7 @@ class Business:
         from .connectors import Connectors
         from .settings import Settings
         from .assistants import Assistants
+        from .mailboxes import Mailboxes
         self.controls = Controls(self)
         self.settings = Settings(self)
         self.connectors = Connectors(self)
@@ -184,12 +185,14 @@ class Business:
             raise ValueError('children is reserved for owned collections')
         # Rows of a ChildTable are journaled with their parent, like Table rows.
         self.journals = {model: journal for model, journal in self.registry.journals.items() if model not in self.child_models}
+        self.mailboxes = Mailboxes(self)
 
     def initialize(self):
         self.auth.initialize()
         self.controls.initialize()
         self.connectors.initialize()
         self.assistants.initialize()
+        self.mailboxes.initialize()
         self.storage.initialize(self.database)
         self.settings.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
@@ -454,6 +457,9 @@ class Business:
             return self.assistants.api(scope, body, user)
         if path == '/api/_settings/me/keys' or path.startswith('/api/_settings/me/keys/'):
             return self.controls.my_keys(scope, body, user)
+        # /api/_settings/me/email is the sign-in address change (Settings); the mailbox has its own routes.
+        if path == '/api/_settings/me/mailbox' or path.startswith('/api/_settings/me/mailbox/'):
+            return self.mailboxes.api(scope, body, user)
         if path == '/api/_controls' or path.startswith('/api/_controls/'):
             return self.controls.dispatch(scope, body, user)
         if path.startswith('/api/_settings/'):
