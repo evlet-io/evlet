@@ -30,10 +30,21 @@ has no two-step sign-in, and nothing is listed for it.
   both narrow it; a request must match both lists when both are set. The address checked is
   `LocalAuth.client_address(scope)`: `X-Forwarded-For` counts only when the connection
   comes from one of the instance's `trusted_proxies` ([routing.md](routing.md)). Sign-in
-  throttling and the public endpoint limit read the same address.
+  throttling and the public endpoint limit read the same address. A local or private peer that
+  keeps sending forwarded headers without being trusted is listed under Needs attention, each
+  peer on its own with its `trusted_proxies=(...)` line, to add only if that address is your
+  reverse proxy; the header stays ignored until then.
 - `ControlsAccess(require_two_step=True)` opens Controls only to sessions that finished two-step
   sign-in; others get a message that sends them to Settings and back through sign-in. Roles in
-  `security.two_step_roles` need such a session too, when the instance can keep secrets.
+  `security.two_step_roles` need such a session too, when the instance can keep secrets: they
+  can't use anything until two-step sign-in is set up (see [settings.md](settings.md#when-the-code-is-asked)).
+- **Changes ask for a fresh code.** For a person with two-step sign-in on, every request that
+  changes something in Controls (any `POST`, `PUT`, `PATCH` or `DELETE` under `/api/_controls/`,
+  except trying a naming series, and under the older account routes `/api/auth/users`) needs a
+  code from the last 10 minutes on this session. Signing
+  in with a code counts. Otherwise the answer is 403 `VERIFY_TWO_STEP: ...`; the page shows a code
+  dialog, sends the code to `POST /api/_settings/me/two-step/verify` and sends the change again.
+  Reading Controls never asks. An admin setting someone else's password is a Controls change.
 - Admins can **Reset two-step** for a user (`PATCH /api/_controls/users/<id>`
   `{"two_step": "reset"}`), and `evlet users reset-two-step <instance> <username>` does the same
   from the server shell. Both are audited and revoke all the user's access, API keys included
@@ -59,15 +70,18 @@ revokes their API keys.
 
 | What happened | Browser sessions | AI assistants and codes | API keys |
 |---|---|---|---|
-| Password changed in Settings | Others end, this one stays | End | Kept |
-| Controls: Sign out everywhere, password set, role change | End | End | Kept |
+| Password changed in Settings | Others end, this one stays | End | Kept, unless "Also revoke API keys" is ticked (`"revoke_keys": true`) |
+| Controls: Sign out everywhere | End | End | Kept, unless "Also revoke API keys" is ticked (`"revoke_keys": true`) |
+| Controls: password set, role change | End | End | Kept |
 | Controls: Reset two-step, `evlet users reset-two-step` | End | End | Revoked |
 | Controls: Deactivate | End | End | Revoked, and stay revoked if the person is activated again |
 | `evlet controls grant` (break glass) | End | End | Revoked |
 
-A password change keeps keys because scripts usually belong to the person who changed it on
-purpose. A two-step reset, deactivation and the break-glass grant are how an account is taken
-back, so whatever the other party could have created goes too.
+The two choices show a checkbox, "Also revoke API keys (N active)", unticked by default; the
+routes take an explicit `revoke_keys` boolean that defaults to false, and the audit row says how
+many keys were revoked. Keys are kept by default because scripts usually belong to the person
+on purpose. A two-step reset, deactivation and the break-glass grant are how an account is
+taken back, so whatever the other party could have created always goes too.
 
 ## Roles
 
@@ -120,10 +134,17 @@ job and rebuilds its `Policy` and settings when it moved. Open pages get a
 `{"ops": [...], "read": [...] | null, "write": [...] | null, "scope": id | null}`):
 operations (`read`, `create`, `update`, `delete`, `journal`, `void`, `revise`, `unpost`, `repost`), readable and
 writable fields must stay within the file rule. Stricter only applies to the fields declared in
-app files: an instance field (`x_`, added by Controls) may be made readable or writable for a
-role even when the app rule lists `read_fields` or `write_fields`, as long as the role has read
-(and create or update, to write). Without such an override, a role whose app rule lists fields
-does not see instance fields. Write needs read, no access clears fields and
+app files. An instance field (`x_`, added by Controls) follows the record for every signed-in
+staff role, that is every desk role: each one that reads the model reads it, and each one that
+creates or updates the model writes it, also when the app rule lists `read_fields` or
+`write_fields`. The file value on the Permissions page includes it, so an override can hide it
+from a role or make it read only, like any field. Adding a field also adds it to the field lists
+of existing desk-role overrides, so it stays hidden from staff only where an admin unticks it.
+Portal roles (customers) and public endpoints never get an instance field by default: an admin
+grants it to a portal role with a permission override, and fields added later stay hidden from
+it until ticked there.
+The API, generated screens, API keys, exports and AI assistants all read fields through the same
+`Policy`. Write needs read, no access clears fields and
 rows, revise needs create. Admin rules can't be overridden. The page shows the first four;
 `journal`, `void`, `revise`, `unpost` and `repost` named in the file rule are kept on save. A role based on the
 editor journals like the editor when its rule reads and updates the model (`docs/journal.md`).
@@ -135,13 +156,26 @@ user's links (`evlet_user_links`) that the session loads with each request, so a
 no customer links sees no records. Link users with `evlet link-user` or
 `LocalAuth.link_user`.
 
-**Security** (kind `setting`):
+**Security** (kind `setting`). The file value of the first three comes from the instance's
+`config.py`, beside `instance = Instance(...)`, or from `LocalAuth(security=...)` in an application
+built by hand:
+
+```python
+from evlet import Instance, Security
+
+instance = Instance(name="acme", domain="erp.acme.com")
+security = Security(session_hours=8, lockout=4, password_min=16)
+```
+
+`Security` checks its values: `session_hours` 1 to 168, `lockout` 3 to 50 and `password_min` 15
+to 64. Left out, they are 12 hours, 5 and 15. Controls can only make them stricter than the
+config value. Change config.py and restart to loosen one.
 
 | Key | File value | Rule |
 |---|---|---|
-| `security.password_min` | 15 | Up only, 64 at most. Applies to new passwords. |
-| `security.session_hours` | 8 | Down only. Sets the session and cookie length in every realm. Lowering it ends sessions already older than the new length, desk and portal alike. |
-| `security.lockout` | 10 | Down only, 3 at least. Failed sign-ins per network and account. |
+| `security.password_min` | 15, or `Security(password_min=...)` | Up only, 64 at most. Applies to new passwords. |
+| `security.session_hours` | 12, or `Security(session_hours=...)` | Down only, 1 at least. Sets the session and cookie length in every realm. Lowering it ends sessions already older than the new length, desk and portal alike. |
+| `security.lockout` | 5, or `Security(lockout=...)` | Down only, 3 at least. Failed sign-ins per network and account, and wrong current passwords per account in Settings. |
 | `security.two_step_roles` | `["admin"]` | Admin stays. These roles must use two-step sign-in ([settings.md](settings.md#two-step-sign-in)) when the instance can keep secrets: people who have not set it up do so at their next sign-in (trust on first use), and Controls needs a verified session. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
 
@@ -288,7 +322,7 @@ they are removed on the Models page.
 | `perm` | `apps/<app>/<package>/permissions.py` | `rules = {("editor", Lead): Rule(operations=..., read_fields=..., write_fields=..., scope=...)}`. The `own_customer` preset is written as the public `own_customer()`, or `own_customer(field='id')` on the customer model |
 | `field`, `custom`, `naming` | The file that declares the model, such as `apps/notes/models/item.py` | The field lines as models.py writes them, with the changes merged in, and `Meta.naming = Naming(...)`. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. Arguments set in code, such as a callable default or validator, are written as `...` with a comment to copy them from models.py, so the code always compiles. |
 | `layout`, `list` | `apps/<app>/<package>/views/__init__.py` | `FormView(model=..., layout=Column(children=[FormLayout(...)]))`, `ListView(model=..., columns=..., page_size=..., order_by=...)` |
-| `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for the other `security.*` settings; `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read any of these yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
+| `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for session length, lockout and minimum password length, which config.py reads (the block keeps what config.py sets today with the overrides on top; restart, then reset the overrides); `two_step_roles = (...)` for `security.two_step_roles`, `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read those three yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
 
 Paste the code, deploy, then reset the overrides. Overrides that no longer apply are left out.
 
@@ -637,8 +671,8 @@ newest first, 50 rows at a time.
 |---|---|
 | `GET /api/_controls/state` | Instance, apps, models, roles, routes, settings, attention list, recent audit rows |
 | `GET/POST /api/_controls/overrides` | File value, override, who and when; save changes |
-| `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end"}` |
-| `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules and audit rows; refused access is a 403 there |
+| `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end", "revoke_keys": false}`. Each user row counts active `keys` |
+| `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules, fresh two-step code and audit rows; refused access is a 403 there |
 | `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls" and descriptions |
 | `POST /api/_controls/fields/<Model>`, `DELETE /api/_controls/fields/<Model>/<x_name>` | Add or remove an instance field: `{name, type, label, help_text, required, default, options, target}` |
 | `GET/POST /api/_controls/naming/<Model>/counters` | Counters; set one with `{prefix, value, note}` |

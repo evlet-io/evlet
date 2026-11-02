@@ -10,7 +10,7 @@ import pytest
 from evlet import (Application, Database, Date, Decimal, LocalAuth, Link, LongText, Model, Move, Naming, Registry, Select, Series,
                    State, Text)
 from evlet.expressions import ConditionError, UnknownField, parse
-from test_business import client, hashed  # noqa: F401
+from test_business import client, hashed, http  # noqa: F401
 from test_controls import add_user, password, save  # noqa: F401
 from test_postgres import pg_dsn  # noqa: F401
 
@@ -897,17 +897,21 @@ def test_recompute_keeps_instance_fields_and_skips_posted_records(tmp_path, hash
     assert status in (409, 422) and admin('GET', issued)[1]['x_region'] == 'north', body
 
 
-def test_instance_fields_can_be_granted_where_the_app_lists_fields(tmp_path, hashed):
-    """Stricter only applies to fields the app declares. Instance fields belong to Controls, so overrides may grant them."""
-    from evlet import Policy, Rule
+@pytest.mark.parametrize('backend', ['sqlite', 'postgresql'])
+def test_instance_fields_follow_the_record_for_roles_whose_rules_list_fields(tmp_path, hashed, request, backend):
+    """An instance field is readable by every role that reads the record and writable by every role that creates or
+    updates it, also when the app lists the fields a role may read or write. Overrides narrow it per role."""
+    from evlet import Policy, PostgreSQLDatabase, Rule
 
     class Deal(Model):
         title = Text(required=True)
         amount = Decimal(scale=2)
         notes = Text()
-    database = Database(tmp_path / 'deal.sqlite3', Registry(Deal))
+    registry = Registry(Deal)
+    database = Database(tmp_path / 'deal.sqlite3', registry) if backend == 'sqlite' else PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
     rules = {('editor', Deal): Rule(('read', 'create', 'update'), read_fields=('title', 'amount'), write_fields=('title',)),
-             ('viewer', Deal): Rule(('read',), read_fields=('title',))}
+             ('viewer', Deal): Rule(('read',), read_fields=('title',)),
+             ('portal', Deal): Rule(('read',), read_fields=('title',))}
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False),
                       policy=Policy(database.registry, rules=rules))
     app.initialize()
@@ -916,16 +920,49 @@ def test_instance_fields_can_be_granted_where_the_app_lists_fields(tmp_path, has
     admin, editor, viewer = client(app), client(app, 'editor'), client(app, 'viewer')
     assert admin('POST', '/api/_controls/fields/Deal', {'name': 'region', 'type': 'Text', 'label': 'Region'})[0] == 201
     assert admin('POST', '/api/deal', {'title': 'Payroll', 'amount': '10.00', 'notes': 'n', 'x_region': 'dxb'})[0] == 201
-    assert 'x_region' not in viewer('GET', '/api/deal/1')[1] and 'x_region' not in editor('GET', '/api/deal/1')[1]
-    status, data, _ = save(admin, ('perm', 'editor|Deal', {'ops': ['read', 'create', 'update'], 'read': ['title', 'amount', 'x_region'],
-                                                           'write': ['title', 'x_region'], 'scope': None}),
-                           ('perm', 'viewer|Deal', {'ops': ['read'], 'read': ['title', 'x_region'], 'write': None, 'scope': None}))
-    assert status == 200, data
+    # Read: the record, the list, the generated screen's schema, an API key and the local MCP connector.
     seen = viewer('GET', '/api/deal/1')[1]
     assert seen['x_region'] == 'dxb' and 'amount' not in seen and 'notes' not in seen
+    assert viewer('GET', '/api/deal')[1]['items'][0]['x_region'] == 'dxb'
+    assert field_of(schema_of(viewer, 'deal'), 'x_region')['label'] == 'Region'
+    assert field_of(schema_of(editor, 'deal'), 'x_region')['read_only'] is False and field_of(schema_of(editor, 'deal'), 'amount')['read_only'] is True
+    viewer_id = next(row['id'] for row in admin('GET', '/api/_controls/users')[1]['items'] if row['username'] == 'viewer')
+    _, key = app.business.auth.create_key(viewer_id, 'Script', {'access': 'read', 'models': None})
+    assert http(app, 'GET', '/api/deal/1', headers={b'authorization': f'Bearer {key}'.encode(), b'x-evlet-request': b''})[1]['x_region'] == 'dxb'
+    assert viewer('GET', '/api/deal/1', headers={b'x-evlet-client': b'mcp'})[1]['x_region'] == 'dxb'
+    # Write: a role that updates the record writes the field; fields the app keeps from it stay closed.
     assert editor('PATCH', '/api/deal/1', {'x_region': 'auh'})[0] == 200
     assert editor('GET', '/api/deal/1')[1]['x_region'] == 'auh'
     assert editor('PATCH', '/api/deal/1', {'amount': '1.00'})[0] in (403, 422)
+    assert viewer('PATCH', '/api/deal/1', {'x_region': 'shj'})[0] == 403
+    # The override page shows the field in the file value, so an admin can hide it or make it read only per role.
+    overrides = {item['key']: item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'perm'}
+    assert overrides['viewer|Deal']['file']['read'] == ['title', 'x_region']
+    assert overrides['editor|Deal']['file']['write'] == ['title', 'x_region']
+    status, data, _ = save(admin, ('perm', 'viewer|Deal', {'ops': ['read'], 'read': ['title'], 'write': None, 'scope': None}),
+                           ('perm', 'editor|Deal', {'ops': ['read', 'create', 'update'], 'read': ['title', 'amount', 'x_region'], 'write': ['title'], 'scope': None}))
+    assert status == 200, data
+    assert 'x_region' not in viewer('GET', '/api/deal/1')[1] and 'x_region' not in viewer('GET', '/api/deal')[1]['items'][0]
+    assert not any(field['name'] == 'x_region' for field in schema_of(viewer, 'deal')['fields'])
+    assert editor('GET', '/api/deal/1')[1]['x_region'] == 'auh' and editor('PATCH', '/api/deal/1', {'x_region': 'x'})[0] in (403, 422)
+    # A field added later reaches roles whose overrides list fields too, until an admin unticks it there.
+    assert admin('POST', '/api/_controls/fields/Deal', {'name': 'zone', 'type': 'Text', 'label': 'Zone'})[0] == 201
+    assert admin('PATCH', '/api/deal/1', {'x_zone': 'north'})[0] == 200
+    assert viewer('GET', '/api/deal/1')[1]['x_zone'] == 'north' and 'x_region' not in viewer('GET', '/api/deal/1')[1]
+    assert editor('PATCH', '/api/deal/1', {'x_zone': 'south'})[0] == 200
+    # Customers in the portal get instance fields only when an admin grants them, and later fields stay hidden from them.
+    from evlet.auth import User
+    customer = User(99, 'buyer', 'portal')
+    def fields(user):
+        with app.database.activated():
+            return app.business.policy.fields(user, Deal)
+    assert fields(customer) == {'title'}
+    assert overrides['portal|Deal']['file']['read'] == ['title']
+    assert save(admin, ('perm', 'portal|Deal', {'ops': ['read'], 'read': ['title', 'x_region'], 'write': None, 'scope': None}))[0] == 200
+    assert fields(customer) == {'title', 'x_region'}
+    assert admin('POST', '/api/_controls/fields/Deal', {'name': 'cost', 'type': 'Text', 'label': 'Internal cost'})[0] == 201
+    assert fields(customer) == {'title', 'x_region'}
+    assert 'x_cost' in fields(User(98, 'viewer', 'viewer'))
     # Fields from the app file stay stricter only.
     status, data, _ = save(admin, ('perm', 'viewer|Deal', {'ops': ['read'], 'read': ['title', 'amount'], 'write': None, 'scope': None}))
     assert status == 422 and 'can only hide more' in json.dumps(data)

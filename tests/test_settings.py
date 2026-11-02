@@ -7,8 +7,7 @@ import time
 import pytest
 
 from evlet import AppDefinition, AppSettings, Database, Decimal, Integer, LocalAuth, Model, MultiSelect, Registry, Text, UserPreferences
-from evlet.auth import User
-from evlet.controls import TWO_STEP
+from evlet.auth import TWO_STEP_FIRST, User
 from evlet.routing import ControlsAccess
 from evlet.settings import totp
 from examples.playground.app import build_app, playground_routes
@@ -257,7 +256,8 @@ def test_controls_require_two_step_lets_in_only_people_who_use_it(settled):
     # The session, not only the account, must have finished two-step sign-in.
     with app.database.transaction() as tx:
         tx.connection.execute('UPDATE evlet_sessions SET two_step=NULL')
-    assert admin('GET', '/api/_controls/state')[1] == {'error': TWO_STEP}
+    # Admin requires two-step sign-in, so that session is no longer accepted anywhere.
+    assert admin('GET', '/api/_controls/state')[:2] == (401, {'error': TWO_STEP_FIRST})
 
 
 def test_portal_hosts_serve_the_portal_subset_of_settings(tmp_path, monkeypatch, hashed):

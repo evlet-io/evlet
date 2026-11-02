@@ -123,7 +123,8 @@ class System:
         if proxy is not None:
             name = self.instance_name() or '<name>'
             try:
-                result['proxy'] = {'caddy': proxy.caddy(routes, routes.port, name), 'nginx': proxy.nginx(routes, routes.port, name)}
+                trusted = self.controls.business.auth.trusted_proxies
+                result['proxy'] = {'caddy': proxy.caddy(routes, routes.port, name, trusted), 'nginx': proxy.nginx(routes, routes.port, name, trusted)}
             except ValueError as exc:
                 result['proxy_error'] = str(exc)
         return result

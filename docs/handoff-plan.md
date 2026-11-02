@@ -114,7 +114,8 @@ open as draft PRs #52 to #60, and a tenth PR closes the findings of a review acr
 | 8 | #59 | `h2/08-remote-mcp` | Remote MCP for AI assistants with OAuth | [connector.md](connector.md#remote-mcp-with-oauth) |
 | 9 | #60 | `h2/09-mailboxes` | Personal mailboxes | [controls.md](controls.md#personal-mailboxes) |
 | 10 | #61 | `h2/10-cross-review-fixes` | One revocation function, export grouped by setting prefix, instance fields grantable, every PostgreSQL variant in CI, the mailbox page with the switch off, a dropped IMAP connection during sign-in kept apart from a rejected password | this section |
-| 11 | | `h2/11-unpost-repost` | Unpost and Repost of posted documents, `--recompute-posted` for Recompute, `unposted` and `reposted` journal entries and audit rows, record screen actions | [states-actions.md](states-actions.md#unpost-and-repost) |
+| 11 | #62 | `h2/11-unpost-repost` | Unpost and Repost of posted documents, `--recompute-posted` for Recompute, `unposted` and `reposted` journal entries and audit rows, record screen actions | [states-actions.md](states-actions.md#unpost-and-repost) |
+| 12 | #63 | `h2/12-security-review` | The owner's security decisions of 02-11-2026: untrusted proxy warning, 12-hour sessions and 5 failed sign-ins, when the two-step code is asked, code-only sensitive settings, the choice to revoke API keys, instance fields for every role | this section |
 
 Decisions taken while building them (the owner's where marked):
 
@@ -124,13 +125,32 @@ Decisions taken while building them (the owner's where marked):
   set, so off in production, unless `Docs(enabled=...)` says otherwise (section 7, decision 4).
 - **Trusted proxies.** `X-Forwarded-For` counts only from the instance's `trusted_proxies`;
   sign-in throttling, Controls networks and the public limits read the same address.
+  `trusted_proxies` stays an explicit `Instance(...)` setting, empty by default, and a header is
+  never trusted on its own. A peer on this machine or a private network that keeps sending
+  forwarded headers (20 within 10 minutes) without being listed is shown under Controls' Needs
+  attention, each peer on its own line, to add only if it is the reverse proxy. It is noted
+  cheaply: counted in memory and written at most every 10 minutes per peer, 50 peers kept.
+  `evlet proxy` prints the line for the local proxy (owner's decision, 02-11-2026).
+- **Security defaults** (owner's decision, 02-11-2026). Sessions last 12 hours and sign-in locks
+  after 5 failed attempts. `security = Security(session_hours=..., lockout=..., password_min=...)`
+  in config.py sets other starting values (1 to 168 hours, 3 to 50 attempts, 15 to 64 characters),
+  as the owner asked; Controls can only make them stricter.
 - **Opens Controls is not admin.** A role may open Controls without being admin. Only admins
   change admin accounts, give the admin role, manage roles and decide who opens Controls.
 - **Overrides fail closed.** A stored override that no longer validates becomes no access, the
   strictest setting, or (when the policy can't be built) admin only, and is listed under Needs attention.
 - **Two-step sign-in.** It is recorded per session. Required roles set it up at their next
   sign-in, trusting the first use, so admins should sign in right after an upgrade. Admins and
-  `evlet users reset-two-step` reset it.
+  `evlet users reset-two-step` reset it. A required role can't use the app until it is set up:
+  a browser session that did not finish two-step sign-in gets 401 on every route (API keys
+  excepted). The code is asked only at sign-in, before changes in Controls (a fresh code on the
+  session counts for 10 minutes; reading Controls never asks, and an admin resetting someone's
+  password is a Controls change) and before changing one's own password (owner's decision,
+  02-11-2026).
+- **Sensitive personal settings ask for the code only** (owner's decision, 02-11-2026). With
+  two-step sign-in on, turning it off, new backup codes and an email change ask a current code
+  and not the password; without it they ask the password. Changing one's own password still
+  needs the current password, plus the code when two-step is on.
 - **cryptography is a core dependency** (owner's decision), chosen over an optional extra so
   encrypted secrets and two-step sign-in work on every install.
 - **Jobs keep their narrowing.** A job queued by an AI assistant or an API key runs with the
@@ -142,9 +162,10 @@ Decisions taken while building them (the owner's where marked):
 - **One revocation matrix.** Every revocation goes through
   `LocalAuth.end_sessions`. A Settings password change and Controls "Sign out everywhere" end
   browser sessions (the current one stays after a password change), AI assistants and unused
-  authorization codes, and keep API keys. A two-step reset (Controls or the shell),
-  deactivation and the break-glass grant also revoke API keys
-  ([controls.md](controls.md#ending-access)).
+  authorization codes. They ask about API keys with "Also revoke API keys (N active)", unticked
+  by default, and send an explicit `revoke_keys` boolean (owner's decision, 02-11-2026). A
+  two-step reset (Controls or the shell), deactivation and the break-glass grant always revoke
+  API keys ([controls.md](controls.md#ending-access)).
 - **Posted records (owner's decision).** Posted records are never recalculated by
   `Recompute` unless an admin asks, for one migration run, with `evlet migrate <instance>
   --recompute-posted` (or `migrate(..., recompute_posted=True)`). Each posted record that
@@ -169,9 +190,12 @@ Decisions taken while building them (the owner's where marked):
   some effect is an original, not a reversal. Unposting makes it a draft for this purpose, so
   edits recalculate and `Recompute` includes it. The state it returns to is the start of its
   posting move; when moves from several states post, the latest `moved` journal entry decides.
-- **Instance fields are grantable.** Stricter only applies to fields
-  declared in app files. A permission override may make an instance field readable or writable
-  for a role whose app rule lists `read_fields` or `write_fields`.
+- **Instance fields for every staff role** (owner's decision, 02-11-2026). An instance field
+  follows the record for desk roles: every one that reads the model reads it and every one that
+  creates or updates it writes it, also when its app rule lists `read_fields` or `write_fields`.
+  "All users" means signed-in staff: portal roles (customers) get one only through an override. An admin can hide it
+  or make it read only per role with a permission override; a field added later also joins the
+  field lists of existing overrides. Stricter only still applies to fields declared in app files.
 
 Fitting them onto the first program:
 

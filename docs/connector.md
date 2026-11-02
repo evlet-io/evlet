@@ -235,8 +235,10 @@ OAuth 2.1, served on the primary host only (any other host gets 404):
   replaces the earlier connection. The rate limit counts these rows, so it holds across processes.
 - **Ending access.** A password change in Settings, "Sign out everywhere" in Controls, a
   two-step reset, deactivation and the break-glass grant all sign out the person's assistants and
-  delete their unused codes, through `LocalAuth.end_sessions`. The last three also revoke the
-  person's API keys ([controls.md](controls.md#ending-access)).
+  delete their unused codes, through `LocalAuth.end_sessions`. The last three always revoke the
+  person's API keys too. The password change and "Sign out everywhere" revoke them only when
+  "Also revoke API keys (N active)" is ticked, which is off by default
+  ([controls.md](controls.md#ending-access)).
 - **Jobs.** A job an assistant queues (`evlet_job_assistants`) runs with the same narrowing,
   rebuilt from the current settings, and fails with "The AI assistant that queued this job was
   disconnected." when the connection was signed out first, like jobs queued with an API key.

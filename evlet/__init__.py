@@ -55,8 +55,9 @@ from .ui.application import App
 __all__ += ["App"]
 
 from .instances import AppDefinition, Instance, Schedule
+from .auth import Security
 
-__all__ += ["AppDefinition", "Instance", "Schedule"]
+__all__ += ["AppDefinition", "Instance", "Schedule", "Security"]
 from .routing import ApiScope, ControlsAccess, Docs, Frontend, Host, Request, Response
 __all__ += ["ApiScope", "ControlsAccess", "Docs", "Frontend", "Host", "Request", "Response"]
 __all__ += ["Child", "Move", "Table", "Ref", "Query", "action", "depends"]

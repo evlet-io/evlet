@@ -592,6 +592,7 @@ class Customization:
                 connection.execute(f'UPDATE {identifier(table)} SET {identifier(name)}=?', (field.to_storage(field.default),))
             connection.execute('INSERT INTO evlet_custom_fields(model,name,definition,created_by,created_at) VALUES (?,?,?,?,?)',
                                (table, name, json.dumps(definition, sort_keys=True), actor.username, int(time.time())))
+            self.grant_new_field(connection, model, name)
             self.controls.audit(connection, actor.username, 'Models', f'{model.__name__}.{name}',
                                 f'Field added ({definition["type"]})' + (f' · backup {backup}' if backup else ''), None, definition)
             return self.controls.publish(tx)
@@ -618,6 +619,27 @@ class Customization:
                 version = self.controls.publish(tx)
         self.controls.refresh()
         return {'name': name, 'backup': backup, 'version': version}
+
+    @staticmethod
+    def grant_new_field(connection, model, name):
+        """A new instance field is readable and writable like the record for desk roles. A desk role's permission
+        override that lists fields gets it too, so it is hidden from staff only when an admin unticks it there.
+        Portal roles get it only when an admin ticks it."""
+        pattern = '%|' + model.__name__.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        desk = {row['id'] for row in connection.execute("SELECT id FROM evlet_roles WHERE realm='desk'")}
+        for row in connection.execute("SELECT key, value FROM evlet_overrides WHERE kind='perm' AND key LIKE ? ESCAPE '\\'", (pattern,)).fetchall():
+            if row['key'].partition('|')[0] not in desk:
+                continue
+            value = json.loads(row['value'])
+            if not isinstance(value, dict) or 'read' not in value.get('ops', []):
+                continue
+            changed = dict(value)
+            if isinstance(value.get('read'), list) and name not in value['read']:
+                changed['read'] = [*value['read'], name]
+            if isinstance(value.get('write'), list) and name not in value['write'] and {'create', 'update'} & set(value['ops']):
+                changed['write'] = [*value['write'], name]
+            if changed != value:
+                connection.execute("UPDATE evlet_overrides SET value=? WHERE kind='perm' AND key=?", (json.dumps(changed, sort_keys=True), row['key']))
 
     def instance_model(self, model_name):
         model = self.controls.models().get(model_name)

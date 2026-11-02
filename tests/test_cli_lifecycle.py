@@ -628,3 +628,30 @@ def test_instance_session_uses_its_name_and_unique_preference_identity(project):
 def test_offline_docs_exclude_internal_handoff():
     from evlet.cli.docs import documentation
     assert 'handoff.md' not in documentation()
+
+
+def test_config_security_sets_the_starting_sign_in_rules(project):
+    from evlet import Security
+    install(project, 'acme', app_name='notes', trust=True)
+    config = project / 'instances/acme/config.py'
+    original = config.read_text()
+    config.write_text(original + '\nfrom evlet import Security\nsecurity = Security(session_hours=8, lockout=4, password_min=20)\n')
+    app = runtime(project)
+    try:
+        auth, controls = app.business.auth, app.business.controls
+        assert (auth.session_hours, auth.lockout, auth.password_min) == (8, 4, 20)
+        settings = controls.state(User(1, 'admin', 'admin'), {'headers': [(b'host', b'127.0.0.1:8000')], 'client': ('127.0.0.1', 1)})['settings']
+        assert settings['security.session_hours'] == {'file': 8, 'value': 8} and settings['security.lockout'] == {'file': 4, 'value': 4}
+        # Controls can only make them stricter than the config value.
+        for key, value in (('security.session_hours', 9), ('security.lockout', 5), ('security.password_min', 19)):
+            with pytest.raises(ValueError):
+                controls.check_setting(key, value)
+        assert controls.check_setting('security.session_hours', 2) == 2 and controls.check_change('setting', 'security.lockout', 4) is None
+    finally:
+        app.database.close()
+    for bad in ('Security(session_hours=0)', 'Security(session_hours=169)', 'Security(lockout=2)', 'Security(lockout=51)',
+                'Security(password_min=14)', 'Security(lockout=True)', '{"lockout": 4}'):
+        config.write_text(original + f'\nfrom evlet import Security\nsecurity = {bad}\n')
+        with pytest.raises(ValueError):
+            load_runtime(project, 'acme')
+    assert Security() == Security(session_hours=12, lockout=5, password_min=15)

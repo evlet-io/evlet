@@ -10,7 +10,7 @@ import pytest
 from evlet import Policy, Rule
 from evlet import auth as auth_module
 from examples.playground.models import Customer, Invoice, Project, registry
-from test_business import client, hashed, http, secured
+from test_business import PASSWORD, client, hashed, http, secured
 from test_hosts_realms import portal  # noqa: F401
 
 
@@ -20,7 +20,7 @@ def with_key(app, token, method, path, data=None, client='127.0.0.1'):
 
 
 def create(c, name='Script', scope=None, user=None, personal=False):
-    body = {'name': name, 'scope': scope or {'access': 'read', 'models': None}, **({} if personal else {'user': user or 'admin'})}
+    body = {'name': name, 'scope': scope or {'access': 'read', 'models': None}, **({'password': PASSWORD} if personal else {'user': user or 'admin'})}
     return c('POST', '/api/_settings/me/keys' if personal else '/api/_controls/keys', body)
 
 
@@ -108,7 +108,10 @@ def test_a_personal_key_cannot_exceed_the_users_own_access(secured):
     assert create(viewer, ' ', personal=True)[1]['fields'] == {'name': 'Give the key a name so you can recognise it later.'}
     status, created, _ = create(editor, 'Mine', {'access': 'write', 'models': ['Customer', 'Invoice']}, personal=True)
     assert status == 201 and created['key']['username'] == 'editor'
-    assert editor('POST', '/api/_settings/me/keys', {'name': 'Other', 'user': 'admin'})[:2] == (422, {'error': 'Validation failed', 'fields': {'_form': 'Use name, scope'}})
+    assert editor('POST', '/api/_settings/me/keys', {'name': 'Other', 'user': 'admin', 'password': PASSWORD})[:2] == (422, {'error': 'Validation failed', 'fields': {'_form': 'Use name, scope'}})
+    # A new key asks who you are: the password here, since two-step sign-in is not on.
+    assert editor('POST', '/api/_settings/me/keys', {'name': 'Other'})[1]['fields'] == {'password': 'Enter your password.'}
+    assert editor('POST', '/api/_settings/me/keys', {'name': 'Other', 'password': 'not the password at all'})[1]['fields'] == {'password': 'Your password is not right.'}
     assert [item['name'] for item in editor('GET', '/api/_settings/me/keys')[1]['items']] == ['Mine']
     assert viewer('GET', '/api/_settings/me/keys')[1]['items'] == []
     assert viewer('DELETE', f"/api/_settings/me/keys/{created['key']['id']}")[0] == 404

@@ -111,7 +111,7 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
   session holds only while the user's role is still of that realm.
 - **Cookies** are host-only, with no `Domain`, and named per realm: `evlet_session`
   for the desk and `evlet_portal_session` for portals. Sessions and cookies in every
-  realm last `security.session_hours` from Controls (8 hours unless lowered).
+  realm last `security.session_hours` from Controls (12 hours, or `Security(session_hours=...)` in config.py, unless lowered).
 - **API scope.** `/api` on a sub-host serves `/api/auth/session`, `login` and `logout`,
   plus exactly what its frontend's `api` scopes list. Everything else answers 404 there,
   and permissions and row scopes still apply to every call:
@@ -182,6 +182,18 @@ adds on the left are ignored. Otherwise forwarded headers are ignored. It is emp
 default, and `routes.py` can't set it. The public limit, sign-in throttling, first-run
 setup, the Controls allowlist and `/_/tls-allowed` use this address. Python code reads it with
 `LocalAuth.client_address(scope)`, or `evlet.auth.client_address(scope, trusted_proxies)`.
+
+Evlet never trusts a proxy on its own. When API requests carry `X-Forwarded-For` or
+`Forwarded` from a peer on this machine or a private network that is not a trusted proxy,
+the header is still ignored. A peer that sends 20 such requests within 10 minutes is noted:
+each process counts in memory (64 peers at most, the one seen longest ago dropped first) and
+writes the `evlet_forwarded_peers` table at most once every 10 minutes per peer; the table keeps
+the newest 50 peers. Controls then shows each peer under **Needs attention** for a day, as its
+own item with its own line, such as `trusted_proxies=("127.0.0.1",)`, and the advice to add it
+only if that address is your reverse proxy: any device on the network can send these headers,
+before signing in, so the lines are never merged. The item goes away as soon as the instance
+trusts that address. Peers with public addresses are clients behind their own proxies and are
+not noted.
 
 The Playground has a working example: `examples/playground/portal` is a static portal
 served at `http://portal.localhost:8000` (and `/portal`), limited to customers and
@@ -298,10 +310,14 @@ loopback origins.
 `evlet proxy acme --caddy` (or `--nginx`) prints a reverse proxy configuration for
 the instance's primary host and sub-hosts, forwarding to `127.0.0.1:<port>`. It
 answers 404 for `/_/*` on every host, and for `/controls*` and `/docs*` on sub-hosts,
-as the instance does. Its first line reminds you to set `trusted_proxies`.
+as the instance does. Its first lines give the exact `trusted_proxies` line to add to
+`Instance(...)`, unless the instance already trusts `127.0.0.1` and `::1`; with
+`--write` the line is printed on the terminal as well.
 
 ```text
-# Set Instance(trusted_proxies=("127.0.0.1", "::1")) in instances/acme/config.py so Evlet reads client addresses from X-Forwarded-For.
+# Evlet reads client addresses from X-Forwarded-For only from trusted proxies. Add this line to Instance(...)
+# in instances/acme/config.py, then restart Evlet:
+#     trusted_proxies=("127.0.0.1", "::1"),
 
 erp.acme.com {
 	@internal path /_/*

@@ -49,8 +49,36 @@ def test_a_settings_password_change_ends_other_sessions_and_assistants_and_keeps
 
 def test_controls_sign_out_everywhere_keeps_keys(settled):
     held = credentials(settled)
-    assert client(settled)('PATCH', f"/api/_controls/users/{user_id(settled, 'editor')}", {'sessions': 'end'})[0] in (200, 204)
+    assert client(settled)('PATCH', f"/api/_controls/users/{user_id(settled, 'editor')}", {'sessions': 'end', 'revoke_keys': False})[0] in (200, 204)
     assert alive(settled, held) == {**ENDED, 'key': True}
+
+
+def test_a_settings_password_change_can_also_revoke_api_keys(settled):
+    held = credentials(settled)
+    person = client(settled, 'editor')
+    assert person('GET', '/api/_settings/me')[1]['security']['api_keys'] == 1
+    assert person('POST', '/api/_settings/me/password', {'current': PASSWORD, 'new': PASSWORD + ' changed', 'revoke_keys': 'yes'})[0] == 422
+    status, body, _ = person('POST', '/api/_settings/me/password', {'current': PASSWORD, 'new': PASSWORD + ' changed', 'revoke_keys': True})
+    assert (status, body) == (200, {'changed': True, 'revoked_keys': 1})
+    assert alive(settled, held) == {**ENDED, 'key': False}
+    assert person('GET', '/api/_settings/me')[1]['security']['api_keys'] == 0
+    with settled.database._connection() as db:
+        assert db.execute("SELECT detail FROM evlet_audit WHERE area='Users' ORDER BY id DESC").fetchone()[0].endswith('Revoked 1 API key')
+
+
+def test_controls_sign_out_everywhere_can_also_revoke_api_keys(settled):
+    held = credentials(settled)
+    admin, editor = client(settled), user_id(settled, 'editor')
+    row = next(item for item in admin('GET', '/api/_controls/users')[1]['items'] if item['id'] == editor)
+    assert row['keys'] == 1
+    # The choice goes with signing out, as an explicit true or false.
+    assert admin('PATCH', f'/api/_controls/users/{editor}', {'revoke_keys': True})[0] == 422
+    assert admin('PATCH', f'/api/_controls/users/{editor}', {'sessions': 'end', 'revoke_keys': 1})[0] == 422
+    assert admin('PATCH', f'/api/_controls/users/{editor}', {'sessions': 'end', 'revoke_keys': True})[0] == 204
+    assert alive(settled, held) == {**ENDED, 'key': False}
+    assert next(item for item in admin('GET', '/api/_controls/users')[1]['items'] if item['id'] == editor)['keys'] == 0
+    with settled.database._connection() as db:
+        assert db.execute("SELECT detail FROM evlet_audit WHERE area='Users' ORDER BY id DESC").fetchone()[0] == 'Signed out everywhere · Revoked 1 API key'
 
 
 @pytest.mark.parametrize('how', ['controls', 'shell'])

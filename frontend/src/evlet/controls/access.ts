@@ -163,7 +163,7 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
     ${when(() => drafts.errors.get().has(id(key)), () => html`<span class="ctl-err">${() => drafts.errors.get().get(id(key))}</span>`)}</div><div class="ctl-setctl">${control}</div></div>`;
   const choose = (key: string, unit: string, options: number[]) => html`<select class="input ctl-select" aria-label=${SETTING_LABELS[key]}
     on:change=${(event: Event) => drafts.set(id(key), Number((event.target as HTMLSelectElement).value))}>
-    ${options.filter(option => option <= file<number>(key)).map(option => html`<option value=${String(option)} selected=${() => get<number>(key) === option}>${option} ${unit}</option>`)}</select>`;
+    ${[...new Set([...options, file<number>(key)])].filter(option => option <= file<number>(key)).sort((a, b) => a - b).map(option => html`<option value=${String(option)} selected=${() => get<number>(key) === option}>${option} ${unit}</option>`)}</select>`;
   const minimum = (event: Event) => {
     const input = event.target as HTMLInputElement, low = file<number>('security.password_min');
     let value = Number.parseInt(input.value, 10);
@@ -192,7 +192,7 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
           html`<span class="ctl-addon"><input class="input num" type="number" min=${String(file<number>('security.password_min'))} max="64" aria-label="Minimum password length"
             prop:value=${() => String(get<number>('security.password_min'))} on:change=${minimum}><span>chars</span></span>`)}
         ${row('security.session_hours', 'Session length', () => `People sign in again after this long. Default is ${file<number>('security.session_hours')} hours.`, choose('security.session_hours', 'hours', [1, 4, 8, 12]))}
-        ${row('security.lockout', 'Failed sign-ins before lockout', 'Sign-in is blocked for 15 minutes after this many wrong passwords from one network.', choose('security.lockout', 'attempts', [3, 5, 10]))}
+        ${row('security.lockout', 'Failed sign-ins before lockout', 'Sign-in is blocked for 15 minutes after this many wrong passwords from one network.', choose('security.lockout', 'attempts', [3, 4, 5]))}
       </section>
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Two-step sign-in ${mark('security.two_step_roles')}</h2>
         <p>People with these roles must set up an authenticator app before they can sign in.</p></div></div>

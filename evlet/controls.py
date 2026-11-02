@@ -21,7 +21,7 @@ OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
 PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'keys', 'models', 'naming', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
-    'security.password_min': 15, 'security.session_hours': 8, 'security.lockout': 10,
+    'security.password_min': 15, 'security.session_hours': 12, 'security.lockout': 5,
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
     'mcp.enabled': True, 'mcp.allow_writes': False, 'mcp.rate': 60, 'mcp.disabled_tools': [], 'mcp.hidden_models': [],
     'mail.personal': False,
@@ -151,8 +151,9 @@ def _networks(values):
     return [ipaddress.ip_network(value, strict=False) for value in values]
 
 
-def strictest(key, value, roles):
-    """The strictest safe value of a stored setting that no longer validates."""
+def strictest(key, value, roles, file=None):
+    """The strictest safe value of a stored setting that no longer validates; file is the starting value."""
+    file = SETTINGS.get(key) if file is None else file
     number = type(value) is int
     if key in ('mcp.enabled', 'mcp.allow_writes', 'mail.personal'):
         return False
@@ -165,11 +166,11 @@ def strictest(key, value, roles):
             return [item for item in value if isinstance(item, str)]
         return list(BY_NAME) if key == 'mcp.disabled_tools' else ['*']
     if key == 'security.password_min':
-        return min(max(value, 15), 64) if number else 64
+        return min(max(value, file), 64) if number else 64
     if key == 'security.session_hours':
-        return min(max(value, 1), SETTINGS[key]) if number else 1
+        return min(max(value, 1), file) if number else 1
     if key == 'security.lockout':
-        return min(max(value, 3), SETTINGS[key]) if number else 3
+        return min(max(value, 3), file) if number else 3
     if key == 'security.two_step_roles':
         listed = [role for role in value if isinstance(role, str) and role in roles] if isinstance(value, list) else []
         return ['admin', *dict.fromkeys(role for role in listed if role != 'admin')]
@@ -190,7 +191,7 @@ class Controls:
         self.routes = None
         self.ready, self.version, self.lock = False, None, Lock()
         self.apps, self.app_of, self.app_roles, self.scopes = [], {}, {}, {}
-        self.roles, self.settings, self.problems = {}, dict(SETTINGS), []
+        self.roles, self.settings, self.problems = {}, self.files(), []
         self.custom = Customization(self)
         self.system = System(self)
 
@@ -272,7 +273,7 @@ class Controls:
         self.settings, self.problems, self.version = settings, problems, version
 
     def build(self, roles, stored, problems):
-        perms, settings = {}, dict(SETTINGS)
+        perms, settings = {}, self.files()
         self.base = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles))
         for row in stored:
             try:
@@ -295,7 +296,7 @@ class Controls:
                     except ValueError:
                         pass
                 elif row['kind'] == 'setting' and row['key'] in SETTINGS:
-                    settings[row['key']] = strictest(row['key'], value, roles)
+                    settings[row['key']] = strictest(row['key'], value, roles, self.files()[row['key']])
         try:
             policy = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles), overrides=perms, read_only=self.custom.read_only)
         except ValueError as exc:
@@ -303,6 +304,15 @@ class Controls:
             policy = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles), read_only=self.custom.read_only,
                             overrides={(role, model): Rule(()) for role in roles if role != 'admin' for model in self.registry.models.values()})
         return policy, settings
+
+    def files(self):
+        """Each setting's starting value: the framework default, with config.py's Security(...) for sign-in rules."""
+        security = getattr(self.business.auth, 'security', None)
+        values = dict(SETTINGS)
+        if security is not None:
+            values.update({'security.session_hours': security.session_hours, 'security.lockout': security.lockout,
+                           'security.password_min': security.password_min})
+        return values
 
     @staticmethod
     def role_bases(roles):
@@ -486,7 +496,7 @@ class Controls:
             return value
         if key not in SETTINGS:
             raise ValueError('Choose a known setting.')
-        file = SETTINGS[key]
+        file = self.files()[key]
         number = type(value) is int
         if key == 'security.password_min' and not (number and file <= value <= 64):
             raise ValueError('Minimum password length can only go up, to 64 at most.')
@@ -541,7 +551,7 @@ class Controls:
             if value is None:
                 return None
             value = self.check_setting(key, value)
-            return None if value == SETTINGS.get(key, True) else value
+            return None if value == self.files().get(key, True) else value
         if kind == 'custom':
             raise ValueError('Add and remove instance fields with Add field and Remove field.')
         return self.custom.check(kind, key, value)
@@ -560,7 +570,7 @@ class Controls:
                 declared = any((each, model) in self.file.declared or each in getattr(model, 'permissions', {}) for each in (role, bases[role]))
                 items.append({'kind': 'perm', 'key': key, 'file': self.file_value(role, model), 'value': value('perm', key),
                               'source': 'app' if declared else 'framework', **meta('perm', key)})
-        for key, file in SETTINGS.items():
+        for key, file in self.files().items():
             items.append({'kind': 'setting', 'key': key, 'file': file, 'value': value('setting', key), **meta('setting', key)})
         for name in self.system.schedule_names():
             key = f'schedule.{name}.active'
@@ -617,7 +627,7 @@ class Controls:
                     audit(connection, user.username, SETTING_AREAS.get(key.split('.')[0], 'Security') if kind == 'setting' else AREAS[kind], key.replace('|', ' · '), 'Reset to the file value' if value is None else 'Changed', before, value)
                 if key == 'security.session_hours':
                     # Sessions keep their start: a shorter length ends the ones already older than it.
-                    shorter = self.settings[key] - (SETTINGS[key] if value is None else value)
+                    shorter = self.settings[key] - (self.files()[key] if value is None else value)
                     if shorter > 0:
                         connection.execute('UPDATE evlet_sessions SET expires=expires-? WHERE expires>?', (shorter * 3600, now))
             version = self.publish(tx)
@@ -645,10 +655,12 @@ class Controls:
             two_step = {row['user_id']: {'since': row['two_step_since'], 'agent': row['two_step_agent']} for row in connection.execute(
                 'SELECT user_id, two_step_since, two_step_agent FROM evlet_user_profile WHERE two_step_secret IS NOT NULL')}
             assistants = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_mcp_clients WHERE revoked_at IS NULL GROUP BY user_id')}
+            keys = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_api_keys WHERE revoked_at IS NULL GROUP BY user_id')}
         for item in page['items']:
             item['active'], item['sessions'] = bool(item['active']), sessions.get(item['id'], 0)
             item['two_step'] = two_step.get(item['id'])
             item['assistants'] = assistants.get(item['id'], 0)
+            item['keys'] = keys.get(item['id'], 0)
         return page
 
     def add_user(self, actor, body):
@@ -660,10 +672,13 @@ class Controls:
             connection, actor.username, 'Users', user.username, f'Added as {user.role}', None, {'role': user.role}))
 
     def change_user(self, actor, user_id, body):
-        if not isinstance(body, dict) or not body or set(body) - {'role', 'active', 'password', 'sessions', 'two_step'}:
-            raise ValidationError({'_form': 'Use role, active, password, sessions or two_step'})
+        if not isinstance(body, dict) or not body or set(body) - {'role', 'active', 'password', 'sessions', 'revoke_keys', 'two_step'}:
+            raise ValidationError({'_form': 'Use role, active, password, sessions, revoke_keys or two_step'})
         if 'sessions' in body and body['sessions'] != 'end':
             raise ValidationError({'sessions': 'Use "end" to sign out every session'})
+        revoke = body.get('revoke_keys', False)
+        if 'revoke_keys' in body and (type(revoke) is not bool or 'sessions' not in body):
+            raise ValidationError({'revoke_keys': 'Use true or false, with "sessions": "end"'})
         if 'two_step' in body:
             if body != {'two_step': 'reset'}:
                 raise ValidationError({'two_step': 'Send only {"two_step": "reset"}'})
@@ -676,7 +691,7 @@ class Controls:
                     raise AccessError(404, 'Account not found')
                 reset_two_step(tx.connection, actor.username, row['id'], row['username'])
             return
-        changes = {key: value for key, value in body.items() if key != 'sessions'}
+        changes = {key: value for key, value in body.items() if key not in ('sessions', 'revoke_keys')}
 
         def check(connection, row, values):
             if actor.role != 'admin' and (row['role'] == 'admin' or values.get('role') == 'admin'):
@@ -690,6 +705,9 @@ class Controls:
                 details.append('Password set')
             if 'sessions' in body:
                 details.append('Signed out everywhere')
+            if revoke:
+                keys = connection.execute('SELECT count(*) FROM evlet_api_keys WHERE user_id=? AND revoked_at IS NULL', (row['id'],)).fetchone()[0]
+                details.append(f'Revoked {keys} API key' + ('' if keys == 1 else 's'))
             before = {'role': row['role'], 'active': bool(row['active'])}
             after = {key: values[key] for key in ('role', 'active') if key in values}
             return lambda: audit(connection, actor.username, 'Users', row['username'], ' · '.join(details), before, after) if details else None
@@ -702,7 +720,7 @@ class Controls:
             if row is None:
                 raise AccessError(404, 'Account not found')
             after = check(tx.connection, row, {})
-            self.business.auth.end_sessions(tx.connection, user_id)
+            self.business.auth.end_sessions(tx.connection, user_id, keys=revoke)
             after()
 
     def role_list(self):
@@ -874,6 +892,10 @@ class Controls:
                       if self.business.policy.allows(user, model, 'read')]
             return 200, {'items': self.business.auth.keys(user.id), 'models': models}, []
         if path == '' and method == 'POST':
+            # A new key is a sensitive personal setting: a current code with two-step on, the password without.
+            body = dict(body) if isinstance(body, dict) else {}
+            proof = {key: body.pop(key) for key in ('password', 'code') if key in body}
+            self.business.settings.reauthenticate(scope, user, proof)
             return 201, self.create_key(user, body, personal=True), []
         match = re.fullmatch(r'/([1-9][0-9]{0,18})', path)
         if match and method == 'DELETE' and int(match[1]) <= 2**63 - 1:
@@ -910,6 +932,7 @@ class Controls:
                 title = item['account'] or connectors.declared[item['connector']].title
                 attention.append({'tone': 'red', 'icon': 'link', 'page': 'email' if item['account'] else 'connectors',
                                   'title': f"{title} isn't connected", 'text': 'The last test failed. Check the details and test again.'})
+        attention += self.proxy_attention()
         controls = self.routes.controls
         return {
             'instance': {'name': self.business.application.get('name', 'Evlet') if self.business.application else 'Evlet',
@@ -918,18 +941,38 @@ class Controls:
             'me': user.public(), 'apps': apps, 'models': models, 'roles': self.role_list(), 'jobs': {'failed': failed},
             'routes': [{'host': row.host, 'path': row.path, 'serves': row.serves, 'realm': row.realm, 'source': row.source, 'locked': row.locked} for row in self.routes.rows()],
             'scopes': {key or '': label for key, label in LABELS.items()} | {key: key.replace('_', ' ').capitalize() for key in self.scopes},
-            'settings': {key: {'file': SETTINGS[key], 'value': self.settings[key]} for key in SETTINGS},
+            'settings': {key: {'file': file, 'value': self.settings[key]} for key, file in self.files().items()},
             'controls': {'allow_ips': list(controls.allow_ips), 'require_two_step': controls.require_two_step},
             'attention': attention, 'overrides': overrides, 'users': {'active': int(active or 0), 'total': total},
             'audit': recent, 'two_step': self.business.settings.possible(), 'client': str(client_ip(scope, self.business.auth) or ''),
             'remove_fields': self.custom.drop, 'instance_fields': True,
         }
 
+    def proxy_attention(self):
+        """One Needs attention item per peer on this machine or network that sends forwarded headers but is not a trusted
+        proxy. Any device on the network can send such headers, so each address is shown on its own, never merged."""
+        from .auth import trusted_proxies_line
+        auth = self.business.auth
+        name = self.system.instance_name()
+        where = f'Instance(...) in instances/{name}/config.py' if name else 'LocalAuth(...) where the application is built'
+        items = []
+        for peer in auth.forwarded_peers()[:5]:
+            line = trusted_proxies_line(auth.trusted_proxies, [peer])
+            items.append({'tone': 'amber', 'icon': 'globe', 'page': 'security', 'title': f'Requests from {peer} name a forwarded client address',
+                          'text': f'Evlet ignores the forwarded address because {peer} is not a trusted proxy, so sign-in limits and allowed networks '
+                                  f'see {peer} instead of each person. Add this only if {peer} is your reverse proxy: put {line} in {where} and restart. '
+                                  'Any other device can send these headers, so otherwise leave it out.',
+                          'line': line})
+        return items
+
     # ---------- HTTP ----------
 
     def dispatch(self, scope, body, user):
         self.check(scope, user)
         path, method = scope['path'].removeprefix('/api/_controls'), scope['method']
+        # Every change asks for a recent two-step code; reading, and trying a naming series, do not.
+        if method not in ('GET', 'HEAD') and not re.fullmatch(r'/naming/[A-Za-z][A-Za-z0-9_]{0,63}/try', path):
+            self.business.settings.recently_verified(user)
         if path == '/state' and method == 'GET':
             return 200, self.state(user, scope), []
         if path == '/overrides':

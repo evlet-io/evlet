@@ -107,6 +107,21 @@ class Policy:
             for role, base in self.roles.items():
                 if role != base and (role, model) not in self.rules and (base, model) in self.rules:
                     self.rules[role, model] = self.rules[base, model]
+        # Instance fields (x_, added in Controls) follow the record for staff: a desk role that reads it reads
+        # them and one that creates or updates it writes them, also when the app lists the fields a role may read
+        # or write. Portal and public roles get them only through a Controls override. Overrides narrow them per
+        # role like any other field.
+        for (role, model), rule in list(self.rules.items()):
+            added = tuple(name for name, field in model.__declared_fields__.items() if getattr(field, 'instance', None))
+            if not added or 'read' not in rule.operations or self.roles.get(role) not in ROLES:
+                continue
+            read, write = rule.read_fields, rule.write_fields
+            if read is not None:
+                read += tuple(name for name in added if name not in read)
+            if write is not None and {'create', 'update'} & set(rule.operations):
+                write += tuple(name for name in added if name not in write)
+            if (read, write) != (rule.read_fields, rule.write_fields):
+                self.rules[role, model] = Rule(rule.operations, read, write, rule.scope)
         self.file_rules = MappingProxyType(dict(self.rules))
         for (role, model), rule in dict(overrides or {}).items():
             if role == 'admin':

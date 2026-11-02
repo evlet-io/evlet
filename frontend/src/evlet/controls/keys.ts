@@ -17,6 +17,8 @@ export interface KeysOptions {
   models: () => Choice[];
   /** Controls only: the users a key can act as. Without it the key acts as the person signed in. */
   users?: () => Array<{ username: string; role: string }>;
+  /** Settings only: a new key asks who you are, a two-step code with two-step on, else the password. */
+  confirm?: 'code' | 'password';
   title: string;
   sub: string;
   empty: string;
@@ -58,13 +60,16 @@ export function KeysPage(options: KeysOptions): HTMLElement {
 
 function createKey(options: KeysOptions, reload: () => Promise<void>) {
   const name = cell(''), user = cell(options.users?.()[0]?.username ?? ''), access = cell<'read' | 'write'>('read'), model = cell('');
-  const errors = cell<Record<string, string>>({}), busy = cell(false), created = cell('');
+  const errors = cell<Record<string, string>>({}), busy = cell(false), created = cell(''), proof = cell('');
   const submit = async () => {
     if (!name.peek().trim()) return errors.set({ name: 'Give the key a name so you can recognise it later.' });
+    if (options.confirm && !proof.peek().trim())
+      return errors.set(options.confirm === 'code' ? { code: 'Enter a code from your app, or a backup code.' } : { password: 'Enter your password.' });
     busy.set(true);
     try {
       const scope: KeyScope = { access: access.peek(), models: model.peek() ? [model.peek()] : null };
-      const result = await options.api.createKey({ name: name.peek().trim(), scope, ...(options.users ? { user: user.peek() } : {}) });
+      const result = await options.api.createKey({ name: name.peek().trim(), scope, ...(options.users ? { user: user.peek() } : {}),
+        ...(options.confirm === 'code' ? { code: proof.peek().trim() } : options.confirm === 'password' ? { password: proof.peek() } : {}) });
       created.set(result.token);
       await reload();
     } catch (failure) {
@@ -86,6 +91,10 @@ function createKey(options: KeysOptions, reload: () => Promise<void>) {
         ${field('Models', 'ctl-k-models', Select({ id: 'ctl-k-models', value: () => model.get(),
           options: () => [['', options.users ? 'All permitted' : 'Everything you can see'], ...options.models().map(item => [item.name, item.label] as [string, string])],
           onChange: value => { model.set(value); errors.set({}); } }), () => null, () => errors.get().scope ?? null)}
+        ${options.confirm === 'code' ? field('Code from your app, or a backup code', 'ctl-k-code', html`<input class="input" id="ctl-k-code" autocomplete="one-time-code" maxlength="9"
+          prop:value=${proof} on:input=${(event: Event) => { proof.set((event.target as HTMLInputElement).value); errors.set({}); }}>`, () => null, () => errors.get().code ?? null)
+          : options.confirm === 'password' ? field('Your password', 'ctl-k-password', html`<input class="input" id="ctl-k-password" type="password" autocomplete="current-password"
+          prop:value=${proof} on:input=${(event: Event) => { proof.set((event.target as HTMLInputElement).value); errors.set({}); }}>`, () => null, () => errors.get().password ?? null) : null}
         ${() => errors.get()._form ? Callout('err', 'info', errors.get()._form) : null}
         <p class="muted ctl-small">${options.users ? 'The key can never do more than the user it acts as.' : "A key can never do more than you can."}</p></div>`}`,
     footer: close => html`${() => created.get() ? DialogFooter({ submit: { label: 'Done', onClick: close } })

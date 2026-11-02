@@ -332,7 +332,9 @@ portal.acme.com   /           notes.portal           portal    routes.py
 portal.acme.com   /api/*      notes.items (scoped)   portal    routes.py
 '''
 
-CADDY = '''# Set Instance(trusted_proxies=("127.0.0.1", "::1")) in instances/acme/config.py so Evlet reads client addresses from X-Forwarded-For.
+CADDY = '''# Evlet reads client addresses from X-Forwarded-For only from trusted proxies. Add this line to Instance(...)
+# in instances/acme/config.py, then restart Evlet:
+#     trusted_proxies=("127.0.0.1", "::1"),
 
 erp.acme.com {
 \t@internal path /_/*
@@ -381,7 +383,9 @@ def test_routes_proxy_and_link_user_commands(project, capsys, tmp_path, hashed):
     assert 'trusted_proxies' in nginx
     target = tmp_path / 'Caddyfile'
     main(['proxy', 'acme', '--caddy', '--write', str(target), '--project', str(project)])
-    assert target.read_text() == CADDY and 'Reload the proxy yourself' in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert target.read_text() == CADDY and 'Reload the proxy yourself' in out
+    assert 'Add this line to Instance(...) in instances/acme/config.py, then restart Evlet:\n    trusted_proxies=("127.0.0.1", "::1"),' in out
     assert target.stat().st_mode & 0o777 == 0o644
     with pytest.raises(SystemExit):
         main(['proxy', 'acme', '--caddy', '--port', '70000', '--project', str(project)])
@@ -506,7 +510,7 @@ def test_login_throttling_uses_the_forwarded_client(portal):
     def attempt(address):
         return http(app, 'POST', '/api/auth/login', {'username': 'admin', 'password': 'wrong password for this account'},
                     headers={b'x-forwarded-for': address.encode()})[0]
-    assert [attempt('198.51.100.7') for _ in range(10)] == [401] * 10
+    assert [attempt('198.51.100.7') for _ in range(5)] == [401] * 5
     assert attempt('198.51.100.7') == 429
     assert attempt('198.51.100.8') == 401
 

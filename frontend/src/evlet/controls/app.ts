@@ -70,9 +70,45 @@ export function Callout(tone: 'info' | 'warn' | 'err', icon: string, body: Child
 
 type Phase = 'loading' | 'ready' | 'denied' | 'failed';
 
+/**
+ * Changes in Controls need a two-step code at most every 10 minutes. This dialog asks for one and resolves
+ * once the server accepts it, so the change that asked is sent again; Cancel rejects and the change is not made.
+ */
+export function askForCode(api: ControlsClient): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const code = cell(''), error = cell(''), busy = cell(false);
+    let accepted = false;
+    const submit = async (close: () => void) => {
+      const value = code.peek().trim();
+      if (!value) { error.set('Enter a code from your app, or a backup code.'); return; }
+      busy.set(true);
+      try {
+        await api.verifyCode(value);
+        accepted = true;
+        close();
+        resolve();
+      } catch (failure) {
+        error.set(failure instanceof ApiError ? Object.values(failure.fields ?? {})[0] ?? failure.message : 'Try again.');
+      } finally { busy.set(false); }
+    };
+    let close = () => {};
+    close = openModal({ title: 'Enter your two-step code', narrow: true, icon: 'lock',
+      onClose: () => { if (!accepted) reject(new ApiError('The change was not made. It needs a code from your authenticator app.', 403, 'forbidden')); },
+      onSubmit: () => void submit(close),
+      body: () => html`<p class="muted ctl-small">Changes in Controls ask for a code from your authenticator app. One code covers your changes for the next 10 minutes.</p>
+        <div class="ctl-field"><label for="ctl-verify-code">Code from your app, or a backup code</label>
+          <input class="input" id="ctl-verify-code" autocomplete="one-time-code" inputmode="numeric" maxlength="9" prop:value=${code}
+            on:input=${(event: Event) => { code.set((event.target as HTMLInputElement).value); error.set(''); }}
+            on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); void submit(close); } }}>
+          ${() => error.get() ? html`<span class="ctl-err" role="alert">${error.get()}</span>` : null}</div>`,
+      footer: done => DialogFooter({ cancel: done, submit: { label: 'Confirm', disabled: busy, onClick: () => void submit(done) } }) });
+  });
+}
+
 export function Controls(options: { router: ControlsRouter; api?: ControlsClient }): Node {
   const { router } = options;
   const api = options.api ?? new ControlsClient();
+  api.verify ??= () => askForCode(api);
   const phase = cell<Phase>('loading'), message = cell('');
   const state = cell<ControlsState>(null as unknown as ControlsState, { name: 'controls.state' });
   const drafts = new Drafts(api);
@@ -253,7 +289,7 @@ function Overview(ctx: ControlsContext): HTMLElement {
       <div class="ctl-stack">
         <section class="ctl-card"><div class="ctl-card-head"><div><h2>Needs attention</h2><p>${() => s().attention.length ? plural(s().attention.length, 'thing') + ' to look at' : 'Nothing right now'}</p></div></div>
           ${() => s().attention.length ? s().attention.map(item => html`<button type="button" class="ctl-row-btn" on:click=${() => go(item.page as keyof typeof ROUTES)}>
-            <span class="ph-icon b-amber ctl-ic">${Icon(item.icon, { size: 'sm' })}</span><span class="ctl-lr"><strong>${item.title}</strong><span>${item.text}</span></span>${Icon('chevron-right', { size: 'sm' })}</button>`)
+            <span class="ph-icon b-amber ctl-ic">${Icon(item.icon, { size: 'sm' })}</span><span class="ctl-lr"><strong>${item.title}</strong><span>${item.text}</span>${item.line ? html`<code class="ctl-attn-line">${item.line}</code>` : null}</span>${Icon('chevron-right', { size: 'sm' })}</button>`)
             : html`<div class="ctl-empty">Everything is working.</div>`}
         </section>
         <section class="ctl-card"><div class="ctl-card-head"><div><h2>Recent changes</h2><p>Every change made in Controls is logged</p></div>

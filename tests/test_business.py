@@ -117,7 +117,7 @@ def test_cookie_security_and_login_throttle(secured):
     assert status == 200
     cookie = headers[b'set-cookie']
     assert all(part in cookie for part in (b'HttpOnly', b'SameSite=Strict', b'Secure', b'Path=/'))
-    for i in range(10):
+    for i in range(5):
         assert http(secured, 'POST', '/api/auth/login', {'username': 'unknown', 'password': 'bad'})[0] == 401
     assert http(secured, 'POST', '/api/auth/login', {'username': 'unknown', 'password': 'bad'})[0] == 429
     assert http(secured, 'POST', '/api/auth/login', {'username': 'admin', 'password': PASSWORD})[0] == 200

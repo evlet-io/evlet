@@ -896,6 +896,9 @@ class Business:
         if not self.controls.allows(scope, user):
             raise AccessError(403, 'Administrator access required')
         self.controls.check(scope, user)
+        if method not in ('GET', 'HEAD'):
+            # Account changes are Controls changes: a recent two-step code, as in Controls.
+            self.settings.recently_verified(user)
         if path == '/api/auth/users':
             if method == 'GET':
                 try:

@@ -81,7 +81,7 @@ def test_stored_rows_remain_readable_and_repairable_after_validation_changes(tmp
 def test_successful_login_does_not_reset_another_username(secured):
     auth = secured.business.auth
     scope = {'client': ('127.0.0.1', 3000), 'headers': []}
-    for _ in range(9):
+    for _ in range(auth.lockout - 1):
         with pytest.raises(AccessError) as failure:
             auth.login(scope, {'username': 'admin', 'password': 'wrong'})
         assert failure.value.status == 401
@@ -97,7 +97,7 @@ def test_successful_login_does_not_reset_another_username(secured):
 
 def test_ipv6_prefix_shares_throttle_and_uds_login_does_not_crash(secured):
     auth = secured.business.auth
-    for index in range(10):
+    for index in range(auth.lockout):
         with pytest.raises(AccessError) as failure:
             auth.login({'client': (f'2001:db8::{index + 1}', 1)}, {'username':'admin','password':'wrong'})
         assert failure.value.status == 401

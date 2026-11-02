@@ -257,6 +257,11 @@ is set. See [routing.md](routing.md).
 Behind a reverse proxy, set `trusted_proxies=("127.0.0.1", "::1")` (addresses or
 CIDR ranges) so client addresses come from `X-Forwarded-For`. It is empty by default.
 
+Next to `instance`, config.py may set the sign-in rules the instance starts from:
+`security = Security(session_hours=8, lockout=4, password_min=16)`. Session length is 1 to
+168 hours (12 by default), the lockout 3 to 50 failed sign-ins (5) and the minimum password
+length 15 to 64 (15). Controls can only make them stricter ([controls.md](controls.md#overrides)).
+
 `database` and `storage` are reserved and optional. They default to `"sqlite"` and
 `"local"`, the only values accepted today. New `config.py` files leave them out.
 Older files that set them to those values keep working.
