@@ -178,6 +178,9 @@ def initialize(database):
         connection.execute('BEGIN IMMEDIATE')
         try:
             tables = _tables(connection)
+            if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
+                from .lifecycle import ensure_tables
+                ensure_tables(connection)
             _metadata(connection)
             saved = connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone()
             if saved and saved[0] != _definition(database.registry):
@@ -395,6 +398,13 @@ def _skip(session, model, record, skipped, posted):
     """Whether Recompute leaves this root record alone. With `posted` (a set, when the run includes posted
     records), posted records are recalculated and collected there instead."""
     key = (model, record.id)
+    if getattr(model, 'confirmable', False):
+        # Revision snapshots are permanent; migrate draft calculations explicitly after reopening.
+        row = session.connection.execute('SELECT revision FROM evlet_document_lifecycle WHERE model=? AND record_id=?',
+                                         (session.registry.name_for(model), record.id)).fetchone()
+        if row is not None and row[0]:
+            skipped.add(key)
+            return True
     if key in skipped:
         return True
     if posted is not None and key in posted:
@@ -630,6 +640,9 @@ def migrate(database, migrations, *, recompute_posted=False):
                         operation.apply(connection)
                 connection.execute('INSERT INTO evlet_migrations (position, name, checksum) VALUES (?, ?, ?)',
                                    (position, migration.name, checksums[position - 1]))
+            if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
+                from .lifecycle import ensure_tables
+                ensure_tables(connection)
             applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
                 applied.skipped, applied.posted = _recompute(connection, database.registry, recomputes(pending), lambda db: db.execute(

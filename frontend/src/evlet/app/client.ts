@@ -5,7 +5,7 @@
 import { ApiClient, type ApiResponse, type ClientOptions, type Page, type RecordData, type RequestOptions, type Session } from '../api';
 import { cell, type Cell } from '../reactive';
 
-const DETAIL = /^\/api\/([A-Za-z][A-Za-z0-9_]*)\/(\d+)(?:\/(?:moves\/[^/]+|actions\/[^/]+|void|revise|unpost|repost))?$/;
+const DETAIL = /^\/api\/([A-Za-z][A-Za-z0-9_]*)\/(\d+)(?:\/(?:moves\/[^/]+|actions\/[^/]+|void|revise|unpost|repost|confirm|cancel|reopen))?$/;
 const NAME = /^[A-Za-z][A-Za-z0-9_.]*$/;
 
 export interface Attachment { id: number; name: string; size: number }
@@ -96,6 +96,27 @@ export class AppClient extends ApiClient {
   /** Add a note to the record's journal; answers the entry as the caller sees it. */
   async addNote(model: string, id: number, text: string) {
     return (await this.request<JournalEntry>('POST', `/api/${model}/${id}/journal`, { body: { kind: 'note', text } })).data;
+  }
+
+  async lifecycle(model: string, id: number, operation: 'confirm' | 'cancel' | 'reopen', etag: string | null, reason?: string) {
+    return this.request<RecordData>('POST', `/api/${model}/${id}/${operation}`, {
+      body: operation === 'cancel' ? { reason } : {}, ifMatch: etag,
+    });
+  }
+
+  async revisions(model: string, id: number, page: { limit?: number; offset?: number } = {}) {
+    return (await this.request<{ items: Array<{ revision: number; execution_id: string; at: string; actor: string; hash: string }>; total: number }>(
+      'GET', `/api/${model}/${id}/revisions`, { query: page })).data;
+  }
+
+  async snapshot(model: string, id: number, revision: number) {
+    return (await this.request<{ revision: number; at: string; document: Record<string, unknown> }>(
+      'GET', `/api/${model}/${id}/snapshot`, { query: { revision } })).data;
+  }
+
+  async revisionDiff(model: string, id: number, from: number, to: number) {
+    return (await this.request<{ from: number; to: number; changes: Record<string, any> }>(
+      'GET', `/api/${model}/${id}/diff`, { query: { from, to } })).data;
   }
 
   async attachments(model: string, id: number) {
