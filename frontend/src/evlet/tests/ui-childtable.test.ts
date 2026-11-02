@@ -26,6 +26,29 @@ describe('ChildTable over a record store', () => {
     expect(host.querySelector('.g-t .n')!.textContent).toBe('3');
   });
 
+  it('starts the Link search when the user types in a Link cell', async () => {
+    const { store } = await bigOrder(3);
+    const searched: string[] = [];
+    const links = { search: async (_meta: unknown, query: string) => { searched.push(query); return [{ id: 2, title: 'Licence' }]; },
+      title: (_model: string, id: number) => cell<string | null>(id === 2 ? 'Licence' : 'Support hours') };
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'], links }));
+    // Typing on a cell that is not being edited opens the search with that letter.
+    key(cellOf(rowsIn(host)[0], 'product'), 'L');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const input = document.querySelector<HTMLInputElement>('.link-search input')!;
+    expect(input.value).toBe('L');
+    expect(searched.at(-1)).toBe('L');
+    key(input, 'Enter');
+    expect(store.table('lines').rows.peek()[0].field('product').value.peek()).toBe(2);
+    expect(document.querySelector('.link-search')).toBeNull();
+    // Typing on the cell's open control does the same.
+    cellOf(rowsIn(host)[1], 'product').click();
+    key(cellOf(rowsIn(host)[1], 'product').querySelector('button')!, 'l');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(document.querySelector<HTMLInputElement>('.link-search input')!.value).toBe('l');
+    expect(searched.at(-1)).toBe('l');
+  });
+
   it('edits a cell: the line amount and the total update, and nothing else is touched', async () => {
     const { store } = await bigOrder(3);
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'] }));

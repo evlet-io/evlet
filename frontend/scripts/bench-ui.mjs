@@ -225,7 +225,7 @@ function changes(target) {
   };
   const api = new AppClient({ fetch });
   const schema = new SchemaIndex(fixture.schema.body);
-  const router = appRouter({ base: '/ui', window });
+  const router = appRouter({ window });
   const ctx = { api, router, schema, session: fixture.session.body, user: fixture.session.body.user, prefs: new Prefs('bench', null),
     links: apiLinks(api, schema), dev: false, libraryHref: '/evlet.html', ...newPageState(), openPalette() {}, toggleSidebar() {}, async signOut() {} };
   const until = async (check, host) => {
@@ -254,9 +254,9 @@ function changes(target) {
   const lists = [], records = [];
   let listRowsShown = 0, recordRowsShown = 0;
   for (let run = 0; run < 15; run++) {
-    const list = await measure('/ui/m/order', () => ListPage(ctx, 'order'), host => host.querySelectorAll('tbody tr[data-key]').length > 0);
+    const list = await measure('/app/order', () => ListPage(ctx, 'order'), host => host.querySelectorAll('tbody tr[data-key]').length > 0);
     lists.push(list.time); listRowsShown = list.rows;
-    const record = await measure('/ui/m/order/1?tab=t-lines', () => RecordPage(ctx, 'order', '1'), host => host.querySelectorAll('.grid tbody tr[data-key]').length > 0);
+    const record = await measure('/app/order/1?tab=t-lines', () => RecordPage(ctx, 'order', '1'), host => host.querySelectorAll('.grid tbody tr[data-key]').length > 0);
     records.push(record.time); recordRowsShown = record.rows;
   }
   report('List page, 100 rows: build, load and first render', lists, 50);
@@ -302,7 +302,7 @@ function changes(target) {
   };
   const api = new AppClient({ fetch });
   const schema = new SchemaIndex(crm.schemas.sara.body);
-  const router = appRouter({ base: '/ui', window });
+  const router = appRouter({ window });
   const session = Object.assign({}, ...crm.sara_big)['GET /api/auth/session'].body;
   const ctx = { api, router, schema, session, user: session.user, prefs: new Prefs('bench-crm', null),
     links: apiLinks(api, schema), dev: false, libraryHref: '/evlet.html', ...newPageState(), openPalette() {}, toggleSidebar() {}, async signOut() {} };
@@ -319,9 +319,9 @@ function changes(target) {
   };
   const lists = [], records = [], edits = [];
   for (let run = 0; run < 15; run++) {
-    const list = await open('/ui/m/deal', () => ListPage(ctx, 'deal'), host => host.querySelectorAll('tbody tr[data-key]').length > 0);
+    const list = await open('/app/deal', () => ListPage(ctx, 'deal'), host => host.querySelectorAll('tbody tr[data-key]').length > 0);
     lists.push(list.time); list.close();
-    const record = await open('/ui/m/deal/1?tab=t-lines', () => RecordPage(ctx, 'deal', '1'), host => host.querySelectorAll('.grid tbody tr[data-key]').length > 0);
+    const record = await open('/app/deal/1?tab=t-lines', () => RecordPage(ctx, 'deal', '1'), host => host.querySelectorAll('.grid tbody tr[data-key]').length > 0);
     records.push(record.time);
     if (run === 14) {
       for (let edit = 0; edit < 25; edit++) {

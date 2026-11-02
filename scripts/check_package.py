@@ -22,7 +22,11 @@ def main():
     assert compiled.to_dict()["layout"]["slots"]["children"][0]["props"]["text"] == "Ready"
     response = static_response("/docs")
     assert response and b'<div id="evlet-app">' in response[1].content
-    assert list((Path(evlet.__file__).parent / "ui/static/assets").glob("*.js"))
+    assets = Path(evlet.__file__).parent / "ui/static/assets"
+    assert list(assets.glob("*.js"))
+    for font, licence in (("InterVariable-", "Inter-OFL.txt"), ("JetBrainsMono-", "JetBrainsMono-OFL.txt")):
+        if not list(assets.glob(font + "*.woff2")) or "SIL OPEN FONT LICENSE" not in (assets / licence).read_text().upper():
+            raise RuntimeError(f"Installed wheel lacks {font} fonts or {licence}")
 
     from evlet import PostgreSQLDatabase
     try:

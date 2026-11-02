@@ -32,7 +32,7 @@ describe('testCRM: sign in and the deals list', () => {
     await until(() => expect(titles(host).length).toBe(8));
     expect(titles(host)).not.toContain('Fleet and warehouse ERP');
     expect([...host.querySelectorAll('thead th')].map(text).slice(1)).toEqual(['Number', 'Title', 'Organization', 'Owner', 'Stage', 'Total', 'Expected close']);
-    await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => text(item.querySelector('span')))).toEqual(['Pipeline', 'Won', 'Deals']));
+    await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => text(item.querySelector('span')))).toEqual(['Pipeline', 'Won', 'Won this month', 'Deals']));
     await until(() => expect(text(byText(host, '.ev-list [role="tab"]', /^All deals/))).toBe('All deals8'));
     expect(run.misses).toEqual([]);
   });
@@ -44,6 +44,10 @@ describe('testCRM: sign in and the deals list', () => {
     typeInto(host.querySelector<HTMLInputElement>('.toolbar input')!, 'planning');
     await until(() => expect(titles(host)).toEqual(['Production planning module']));
     expect(listed(run, sent).pop()).toMatchObject({ q: 'planning', offset: '0', limit: '50' });
+    // The measures strip and the per-stage counts follow the search box.
+    await until(() => expect(sent.map(item => item.url)).toEqual(expect.arrayContaining([
+      expect.stringMatching(/\/api\/deal\/measures\?q=planning$/), expect.stringMatching(/\/api\/deal\/aggregate\?.*q=planning/)])));
+    await until(() => expect(text(byText(host, '.ev-list [role="tab"]', /^All deals/))).toBe('All deals1'));
     typeInto(host.querySelector<HTMLInputElement>('.toolbar input')!, '');
     await until(() => expect(titles(host).length).toBe(8));
     click(byText(host, '.ev-list [role="tab"]', /^Proposal/));
@@ -69,6 +73,9 @@ describe('testCRM: sign in and the deals list', () => {
     press(portal, 'ArrowRight', { altKey: true });
     await until(() => expect(byText(column('Proposal'), '.card', /Distributor portal/)).not.toBeNull());
     await until(() => expect(sent.filter(item => item.method === 'POST' && /moves\/proposal$/.test(item.url))).toHaveLength(1));
+    // Deal declares no move from proposal back to qualified, so the board offers no Undo.
+    expect(lastToast()).toBe('Moved to Proposal');
+    expect([...document.querySelectorAll('.toast')].pop()!.querySelector('button')).toBeNull();
     // Won deals cannot be moved by the board: the reason is shown and nothing is sent.
     press(byText(column('Won'), '.card', /AMC renewal/)!, 'ArrowRight', { altKey: true });
     expect(lastToast()).not.toBe('');

@@ -9,10 +9,10 @@ the deals they own and never see a deal's internal notes. Viewers read, without 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from evlet import (Attachments, Boolean, Child, Count, Currency, Date, Decimal, Duration, Effect, Email, Integer, Link,
+from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Effect, Email, Integer, Link,
                    LongText, Model, Move, Negate, Percent, Phone, Reference, Related, Rule, Select, Sequence, State, Sum,
                    Table, Tags, Text, Time, URL, action)
-from evlet.calc import D, F, coalesce, days, parent, round, row, today, when
+from evlet.calc import D, F, coalesce, days, month_start, parent, round, row, today, when
 
 EVERYTHING = Rule(('read', 'create', 'update', 'delete'))
 READ = Rule(('read',))
@@ -127,8 +127,8 @@ class Deal(Model):
     title = Text(required=True, max_length=160)
     organization = Link(Organization, required=True)
     contact = Link(Contact)
-    # The username of the sales person who owns the deal.
-    owner = Text(required=True, max_length=60)
+    # The username of the sales person who owns the deal; whoever creates it, unless they name someone.
+    owner = Text(required=True, default=CurrentUser, max_length=60)
     lead_source = Select(SOURCES, label='Source')
     expected_close = Date()
     stage = State(('lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost', 'void'), moves=(
@@ -148,9 +148,9 @@ class Deal(Model):
                                                       when(F('stage') == 'lead', D('10'), D('0')))))))
     payment_days = Integer(initial=F('organization.payment_days'), minimum=0, maximum=180)
     vat_rate = Percent(default=5)
-    # Shown once the deal is lost and still editable after it is locked. It is not required: a move
-    # takes no values, so a field required in the target state would block the move (see Lead).
-    lost_reason = Text(applies_when=F('stage') == 'lost', editable_when_locked=True, max_length=200)
+    # Shown once the deal is lost, required then and still editable after it is locked. Mark lost asks for it.
+    lost_reason = Text(applies_when=F('stage') == 'lost', required_when=F('stage') == 'lost', editable_when_locked=True,
+                       max_length=200)
     next_step = Text(max_length=200, editable_when_locked=True)
     follow_up_on = Date()
     won_on = Date()
@@ -203,6 +203,7 @@ class Deal(Model):
         measures = {
             'pipeline': Sum('total', where=(F('stage') != 'won') & (F('stage') != 'lost') & (F('stage') != 'void')),
             'won': Sum('total', where=F('stage') == 'won'),
+            'won_this_month': Sum('total', where=(F('stage') == 'won') & (F('won_on') >= month_start())),
             'deals': Count(),
             'open_tasks': Count('task', link='deal', where=F('done') == False),  # noqa: E712
         }
@@ -265,14 +266,13 @@ class Lead(Model):
     phone = Phone()
     lead_source = Select(SOURCES, label='Source')
     score = Integer(default=50, minimum=0, maximum=100)
-    owner = Text(max_length=60)
+    owner = Text(default=CurrentUser, max_length=60)
     status = State(('new', 'qualified', 'lost'), moves=(
         Move('new', 'qualified', 'Qualify', when=F('score') >= 40),
         Move(('new', 'qualified'), 'lost', 'Mark lost'),
         Move('lost', 'new', 'Reopen'),
     ), locked=('lost',))
-    # The reason rule as the handoff writes it. Today it blocks Mark lost: the field does not apply
-    # before the move, so it is empty, and the move cannot carry a value (docs/testcrm.md, gaps).
+    # Mark lost asks for the reason: the move carries it and checks it in the same transaction.
     lost_reason = Text(applies_when=F('status') == 'lost', required_when=F('status') == 'lost',
                        editable_when_locked=True, max_length=200)
     deal = Link(Deal)

@@ -497,8 +497,6 @@ class Business:
                 calculation = body.pop('_calculation')
                 self.check_calculation(model, calculation)
                 recalculate = calculation.get('recalculate', False)
-            if move and body:
-                raise ValidationError({'_form': 'A move takes no values'})
             with self.context(user) as context:
                 context._recalculate = (model, record_id) if recalculate and record_id else None
                 if record_id:
@@ -506,7 +504,7 @@ class Business:
                     if b'if-match' not in dict(scope.get('headers', [])):
                         raise AccessError(428, 'A current If-Match revision is required')
                     self.check_revision(scope, context._tx, user, record)
-                result = context._write(model, record_id, {} if action or move else body, action=action,
+                result = context._write(model, record_id, {} if action else body, action=action,
                                         arguments=body if action else None, move=move)
                 extra = self.availability(context, model, context._tx.get(model, result['id']))
             # The write returns every readable row; the ETag covers them all and the body embeds the first page.

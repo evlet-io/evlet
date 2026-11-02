@@ -345,6 +345,11 @@ def today():
     return Expr('today')
 
 
+def month_start():
+    """The first day of the current month, for a measure's where= only (measures.md)."""
+    return Expr('month_start')
+
+
 def safe_divide(numerator, denominator, *, default):
     return Expr('safe_divide', (lift(numerator), lift(denominator), lift(default)))
 
@@ -446,6 +451,7 @@ class _Context:
     row: object = None
     table: str = None
     registry: object = None
+    measure: bool = False  # a measure's where=, which alone may read month_start()
 
 
 def compile_expression(expr, context, target):
@@ -516,6 +522,10 @@ def compile_expression(expr, context, target):
         if op == 'today':
             reads.append(('today', None, None))
             return {'$expr': 'today'}, 'date', False
+        if op == 'month_start':
+            if not context.measure:
+                fail('UNSUPPORTED_EXPRESSION', 'month_start() belongs only in a measure where=; use today() and days() here')
+            return {'$expr': 'month_start'}, 'date', False
         if op == 'ref' and node.meta['scope'] == 'self' and '.' in (node.meta.get('name') or ''):
             return link_path(node.meta['name'])
         if op == 'ref':
@@ -615,7 +625,7 @@ def compile_expression(expr, context, target):
     ir, kind, _ = visit(expr, 0, 'self')
     try:
         # Boolean arithmetic adds conversion nodes, so the emitted IR is what must fit the limits.
-        check_node(ir, 0, [0])
+        check_node(ir, 0, [0], measure=context.measure)
     except CalcError:
         raise CalcError('CALCULATION_LIMIT_EXCEEDED', f'{address(context.path, target)}: expression is too large') from None
     return ir, kind, reads
@@ -1875,10 +1885,11 @@ def hop_steps(steps):
         and (step[2] == 'link' or index == len(steps) - 1) for index, step in enumerate(steps))
 
 
-def check_node(node, depth, count, scale=False):
+def check_node(node, depth, count, scale=False, measure=False):
     """Closed, bounded IR: unknown operations, arities, scopes or shapes fail before evaluation.
 
     An integer literal is only valid as round()'s scale (`scale`), and nothing else is valid there.
+    month_start is valid only in a measure's where= (`measure`); plans never contain it.
     """
     count[0] += 1
     if not isinstance(node, dict) or depth > LIMITS['expression_depth'] or count[0] > LIMITS['expression_nodes']:
@@ -1894,7 +1905,7 @@ def check_node(node, depth, count, scale=False):
                 parse(value)
     elif op == 'ref':
         ok = not scale and node.get('scope') in SCOPES and isinstance(node.get('field'), str) and re.fullmatch(NAME, node['field']) is not None
-    elif op == 'today':
+    elif op == 'today' or op == 'month_start' and measure:
         ok = not scale
     elif op == 'hop':
         ok = not scale and isinstance(node.get('field'), str) and re.fullmatch(NAME, node['field']) is not None and hop_steps(node.get('steps'))
@@ -1903,11 +1914,11 @@ def check_node(node, depth, count, scale=False):
         ok = not scale and node.get('kind') in ('sum', 'min', 'max', 'count') and isinstance(node.get('table'), str) and 'where' in node \
             and (field is None if node['kind'] == 'count' else isinstance(field, str) and re.fullmatch(NAME, field) is not None)
         if ok and node['where'] is not None:
-            check_node(node['where'], depth + 1, count)
+            check_node(node['where'], depth + 1, count, measure=measure)
     else:
         args = node.get('args')
         ok = not scale and op in ARITY and isinstance(args, list) and len(args) == ARITY[op]
         for index, arg in enumerate(args if ok else []):
-            check_node(arg, depth + 1, count, op == 'round' and index == 1)
+            check_node(arg, depth + 1, count, op == 'round' and index == 1, measure)
     if not ok:
         raise CalcError('UNSUPPORTED_EXPRESSION', f'Unknown or malformed calculation node {op!r}')

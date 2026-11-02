@@ -250,6 +250,14 @@ plain value is set once, a reactive one updates only the node bound to it. Impor
 `ui/styles.css` once per page: it carries the design tokens for both themes and the mockup's
 class names.
 
+The fonts are bundled, so pages load nothing from another host and the CSP stays
+`default-src 'self'`. `frontend/fonts` holds Inter 4.1 (`InterVariable.woff2`, weights 100 to 900)
+and JetBrains Mono 2.304 (`JetBrainsMono-Regular.woff2` and `-Medium.woff2`), taken from the
+official GitHub releases (`rsms/inter`, `JetBrains/JetBrainsMono`), with their SIL Open Font
+License 1.1 files beside them. The build copies them to `/assets` with a content hash (538,228
+bytes of woff2 in all); the server sends them as `font/woff2`. `font-display: swap` shows the
+system fonts (`system-ui`, `ui-monospace` and the rest of the stack) until they load.
+
 | Module | Components |
 |---|---|
 | `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, Stat, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
@@ -313,7 +321,8 @@ mount(document.querySelector('#app')!, () => DocFrame({
   confirms with a toast that has Undo.
 - **ChildTable** binds to a record `Table`: click or Enter edits a cell, Tab and Shift Tab move
   across editable cells and wrap rows, Enter moves down, Esc cancels, arrow keys move between
-  cells, typing starts editing, Alt and an arrow moves a row. Rows can be added, duplicated
+  cells, typing starts editing (on a Link cell it opens the search with what was typed), Alt and an
+  arrow moves a row. Rows can be added, duplicated
   (with their rows of rows, as new rows), removed with Undo (`Table.restore()` brings back
   the same rows with their ids and rows of rows; Undo is refused with a message while the
   record saves or the lines are locked), opened in place with every field and their nested
@@ -327,8 +336,10 @@ mount(document.querySelector('#app')!, () => DocFrame({
 - Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
   first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
   polite live region that the app creates at mount with `mountToasts()`. A popover stays open
-  when a phone keyboard resizes the window while the user types in it. `apiLinks()` forgets
-  record titles when the session ends; `recordOf(field)` gives a field's record store. Data is always text: nothing a record holds is parsed as markup.
+  when a phone keyboard resizes the window while the user types in it. `apiLinks()` reads
+  link titles in batches (one list request per target model with `id__in` for the titles a page
+  asks for in one turn, none for a record already read or being read), keeps them for the session
+  and forgets them when it ends; `recordOf(field)` gives a field's record store. Data is always text: nothing a record holds is parsed as markup.
 
 The Library page (`ui/library.ts`) lists all 114 components of the design catalog with their
 details and a live demo for each one built here; the rest are marked for the screens phase.
@@ -401,11 +412,11 @@ tab closes. Signing in keeps the address the user opened.
 | `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. Form dialog actions (`dialog: true`) are not shown: these screens cannot open them yet |
-| `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board, the status flow, move buttons; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column |
+| `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board, the status flow, move buttons; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
 | Locked states, `editable_when_locked` | Lock banner; only the declared fields stay editable; lines lock |
 | Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |
 | `Sequence` (Phase 7) | The number in mono as the title; "Number assigned on ..." until then |
-| `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
+| `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.key_fields` (Phase 10) | Header facts, the summary strip and the Key fields side block (without it: the first fields) |
 | `Meta.relations` (Phase 10) | The Related tab and side block |
 | `attachments` | The Files side block, with upload for roles that can update while the record is not locked |

@@ -12,6 +12,7 @@ export interface Attachment { id: number; name: string; size: number }
 
 export class AppClient extends ApiClient {
   private readonly details = new Map<string, Cell<RecordData | null>>();
+  private readonly inflight = new Map<string, Promise<ApiResponse<RecordData>>>();
 
   constructor(options: ClientOptions = {}) { super(options); }
 
@@ -23,7 +24,21 @@ export class AppClient extends ApiClient {
     return found;
   }
 
+  /** A read of a record that is in flight now (GET /api/{model}/{id}), to share instead of asking again. */
+  reading(model: string, id: number): Promise<ApiResponse<RecordData>> | undefined {
+    return this.inflight.get(`/api/${model}/${id}`);
+  }
+
   async request<T>(method: string, path: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
+    if (method !== 'GET' || !/^\/api\/[A-Za-z][A-Za-z0-9_]*\/\d+$/.test(path) || options.query) return this.withDetail<T>(method, path, options);
+    const pending = this.withDetail<T>(method, path, options);
+    this.inflight.set(path, pending as Promise<ApiResponse<any>>);
+    const done = () => { if (this.inflight.get(path) === pending) this.inflight.delete(path); };
+    pending.then(done, done);
+    return pending;
+  }
+
+  private async withDetail<T>(method: string, path: string, options: RequestOptions): Promise<ApiResponse<T>> {
     const response = await super.request<T>(method, path, options);
     const found = DETAIL.exec(path);
     const data = response.data as any;
@@ -41,10 +56,10 @@ export class AppClient extends ApiClient {
     await this.request('POST', '/api/auth/setup', { body: { username, password } });
   }
 
-  /** Declared model-level measures (Phase 9), following the list's filters. */
-  async measures(model: string, filters?: Record<string, unknown>) {
+  /** Declared model-level measures (Phase 9), following the list's filters and search text. */
+  async measures(model: string, filters?: Record<string, unknown>, q?: string) {
     return (await this.request<{ measures: Record<string, unknown> }>('GET', `/api/${model}/measures`,
-      { query: { filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined } })).data.measures;
+      { query: { filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined, q: q || undefined } })).data.measures;
   }
 
   /** Declared per-record measures (Phase 9). */
@@ -53,10 +68,10 @@ export class AppClient extends ApiClient {
   }
 
   /** An ad hoc aggregate (Phase 9): measures as `name:function:field`, grouped by fields. */
-  async aggregate(model: string, measures: string[], groupBy: string[] = [], filters?: Record<string, unknown>) {
+  async aggregate(model: string, measures: string[], groupBy: string[] = [], filters?: Record<string, unknown>, q?: string) {
     return (await this.request<{ group_by: string[]; measures: string[]; items: Array<Record<string, unknown>> }>('GET', `/api/${model}/aggregate`, { query: {
       measures: measures.join(','), group_by: groupBy.length ? groupBy.join(',') : undefined,
-      filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined,
+      filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined, q: q || undefined,
     } })).data;
   }
 

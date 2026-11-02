@@ -3,6 +3,11 @@
    framework components are at the end. Import this file once per page. A few token values are
    darker or lighter than the mockup so small text meets WCAG AA contrast; docs/ui-framework.md
    lists them under "Deviations from the mockup". */
+/* Fonts bundled from frontend/fonts (SIL OFL 1.1, license files beside them): Inter 4.1 variable and
+   JetBrains Mono 2.304 regular and medium. Served from /assets; the system fonts stand in until they load. */
+@font-face{font-family:"Inter";font-style:normal;font-weight:100 900;font-display:swap;src:url("../../../fonts/InterVariable.woff2") format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:400;font-display:swap;src:url("../../../fonts/JetBrainsMono-Regular.woff2") format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:500;font-display:swap;src:url("../../../fonts/JetBrainsMono-Medium.woff2") format("woff2")}
 /* Layout: fixed sidebar + topbar shell, one scrolling view region. White ground, cool slate neutrals, one blue accent, soft tinted icons. */
 :root{
   --bg:#ffffff; --bg-subtle:#f8f9fb; --bg-muted:#f2f4f7; --side-bg:#f4f5f8; --surface:#ffffff; --overlay:rgba(16,20,30,.32);

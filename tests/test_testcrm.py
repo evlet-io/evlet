@@ -18,6 +18,12 @@ from test_business import http
 PASSWORD = 'a long local test password'
 
 
+def dubai_today():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo('Asia/Dubai')).date()
+
+
 @pytest.fixture(scope='module')
 def crm(tmp_path_factory):
     app = testcrm.build(tmp_path_factory.mktemp('testcrm') / 'project', frontend_port=8000)
@@ -95,9 +101,20 @@ def test_list_sort_search_filter_and_paging(crm):
     by_stage = admin('GET', '/api/deal/aggregate?measures=value:sum:total,deals:count&group_by=stage')[1]['items']
     assert {row['stage'] for row in by_stage} >= {'lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'}
     assert sum(Decimal(row['value']) for row in by_stage if row['stage'] not in ('won', 'lost', 'void')) == Decimal(measures['pipeline'])
-    # Won this month: a declared measure cannot compare dates with today, so it is an aggregate by month.
+    # The measures and the aggregate follow the list's search box, with the list's readable search fields.
+    rollout = admin('GET', '/api/deal?limit=50&offset=0&q=rollout')[1]
+    searched = admin('GET', '/api/deal/measures?q=rollout')[1]['measures']
+    assert searched['deals'] == rollout['total'] == 2
+    assert Decimal(searched['pipeline']) + Decimal(searched['won']) == sum(Decimal(item['total']) for item in rollout['items']
+                                                                          if item['stage'] not in ('lost', 'void'))
+    stages = admin('GET', '/api/deal/aggregate?measures=n:count&group_by=stage&q=rollout')[1]['items']
+    assert sum(row['n'] for row in stages) == 2
+    assert login(crm, 'vera')('GET', '/api/deal/measures?q=' + 'x' * 201)[0] == 422
+    # Won this month is a declared measure: won_on from the first of this month in Dubai, decided at query time.
+    month = dubai_today().strftime('%Y-%m')
     won = admin('GET', '/api/deal/aggregate?measures=won:sum:total&group_by=won_on:month&filters=' + quote(json.dumps({'stage': 'won'})))[1]['items']
     assert sum(Decimal(row['won']) for row in won) == Decimal(measures['won'])
+    assert Decimal(measures['won_this_month']) == sum(Decimal(row['won']) for row in won if row['won_on__month'] == month) > 0
 
 
 def test_open_a_deal_and_edit_fields(crm):
@@ -162,8 +179,11 @@ def test_rules_lost_reason(crm):
     assert sara('GET', url)[1]['lost_reason'] is None
     # Before the deal is lost the reason does not apply, so a value sent now is cleared.
     assert sara.write('PATCH', url, {'lost_reason': 'Too early'})[1]['lost_reason'] is None
-    lost = sara.write('POST', url + '/moves/lost', {})
+    assert {move['to']: move.get('asks') for move in sara('GET', url)[1]['_moves']}['lost'] == ['lost_reason']
+    assert sara.write('POST', url + '/moves/lost', {})[1]['fields'] == {'lost_reason': 'This field is required'}
+    lost = sara.write('POST', url + '/moves/lost', {'lost_reason': 'Budget moved to next year'})
     assert lost[0] == 200 and lost[1]['stage'] == 'lost' and lost[1]['_locked'] is True
+    assert lost[1]['lost_reason'] == 'Budget moved to next year'
     # Locked, but the reason stays editable.
     assert sara.write('PATCH', url, {'title': 'x'})[1]['fields'] == {'title': 'This record is lost, so it is locked'}
     assert sara.write('PATCH', url, {'lost_reason': 'Chose another vendor'})[1]['lost_reason'] == 'Chose another vendor'
@@ -173,15 +193,15 @@ def test_rules_lost_reason(crm):
     assert reopened['stage'] == 'lead' and reopened['lost_reason'] is None
 
 
-def test_lead_reason_rule_blocks_mark_lost(crm):
-    """Known gap: Lead declares lost_reason with applies_when and required_when on lost, as the handoff
-    writes it. A move carries no values and the field is cleared while it does not apply, so the move
-    into lost always fails. When moves can take inputs, this test should flip to a successful move."""
+def test_lead_mark_lost_carries_the_reason(crm):
+    """Lead declares lost_reason with applies_when and required_when on lost. Mark lost asks for it."""
     sara = login(crm, 'sara')
     url = '/api/lead/' + str(find(sara, 'lead', name='Majid Obaid')['id'])
     refused = sara.write('POST', url + '/moves/lost', {})
     assert refused[0] == 422 and refused[1]['fields'] == {'lost_reason': 'This field is required'}
     assert sara('GET', url)[1]['status'] == 'new'
+    lost = sara.write('POST', url + '/moves/lost', {'lost_reason': 'No budget this year'})
+    assert lost[0] == 200 and (lost[1]['status'], lost[1]['lost_reason']) == ('lost', 'No budget this year')
 
 
 def test_moves_guards_and_blocked_reasons(crm):
@@ -277,6 +297,10 @@ def test_sales_see_only_their_deals_and_no_hidden_fields(crm):
     assert admin('GET', deal_url(admin, 'ERP rollout'))[1]['internal_notes'].startswith('Partner sign-off')
     # Measures follow the row scope.
     assert sara('GET', '/api/deal/measures')[1]['measures']['deals'] == len(mine)
+    # A new deal or lead belongs to whoever creates it, without typing a username.
+    created = sara('POST', '/api/deal', {'title': 'Mine without typing', 'organization': 1})
+    assert created[0] == 201 and created[1]['owner'] == 'sara'
+    assert sara('POST', '/api/lead', {'name': 'Hamad', 'company': 'Hamad Trading'})[1]['owner'] == 'sara'
 
 
 def test_two_sessions_editing_the_same_deal_conflict(crm):

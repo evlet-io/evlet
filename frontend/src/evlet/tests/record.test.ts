@@ -222,6 +222,19 @@ describe('saving', () => {
     expect(buildChanges(store.root)).toEqual({ title: 'Fresh', stage: 'open', children: { lines: [{ _key: 'n1', qty: '2', rate: '3' }] } });
   });
 
+  it('fills default=CurrentUser fields with the signed-in user on a new record', async () => {
+    const order = schema.models.find(model => model.name === 'order')!;
+    const withOwner = { ...schema, models: schema.models.map(model => model === order ? { ...order, fields: [...order.fields,
+      { name: 'owner', type: 'text', label: 'Owner', required: true, read_only: false, default_kind: 'user' },
+      { name: 'author_id', type: 'integer', label: 'Author', required: false, read_only: false, default_kind: 'user' }] } : model) };
+    const store = new RecordStore({ api: createClient({ fetch: server([]).fetch }), schema: withOwner, model: 'order', today: () => '2026-11-01',
+      user: { id: 7, username: 'sara', role: 'editor' } });
+    stores.push(store);
+    await store.create({ title: 'Fresh' });
+    expect([store.field('owner').value.peek(), store.field('author_id').value.peek()]).toEqual(['sara', 7]);
+    expect(buildChanges(store.root)).toMatchObject({ owner: 'sara', author_id: 7 });
+  });
+
   it('keeps the draft and reports a conflict when the record changed on the server', async () => {
     const { store } = backend([['PATCH', /\/api\/order\/1$/, 'stale_if_match']]);
     await store.open(1);

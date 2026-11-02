@@ -121,6 +121,25 @@ or fields. Python queries retain relationship traversal. Direct Link filters are
 also rejected when the target has a row scope. These restrictions are deliberate;
 a permission-aware join planner is future work.
 
+A scope on the signed-in user pairs with `default=CurrentUser`, which fills a field from that
+user when a record is created without a value: the username in a `Text` field, the account id
+in an `Integer` field. Other field types refuse it. A value the caller sends wins and still has
+to fit the scope. Updates never apply the default again. The schema marks the field
+`default_kind: "user"` and the record view fills it in on a new record.
+
+`CurrentUser` is only a default. A role that may write the field can still change it, on create
+or later. For ownership, declare the field `read_only=True` (it is still filled on create), leave
+it out of the role's `write_fields`, or rely on a row scope, which refuses a value outside it.
+
+A `business.context()` needs a `User`: its reads and writes are checked against that user's
+role, so a context opened with `None` refuses them with a plain `ValueError`.
+
+```python
+class Deal(Model):
+    permissions = {'editor': Rule(('read', 'create', 'update'), scope=lambda user: {'owner': user.username})}
+    owner = Text(required=True, default=CurrentUser)
+```
+
 Schema permissions guide the UI. Backend checks remain authoritative. Hidden fields
 and grouped layouts are presentation options, not access controls. A stale screen
 cannot bypass a changed role; the next request ends the revoked session.
@@ -234,7 +253,9 @@ class Meta:
     )
 ```
 
-Use at most eight groups and include each visible field exactly once. The default
+Use at most eight groups and list each visible field at most once. Visible fields a
+layout leaves out follow in an Other group, in declaration order. A field listed twice,
+or an unknown or hidden name, fails registration with a message naming it. The default
 is one Details group. The UI schema retains version 1 with additive layout,
 permissions, actions, children, child_only, and attachments metadata. Presentation
 changes do not alter migration checksums.

@@ -12,7 +12,7 @@ import sqlite3
 from .auth import AccessError
 from .database import ConflictError, ROW_LIMIT
 from .declarations import Ref
-from .fields import MISSING, Link
+from .fields import CurrentUser, MISSING, Link
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
@@ -134,6 +134,9 @@ class Context:
         return Context(self._business, self._tx, self.user, readonly=True, active=self._active)
 
     def _model(self, value):
+        if self.user is None:
+            raise ValueError('A document context needs a User: pass the account whose permissions apply, '
+                             'such as User(1, "admin", "admin"), to business.context()')
         model = self._business.registry.resolve(value)
         if model in self._business.child_models:
             raise AccessError(403, 'Access child rows through their parent document')
@@ -188,9 +191,10 @@ class Context:
     def action(self, model, record_id, name, **arguments):
         return self._write(model, record_id, {}, action=name, arguments=arguments)
 
-    def move(self, model, record_id, to):
-        """Move a record's State to `to` with the same checks as POST /api/{model}/{id}/moves/{to}."""
-        return self._write(model, record_id, {}, move=to)
+    def move(self, model, record_id, to, **values):
+        """Move a record's State to `to` with the same checks as POST /api/{model}/{id}/moves/{to}. `values` fill
+        the fields the move asks for (see states.move_asks), checked with the move."""
+        return self._write(model, record_id, values, move=to)
 
     def void(self, model, record_id, reason):
         """Void a record with a reason; the same checks as POST /api/{model}/{id}/void."""
@@ -786,6 +790,17 @@ def settle(context, draft, *, complete, previous=None, kept=False):
     return errors, states
 
 
+def current_user(item, field):
+    """The signed-in user's username (Text) or account id (Integer), from the root draft's context."""
+    root = item
+    while root.parent is not None:
+        root = root.parent
+    user = root.context.user if root.context is not None else None
+    if user is None:
+        return None
+    return user.username if field.kind == 'text' else user.id
+
+
 def apply_inputs(item, prefix, internal, errors):
     """Creation defaults, then type validation of every source (non-calculated) field."""
     for name, field in item._definition.__declared_fields__.items():
@@ -793,6 +808,7 @@ def apply_inputs(item, prefix, internal, errors):
         value = item._values.get(name, MISSING)
         if value is MISSING and item.id is None:
             if isinstance(field.default, Ref): value = item.read(field.default.path)
+            elif field.default is CurrentUser: value = current_user(item, field)
             elif field.default is not MISSING: value = field.default() if callable(field.default) else field.default
         if field.compute is not None or field.query is not None: continue
         try:
@@ -1233,7 +1249,17 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     business, tx, user = context._business, context._tx, context.user
     if (action is not None or move is not None) and not record_id:
         raise AccessError(404, 'Record not found')
-    draft, before = load_draft(context, model, record_id, values)
+    declared_move = None
+    if move is not None:
+        # The move is checked on the saved record before its values, so values never reveal which moves exist.
+        draft, before = load_draft(context, model, record_id, {})
+        declared_move = states.begin_move(context, model, draft, before, move)
+        if values:
+            states.check_move_values(context, model, declared_move, values)
+            draft, before = load_draft(context, model, record_id, values)
+            draft._values[model.__state__] = move
+    else:
+        draft, before = load_draft(context, model, record_id, values)
     # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
     locked_write = action is None and move is None and before is not None and states.locked_state(model, before._values) is not None
     if locked_write and context._recalculate == (model, record_id):
@@ -1250,9 +1276,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         if row is not None and row[0] != version and context._recalculate != (model, record_id):
             raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; '
                                    'resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it')
-    outcome = declared_move = None
-    if move is not None:
-        declared_move = states.begin_move(context, model, draft, before, move)
+    outcome = None
+    if declared_move is not None:
         if declared_move.run is not None:
             outcome = getattr(model, declared_move.run)(draft)
     elif action is not None:

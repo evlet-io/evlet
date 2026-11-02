@@ -8,6 +8,20 @@ import re
 from urllib.parse import urlsplit
 
 MISSING = object()
+
+
+class _CurrentUser:
+    """`default=CurrentUser` fills a Text field with the signed-in user's username, or an Integer field
+    with their account id, when a record is created without a value. Outside a signed-in write (an
+    action input, a migration backfill) it is no value."""
+    def __call__(self):
+        return None
+
+    def __repr__(self):
+        return 'CurrentUser'
+
+
+CurrentUser = _CurrentUser()
 MAX_INTEGER = 2**63 - 1
 ROUNDING = ("half_up", "half_even")
 # Finite-v1 expression options a field may declare, besides compute=.
@@ -57,6 +71,8 @@ class Field:
                  initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False):
         self.required = required
         self.default = default
+        if default is CurrentUser and self.kind not in ('text', 'integer'):
+            raise ValueError('default=CurrentUser fills Text (the username) or Integer (the account id) fields')
         self.unique = unique
         self.index = index
         self.validator = validator

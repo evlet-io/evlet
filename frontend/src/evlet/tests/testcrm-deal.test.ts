@@ -90,7 +90,8 @@ describe('testCRM: a deal and its lines', () => {
     expect(lastToast()).toContain('Negotiation');
     click(button(host, 'Mark won'));
     await until(() => expect(current(host)).toBe('Won'));
-    expect(text(host.querySelector('.inv-banner'))).toContain('Won and locked. Only lost reason and next step can change.');
+    // A sales person cannot void or revise, so the banner does not offer it.
+    expect(text(host.querySelector('.inv-banner > div'))).toBe('Won and locked. Only lost reason and next step can change.');
     expect(run.writes.map(write => `${write.method} ${new URL(write.url, 'http://x').pathname}`)).toEqual([`POST /api/deal/${id}/moves/negotiation`, `POST /api/deal/${id}/moves/won`]);
     expect(run.writes.every(write => write.headers['if-match'] && JSON.stringify(write.body) === '{}')).toBe(true);
     // The win created a kick-off task: the Related block counts it again after the move.
@@ -121,8 +122,17 @@ describe('testCRM: a deal and its lines', () => {
     // The lost reason applies only once the deal is lost.
     expect(field(host, 'lost_reason')!.hidden).toBe(true);
     run.skip(1);
+    // Mark lost asks for the reason in a small dialog and sends it with the move.
     click(button(host, 'Mark lost'));
+    const dialog = document.querySelector('.modal')!;
+    expect(text(dialog.querySelector('h2'))).toBe('Mark lost');
+    typeInto(dialog.querySelector('input')!, 'Budget moved');
+    click(byText(dialog, '.modal-f button', 'Mark lost'));
     await until(() => expect(current(host)).toBe('Lost'));
+    expect(run.writes.at(-1)!.body).toEqual({ lost_reason: 'Budget moved' });
+    // Lost is not voidable, so the banner offers no correction.
+    expect(text(host.querySelector('.inv-banner > div'))).toBe('Lost and locked. Only lost reason and next step can change.');
+    expect(document.querySelector('.modal')).toBeNull();
     expect(field(host, 'lost_reason')!.hidden).toBe(false);
     // Locked, but the reason stays editable in place.
     expect([...host.querySelectorAll('.fs .ff')].filter(item => item.querySelector('button.fval, .fval:not(.ro)')).map(item => item.getAttribute('data-field')))
@@ -141,17 +151,50 @@ describe('testCRM: a deal and its lines', () => {
     expect(run.misses).toEqual([]);
   });
 
-  it('known gap: the lead reason rule refuses Mark lost, and the screen does not say why', async () => {
+  it('asks for the lead reason before Mark lost and shows the server check in the dialog', async () => {
     const run = scenario('sara_lead_lost');
     const id = idOf('sara_lead_lost', 'lead', 'Majid Obaid');
     const { host } = run.start(`/app/lead/${id}?tab=details`);
     await until(() => expect(button(host, 'Mark lost')).not.toBeNull());
     click(button(host, 'Mark lost'));
-    await until(() => expect(run.writes).toHaveLength(1));
-    await until(() => expect(lastToast()).toBe('Mark lost did not run'));
+    const dialog = document.querySelector('.modal')!;
+    const submit = () => click(byText(dialog, '.modal-f button', 'Mark lost'));
+    // Required in the target state: checked in the dialog before anything is sent.
+    submit();
+    expect(text(dialog)).toContain('Lost reason is required');
+    expect(run.writes).toHaveLength(0);
+    // The recording's first answer is the server's 422; its message lands on the field.
+    typeInto(dialog.querySelector('input')!, 'No budget this year');
+    submit();
+    await until(() => expect(text(dialog)).toContain('This field is required'));
     expect(current(host)).toBe('New');
-    // The server's reason (lost_reason: This field is required) is on a field that does not apply yet.
-    expect(field(host, 'lost_reason')!.hidden).toBe(true);
+    submit();
+    await until(() => expect(current(host)).toBe('Lost'));
+    expect(run.writes.map(sent => sent.body)).toEqual([{ lost_reason: 'No budget this year' }, { lost_reason: 'No budget this year' }]);
+    await until(() => expect(text(field(host, 'lost_reason'))).toContain('No budget this year'));
+    expect(run.misses).toEqual([]);
+  });
+});
+
+describe('testCRM: lead actions', () => {
+  it('Convert to deal sends the typed date even when the field was not left before submitting', async () => {
+    const run = scenario('sara_convert');
+    const id = idOf('sara_convert', 'lead', 'Anjali Varma');
+    const { host } = run.start(`/app/lead/${id}?tab=details`);
+    await until(() => expect(button(host, 'Convert to deal')).not.toBeNull());
+    click(button(host, 'Convert to deal'));
+    const dialog = document.querySelector('.modal')!;
+    const [title, close] = [...dialog.querySelectorAll<HTMLInputElement>('.fld input')];
+    typeInto(title, 'Pharmacy chain ERP');
+    // Typed, still in the field: no change event yet.
+    close.focus();
+    close.value = '15-12-2026';
+    close.dispatchEvent(new Event('input', { bubbles: true }));
+    click(byText(dialog, '.modal-f button', 'Convert to deal'));
+    await until(() => expect(run.writes).toHaveLength(1));
+    expect(run.writes[0].body).toEqual({ title: 'Pharmacy chain ERP', expected_close: '2026-12-15' });
+    await until(() => expect(document.querySelector('.modal')).toBeNull());
+    expect(run.misses).toEqual([]);
   });
 });
 

@@ -33,7 +33,7 @@ testpaths = ["tests"]
 addopts = "-ra"
 
 [tool.setuptools.package-data]
-evlet = ["py.typed", "ui/*.pyi", "ui/static/*.html", "ui/static/assets/*.js", "ui/static/assets/*.css", "ui/static/assets/*.svg"]
+evlet = ["py.typed", "ui/*.pyi", "ui/static/*.html", "ui/static/assets/*.js", "ui/static/assets/*.css", "ui/static/assets/*.svg", "ui/static/assets/*.woff2", "ui/static/assets/*-OFL.txt"]
 
 "evlet.resources" = ["templates/**/*.tpl", "docs/*.md"]
 

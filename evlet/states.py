@@ -501,7 +501,7 @@ def availability(business, context, model, record, loaded=None):
 
     def evaluator():
         return guards_now
-    result = {}
+    result, locks = {}, []
     if shown_state:
         field = model.__declared_fields__[name]
         current = record._values.get(name)
@@ -516,7 +516,14 @@ def availability(business, context, model, record, loaded=None):
                 reason = 'You cannot change this record'
             elif move in guards:
                 reason = blocked_reason(evaluator().result(guards[move]), readable(policy, user, guards[move]), 'move')
-            moves.append({'to': move.to, 'label': move.label, 'allowed': reason is None, **({'reason': reason} if reason else {})})
+            asks = writable_asks(business, user, model, move)
+            # A field locked on this record cannot take a value, so the move does not ask for it.
+            if any(model.__declared_fields__[ask].locked_when is not None for ask in asks):
+                if not locks:
+                    locks.append(saved_locks(context, model, guards_now.load))
+                asks = [ask for ask in asks if ask not in locks[0]]
+            moves.append({'to': move.to, 'label': move.label, 'allowed': reason is None, **({'reason': reason} if reason else {}),
+                          **({'asks': asks} if asks else {})})
         result['_moves'] = moves
         result['_locked'] = current in field.locked
     actions = []
@@ -531,16 +538,35 @@ def availability(business, context, model, record, loaded=None):
     return result
 
 
+def saved_locks(context, model, load):
+    """Root fields whose locked_when holds on the saved record, decided as a save decides them:
+    a rule that is not decided locks the field."""
+    from .calc import CalcError, Document
+    from .documents import host_today, resolve_lookups
+    business = context._business
+    names = {name for name, field in model.__declared_fields__.items() if field.locked_when is not None}
+    try:
+        document = Document(business.registry.plan_for(model), saved_data(load()), checked=True)
+        document.set_today(host_today(business))
+        resolve_lookups(context, document)
+    except (CalcError, ValidationError):
+        return names
+    return {name for name in names if document.locked(document.root, name)}
+
+
 def state_schema(business, user, model):
     """Schema metadata of a model's State for this role, or None when the role cannot read the field."""
     name = model.__state__
     if name is None or name not in business.policy.fields(user, model):
         return None
     field, guards = model.__declared_fields__[name], business.registry.guards.get(model, {})
-    return {'field': name, 'states': list(field.choices), 'default': field.default,
-            'moves': [{'from': list(move.sources), 'to': move.to, 'label': move.label, 'roles': list(move.roles),
-                       'guarded': move in guards, 'when': guards[move].ir if move in guards and readable(business.policy, user, guards[move]) else None}
-                      for move in field.moves],
+    moves = []
+    for move in field.moves:
+        asks = writable_asks(business, user, model, move)
+        moves.append({'from': list(move.sources), 'to': move.to, 'label': move.label, 'roles': list(move.roles), 'guarded': move in guards,
+                      'when': guards[move].ir if move in guards and readable(business.policy, user, guards[move]) else None,
+                      **({'asks': asks} if asks else {})})
+    return {'field': name, 'states': list(field.choices), 'default': field.default, 'moves': moves,
             'locked': list(field.locked), 'final': list(field.final), 'voidable': list(field.voidable)}
 
 
@@ -569,3 +595,72 @@ def action_schema(business, user, model, name):
             item['default'] = field.serialize(field.validate(field.default))
         result['arguments'].append(item)
     return result
+
+
+# Values a move asks for
+
+class _StateOnly:
+    """An evaluation scope that knows only the State, for deciding rules per state without a record."""
+    def __init__(self, name, value):
+        self.name, self.value, self.document, self.lookups, self.misses, self.row, self.at = name, value, self, {}, set(), None, 'move'
+
+    def read(self, scope, field):
+        from .calc import pending, ready
+        return ready(self.value) if scope == 'self' and field == self.name else pending('COMPUTE_INPUT_MISSING', ['move'])
+
+    def today_result(self):
+        from .calc import pending
+        return pending('COMPUTE_INPUT_MISSING', ['move'])
+
+    def causes(self):
+        return ['move']
+
+
+def move_asks(business, model, move):
+    """The fields a move may carry values for: root fields whose applies_when or required_when reads the
+    State and becomes true (or depends on other values) in the target state while it is false in a source
+    state. Decided once per move from the declaration, in field order."""
+    cache = business.__dict__.setdefault('_move_asks', {})
+    key = (model, move)
+    if key not in cache:
+        from .calc import Budget, CalcError, _Context, compile_expression, evaluate, lift
+        state = model.__state__
+        tables = {child.name: child.model for child in business.registry.children if child.parent is model}
+
+        def decided(ir, value):
+            try:
+                outcome = evaluate(ir, _StateOnly(state, value), Budget())
+            except (CalcError, AttributeError, TypeError):
+                return None
+            return outcome.value if outcome.state == 'ready' else None
+        asks = []
+        for name, field in model.__declared_fields__.items():
+            for kind in ('applies_when', 'required_when'):
+                expression = getattr(field, kind, None)
+                if expression is None or name == state:
+                    continue
+                ir, _, reads = compile_expression(lift(expression), _Context(model, (), None, tables, registry=business.registry), f'{name}_{kind}')
+                if any(scope == 'self' and read == state for scope, _, read in reads) and decided(ir, move.to) is not False \
+                        and any(decided(ir, source) is False for source in move.sources):
+                    asks.append(name)
+                    break
+        cache[key] = tuple(asks)
+    return cache[key]
+
+
+def writable_asks(business, user, model, move):
+    allowed = business.policy.fields(user, model, write=True)
+    return [name for name in move_asks(business, model, move) if name in allowed]
+
+
+def check_move_values(context, model, move, values):
+    """Refuse values the checked move does not ask this role for, before any of them is applied.
+
+    A key that names no field this role can read (unknown or hidden) gets one form error, so the
+    answer never confirms a hidden field."""
+    business = context._business
+    allowed, readable = set(writable_asks(business, context.user, model, move)), business.policy.fields(context.user, model)
+    message = 'This move does not take this value'
+    errors = {key if key in readable else '_form': message for key in values if key not in allowed}
+    if errors:
+        raise ValidationError(errors)

@@ -10,7 +10,7 @@ import type { FieldSchema, ModelSchema, SchemaIndex } from '../model/schema';
 import { kindOf } from '../ui/kinds';
 import { tintFor, type Tint } from '../ui/core';
 
-export interface MoveSchema { from: string[] | string; to: string; label: string; roles?: string[]; guarded?: boolean; when?: unknown }
+export interface MoveSchema { from: string[] | string; to: string; label: string; roles?: string[]; guarded?: boolean; when?: unknown; asks?: string[] }
 export interface StateMeta { field: string; states: string[]; default?: string; moves: MoveSchema[]; locked?: string[]; final?: string[]; voidable?: string[] }
 export interface MeasureSchema { name: string; function: string; field: string | null; per_record: boolean; model: string | null; link: string | null; where?: unknown }
 export interface RelationSchema { name: string; label: string; model: string; link: string; limit: number; order?: string[] }
@@ -47,7 +47,7 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
 export interface Availability { allowed: boolean; reason?: string }
 export interface DetailExtras {
   _locked?: boolean;
-  _moves?: Array<{ to: string; label: string; allowed: boolean; reason?: string }>;
+  _moves?: Array<{ to: string; label: string; allowed: boolean; reason?: string; asks?: string[] }>;
   _actions?: Array<{ name: string; label: string; allowed: boolean; reason?: string }>;
   _void?: Availability;
   _revise?: Availability;

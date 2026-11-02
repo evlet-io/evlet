@@ -292,10 +292,32 @@ amount through `when()` and `parent.vat_rate`; the deal has five sums and totals
 | Deal opened on its 1,000-line tab: detail, calculations, header, summary and ChildTable | 161.9 ms | 100 ms |
 | Deal, 1,000 lines: commit one quantity with Enter (line amount, VAT, five totals) | 8.8 ms | 16 ms |
 
-Opening the 1,000-line deal misses its budget: it takes about three times as long as the
-1,000-line `order` above, which has one calculated field per line and no suggestions. The
-difference is the per-row work of a richer line (three suggestions, two calculations and a
-`parent` read per row). It needs profiling before the switch from SolidJS.
+Opening the 1,000-line deal missed its budget. A CPU profile (`node --cpu-prof` on the bench)
+showed the calculation engine doing whole-document work once per linked record: each product,
+organization and contact read in the background was handed to the engine in a batch of its own,
+and every batch copied the document for rollback, walked every calculation and every observer.
+In branch `ui-final/06-testcrm-findings`:
+
+* records that arrive together are given to the engine in one batch, and today's date and the
+  records read before go in with the first one;
+* `set`, `setToday` and `setLookups` check everything before they change anything, so inside a
+  batch they no longer copy the whole document;
+* the settle walk keeps each calculation's row, plan field and inputs from the last bind instead
+  of splitting node keys and copying input sets on every batch;
+* observers of removed rows are looked for only when rows were added or removed.
+
+Measured with `npm run bench:ui` on the same machine, before and after:
+
+| Case | Before | After | Budget |
+| --- | ---: | ---: | ---: |
+| testCRM deal opened on its 1,000-line tab | 159.4 ms | 80.2 ms | 100 ms |
+| testCRM deal, 1,000 lines: commit one quantity | 8.7 ms | 4.8 ms | 16 ms |
+| 1,000-line `order`: edit one quantity | 4.3 ms | 2.0 ms | 16 ms |
+| ChildTable, 1,000 rows: commit one cell | 4.3 ms | 2.4 ms | 16 ms |
+
+Only the active tab's panel is rendered, so the Details tab costs nothing while the lines tab is
+open. The rest of the first screen is the engine's first settle of every line and the 21 grid
+rows in view.
 
 In a real browser (Chromium in the Claude desktop Browser pane, 1280 x 800, development build
 served by Vite through its proxy to the testCRM backend on loopback, SQLite). The pane was not in

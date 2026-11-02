@@ -74,7 +74,7 @@ export function RecordPage(ctx: AppContext, name: string, idText: string): HTMLE
   const isNew = idText === 'new';
   const id = isNew ? null : Number(idText);
   if (!isNew && !(Number.isSafeInteger(id) && id! > 0)) return missing(ctx, model);
-  const store = new RecordStore({ api, schema: ctx.schema, model: name });
+  const store = new RecordStore({ api, schema: ctx.schema, model: name, user: ctx.user });
   onCleanup(() => store.dispose());
   const status = cell<'loading' | 'ready' | 'missing' | 'error'>('loading', { name: `${name} page` });
   const failure = cell<string>('');
@@ -182,12 +182,27 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     if (!move) return `This record cannot move from ${humanize(stateValue())} to ${humanize(to)}`;
     return move.allowed ? null : move.reason ?? `${move.label} is not available now`;
   };
-  const runMove = async (to: string) => {
-    const label = extras.peek()._moves?.find(item => item.to === to)?.label ?? humanize(to);
-    const ok = await store.move(to);
-    if (!ok) { toast(store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`, { icon: 'info' }); return; }
+  const moved = (to: string, label: string) => {
     const number = sequence && has(sequence.name) ? store.field(sequence.name).value.peek() : null;
     toast(number && sequence?.name !== undefined && (sequence as any).sequence?.assign_on === to ? `${label} done. Number ${number}.` : `Moved to ${humanize(to)}`);
+  };
+  const runMove = async (to: string) => {
+    const move = extras.peek()._moves?.find(item => item.to === to);
+    const label = move?.label ?? humanize(to);
+    // A move that asks for fields (a reason required once lost, say) collects them first.
+    const asked = (move?.asks ?? []).map(field => model.fields.find(meta => meta.name === field)).filter(meta => meta !== undefined);
+    if (asked.length) {
+      const inputs = asked.map(meta => ({ ...meta, read_only: false, required: Boolean(meta.required || meta.required_when), applies_when: null, required_when: null, locked_when: null }));
+      ActionDialog({ name: to, label } as ActionMeta, inputs, async values => {
+        if (await store.move(to, values)) { moved(to, label); return null; }
+        const errors = Object.fromEntries(asked.map(meta => [meta.name, store.field(meta.name).error.peek()]).filter(([, error]) => error));
+        return Object.keys(errors).length ? errors : store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`;
+      });
+      return;
+    }
+    const ok = await store.move(to);
+    if (!ok) { toast(store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`, { icon: 'info' }); return; }
+    moved(to, label);
   };
   const actions = (): ActionMeta[] => {
     const declared = model.actions ?? [];
@@ -317,8 +332,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       const buttons = [now._revise?.allowed ? Button({ label: 'Revise', icon: 'copy', size: 'small', onClick: () => correct('revise') }) : null,
         now._void?.allowed ? Button({ label: 'Void', icon: 'circle-x', size: 'small', variant: 'soft-danger', onClick: () => correct('void') }) : null].filter(Boolean) as Node[];
       const editable = model.fields.filter(field => (field as any).editable_when_locked).map(field => field.label.toLowerCase());
+      // Only the corrections this user can make now (the state allows them and so does the role).
+      const ways = [now._void?.allowed ? 'void' : null, now._revise?.allowed ? 'revise' : null].filter(Boolean);
+      const correction = ways.length === 2 ? ' To correct it, void or revise.' : ways.length ? ` To correct it, ${ways[0]} it.` : '';
       return StateBanner({ tone: 'info', title: `${humanize(value)} and locked.`, actions: buttons,
-        text: [editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.', now._void || now._revise ? ' To correct it, void or revise.' : '', ...reviseOf] });
+        text: [editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.', correction, ...reviseOf] });
     }
     const next = (state.moves.find(move => (Array.isArray(move.from) ? move.from : [move.from]).includes(value) && state.locked?.includes(move.to)));
     return StateBanner({ tone: 'neutral', title: `${humanize(value)}.`, text: [next ? `Everything can change until it is ${humanize(next.to).toLowerCase()}.` : 'Everything can change.', ...reviseOf] });
@@ -445,12 +463,17 @@ function actionInputs(action: ActionMeta): FieldSchema[] {
     required: argument.required, read_only: false, default: argument.default }) as FieldSchema);
 }
 
-/** Small dialog that collects an action's inputs, checks them in place and runs it. */
-export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (values: Record<string, unknown>) => Promise<string | null>) {
+/** Small dialog that collects an action's (or a move's) inputs, checks them in place and runs it. `run`
+ * answers null when done, a message, or field errors by input name. */
+export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (values: Record<string, unknown>) => Promise<string | Record<string, string> | null>) {
   const fields = inputs.map(meta => localField(meta as any, meta.default ?? (meta.type === 'boolean' ? false : null)));
+  const controls = fields.map(field => fieldFor({ field, full: true }));
   const note = cell<string>('');
   let busy = false;
   const submit = async (close: () => void) => {
+    // A value typed but not yet committed (the field was not left) counts: commit every text input first.
+    for (const input of controls.flatMap(element => [...element.querySelectorAll('input, textarea')])) input.dispatchEvent(new Event('change'));
+    if (fields.some(field => field.error.peek())) return;
     let valid = true;
     for (const field of fields) {
       const value = field.value.peek();
@@ -461,12 +484,13 @@ export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (va
     const values = Object.fromEntries(fields.filter(field => field.value.peek() !== null && field.value.peek() !== '').map(field => [field.meta.name, field.value.peek()]));
     const problem = await run(values);
     busy = false;
-    if (problem) { note.set(problem); return; }
+    if (typeof problem === 'string') { note.set(problem); return; }
+    if (problem) { for (const field of fields) if (problem[field.meta.name]) field.error.set(problem[field.meta.name]); return; }
     close();
   };
   let closeDialog = () => {};
   closeDialog = openModal({ title: action.label, icon: 'zap', tint: 'blue', narrow: true, onSubmit: () => void submit(closeDialog),
-    body: () => [...fields.map(field => fieldFor({ field, full: true })), html`<p class="ev-error" role="alert" hidden=${() => !note.get()}>${() => note.get()}</p>`],
+    body: () => [...controls, html`<p class="ev-error" role="alert" hidden=${() => !note.get()}>${() => note.get()}</p>`],
     footer: close => DialogFooter({ cancel: close, submit: { label: action.label, onClick: () => void submit(close) } }) });
   return closeDialog;
 }

@@ -12,7 +12,7 @@ from evlet import (Boolean, Child, Count, CountDistinct, Currency, Database, Dat
                    Model, Month, Move, NotFoundError, PostgreSQLDatabase, Registry, Rule, Select, Sequence, State, Sum, Tags, Text,
                    Table, ValidationError, Year)
 from evlet.auth import AccessError, User
-from evlet.calc import D, F, today, when
+from evlet.calc import D, F, days, month_start, today, when
 from test_business import client, http
 from test_postgres import pg_dsn  # noqa: F401 - fixture
 from test_rules_types import add_user, start
@@ -297,24 +297,60 @@ def test_where_expressions_match_finite_semantics(app):
                        {'posting_date__year': 2025, 'issued': D_('10.00'), 'big': 1, 'approved': 2}]
 
 
+def test_where_compares_dates_with_today_days_and_the_month_start(app, monkeypatch):
+    import evlet.measures as measures
+    zones = []
+    monkeypatch.setattr(measures, 'current_date', lambda zone: zones.append(zone) or date(2026, 3, 15))
+    dates = ['2026-02-28', '2026-03-01', '2026-03-14', '2026-03-15', '2026-03-16', None]
+    insert(app, Invoice, [{'posting_date': value, 'total': '2.00'} for value in dates])
+    cases = [
+        (F('posting_date') < today(), 3),
+        (today() > F('posting_date'), 3),
+        (F('posting_date') == today(), 1),
+        (F('posting_date') != today(), 5),
+        (F('posting_date') >= today() - days(14), 4),
+        (F('posting_date') <= today() + days(1), 5),
+        (F('posting_date') >= month_start(), 4),
+        ((F('posting_date') >= month_start()) & (F('posting_date') < today()), 2),
+    ]
+    for condition, expected in cases:
+        assert total(app, measures={'n': Count(where=condition)}) == [{'n': expected}], condition
+    # Trusted database calls use UTC; Context and HTTP use the instance timezone, at query time.
+    assert set(zones) == {'UTC'}
+    app.business.timezone = 'Asia/Dubai'
+    with app.business.context(User(1, 'admin', 'admin')) as context:
+        assert context.aggregate(Invoice, measures={'n': Sum('total', where=F('posting_date') >= month_start())}) == [{'n': D_('8.00')}]
+    assert zones[-1] == 'Asia/Dubai'
+
+
 def test_unsupported_where_expressions_are_rejected(app):
     rejected = [
         (F('total') + 1 > 2, 'not calculations'),
         (F('customer.name') == 'x', 'Link paths'),
         (F('nope') == 1, 'unknown field nope'),
         (F('total'), 'Boolean condition'),
-        (F('posting_date') < today(), 'not calculations'),
+        (F('posting_date') < today() - days(F('weight')), 'not calculations'),
+        (F('total') < today(), 'ordered comparisons'),
         (F('qty') == F('total'), 'same scale'),
         (D(1) == 1, 'compare a field'),
         (when(F('approved'), True, False), 'when is not supported'),
         (F('status') > 'a', 'ordered comparisons'),
         (F('labels') == 'x', 'tags field'),
         (F('total') == D('99999999999999999999'), 'outside the range'),
+        # A literal shift as large as the old month_start() marker is a shift, and out of range.
+        (F('posting_date') >= today() - days(10**12), 'days'),
     ]
     for condition, message in rejected:
         with pytest.raises(ValidationError) as error:
             total(app, measures={'n': Count(where=condition)})
         assert message in error.value.errors['n'], (condition, error.value.errors)
+
+
+def test_month_start_belongs_only_in_a_measure_where():
+    for options in ({'compute': month_start()}, {'applies_when': F('day') >= month_start()}):
+        Bad = type('Bad', (Model,), {'day': Date(), 'shown': Date(**options) if 'compute' in options else Text(**options)})
+        with pytest.raises(Exception, match=r'month_start\(\) belongs only in a measure where='):
+            Registry(Bad)
 
 
 def test_meta_measures_are_checked_at_registration():
@@ -490,7 +526,8 @@ def test_http_rejects_malformed_parameters(app):
         '/api/invoice/aggregate?measures=n:count&order_by=n',
         '/api/invoice/aggregate?measures=' + ','.join(f'm{index}:count' for index in range(9)),
         '/api/invoice/aggregate?measures=n:count&filters=' + quote(json.dumps({'total__gt': 'x'})),
-        '/api/invoice/measures?q=x',
+        '/api/invoice/1/measures?q=x',
+        '/api/invoice/measures?q=' + 'x' * 201,
         '/api/invoice/1/measures?filters=%7B%7D',
         '/api/invoice/aggregate?measures=n%FF:count',
         '/api/invoice/aggregate?measures=n:count&filters=' + 'x' * 9000,

@@ -96,10 +96,25 @@ Supported:
   Ordered comparisons need two numbers or two dates.
 * A `Boolean` field on its own, and `&`, `|` and `~`.
 * Fields of the measured model that are stored.
+* A `Date` field compared with `today()`, `today() + days(n)`, `today() - days(n)` (a whole
+  number `n`) or `month_start()`, the first day of the current month. They are query
+  parameters decided when the measure runs, in the instance timezone for `Context` and HTTP
+  calls (UTC for `Database.aggregate` and `Database.measures`).
+
+```python
+from evlet.calc import F, days, month_start, today
+
+Sum("total", where=(F("stage") == "won") & (F("won_on") >= month_start()))
+Count(where=F("due_on") < today())
+Count(where=F("posting_date") >= today() - days(30))
+```
+
+`month_start()` belongs only in a measure's `where=`. A `compute=`, rule or guard that uses it is
+rejected when the model is registered, with a message that names the field.
 
 Not supported, and rejected with a clear message when the measure is declared (or
 when an ad hoc call is made): arithmetic (`F("total") - F("paid") > 0`), Link paths
-(`F("customer.name")`), `today()`, `when()`, `coalesce()`, `round()`, table aggregates,
+(`F("customer.name")`), `today()` outside a Date comparison, `when()`, `coalesce()`, `round()`, table aggregates,
 comparisons with no field, and `Tags`, `Reference` and `Time` fields. Put a calculation
 in a stored field and compare that field instead.
 
@@ -197,6 +212,8 @@ GET /api/invoice/aggregate?measures=amount:sum:total,count:count,outstanding&gro
 * `group_by` (optional): comma-separated `field` or `field:day`, `field:month`,
   `field:year`, up to four.
 * `filters` (optional): a JSON object in the list filter syntax.
+* `q` (optional): the list's search text, matched like the list's search box against the
+  model's search fields the caller may read (at most 200 characters).
 
 ```json
 {"group_by": ["status", "posting_date__month"],
@@ -211,7 +228,8 @@ month keys are `"YYYY-MM"` and year keys are integers. Empty values are `null`.
 ### GET /api/{model}/measures
 
 The declared model-level measures the caller may read, for a list page. It takes the
-same optional `filters` as the list, so totals can follow the list's filters.
+same optional `filters` and `q` (search) as the list, so totals follow the list's filters and
+its search box.
 
 ```json
 {"measures": {"outstanding": "110.00", "count": 4}}

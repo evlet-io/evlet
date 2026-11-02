@@ -2,7 +2,7 @@
 
 import re
 
-from ..fields import LongText, MISSING, Text
+from ..fields import CurrentUser, LongText, MISSING, Text
 from ..declarations import Ref
 
 
@@ -49,12 +49,20 @@ def view_for(model):
     if not isinstance(layout, (tuple, list)) or len(layout) > 8:
         raise ValueError('Use at most eight layout groups')
     for group in layout:
-        if not isinstance(group, (tuple, list)) or len(group) != 2 or not isinstance(group[0], str) or not group[0] or not isinstance(group[1], (tuple, list)) or any(not isinstance(name, str) or name not in visible for name in group[1]):
-            raise ValueError('Layout groups need a label and visible field names')
-        used.extend(group[1])
+        if not isinstance(group, (tuple, list)) or len(group) != 2 or not isinstance(group[0], str) or not group[0] or not isinstance(group[1], (tuple, list)):
+            raise ValueError('Layout groups are (label, field names) pairs')
+        unknown = [str(name) for name in group[1] if not isinstance(name, str) or name not in visible]
+        if unknown:
+            raise ValueError(f'Layout group {group[0]} names unknown or hidden fields: {", ".join(unknown)}')
+        for name in group[1]:
+            if name in used:
+                raise ValueError(f'Layout lists {name} more than once')
+            used.append(name)
         groups.append({'label': group[0], 'fields': list(group[1])})
-    if len(set(used)) != len(used) or set(used) != set(visible):
-        raise ValueError('Layout must include every visible field exactly once')
+    # Visible fields the layout leaves out follow under Other, in declaration order.
+    rest = [name for name in visible if name not in used]
+    if rest:
+        groups.append({'label': 'Other', 'fields': rest})
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search)}
 
@@ -67,7 +75,8 @@ def field_schema(field):
               **({'currency': field.currency} if getattr(field, 'currency', None) is not None else {}),
               **({'editable_when_locked': True} if getattr(field, 'editable_when_locked', False) else {}),
               **({'sequence': field.schema()} if field.kind == 'sequence' else {}),
-              'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'callable' if callable(field.default) else 'static'}
+              'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'user' if field.default is CurrentUser
+              else 'callable' if callable(field.default) else 'static'}
     if result['default_kind'] == 'static':
         value = None if field.default is None else field.validate(field.default)
         result['default'] = field.serialize(value)

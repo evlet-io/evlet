@@ -129,7 +129,8 @@ class Scenario:
     def list_page(self, model, query=''):
         """What the list page reads: the page, the measures strip, counts per state and linked titles."""
         page = self.get(f'/api/{model}?limit=50&offset=0' + query)
-        self.get(f'/api/{model}/measures' + (('?' + query.lstrip('&')) if 'filters=' in query else ''))
+        kept = '&'.join(part for part in query.lstrip('&').split('&') if part.startswith(('filters=', 'q=')))
+        self.get(f'/api/{model}/measures' + ('?' + kept if kept else ''))
         self.links(model, page['items'])
         return page
 
@@ -175,6 +176,7 @@ def record(app, out):
     sara.list_page('deal')
     sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage')
     sara.list_page('deal', '&q=planning')
+    sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage&q=planning')
     sara.list_page('deal', '&filters=' + quote(json.dumps({'stage': 'proposal'}, separators=(',', ':'))))
     sara.list_page('deal', '&order_by=total')
     sara.list_page('deal', '&order_by=-total')
@@ -233,19 +235,31 @@ def record(app, out):
     refused = omar.write('POST', f'{url}/moves/proposal', {}, read=url)
     assert refused['status'] == 409, refused
     omar.record_page('deal', deal)
-    assert omar.write('POST', f'{url}/moves/lost', {}, read=url)['status'] == 200
+    # Mark lost asks for the reason; then the reason is edited in place on the locked deal.
+    assert omar.write('POST', f'{url}/moves/lost', {'lost_reason': 'Budget moved'}, read=url)['status'] == 200
     omar.record_page('deal', deal)
     assert omar.write('PATCH', url, {'lost_reason': 'Budget moved to next year'})['status'] == 200
     omar.record_page('deal', deal)
     out['omar_lost'] = omar.dump()
 
-    # The handoff's lead reason rule refuses Mark lost (see docs/testcrm.md).
+    # A lead's Mark lost asks for the reason too: refused without it, done with it.
     sara = Scenario(app, 'sara')
     lead = ids(sara, 'lead', name='Majid Obaid')
     sara.record_page('lead', lead)
     assert sara.write('POST', f'/api/lead/{lead}/moves/lost', {}, read=f'/api/lead/{lead}')['status'] == 422
+    assert sara.write('POST', f'/api/lead/{lead}/moves/lost', {'lost_reason': 'No budget this year'}, read=f'/api/lead/{lead}')['status'] == 200
     sara.record_page('lead', lead)
     out['sara_lead_lost'] = sara.dump()
+
+    # Convert to deal on a qualified lead: the dialog sends the title and the expected close date.
+    sara = Scenario(app, 'sara')
+    lead = ids(sara, 'lead', name='Anjali Varma')
+    sara.record_page('lead', lead)
+    converted = sara.write('POST', f'/api/lead/{lead}/actions/convert', {'title': 'Pharmacy chain ERP', 'expected_close': '2026-12-15'},
+                           read=f'/api/lead/{lead}')
+    assert converted['status'] == 200, converted
+    sara.record_page('lead', lead)
+    out['sara_convert'] = sara.dump()
 
     # A deal with 150 lines: 100 embedded, the rest paged in; one edit on the last line.
     sara = Scenario(app, 'sara')
