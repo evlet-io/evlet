@@ -10,9 +10,6 @@ import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Icon, Switch } from '../ui/base';
 import { DialogFooter, copyText, openModal, toast } from '../ui/layers';
 import { humanize, InputError, kindOf } from '../ui/kinds';
-import { MyAIPage } from '../settings/ai';
-import { MyEmailPage } from '../settings/email';
-import { MyKeysPage } from '../settings/keys';
 import './settings.css';
 
 export interface Me {
@@ -164,7 +161,7 @@ export function SettingsView(ctx: SettingsContext, page: string): HTMLElement {
     }}</nav>`;
   const options: Array<[string, string]> = [...me.pages.map(id => [id, PAGES[id][0]] as [string, string]), ...me.apps.map(app => [`app/${app.id}`, `${app.title} settings`] as [string, string])];
   const content = page.startsWith('app/') ? AppSettingsPage(ctx, page.slice(4)) : ({ profile: ProfilePage, appearance: AppearancePage, security: SecurityPage,
-    notifications: NotificationsPage, email: EmailPage, ai: AiPage, keys: (ctx: SettingsContext) => MyKeysPage({ api: ctx.api }) } as Record<string, (ctx: SettingsContext) => Node>)[page]?.(ctx) ?? null;
+    notifications: NotificationsPage, email: EmailPage, ai: AiPage, keys: (ctx: SettingsContext) => later(async () => (await import('../settings/keys')).MyKeysPage({ api: ctx.api })) } as Record<string, (ctx: SettingsContext) => Node>)[page]?.(ctx) ?? null;
   return html`<div class="set-wrap">${nav}<div class="set-main">${select(page, options, value => ctx.go(value), 'Settings page')}${content}</div></div>` as HTMLElement;
 }
 
@@ -507,9 +504,16 @@ function NotificationsPage(ctx: SettingsContext): Node {
 
 // ---------- connections ----------
 
+/** A page that shares the Controls pages' code, loaded with them on first use so the app chunk stays small. */
+function later(load: () => Promise<Node>): Node {
+  const holder = html`<div><p class="set-p">Loading…</p></div>` as HTMLElement;
+  load().then(page => holder.replaceChildren(page), () => holder.replaceChildren(callout('warn', 'info', 'This page could not load. Reload and try again.')));
+  return holder;
+}
+
 /** /settings/email: the person's own mailbox (MyEmailPage). */
 function EmailPage(ctx: SettingsContext): Node {
-  return MyEmailPage({ api: ctx.api });
+  return later(async () => (await import('../settings/email')).MyEmailPage({ api: ctx.api }));
 }
 
 /** /settings/ai: remote assistants (MyAIPage) with the local `evlet mcp` steps and its signed-in command line sessions. */
@@ -527,7 +531,7 @@ function AiPage(ctx: SettingsContext): Node {
         try { await ctx.api.request('DELETE', `/api/_settings/me/sessions/${item.id}`); toast('Disconnected'); ctx.me.set({ ...ctx.me.peek(), security: { ...ctx.me.peek().security, sessions: ctx.me.peek().security.sessions.filter(each => each.id !== item.id) } }); }
         catch (failure) { fail(failure); }
       } }))) : html`<div class="set-empty">No command line session is signed in.</div>`}`;
-  return MyAIPage({ api: ctx.api, local });
+  return later(async () => (await import('../settings/ai')).MyAIPage({ api: ctx.api, local }));
 }
 
 // ---------- app settings ----------
