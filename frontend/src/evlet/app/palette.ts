@@ -7,9 +7,8 @@ import { cell, derive, effect, untrack } from '../reactive';
 import { Icon, SegmentedControl, Button } from '../ui/base';
 import { tint as safeTint, type Tint } from '../ui/core';
 import { openModal } from '../ui/layers';
-import { docsOn, type AppContext } from './context';
+import { docsOn, goSettings, type AppContext } from './context';
 import { identity, rootModels, titleOf, type ScreenModel } from './meta';
-import { applyTheme } from './prefs';
 
 interface Tile { id: string; group: 'Lists' | 'Documents' | 'Pages'; icon: string; tint: Tint; label: string; badge?: 'plus' | 'list'; run: () => void }
 interface Item { icon: string; tint: Tint | 'ghost'; label: string; sub?: string; hint?: string; run: () => void; tile?: boolean; record?: boolean; recent?: string }
@@ -86,9 +85,8 @@ function paletteBody(ctx: AppContext, close: () => void) {
     return () => clearTimeout(timer);
   });
 
-  const isDark = () => document.documentElement.dataset.theme === 'dark';
   const preferences = (): Item[] => [
-    { icon: isDark() ? 'sun' : 'moon', tint: 'slate', label: `Switch to ${isDark() ? 'light' : 'dark'} theme`, run: () => { prefs.theme.set(isDark() ? 'light' : 'dark'); applyTheme(prefs.theme.peek()); } },
+    ...(ctx.me.peek() ? [{ icon: 'settings', tint: 'slate' as const, label: 'Open settings', run: () => void goSettings(ctx.router, ctx.me.peek()!.last_page || 'profile') }] : []),
     { icon: 'panel-left', tint: 'slate', label: 'Toggle sidebar', hint: '[', run: () => ctx.toggleSidebar() },
   ];
   // Rows in the order arrow keys visit them.

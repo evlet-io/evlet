@@ -12,6 +12,8 @@ export interface FieldSchema {
   hidden?: boolean;
   help_text?: string;
   placeholder?: string;
+  /** A unit shown after the input, such as % or days. */
+  suffix?: string;
   scale?: number | null;
   minimum?: string | number | null;
   maximum?: string | number | null;

@@ -56,8 +56,7 @@ describe('preferences hold no record data', () => {
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toContain('Big order'));
     await until(() => expect(text(byText(host, '.nav-group', /^Recent/))).toContain('Big order'));
     expect(text(host.querySelector('.side'))).not.toContain('Old secret');
-    click(host.querySelector('.side-foot .icon-btn'));
-    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('light');
 
     const stored = () => Object.fromEntries(Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)!).map(key => [key, localStorage.getItem(key)]));
     expect(JSON.stringify(stored())).not.toContain('Big order');
@@ -66,9 +65,8 @@ describe('preferences hold no record data', () => {
 
     signOut(host);
     await until(() => expect(host.querySelector('.ev-login')).not.toBeNull());
-    // The sign-in screen does not show the previous user's theme; the choice is still saved for them.
+    // The sign-in screen does not keep the previous user's theme.
     expect(document.documentElement.dataset.theme).toBeUndefined();
-    expect(stored()['evlet.admin.theme']).toBe('"dark"');
     expect(JSON.stringify(stored())).not.toContain('Big order');
   });
 });
