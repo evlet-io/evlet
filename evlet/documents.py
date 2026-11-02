@@ -1369,7 +1369,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
             raise AccessError(409, 'This record has postings. To change its totals, void or revise it.')
         if locked_write:
             states.check_recalculate(context, model, before)
-    kept = locked_write or posted
+    kept = locked_write or posted or lifecycle_locked
     plan = business.registry.plan_for(model)
     version = business.registry.formula_hashes.get(business.registry.root_of(model))
     # A write that keeps saved results does not recalculate, so it neither checks nor updates the recorded formula version.

@@ -160,7 +160,35 @@ def append(business, tx, user, model, record_id, kind, data):
     return insert(tx.connection, business.registry, model, record_id, kind, actor_of(user), data)
 
 
+def tracking_values(registry, model, data):
+    """Apply field policies at the storage boundary, including migration-generated differences."""
+    result = dict(data)
+    if 'fields' in data:
+        fields = {}
+        for name, change in data['fields'].items():
+            field = model.__declared_fields__.get(name)
+            if field is not None and field.tracking == 'exclude':
+                continue
+            fields[name] = ({key: None if value is None else '[masked]' for key, value in change.items()}
+                            if field is not None and field.tracking == 'mask' else change)
+        result['fields'] = fields
+    if 'rows' in data:
+        children = {child.name: child.model for child in registry.children if child.parent is model}
+        result['rows'] = {
+            name: {key: [tracking_values(registry, children[name], row) for row in value]
+                   if key in ('added', 'updated', 'removed') and name in children else value
+                   for key, value in collection.items()}
+            for name, collection in data['rows'].items()
+        }
+    if data.get('field') in model.__declared_fields__ and 'number' in data:
+        policy = model.__declared_fields__[data['field']].tracking
+        if policy != 'value':
+            result['number'] = '[masked]' if policy == 'mask' else None
+    return result
+
+
 def insert(connection, registry, model, record_id, kind, actor, data):
+    data = tracking_values(registry, model, data)
     name = registry.name_for(model)
     at, text = now(), canonical(data)
     prev_hash = digest = None
@@ -186,6 +214,10 @@ def recomputed(connection, registry, changes, *, postgres=False):
     ensure_table(connection, postgres=postgres,
                  hashed=[registry.name_for(model) for model, journal in registry.journals.items() if journal.tamper_evident])
     for (model, record_id), data in sorted(changes.items(), key=lambda item: (registry.name_for(item[0][0]), item[0][1])):
+        if getattr(model, 'confirmable', False) or getattr(model, 'track_changes', False):
+            from uuid import uuid4
+            data = {**data, 'event_id': uuid4().hex, 'document_id': record_id, 'model': registry.name_for(model),
+                    'source': 'System', 'revision': 0, 'correlation_id': None}
         insert(connection, registry, model, record_id, 'recomputed', ENGINE, data)
 
 

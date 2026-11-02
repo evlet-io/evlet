@@ -46,4 +46,13 @@ describe('document lifecycle contract', () => {
       { path: 'lines #3', operation: 'reordered', old: 2, new: 1 },
     ]);
   });
+
+  it('shows nested child values when their containing row was added or removed', () => {
+    const row = { id: 3, title: 'Line', children: { notes: [{ id: 5, text: 'Nested value' }] } };
+    const added = revisionChanges({ rows: { lines: { added: [row] } } });
+    const removed = revisionChanges({ rows: { lines: { removed: [row] } } });
+    expect(added.find(item => item.path === 'lines #3.notes #5')?.new).toEqual({ id: 5, text: 'Nested value' });
+    expect(removed.find(item => item.path === 'lines #3.notes #5')?.old).toEqual({ id: 5, text: 'Nested value' });
+  });
+
 });

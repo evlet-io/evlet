@@ -497,3 +497,82 @@ def test_late_failure_rolls_back_postings_state_and_history(app, failure):
         if failure == 'snapshot':
             context.confirm(Invoice, record_id)
             assert context.snapshot(Invoice, record_id, revision=1)['revision'] == 1
+
+
+def test_snapshots_and_history_hide_links_to_unreadable_models(tmp_path):
+    from evlet import Link
+    class Target(Model):
+        permissions = {'admin': Rule(('read', 'create', 'update'))}
+        title = Text()
+    class Linked(Model):
+        confirmable = True
+        target = Link(Target)
+        permissions = {'admin': Rule(('read', 'create', 'update')),
+                       'viewer': Rule(('read',))}
+    database = Database(tmp_path / 'links.sqlite3', Registry(Target, Linked))
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',)))
+    app.initialize()
+    with app.business.context(ADMIN) as context:
+        target = context.create(Target, title='Private target')['id']
+        record_id = context.create(Linked, target=target)['id']
+        context.confirm(Linked, record_id)
+    with app.business.context(User(2, 'viewer', 'viewer'), readonly=True) as context:
+        with pytest.raises(AttributeError):
+            context.get(Linked, record_id).target
+        assert 'target' not in context.snapshot(Linked, record_id, revision=1)['document']
+        created = next(item for item in context.history(Linked, record_id)['items'] if item['kind'] == 'created')
+        assert 'target' not in created['data'].get('fields', {})
+
+
+def test_confirmed_action_keeps_calculations_after_formula_version_change(tmp_path):
+    from types import MappingProxyType
+    class Calculated(Model):
+        confirmable = True
+        permissions = {'admin': Rule(('read', 'create', 'update'))}
+        qty = Integer(default=2)
+        rate = Currency(default='10')
+        total = Currency(compute=qty * rate)
+        remarks = Text(editable_when_locked=True)
+        class Meta:
+            calculation_language = 'finite-v1'
+        @action
+        def note(self): self.remarks = 'Checked'
+    database = Database(tmp_path / 'kept.sqlite3', Registry(Calculated))
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',)))
+    app.initialize()
+    with app.business.context(ADMIN) as context:
+        record_id = context.create(Calculated)['id']
+        context.confirm(Calculated, record_id)
+    # An application upgrade changes the active formula version; confirmed results stay fixed.
+    app.registry.formula_hashes = MappingProxyType({Calculated: 'new-formula-version'})
+    with app.business.context(ADMIN) as context:
+        result = context.action(Calculated, record_id, 'note')
+        assert result['remarks'] == 'Checked' and result['total'] == '20.00'
+        assert context.snapshot(Calculated, record_id, revision=1)['document']['total'] == '20.00'
+
+
+def test_recompute_audit_applies_tracking_policies_before_storage(tmp_path):
+    from evlet import CreateModel, Migration, Recompute
+    def definition(multiplier):
+        return type('Migrating', (Model,), {
+            'track_changes': True,
+            'value': Integer(default=17),
+            'masked': Integer(compute=f'value * {multiplier}', tracking='mask'),
+            'excluded': Integer(compute=f'value * {multiplier + 1}', tracking='exclude'),
+        })
+    Old = definition(2)
+    base = Migration('0000_initial', CreateModel(Old))
+    path = tmp_path / 'migration-tracking.sqlite3'
+    database = Database(path, Registry(Old), migrations=(base,))
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',)))
+    app.initialize()
+    with app.business.context(ADMIN) as context: context.create(Old)
+    New = definition(4)
+    upgraded = Database(path, Registry(New))
+    upgraded.migrate((base, Migration('0001_recompute', Recompute('migrating', ('masked', 'excluded')))))
+    with upgraded.transaction() as tx:
+        event = json.loads(tx.connection.execute("SELECT data FROM evlet_journal WHERE kind='recomputed'").fetchone()[0])
+        assert event['fields']['masked'] == {'old': '[masked]', 'new': '[masked]'}
+        assert 'excluded' not in event['fields']
+        assert event['source'] == 'System' and event['revision'] == 0
+    assert upgraded.get(New, 1).masked == 68

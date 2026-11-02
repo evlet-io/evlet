@@ -17,6 +17,9 @@ export function revisionChanges(changes: Record<string, any>, prefix = ''): Revi
     const delta = value as Record<string, any[]>;
     for (const operation of ['added', 'removed'] as const) for (const row of delta[operation] ?? []) {
       rows.push({ path: `${prefix}${table} #${row.id}`, operation, old: operation === 'removed' ? row : null, new: operation === 'added' ? row : null });
+      for (const [nested, children] of Object.entries(row.children ?? {})) {
+        rows.push(...revisionChanges({ rows: { [nested]: { [operation]: children } } }, `${prefix}${table} #${row.id}.`));
+      }
     }
     for (const row of delta.updated ?? []) rows.push(...revisionChanges(row, `${prefix}${table} #${row.id}.`));
     for (const row of delta.positions ?? []) rows.push({ path: `${prefix}${table} #${row.id}`, operation: 'reordered', old: row.old + 1, new: row.new + 1 });
