@@ -701,6 +701,7 @@ from tests.test_settings_security import (  # noqa: E402
     test_a_role_that_requires_two_step_uses_nothing_until_it_is_set_up as test_postgres_two_step_first,
     test_controls_changes_ask_for_a_code_at_most_every_ten_minutes as test_postgres_controls_verification,
     test_changing_your_own_password_asks_a_code_when_two_step_is_on as test_postgres_password_code,
+    test_a_code_cannot_be_used_twice_by_requests_that_race as test_postgres_code_race,
 )
 from tests.test_revocation import (  # noqa: E402
     test_a_settings_password_change_can_also_revoke_api_keys as test_postgres_password_revokes_keys,

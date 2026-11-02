@@ -353,3 +353,16 @@ def test_changing_your_own_password_asks_a_code_when_two_step_is_on(settled):
     # Without two-step sign-in the current password is enough.
     viewer = client(app, 'viewer')
     assert viewer('POST', '/api/_settings/me/password', {'current': PASSWORD, 'new': new})[0] == 200
+
+
+def test_a_code_cannot_be_used_twice_by_requests_that_race(settled):
+    app = settled
+    _, raw, _ = enrol(app, 'editor')
+    editor_id, settings = user_id(app, 'editor'), app.business.settings
+    with app.database._connection() as db:
+        stale = dict(db.execute('SELECT * FROM evlet_user_profile WHERE user_id=?', (editor_id,)).fetchone())
+    code = totp(raw, int(time.time() // 30) + 1)
+    assert sign_in(app, 'editor', code)[0] == 200
+    # A second request that read the profile before the first one wrote it still loses.
+    with app.database.transaction() as tx:
+        assert settings._use_code(tx.connection, editor_id, stale, code) is False

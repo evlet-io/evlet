@@ -731,8 +731,9 @@ class Settings:
         raw = vault.open(self.key, profile['two_step_secret'], f'two_step:{user_id}')
         if re.fullmatch(r'[0-9]{6}', code):
             counter = check_totp(raw, code, profile['two_step_last'] if profile['two_step_last'] is not None else -1)
-            if counter is not None:
-                connection.execute('UPDATE evlet_user_profile SET two_step_last=? WHERE user_id=?', (counter, user_id))
+            # Conditional, so two requests racing with the same code (on PostgreSQL, say) cannot both use it.
+            if counter is not None and connection.execute('UPDATE evlet_user_profile SET two_step_last=? WHERE user_id=? AND (two_step_last IS NULL OR two_step_last<?)',
+                                                          (counter, user_id, counter)).rowcount == 1:
                 return True
         elif re.fullmatch(r'[a-z0-9]{4}-?[a-z0-9]{4}', code) and profile['backup_codes']:
             hashes = self.codes(profile)
