@@ -398,7 +398,7 @@ mailbox" on the Email page:
 
 | Key | File value | Rule |
 |---|---|---|
-| `mail.personal` | false | Off refuses new connections and pauses every personal mailbox: nothing is read and emails go from the shared account. People can still change options and disconnect. |
+| `mail.personal` | false | Off refuses new connections and pauses every personal mailbox: nothing is read and emails go from the shared account. People can still change options and disconnect. Settings, Your email says so and disables every Connect button and the app-password form. |
 
 A stored value that no longer validates turns it off. Changes are audited under `Email`.
 
