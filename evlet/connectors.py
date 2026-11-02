@@ -170,22 +170,44 @@ class _SMTPSSL(smtplib.SMTP_SSL):
         return self.context.wrap_socket(socket.create_connection(self._address, timeout), server_hostname=self._host)
 
 
-class _IMAP(imaplib.IMAP4):
-    def __init__(self, address, host, port, timeout):
-        self._address = address
+class _Limits:
+    """IMAP reads with a cap on each literal and, with a deadline, a socket shut at that time."""
+    LITERAL = 2_000_000
+
+    def _limit(self, sock):
+        if self._deadline is not None:
+            def stop():
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            self.watchdog = threading.Timer(max(0.0, self._deadline - time.monotonic()), stop)
+            self.watchdog.daemon = True
+            self.watchdog.start()
+        return sock
+
+    def read(self, size):
+        if size > self.LITERAL:
+            raise imaplib.IMAP4.abort('The server sent more than this connection reads.')
+        return super().read(size)
+
+
+class _IMAP(_Limits, imaplib.IMAP4):
+    def __init__(self, address, host, port, timeout, deadline=None):
+        self._address, self._deadline, self.watchdog = address, deadline, None
         super().__init__(host, port, timeout=timeout)
 
     def _create_socket(self, timeout=None):
-        return socket.create_connection(self._address, timeout)
+        return self._limit(socket.create_connection(self._address, timeout))
 
 
-class _IMAPSSL(imaplib.IMAP4_SSL):
-    def __init__(self, address, host, port, timeout, context):
-        self._address = address
+class _IMAPSSL(_Limits, imaplib.IMAP4_SSL):
+    def __init__(self, address, host, port, timeout, context, deadline=None):
+        self._address, self._deadline, self.watchdog = address, deadline, None
         super().__init__(host, port, ssl_context=context, timeout=timeout)
 
     def _create_socket(self, timeout=None):
-        return self.ssl_context.wrap_socket(socket.create_connection(self._address, timeout), server_hostname=self.host)
+        return self.ssl_context.wrap_socket(self._limit(socket.create_connection(self._address, timeout)), server_hostname=self.host)
 
 
 def _mail_fields(port):
@@ -243,14 +265,18 @@ def xoauth2(address, token):
 
 
 def open_imap(values):
-    """Sign in to an IMAP server with a password, or with an OAuth token (XOAUTH2). Raises ConnectionFailed."""
+    """Sign in to an IMAP server with a password, or with an OAuth token (XOAUTH2). Raises ConnectionFailed.
+
+    values['deadline'] (time.monotonic()) closes the connection at that time, however slowly the server answers.
+    """
     host, port, security = values['host'], int(values['port']), values['security']
     address = safe_address(host, port, local=security == 'none')
+    deadline = values.get('deadline')
     try:
         if security == 'ssl':
-            client = _IMAPSSL(address, host, port, TIMEOUT, ssl.create_default_context())
+            client = _IMAPSSL(address, host, port, TIMEOUT, ssl.create_default_context(), deadline)
         else:
-            client = _IMAP(address, host, port, TIMEOUT)
+            client = _IMAP(address, host, port, TIMEOUT, deadline)
     except (OSError, imaplib.IMAP4.error) as exc:
         raise ConnectionFailed(_plain(exc, values)) from None
     try:

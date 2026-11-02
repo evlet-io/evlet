@@ -3,15 +3,19 @@ replies on the records they can read.
 
 Microsoft 365 and Google sign in with OAuth (authorization code with PKCE); any other mailbox uses
 IMAP and SMTP with an app password. Tokens and passwords are sealed with the instance secret key.
-A sync job copies in only messages whose addresses match records the person can read; nothing
-else is stored, not even headers. No route lets an admin read a mailbox or its credentials.
+A sync job copies in only messages whose addresses match records the person can read, in the
+models apps opt in with Meta.mail; nothing else is stored, not even headers. No route lets an
+admin read a mailbox or its credentials.
 """
 
 import base64
+from collections import defaultdict
+from dataclasses import dataclass
 import email
 from email import policy as email_policy
 from email.utils import getaddresses
 import hashlib
+from html import escape
 from html.parser import HTMLParser
 import http.client
 import imaplib
@@ -21,6 +25,7 @@ import re
 import secrets
 import socket
 import ssl
+import threading
 import time
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
@@ -39,10 +44,13 @@ EVERY = 300           # seconds between scheduled syncs
 BATCH = 50            # messages read per mailbox per run
 PER_RUN = 20          # mailboxes per scheduled run
 FIRST_DAYS = 30       # a new mailbox starts with the last 30 days
-MAX_SIZE = 1_000_000  # larger messages are linked without their text
+MAX_SIZE = 1_000_000  # bytes of a message read for its text
+HEADER_SIZE = 65_536  # bytes of headers parsed per message
+RUN_SECONDS = 120     # one mailbox's sync stops after this long
 STATE_SECONDS = 600
-MATCHED = ('Customer', 'Contact', 'Lead')
+KINDS = ('customer', 'contact', 'lead', 'other')
 OFF = "Your workspace doesn't let people connect their own mailbox. Ask an admin to turn it on in Controls, under Email."
+FAILED = 'Syncing stopped with an error. It will try again.'
 AREA = 'Email'
 MONTHS = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
 OPTIONS = {'send_from': ('mine', 'shared'), 'link_replies': (True, False), 'only_crm': (True, False)}
@@ -53,15 +61,40 @@ PORTS = {'imap': (143, 993), 'smtp': (25, 465, 587)}  # unless the server is on 
 PROVIDERS = {
     'microsoft': {'title': 'Microsoft 365', 'connector': 'mail_microsoft',
                   'authorize_url': 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize',
-                  'token_url': 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token',
+                  'token_url': 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token', 'revoke_url': '',
                   'scope': 'openid email offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send',
                   'imap_host': 'outlook.office365.com', 'imap_port': 993, 'smtp_host': 'smtp.office365.com', 'smtp_port': 587},
     'google': {'title': 'Google Workspace', 'connector': 'mail_google',
                'authorize_url': 'https://accounts.google.com/o/oauth2/v2/auth', 'token_url': 'https://oauth2.googleapis.com/token',
-               'scope': 'openid email https://mail.google.com/',
+               'revoke_url': 'https://oauth2.googleapis.com/revoke', 'scope': 'openid email https://mail.google.com/',
                'imap_host': 'imap.gmail.com', 'imap_port': 993, 'smtp_host': 'smtp.gmail.com', 'smtp_port': 465},
 }
 TITLES = {'imap': 'Other mailbox', **{name: item['title'] for name, item in PROVIDERS.items()}}
+# The page the provider sends the person back to. Their session cookie is SameSite=Strict, so it is not
+# sent on that cross-site redirect; the page posts the code from this origin, where it is.
+CONTINUE = ('<!doctype html><meta charset="utf-8"><title>Connecting your mailbox</title>'
+            '<form method="post" action="/_/mail/callback">{fields}<p>Connecting your mailbox…</p>'
+            '<noscript><button>Continue</button></noscript></form><script src="/_/mail/continue.js"></script>')
+CONTINUE_CSP = b"default-src 'none'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+
+
+@dataclass(frozen=True)
+class Mail:
+    """Meta.mail = Mail(match=("email",), kind="customer"): the Email fields a personal mailbox matches addresses in.
+
+    kind is customer, contact, lead or other. "Only read emails with customers and leads" matches the
+    first three; with it off, every model with Meta.mail.
+    """
+    match: tuple
+    kind: str = 'other'
+
+    def __post_init__(self):
+        match = (self.match,) if isinstance(self.match, str) else tuple(self.match)
+        if not match or any(not isinstance(name, str) for name in match) or len(set(match)) != len(match):
+            raise ValueError('Mail(match=...) names Email fields, each once')
+        if self.kind not in KINDS:
+            raise ValueError(f'Mail kind is one of {", ".join(KINDS)}')
+        object.__setattr__(self, 'match', match)
 
 
 def _provider_fields(tenant):
@@ -70,6 +103,7 @@ def _provider_fields(tenant):
             *((ConnectorField('tenant', 'Directory (tenant) ID', default='organizations', required=False),) if tenant else ()),
             ConnectorField('authorize_url', 'Sign-in address', required=False, help=standard),
             ConnectorField('token_url', 'Token address', required=False, help=standard),
+            *(() if tenant else (ConnectorField('revoke_url', 'Revoke address', required=False, help=standard),)),
             ConnectorField('imap_host', 'IMAP server', required=False, help=standard),
             ConnectorField('imap_port', 'IMAP port', 'number', required=False),
             ConnectorField('smtp_host', 'SMTP server', required=False, help=standard),
@@ -103,14 +137,19 @@ def unseal(business, blob, context):
     return json.loads(business.connectors.key.decrypt(blob, context))
 
 
-def link_message(tx, user, model_name, record_id, key, data):
-    """Store one copied message on a record, once per record (a Journal `message` entry after the restack)."""
-    tx.connection.execute('INSERT INTO evlet_mail_links(model,record_id,message_key,user_id,at,data) VALUES (?,?,?,?,?,?) '
-                          'ON CONFLICT(model,record_id,message_key) DO NOTHING',
-                          (model_name, record_id, key, user.id, int(time.time()), json.dumps(data, sort_keys=True)))
+def link_message(tx, user, model_name, record_id, key, data, field=None):
+    """Store one copied message on a record (a Journal `message` entry after the restack).
+
+    The same message is stored once per record; a different message reusing its Message-ID is kept too.
+    `field` names the Email field of the record that matched, so readers who can't read it don't see the address.
+    """
+    encoded = json.dumps(data, sort_keys=True)
+    tx.connection.execute('INSERT INTO evlet_mail_links(model,record_id,message_key,content,field,user_id,at,data) VALUES (?,?,?,?,?,?,?,?) '
+                          'ON CONFLICT(model,record_id,message_key,content) DO NOTHING',
+                          (model_name, record_id, key, digest(encoded), field, user.id, int(time.time()), encoded))
 
 
-# ---------- small helpers ----------
+# ---------- reading messages ----------
 
 class _Text(HTMLParser):
     def __init__(self):
@@ -132,14 +171,15 @@ class _Text(HTMLParser):
 
 
 def plain_text(message):
+    """The message's text, at most 10,000 characters; empty when it can't be read."""
     try:
         part = message.get_body(preferencelist=('plain', 'html'))
         text = part.get_content() if part is not None else ''
         if part is not None and part.get_content_subtype() == 'html':
             parser = _Text()
-            parser.feed(text)
+            parser.feed(text[:MAX_SIZE])
             text = ''.join(parser.parts)
-    except (LookupError, ValueError, AssertionError):
+    except Exception:
         text = ''
     text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text.replace('\x00', '').replace('\r', '')).strip()
     return text[:10000]
@@ -148,11 +188,7 @@ def plain_text(message):
 def addresses(message, *names):
     found = []
     for name in names:
-        try:
-            values = [str(value) for value in message.get_all(name, [])]
-        except (ValueError, TypeError, IndexError):
-            continue
-        for _, address in getaddresses(values):
+        for _, address in getaddresses([str(value) for value in message.get_all(name, [])]):
             address = address.strip().lower()
             if ADDRESS.fullmatch(address) and address not in found:
                 found.append(address)
@@ -162,10 +198,7 @@ def addresses(message, *names):
 def message_ids(message, *names):
     found = []
     for name in names:
-        try:
-            found += re.findall(r'<[^<>\s]{1,250}>', ' '.join(str(value) for value in message.get_all(name, [])))
-        except (ValueError, TypeError, IndexError):
-            continue
+        found += re.findall(r'<[^<>\s]{1,250}>', ' '.join(str(value) for value in message.get_all(name, [])))
     return found[:20]
 
 
@@ -235,6 +268,7 @@ def claims(id_token):
 class Mailboxes:
     def __init__(self, business):
         self.business, self.database = business, business.database
+        self.locks, self.locks_lock = defaultdict(threading.Lock), threading.Lock()
         for connector in CONNECTORS:
             business.connectors.register('evlet', connector)
         if business.jobs is not None:
@@ -242,16 +276,30 @@ class Mailboxes:
             if TASK in business.jobs.tasks:
                 raise ValueError(f'The task name {TASK} is reserved')
             business.jobs.tasks[TASK] = Task(TASK, self.run_job, max_attempts=1, external=True)
+        # Models apps opt in to matching, with the Email fields to match.
+        self.declared = {}
+        for model in business.registry.models.values():
+            mail = getattr(getattr(model, 'Meta', None), 'mail', None)
+            if mail is None:
+                continue
+            if not isinstance(mail, Mail) or model in business.child_models:
+                raise ValueError(f'{model.__name__}: Meta.mail is a Mail(...) on a model that is not a table row')
+            for name in mail.match:
+                if not isinstance(model.__declared_fields__.get(name), Email) or not getattr(model.__declared_fields__[name], 'stored', True):
+                    raise ValueError(f'{model.__name__}: Meta.mail matches stored Email fields; {name} is not one')
+            self.declared[model] = mail
 
     def initialize(self):
         with self.database.transaction() as tx:
             for statement in (
                 'CREATE TABLE IF NOT EXISTS evlet_mailboxes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE REFERENCES evlet_users(id) ON DELETE CASCADE, '
-                'provider TEXT NOT NULL, address TEXT NOT NULL, settings TEXT NOT NULL, secrets BLOB, status TEXT NOT NULL, error TEXT, cursor TEXT, created_at INTEGER NOT NULL, synced_at INTEGER)',
+                'provider TEXT NOT NULL, address TEXT NOT NULL, settings TEXT NOT NULL, secrets BLOB, status TEXT NOT NULL, error TEXT, cursor TEXT, '
+                'linking INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, attempted_at INTEGER, synced_at INTEGER)',
                 'CREATE TABLE IF NOT EXISTS evlet_mail_states (hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
                 'provider TEXT NOT NULL, secrets BLOB NOT NULL, expires INTEGER NOT NULL)',
                 'CREATE TABLE IF NOT EXISTS evlet_mail_links (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, record_id INTEGER NOT NULL, '
-                'message_key TEXT NOT NULL, user_id INTEGER, at INTEGER NOT NULL, data TEXT NOT NULL, UNIQUE (model, record_id, message_key))',
+                'message_key TEXT NOT NULL, content TEXT NOT NULL, field TEXT, user_id INTEGER, at INTEGER NOT NULL, data TEXT NOT NULL, '
+                'UNIQUE (model, record_id, message_key, content))',
                 'CREATE INDEX IF NOT EXISTS evlet_mail_links_key ON evlet_mail_links(message_key)',
             ):
                 tx.connection.execute(statement)
@@ -265,6 +313,10 @@ class Mailboxes:
 
     def row(self, connection, user_id):
         return connection.execute('SELECT * FROM evlet_mailboxes WHERE user_id=?', (user_id,)).fetchone()
+
+    def enqueue(self, tx, mailbox_id, key):
+        if self.business.jobs is not None:
+            self.business.jobs.enqueue(tx, TASK, {'mailbox': mailbox_id}, key=key)
 
     # ---------- the personal page ----------
 
@@ -335,14 +387,14 @@ class Mailboxes:
             if old is not None:
                 settings.update({name: json.loads(old['settings'])[name] for name in OPTIONS})
             tx.connection.execute('DELETE FROM evlet_mailboxes WHERE user_id=?', (user.id,))
-            tx.connection.execute('INSERT INTO evlet_mailboxes(user_id,provider,address,settings,secrets,status,created_at) VALUES (?,?,?,?,?,?,?)',
+            tx.connection.execute('INSERT INTO evlet_mailboxes(user_id,provider,address,settings,secrets,status,linking,created_at) VALUES (?,?,?,?,?,?,?,?)',
                                   (user.id, provider, address, json.dumps(settings, sort_keys=True), seal(self.business, secret, mailbox_context(user.id)),
-                                   'connected', int(time.time())))
+                                   'connected', int(settings['link_replies']), int(time.time())))
             audit(tx.connection, user.username, AREA, f'{user.username} · own mailbox', f'Connected ({TITLES[provider]})')
             mailbox_id = self.row(tx.connection, user.id)['id']
             if self.business.jobs is not None:
                 # Sync now, then every connected mailbox every five minutes.
-                self.business.jobs.enqueue(tx, TASK, {'mailbox': mailbox_id})
+                self.enqueue(tx, mailbox_id, f'mail:{mailbox_id}:first')
                 tx.connection.execute('INSERT INTO evlet_schedules(name,task,payload,actor,model,record_id,interval,next_run) VALUES (?,?,?,?,?,?,?,?) '
                                       'ON CONFLICT(name) DO NOTHING', (TASK, TASK, '{}', None, None, None, EVERY, int(time.time()) + EVERY))
 
@@ -359,29 +411,41 @@ class Mailboxes:
             settings.update(body)
             after = {name: settings[name] for name in OPTIONS}
             if before != after:
-                tx.connection.execute('UPDATE evlet_mailboxes SET settings=? WHERE id=?', (json.dumps(settings, sort_keys=True), row['id']))
+                tx.connection.execute('UPDATE evlet_mailboxes SET settings=?, linking=? WHERE id=?',
+                                      (json.dumps(settings, sort_keys=True), int(settings['link_replies']), row['id']))
                 audit(tx.connection, user.username, AREA, f'{user.username} · own mailbox', 'Settings changed', before, after)
         return self.state(user)
 
     def disconnect(self, user):
-        """Delete the saved sign-in and stop syncing. Messages already linked to records stay there."""
-        with self.database.transaction() as tx:
-            row = self.row(tx.connection, user.id)
-            tx.connection.execute('DELETE FROM evlet_mail_states WHERE user_id=?', (user.id,))
-            if row is None:
-                raise AccessError(404, 'No mailbox is connected.')
-            tx.connection.execute('DELETE FROM evlet_mailboxes WHERE id=?', (row['id'],))
-            audit(tx.connection, user.username, AREA, f'{user.username} · own mailbox', 'Disconnected; saved sign-in deleted')
+        """Delete the saved sign-in and stop syncing; revoke the sign-in at the provider when it can. Linked messages stay."""
+        with self.database._connection() as connection:
+            found = self.row(connection, user.id)
+        # Waits for a token refresh of this mailbox to finish, so it can't write the tokens back.
+        with self.lock(found['id'] if found else None):
+            with self.database.transaction() as tx:
+                row = self.row(tx.connection, user.id)
+                tx.connection.execute('DELETE FROM evlet_mail_states WHERE user_id=?', (user.id,))
+                if row is None:
+                    raise AccessError(404, 'No mailbox is connected.')
+                tx.connection.execute('DELETE FROM evlet_mailboxes WHERE id=?', (row['id'],))
+                audit(tx.connection, user.username, AREA, f'{user.username} · own mailbox', 'Disconnected; saved sign-in deleted')
+        revoke = json.loads(row['settings']).get('revoke_url')
+        if revoke and row['secrets'] is not None:
+            try:
+                post_form(revoke, {'token': unseal(self.business, row['secrets'], mailbox_context(user.id))['refresh_token']})
+            except Exception as exc:  # Best effort: the tokens are already deleted here.
+                logger.info('Mailbox %s: revoking at the provider failed with %s', row['id'], type(exc).__name__)
         return self.state(user)
 
     def sync_now(self, user):
         self.require_on()
+        self.business.connectors.throttle(user)
         with self.database.transaction() as tx:
             row = self.row(tx.connection, user.id)
             if row is None:
                 raise AccessError(404, 'Connect a mailbox first.')
             if self.business.jobs is not None:
-                self.business.jobs.enqueue(tx, TASK, {'mailbox': row['id']})
+                self.enqueue(tx, row['id'], f"mail:{row['id']}:now:{int(time.time()) // 60}")
                 return {**self.state(user), 'queued': True}
         return {**self.state(user), 'copied': self.sync(row['id'])}
 
@@ -426,32 +490,45 @@ class Mailboxes:
         separator = '&' if authorize.query else '?'
         return {'url': config['authorize_url'] + separator + urlencode(params)}
 
-    def callback(self, scope):
-        """GET /_/mail/callback: the provider sends the person back here. Returns a redirect to the email settings page."""
+    def callback(self, scope, raw):
+        """/_/mail/callback. GET (from the provider, without the session cookie): a page that posts the code
+        and state back from this origin. POST (with the cookie): checks the session, the origin and the
+        state, finishes the sign-in and redirects to the email settings page."""
         from .business import Download
         if self.business.assistants.origin(scope) is None:
             raise AccessError(404, NOT_FOUND)
-        if scope['method'] != 'GET':
-            raise AccessError(405, 'Method not allowed')
-        back = lambda result: (302, Download(b''), [(b'location', f'/settings/email?mail={result}'.encode())])
+        headers = dict(scope.get('headers', []))
+        if scope['method'] == 'GET' and scope['path'] == '/_/mail/continue.js':
+            return 200, Download(b'document.forms[0].submit();\n'), [(b'content-type', b'text/javascript; charset=utf-8')]
+        if scope['path'] != '/_/mail/callback' or scope['method'] not in ('GET', 'POST'):
+            raise AccessError(404 if scope['path'] != '/_/mail/callback' else 405, NOT_FOUND)
+        source = scope.get('query_string', b'') if scope['method'] == 'GET' else raw
         try:
-            user, _ = self.business.auth.session(scope)
-        except AccessError:
-            return back('signin')
-        try:
-            query = parse_qs(scope.get('query_string', b'').decode('ascii'), keep_blank_values=True, max_num_fields=10)
+            query = parse_qs(source.decode('ascii'), keep_blank_values=True, max_num_fields=10)
         except (ValueError, UnicodeError):
             query = {}
-        if any(len(values) != 1 for values in query.values()):
-            return back('failed')
-        query = {key: values[0] for key, values in query.items()}
+        query = {key: values[0][:2000] for key, values in query.items() if key in ('code', 'state', 'error') and len(values) == 1}
+        if scope['method'] == 'GET':
+            fields = ''.join(f'<input type="hidden" name="{key}" value="{escape(value)}">' for key, value in query.items())
+            return 200, Download(CONTINUE.format(fields=fields).encode()), [
+                (b'content-type', b'text/html; charset=utf-8'), (b'content-security-policy', CONTINUE_CSP), (b'referrer-policy', b'no-referrer')]
+        back = lambda result: (302, Download(b''), [(b'location', f'/settings/email?mail={result}'.encode())])
+        # The form comes from this origin; with the state bound to the person, that replaces the CSRF header.
+        sent = headers.get(b'origin', b'').decode('latin1')
+        if sent not in self.business.auth.origins or headers.get(b'sec-fetch-site') == b'cross-site':
+            raise AccessError(403, 'Unrecognized origin')
+        try:
+            user, _ = self.business.auth.session({**scope, 'method': 'GET'})
+        except AccessError:
+            return back('signin')
         now = int(time.time())
+        hashed = digest(query.get('state', ''))
         with self.database.transaction() as tx:
-            hashed = digest(query.get('state', ''))
             row = tx.connection.execute('SELECT * FROM evlet_mail_states WHERE hash=?', (hashed,)).fetchone()
-            tx.connection.execute('DELETE FROM evlet_mail_states WHERE hash=? OR expires<=?', (hashed, now))
-        if row is None or row['user_id'] != user.id or row['expires'] <= now:
-            return back('expired')
+            tx.connection.execute('DELETE FROM evlet_mail_states WHERE expires<=?', (now,))
+            if row is None or row['user_id'] != user.id or row['expires'] <= now:
+                return back('expired')
+            tx.connection.execute('DELETE FROM evlet_mail_states WHERE hash=?', (hashed,))
         if 'error' in query or not query.get('code'):
             return back('denied')
         if not self.enabled():
@@ -464,7 +541,7 @@ class Mailboxes:
                 'client_id': config['client_id'], 'client_secret': config['client_secret'], 'code_verifier': saved['verifier']})
             identity = claims(answer.get('id_token'))
             address = str(identity.get('email') or identity.get('preferred_username') or '').strip().lower()
-            audience = identity.get('aud', config['client_id'])
+            audience = identity.get('aud')
             if status != 200 or not isinstance(answer.get('access_token'), str) or not isinstance(answer.get('refresh_token'), str) \
                     or not ADDRESS.fullmatch(address) or config['client_id'] not in (audience if isinstance(audience, list) else [audience]):
                 return back('failed')
@@ -478,33 +555,53 @@ class Mailboxes:
                       'expires': now + min(max(int(answer.get('expires_in') or 3600), 60), 86400)}
             if run_with_timeout(check_imap, {'address': address, 'token': secret['access_token'], **servers['imap']}, self.business.connectors.slots) is not None:
                 return back('mailbox')
-            # The servers and token address are fixed now, so a later change to the connector can't send this person's tokens elsewhere.
-            settings = {**servers, 'token_url': config['token_url'], **DEFAULT_OPTIONS}
+            # The servers and token addresses are fixed now, so a later change to the connector can't send this person's tokens elsewhere.
+            settings = {**servers, 'token_url': config['token_url'], 'revoke_url': config.get('revoke_url') or None, **DEFAULT_OPTIONS}
             self.store(user, row['provider'], address, settings, secret)
         except (ConnectionFailed, SecretKeyError, AccessError, ValidationError, ValueError, TypeError):
             return back('failed')
         return back('connected')
 
-    def token(self, row, secret):
-        """A current access token, refreshed when it is about to expire. Raises Ended when the sign-in was revoked."""
-        if secret['expires'] > time.time() + 60:
-            return secret['access_token']
-        settings = json.loads(row['settings'])
-        try:
-            config = self.provider(row['provider'])
-        except AccessError:
-            raise Ended(f"{TITLES[row['provider']]} sign-in was removed from this workspace. Ask an admin, then connect again.") from None
-        form = {'grant_type': 'refresh_token', 'refresh_token': secret['refresh_token'], 'client_id': config['client_id'], 'client_secret': config['client_secret']}
-        status, answer = post_form(settings['token_url'], form)
-        if status in (400, 401) and answer.get('error') in ('invalid_grant', 'invalid_client', 'unauthorized_client'):
-            raise Ended(f"Your {TITLES[row['provider']]} sign-in ended. Connect your mailbox again.")
-        if status != 200 or not isinstance(answer.get('access_token'), str):
-            raise ConnectionFailed(UNREACHABLE)
-        fresh = {'access_token': answer['access_token'], 'refresh_token': answer.get('refresh_token') or secret['refresh_token'],
-                 'expires': int(time.time()) + min(max(int(answer.get('expires_in') or 3600), 60), 86400)}
-        with self.database.transaction() as tx:
-            tx.connection.execute('UPDATE evlet_mailboxes SET secrets=? WHERE id=?', (seal(self.business, fresh, mailbox_context(row['user_id'])), row['id']))
-        return fresh['access_token']
+    def lock(self, key):
+        with self.locks_lock:
+            return self.locks[key]
+
+    def token(self, mailbox_id):
+        """A current access token, refreshed when it is about to expire. Raises Ended only when the provider
+        says the sign-in itself is no longer valid (invalid_grant); anything else can be tried again."""
+        with self.lock(mailbox_id):
+            with self.database._connection() as connection:
+                row = connection.execute('SELECT * FROM evlet_mailboxes WHERE id=?', (mailbox_id,)).fetchone()
+            if row is None or row['secrets'] is None:
+                raise Ended('Connect your mailbox again.')
+            secret = unseal(self.business, row['secrets'], mailbox_context(row['user_id']))
+            if secret['expires'] > time.time() + 60:
+                return secret['access_token']
+            title = TITLES[row['provider']]
+            try:
+                config = self.provider(row['provider'])
+            except AccessError:
+                raise ConnectionFailed(f"{title} sign-in isn't set up in this workspace any more. Ask an admin.") from None
+            form = {'grant_type': 'refresh_token', 'refresh_token': secret['refresh_token'], 'client_id': config['client_id'], 'client_secret': config['client_secret']}
+            status, answer = post_form(json.loads(row['settings'])['token_url'], form)
+            if status != 200 or not isinstance(answer.get('access_token'), str):
+                if answer.get('error') != 'invalid_grant':
+                    raise ConnectionFailed(f"{title} didn't accept this workspace's sign-in settings. Ask an admin to check them in Controls."
+                                           if answer.get('error') in ('invalid_client', 'unauthorized_client') else UNREACHABLE)
+                # Another process may have refreshed it first with the same refresh token.
+                with self.database._connection() as connection:
+                    now = connection.execute('SELECT secrets FROM evlet_mailboxes WHERE id=?', (mailbox_id,)).fetchone()
+                latest = None if now is None or now['secrets'] is None else unseal(self.business, now['secrets'], mailbox_context(row['user_id']))
+                if latest and latest['refresh_token'] != secret['refresh_token']:
+                    return latest['access_token']
+                raise Ended(f'Your {title} sign-in ended. Connect your mailbox again.')
+            fresh = {'access_token': answer['access_token'], 'refresh_token': answer.get('refresh_token') or secret['refresh_token'],
+                     'expires': int(time.time()) + min(max(int(answer.get('expires_in') or 3600), 60), 86400)}
+            with self.database.transaction() as tx:
+                # Disconnected meanwhile: the row is gone, so nothing is written back.
+                tx.connection.execute('UPDATE evlet_mailboxes SET secrets=? WHERE id=? AND secrets IS NOT NULL',
+                                      (seal(self.business, fresh, mailbox_context(row['user_id'])), mailbox_id))
+            return fresh['access_token']
 
     def values(self, row, kind):
         """Connection values for the mailbox's IMAP or SMTP server, with its password or a current token."""
@@ -518,26 +615,31 @@ class Mailboxes:
         values = {'address': row['address'], **settings[kind]}
         if row['provider'] == 'imap':
             return {**values, 'username': settings.get('username'), 'password': secret['password']}
-        return {**values, 'token': self.token(row, secret)}
+        return {**values, 'token': self.token(row['id'])}
 
     def end(self, mailbox_id, message):
         """Delete a sign-in that stopped working; syncing stops until the person connects again."""
         with self.database.transaction() as tx:
             tx.connection.execute("UPDATE evlet_mailboxes SET status='reconnect', error=?, secrets=NULL WHERE id=?", (message, mailbox_id))
 
+    def failed(self, mailbox_id, message):
+        with self.database.transaction() as tx:
+            tx.connection.execute("UPDATE evlet_mailboxes SET status='error', error=? WHERE id=? AND status IN ('connected','error')", (message, mailbox_id))
+
     # ---------- sending ----------
 
     def send_mail(self, user, to, subject, text, *, html=None, record=None):
         """Send as the person from their own mailbox, or from the shared account when they chose it or have none.
 
-        With record=(Model, id), the message is linked to that record, so replies to it link there too. Returns the Message-ID.
+        With record=(Model, id), which the person must be able to update, the message is linked to that
+        record, so replies to it link there too. Returns the Message-ID.
         """
         recipients = [to] if isinstance(to, str) else list(to)
         if not recipients or len(recipients) > 50 or any(not isinstance(item, str) or not ADDRESS.fullmatch(item) for item in recipients):
             raise ValueError('Send to between 1 and 50 valid email addresses')
         if record is not None:
             with self.database.transaction() as tx:
-                self.business.policy.record(tx, user, record[0], record[1])
+                self.business.policy.record(tx, user, record[0], record[1], 'update')
         with self.database._connection() as connection:
             row = self.row(connection, user.id)
         own = (row is not None and self.enabled() and row['status'] in ('connected', 'error')
@@ -563,33 +665,48 @@ class Mailboxes:
         if 'mailbox' in payload:
             self.sync(int(payload['mailbox']))
             return
+        # Only mailboxes that read mail, of active people, the longest unattempted first, so failing ones can't hold the others back.
         with self.database._connection() as connection:
-            due = [row[0] for row in connection.execute("SELECT id FROM evlet_mailboxes WHERE status IN ('connected','error') "
-                                                         'ORDER BY COALESCE(synced_at,0), id LIMIT ?', (PER_RUN,))]
+            due = [row[0] for row in connection.execute(
+                "SELECT m.id FROM evlet_mailboxes m JOIN evlet_users u ON u.id=m.user_id WHERE m.status IN ('connected','error') "
+                'AND m.linking=1 AND u.active=1 ORDER BY COALESCE(m.attempted_at,0), m.id LIMIT ?', (PER_RUN,))]
         for mailbox_id in due:
-            try:
-                self.sync(mailbox_id)
-            except Exception as exc:
-                # Only the type: a message may quote mail content.
-                logger.warning('Mailbox sync failed with %s', type(exc).__name__)
+            self.sync(mailbox_id)
 
     def sync(self, mailbox_id):
-        """Copy in one batch of new messages that match records the person can read. Returns how many were copied."""
+        """Copy in one batch of new messages that match records the person can read. Returns how many were copied.
+
+        Never raises: a failure is recorded on the mailbox, and only exception types and mailbox ids are logged,
+        since a message from anyone could reach an exception's text.
+        """
+        try:
+            return self._sync(mailbox_id)
+        except Exception as exc:
+            logger.warning('Mailbox %s sync failed with %s', mailbox_id, type(exc).__name__)
+            try:
+                self.failed(mailbox_id, FAILED)
+            except Exception as again:
+                logger.warning('Mailbox %s status could not be saved: %s', mailbox_id, type(again).__name__)
+            return 0
+
+    def _sync(self, mailbox_id):
         if not self.enabled():
             return 0
         with self.database._connection() as connection:
             row = connection.execute('SELECT m.*, u.username, u.role, u.active FROM evlet_mailboxes m JOIN evlet_users u ON u.id=m.user_id WHERE m.id=?',
                                      (mailbox_id,)).fetchone()
-        if row is None or not row['active'] or row['status'] not in ('connected', 'error'):
+        if row is None or not row['active'] or row['status'] not in ('connected', 'error') or not row['linking']:
             return 0
+        with self.database.transaction() as tx:
+            tx.connection.execute('UPDATE evlet_mailboxes SET attempted_at=? WHERE id=?', (int(time.time()), row['id']))
         settings = json.loads(row['settings'])
-        if not settings['link_replies']:
-            return 0
         user = User(row['user_id'], row['username'], row['role'])
+        deadline = time.monotonic() + RUN_SECONDS
+        client = None
         try:
-            client = open_imap(self.values(row, 'imap'))
+            client = open_imap({**self.values(row, 'imap'), 'deadline': deadline})
             try:
-                copied, cursor, more = self.read(client, row, settings, user)
+                copied, cursor, more = self.read(client, row, settings, user, deadline)
             finally:
                 try:
                     client.logout()
@@ -601,26 +718,30 @@ class Mailboxes:
         except (ConnectionFailed, OSError, imaplib.IMAP4.error) as exc:
             if isinstance(exc, ConnectionFailed) and str(exc) == REJECTED:
                 self.end(row['id'], 'The mail server rejected the sign-in. Connect your mailbox again.')
-                return 0
-            with self.database.transaction() as tx:
-                tx.connection.execute("UPDATE evlet_mailboxes SET status='error', error=? WHERE id=?",
-                                      (str(exc) if isinstance(exc, ConnectionFailed) else UNREACHABLE, row['id']))
+            else:
+                self.failed(row['id'], str(exc) if isinstance(exc, ConnectionFailed) else UNREACHABLE)
             return 0
+        finally:
+            if client is not None and client.watchdog is not None:
+                client.watchdog.cancel()
         with self.database.transaction() as tx:
             # Disconnected (or connected again) while reading: nothing is kept.
             if tx.connection.execute("SELECT 1 FROM evlet_mailboxes WHERE id=? AND status IN ('connected','error')", (row['id'],)).fetchone() is None:
                 return 0
             for key, data, targets in copied:
-                for model, record_id in targets:
-                    link_message(tx, user, self.business.registry.name_for(model), record_id, key, data)
+                for model, record_id, field in targets:
+                    link_message(tx, user, self.business.registry.name_for(model), record_id, key, data, field)
             tx.connection.execute("UPDATE evlet_mailboxes SET cursor=?, synced_at=?, status='connected', error=NULL WHERE id=?",
                                   (json.dumps(cursor), int(time.time()), row['id']))
-            if more and self.business.jobs is not None:
-                self.business.jobs.enqueue(tx, TASK, {'mailbox': row['id']}, key=f"mail:{row['id']}:{cursor['validity']}:{cursor['uid']}")
+            if more:
+                self.enqueue(tx, row['id'], f"mail:{row['id']}:{cursor['validity']}:{cursor['uid']}")
         return len(copied)
 
-    def read(self, client, row, settings, user):
-        """Read headers of the next batch, match them, and fetch the text of matching messages only."""
+    def read(self, client, row, settings, user, deadline):
+        """Read headers of the next batch, match them, and fetch the text of matching messages only.
+
+        A message that can't be parsed is skipped; the cursor still moves past it.
+        """
         status, _ = client.select('INBOX', readonly=True)
         if status != 'OK':
             raise ConnectionFailed('Signed in, but the inbox could not be opened.')
@@ -643,41 +764,47 @@ class Mailboxes:
                 # Nothing in the first days: start after the newest message, or search by date again next time.
                 return [], {'validity': validity, 'uid': int(next_uid) - 1} if next_uid else None, False
             return [], cursor, False
-        headers = self.fetch(client, batch, '(RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM TO CC MESSAGE-ID IN-REPLY-TO REFERENCES SUBJECT)])')
-        own = row['address']
-        parsed = {}
-        for uid, (size, raw) in headers.items():
-            message = email.message_from_bytes(raw, policy=email_policy.default)
-            parties = [address for address in addresses(message, 'From', 'To', 'Cc') if address != own]
-            ids = message_ids(message, 'Message-ID')
-            parsed[uid] = (message, size, parties, addresses(message, 'From')[:1] == [own], ids[0] if ids else None,
-                           message_ids(message, 'In-Reply-To', 'References'))
-        matched = self.match(user, {address for _, _, parties, _, _, _ in parsed.values() for address in parties}, settings['only_crm'])
-        threads = self.threads(user, {item for *_, references in parsed.values() for item in references})
-        copied = []
-        for uid in batch:
+        headers = self.fetch(client, batch, '(BODY.PEEK[HEADER.FIELDS (FROM TO CC MESSAGE-ID IN-REPLY-TO REFERENCES SUBJECT)])')
+        own, parsed = row['address'], {}
+        for uid, raw in headers.items():
+            try:
+                message = email.message_from_bytes(raw[:HEADER_SIZE], policy=email_policy.default)
+                parties = [address for address in addresses(message, 'From', 'To', 'Cc') if address != own]
+                ids = message_ids(message, 'Message-ID')
+                parsed[uid] = (parties, addresses(message, 'From')[:1] == [own], ids[0] if ids else None,
+                               message_ids(message, 'In-Reply-To', 'References'), str(message.get('Subject', '') or '').replace('\x00', '').strip()[:200])
+            except Exception as exc:
+                logger.info('Mailbox %s skipped a message it could not read (%s)', row['id'], type(exc).__name__)
+        matched = self.match(user, {address for parties, *_ in parsed.values() for address in parties}, settings['only_crm'])
+        threads = self.threads(user, {item for *_, references, _ in parsed.values() for item in references})
+        copied, done = [], batch[-1]
+        for index, uid in enumerate(batch):
+            if time.monotonic() > deadline - 2 * TIMEOUT:
+                done, more = batch[index - 1] if index else last, True
+                break
             if uid not in parsed:
                 continue
-            message, size, parties, outgoing, message_id, references = parsed[uid]
+            parties, outgoing, message_id, references, subject = parsed[uid]
             targets = [target for address in parties for target in matched.get(address, ())]
+            # A reply to a message this person linked to a record links there, even from someone not on any record yet.
+            targets += [target for reference in references for target in threads.get(key_of(reference), ())]
             if not targets:
                 continue  # Not linked to any record: nothing of it is kept.
-            targets += [target for reference in references for target in threads.get(key_of(reference), ())]
             targets = list(dict.fromkeys(targets))[:10]
-            text = ''
-            if size <= MAX_SIZE:
-                body = self.fetch(client, [uid], '(BODY.PEEK[])').get(uid)
-                text = plain_text(email.message_from_bytes(body[1], policy=email_policy.default)) if body else ''
-            subject = str(message.get('Subject', '') or '').replace('\x00', '').strip()[:200]
-            party = next(address for address in parties if matched.get(address))
+            body = self.fetch(client, [uid], f'(BODY.PEEK[]<0.{MAX_SIZE}>)').get(uid)
+            try:
+                text = plain_text(email.message_from_bytes(body[:MAX_SIZE], policy=email_policy.default)) if body else ''
+            except Exception:
+                text = ''
+            party = next((address for address in parties if matched.get(address)), parties[0] if parties else '')
             key = key_of(message_id) if message_id else digest(f"uid:{row['id']}:{validity}:{uid}")
             copied.append((key, {'text': text or subject or '(No text)', 'subject': subject, 'party': party[:200],
                                  'direction': 'out' if outgoing else 'in'}, targets))
-        return copied, {'validity': validity, 'uid': batch[-1]}, more
+        return copied, {'validity': validity, 'uid': done}, more
 
     @staticmethod
     def fetch(client, uids, parts):
-        """UID FETCH: {uid: (size, bytes)}."""
+        """UID FETCH: {uid: bytes}."""
         status, data = client.uid('FETCH', ','.join(str(uid) for uid in uids), parts)
         if status != 'OK':
             raise ConnectionFailed(UNREACHABLE)
@@ -687,53 +814,52 @@ class Mailboxes:
                 continue
             meta = item[0] + (data[index + 1] if index + 1 < len(data) and isinstance(data[index + 1], bytes) else b'')
             uid = re.search(rb'UID (\d+)', meta)
-            size = re.search(rb'RFC822\.SIZE (\d+)', meta)
             if uid:
-                found[int(uid[1])] = (int(size[1]) if size else 0, item[1])
+                found[int(uid[1])] = item[1]
         return found
 
     def models(self, user, only_crm):
-        """Models and their readable Email fields to match addresses in, as this person."""
-        policy, children = self.business.policy, self.business.child_models
-        for model in self.business.registry.models.values():
-            if model in children or (only_crm and model.__name__ not in MATCHED) or not policy.allows(user, model, 'read'):
+        """Opted-in models and their matched Email fields this person can read."""
+        policy = self.business.policy
+        for model, mail in self.declared.items():
+            if (only_crm and mail.kind == 'other') or not policy.allows(user, model, 'read'):
                 continue
             readable = policy.fields(user, model)
-            fields = [name for name, field in model.__declared_fields__.items()
-                      if isinstance(field, Email) and name in readable and getattr(field, 'stored', True)]
+            fields = [name for name in mail.match if name in readable]
             if fields:
                 yield model, fields
 
     def match(self, user, wanted, only_crm):
-        """{address: [(Model, id), ...]} for records this person can read (row scope and field rules applied)."""
+        """{address: [(Model, id, field), ...]} for records this person can read (row scope and field rules applied)."""
         found = {}
-        if not wanted:
-            return found
         wanted = sorted(wanted)
         with self.database._connection() as connection:
             for model, fields in self.models(user, only_crm):
                 where, values = self.business.policy.scope_sql(user, model)
-                marks = ', '.join('?' for _ in wanted)
                 columns = [f'record.{identifier(name)}' for name in fields]
-                condition = ' OR '.join(f'lower({column}) IN ({marks})' for column in columns)
                 table = identifier(self.business.registry.name_for(model))
-                sql = (f'SELECT record.id, {", ".join(columns)} FROM {table} AS record{where} {"AND" if where else "WHERE"} ({condition}) '
-                       f'ORDER BY record.id LIMIT 500')
-                for row in connection.execute(sql, [*values, *(wanted * len(fields))]).fetchall():
-                    for value in tuple(row)[1:]:
-                        if isinstance(value, str) and value.lower() in wanted:
-                            found.setdefault(value.lower(), []).append((model, row[0]))
+                size = max(1, 400 // len(fields))  # well under every database's limit on SQL values
+                for start in range(0, len(wanted), size):
+                    part = wanted[start:start + size]
+                    marks = ', '.join('?' for _ in part)
+                    condition = ' OR '.join(f'lower({column}) IN ({marks})' for column in columns)
+                    sql = (f'SELECT record.id, {", ".join(columns)} FROM {table} AS record{where} {"AND" if where else "WHERE"} ({condition}) '
+                           f'ORDER BY record.id LIMIT 500')
+                    for row in connection.execute(sql, [*values, *(part * len(fields))]).fetchall():
+                        for name, value in zip(fields, tuple(row)[1:]):
+                            if isinstance(value, str) and value.lower() in part:
+                                found.setdefault(value.lower(), []).append((model, row[0], name))
         return {address: list(dict.fromkeys(targets))[:10] for address, targets in found.items()}
 
     def threads(self, user, references):
-        """{message key: [(Model, id)]} for earlier messages this one replies to, on records this person can read."""
+        """{message key: [(Model, id, None)]}: records this person linked an earlier message of the thread to, and can still read."""
         if not references:
             return {}
         keys = [key_of(item) for item in references]
         found = {}
         with self.database.transaction() as tx:
-            rows = tx.connection.execute(f'SELECT message_key, model, record_id FROM evlet_mail_links WHERE message_key IN ({", ".join("?" for _ in keys)})',
-                                                  keys).fetchall()
+            rows = tx.connection.execute(f'SELECT message_key, model, record_id FROM evlet_mail_links WHERE user_id=? AND message_key IN ({", ".join("?" for _ in keys)})',
+                                         [user.id, *keys]).fetchall()
             by_model = {}
             for row in rows:
                 model = self.business.registry.models.get(row['model'])
@@ -743,7 +869,7 @@ class Mailboxes:
                 visible = self.business.policy.visible(tx, user, model, [record_id for _, record_id in items])
                 for key, record_id in items:
                     if record_id in visible:
-                        found.setdefault(key, []).append((model, record_id))
+                        found.setdefault(key, []).append((model, record_id, None))
         return found
 
     # ---------- linked messages on a record ----------
@@ -760,13 +886,19 @@ class Mailboxes:
         except (ValueError, UnicodeError):
             raise ValidationError({'query': 'Use a limit of 1 to 100 and a nonnegative offset'}) from None
         name = self.business.registry.name_for(model)
+        readable = self.business.policy.fields(user, model)
         with self.database.transaction() as tx:
             self.business.policy.record(tx, user, model, record_id)
             connection = tx.connection
-            rows = connection.execute('SELECT l.id, l.at, l.data, u.username FROM evlet_mail_links l LEFT JOIN evlet_users u ON u.id=l.user_id '
+            rows = connection.execute('SELECT l.id, l.at, l.data, l.field, u.username FROM evlet_mail_links l LEFT JOIN evlet_users u ON u.id=l.user_id '
                                       'WHERE l.model=? AND l.record_id=? ORDER BY l.id DESC LIMIT ? OFFSET ?', (name, record_id, limit, offset)).fetchall()
             total = connection.execute('SELECT count(*) FROM evlet_mail_links WHERE model=? AND record_id=?', (name, record_id)).fetchone()[0]
-        items = [{'id': row['id'], 'at': row['at'], 'by': row['username'], **json.loads(row['data'])} for row in rows]
+        items = []
+        for row in rows:
+            data = json.loads(row['data'])
+            if row['field'] is not None and row['field'] not in readable:
+                data['party'] = None  # The address is the record's own field, which this reader can't read.
+            items.append({'id': row['id'], 'at': row['at'], 'by': row['username'], **data})
         return 200, {'items': items, 'total': total, 'limit': limit, 'offset': offset}, []
 
     # ---------- HTTP ----------
@@ -793,4 +925,3 @@ class Mailboxes:
         except SecretKeyError as exc:
             raise AccessError(503, str(exc)) from None
         raise AccessError(404, NOT_FOUND)
-

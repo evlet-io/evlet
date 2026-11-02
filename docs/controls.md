@@ -377,6 +377,23 @@ mailbox" on the Email page:
 
 A stored value that no longer validates turns it off. Changes are audited under `Email`.
 
+**Which records mail matches.** Apps opt models in, naming the `Email` fields to match:
+
+```python
+from evlet import Email, Mail, Model, Text
+
+class Contact(Model):
+    name = Text()
+    email = Email()
+
+    class Meta:
+        mail = Mail(match=("email",), kind="contact")
+```
+
+`kind` is `customer`, `contact`, `lead` or `other` (the default). A model without `Meta.mail` is
+never matched, whatever fields it has. The fields must be stored `Email` fields; the model can't
+be a table row. A CRM app would declare its organizations or customers, contacts and leads.
+
 **Connecting.**
 
 - *Microsoft 365 and Google* sign in with OAuth: the authorization code flow with PKCE (S256)
@@ -384,10 +401,18 @@ A stored value that no longer validates turns it off. Changes are audited under 
   it. Each provider is a connector in Controls (`mail_microsoft`, `mail_google`) holding the
   client ID and secret of the workspace's own app registration. The sign-in, token, IMAP and
   SMTP addresses default to the provider's and can be replaced, which is how tests use a fake
-  provider. The provider sends the person back to `/_/mail/callback`, which exchanges the code,
-  reads the address from the ID token, checks that IMAP accepts the token and returns to
-  `/settings/email?mail=connected` (or `denied`, `expired`, `failed`, `mailbox`, `off`, `signin`).
-  Mail uses XOAUTH2 on IMAP and SMTP. Tokens are refreshed shortly before they expire.
+  provider. The provider sends the person back to `/_/mail/callback`. The session cookie is
+  SameSite=Strict, so it doesn't come with that cross-site redirect: the callback answers with a
+  small page (no inline script; `/_/mail/continue.js` submits it) that posts the code and state
+  back to `/_/mail/callback` from this origin, where the cookie is sent. The post must come from
+  the instance's origin, the person must be signed in, and the state must be theirs; another
+  person's attempt leaves the state in place. It then exchanges the code, reads the address from
+  the ID token (which must name the client in `aud`), checks that IMAP accepts the token and
+  returns to `/settings/email?mail=connected` (or `denied`, `expired`, `failed`, `mailbox`, `off`,
+  `signin`). Mail uses XOAUTH2 on IMAP and SMTP. Tokens are refreshed shortly before they expire,
+  one refresh per mailbox at a time.
+- Disconnecting a Google mailbox also revokes its sign-in at Google (best effort). Microsoft has
+  no revocation address; the tokens are deleted here and expire there.
 - *Any other mailbox* uses IMAP and SMTP with a password or app password. Both servers must
   accept it before it is saved.
 - Tokens and passwords are sealed with the instance secret key, bound to the person, and never
@@ -397,7 +422,8 @@ A stored value that no longer validates turns it off. Changes are audited under 
 - Personal servers follow the connector address rules: link-local, metadata, multicast,
   unspecified and reserved addresses are refused, loopback only with security None, and mail
   ports 143/993 and 25/465/587. Token addresses must be https, or http on this machine. Every
-  connection has the 10-second time limit, and connecting counts toward the connection test rate.
+  connection has the 10-second time limit, and connecting and Sync now count toward the
+  connection test rate.
 
 **Options per person**, saved at once and audited:
 
@@ -410,41 +436,54 @@ A stored value that no longer validates turns it off. Changes are audited under 
 **What is copied.** A sync job (`evlet_mail_sync`, on the jobs queue) reads the inbox read only.
 A new mailbox starts with the last 30 days. Each run reads at most 50 messages per mailbox and
 20 mailboxes; a mailbox with more queues its next batch at once, and every connected mailbox is
-synced every five minutes. A per-mailbox cursor (UIDVALIDITY and the last UID) and a key per
-message (its Message-ID) make syncing idempotent: reading the same messages again links nothing
-twice. Without a jobs queue, Sync now runs the sync in the request.
+synced every five minutes. Scheduled runs pick only mailboxes that read mail and belong to
+active people, the longest unattempted first, and stamp each attempt, so failing mailboxes can't
+hold the others back. One mailbox's run stops after two minutes, however slowly its server
+answers, and reads at most 2 MB in one piece. A per-mailbox cursor (UIDVALIDITY and the last
+UID) and a key per message (its Message-ID and content) make syncing idempotent: reading the same
+messages again links nothing twice, and a different message reusing a Message-ID is kept too.
+Sync now queues one job per mailbox a minute. Without a jobs queue, it runs the sync in the
+request.
 
 For each message, the From, To and Cc addresses other than the person's own are matched,
-without regard to case, against `Email` fields **as the person**: with their row scopes and only
-fields they can read.
+without regard to case, against the opted-in `Email` fields **as the person**: with their row
+scopes and only fields they can read.
 
-- With "Only read emails with customers and leads" on, only models named `Customer`, `Contact`
-  or `Lead` are searched.
-- With it off, every model the person can read is searched, through each of its `Email` fields
-  the person can read.
+- With "Only read emails with customers and leads" on, only models with `kind` `customer`,
+  `contact` or `lead` are searched.
+- With it off, every opted-in model is searched.
 
-A message that matches no record is skipped: its text is never fetched, and nothing of it is
-stored, not even its headers or Message-ID. A matching message is linked to each matching record
-(10 at most) with its subject, plain text (10,000 characters at most; messages over 1 MB are
-linked without text), the matching address and the direction. A reply to a message already
-linked to a record is also linked to that record when the person can read it. Changing an option
-applies to messages read after the change.
+A reply (In-Reply-To or References) to a message this person linked to a record links to that
+record as well, while they can still read it, even when the sender isn't on any record yet. A
+forged References header only works with the earlier message's Message-ID, which the sender
+must have seen.
 
-A sign-in that stops working (a revoked refresh token, a rejected password) is deleted and
-syncing stops; the page asks the person to connect again. Other failures are shown and retried.
-Disconnecting deletes the saved sign-in and any pending sign-in, and stops syncing at once.
-Messages already linked to records stay there.
+A message that matches no record and answers none is skipped: its text is never fetched, and
+nothing of it is stored, not even its headers or Message-ID. A matching message is linked to each
+matching record (10 at most) with its subject, plain text (10,000 characters at most, from its
+first megabyte), the matching address and the direction. Changing an option applies to messages
+read after the change. A message that can't be parsed (deep nesting, broken headers) is skipped
+and the cursor moves past it.
+
+A sign-in the provider no longer accepts (`invalid_grant`) or a password the server rejects is
+deleted and syncing stops; the page asks the person to connect again. Every other failure,
+including a refused client ID or secret, is shown on the page and retried. Logs name only the
+mailbox id and the type of a failure, never addresses, subjects or text. Disconnecting deletes
+the saved sign-in and any pending sign-in, and stops syncing at once. Messages already linked to
+records stay there.
 
 **Privacy.** No Controls route reads a personal mailbox, its messages or its credentials. Linked
 messages are shown with the record (`GET /api/{model}/{id}/messages`, newest first, `limit` 1 to
-100), only to people who can read that record. Until the Journal is on this branch they are
-stored in `evlet_mail_links`; they become Journal `message` entries when it arrives.
+100), only to people who can read that record; API keys and AI assistants only within their
+scope. The matching address is left out (`party` is `null`) for readers who can't read the
+record's field it matched. Until the Journal is on this branch they are stored in
+`evlet_mail_links`; they become Journal `message` entries when it arrives.
 
 **Sending.** Trusted code sends as a person with
 `business.mailboxes.send_mail(user, to, subject, text, html=None, record=None)`: from their own
 mailbox when it is connected, the workspace allows it and they chose `mine`, otherwise from the
-default outgoing account. With `record=(Model, id)` the person must be able to read the record,
-and the email is linked to it, so replies to it are linked there too.
+default outgoing account. With `record=(Model, id)` the person must be able to update the
+record, and the email is linked to it, so replies to it are linked there too.
 
 The personal page is the `MyEmailPage` component (`frontend/src/evlet/settings/email.ts`), ready
 for the Settings shell.
@@ -572,5 +611,5 @@ newest first, 50 rows at a time.
 | `GET/POST /api/_controls/keys`, `DELETE /api/_controls/keys/<id>` | API keys: list, create `{"name", "user", "scope"}` (the key is in this reply only), revoke |
 | `GET/POST/PATCH/DELETE /api/_settings/me/mailbox` | The person's own mailbox: read, connect with a password, change options, disconnect. Sessions only |
 | `POST /api/_settings/me/mailbox/oauth`, `POST .../sync` | Start a Microsoft 365 or Google sign-in (`{"provider"}`, answers `{"url"}`); sync now |
-| `GET /_/mail/callback` | Where the provider sends the person back |
+| `GET/POST /_/mail/callback`, `GET /_/mail/continue.js` | Where the provider sends the person back; the page posts the code from this origin |
 | `GET /api/{model}/{id}/messages` | Emails linked to a record, for people who can read it |

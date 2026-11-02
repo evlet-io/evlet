@@ -124,7 +124,6 @@ class Business:
         # instances/<name>/secret.key for evlet.secrets; None keeps two-step sign-in off.
         self.secret_key = None
         self.assistants = Assistants(self)
-        self.mailboxes = Mailboxes(self)
         self.actions, self.children, self.child_models = {}, {}, set()
         self.attachments = set(attachments)
         self.storage = storage if storage is not None else SQLiteStorage()
@@ -186,6 +185,7 @@ class Business:
             raise ValueError('children is reserved for owned collections')
         # Rows of a ChildTable are journaled with their parent, like Table rows.
         self.journals = {model: journal for model, journal in self.registry.journals.items() if model not in self.child_models}
+        self.mailboxes = Mailboxes(self)
 
     def initialize(self):
         self.auth.initialize()
