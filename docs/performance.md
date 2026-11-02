@@ -260,3 +260,39 @@ jsdom is not a browser. Its DOM operations are slower than a browser's and it do
 layout or paint, so these numbers bound the framework's own work, not frame times. Browser
 timings (first screen, 60 fps scrolling) are measured against testCRM in phase
 `ui/04-testcrm`.
+
+### testCRM, 2 November 2026
+
+testCRM ([testcrm.md](testcrm.md)) in two settings on the same machine.
+
+In jsdom, `npm run bench:ui` (section 8), over responses recorded from testCRM as the sales
+user `sara`. The 1,000-line deal repeats the recorded lines of the 150-line deal: each line has a
+product Link, three `initial` suggestions from the product, an amount with a discount and a VAT
+amount through `when()` and `parent.vat_rate`; the deal has five sums and totals over them.
+
+| Case | Median | Budget |
+| --- | ---: | ---: |
+| Deals list, 100 deals: build, load and first render | 11.1 ms | 50 ms |
+| Deal opened on its 1,000-line tab: detail, calculations, header, summary and ChildTable | 161.9 ms | 100 ms |
+| Deal, 1,000 lines: commit one quantity with Enter (line amount, VAT, five totals) | 8.8 ms | 16 ms |
+
+Opening the 1,000-line deal misses its budget: it takes about three times as long as the
+1,000-line `order` above, which has one calculated field per line and no suggestions. The
+difference is the per-row work of a richer line (three suggestions, two calculations and a
+`parent` read per row). It needs profiling before the switch from SolidJS.
+
+In a real browser (Chromium in the Claude desktop Browser pane, 1280 x 800, development build
+served by Vite through its proxy to the testCRM backend on loopback, SQLite). The pane was not in
+the foreground, so the browser may have throttled timers; these are upper bounds.
+
+| Case | Measured | Budget |
+| --- | ---: | ---: |
+| Deal with 1,000 lines: link clicked to the 1,000 lines paged in and the first screen shown, network included (one detail and nine line pages) | 433 ms | none for the network |
+| Same deal: commit one quantity with Enter, five edits | 13 to 23 ms (median 18 ms) | 16 ms |
+| Deal with 150 lines: commit one quantity | 9.4 ms | 16 ms |
+| Deals list, 102 deals (50 per page, 23 rows in the DOM): link clicked to rows shown, network included | 23.5 ms | 50 ms |
+| Deals board, 100 cards: link clicked to every card shown, network included | 27.5 ms | 50 ms |
+
+The 1,000-line edit in the browser is near the 16 ms budget and over it in some runs, against
+8.8 ms in jsdom; the development build keeps its checks on. Scrolling at 60 fps was not
+measured: the pane gave no frame timing while it was hidden.
