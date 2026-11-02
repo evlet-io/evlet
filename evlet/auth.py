@@ -35,6 +35,8 @@ class KeyAccess:
     """What an API key narrows its user to: reads only or reads and writes, on every model or on these."""
     write: bool
     models: frozenset | None = None
+    # The key's row, so background jobs it queues can check it is still valid.
+    key_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -167,7 +169,7 @@ class LocalAuth:
         if headers.get(b'sec-fetch-site') == b'cross-site':
             raise AccessError(403, 'Cross-site request rejected')
         # A key in the Authorization header is never sent by a browser on its own, so it needs no CSRF header.
-        if scope['method'] not in ('GET', 'HEAD') and headers.get(b'x-evlet-request') != b'1' and self.bearer(scope) is None:
+        if scope['method'] not in ('GET', 'HEAD') and headers.get(b'x-evlet-request') != b'1' and not API_KEY.fullmatch(self.bearer(scope) or ''):
             raise AccessError(403, 'Missing request protection header')
 
     @staticmethod
@@ -214,13 +216,12 @@ class LocalAuth:
             return self._key_counts[key] <= limit
 
     def key_session(self, scope):
-        """Authorization: Bearer evk_...: the key's user, narrowed to the key's scope, with the same checks as a session."""
+        """Authorization: Bearer evk_...: the key's user, narrowed to the key's scope, with the same checks as a session.
+
+        A valid key is never throttled by others' failures: invalid keys are counted per network and
+        prefix (and per network overall) only after the lookup.
+        """
         token = self.bearer(scope)
-        network = 'key-failure:' + client_network((scope.get('client') or ('unknown',))[0])
-        with self._key_lock:
-            failed = self._key_window == int(time.time()) // 60 and self._key_counts.get(network, 0) >= KEY_FAILURES
-        if failed:
-            raise AccessError(429, 'Too many requests with an invalid key. Try again in a minute.')
         match = API_KEY.fullmatch(token or '')
         row = None
         if match:
@@ -228,7 +229,16 @@ class LocalAuth:
                 row = connection.execute('SELECT k.id AS key_id, k.hash, k.scope, k.last_used, u.id, u.username, u.role FROM evlet_api_keys k JOIN evlet_users u ON u.id=k.user_id '
                                          'WHERE k.prefix=? AND k.revoked_at IS NULL AND u.active=1', (match[1],)).fetchone()
         if row is None or not hmac.compare_digest(row['hash'], hashlib.sha256(token.encode()).hexdigest()):
-            self._count(network, KEY_FAILURES)
+            reader = getattr(self, 'client_address', None)
+            network = 'key-failure:' + client_network(str(reader(scope) if reader is not None else (scope.get('client') or ('unknown',))[0]))
+            prefix = network + ':' + (match[1] if match else (token or '')[:12])
+            with self._key_lock:
+                current = self._key_window == int(time.time()) // 60
+                limited = current and (self._key_counts.get(prefix, 0) >= KEY_FAILURES or self._key_counts.get(network, 0) >= KEY_FAILURES * 5)
+            if limited:
+                raise AccessError(429, 'Too many requests with an invalid key. Try again in a minute.')
+            self._count(prefix, KEY_FAILURES)
+            self._count(network, KEY_FAILURES * 5)
             raise AccessError(401, 'This API key is not valid. It may have been revoked.')
         if not self._count('key:' + str(row['key_id']), KEY_RATE):
             raise AccessError(429, 'Too many requests with this key. Try again in a minute.')
@@ -236,16 +246,20 @@ class LocalAuth:
         if row['last_used'] is None or row['last_used'] < now - 60:
             with self.database.transaction() as tx:
                 tx.connection.execute('UPDATE evlet_api_keys SET last_used=? WHERE id=?', (now, row['key_id']))
-        scope_value = json.loads(row['scope'])
+        return User(row['id'], row['username'], row['role'], self.key_access(row['key_id'], row['scope']))
+
+    def key_access(self, key_id, scope):
+        """The KeyAccess of a key's stored scope: models named by the key, with their child rows."""
+        value = json.loads(scope)
         models = None
-        if scope_value['models'] is not None:
-            names = set(scope_value['models'])
+        if value['models'] is not None:
+            names = set(value['models'])
             def root(model):
                 while model in self.owners:
                     model = self.owners[model]
                 return model
             models = frozenset(model for model in self.database.registry.models.values() if root(model).__name__ in names)
-        return User(row['id'], row['username'], row['role'], KeyAccess(scope_value['access'] == 'write', models))
+        return KeyAccess(value['access'] == 'write', models, key_id)
 
     def create_key(self, user_id, name, scope, check=None):
         """Store a new key and return (row, key). The key itself is shown once and only its hash is kept."""

@@ -114,6 +114,13 @@ Trusted server code reads a saved connector with `business.connectors.values("wh
 - **Secrets are write only.** No API returns one, not even to admins: a secret field reads
   `{"saved": true}`. Leaving a secret out keeps the saved value; replacing it needs the new
   value, and an empty one is refused. Secrets never go into audit rows or log lines.
+- **A saved secret stays with its server.** A field that says where secrets go is
+  *identifying*: by default any field whose name contains url, host, server, port, user,
+  address, account, endpoint, gateway, issuer, domain, tenant, region, bucket or security;
+  set `ConnectorField(..., identifies=True)` or `False` to say so explicitly. When a test or
+  a save changes an identifying setting, the saved secrets are not used: the form asks for
+  them again ("Enter the password again. The server details changed..."). So a saved password
+  is never sent to a different server, by a test or by a save.
 - **Encryption.** Secrets are encrypted with AES-GCM (the `cryptography` package), bound to
   their connector id, so a changed or moved value is detected and refused. The key lives
   outside the database: `instances/<name>/secret.key`, created with mode 0600 the first time
@@ -124,14 +131,31 @@ Trusted server code reads a saved connector with `business.connectors.values("wh
   can be read by anyone but its owner.
 - **Rotation.** `evlet secrets rotate <instance>` writes a new key and re-encrypts every
   saved secret. The old key stays in the file until all rows are done, so an interruption
-  loses nothing. The key file is read on each use, so running processes pick it up. With
+  loses nothing. A row that can't be read is reported and left as it is, the others are
+  re-encrypted, and the old key stays in the file until that row is entered again and rotation
+  runs once more. The command refuses an instance without a database. The key file is read on
+  each use, so running processes pick up the new key straight away. With
   `EVLET_SECRET_KEY`, rotate the key outside Evlet: the variable can hold several keys
   separated by commas; the first one encrypts and any of them decrypts.
 - **Testing.** `POST /api/_controls/connectors/<id>/test` runs the connector's `test` on the
   saved values, or on draft values sent in the body, and answers within 10 seconds with
   `{"ok": true, "message": ...}` or `{"ok": false, "error": ...}` in plain words. A test of
-  exactly the saved values sets the status Controls shows. A test still running at
-  10 seconds is abandoned.
+  exactly the saved values sets the status Controls shows. Tests run on two threads per
+  process at most; a third gets 429 until one ends, and each person can run 10 tests a minute.
+  A test still running at 10 seconds is abandoned but keeps its thread until it ends, so
+  abandoned tests can't pile up. A server that refuses, stays silent or answers something
+  else gets the same message, "Couldn't connect to the service...", so tests can't be used to
+  map ports.
+- **Addresses.** Mail connections resolve the server once, refuse link-local addresses
+  (including 169.254.169.254), other cloud metadata addresses, unspecified, multicast and
+  reserved addresses, and then connect to the address they checked. Loopback is allowed only
+  with security None, and None only reaches loopback. Mail ports are 25, 465 and 587 for SMTP
+  and 143 and 993 for IMAP unless security is None (`Connector(ports=...)` sets this for app
+  connectors with a `port` field). App connectors that open connections should call
+  `evlet.connectors.safe_address(host, port)` before connecting.
+- **Error messages.** Messages from a test are scrubbed of secrets, including quoted,
+  escaped, URL-encoded and partial copies, but an app's `ConnectionFailed` messages must
+  still never include a secret or a full server reply.
 - **Not yet.** The handoff also lists local disk, S3, single sign-on (OIDC), webhooks and an
   AI model provider as framework connectors. They are not declared yet: each needs code
   that uses its settings, which arrives with the feature that needs it.
@@ -165,14 +189,24 @@ whole key are stored in `evlet_api_keys`.
 - **Never more than the user.** A key acts as its user with that user's current role, row
   scopes and field rules, narrowed by its scope:
   `{"access": "read" | "write", "models": null | ["Customer", ...]}`. A read key refuses
-  every request that isn't GET. A key with models sees only those models and their child
-  rows. When the user loses access or is deactivated, so does the key. Creating a key for
-  a model the user can't read, or a write key for a user who can only read, is refused.
-- **Where keys work.** Every `/api` route that a session can use, without CSRF headers. Keys
-  never open Controls (404) and can't use `/api/auth/*` or `/api/_settings/*` (403).
-- **Limits.** 300 requests a minute per key, and 20 invalid keys a minute per network, per
-  process; then 429. At most 20 active keys per user. `last_used` is updated at most once a
-  minute.
+  every request that isn't GET, including reports and draft evaluation, which are POST. A key
+  with models sees only those models and their child rows. A key with `models: null` covers
+  whatever its user's role can read today, so it grows and shrinks with the role. When the
+  user loses access or is deactivated, so does the key. Creating a key for a model the user
+  can't read, or a write key for a user who can only read, is refused.
+- **Jobs.** A job queued by a key request runs with the key's scope. If the key is revoked
+  before the job runs, the job fails with "The API key that queued this job was revoked."
+- **Where keys work.** Every `/api` route that a session can use. Only a well-formed key
+  (`evk_` + 8 characters + `_` + 43 characters) skips the request protection header; other
+  Authorization values don't. `GET /api/auth/session` answers with the key's user. Keys never
+  open Controls (404) and can't use the other `/api/auth/*` routes or `/api/_settings/*` (403).
+- **Limits.** 300 requests a minute per key, per process; then 429. Invalid keys are counted
+  per network and prefix (20 a minute) and per network (100 a minute) after the key is
+  looked up, so a valid key is never slowed by someone else's failures. The network is the
+  one the trusted proxy settings report, when they are configured. At most 20 active keys
+  per user. `last_used` is updated at most once a minute.
+- **No expiry.** Keys don't expire. Revoke a key that is no longer used; Controls marks keys
+  unused for 30 days.
 - **Controls** lists every key and creates keys that act as any active user; only admins
   create or revoke keys that act as admins. **Personal keys** use
   `GET/POST /api/_settings/me/keys` and `DELETE /api/_settings/me/keys/<id>`, for the person
