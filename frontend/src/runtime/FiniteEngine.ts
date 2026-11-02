@@ -332,7 +332,8 @@ type Node = string;
 const nodeKey = (handle: string, field: string): Node => handle + '\u0000' + field;
 const nodeParts = (node: Node) => node.split('\u0000') as [string, string];
 
-export const LIMITS = {expression_nodes: 128, expression_depth: 32, table_depth: 8, collection_rows: 100, document_rows: 1000,
+// collection_rows is the most any owned table may declare (Table max_rows); each plan table carries its own.
+export const LIMITS = {expression_nodes: 128, expression_depth: 32, table_depth: 8, collection_rows: 1000, document_rows: 5000,
   graph_nodes: 50000, graph_edges: 250000, evaluation_steps: 1000000, decimal_text: 128};
 
 export function checkPlan(plan: any) {
@@ -348,9 +349,15 @@ export function checkPlan(plan: any) {
     if (own(field, 'kind') && !KINDS.includes(field.kind)) throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid plan entry kind');
     checkNode(field.expression, 0, {count: 0});
   }
-  for (const table of Object.values<any>(plan.tables))
+  for (const table of Object.values<any>(plan.tables)) {
+    for (const key of ['min_rows', 'max_rows'])
+      if (own(table, key) && (!Number.isInteger(table[key]) || table[key] < 0 || table[key] > LIMITS.collection_rows))
+        throw new CalcError('SCHEMA_VERSION_MISMATCH', 'Invalid table row limits');
+    if ((own(table, 'min_rows') ? table.min_rows : 0) > (own(table, 'max_rows') ? table.max_rows : LIMITS.collection_rows))
+      throw new CalcError('SCHEMA_VERSION_MISMATCH', 'Invalid table row limits');
     for (const meta of Object.values<any>(table.fields))
       for (const bound of [meta.minimum, meta.maximum]) if (bound !== null && bound !== undefined) parse(bound);
+  }
 }
 
 const SCOPES = new Set(['self', 'parent', 'row']);
@@ -535,10 +542,11 @@ export class FiniteDocument {
     for (const table of entry.tables) {
       const items = own(children, table) ? children[table] : [];
       if (!Array.isArray(items)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', table + ' must be a list of rows');
-      if (items.length > this.plan.limits.collection_rows)
+      if (items.length > this.maxRows(path, table))
         throw new CalcError('CALCULATION_LIMIT_EXCEEDED', table + ' exceeds the collection row limit');
       row.children[table] = [];
-      for (const item of items) this.place(row, table, this.build(item, [...path, table], row, created), row.children[table].length);
+      const seen = {keys: new Set<string>(), ids: new Set<number | null>()};
+      for (const item of items) this.place(row, table, this.build(item, [...path, table], row, created), row.children[table].length, seen);
     }
     return row;
   }
@@ -556,13 +564,24 @@ export class FiniteDocument {
     }
   }
 
-  private place(owner: Row, table: string, row: Row, at: number) {
+  /** The table's declared max_rows (plans without one use the engine limit). */
+  private maxRows(path: string[], table: string): number {
+    const entry = this.schema.get([...path, table].join('/'));
+    const declared = entry && own(entry, 'max_rows') ? entry.max_rows : this.plan.limits.collection_rows;
+    return Math.min(declared, this.plan.limits.collection_rows);
+  }
+
+  /** Insert a row; `seen` (keys and ids of the rows already in the list) makes bulk loads linear. */
+  private place(owner: Row, table: string, row: Row, at: number, seen?: {keys: Set<string>, ids: Set<number | null>}) {
     const items = owner.children[table];
-    if (items.some(item => item !== row && item.key === row.key)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', `Repeated row key ${row.key} in ${table}`);
-    if (row.id !== null && items.some(item => item !== row && item.id === row.id)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', `Repeated row ID ${row.id} in ${table}`);
-    if (items.length >= this.plan.limits.collection_rows) throw new CalcError('CALCULATION_LIMIT_EXCEEDED', table + ' exceeds the collection row limit');
+    if (seen ? seen.keys.has(row.key) : items.some(item => item !== row && item.key === row.key))
+      throw new CalcError('DOCUMENT_STRUCTURE_ERROR', `Repeated row key ${row.key} in ${table}`);
+    if (row.id !== null && (seen ? seen.ids.has(row.id) : items.some(item => item !== row && item.id === row.id)))
+      throw new CalcError('DOCUMENT_STRUCTURE_ERROR', `Repeated row ID ${row.id} in ${table}`);
+    if (items.length >= this.maxRows(owner.path, table)) throw new CalcError('CALCULATION_LIMIT_EXCEEDED', table + ' exceeds the collection row limit');
     items.splice(at, 0, row);
     row.parent = owner;
+    if (seen) { seen.keys.add(row.key); seen.ids.add(row.id); }
   }
 
   private labels(row: Row, label: string) {
@@ -793,7 +812,7 @@ export class FiniteDocument {
       const parent = this.row(owner);
       if (!this.schema.get(parent.path.join('/')).tables.includes(table) || !Array.isArray(items)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown collection ' + table);
       const existing = new Map(parent.children[table].filter(row => row.id !== null).map(row => [row.id, row]));
-      const old = [...parent.children[table]], seen = new Set<number>();
+      const old = [...parent.children[table]], seen = new Set<number>(), placed = {keys: new Set<string>(), ids: new Set<number | null>()};
       parent.children[table] = [];
       for (const data of items) {
         const rawId = ownValue(data, 'id') ?? null, id = rawId === null ? null : integer(rawId);
@@ -811,9 +830,10 @@ export class FiniteDocument {
             if (!sameValue(row.values, name, value)) { row.values[name] = value; this.current.sources.add(nodeKey(row.handle, name)); }
           }
         } else row = this.build(data, [...parent.path, table], parent, true);
-        this.place(parent, table, row, parent.children[table].length);
+        this.place(parent, table, row, parent.children[table].length, placed);
       }
-      for (const row of old) if (!parent.children[table].includes(row)) this.drop(row);
+      const kept = new Set(parent.children[table]);
+      for (const row of old) if (!kept.has(row)) this.drop(row);
       this.structure(owner, table);
     });
   }

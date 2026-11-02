@@ -145,6 +145,11 @@ The existing create, list, detail, health, and schema endpoints remain available
 - `GET /api/{model}` accepts `limit`, `offset`, `filters` (a URL-encoded JSON
   object), and `order_by` (comma-separated fields). The result keeps the existing
   `items`, `limit`, and `offset` shape. Query strings are limited to 8 KiB.
+- Document POST and PATCH accept owned rows as full lists or as change sets
+  (`{"create": [...], "update": [...], "delete": [...], "order": [...]}`). A detail embeds
+  at most 100 rows per collection and reports larger ones in `children_pages`.
+  `GET /api/{model}/{id}/lines/{name}?limit=&offset=` pages one collection. See
+  [owned tables](finite-calculations.md#owned-tables).
 
 The neutral schema remains version 1 with additional field types and metadata.
 The Playground now generates forms, lists, and details from the extended UI

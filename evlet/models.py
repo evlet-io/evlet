@@ -4,7 +4,7 @@ import re
 from types import MappingProxyType
 
 from .fields import Field, Link, MISSING, RULES
-from .declarations import Table, ReactiveQuery
+from .declarations import Table, ReactiveQuery, DEFAULT_TABLE_ROWS
 
 
 def identifier(name):
@@ -142,6 +142,9 @@ class Registry:
                     raise CalcError('MODEL_CONTAINMENT_CYCLE', ' -> '.join(item.__name__ for item in owners + (table.child,)))
                 if table.child.__tables__ and not nested:
                     raise ValueError('Nested tables require a finite-v1 root (Meta.calculation_language = "finite-v1")')
+                if table.max_rows > DEFAULT_TABLE_ROWS and not nested:
+                    raise ValueError(f'{model.__name__}.{name}: max_rows above {DEFAULT_TABLE_ROWS} requires a finite-v1 root '
+                                     '(Meta.calculation_language = "finite-v1")')
                 if len(owners) > LIMITS['table_depth']:
                     raise CalcError('CALCULATION_LIMIT_EXCEEDED', f'Owned tables nest deeper than {LIMITS["table_depth"]}')
                 child = generate(model, name, table)

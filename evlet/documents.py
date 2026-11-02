@@ -49,6 +49,8 @@ class Draft:
         object.__setattr__(self, 'key', str(record_id) if record_id else uuid4().hex)
         object.__setattr__(self, '_readonly', False)
         object.__setattr__(self, '_submitted', frozenset())
+        # Whether the caller placed this row (a full row list, or `order` in a change set).
+        object.__setattr__(self, '_placed', False)
         # Field rule states from the last settlement, and source values as the caller left them (lock checks).
         object.__setattr__(self, '_rules', {})
         object.__setattr__(self, '_caller', {})
@@ -71,8 +73,9 @@ class Draft:
                 raise ValidationError({name: 'COMPUTED_FIELD_WRITE: this value is calculated'})
             self._values[name] = value
         elif name in self._definition.__tables__:
-            if not isinstance(value, (list, tuple)) or len(value) > ROW_LIMIT:
-                raise ValidationError({name: f'Use at most {ROW_LIMIT} rows'})
+            limit = self._definition.__tables__[name].max_rows
+            if not isinstance(value, (list, tuple)) or len(value) > limit:
+                raise ValidationError({name: f'Use at most {limit} rows'})
             child = self._definition.__tables__[name].child
             self._rows[name] = [row if isinstance(row, Draft) else Draft(child, row, context=self.context, parent=self, source=self.source) for row in value]
         else:
@@ -131,7 +134,8 @@ class Context:
     def get(self, model, record_id):
         model = self._model(model)
         record = self._business.policy.record(self._tx, self.user, model, record_id)
-        value = self._business.detail(self._tx, self.user, record)
+        # Python code sees every readable row, not the first page an HTTP detail embeds.
+        value = self._business.detail(self._tx, self.user, record, row_limit=None)
         children = value.pop('children', {})
         return Snapshot({**value, **children})
 
@@ -178,13 +182,19 @@ class Context:
             record = business.policy.record(tx, user, model, record_id, 'delete')
             before, _ = load_draft(self, model, record_id, {}, preview=True)
             child_changes = {}
+            subtree = {}
             for prefix, item in walk(before):
-                if item is not before: business.policy.record(tx, user, item._definition, item.id, 'delete')
+                if item is not before:
+                    business.policy.require(user, item._definition, 'delete')
+                    subtree.setdefault(item._definition, []).append(item.id)
+            for definition, ids in subtree.items():
+                if set(ids) - business.policy.visible(tx, user, definition, ids, 'delete'):
+                    raise AccessError(404, 'Record not found')
             for child in business.children.values():
                 if child.parent is not model: continue
                 rows = before._rows.get(child.name, [])
                 child_changes[child.name] = {'added': [], 'updated': [], 'removed': [row.id for row in rows], 'reordered': False}
-                for row in rows: delete_tree(business, tx, child.model, row.id)
+                delete_rows(business, tx, child.model, [row.id for row in rows])
             with tx.maintenance():
                 tx.delete(model, record.id)
             if business.registry.plan_for(model) is not None:
@@ -238,7 +248,10 @@ def load_draft(context, model, record_id, values, *, preview=False):
     old = Draft(model, dict(current._values), context=context, record_id=record_id) if current else None
     # Finite-v1 roots bound the rows they load; legacy roots keep the per-collection limit only.
     bounded = [0, 0] if business.registry.plan_for(model) is not None else None
-    load_rows(context, model, draft, old, record_id, collections, preview, '', set(), bounded)
+    saved = SavedRows(context, model, record_id) if record_id else None
+    targets = LinkTargets(context)
+    targets.prefetch(submitted_links(business, model, collections))
+    load_rows(context, model, draft, old, record_id, collections, preview, '', set(), bounded, saved, targets)
     if business.registry.plan_for(model) is not None and sum(1 for _ in walk(draft)) - 1 > LIMITS['document_rows']:
         raise ValidationError({'children': 'This document exceeds the owned row limit'})
     return draft, old
@@ -253,8 +266,217 @@ def computed_write(business, model, values, prefix):
         raise ValidationError({prefix + name: 'COMPUTED_FIELD_WRITE: this value is calculated' for name in written})
 
 
-def load_rows(context, model, draft, old, record_id, collections, preview, prefix, keys_seen, loaded=None):
-    """Merge submitted child collections at every depth, keeping hidden rows."""
+def row_bounds(business, child):
+    """(min_rows, max_rows, cap) of an owned collection: declared bounds, and the most stored rows it may load.
+
+    Table declarations carry min_rows and max_rows. Legacy ChildTable registrations and tables under
+    legacy roots keep the 100-row limit; finite-v1 tables may load up to the engine limit so that a
+    collection saved before max_rows was lowered can still be edited down.
+    """
+    from .declarations import Table
+    table = child.parent.__tables__.get(child.name)
+    if not isinstance(table, Table) or table.child not in child.model.__mro__:
+        return 0, ROW_LIMIT, ROW_LIMIT
+    finite = business.registry.plan_for(child.model) is not None
+    return table.min_rows, table.max_rows, LIMITS['collection_rows'] if finite else ROW_LIMIT
+
+
+def owned_rows(tx, child, owner_ids, *, scope=None, limit=None):
+    """Rows of one owned collection for many owners, in position order: {owner_id: (records, total)}.
+
+    One statement per chunk of owner IDs. `scope` is a (where, values) row-scope clause from the
+    policy. With a limit each owner keeps its first `limit` rows while `total` counts them all.
+    """
+    from .permissions import CHUNK
+    model = child.model
+    table, link = identifier(tx.registry.name_for(model)), identifier(child.link)
+    order = 'record."evlet_position", record.id' if 'evlet_position' in model.__fields__ else 'record.id'
+    where, values = scope or ('', [])
+    ids, result = list(dict.fromkeys(owner_ids)), {}
+    for start in range(0, len(ids), CHUNK):
+        part = ids[start:start + CHUNK]
+        condition = f'{where} {"AND" if where else "WHERE"} record.{link} IN ({", ".join("?" for _ in part)})'
+        if limit is None:
+            sql, parameters = f'SELECT record.* FROM {table} AS record{condition} ORDER BY record.{link}, {order}', [*values, *part]
+        else:
+            # Window functions (SQLite 3.25+, PostgreSQL) keep the first rows per owner and count them all.
+            sql = (f'SELECT * FROM (SELECT record.*, ROW_NUMBER() OVER (PARTITION BY record.{link} ORDER BY {order}) AS evlet_rank, '
+                   f'COUNT(*) OVER (PARTITION BY record.{link}) AS evlet_total FROM {table} AS record{condition}) AS ranked '
+                   f'WHERE ranked.evlet_rank <= ? ORDER BY ranked.{link}, ranked.evlet_rank')
+            parameters = [*values, *part, limit]
+        for row in tx.connection.execute(sql, parameters).fetchall():
+            record = model._from_row(row)
+            records, total = result.setdefault(getattr(record, child.link), ([], [0]))
+            records.append(record)
+            total[0] = row['evlet_total'] if limit is not None else total[0] + 1
+    return {owner: (records, total[0]) for owner, (records, total) in result.items()}
+
+
+class SavedRows:
+    """A saved document's owned rows, and the ones this user cannot see, loaded one table level at a time.
+
+    Each level costs one statement per chunk of owner IDs for the rows and one for their row scope,
+    instead of statements per row.
+    """
+    def __init__(self, context, model, record_id):
+        business, tx, user = context._business, context._tx, context.user
+        bounded = business.registry.plan_for(model) is not None
+        self.rows, self.hidden = {}, set()
+        level, loaded = {model: [record_id]}, 0
+        while level:
+            following = {}
+            for owner, ids in level.items():
+                for child in business.children.values():
+                    if child.parent is not owner:
+                        continue
+                    cap = row_bounds(business, child)[2]
+                    found = owned_rows(tx, child, ids, limit=cap + 1)
+                    if any(total > cap for _, total in found.values()):
+                        raise ValidationError({'children': f'{child.name} exceeds the {cap}-row editor limit'})
+                    found_ids = []
+                    for owner_id, (records, _) in found.items():
+                        self.rows[child, owner_id] = records
+                        found_ids.extend(record.id for record in records)
+                    loaded += len(found_ids)
+                    if bounded and loaded > LIMITS['document_rows']:
+                        raise ValidationError({'children': 'This document exceeds the owned row limit'})
+                    shown = business.policy.visible(tx, user, child.model, found_ids)
+                    self.hidden.update((child.model, row_id) for row_id in found_ids if row_id not in shown)
+                    if found_ids:
+                        following.setdefault(child.model, []).extend(found_ids)
+            level = following
+
+    def of(self, child, owner_id):
+        return self.rows.get((child, owner_id), [])
+
+
+CHANGES = ('create', 'update', 'delete', 'order')
+CHILD_ID = 'Child ID must belong to this parent and appear once'
+
+
+def row_changes(changes, existing, hidden, positioned, where):
+    """Entries ('keep', id, False) or ('row', value, placed) for a {create, update, delete, order} change set.
+
+    Rows the change set does not mention keep their values and place. Created rows append unless
+    `order` places them. `order` lists saved row IDs and the `_key` of created rows; the listed rows
+    take that order within the positions they already hold, so unlisted and hidden rows stay put.
+    """
+    def fail(message):
+        raise ValidationError({where: message})
+    if set(changes) - set(CHANGES):
+        fail('Row changes use only create, update, delete and order')
+    parts = {key: changes.get(key, []) for key in CHANGES}
+    if any(not isinstance(value, list) or len(value) > LIMITS['collection_rows'] for value in parts.values()):
+        fail(f'create, update, delete and order are lists of at most {LIMITS["collection_rows"]} items')
+    if any(not isinstance(value, dict) for value in parts['create'] + parts['update']):
+        fail('Each row must be an object')
+    if any('id' in value for value in parts['create']):
+        fail('Created rows take no id; change saved rows with update')
+    saved = {row.id for row in existing}
+
+    def saved_id(value):
+        if type(value) is not int or value not in saved or value in hidden:
+            fail(CHILD_ID)
+        return value
+    deleted = [saved_id(value) for value in parts['delete']]
+    updates = {}
+    for value in parts['update']:
+        row_id = saved_id(value.get('id'))
+        if row_id in updates:
+            fail(CHILD_ID)
+        updates[row_id] = value
+    removed = set(deleted)
+    if len(removed) != len(deleted) or removed & set(updates):
+        fail(CHILD_ID)
+    sequence = [('saved', row.id) for row in existing if row.id not in removed]
+    sequence += [('new', index) for index in range(len(parts['create']))]
+    listed, placed = [], set()
+    if parts['order']:
+        if not positioned:
+            fail('This collection has no stored order')
+        created = {}
+        for index, value in enumerate(parts['create']):
+            if isinstance(value.get('_key'), str):
+                created.setdefault(value['_key'], index)
+        for item in parts['order']:
+            if type(item) is int:
+                if item in removed:
+                    fail('A deleted row cannot be ordered')
+                entry = ('saved', saved_id(item))
+            elif isinstance(item, str) and item in created:
+                entry = ('new', created[item])
+            else:
+                fail('Order lists saved row IDs and the _key of rows created in this request')
+            if entry in placed:
+                fail('Each row appears once in order')
+            listed.append(entry)
+            placed.add(entry)
+        index = {entry: position for position, entry in enumerate(sequence)}
+        for slot, entry in zip(sorted(index[entry] for entry in listed), listed):
+            sequence[slot] = entry
+    entries = []
+    for kind, ref in sequence:
+        if kind == 'new':
+            entries.append(('row', parts['create'][ref], (kind, ref) in placed))
+        elif ref in updates:
+            entries.append(('row', updates[ref], (kind, ref) in placed))
+        elif (kind, ref) in placed:
+            entries.append(('row', {'id': ref}, True))
+        else:
+            entries.append(('keep', ref, False))
+    return entries
+
+
+def full_list(submitted, existing, hidden):
+    """Entries for a full row list: hidden rows keep their places and the submitted rows fill the others in order."""
+    rows, entries = iter(submitted), []
+    for row in existing:
+        if row.id in hidden:
+            entries.append(('keep', row.id, False))
+            continue
+        value = next(rows, None)
+        if value is not None:
+            entries.append(('row', value, True))
+    return entries + [('row', value, True) for value in rows]
+
+
+def positions(rows, hidden):
+    """Stored positions for rows in their new order without moving hidden rows.
+
+    Rows keep their stored position when it still fits, otherwise take the next free number before
+    the following hidden row. Only when no numbers are left (rows saved with equal positions) is the
+    whole collection renumbered.
+    """
+    current = [row._values.get('evlet_position') for row in rows]
+    fixed = [row.id in hidden for row in rows]
+    following, upper = [None] * len(rows), None
+    for index in range(len(rows) - 1, -1, -1):
+        following[index] = upper
+        if fixed[index]: upper = current[index]
+    first = next((value for value, keep in zip(current, fixed) if keep), None)
+
+    def attempt(reuse):
+        result = []
+        last = -1 if first is None else min(-1, first - len(rows) - 1)
+        for index, value in enumerate(current):
+            limit = following[index]
+            if not fixed[index]:
+                fits = reuse and rows[index].id is not None and type(value) is int and value > last
+                value = value if fits and (limit is None or value < limit) else last + 1
+            if value <= last or not fixed[index] and limit is not None and value >= limit:
+                return None
+            result.append(value)
+            last = value
+        return result
+    return attempt(True) or attempt(False) or list(range(len(rows)))
+
+
+def load_rows(context, model, draft, old, record_id, collections, preview, prefix, keys_seen, loaded=None, saved=None, targets=None):
+    """Merge submitted child collections at every depth, keeping hidden rows.
+
+    A collection is either a full list of rows (rows left out are removed) or a change set
+    {create, update, delete, order} (rows left out are kept).
+    """
     business, tx, user = context._business, context._tx, context.user
     def count(rows, slot):
         # Stored rows (each once, draft side) and new submitted rows are bounded separately so
@@ -267,31 +489,40 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
         raise ValidationError({prefix + 'children': 'Unknown child collection'})
     for child in business.children.values():
         if child.parent is not model: continue
-        existing = tx.list(child.model, filters={child.link: record_id}, limit=ROW_LIMIT, order_by=('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',)) if record_id else []
-        if record_id and tx.count(child.model, filters={child.link: record_id}) > ROW_LIMIT:
-            raise ValidationError({prefix + 'children': f'This collection exceeds the {ROW_LIMIT}-row editor limit'})
+        max_rows = row_bounds(business, child)[1]
+        existing = saved.of(child, record_id) if record_id else []
         count(len(existing), 0)
         originals = {row.id: row for row in existing}
-        hidden = set()
-        for row in existing:
-            try: business.policy.record(tx, user, child.model, row.id)
-            except AccessError: hidden.add(row.id)
+        hidden = {row.id for row in existing if (child.model, row.id) in saved.hidden}
+        positioned = 'evlet_position' in child.model.__fields__
 
         def stored(row, owner, counter):
             item = Draft(child.model, row._values, context=context, parent=owner, record_id=row.id)
-            load_rows(context, child.model, item, None, row.id, {}, True, prefix + child.name + '.' + item.key + '.', set(), counter)
+            load_rows(context, child.model, item, None, row.id, {}, True, prefix + child.name + '.' + item.key + '.', set(), counter, saved)
             return item
         if old is not None:
             old._rows[child.name] = [stored(row, old, None if loaded is None else [0, 0]) for row in existing]
         if child.name not in collections:
             draft._rows[child.name] = [stored(row, draft, loaded) for row in existing]
             continue
-        rows = collections[child.name]
-        if not isinstance(rows, list) or len(rows) > ROW_LIMIT:
-            raise ValidationError({prefix + child.name: f'Use at most {ROW_LIMIT} rows'})
-        count(sum(1 for value in rows if isinstance(value, dict) and value.get('id') is None), 1)
+        submitted = collections[child.name]
+        if isinstance(submitted, dict):
+            entries = row_changes(submitted, existing, hidden, positioned, prefix + child.name)
+        elif isinstance(submitted, list) and len(submitted) <= max_rows:
+            if len(existing) - len(hidden) > ROW_LIMIT:
+                # A detail embeds only the first ROW_LIMIT rows, so a full list from it would drop the rest.
+                raise ValidationError({prefix + child.name: f'This collection has more than {ROW_LIMIT} rows; send a change set '
+                                                             '{"create", "update", "delete", "order"} instead of the full list'})
+            entries = full_list(submitted, existing, hidden)
+        else:
+            raise ValidationError({prefix + child.name: f'Use at most {max_rows} rows'})
+        count(sum(1 for kind, value, _ in entries if kind == 'row' and isinstance(value, dict) and value.get('id') is None), 1)
         kept, keys, merged = set(), set(), []
-        for index, value in enumerate(rows):
+        for kind, value, placed in entries:
+            if kind == 'keep':
+                if value not in hidden: kept.add(value)
+                merged.append(stored(originals[value], draft, loaded))
+                continue
             if not isinstance(value, dict):
                 raise ValidationError({prefix + child.name: 'Each row must be an object'})
             value = dict(value)
@@ -305,28 +536,31 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             keys_seen.add(temporary) if temporary is not None and fresh else None
             value, nested = business.split_body(value)
             computed_write(business, child.model, value, prefix + child.name + '.')
-            business.policy.check_values(tx, user, child.model, value)
+            business.policy.check_values(tx, user, child.model, value, targets=targets)
             if row_id is not None:
                 if type(row_id) is not int or row_id not in originals or row_id in kept or row_id in hidden:
-                    raise ValidationError({prefix + child.name: 'Child ID must belong to this parent and appear once'})
-                business.policy.record(tx, user, child.model, row_id, 'read' if preview or not value else 'update')
+                    raise ValidationError({prefix + child.name: CHILD_ID})
+                # A row that is not hidden is inside this user's row scope, so the operation check is enough.
+                business.policy.require(user, child.model, 'read' if preview or not value else 'update')
                 kept.add(row_id)
             elif not preview:
                 business.policy.require(user, child.model, 'create')
             row = Draft(child.model, {**(dict(originals[row_id]._values) if row_id else {}), **value}, context=context, parent=draft, record_id=row_id)
             object.__setattr__(row, '_submitted', frozenset(value))
-            if 'evlet_position' in child.model.__fields__: row._values['evlet_position'] = index
+            object.__setattr__(row, '_placed', placed)
             if temporary is not None: object.__setattr__(row, 'key', temporary)
-            load_rows(context, child.model, row, None, row_id, nested, preview, prefix + child.name + '.' + row.key + '.', keys_seen, loaded)
+            load_rows(context, child.model, row, None, row_id, nested, preview, prefix + child.name + '.' + row.key + '.', keys_seen, loaded, saved, targets)
             merged.append(row)
         for row_id in originals.keys() - kept - hidden:
             if not preview:
                 # Removing a row removes its whole subtree: every descendant must be deletable too.
                 for _, item in walk(stored(originals[row_id], draft, None if loaded is None else [0, 0])):
-                    try: business.policy.record(tx, user, item._definition, item.id, 'delete')
-                    except AccessError: raise AccessError(403, 'You do not have permission for this operation') from None
-        merged.extend(stored(originals[row_id], draft, loaded) for row_id in sorted(hidden))
-        if len(merged) > ROW_LIMIT: raise ValidationError({prefix + child.name: f'Use at most {ROW_LIMIT} rows'})
+                    if not business.policy.allows(user, item._definition, 'delete') or (item._definition, item.id) in saved.hidden:
+                        raise AccessError(403, 'You do not have permission for this operation')
+        if len(merged) > max_rows: raise ValidationError({prefix + child.name: f'Use at most {max_rows} rows'})
+        if positioned:
+            for row, position in zip(merged, positions(merged, hidden)):
+                row._values['evlet_position'] = position
         draft._rows[child.name] = merged
 
 
@@ -351,10 +585,77 @@ def prior_versions(previous, draft):
     return prior
 
 
-def link_matches(context, item, field, value):
+class LinkTargets:
+    """Linked records read for one write or preview, in batches; the same checks as Policy.record.
+
+    prefetch() reads every (model, id) not yet asked with one statement per model and chunk;
+    get() raises AccessError exactly like Policy.record for a record the user cannot read.
+    """
+    def __init__(self, context):
+        self.context, self.found, self.asked = context, {}, set()
+
+    def prefetch(self, pairs):
+        wanted = {}
+        for model, record_id in pairs:
+            if (model, record_id) not in self.asked:
+                self.asked.add((model, record_id))
+                wanted.setdefault(model, []).append(record_id)
+        policy, tx, user = self.context._business.policy, self.context._tx, self.context.user
+        for model, ids in wanted.items():
+            self.found.update(((model, record_id), record) for record_id, record in policy.records(tx, user, model, ids).items())
+
+    def get(self, model, record_id):
+        self.context._business.policy.require(self.context.user, model, 'read')
+        if type(record_id) is not int:
+            return self.context._business.policy.record(self.context._tx, self.context.user, model, record_id)
+        self.prefetch([(model, record_id)])
+        record = self.found.get((model, record_id))
+        if record is None:
+            raise AccessError(404, 'Record not found')
+        return record
+
+
+def link_values(items, *, fetches_only=False):
+    """(target model, id) of every valid Link value on the given drafts (or the Links their fetches read)."""
+    pairs = []
+    for item in items:
+        definition = item._definition
+        names = {field.fetch.split('.')[0] for field in definition.__declared_fields__.values() if field.fetch} if fetches_only \
+            else definition.__declared_fields__
+        for name in names:
+            field = definition.__declared_fields__.get(name)
+            value = item._values.get(name)
+            if isinstance(field, Link) and value is not None and isinstance(field.target, type):
+                try: pairs.append((field.target, field.clean(value)))
+                except (ValueError, TypeError): pass
+    return pairs
+
+
+def submitted_links(business, model, collections):
+    """(target model, id) of Link values submitted in child rows at any depth, in either collection format."""
+    pairs = []
+    for child in business.children.values():
+        if child.parent is not model or child.name not in collections: continue
+        rows = collections[child.name]
+        if isinstance(rows, dict):
+            rows = [value for key in ('create', 'update') for value in rows.get(key, []) if isinstance(rows.get(key), list)]
+        if not isinstance(rows, list): continue
+        for row in rows:
+            if not isinstance(row, dict): continue
+            for name, value in row.items():
+                field = child.model.__declared_fields__.get(name)
+                if isinstance(field, Link) and value is not None:
+                    try: pairs.append((field.target, field.clean(value)))
+                    except (ValueError, TypeError): pass
+            if isinstance(row.get('children'), dict):
+                pairs.extend(submitted_links(business, child.model, row['children']))
+    return pairs
+
+
+def link_matches(context, item, field, value, targets=None):
     """Whether the Link's selected record satisfies its filters; reading the record checks access."""
     business = context._business
-    target = business.policy.record(context._tx, context.user, field.target, value)
+    target = targets.get(field.target, value) if targets is not None else business.policy.record(context._tx, context.user, field.target, value)
     visible = business.policy.fields(context.user, field.target)
     if set(field.filters) - visible: raise AccessError(403, 'A selection constraint is unavailable')
     for filter_name, expected in field.filters.items():
@@ -378,19 +679,23 @@ def settle(context, draft, *, complete, previous=None):
     def internal(item):
         names = set(getattr(item._definition, '__internal_fields__', ()))
         return names | {owner_links[item._definition]} if item is not draft and item._definition in owner_links else names
+    targets = LinkTargets(context)
+    targets.prefetch(link_values([item for _, item in all_drafts], fetches_only=True))
     for prefix, item in all_drafts:
         apply_inputs(item, prefix, internal(item), errors)
         object.__setattr__(item, '_caller', dict(item._values))
-        apply_fetches(context, item, prefix, prior(item), errors)
+        apply_fetches(context, item, prefix, prior(item), errors, targets)
     plan = registry.plan_for(draft._definition)
     if plan is not None:
         finite_settle(context, plan, draft, errors, states, complete, previous)
     else:
         compute_legacy(context, draft, all_drafts, errors, states, complete)
+    # Every Link target is read once, in batches, before the per-field checks.
+    targets.prefetch(link_values([item for _, item in all_drafts]))
     if complete:
-        validate_tree(context, all_drafts, internal, prior, errors)
+        validate_tree(context, all_drafts, internal, prior, errors, targets)
     else:
-        check_preview(context, all_drafts, internal, errors, states)
+        check_preview(context, all_drafts, internal, errors, states, targets)
     return errors, states
 
 
@@ -411,7 +716,7 @@ def apply_inputs(item, prefix, internal, errors):
             errors[prefix + name] = str(exc)
 
 
-def apply_fetches(context, item, prefix, old, errors):
+def apply_fetches(context, item, prefix, old, errors, targets=None):
     """Copy `fetch='link.field'` values from the linked record when the link changed."""
     for name, field in item._definition.__declared_fields__.items():
         if not field.fetch: continue
@@ -425,7 +730,8 @@ def apply_fetches(context, item, prefix, old, errors):
         try:
             value = None
             if item._values.get(link_name) is not None:
-                record = context._business.policy.record(context._tx, context.user, link.target, item._values[link_name])
+                record = targets.get(link.target, item._values[link_name]) if targets is not None else \
+                    context._business.policy.record(context._tx, context.user, link.target, item._values[link_name])
                 if target_name not in context._business.policy.fields(context.user, link.target): raise AccessError(403, 'Fetched field is unavailable')
                 value = getattr(record, target_name)
             item._values[name] = field.clean(value)
@@ -505,7 +811,7 @@ def load_source(context, item, prefix, name, all_drafts, source_cache, errors, s
         errors[prefix + name] = str(exc)
 
 
-def check_preview(context, all_drafts, internal, errors, states):
+def check_preview(context, all_drafts, internal, errors, states, targets=None):
     """Preview-only hints: missing required inputs and Link selections that no longer match."""
     for prefix, item in all_drafts:
         for name, field in item._definition.__declared_fields__.items():
@@ -515,12 +821,12 @@ def check_preview(context, all_drafts, internal, errors, states):
                 required = required or item._rules.get(name, {}).get('required', False)
                 if required and item._values.get(name) in EMPTY: states[prefix + name] = 'required-input'
                 if isinstance(field, Link) and item._values.get(name) is not None and field.filters:
-                    if not link_matches(context, item, field, item._values[name]):
+                    if not link_matches(context, item, field, item._values[name], targets):
                         errors[prefix + name] = 'The selected record does not match the current filters'
             except (ValueError, TypeError, ArithmeticError) as exc: errors[prefix + name] = str(exc)
 
 
-def validate_tree(context, all_drafts, internal, prior, errors):
+def validate_tree(context, all_drafts, internal, prior, errors, targets=None):
     """Full save validation, children before parents; raises ValidationError on any error."""
     for prefix, item in reversed(all_drafts):
         old = prior(item)
@@ -545,12 +851,13 @@ def validate_tree(context, all_drafts, internal, prior, errors):
                     raise ValueError('This field is required')
                 item._values[name] = field.clean(item._values.get(name))
                 if isinstance(field, Link) and item._values[name] is not None:
-                    if not link_matches(context, item, field, item._values[name]):
+                    if not link_matches(context, item, field, item._values[name], targets):
                         raise ValueError('The selected record does not match the current filters')
             except ValueError as exc:
                 errors[prefix + name] = str(exc)
         for name, table in item._definition.__tables__.items():
-            if table.required and not item._rows.get(name): errors[prefix + name] = 'Add at least one row'
+            if len(item._rows.get(name, ())) < table.min_rows:
+                errors[prefix + name] = 'Add at least one row' if table.min_rows == 1 else f'Add at least {table.min_rows} rows'
         if not errors:
             try: item.validate()
             except ValidationError as exc: errors.update({prefix + key: value for key, value in exc.errors.items()})
@@ -661,7 +968,8 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None)
         values = {name: item._values.get(name) for name, field in item._definition.__declared_fields__.items()
                   if not is_finite(field) and name not in getattr(item._definition, '__internal_fields__', ())
                   and not (item.id is None and (path, name) in initials and name not in item._submitted)}
-        values['_key'], values['id'] = item.key, item.id
+        # Engine keys are internal: saved rows by ID and new rows by draft, so a client _key never meets a saved ID.
+        values['_key'], values['id'] = ('s' + str(item.id)) if item.id else 'n' + str(id(item)), item.id
         if item._rows:
             values['children'] = {name: [data(row, path + (name,)) for row in rows] for name, rows in item._rows.items()}
         return values
@@ -804,7 +1112,7 @@ def source_values(draft, allowed=None, behaviors=('compute',)):
             for name, source in sources.items() if name in used}
 
 
-def write_snapshot(tx, draft, before=None):
+def write_snapshot(tx, draft, before=None, *, reload=True):
     from .database import storage_columns
     model = draft._definition
     # References are checked when they change; a saved one is not rechecked on every write.
@@ -818,7 +1126,7 @@ def write_snapshot(tx, draft, before=None):
         object.__setattr__(draft, 'id', result.lastrowid)
     elif names:
         tx.connection.execute(f'UPDATE {table} SET {", ".join(identifier(name) + "=?" for name in names)} WHERE id=?', [*values, draft.id])
-    return tx.get(model, draft.id)
+    return tx.get(model, draft.id) if reload else None
 
 
 def operate(context, model, record_id, values, *, action=None, arguments=None):
@@ -846,7 +1154,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
     if prior == after:
         if plan is not None:
             record_plan(tx, business.registry.name_for(model), record_id, version)
-        result = business.detail(tx, user, tx.get(model, record_id))
+        # Every readable row: the HTTP route derives its ETag from this and embeds the first page.
+        result = business.detail(tx, user, tx.get(model, record_id), row_limit=None)
         if outcome is not None: result['_outcome'] = outcome
         return result
     record = write_snapshot(tx, draft, before)
@@ -866,7 +1175,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
         freeze_draft(draft)
         reaction(draft, change)
     business.changed(tx, model, record.id)
-    result = business.detail(tx, user, tx.get(model, record.id))
+    result = business.detail(tx, user, tx.get(model, record.id), row_limit=None)
     if keys: result['_row_ids'] = keys
     if outcome is not None: result['_outcome'] = outcome
     return result
@@ -879,8 +1188,13 @@ def record_plan(tx, resource, record_id, version):
 
 
 def persist_rows(context, model, draft, before, owner_id, keys):
-    """Write owned rows parent-before-child; delete removed subtrees child-before-parent."""
+    """Write owned rows parent-before-child; delete removed subtrees child-before-parent.
+
+    Permission checks run once per collection: the operation for the role, then one row-scope
+    statement for the rows this write created or changed, so they stay inside the user's scope.
+    """
     business, tx, user = context._business, context._tx, context.user
+    policy = business.policy
     changes = {}
     for child in business.children.values():
         if child.parent is not model: continue
@@ -888,39 +1202,81 @@ def persist_rows(context, model, draft, before, owner_id, keys):
         old_by_id = {row.id: row for row in old_rows}
         rows = draft._rows.get(child.name, [])
         retained = {row.id for row in rows if row.id}
-        for row_id in set(old_by_id) - retained: delete_tree(business, tx, child.model, row_id)
-        added, updated, nested = [], [], {}
+        delete_rows(business, tx, child.model, sorted(set(old_by_id) - retained))
+        added, updated, moved, nested = [], [], {}, {}
         for row in rows:
             row._values[child.link] = owner_id
             if row.id is None:
-                write_snapshot(tx, row)
-                business.policy.record(tx, user, child.model, row.id, 'create')
+                policy.require(user, child.model, 'create')
+                write_snapshot(tx, row, reload=False)
                 added.append(row.id)
                 keys[row.key] = row.id
-            elif row.stored_values() != old_by_id[row.id].stored_values():
-                business.policy.record(tx, user, child.model, row.id, 'update')
-                write_snapshot(tx, row, old_by_id[row.id])
-                # The written row must stay inside this user's row scope.
-                business.policy.record(tx, user, child.model, row.id, 'update')
-                updated.append(row.id)
+            else:
+                previous, current = old_by_id[row.id].stored_values(), row.stored_values()
+                if previous != current:
+                    position = previous.pop('evlet_position', None) != current.pop('evlet_position', None)
+                    if previous != current:
+                        # A changed row, or one whose owned rows changed, is an update of that row.
+                        policy.require(user, child.model, 'update')
+                        own = old_by_id[row.id]._values
+                        if position or any(own.get(name) != row._values.get(name) for name in child.model.__fields__):
+                            write_snapshot(tx, row, old_by_id[row.id], reload=False)
+                        updated.append(row.id)
+                    elif position:
+                        # Rows the caller placed need update permission; rows shifted by others' changes do not.
+                        if row._placed: policy.require(user, child.model, 'update')
+                        moved[row.id] = row._values['evlet_position']
             inner = persist_rows(context, child.model, row, old_by_id.get(row.id), row.id, keys)
             if inner: nested[row.id] = inner
+        write_positions(tx, child.model, moved)
+        # The written rows must stay inside this user's row scope.
+        for ids, operation in ((added, 'create'), (updated, 'update')):
+            if ids and set(ids) - policy.visible(tx, user, child.model, ids, operation):
+                raise AccessError(404, 'Record not found')
         changes[child.name] = {'added': added, 'updated': updated, 'removed': sorted(set(old_by_id) - retained),
                                'reordered': [row.id for row in old_rows] != [row.id for row in rows]}
         if nested: changes[child.name]['rows'] = nested
     return changes
 
 
-def delete_tree(business, tx, model, record_id):
-    """Document-pipeline deletion; callers have checked permissions for the whole subtree."""
+def write_positions(tx, model, positions):
+    """Store new row positions, one statement per chunk of rows."""
+    from .permissions import CHUNK
+    items, table = list(positions.items()), identifier(tx.registry.name_for(model))
+    for start in range(0, len(items), CHUNK):
+        part = items[start:start + CHUNK]
+        cases = ' '.join('WHEN ? THEN ?' for _ in part)
+        tx.connection.execute(f'UPDATE {table} SET "evlet_position" = CASE id {cases} END WHERE id IN ({", ".join("?" for _ in part)})',
+                              [value for item in part for value in item] + [row_id for row_id, _ in part])
+
+
+def delete_rows(business, tx, model, record_ids):
+    """Document-pipeline deletion of rows and their owned subtrees, children first.
+
+    Callers have checked permissions for the whole subtree. One statement per table level and chunk.
+    """
+    from .permissions import CHUNK
+    ids = list(dict.fromkeys(record_ids))
+    if not ids:
+        return
     for child in business.children.values():
         if child.parent is model:
-            # Callers loaded and permission-checked this subtree, and loading refuses collections
-            # over ROW_LIMIT rows, so one page always holds every child.
-            for row in tx.list(child.model, filters={child.link: record_id}, limit=ROW_LIMIT):
-                delete_tree(business, tx, child.model, row.id)
-    with tx.maintenance():
-        tx.delete(model, record_id)
+            table, link = identifier(business.registry.name_for(child.model)), identifier(child.link)
+            below = []
+            for start in range(0, len(ids), CHUNK):
+                part = ids[start:start + CHUNK]
+                below.extend(row[0] for row in tx.connection.execute(
+                    f'SELECT id FROM {table} WHERE {link} IN ({", ".join("?" for _ in part)})', part).fetchall())
+            delete_rows(business, tx, child.model, below)
+    table = identifier(business.registry.name_for(model))
+    for start in range(0, len(ids), CHUNK):
+        part = ids[start:start + CHUNK]
+        tx.connection.execute(f'DELETE FROM {table} WHERE id IN ({", ".join("?" for _ in part)})', part)
+
+
+def delete_tree(business, tx, model, record_id):
+    """Document-pipeline deletion; callers have checked permissions for the whole subtree."""
+    delete_rows(business, tx, model, [record_id])
 
 
 def typed_arguments(function, values, *, skip=0):

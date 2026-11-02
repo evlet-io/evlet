@@ -131,7 +131,9 @@
           "name": "items",
           "model": "order_items",
           "link": "evlet_owner",
-          "label": "Items"
+          "label": "Items",
+          "min_rows": 1,
+          "max_rows": 100
         }
       ],
       "actions": [

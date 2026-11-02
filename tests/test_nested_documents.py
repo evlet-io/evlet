@@ -404,8 +404,14 @@ def test_row_limits_apply_to_finite_roots_only_and_allow_full_swaps(tmp_path):
     stages[0]['children']['tasks'] = stages[0]['children']['tasks'][5:] + [{'_key': f'n{k}', 'hours': '2'} for k in range(5)]
     status, result, _ = c('PATCH', f"/api/plan/{plan['id']}", {'children': {'stages': stages}}, headers={b'if-match': headers[b'etag']})
     assert status == 200, result
-    stages[1]['children']['tasks'].append({'_key': 'over', 'hours': '1'})
+    # The owned-row cap is 5,000, so one more row fits; a 101st task exceeds the table's max_rows (100).
+    stages[1]['children']['tasks'].append({'_key': 'fits', 'hours': '1'})
     _, _, headers = c('GET', f"/api/plan/{plan['id']}")
+    status, result, _ = c('PATCH', f"/api/plan/{plan['id']}", {'children': {'stages': stages}}, headers={b'if-match': headers[b'etag']})
+    assert status == 200, result
+    _, current, headers = c('GET', f"/api/plan/{plan['id']}")
+    stages = [{'id': stage['id'], 'children': {'tasks': [{'id': task['id']} for task in stage['children']['tasks']]}} for stage in current['children']['stages']]
+    stages[1]['children']['tasks'].append({'_key': 'over', 'hours': '1'})
     assert c('PATCH', f"/api/plan/{plan['id']}", {'children': {'stages': stages}}, headers={b'if-match': headers[b'etag']})[0] == 422
 
 

@@ -179,6 +179,30 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     expect(small.snapshot()._states.grand_total.code).toBe('COMPUTE_RANGE_ERROR');
   });
 
+  it('enforces each table\'s max_rows from the plan and rejects invalid row limits', () => {
+    const plan = plans.capped;
+    expect(plan.tables['lines[*]'].max_rows).toBe(2);
+    expect(plan.limits.collection_rows).toBe(1000);
+    expect(plan.limits.document_rows).toBe(5000);
+    expect(() => new FiniteDocument(plan, {children: {lines: [{}, {}, {}]}})).toThrow('CALCULATION_LIMIT_EXCEEDED');
+    const document = new FiniteDocument(plan, {children: {lines: [{_key: 'a'}, {_key: 'b'}]}});
+    expect(() => document.addRow(document.root.handle, 'lines', {})).toThrow('CALCULATION_LIMIT_EXCEEDED');
+    for (const value of [1001, -1, 1.5, '2']) {
+      const broken = structuredClone(plan);
+      broken.tables['lines[*]'].max_rows = value;
+      broken.model_schema_hash = fingerprint(broken);
+      expect(() => new FiniteDocument(broken, {})).toThrow('SCHEMA_VERSION_MISMATCH');
+    }
+    const inverted = structuredClone(plan);
+    inverted.tables['lines[*]'].min_rows = 3;
+    inverted.model_schema_hash = fingerprint(inverted);
+    expect(() => new FiniteDocument(inverted, {})).toThrow('SCHEMA_VERSION_MISMATCH');
+    const wide = structuredClone(plan);
+    wide.tables['lines[*]'].max_rows = 1000;
+    wide.model_schema_hash = fingerprint(wide);
+    expect(new FiniteDocument(wide, {children: {lines: Array.from({length: 1000}, () => ({qty: '1'}))}}).snapshot().total).toBe('1000.0000');
+  });
+
   it('keeps rows added before a rolled-back command and undoes caught nested batches', () => {
     const document = new FiniteDocument(plans.invoice, {inclusive: false, children: {items: []}});
     const root = document.root.handle;

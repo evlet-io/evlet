@@ -29,7 +29,7 @@ Nothing was merged, reset, deployed or published. No customer database was touch
 | Nesting | Allowed only under finite-v1 roots, depth 8. Legacy roots keep one level. |
 | Wire metadata | `_calculation` in POST/PATCH bodies, `calculation` in `/api/_draft`; mismatch is 409. |
 | `_key` scope | Unique across the whole document so the flat `_row_ids` map cannot collide. |
-| Limits | As specified (128/32 expression, 8 depth, 100 per collection, 1,000 owned rows, 50k nodes, 250k edges, 1M steps, 128-char decimals), embedded in plans and checked by both runtimes. |
+| Limits | As specified (128/32 expression, 8 depth, 100 per collection, 1,000 owned rows, 50k nodes, 250k edges, 1M steps, 128-char decimals), embedded in plans and checked by both runtimes. Phase 3 (01-11-2026): each table carries its `max_rows` (up to 1,000) and roots allow 5,000 owned rows. |
 | Permissions | A result is readable only when its whole input closure and complete collections are readable; otherwise withheld (no declassification policy yet). |
 
 ## Work packages
@@ -265,3 +265,73 @@ Known limitations of this phase:
   preview; the new UI will.
 * Recompute uses the UTC date for `today()` and is not replayed on baseline adoption.
 * Reference fields are not validated against a list of allowed models.
+
+## Phase 3: owned tables (01-11-2026)
+
+Branch `model/03-lines`, stacked on `model/02-rules`. The owner kept the name `Table(Child)`;
+there is no `Lines` alias.
+
+* **Options.** `Table(Child, min_rows=0, max_rows=100)`. `max_rows` goes up to 1,000;
+  `required=True` means `min_rows=1`. Conflicts and bad values fail at declaration; a
+  `max_rows` above 100 under a legacy root fails at registration. Legacy roots and
+  `ChildTable` keep 100.
+* **Engine limits.** `collection_rows` is now 1,000 (the most a table may declare) and
+  `document_rows` 5,000, in both runtimes. Plan table entries carry `min_rows` and
+  `max_rows`; both engines enforce each table's `max_rows` and reject invalid values in a
+  plan. This changes every plan's `model_schema_hash` but not formula hashes, so saved
+  documents do not need recalculation. Row placement while loading a document is now linear.
+* **Row changes.** Collections accept `{create, update, delete, order}` change sets in
+  addition to full lists, at every depth, in one transaction. `order` rearranges the listed
+  rows within the places they hold. Positions follow the final order (stored values kept where they fit); rows whose
+  only change is their position are written in one statement per chunk. Hidden rows keep
+  their places and stored positions.
+* **Reading.** Details embed at most 100 rows per collection plus `children_pages` for larger
+  ones. New route `GET /api/{model}/{id}/lines/{name}[/{row id}/{name}...]?limit=&offset=`.
+  `/api/schema` child entries gain `min_rows` and `max_rows`.
+* **Batching.** Saved rows load one table level at a time (`owned_rows`, window functions for
+  per-owner limits), with one row-scope statement per level (`Policy.visible`). Serialization
+  checks Link and Reference targets per model (`Policy.serialize_many`). Link targets for
+  validation, fetches and submitted values are read in batches (`LinkTargets`,
+  `Policy.records`). Subtree deletes and position updates use `IN` lists. Permission rules are
+  unchanged; per-row checks became per-collection checks with the same outcome.
+* **Statement counts** (SQLite, authenticated HTTP, including session checks). Before, with
+  100 rows: GET 607, title PATCH 2,021, one-row change 2,227. Before, 100 x 9 nested: GET
+  2,407, title PATCH 9,221. After (with the review fixes): GET of 1,000 rows 9, title PATCH 30,
+  one-row change set 32; 100 x 9 nested: GET 8, title PATCH 29. Tests assert upper bounds.
+* **Changed tests.** `test_row_limits_apply_to_finite_roots_only_and_allow_full_swaps` now
+  adds a 101st task to reach the per-table limit, because one extra row no longer exceeds
+  the document limit. Generated fixtures (`finite-fixtures.json`, `test-business-schema.json`,
+  `document-contract.json`, `ui-fixture.json`) gained the new keys, limits and the
+  `table-limits` scenario. `tests/test_builds.py` adds a row-change step for the amendment
+  Quote, whose lines now allow 500 rows.
+
+Behaviour changes to note:
+
+* A detail of a collection with more than 100 rows no longer fails with 422; it embeds the
+  first 100 and reports the rest in `children_pages`.
+* `Change.children[...]["updated"]` no longer lists rows whose only change is their position;
+  `reordered` still reports the reorder.
+* When a full list is saved, rows hidden from the user keep their places; before this phase
+  they moved to the end.
+
+Review fixes (01-11-2026):
+
+* ETags (`Business.record_revision`) cover every readable row again, read with the batched
+  loaders; write routes compute them from the full detail and embed the first page. A stale
+  `If-Match` after a change to row 101 or later fails with 409.
+* A full list is refused (422) for a collection with more than 100 readable rows; use a
+  change set.
+* Hidden rows keep their places and stored positions for full lists and change-set deletes;
+  other rows keep their stored positions when they still fit (`positions()`).
+* The calculation session gets internal row keys, so a client `_key` equal to a saved row ID
+  no longer fails with "Repeated row key".
+* Plans with `min_rows` above `max_rows` are rejected by both engines.
+* The row-limit side channel for hidden rows is documented with the other residual signals.
+
+Known limitations:
+
+* Change sets update one row per statement.
+* Creating a document still inserts one row per statement (about 1,000 statements for 1,000
+  rows), and the 64 KiB request body limit allows only short rows in one request.
+* The paging route reads one collection; it has no filters or sorting other than position.
+* The SolidJS form does not use change sets, paging or `children_pages`; the new UI will.

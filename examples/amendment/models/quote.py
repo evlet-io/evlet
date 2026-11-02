@@ -38,7 +38,8 @@ class Quote(Model):
         net = Currency(compute=round(net_raw, 2))
         vat = Currency(compute=amount - net + (1 - parent.inclusive) * round(net * taxable * vat_rate / 100, 2))
 
-    lines = Table(Line)
+    # Up to 500 lines. Clients may send only what changed: {"create": [...], "update": [...], "delete": [...], "order": [...]}.
+    lines = Table(Line, max_rows=500)
     net_total = Currency(compute=lines.sum('net'))
     vat_total = Currency(compute=lines.sum('vat'))
     taxable_net = Currency(compute=lines.where(taxable=True).sum('net'))

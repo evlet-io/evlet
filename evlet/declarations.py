@@ -14,9 +14,29 @@ class Ref:
             raise ValueError('Use a declared field path')
 
 
+# Rows one owned table may hold. Tables under legacy (non finite-v1) roots keep 100.
+MAX_TABLE_ROWS = 1000
+DEFAULT_TABLE_ROWS = 100
+
+
 class Table:
-    def __init__(self, child, *, required=False, label=None, storage_name=None, owner_field='evlet_owner'):
-        self.child, self.required, self.label = child, required, label
+    """Owned rows. `min_rows` is checked on save (`required=True` means at least one row);
+    `max_rows` (default 100, at most 1,000) bounds the collection in both runtimes."""
+    def __init__(self, child, *, required=False, min_rows=None, max_rows=DEFAULT_TABLE_ROWS, label=None,
+                 storage_name=None, owner_field='evlet_owner'):
+        for name, value in (('min_rows', min_rows), ('max_rows', max_rows)):
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError(f'Table {name} must be a nonnegative integer')
+        if required and min_rows == 0:
+            raise ValueError('A required table needs at least one row; use min_rows=1 or more, or drop required')
+        min_rows = (1 if required else 0) if min_rows is None else min_rows
+        if not 1 <= max_rows <= MAX_TABLE_ROWS:
+            raise ValueError(f'Table max_rows must be between 1 and {MAX_TABLE_ROWS}')
+        if min_rows > max_rows:
+            raise ValueError('Table min_rows cannot exceed max_rows')
+        self.child, self.label = child, label
+        self.min_rows, self.max_rows = min_rows, max_rows
+        self.required = min_rows > 0
         self.name = ''
         self.storage_name, self.owner_field = storage_name, owner_field
 

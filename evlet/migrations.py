@@ -298,9 +298,9 @@ def _recompute(connection, registry, operations, versions):
 
 
 def _rows(session, model, record_id, child):
-    from .database import ROW_LIMIT
-    order = ('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',)
-    return session.list(child.model, filters={child.link: record_id}, limit=ROW_LIMIT, order_by=order)
+    # Every row in position order; owned tables may hold more rows than one list page.
+    from .documents import owned_rows
+    return owned_rows(session, child, [record_id]).get(record_id, ([], 0))[0]
 
 
 def _recompute_finite(session, registry, plan, model, operation):

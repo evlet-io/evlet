@@ -248,6 +248,11 @@ Rules may read fields or Link paths the user cannot read; the server enforces th
   a writer learns that a hidden rule is true (or undecided) when a change is rejected as
   locked or required, and that `applies_when` is false when a saved value comes back empty.
   Avoid rules over inputs a writer must not learn about.
+* Row limits count every row, including rows a row scope hides. A writer can therefore learn
+  roughly how many hidden rows a collection holds by adding rows until "Use at most N rows"
+  (or removing them until "Add at least N rows"). The messages name only the declared limit,
+  never a count. Avoid tight `max_rows` or `min_rows` on collections whose hidden row count
+  must stay private.
 
 ## Field types in expressions
 
@@ -302,6 +307,96 @@ MODEL_DEPENDENCY_CYCLE: lines[*].allocated -> unit -> allocated_total -> lines[*
 Owned tables can nest up to 8 levels under finite-v1 roots. A table that contains its own
 model type fails with `MODEL_CONTAINMENT_CYCLE`.
 
+## Owned tables
+
+```python
+lines = Table(InvoiceItem, min_rows=1, max_rows=500)
+```
+
+* `max_rows` (default 100) bounds one collection, up to 1,000. Values above 1,000, below 1,
+  or below `min_rows` are rejected when the model is declared. Tables under a legacy (non
+  finite-v1) root keep at most 100 rows; a larger `max_rows` there is rejected at registration.
+* `min_rows` (default 0) is checked on every save: "Add at least one row" or "Add at least N
+  rows". `required=True` still works and means `min_rows=1`; `required=True` with
+  `min_rows=0` is rejected.
+* The plan records `min_rows` and `max_rows` on each table entry. The Python and browser
+  engines refuse a collection above its `max_rows` with `CALCULATION_LIMIT_EXCEEDED`.
+* Rows keep an explicit, stable order in the framework column `evlet_position`. New rows
+  without a place append. Reordering is a row change (below).
+* `/api/schema` lists `min_rows` and `max_rows` with each child collection. A legacy
+  `ChildTable` reports 0 and 100.
+
+### Row changes
+
+POST and PATCH accept each collection either as the full list of rows (rows left out are
+removed, as before) or as a change set that names only what changed:
+
+```json
+{"children": {"lines": {
+  "create": [{"_key": "n1", "qty": "2"}],
+  "update": [{"id": 7, "qty": "3", "children": {"parts": {"delete": [41]}}}],
+  "delete": [9],
+  "order": ["n1", 12, 7]
+}}}
+```
+
+* Rows the change set does not mention keep their values and their place.
+* `create` rows take no `id`. A `_key` works as before: unique in the document, mapped to the
+  new ID in `_row_ids`, and used to address errors (`lines.n1.qty`).
+* `update` rows carry the `id` of a saved row of this collection. `delete` lists saved IDs.
+  An ID may appear once across `update` and `delete`.
+* `order` lists saved IDs and the `_key` of rows created in the same request. The listed
+  rows take that order within the places they already hold; rows not listed stay where they
+  are. Sending every visible row always gives exactly that order. A created row that is not
+  listed appends.
+* Rows inside `create` and `update` may carry their own `children` in either format, at
+  every depth.
+* Everything, including recalculated parent totals, commits in one transaction. Any row
+  error rolls back the whole request; errors use the same keys as the full format.
+* Permissions are the same as for the full format: rows hidden by a row scope are kept and
+  cannot be updated, deleted or ordered (the request fails as if the ID did not belong to the
+  collection); a delete needs delete permission on the whole subtree; changed rows need
+  update permission and must stay inside the row scope; created rows need create permission.
+  Rows a request places with `order` (or by a full list) need update permission when their
+  position changes. Positions of other rows shift without a check.
+* A legacy `ChildTable` registered on `Application` accepts `create`, `update` and `delete`
+  on document models. It has no stored order, so `order` is rejected there.
+* Request bodies are limited to 64 KiB. Clients that build large collections send rows in
+  several change sets.
+* A full list is refused with 422 when the collection holds more than 100 rows the user can
+  read, because a detail embeds only the first 100 and a list built from it would remove the
+  rest. Use a change set for such collections; full lists keep working up to 100 rows.
+* Rows hidden by a row scope keep their places and their stored positions, for full lists and
+  change sets alike. A full list fills the places of the visible rows in order; extra rows
+  append. Other rows keep their stored position when it still fits the new order. Only rows
+  saved with equal positions can force a renumbering of the whole collection.
+
+### Reading large tables
+
+A detail response embeds at most 100 rows per collection, at every depth. Collections with
+at most 100 readable rows look exactly as before. A larger collection embeds its first 100
+rows, and the record gains `children_pages`:
+
+```json
+"children_pages": {"lines": {"total": 1000, "limit": 100, "partial": true}}
+```
+
+`GET /api/{model}/{id}/lines/{name}?limit=&offset=` returns one page of a collection in
+position order: `{"items": [...], "total": n, "limit": l, "offset": o}`. `limit` is 1 to
+100 (default 100). Nested collections alternate names and row IDs:
+`/api/project/5/lines/phases/12/tasks`. Every row on the path must be readable and belong
+to the row before it. Items have the same shape as embedded rows (readable fields only,
+no `evlet_owner` or `evlet_position`) and embed their own collections. `total` counts the
+rows this user can read. `Context.get` in Python returns every readable row.
+
+The ETag of a document covers every row the user can read, not only the embedded page, so a
+change to row 101 or later (its values or its place) makes an older `If-Match` fail with 409.
+Write responses carry the new ETag.
+
+Loading a document costs one statement per table level and chunk of 500 owners for the
+rows, plus one per Link target model for permission checks, whatever the row count. See
+[performance.md](performance.md#owned-tables).
+
 ## Server writes
 
 All ordinary writes settle the document in the existing transaction:
@@ -309,8 +404,9 @@ All ordinary writes settle the document in the existing transaction:
 * Routes, `@action`, dialogs and services write through `Context`, which loads the whole
   tree, merges permitted source changes, settles, validates and persists parent before
   child. Any failure rolls back everything.
-* Nested rows use the same `children` envelope at every depth. `_key` values must be
-  unique across the document; `_row_ids` maps them to new IDs.
+* Nested rows use the same `children` envelope at every depth, as full lists or change sets
+  (see [Row changes](#row-changes)). `_key` values must be unique across the document;
+  `_row_ids` maps them to new IDs.
 * Clients send source fields only. A submitted calculated value, even an equal one, is
   `COMPUTED_FIELD_WRITE`. Actions cannot assign calculated fields either.
 * Removing a row removes its subtree and needs delete permission on every descendant.
@@ -379,6 +475,6 @@ them and must match snapshots, states, causes, revisions and evaluation counts.
 
 ## Limits
 
-Expressions: 128 nodes, depth 32. Tables: depth 8, 100 rows per collection, 1,000 owned
-rows per root. Graph: 50,000 nodes, 250,000 edges. Evaluation: 1,000,000 steps per batch.
+Expressions: 128 nodes, depth 32. Tables: depth 8, each collection its `max_rows` (default
+100, at most 1,000), 5,000 owned rows per root. Graph: 50,000 nodes, 250,000 edges. Evaluation: 1,000,000 steps per batch.
 Decimal text: 128 characters. Plans carry these limits and both runtimes refuse others.

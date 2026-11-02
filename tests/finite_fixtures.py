@@ -214,9 +214,20 @@ class Offer(Model):
     total = Currency(compute=lines.sum('amount'))
 
 
+class CappedLine(Child):
+    qty = Decimal(default=1)
+
+
+class Capped(Model):
+    """Per-table row limits: the plan carries max_rows and both runtimes enforce it."""
+    Meta = FiniteMeta
+    lines = Table(CappedLine, min_rows=1, max_rows=2)
+    total = Decimal(compute=lines.sum('qty'))
+
+
 MODELS = {'invoice': Invoice, 'project': Project, 'cost': CostSheet, 'states': States,
           'rounding': Rounding, 'schedule': Schedule, 'sale': Sale, 'choice': Choice, 'moments': Moments,
-          'offer': Offer}
+          'offer': Offer, 'capped': Capped}
 LOOKUP_MODELS = (Region, Customer)
 
 
@@ -284,6 +295,11 @@ SCENARIOS = [
       ['set', '', 'customer', 8], ['lookup', 'customer', 8, {'credit_days': 10, 'rate': '1.25'}], ['rebase'],
       ['set', '', 'terms', 60], ['set', '', 'customer', 8], ['set', '', 'stage', 'won'], ['set', '', 'customer', 7],
       ['add', '', 'lines', {'_key': 'n', 'qty': '1'}], ['set', 'lines.2', 'qty', '1'], ['set', '', 'stage', 'lost']]),
+    ('table-limits', 'capped', {'children': {'lines': items({'qty': '1'})}},
+     [['add', '', 'lines', {'_key': 'n1', 'qty': '2'}], ['add', '', 'lines', {'_key': 'n2', 'qty': '4'}],
+      ['replace', '', 'lines', [{'_key': 'a'}, {'_key': 'b'}, {'_key': 'c'}]], ['remove', 'lines.r0'],
+      ['add', '', 'lines', {'_key': 'n3', 'qty': '5'}], ['batch', [['remove', 'lines.n1'], ['add', '', 'lines', {'_key': 'n4'}]]],
+      ['add', '', 'lines', {'_key': 'n5'}]]),
     ('when', 'choice', {'a': '6'},
      [['set', '', 'flag', True], ['set', '', 'a', None], ['set', '', 'flag', False], ['set', '', 'a', '6'],
       ['set', '', 'zero', '4'], ['today', '2026-11-01'], ['set', '', 'flag', True], ['set', '', 'a', '0.5'], ['set', '', 'flag', None]]),
