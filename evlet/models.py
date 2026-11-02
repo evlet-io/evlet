@@ -3,7 +3,7 @@
 import re
 from types import MappingProxyType
 
-from .fields import Field, Link, MISSING, RULES
+from .fields import Field, Link, MISSING, RULES, State
 from .declarations import Table, ReactiveQuery, DEFAULT_TABLE_ROWS
 
 
@@ -68,7 +68,12 @@ class ModelType(type):
         cls.__fields__ = MappingProxyType({key: value for key, value in fields.items() if value.stored})
         cls.__tables__ = MappingProxyType(tables)
         cls.__sources__ = MappingProxyType(sources)
-        if sources or tables or 'permissions' in namespace or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
+        states = [key for key, value in fields.items() if isinstance(value, State)]
+        if len(states) > 1:
+            raise ValueError(f"{name} declares more than one State: " + ", ".join(states))
+        # The State field's name; its value changes only through moves, so the model is a document.
+        cls.__state__ = states[0] if states else None
+        if states or sources or tables or 'permissions' in namespace or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
         if getattr(cls, '__declaration_mode__', False) and (set(fields) | set(tables) | set(sources)) & {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}:
@@ -224,6 +229,11 @@ class Registry:
         self.plans = MappingProxyType(plans)
         # What saved documents record: changes only when formulas or the fields they use change.
         self.formula_hashes = MappingProxyType({root: formula_hash(plan) for root, plan in plans.items()})
+        # Move guards and action availability, compiled once per root document.
+        from .states import compile_guards, kept_plan
+        self.guards, self.guard_plans, self.guard_root_plans = compile_guards(self, models, plans, child_models)
+        # Ordinary writes on a locked record evaluate rules over the results it keeps.
+        self.kept_plans = MappingProxyType({root: kept_plan(plan) for root, plan in plans.items() if root.__state__ is not None})
 
     def root_of(self, model):
         owners = {child.model: child.parent for child in self.children}

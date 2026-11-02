@@ -254,6 +254,16 @@ Rules may read fields or Link paths the user cannot read; the server enforces th
   never a count. Avoid tight `max_rows` or `min_rows` on collections whose hidden row count
   must stay private.
 
+### Move guards and action availability
+
+`Move(..., when=...)` and `@action(..., available_when=...)` use the same language and are
+decided like `locked_when`: on the record as saved, in the write's transaction, with pending
+or error results blocking. They are compiled with the document at registration but are not
+entries of the shipped plan, so they do not change any plan or formula hash. A State field is
+an ordinary Select in the plan, so rules and calculations read it. The same readability rule
+applies: the schema shows a guard only to roles that can read its inputs, and the reasons
+other roles get are generic. See [states-actions.md](states-actions.md).
+
 ## Field types in expressions
 
 `Percent` and `Duration` are numbers: a percentage is its value (`5` for 5%), so divide by

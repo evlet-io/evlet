@@ -186,6 +186,11 @@ They must implement the business rules and any additional permissions for other
 records they touch. They must not call external services inside the transaction.
 Do not expose an arbitrary method dispatcher.
 
+Model actions declared with `@action` on a document may also take validated `inputs`
+and declare `available_when`. A `State` field with `Move` declarations changes a
+document's state through `POST /api/{model}/{id}/moves/{to}` and can lock it against
+ordinary writes. See [states-actions.md](states-actions.md).
+
 The Playground's Start action moves a planned Project to active. Complete requires
 an active Project with at least one task and every task done, then writes status
 `done` and progress `100` together. Status is read-only in ordinary HTTP writes.

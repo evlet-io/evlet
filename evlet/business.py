@@ -242,10 +242,13 @@ class Business:
             entry['children'] = [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label,
                                   **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child)))}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
-            from .documents import argument_schema
+            from .states import action_schema, state_schema
             entry['actions'] = [{'name': action.name, 'label': action.label,
-                                 **({'arguments': argument_schema(getattr(model, action.name), skip=1)} if hasattr(getattr(model, action.name, None), '__action__') else {})}
+                                 **(action_schema(self, user, model, action.name) if hasattr(getattr(model, action.name, None), '__action__') else {})}
                                 for action in self.actions.values() if action.model is model and user.role in action.roles and self.policy.allows(user, model, 'update')]
+            state = state_schema(self, user, model)
+            if state is not None:
+                entry['state'] = state
             entry['attachments'] = model in self.attachments
             plan = self.registry.plans.get(model)
             if plan is not None:
@@ -409,7 +412,9 @@ class Business:
             return 204, None, []
         # Legacy Action registrations keep their own route on document models.
         legacy_action = len(parts) == 6 and parts[4] == 'actions' and not hasattr(getattr(model, parts[5], None), '__action__')
-        if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH') and not legacy_action:
+        # Attachments and line pages have their own routes on every model.
+        own_route = len(parts) >= 5 and parts[4] in ('attachments', 'lines')
+        if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH') and not legacy_action and not own_route:
             from .documents import Context
             record_id = None
             if len(parts) >= 4:
@@ -417,7 +422,8 @@ class Business:
                     raise AccessError(404, 'Record not found')
                 record_id = int(parts[3])
             action = parts[5] if len(parts) == 6 and parts[4] == 'actions' and method == 'POST' else None
-            if not ((len(parts) == 3 and method == 'POST') or (len(parts) == 4 and method == 'PATCH') or action):
+            move = parts[5] if len(parts) == 6 and parts[4] == 'moves' and method == 'POST' else None
+            if not ((len(parts) == 3 and method == 'POST') or (len(parts) == 4 and method == 'PATCH') or action or move):
                 raise AccessError(405, 'Method not allowed')
             plan = self.registry.plan_for(model)
             recalculate = False
@@ -426,6 +432,8 @@ class Business:
                 calculation = body.pop('_calculation')
                 self.check_calculation(model, calculation)
                 recalculate = calculation.get('recalculate', False)
+            if move and body:
+                raise ValidationError({'_form': 'A move takes no values'})
             with self.context(user) as context:
                 context._recalculate = (model, record_id) if recalculate and record_id else None
                 if record_id:
@@ -433,10 +441,12 @@ class Business:
                     if b'if-match' not in dict(scope.get('headers', [])):
                         raise AccessError(428, 'A current If-Match revision is required')
                     self.check_revision(scope, context._tx, user, record)
-                result = context._write(model, record_id, {} if action else body, action=action, arguments=body if action else None)
+                result = context._write(model, record_id, {} if action or move else body, action=action,
+                                        arguments=body if action else None, move=move)
+                extra = self.availability(context, model, context._tx.get(model, result['id']))
             # The write returns every readable row; the ETag covers them all and the body embeds the first page.
             etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome')})
-            result = self.embedded(result)
+            result = {**self.embedded(result), **extra}
             if plan is not None:
                 result['_calculation'] = {'language': plan['language'], 'model_schema_hash': plan['model_schema_hash']}
             return (201 if record_id is None else 200), result, [(b'etag', etag)]
@@ -482,6 +492,7 @@ class Business:
             return 200, result, []
         if len(parts) != 4 or method not in ('GET', 'PATCH', 'DELETE'):
             raise AccessError(405, 'Method not allowed')
+        from .documents import Context
         with self.database.transaction() as tx:
             record = self.policy.record(tx, user, model, record_id, {'GET': 'read', 'PATCH': 'update', 'DELETE': 'delete'}[method])
             if method != 'GET': self.check_revision(scope, tx, user, record)
@@ -504,8 +515,20 @@ class Business:
                 self.policy.record(tx, user, model, record_id, 'update')
                 self.save_children(tx, user, record, children)
                 self.changed(tx, model, record_id)
-            result = self.detail(tx, user, record, row_limit=None)
-        return 200, self.embedded(result), [(b'etag', self.revision(result))]
+            loaded = {} if method == 'GET' else None
+            result = self.detail(tx, user, record, row_limit=None, loaded=loaded)
+            extra = self.availability(Context(self, tx, user, readonly=True), model, record, loaded) if method == 'GET' else {}
+        return 200, {**self.embedded(result), **extra}, [(b'etag', self.revision(result))]
+
+    def availability(self, context, model, record, loaded=None):
+        """Moves and actions the caller may use on a saved record now (`_moves`, `_actions`, `_locked`); not part of the ETag.
+
+        `loaded` holds the owned rows a detail of the record just read (see `detail`), for guards that read rows.
+        """
+        if model.__state__ is None and model not in self.registry.guards:
+            return {}
+        from .states import availability
+        return availability(self, context.read_context(), model, record, loaded)
 
     def field_expressions(self, user, model):
         """Serialized finite expressions per readable field: compute, initial and the three rules.
@@ -722,24 +745,33 @@ class Business:
                 self.policy.record(tx, user, child.model, row_id, 'delete')
                 tx.delete(child.model, row_id)
 
-    def detail(self, tx, user, record, *, row_limit=EMBEDDED_ROWS):
+    def detail(self, tx, user, record, *, row_limit=EMBEDDED_ROWS, loaded=None):
         """A record with its readable owned rows at every depth, in position order.
 
         Each collection embeds at most `row_limit` rows (None embeds all). A collection with more
         readable rows is listed under `children_pages` with its total so a client can page it.
         Rows load one table level at a time, so the statement count does not grow with the rows.
+        A `loaded` dict receives the saved rows read ({(child, owner id): records}) and is marked
+        partial when some saved rows were left out (unreadable, outside the row scope or not embedded).
         """
         result = self.policy.serialize(tx, user, record)
-        self.embed(tx, user, type(record), {record.id: result}, row_limit)
+        self.embed(tx, user, type(record), {record.id: result}, row_limit, loaded)
         return result
 
-    def embed(self, tx, user, model, results, row_limit=EMBEDDED_ROWS):
+    def embed(self, tx, user, model, results, row_limit=EMBEDDED_ROWS, loaded=None):
         """Add readable owned rows to serialized records of one model ({id: result}), level by level."""
         from .documents import owned_rows
         for child in self.children.values():
-            if child.parent is not model or not self.policy.allows(user, child.model, 'read'):
+            if child.parent is not model:
+                continue
+            readable = self.policy.allows(user, child.model, 'read')
+            if loaded is not None and (not readable or row_limit is not None or self.policy.rule(user, child.model).scope is not None):
+                loaded['partial'] = True
+            if not readable:
                 continue
             found = owned_rows(tx, child, list(results), scope=self.policy.scope_sql(user, child.model), limit=row_limit)
+            if loaded is not None:
+                loaded.update({(child, owner): found.get(owner, ((), 0))[0] for owner in results})
             records = [record for owner in results for record in found.get(owner, ((), 0))[0]]
             values = dict(zip((record.id for record in records), self.policy.serialize_many(tx, user, records)))
             for value in values.values():
@@ -751,7 +783,7 @@ class Business:
                 if total > len(rows):
                     result.setdefault('children_pages', {})[child.name] = {'total': total, 'limit': row_limit, 'partial': True}
             if values:
-                self.embed(tx, user, child.model, values, row_limit)
+                self.embed(tx, user, child.model, values, row_limit, loaded)
 
     def lines(self, scope, user, model, record_id, path):
         """GET /api/{model}/{id}/lines/{name}[/{row id}/{name}...]: one page of a readable owned collection."""
@@ -850,7 +882,11 @@ class Business:
             file_id = int(tail[0])
         name = self.registry.name_for(model)
         with self.database.transaction() as tx:
-            self.policy.record(tx, user, model, record_id, 'read' if method == 'GET' else 'update')
+            record = self.policy.record(tx, user, model, record_id, 'read' if method == 'GET' else 'update')
+            if method in ('POST', 'DELETE'):
+                from .documents import Context
+                from .states import check_attachments
+                check_attachments(Context(self, tx, user, readonly=True), model, record)
             args = (name, record_id)
             if method == 'GET' and file_id is None:
                 rows = tx.connection.execute('SELECT id,name,COALESCE(file_size,length(content)) AS size FROM evlet_attachments WHERE model=? AND record_id=? ORDER BY id', args)

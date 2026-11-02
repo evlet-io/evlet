@@ -621,8 +621,12 @@ def compile_expression(expr, context, target):
     return ir, kind, reads
 
 
-def compile_plan(registry, root):
-    """Compile the finite plan for a root model, or return None for legacy documents."""
+def compile_plan(registry, root, *, force=False):
+    """Compile the finite plan for a root model, or return None for legacy documents.
+
+    `force` compiles a plan for a legacy root too, so move guards and action availability can be
+    evaluated over its saved values; such a plan does not make the document finite-v1.
+    """
     from .fields import Decimal as DecimalField, Integer, MISSING
     language = root_language(root)
     tables = {}
@@ -637,13 +641,15 @@ def compile_plan(registry, root):
             walk(child, path + (name,), owners, model)
     walk(root, (), (), None)
     finite = any(uses_finite(field) for model, _, _ in tables.values() for field in model.__declared_fields__.values())
-    if not finite and language is None:
+    if not finite and language is None and not force:
         return None
+    # A plan forced for guards over a legacy root reads legacy calculated and queried fields as saved values.
+    legacy = force and not finite and language is None
     fields, schema = [], {}
     for path, (model, parent_model, children) in tables.items():
-        if any(field.compute is not None and not is_finite(field) for field in model.__declared_fields__.values()):
+        if not legacy and any(field.compute is not None and not is_finite(field) for field in model.__declared_fields__.values()):
             raise CalcError('UNSUPPORTED_EXPRESSION', f'{root.__name__}: finite-v1 documents cannot also use legacy string computes ({address(path, "")})')
-        if model.__sources__ or any(field.query is not None for field in model.__declared_fields__.values()):
+        if not legacy and (model.__sources__ or any(field.query is not None for field in model.__declared_fields__.values())):
             raise CalcError('UNSUPPORTED_EXPRESSION', f'{root.__name__}: finite-v1 documents do not support Query sources yet')
         entry = {}
         for name, field in model.__declared_fields__.items():

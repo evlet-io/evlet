@@ -140,6 +140,12 @@
         {
           "name": "confirm",
           "label": "Confirm",
+          "roles": [
+            "admin",
+            "editor"
+          ],
+          "guarded": false,
+          "available_when": null,
           "arguments": [
             {
               "name": "note",
@@ -147,7 +153,8 @@
               "required": false,
               "default": ""
             }
-          ]
+          ],
+          "inputs": []
         }
       ],
       "attachments": false

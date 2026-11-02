@@ -150,12 +150,19 @@ class Policy:
         cache = self.__dict__.setdefault('_derived', {})
         key = (user.role, model, name, kind)
         if key not in cache:
-            cache[key] = all(
-                self.allows(user, target, 'read')
-                and not (scope in ('member', 'membership', 'lookup') and self.rule(user, target).scope is not None)
-                and (read is None or read in self.presented(user, target) and self.derivation_allowed(user, target, read))
-                for scope, target, read in self.registry.finite_reads(model, name, kind))
+            cache[key] = self.reads_allowed(user, self.registry.finite_reads(model, name, kind))
         return cache[key]
+
+    def reads_allowed(self, user, reads):
+        """Whether this role may read every (scope, model, field) input of a finite expression.
+
+        Collections and Link lookups must be complete for the role: a row scope on them hides rows.
+        """
+        return all(
+            self.allows(user, target, 'read')
+            and not (scope in ('member', 'membership', 'lookup') and self.rule(user, target).scope is not None)
+            and (read is None or read in self.presented(user, target) and self.derivation_allowed(user, target, read))
+            for scope, target, read in reads)
 
     def scope_sql(self, user, model):
         rule = self.rule(user, model)

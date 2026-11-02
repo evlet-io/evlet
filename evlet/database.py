@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 
-from .fields import Link, Reference
+from .fields import Link, MISSING, Reference
 from .models import ValidationError, identifier
 from .query import SqlQuery
 
@@ -156,8 +156,19 @@ class Session:
             raise ValueError(f'{model.__name__} is a finite-v1 document; write it through Context.create/update '
                              '(document settlement) or inside session.maintenance() for an audited repair')
 
+    def _state(self, model, value, current):
+        """A State changes only through its moves; raw writes may set it only inside maintenance()."""
+        name = getattr(model, '__state__', None)
+        if name is None or self._maintenance or value is MISSING:
+            return
+        expected = model.__declared_fields__[name].default if current is None else current._values.get(name)
+        if value != expected:
+            raise ValueError(f'{model.__name__}.{name} changes only through its moves; use Context.move(), '
+                             'or session.maintenance() for an audited repair')
+
     def create(self, model, /, **values):
         self._guard(model)
+        self._state(model, values.get(getattr(model, '__state__', None) or '', MISSING), None)
         table = identifier(self.registry.name_for(model))
         record = model(**values)
         self.check_references(model, record._values)
@@ -200,6 +211,7 @@ class Session:
     def update(self, model, record_id, /, **changes):
         self._guard(model)
         current = self.get(model, record_id)
+        self._state(model, changes.get(getattr(model, '__state__', None) or '', MISSING), current)
         record = model(**{**current._values, **changes})
         if changes:
             self.check_references(model, {name: record._values[name] for name in changes})

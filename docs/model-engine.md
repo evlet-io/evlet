@@ -66,6 +66,10 @@ class Visit(Model):
 | `Duration` | INTEGER seconds | ISO 8601 days, hours, minutes and seconds (`P1DT2H`, `PT90M`) or whole seconds, 0 or more | number filters; values in either form |
 | `Tags` | TEXT JSON array | at most 20 distinct tags (ignoring case) of 1 to 40 characters, without quotes, backslashes, commas or control characters; a text value is split on commas | `contains` matches one whole tag exactly, including case (duplicates are detected ignoring case); equality matches the whole list |
 | `Reference` | two columns `<name>_model`, `<name>_id`, no SQL foreign key | a registered model and a record that exists, checked when the value changes | equality with `{"model", "id"}` and `isnull` |
+| `State` | TEXT like `Select` | one of its states; set only to the default on create, then changed only by its `Move`s; at most one per root document; see [states-actions.md](states-actions.md) | text filters |
+
+Any editable field may declare `editable_when_locked=True` so that ordinary writes can still
+change it while its document is in a locked State (for example remarks).
 
 `Reference` is the field type; `Ref("parent.warehouse")` keeps meaning a declared path for
 defaults and filters. A reference cannot be unique, indexed,

@@ -335,3 +335,94 @@ Known limitations:
   rows), and the 64 KiB request body limit allows only short rows in one request.
 * The paging route reads one collection; it has no filters or sorting other than position.
 * The SolidJS form does not use change sets, paging or `children_pages`; the new UI will.
+
+## Phase 4: states, moves and model actions (01-11-2026)
+
+Branch `model/04-state`, stacked on `model/03-lines`. Guide: [states-actions.md](states-actions.md).
+
+* **State and Move.** `State(choices, default=..., moves=..., locked=..., final=...,
+  voidable=...)` is a read-only `Select` (at most one per root document, never on Table
+  rows). `Move("draft", "issued", "Issue", roles=..., when=..., run=...)` takes its states
+  positionally. Unknown states, moves out of final states, duplicate moves between two
+  states and voidable states that are not locked or are final fail at declaration; a `run`
+  that is not a model method fails at registration. A model with a State is a document
+  (`__declaration_mode__`) but does not become finite-v1 by itself.
+* **Ordinary writes** may create a record only in the default state and never set it
+  afterwards (field errors). A locked state refuses ordinary changes to the record and to
+  its Table rows at every depth, through HTTP, `Context`, dialogs and services, except fields
+  with `editable_when_locked=True`. Deleting a locked record is refused with 409.
+* **Moves.** `POST /api/{model}/{id}/moves/{to}` and `Context.move()`. Order of checks:
+  update permission and row scope as for updates, then unknown target 404, final state 409,
+  no such move 409, role 403, guard 409. The move, `run`, settlement and rows commit in one
+  transaction. `changed()` receives `"move"`. `evlet.states.moved()` is the empty hook
+  where Phase 8 will write the Journal entry.
+* **Actions.** `@action("Label", roles=..., inputs={...}, available_when=...)`. With
+  `inputs`, fields clean the values and the signature is not read for types; without, the
+  typed-signature rule stays. `available_when` failing is 409. Moves and actions bypass the
+  State lock but not `locked_when` or any other rule. Legacy `Action` is unchanged.
+* **Guards** compile with `compile_expression` against the root and are evaluated over an
+  engine session of the saved document (with today and Link lookups read in the
+  transaction). Roots without finite features get a plan compiled with
+  `compile_plan(force=True)` only for this; `Registry.plans` and all hashes are unchanged.
+* **Responses and schema.** Details of models with a State or a guarded action add
+  `_moves`, `_actions` and `_locked`, outside the ETag; reasons over unreadable inputs are
+  generic. `/api/schema` adds `state`, and action entries add `roles`, `inputs`,
+  `available_when`, `guarded` and derived `arguments`. `Policy.reads_allowed()` is the shared
+  readability check for rules and guards.
+* **Playground.** The amendment Quote's `stage` is now a State (Send when the total is
+  positive, Mark won, Mark lost, Reopen for administrators; sent, won and lost are locked; won
+  is final) and the Quote has an `Extend validity` action with an input. Its lost reason is no
+  longer required when lost, because it can only be entered after the move, and it is
+  `editable_when_locked`.
+* **Changed tests.** `tests/test_builds.py`: the Quote steps that set `stage` by PATCH now
+  expect the State field error and use moves; the row-change step runs while the quote is a
+  draft. The generated `document-contract.json` gained the additive action keys. New tests
+  in `tests/test_states.py` and a PostgreSQL variant in `tests/test_postgres.py`.
+
+Known limitations:
+
+* A guard that reads owned rows or virtual results loads the whole saved document for a
+  detail response when the caller cannot read every row (hidden collections or a row
+  scope); otherwise it reuses the rows the detail read. Other guards read only the root.
+* Draft previews do not report the State lock. The connector, the MCP server and the
+  SolidJS form do not offer moves.
+* Void and revise (Phase 5) are not implemented; `voidable` is stored metadata only.
+
+Review fixes (01-11-2026):
+
+* Ordinary writes on a locked record keep every saved value except `editable_when_locked`
+  fields, at every depth, so linked prices and `today()` no longer reprice a locked record.
+  A stored result reading an `editable_when_locked` field (finite or legacy, at any depth)
+  fails at registration. `recalculate` on a locked record is 409. Moves and actions still
+  settle normally.
+* Attachment upload works on document models (it answered 405 before for models with
+  permissions or calculations). Upload and delete are refused on locked records (409).
+* Messages do not name the State to roles that cannot read it. Those roles still get
+  `_actions`.
+* Guards work on roots with legacy string calculations (legacy results are read as saved
+  values). Guards that read no owned rows and no virtual results are decided on the saved
+  root values without loading rows: a GET of a 1,000-row stated document now runs 8
+  statements against 7 without a State (it was 15 to 17).
+* `Session.create` and `Session.update` refuse State changes outside `maintenance()`.
+* Action input names `name`, `model`, `record_id` and `self` are rejected; input fields are
+  copied rather than renamed in place.
+
+Lock and leak fixes (01-11-2026):
+
+* The registration check for stored results follows legacy string formulas, virtual
+  chains, Query fields and fetches through the legacy template graph's value inputs
+  (`evlet.reactivity.template`), and finite results through their plan reads, including
+  reads of fetched copies. `sum(lines.extra)`, `v = remarks * 2` (virtual) read by a stored
+  `s = v + 1`, and `fetch="cust.name"` over an `editable_when_locked` Link now fail.
+* Ordinary writes on a locked record settle with a kept plan (`Registry.kept_plans`) in
+  which stored results are saved values, and legacy roots skip stored formulas and fetches.
+  Rules and validation therefore read the values the record keeps; a linked limit that
+  changed after locking no longer makes a field required.
+* Those writes skip the formula-version check and leave the recorded version unchanged, so
+  a locked record saved under older formulas stays editable. Moves and actions still check
+  the version; the guide says how to recalculate.
+* A role that cannot read the State gets one answer (409 `This record has no such move
+  now`) for unknown targets, missing moves, role refusals and unmet guards.
+* Guards that read rows reuse the rows the GET detail loaded when the caller reads every
+  row without a row scope. A 1,000-row document with such a guard now costs 8 statements
+  against 7 without a State (it was 13).
