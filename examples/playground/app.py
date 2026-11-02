@@ -10,7 +10,7 @@ Portal users sign in there only, and see the customer they are linked to and its
 from pathlib import Path
 
 from evlet import (Action, ApiScope, AppDefinition, Application, ChildTable, EventStore, Frontend, Host, JobQueue, LocalAuth,
-                   Policy, Rule, Task, ValidationError, own_customer)
+                   Policy, Rule, Security, Task, ValidationError, own_customer)
 from evlet.routing import resolve_routes
 from .models import Customer, Invoice, Project, ProjectTask, registry
 from .migrate import configured_database
@@ -51,7 +51,9 @@ def create_app():
     routes = playground_routes(8000)
     auth = LocalAuth(database, origins=(*routes.origins(), 'http://127.0.0.1:5173', 'http://localhost:5173',
                                        'http://127.0.0.1:4173', 'http://localhost:4173'),
-                     realms=routes.realms(), secure_cookies=False, allow_setup=True)
+                     realms=routes.realms(), secure_cookies=False, allow_setup=True,
+                     # The sign-in rules this instance starts from (the defaults); Controls can only make them stricter.
+                     security=Security(session_hours=12, lockout=5, password_min=15))
     return build_app(database, auth, routes=routes)
 
 

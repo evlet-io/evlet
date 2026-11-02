@@ -132,7 +132,9 @@ Decisions taken while building them (the owner's where marked):
   cheaply: counted in memory and written at most every 10 minutes per peer, 50 peers kept.
   `evlet proxy` prints the line for the local proxy (owner's decision, 02-11-2026).
 - **Security defaults** (owner's decision, 02-11-2026). Sessions last 12 hours and sign-in locks
-  after 5 failed attempts. Controls can only make them stricter (down to 1 hour and 3 attempts).
+  after 5 failed attempts. `security = Security(session_hours=..., lockout=..., password_min=...)`
+  in config.py sets other starting values (1 to 168 hours, 3 to 50 attempts, 15 to 64 characters),
+  as the owner asked; Controls can only make them stricter.
 - **Opens Controls is not admin.** A role may open Controls without being admin. Only admins
   change admin accounts, give the admin role, manage roles and decide who opens Controls.
 - **Overrides fail closed.** A stored override that no longer validates becomes no access, the

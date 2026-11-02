@@ -151,8 +151,9 @@ def _networks(values):
     return [ipaddress.ip_network(value, strict=False) for value in values]
 
 
-def strictest(key, value, roles):
-    """The strictest safe value of a stored setting that no longer validates."""
+def strictest(key, value, roles, file=None):
+    """The strictest safe value of a stored setting that no longer validates; file is the starting value."""
+    file = SETTINGS.get(key) if file is None else file
     number = type(value) is int
     if key in ('mcp.enabled', 'mcp.allow_writes', 'mail.personal'):
         return False
@@ -165,11 +166,11 @@ def strictest(key, value, roles):
             return [item for item in value if isinstance(item, str)]
         return list(BY_NAME) if key == 'mcp.disabled_tools' else ['*']
     if key == 'security.password_min':
-        return min(max(value, 15), 64) if number else 64
+        return min(max(value, file), 64) if number else 64
     if key == 'security.session_hours':
-        return min(max(value, 1), SETTINGS[key]) if number else 1
+        return min(max(value, 1), file) if number else 1
     if key == 'security.lockout':
-        return min(max(value, 3), SETTINGS[key]) if number else 3
+        return min(max(value, 3), file) if number else 3
     if key == 'security.two_step_roles':
         listed = [role for role in value if isinstance(role, str) and role in roles] if isinstance(value, list) else []
         return ['admin', *dict.fromkeys(role for role in listed if role != 'admin')]
@@ -190,7 +191,7 @@ class Controls:
         self.routes = None
         self.ready, self.version, self.lock = False, None, Lock()
         self.apps, self.app_of, self.app_roles, self.scopes = [], {}, {}, {}
-        self.roles, self.settings, self.problems = {}, dict(SETTINGS), []
+        self.roles, self.settings, self.problems = {}, self.files(), []
         self.custom = Customization(self)
         self.system = System(self)
 
@@ -272,7 +273,7 @@ class Controls:
         self.settings, self.problems, self.version = settings, problems, version
 
     def build(self, roles, stored, problems):
-        perms, settings = {}, dict(SETTINGS)
+        perms, settings = {}, self.files()
         self.base = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles))
         for row in stored:
             try:
@@ -295,7 +296,7 @@ class Controls:
                     except ValueError:
                         pass
                 elif row['kind'] == 'setting' and row['key'] in SETTINGS:
-                    settings[row['key']] = strictest(row['key'], value, roles)
+                    settings[row['key']] = strictest(row['key'], value, roles, self.files()[row['key']])
         try:
             policy = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles), overrides=perms, read_only=self.custom.read_only)
         except ValueError as exc:
@@ -303,6 +304,15 @@ class Controls:
             policy = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles), read_only=self.custom.read_only,
                             overrides={(role, model): Rule(()) for role in roles if role != 'admin' for model in self.registry.models.values()})
         return policy, settings
+
+    def files(self):
+        """Each setting's starting value: the framework default, with config.py's Security(...) for sign-in rules."""
+        security = getattr(self.business.auth, 'security', None)
+        values = dict(SETTINGS)
+        if security is not None:
+            values.update({'security.session_hours': security.session_hours, 'security.lockout': security.lockout,
+                           'security.password_min': security.password_min})
+        return values
 
     @staticmethod
     def role_bases(roles):
@@ -486,7 +496,7 @@ class Controls:
             return value
         if key not in SETTINGS:
             raise ValueError('Choose a known setting.')
-        file = SETTINGS[key]
+        file = self.files()[key]
         number = type(value) is int
         if key == 'security.password_min' and not (number and file <= value <= 64):
             raise ValueError('Minimum password length can only go up, to 64 at most.')
@@ -541,7 +551,7 @@ class Controls:
             if value is None:
                 return None
             value = self.check_setting(key, value)
-            return None if value == SETTINGS.get(key, True) else value
+            return None if value == self.files().get(key, True) else value
         if kind == 'custom':
             raise ValueError('Add and remove instance fields with Add field and Remove field.')
         return self.custom.check(kind, key, value)
@@ -560,7 +570,7 @@ class Controls:
                 declared = any((each, model) in self.file.declared or each in getattr(model, 'permissions', {}) for each in (role, bases[role]))
                 items.append({'kind': 'perm', 'key': key, 'file': self.file_value(role, model), 'value': value('perm', key),
                               'source': 'app' if declared else 'framework', **meta('perm', key)})
-        for key, file in SETTINGS.items():
+        for key, file in self.files().items():
             items.append({'kind': 'setting', 'key': key, 'file': file, 'value': value('setting', key), **meta('setting', key)})
         for name in self.system.schedule_names():
             key = f'schedule.{name}.active'
@@ -617,7 +627,7 @@ class Controls:
                     audit(connection, user.username, SETTING_AREAS.get(key.split('.')[0], 'Security') if kind == 'setting' else AREAS[kind], key.replace('|', ' · '), 'Reset to the file value' if value is None else 'Changed', before, value)
                 if key == 'security.session_hours':
                     # Sessions keep their start: a shorter length ends the ones already older than it.
-                    shorter = self.settings[key] - (SETTINGS[key] if value is None else value)
+                    shorter = self.settings[key] - (self.files()[key] if value is None else value)
                     if shorter > 0:
                         connection.execute('UPDATE evlet_sessions SET expires=expires-? WHERE expires>?', (shorter * 3600, now))
             version = self.publish(tx)
@@ -931,7 +941,7 @@ class Controls:
             'me': user.public(), 'apps': apps, 'models': models, 'roles': self.role_list(), 'jobs': {'failed': failed},
             'routes': [{'host': row.host, 'path': row.path, 'serves': row.serves, 'realm': row.realm, 'source': row.source, 'locked': row.locked} for row in self.routes.rows()],
             'scopes': {key or '': label for key, label in LABELS.items()} | {key: key.replace('_', ' ').capitalize() for key in self.scopes},
-            'settings': {key: {'file': SETTINGS[key], 'value': self.settings[key]} for key in SETTINGS},
+            'settings': {key: {'file': file, 'value': self.settings[key]} for key, file in self.files().items()},
             'controls': {'allow_ips': list(controls.allow_ips), 'require_two_step': controls.require_two_step},
             'attention': attention, 'overrides': overrides, 'users': {'active': int(active or 0), 'total': total},
             'audit': recent, 'two_step': self.business.settings.possible(), 'client': str(client_ip(scope, self.business.auth) or ''),

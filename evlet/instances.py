@@ -37,6 +37,8 @@ class Instance:
     timezone: str = 'UTC'
     # Reverse proxies whose X-Forwarded-For is believed, such as ("127.0.0.1", "::1"). Empty: none.
     trusted_proxies: tuple = ()
+    # `security = Security(...)` beside `instance` in config.py; read_instance fills it in.
+    security: object = field(default=None, init=False, compare=False, repr=False)
 
     def __post_init__(self):
         from .cli.project import valid_name
@@ -123,9 +125,15 @@ def read_instance(path):
         target = path / relative
         if target.is_symlink() or not target.resolve().is_relative_to(path.resolve()):
             raise ValueError(f'Instance path cannot escape through a symbolic link: {relative}')
-    value = runpy.run_path(str(path / 'config.py')).get('instance')
+    namespace = runpy.run_path(str(path / 'config.py'))
+    value = namespace.get('instance')
     if not isinstance(value, Instance) or value.name != path.name:
         raise ValueError('config.py must define instance = Instance(name=the_directory_name, ...)')
+    from .auth import Security
+    security = namespace.get('security', Security())
+    if not isinstance(security, Security):
+        raise ValueError('config.py security must be security = Security(session_hours=..., lockout=..., password_min=...)')
+    object.__setattr__(value, 'security', security)
     return value
 
 
@@ -328,7 +336,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     routes = resolve_routes(definitions, config, read_routes(path), port=port, roots={package.name: package.source_root for package in pinned})
     secure = routes.primary is not None
     auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=secure, allow_setup=not secure,
-                     trusted_proxies=config.trusted_proxies)
+                     trusted_proxies=config.trusted_proxies, security=config.security)
     rules, views, schedules, roles = {}, ViewRegistry(), [], {role: role for role in ('admin', 'editor', 'viewer', 'portal')}
     for name, definition in definitions:
         for role, base in definition.roles.items():

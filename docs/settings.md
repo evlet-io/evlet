@@ -48,7 +48,7 @@ session of the person ends, and so do their connected AI assistants and unused a
 codes. API keys are kept unless the person ticks "Also revoke API keys (N active)", which sends
 `"revoke_keys": true`; it is unticked by default and shown when they have active keys
 ([controls.md](controls.md#ending-access)). Wrong current passwords count against the account's
-sign-in lockout (`security.lockout`, 5 by default).
+sign-in lockout (`security.lockout`, 5 unless config.py's `Security(...)` sets it).
 
 **Start page.** Only Docs or a model the person can read.
 

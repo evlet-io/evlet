@@ -156,13 +156,26 @@ user's links (`evlet_user_links`) that the session loads with each request, so a
 no customer links sees no records. Link users with `evlet link-user` or
 `LocalAuth.link_user`.
 
-**Security** (kind `setting`):
+**Security** (kind `setting`). The file value of the first three comes from the instance's
+`config.py`, beside `instance = Instance(...)`, or from `LocalAuth(security=...)` in an application
+built by hand:
+
+```python
+from evlet import Instance, Security
+
+instance = Instance(name="acme", domain="erp.acme.com")
+security = Security(session_hours=8, lockout=4, password_min=16)
+```
+
+`Security` checks its values: `session_hours` 1 to 168, `lockout` 3 to 50 and `password_min` 15
+to 64. Left out, they are 12 hours, 5 and 15. Controls can only make them stricter than the
+config value. Change config.py and restart to loosen one.
 
 | Key | File value | Rule |
 |---|---|---|
-| `security.password_min` | 15 | Up only, 64 at most. Applies to new passwords. |
-| `security.session_hours` | 12 | Down only. Sets the session and cookie length in every realm. Lowering it ends sessions already older than the new length, desk and portal alike. |
-| `security.lockout` | 5 | Down only, 3 at least. Failed sign-ins per network and account, and wrong current passwords per account in Settings. |
+| `security.password_min` | 15, or `Security(password_min=...)` | Up only, 64 at most. Applies to new passwords. |
+| `security.session_hours` | 12, or `Security(session_hours=...)` | Down only, 1 at least. Sets the session and cookie length in every realm. Lowering it ends sessions already older than the new length, desk and portal alike. |
+| `security.lockout` | 5, or `Security(lockout=...)` | Down only, 3 at least. Failed sign-ins per network and account, and wrong current passwords per account in Settings. |
 | `security.two_step_roles` | `["admin"]` | Admin stays. These roles must use two-step sign-in ([settings.md](settings.md#two-step-sign-in)) when the instance can keep secrets: people who have not set it up do so at their next sign-in (trust on first use), and Controls needs a verified session. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
 
@@ -309,7 +322,7 @@ they are removed on the Models page.
 | `perm` | `apps/<app>/<package>/permissions.py` | `rules = {("editor", Lead): Rule(operations=..., read_fields=..., write_fields=..., scope=...)}`. The `own_customer` preset is written as the public `own_customer()`, or `own_customer(field='id')` on the customer model |
 | `field`, `custom`, `naming` | The file that declares the model, such as `apps/notes/models/item.py` | The field lines as models.py writes them, with the changes merged in, and `Meta.naming = Naming(...)`. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. Arguments set in code, such as a callable default or validator, are written as `...` with a comment to copy them from models.py, so the code always compiles. |
 | `layout`, `list` | `apps/<app>/<package>/views/__init__.py` | `FormView(model=..., layout=Column(children=[FormLayout(...)]))`, `ListView(model=..., columns=..., page_size=..., order_by=...)` |
-| `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for the other `security.*` settings; `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read any of these yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
+| `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for session length, lockout and minimum password length, which config.py reads (the block keeps what config.py sets today with the overrides on top; restart, then reset the overrides); `two_step_roles = (...)` for `security.two_step_roles`, `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read those three yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
 
 Paste the code, deploy, then reset the overrides. Overrides that no longer apply are left out.
 

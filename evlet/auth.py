@@ -40,6 +40,21 @@ FORWARDED_NOTE_SECONDS, FORWARDED_REQUESTS, FORWARDED_CACHE, FORWARDED_ROWS = 60
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class Security:
+    """Sign-in rules an instance starts from: `security = Security(...)` in config.py, or LocalAuth(security=...).
+    Controls can only make them stricter."""
+    session_hours: int = 12
+    lockout: int = 5
+    password_min: int = 15
+
+    def __post_init__(self):
+        for name, low, high, what in (('session_hours', 1, 168, 'hours'), ('lockout', 3, 50, 'failed sign-ins'), ('password_min', 15, 64, 'characters')):
+            value = getattr(self, name)
+            if type(value) is not int or not low <= value <= high:
+                raise ValueError(f'Security {name} takes {low} to {high} {what}')
+
+
 class AccessError(Exception):
     def __init__(self, status, message):
         self.status, self.message = status, message
@@ -180,7 +195,8 @@ def client_network(address):
 
 
 class LocalAuth:
-    def __init__(self, database, *, origins, secure_cookies=True, allow_setup=False, cookie_name='evlet_session', realms=None, trusted_proxies=()):
+    def __init__(self, database, *, origins, secure_cookies=True, allow_setup=False, cookie_name='evlet_session', realms=None, trusted_proxies=(),
+                 security=None):
         self.trusted_proxies = proxy_networks(trusted_proxies)
         self._proxy_networks = [ipaddress.ip_network(value) for value in self.trusted_proxies]
         # Peers whose forwarded headers were ignored, with when this process last wrote them down.
@@ -207,8 +223,13 @@ class LocalAuth:
             self.realms[authority(origin).encode()] = realm
         self.secure_cookies = secure_cookies
         self.allow_setup = allow_setup
-        # Security settings; Controls overrides can only make them stricter.
-        self.password_min, self.session_hours, self.lockout = 15, 12, 5
+        # Security settings: the starting values, which Controls overrides can only make stricter.
+        if security is None:
+            security = Security()
+        if not isinstance(security, Security):
+            raise ValueError('LocalAuth security takes Security(...)')
+        self.security = security
+        self.password_min, self.session_hours, self.lockout = security.password_min, security.session_hours, security.lockout
         # Two-step sign-in (evlet.settings): challenge(tx, account, realm) and finish(scope, body).
         self.second_step = None
         # Child model -> parent model, so a key scoped to a model also covers its rows (Business fills it).

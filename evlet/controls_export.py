@@ -159,11 +159,18 @@ class Exporter:
         """Security settings for config.py, allowed networks for routes.py and paused schedules beside the app's schedules."""
         instance = f'instances/{self.controls.system.instance_name() or "<name>"}'
         blocks = []
-        security = {key.split('.', 1)[1]: value for key, value in values.items()
-                    if key in SETTINGS and key.startswith('security.') and key != 'security.controls_ips'}
-        if security:
-            blocks.append((f'{instance}/config.py', "# Security() is not read from config.py yet. Keep these overrides until it is.\n"
-                           f"security = {call('Security', (), {key: tuple(value) if isinstance(value, list) else value for key, value in security.items()})}"))
+        # Security(...) in config.py sets the sign-in rules. The block keeps what config.py sets today, with the overrides on top.
+        rules = ('session_hours', 'lockout', 'password_min')
+        if any(f'security.{name}' in values for name in rules):
+            from .auth import Security
+            current, default = self.controls.business.auth.security, Security()
+            security = {name: values.get(f'security.{name}', getattr(current, name)) for name in rules}
+            security = {name: value for name, value in security.items() if value != getattr(default, name)}
+            blocks.append((f'{instance}/config.py', '# Replaces any security = Security(...) in config.py. Restart, then reset these overrides.\n'
+                           f"security = {call('Security', (), security)}"))
+        if 'security.two_step_roles' in values:
+            blocks.append((f'{instance}/config.py', '# Two-step roles are not read from config.py yet. Keep this override until they are.\n'
+                           f"two_step_roles = {literal(tuple(values['security.two_step_roles']))}"))
         # Other settings keep their full keys, one block per prefix, since no config class takes them yet.
         for prefix, (name, what) in GROUPS.items():
             group = {key: value for key, value in values.items() if key in SETTINGS and key.startswith(prefix + '.')}

@@ -372,15 +372,16 @@ def test_every_setting_kind_exports_under_its_own_prefix_and_round_trips(secured
     assert status == 200, payload
     exported = {item['file']: item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1]}
     config, routes = exported['instances/<name>/config.py'], exported['instances/<name>/routes.py']
-    assert 'Security() is not read from config.py yet' in config and 'not read from config.py yet' in config.split('security =')[1]
+    assert 'security = Security(session_hours=4, lockout=4, password_min=20)' in config and 'Security() is not read' not in config
+    assert 'Two-step roles are not read from config.py yet' in config
     names, found = {'Security': lambda **options: options, 'ControlsAccess': lambda **options: options}, {}
     exec(config, names, found)
     exec(routes, names, found)
-    back = {f'security.{key}': list(value) if isinstance(value, tuple) else value for key, value in found['security'].items()}
+    back = {f'security.{key}': value for key, value in found['security'].items()} | {'security.two_step_roles': list(found['two_step_roles'])}
     back |= found['assistants'] | found['mail'] | {'security.controls_ips': list(found['controls']['allow_ips'])}
     paused = [item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1] if item['file'] == 'hooks.py']
     assert paused == ['# nightly is paused on this instance. Remove its Schedule here to stop it everywhere.\n']
     assert back | {'schedule.nightly.active': False} == values
     # Nothing loses its prefix: a Security() argument is never an assistant or mail setting.
-    assert set(found['security']) == {'password_min', 'session_hours', 'lockout', 'two_step_roles'}
+    assert set(found['security']) == {'password_min', 'session_hours', 'lockout'}
     assert config.count("'mail.personal': True") == 1
