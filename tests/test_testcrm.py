@@ -39,6 +39,9 @@ def crm(tmp_path_factory):
 
 def login(app, username):
     status, data, headers = http(app, 'POST', '/api/auth/login', {'username': username, 'password': PASSWORD})
+    if status == 200 and data.get('two_step'):
+        # Admin needs two-step sign-in on an instance.
+        status, data, headers = testcrm.finish_sign_in(app, username, data, lambda body: http(app, 'POST', '/api/auth/login', body))
     assert status == 200, data
     cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
 

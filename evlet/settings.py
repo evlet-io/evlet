@@ -206,6 +206,19 @@ class Settings:
         """Two-step sign-in can run here: a secret key is configured and cryptography is installed."""
         return self.key.configured and vault.cryptography_installed()
 
+    def two_step_problem(self):
+        """Why roles that require two-step sign-in sign in with a password only on this instance, or None.
+        An application without a secret key (not an instance) has no two-step sign-in by design."""
+        if not self.key.configured or not self.business.controls.settings['security.two_step_roles']:
+            return None
+        if not vault.cryptography_installed():
+            return 'The cryptography package is not installed on the server, so these roles sign in with a password only. Install it and restart.'
+        try:
+            self.key.check()
+        except (vault.SecretKeyError, OSError) as exc:
+            return str(exc)
+        return None
+
     def ready(self, connection=None):
         """The key can be used now. With sealed data it must already exist."""
         if connection is None:

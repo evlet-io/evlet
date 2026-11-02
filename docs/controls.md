@@ -6,7 +6,10 @@ Permissions, Security, Apps, Models, Naming, Routing, Jobs, Overrides and the Au
 
 The Overview lists what needs attention: an app waiting to be migrated or a server that still
 runs the old version, overrides that no longer apply (and what fails closed meanwhile), skipped
-naming series, screen extensions that no longer fit a form layout, and failed jobs.
+naming series, screen extensions that no longer fit a form layout, failed jobs, and roles in
+`security.two_step_roles` that can't use two-step sign-in because the `cryptography` package is
+missing or the secret key file is refused. An application without a secret key (not an instance)
+has no two-step sign-in, and nothing is listed for it.
 
 ## Access
 

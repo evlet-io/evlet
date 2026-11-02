@@ -281,6 +281,10 @@ class System:
                 add('layers', 'naming' if kind == 'naming' else 'models', f'The {key} {kind} override no longer applies. The app file is used.', error)
         for error in self.extension_problems():
             add('layers', 'models', 'A screen extension no longer fits the form layout', error)
+        reason = self.controls.business.settings.two_step_problem()
+        if reason:
+            roles = ', '.join(self.controls.settings['security.two_step_roles'])
+            add('lock', 'security', f'Two-step sign-in is unavailable for {roles}', reason)
         if failed:
             add('clock', 'jobs', f"{failed} job{'s' if failed != 1 else ''} failed", 'Retry them from Jobs once the cause is fixed.')
         return items

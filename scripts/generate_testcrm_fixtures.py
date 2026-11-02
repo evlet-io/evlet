@@ -63,12 +63,23 @@ class Scenario:
             self.phases[-1][key('POST', '/api/auth/login')] = self.call('POST', '/api/auth/login', {'username': username, 'password': 'not the password'})
             self.phases.append({})
         status, data, headers = http(app, 'POST', '/api/auth/login', {'username': username, 'password': PASSWORD})
+        if status == 200 and data.get('two_step'):
+            # Admin needs two-step sign-in on an instance.
+            status, data, headers = testcrm.finish_sign_in(app, username, data, lambda body: http(app, 'POST', '/api/auth/login', body))
         assert status == 200, data
         self.cookie, self.csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
         if not signed_in:
             self.phases[-1][key('POST', '/api/auth/login')] = {'status': status, 'body': {**data, 'csrf': 'fixture-csrf-token'}, 'etag': None}
             self.phases.append({})
         self.schema = self.get('/api/auth/session', '/api/schema')
+        # The shell reads the person's settings (name, region formats, two-step state) on start.
+        me = self.get('/api/_settings/me')
+        if me and me.get('security'):
+            # Sessions carry random ids and times; the fixture keeps one fixed session.
+            me['security']['sessions'] = [{'id': '0' * 16, 'current': True, 'started': 1793534400, 'expires': 1793563200,
+                                           'agent': 'Browser', 'realm': 'desk'}]
+            if me['security'].get('two_step', {}).get('since'):
+                me['security']['two_step']['since'] = 1793534400
 
     def call(self, method, url, body=None, headers=None):
         status, payload, response_headers = http(self.app, method, url, body, cookie=self.cookie, csrf=self.csrf, headers=headers)

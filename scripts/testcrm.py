@@ -127,6 +127,27 @@ def models(app):
     return {model.__name__: model for model in app.database.registry.models.values()}
 
 
+# Backup codes of scripted sign-ins, {(id(app), username): [code, ...]}.
+_BACKUP_CODES = {}
+
+
+def finish_sign_in(app, username, data, post):
+    """Finish a scripted sign-in that asks for two-step sign-in, as admin's does on an instance.
+
+    The first sign-in sets it up with the secret it is given and keeps the backup codes; later ones
+    use one backup code each. post(body) sends POST /api/auth/login and returns (status, data, headers).
+    """
+    import base64
+    import time
+    from evlet.settings import totp
+    if data.get('two_step') == 'setup':
+        raw = base64.b32decode(data['secret'] + '=' * (-len(data['secret']) % 8))
+        status, data, headers = post({'ticket': data['ticket'], 'code': totp(raw, int(time.time() // 30))})
+        _BACKUP_CODES[id(app), username] = list(data.get('backup_codes', ()))
+        return status, data, headers
+    return post({'ticket': data['ticket'], 'code': _BACKUP_CODES[id(app), username].pop()})
+
+
 def seed(app, password, *, big_lines=150):
     """Fictional users and data. Deals reach their stage through their moves, so won deals post their
     bookings and create their kick-off tasks exactly as the app does. Returns {username: User}."""

@@ -216,3 +216,26 @@ def test_start_warns_when_required_roles_cannot_use_two_step(secured, tmp_path, 
         secured.business.settings.initialize()
     assert 'need two-step sign-in, but the cryptography package is not installed' in caplog.text
     assert http(secured, 'POST', '/api/auth/login', {'username': 'admin', 'password': PASSWORD})[1]['user']['username'] == 'admin'
+
+
+def test_controls_lists_required_roles_that_cannot_use_two_step(secured, tmp_path, monkeypatch):
+    from test_controls import save
+    admin = client(secured)
+    unavailable = lambda: [item for item in admin('GET', '/api/_controls/state')[1]['attention'] if item['page'] == 'security']
+    # An application without a secret key has no two-step sign-in by design, so nothing is listed.
+    assert unavailable() == []
+    secured.business.secret_key = tmp_path / 'secret.key'
+    monkeypatch.setattr(vault, 'cryptography_installed', lambda: False)
+    assert save(admin, ('setting', 'security.two_step_roles', ['admin', 'editor']))[0] == 200
+    [item] = unavailable()
+    assert item['title'] == 'Two-step sign-in is unavailable for admin, editor' and 'cryptography package is not installed' in item['text']
+    # With the package, admin needs a two-step session to open Controls, so the list is read directly.
+    monkeypatch.setattr(vault, 'cryptography_installed', lambda: True)
+    listed = lambda: [item for item in secured.business.controls.system.attention([], 0) if item['page'] == 'security']
+    (tmp_path / 'secret.key').write_bytes(base64.urlsafe_b64encode(os.urandom(32)) + b'\n')
+    os.chmod(tmp_path / 'secret.key', 0o644)
+    [item] = listed()
+    assert 'can be read by other users' in item['text']
+    os.chmod(tmp_path / 'secret.key', 0o600)
+    assert listed() == []
+    assert admin('GET', '/api/_controls/state')[:2] == (403, {'error': TWO_STEP})
