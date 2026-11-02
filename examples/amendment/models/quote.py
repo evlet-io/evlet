@@ -1,8 +1,19 @@
 """A finite-v1 document: one formula definition for browser previews and server saves."""
 from evlet import (Model, Child, Table, Decimal, Currency, Boolean, Text, Rule, Link, Date, Integer, Percent, Tags, State, Move,
-                   Sequence, action, Count, Sum)
+                   Sequence, Reference, Effect, action, Count, Sum)
 from evlet.calc import F, days, parent, round, when
 from amendment.models.masters import Company
+
+
+class SalesLedger(Model):
+    """Won business, one row per won quote. Rows are written only by the Quote's effect and are read only."""
+    permissions = {'admin': Rule(('read',)), 'editor': Rule(('read',)), 'viewer': Rule(())}
+    company = Link(Company)
+    amount = Currency(required=True)
+    memo = Text(default='')
+    # Filled by the engine: the quote that posted the row, and whether the row reverses another one.
+    source = Reference()
+    reversal = Boolean(default=False)
 
 
 class Quote(Model):
@@ -19,6 +30,9 @@ class Quote(Model):
         }
         # Shown beside the quote; its revisions are listed as related records automatically.
         key_fields = ('company', 'stage', 'payable', 'valid_until')
+        # Winning a quote posts one row to the sales ledger in the same transaction. A won quote is final,
+        # so it is never voided and the effect needs no reverse.
+        effects = (Effect(SalesLedger, rows='ledger_rows', on='won'),)
 
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
@@ -76,3 +90,7 @@ class Quote(Model):
             available_when=F('stage') == 'sent')
     def extend_validity(self, extra_days):
         self.payment_days = (self.payment_days or 0) + extra_days
+
+    # Effect rows are a pure function of the saved quote.
+    def ledger_rows(self):
+        return [{'company': self.company, 'amount': self.payable, 'memo': self.name}]

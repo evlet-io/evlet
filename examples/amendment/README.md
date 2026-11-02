@@ -31,6 +31,8 @@ becomes void and keeps its quote number, and a new draft copy with the same line
 back to it. The copy has no number until it is sent. Companies
 have a phone number and quotes have free tags. The quote list declares measures:
 the total of open (sent) quotes, the total of won quotes and the number of quotes.
+Marking a quote won posts one row to the Sales Ledger through an effect;
+ledger rows are read only for every role.
 
 Sales Register is manual. Live Sales Register runs after valid filter changes.
 The nested warehouse service demonstrates a read-only custom API and daily

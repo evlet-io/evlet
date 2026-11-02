@@ -549,3 +549,107 @@ def test_postgres_related_records_follow_row_scope(pg_dsn):
 def test_postgres_attachment_limits_from_meta(pg_dsn):
     from tests import test_meaning as meaning
     meaning.check_attachment_limits(meaning.serve(PostgreSQLDatabase(pg_dsn, Registry(*meaning.MODELS))))
+
+
+def effect_books(pg_dsn):
+    from tests import test_effects as effects
+    from tests.test_rules_types import start
+    return effects, effects.seed(start(PostgreSQLDatabase(pg_dsn, Registry(*effects.MODELS))))
+
+
+@pytest.mark.parametrize('name', ['test_a_move_posts_balanced_rows_atomically', 'test_unbalanced_rows_roll_the_move_back',
+                                  'test_an_invalid_row_rolls_the_move_back'])
+def test_postgres_effects_post_balance_and_roll_back(pg_dsn, name):
+    effects, books = effect_books(pg_dsn)
+    getattr(effects, name)(books)
+
+
+def test_postgres_effect_rows_are_read_only(pg_dsn):
+    effects, books = effect_books(pg_dsn)
+    effects.test_effect_rows_are_read_only_on_every_write_path(books)
+
+
+def test_postgres_effects_are_reversed_on_void_and_revise(pg_dsn):
+    effects, books = effect_books(pg_dsn)
+    effects.test_void_writes_mirror_rows_and_keeps_originals(books)
+    effects.test_revise_reverses_the_original_and_the_copy_posts_its_own(books)
+
+
+def test_postgres_effect_permissions(pg_dsn):
+    effects, books = effect_books(pg_dsn)
+    effects.test_roles_that_cannot_read_a_target_see_nothing_about_it(books)
+
+
+def test_postgres_effects_check(pg_dsn):
+    effects, books = effect_books(pg_dsn)
+    effects.test_check_reports_changed_missing_extra_and_unbalanced_rows(books)
+
+
+def test_postgres_effects_check_command(pg_dsn, tmp_path, monkeypatch, capsys):
+    effects, books = effect_books(pg_dsn)
+    effects.test_check_command_exit_codes(books, tmp_path, monkeypatch, capsys)
+
+
+def effect_branches(pg_dsn):
+    from tests import test_effects as effects
+    from tests.test_rules_types import add_user, start
+    app = start(PostgreSQLDatabase(pg_dsn, Registry(effects.Branch, effects.BranchEntry, effects.PlainEntry, effects.BranchOrder)))
+    return effects, (app, add_user(app, 'editor'))
+
+
+@pytest.mark.parametrize('name', ['test_rows_are_validated_without_any_role', 'test_links_to_missing_records_are_field_errors'])
+def test_postgres_effect_rows_are_validated_without_any_role(pg_dsn, name):
+    effects, branches = effect_branches(pg_dsn)
+    getattr(effects, name)(branches)
+
+
+def test_postgres_effect_failures_roll_back(pg_dsn, monkeypatch, caplog):
+    effects, books = effect_books(pg_dsn)
+    effects.test_a_failing_rows_method_is_a_field_error_and_an_invalid_check(books, monkeypatch, caplog)
+
+
+def test_postgres_void_checks_the_mirror_balance(pg_dsn, monkeypatch):
+    effects, books = effect_books(pg_dsn)
+    effects.test_void_checks_the_balance_of_the_mirror_rows(books, monkeypatch)
+
+
+def test_postgres_effects_check_reads_a_snapshot_and_uses_the_source_index(pg_dsn):
+    import psycopg
+    effects, books = effect_books(pg_dsn)
+    app, c, account = books
+    url = effects.invoice(c, account)
+    effects.move(c, url, 'issued')
+    with psycopg.connect(pg_dsn) as writer:
+        writer.execute('UPDATE stockmove SET qty = 0')
+        # An uncommitted writer neither blocks the check nor shows in its snapshot.
+        assert effects.effects.check(app) == []
+        writer.rollback()
+    with app.database.transaction() as tx:
+        tx.connection.execute('SET LOCAL enable_seqscan = off')
+        plan = ' '.join(row[0] for row in tx.connection.execute(
+            'EXPLAIN SELECT * FROM "ledgerentry" WHERE "source_model"=? AND "source_id" IN (?) ORDER BY id', ('invoice', 1)).fetchall())
+    assert 'Index' in plan and 'source' in plan, plan
+
+
+def test_postgres_reference_index_migrations(pg_dsn):
+    from evlet import Boolean, CreateModel, Reference
+    def entry_model(name, indexed):
+        return type('Entry', (Model,), {'item': Text(default=''), name: Reference(index=indexed), 'reversal': Boolean(default=False)})
+    old, new, renamed = entry_model('source', False), entry_model('source', True), entry_model('origin', True)
+    first = (Migration('0001', CreateModel(old)),)
+    PostgreSQLDatabase(pg_dsn, Registry(old), migrations=first).migrate(first)
+    with pytest.raises(SchemaError):
+        PostgreSQLDatabase(pg_dsn, Registry(new), migrations=first).initialize()
+    second = first + (Migration('0002', AddIndex('entry', 'source')),)
+    PostgreSQLDatabase(pg_dsn, Registry(new), migrations=second).migrate(second)
+    PostgreSQLDatabase(pg_dsn, Registry(new), migrations=second).initialize()
+    third = second + (Migration('0003', RenameField('entry', 'source', 'origin')),)
+    PostgreSQLDatabase(pg_dsn, Registry(renamed), migrations=third).migrate(third)
+    PostgreSQLDatabase(pg_dsn, Registry(renamed), migrations=third).initialize()
+
+
+@pytest.mark.parametrize('check', ['check_a_caught_move_failure_leaves_no_rows_or_number', 'check_numbers_and_rows_on_one_move_and_on_revise',
+                                   'check_measures_over_a_target_follow_row_scope', 'check_an_effect_source_is_not_a_relation'])
+def test_postgres_effects_beside_numbers_measures_and_relations(pg_dsn, check):
+    from tests import test_effects as effects
+    getattr(effects, check)(effects.stacked_books(PostgreSQLDatabase(pg_dsn, Registry(*effects.STACKED))))

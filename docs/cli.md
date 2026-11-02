@@ -46,6 +46,7 @@ evlet install notes --instance acme --trust
 evlet serve acme --port 8000
 evlet dev --instance acme
 evlet migrate acme --trust
+evlet effects check acme
 evlet playground --port 8000
 evlet docs --port 8001
 ```
@@ -72,6 +73,9 @@ data on exit. It runs the existing framework examples, layouts and Projects demo
 It does not read `EVLET_DATABASE`, create an app or touch customer instances.
 The Projects demo retains its separate browser-local storage behavior.
 `docs` serves this installed version's guides locally without a login or database.
+`effects check` recomputes the rows records post to other models and reports differences.
+It reads one snapshot without writing or taking the write lock, so it may run beside a server;
+it exits with status 1 when there is any difference. See [effects.md](effects.md).
 
 ## App package
 

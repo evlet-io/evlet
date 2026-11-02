@@ -50,6 +50,11 @@ def parser():
         command.add_argument('--debug', action='store_true', help='Show tracebacks for expected startup errors')
         command.add_argument('--host', default='127.0.0.1')
         command.add_argument('--port', type=int, default=8000)
+    effects = commands.add_parser('effects', help='Check the rows records post to other models')
+    effects_commands = effects.add_subparsers(dest='effects_command', required=True)
+    effects_check = effects_commands.add_parser('check', help='Recompute effect rows and report differences without writing')
+    effects_check.add_argument('instance')
+    effects_check.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     for name, port in (('playground', 8000), ('docs', 8001)):
         command = commands.add_parser(name, help='Launch bundled ' + name + ' without a project')
         command.add_argument('--port', type=int, default=port)
@@ -145,6 +150,16 @@ def main(argv=None):
             print('Applied migrations: ' + (', '.join(result['migrations']) or 'none; schema is current'))
             if result['backup']:
                 print('Backup: ' + result['backup'])
+        elif args.command == 'effects':
+            from .effects import check_instance
+            from ..effects import describe
+            differences = check_instance(root, args.instance)
+            for item in differences:
+                print(describe(item))
+            if differences:
+                print(f'{len(differences)} difference' + ('' if len(differences) == 1 else 's'), file=sys.stderr)
+                raise SystemExit(1)
+            print('No differences')
         elif args.command in ('serve', 'dev'):
             from .serve import serve
             name = args.instance

@@ -7,7 +7,7 @@ from .fields import Link, Reference, Text
 from .models import identifier, storage_name
 from .migrations import (SchemaError, AddField, AddIndex, CreateModel, RenameField, Recompute,
                          _metadata, _definition, _migration_plan, _history,
-                         _normalized, _planned_definition, _recompute, recomputes)
+                         _normalized, _planned_definition, _recompute, recomputes, index_columns, stored_columns)
 
 
 def validate_indexes(registry):
@@ -36,10 +36,11 @@ def relation_name(db, kind, key):
     return name
 
 
-def index(db, table, field, unique=False):
+def index(db, table, field, unique=False, columns=None):
     # A field rename preserves its index name; the old field name may be reused.
     name = relation_name(db, 'idx', f'{table}:{field}:{unique}')
-    db.execute(f'CREATE {"UNIQUE " if unique else ""}INDEX {identifier(name)} ON {identifier(table)} ({identifier(field)})')
+    covered = ', '.join(identifier(column) for column in (columns or (field,)))
+    db.execute(f'CREATE {"UNIQUE " if unique else ""}INDEX {identifier(name)} ON {identifier(table)} ({covered})')
 
 
 def sequence_index(db, table, name, field):
@@ -71,7 +72,7 @@ def create(db, table, model):
     reserve_id_names(db, table)
     for name, field in model.__fields__.items():
         if field.index or field.unique:
-            index(db, table, name, field.unique)
+            index(db, table, name, field.unique, index_columns(name, field))
         if field.kind == 'sequence':
             sequence_index(db, table, name, field)
 
@@ -109,7 +110,7 @@ def check(db, registry, rows=False):
         if {tuple(r['fields']) for r in indexes if r['indisunique'] and not r['indisprimary']} != {(name,) for name, field in model.__fields__.items() if field.unique}:
             raise SchemaError(f'{table}: unique constraints differ from models')
         indexed = {tuple(r['fields']) for r in indexes}
-        if any((name,) not in indexed for name, field in model.__fields__.items() if field.index):
+        if any(index_columns(name, field) not in indexed for name, field in model.__fields__.items() if field.index):
             raise SchemaError(f'{table}: an explicit index migration is required')
         if any(field.kind == 'sequence' for field in model.__fields__.values()):
             partial = db.execute('''SELECT array_agg(a.attname ORDER BY k.ordinality) AS fields
@@ -169,7 +170,8 @@ def apply(db, op):
         create(db, table, op.model)
         links(db, table, op.model)
     elif isinstance(op, AddIndex):
-        index(db, op.table, op.field, op.unique)
+        columns = {row[0] for row in db.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?", (op.table,))}
+        index(db, op.table, op.field, op.unique, stored_columns(columns, op.field))
     elif isinstance(op, RenameField):
         op.apply(db, {row[0] for row in db.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?", (op.table,))})
     elif isinstance(op, Recompute):
@@ -184,7 +186,7 @@ def apply(db, op):
             db.execute(f'ALTER TABLE {identifier(op.table)} ADD COLUMN {sql} DEFAULT {literal}')
         if isinstance(op.field, Link):
             db.execute(f'ALTER TABLE {identifier(op.table)} ADD FOREIGN KEY ({identifier(op.name)}) REFERENCES {identifier(storage_name(op.field.target))}(id)')
-        if op.field.index or op.field.unique: index(db, op.table, op.name, op.field.unique)
+        if op.field.index or op.field.unique: index(db, op.table, op.name, op.field.unique, index_columns(op.name, op.field))
         if op.field.kind == 'sequence': sequence_index(db, op.table, op.name, op.field)
 
 

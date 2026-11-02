@@ -689,13 +689,14 @@ class Reference(Field):
     """A link to a record of any registered model, stored as <name>_model and <name>_id; no SQL foreign key.
 
     The value is {"model": "<storage name>", "id": <id>}. Writes check that the record exists.
+    index=True creates one index over both columns, (<name>_model, <name>_id).
     """
     kind = "reference"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        if self.unique or self.index:
-            raise ValueError("Reference fields cannot be unique or indexed")
+        if self.unique:
+            raise ValueError("Reference fields cannot be unique")
 
     def validate(self, value):
         if isinstance(value, (list, tuple)) and len(value) == 2:

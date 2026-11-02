@@ -6,7 +6,8 @@ against ordinary edits. Model actions are declared methods that may take validat
 inputs and may be available only in some states.
 
 This guide covers Phases 4 and 5 of the model handoff: states, moves, actions, and the
-void and revise corrections. The Journal (Phase 8) is not implemented yet; see "Not yet" below.
+void and revise corrections. Rows a move posts to other models, and their reversal on void,
+are described in [effects.md](effects.md). The Journal (Phase 8) is not implemented yet; see "Not yet" below.
 
 ## Declaring a State
 
@@ -243,7 +244,8 @@ reason)` from Python.
   no other keys (`Send only a reason`). Errors are field errors (422).
 * Voiding starts only from a state in `voidable`; otherwise 409 `This record is draft, which
   cannot be voided`. A role that cannot read the State gets `This record cannot be voided now`.
-* The engine writes the `void` state and nothing else. A void is not an ordinary write and not
+* The engine writes the `void` state and, for a model with effects, the mirror rows that reverse
+  them (see [effects.md](effects.md)). A void is not an ordinary write and not
   a declared Move: no State lock, move roles or guards apply, and the document is not
   recalculated. Every other value, at every depth, stays as it was saved, saved results
   included.
@@ -351,8 +353,7 @@ reasons above. They never include counts or names.
 * The Journal (Phase 8) will record each move, void and revise. The places that write it are
   `evlet.states.moved()`, `evlet.corrections.voided()` and `evlet.corrections.revised()`,
   each called in the operation's transaction.
-* Effects (Phase 6) will be reversed in `evlet.corrections.reverse_effects()`, which is
-  empty today.
+* Effects are reversed in `evlet.corrections.reverse_effects()`; see [effects.md](effects.md).
 * Document numbers are described in [sequences.md](sequences.md). A void record keeps its
   number; `evlet.corrections.prepare_copy()` clears the numbers on a revision's copy, which
   is numbered again when it reaches `assign_on`.

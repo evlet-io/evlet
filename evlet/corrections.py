@@ -20,7 +20,9 @@ REASON_LENGTH = 1000
 # Hooks for later phases. Each is called once per operation, inside its transaction.
 
 def reverse_effects(context, model, record_id, previous):
-    """Called when a record is voided, after its state changed. Effects (Phase 6) write mirror rows here."""
+    """Called when a record is voided, after its state changed: the effects write their mirror rows."""
+    from .effects import reverse
+    reverse(context, model, record_id)
 
 
 def prepare_copy(context, model, original, copy):

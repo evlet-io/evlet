@@ -59,6 +59,8 @@ from .instances import AppDefinition, Instance, Schedule
 __all__ += ["AppDefinition", "Instance", "Schedule"]
 __all__ += ["Child", "Move", "Table", "Ref", "Query", "action", "depends"]
 from .forms import Dialog, Report, Column
+from .effects import Effect, Negate, Swap
+__all__ += ["Effect", "Negate", "Swap"]
 __all__ += ["Dialog", "Report", "Column"]
 from .services import api, cron
 __all__ += ["api", "cron"]

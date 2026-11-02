@@ -696,3 +696,95 @@ Restacked on Phase 9 (01-11-2026):
 * The generated fixtures were regenerated on the stacked branch with
   `scripts.generate_ui_fixtures`, `scripts.generate_document_fixtures` and
   `scripts.generate_finite_fixtures`; they match the committed files.
+
+## Phase 6: effects (01-11-2026)
+
+Branch `model/06-effects`, stacked on `model/05-void-revise`; restacked on
+`model/10-stacked` as `model/06-stacked`. Guide: [effects.md](effects.md).
+
+* **Declaration.** `Meta.effects = (Effect(Target, rows="method", on="state", reverse=Swap(a, b) or
+  Negate(*fields), balanced=(a, b)), ...)`, exported from `evlet` with `Swap` and `Negate`. The
+  engine lives in `evlet/effects.py`; `Registry` compiles the effects into `registry.effects` and
+  `registry.effect_targets` at startup.
+* **Decisions.**
+  * The rows method takes only `self`, like a `run` method, instead of the handoff's
+    `(self, tx)`. `self` is the saved document read with full access and frozen, so the rows are a
+    pure function of the record and the check command can recompute them. Virtual results are
+    not available to it.
+  * A target declares `source = Reference()` and `reversal = Boolean(default=False)`. Reversal rows
+    are marked by the flag, keep the original's `source`, and originals are never changed. The
+    Draft interface reserves `source`, so a flat model (no Table) may now name a Reference field
+    `source`; on such a draft the field wins.
+  * Any model named by an Effect is an effect target. `Policy.allows` refuses create, update and
+    delete on it for every role, which covers HTTP, `Context`, dialogs, services and attachments,
+    and `Session` raw writes raise outside `tx.maintenance()`.
+  * Registration requires `on` to be entered by a declared move, not the default, never entered
+    twice, with every later state locked; `reverse` is required when a voidable state is reachable
+    after `on`; Swap fields must match in type, scale and bounds and Negate bounds must be
+    symmetric, so reversal rows are always valid. One effect per target per model.
+  * Rows are validated as new records of the target: declarative targets settle through the normal
+    pipeline, plain models through their fields and `validate()`. Link values are checked with the
+    admin role's read access. Balance sums are exact decimals.
+  * Posting runs in `documents.operate` after a move is saved; reversal runs from
+    `corrections.reverse_effects`. Any failure rolls back the move or void.
+* **Details and schema.** `_effects` (target, rows, reversals, balanced) outside the ETag, and
+  schema `effects` (target, on, balanced, reverse) on sources plus `effect_target: true` on
+  targets, only for roles that read the target without a row scope.
+* **Check.** `evlet.effects.check(application)` and `evlet effects check INSTANCE` (shared instance
+  lock, nothing written, exit status 1 on differences) report missing, extra, changed,
+  unbalanced and invalid rows, including mirror rows of void records and rows of deleted sources.
+  Whether a record must have posted is derived from the State's moves.
+* **Playground.** The amendment Quote posts one `SalesLedger` row when it is marked won;
+  `tests/test_builds.py` checks the row, the 403 on create and a clean check.
+* **Shared files touched:** `models.py` (registry hook, `source` exemption), `permissions.py`
+  (`allows`), `database.py` (`_guard`), `documents.py` (post after a move, Draft `source`),
+  `corrections.py` (`reverse_effects` body), `business.py` (details and schema), `ui/metadata.py`
+  (`Meta.effects` allowed), `cli/main.py`, `__init__.py`.
+* **Tests.** `tests/test_effects.py` (26 tests on SQLite) and eight PostgreSQL variants in
+  `tests/test_postgres.py`, run against a local PostgreSQL 14 cluster.
+
+Known limitations:
+
+* Reference fields cannot be indexed, so finding a record's rows scans the target table.
+* The check holds one write transaction for the whole run.
+* Effects post only on a move; raw writes inside `tx.maintenance()` post nothing.
+* The SolidJS form, the connector and the MCP server do not show `_effects`.
+
+### Phase 6 review findings (01-11-2026)
+
+* Effect rows are validated without any role: an engine policy reads linked records as stored,
+  in batches, so Link existence and Link filters do not depend on the admin role's scope or
+  read access. A Link to a missing record is a 422 under `_effects` for plain and declarative
+  targets.
+* A `reverse` that changes one field of the `balanced` pair is rejected at registration, and a
+  void checks the balance of the mirror rows too. Roles that cannot read both balanced fields get
+  the balance error without totals.
+* A failing rows method is a 422 that rolls back (the exception is logged, not shown) and an
+  `invalid` difference in the check. Reading a virtual result is an error with a clear message.
+* An `on` state that no sequence of moves from the default reaches is rejected.
+* The check reads one snapshot (deferred SQLite transaction, `REPEATABLE READ READ ONLY` on
+  PostgreSQL) without the write lock, and scans for orphans in batches.
+* `Reference(index=True)` creates one index over both columns on SQLite and PostgreSQL (create,
+  AddField, AddIndex, rename, schema check). Effects index the target's `source`; an existing
+  table gains it with `AddIndex("<target>", "source")`. EXPLAIN shows an index search.
+* Posting writes one INSERT per row with linked records read in batches and no reload: 500
+  ledger rows take 524 statements for the move (about 1,500 before) and 518 for the void.
+* Events: `EventStore.publish` inserts into `evlet_events` in the operation's transaction, so an
+  event for an effect row is discarded with any rollback, including a savepoint rollback.
+
+Restacked on `model/10-stacked` as `model/06-stacked` (02-11-2026):
+
+* `corrections.reverse_effects()` now writes the mirror rows; `Meta.effects` joins the Meta
+  keys of Phases 9 and 10; the `Reference(index=True)` composite index sits beside the
+  Sequence unique index in `migrations.py` and `postgres_schema.py`; raw `Session` writes
+  refuse effect targets beside the finite document, State and Sequence guards.
+* In `operate()` a Sequence is assigned before the write and effects post after it, so a
+  move into `assign_on` that also posts rows numbers the record first and the rows can read
+  the number.
+* An effect target's `source` Reference is not a relation (relations come from Links).
+* `tests/test_effects.py` adds checks on SQLite and PostgreSQL: a caught move failure rolls
+  back an earlier effect's rows and the number to the savepoint; revise reverses the original
+  and the numbered copy posts again; measures on a target and per-record measures over it
+  follow row scope; the source Reference is not a relation.
+* The amendment Quote keeps its number, measures and key fields and adds the SalesLedger
+  effect. The generated fixtures were regenerated and match the committed files.

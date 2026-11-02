@@ -281,6 +281,8 @@ class Business:
             state = state_schema(self, user, model)
             if state is not None:
                 entry['state'] = state
+            from .effects import model_schema as effect_schema
+            entry.update(effect_schema(self, user, model))
             entry['attachments'] = model in self.attachments
             from .measures import schema as measure_schema
             if self.registry.measures.get(model):
@@ -587,7 +589,9 @@ class Business:
         from .states import availability
         from . import corrections
         reader = context.read_context()
-        return {**availability(self, reader, model, record, loaded), **corrections.availability(self, reader, model, record)}
+        from .effects import summary
+        return {**availability(self, reader, model, record, loaded), **corrections.availability(self, reader, model, record),
+                **summary(self, reader, model, record)}
 
     def field_expressions(self, user, model):
         """Serialized finite expressions per readable field: compute, initial and the three rules.

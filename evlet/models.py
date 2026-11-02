@@ -3,7 +3,7 @@
 import re
 from types import MappingProxyType
 
-from .fields import Field, Link, MISSING, RULES, State
+from .fields import Field, Link, MISSING, RULES, Reference, State
 from .declarations import Table, ReactiveQuery, DEFAULT_TABLE_ROWS
 
 
@@ -119,7 +119,11 @@ class ModelType(type):
         if states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
-        if getattr(cls, '__declaration_mode__', False) and (set(fields) | set(tables) | set(sources)) & {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}:
+        reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}
+        if isinstance(fields.get('source'), Reference) and not tables:
+            # Effect targets declare source = Reference(); a flat record has no dialog source to shadow.
+            reserved.discard('source')
+        if getattr(cls, '__declaration_mode__', False) and (set(fields) | set(tables) | set(sources)) & reserved:
             raise ValueError('A document field conflicts with its draft interface')
         return cls
 
@@ -285,6 +289,9 @@ class Registry:
         self.sequences = compile_sequences(self, models, plans, child_models)
         from .measures import compile_declared
         self.measures = MappingProxyType(compile_declared(self, models))
+        # Rows documents post to other models (Meta.effects); the targets' rows are read only.
+        from .effects import compile_effects
+        self.effects, self.effect_targets = compile_effects(self, models, child_models)
 
     def root_of(self, model):
         owners = {child.model: child.parent for child in self.children}
