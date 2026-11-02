@@ -25,7 +25,7 @@ export interface Me {
   notifications: { events: Array<{ group: string; items: Array<{ key: string; label: string; locked: boolean; channels: [boolean, boolean] }> }>; quiet: { on: boolean; from: string; to: string } };
   security: {
     password_min: number;
-    two_step: { on: boolean; since: number | null; codes: number; required: boolean; available: boolean };
+    two_step: { on: boolean; since: number | null; agent: string; codes: number; required: boolean; available: boolean; verified: boolean };
     sessions: Array<{ id: string; current: boolean; started: number | null; expires: number; agent: string; realm: string }>;
   };
 }
@@ -261,21 +261,45 @@ function ProfilePage(ctx: SettingsContext): Node {
 }
 
 function changeEmail(ctx: SettingsContext) {
-  const value = cell(''), error = cell(''), busy = cell(false);
-  openModal({ title: 'Change your email', narrow: true, icon: 'mail',
-    body: () => html`<div class="set-field"><label for="ce">New email</label><input class="input" id="ce" type="email" prop:value=${value}
+  if (!ctx.me.peek().development) { toast("Email is not set up yet, so your address can't be changed here. Ask your admin.", { icon: 'info' }); return; }
+  const value = cell('');
+  confirmIdentity<{ sent: string; link?: string }>(ctx, { title: 'Change your email', icon: 'mail', yes: 'Send link', path: '/api/_settings/me/email',
+    before: error => html`<div class="set-field"><label for="ce">New email</label><input class="input" id="ce" type="email" prop:value=${value}
       on:input=${(event: Event) => { value.set((event.target as HTMLInputElement).value); error.set(''); }}>
-      ${() => error.get() ? html`<span class="err">${error.get()}</span>` : html`<span class="hint">We'll send a link to the new address. Your email changes when you open it.</span>`}</div>`,
-    footer: close => DialogFooter({ cancel: close, submit: { label: 'Send link', icon: 'send', disabled: busy, onClick: async () => {
+      <span class="hint">We'll send a link to the new address. Your email changes when you open it.</span></div>`,
+    body: () => {
       const address = value.peek().trim();
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address)) { error.set('Enter a valid email address.'); return; }
+      return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address) ? { email: address } : 'Enter a valid email address.';
+    },
+    done: data => { if (data.link) showLink(data.link); else toast(`Link sent to ${data.sent}. Your email changes when you open it.`); } });
+}
+
+/**
+ * Sensitive changes ask for the password again and, with two-step sign-in on, a code from the app
+ * or a backup code. body() adds the change's own values, or returns a message to show.
+ */
+function confirmIdentity<T>(ctx: SettingsContext, options: { title: string; icon: string; yes: string; path: string; danger?: boolean; text?: string;
+  before?: (error: Cell<string>) => Child; body?: () => Record<string, unknown> | string; done: (data: T) => void }) {
+  const password = cell(''), code = cell(''), error = cell(''), busy = cell(false);
+  const enrolled = ctx.me.peek().security.two_step.on;
+  openModal({ title: options.title, narrow: true, icon: options.icon,
+    body: () => html`${options.text ? html`<p class="set-p">${options.text}</p>` : null}${options.before?.(error) ?? null}
+      <div class="set-field"><label for="ra-password">Your password</label><input class="input" id="ra-password" type="password" autocomplete="current-password"
+        prop:value=${password} on:input=${(event: Event) => { password.set((event.target as HTMLInputElement).value); error.set(''); }}></div>
+      ${enrolled ? html`<div class="set-field"><label for="ra-code">Code from your app, or a backup code</label><input class="input" id="ra-code" autocomplete="one-time-code" maxlength="9"
+        prop:value=${code} on:input=${(event: Event) => { code.set((event.target as HTMLInputElement).value); error.set(''); }}></div>` : null}
+      ${() => error.get() ? html`<span class="err" role="alert">${error.get()}</span>` : null}`,
+    footer: close => DialogFooter({ cancel: close, submit: { label: options.yes, variant: options.danger ? 'danger' : 'primary', disabled: busy, onClick: async () => {
+      const extra = options.body?.() ?? {};
+      if (typeof extra === 'string') { error.set(extra); return; }
+      if (!password.peek()) { error.set('Enter your password.'); return; }
       busy.set(true);
       try {
-        const { data } = await ctx.api.request<{ sent: string; link?: string }>('POST', '/api/_settings/me/email', { body: { email: address } });
+        const { data } = await ctx.api.request<T>('POST', options.path, { body: { ...extra, password: password.peek(), ...(enrolled ? { code: code.peek() } : {}) } });
         close();
-        if (data.link) showLink(data.link); else toast(`Link sent to ${data.sent}. Your email changes when you open it.`);
+        options.done(data);
       } catch (failure) {
-        error.set(failure instanceof ValidationError ? failure.fields?.email ?? failure.message : failure instanceof ApiError ? failure.message : 'Try again.');
+        error.set(failure instanceof ValidationError ? Object.values(failure.fields ?? {})[0] ?? failure.message : failure instanceof ApiError ? failure.message : 'Try again.');
       } finally { busy.set(false); }
     } } }) });
 }
@@ -331,12 +355,12 @@ function SecurityPage(ctx: SettingsContext): Node {
     const state = security.get().two_step;
     const text = state.required ? `Required for the ${me.user.role} role in this workspace.` : 'A code from an authenticator app, on top of your password.';
     if (!state.available && !state.on) return section('Two-step sign-in', text, row('Authenticator app', 'Two-step sign-in needs the cryptography package and a secret key on the server. Ask your admin.', null, badge('Not available', 'grey')));
-    if (state.on) return section('Two-step sign-in', text, row('Authenticator app', `Set up on ${state.since ? formatDate(new Date(state.since * 1000).toISOString()) : 'an earlier day'}. ${state.codes} backup code${state.codes === 1 ? '' : 's'} left.`,
-      [Button({ label: 'Make new codes', size: 'small', onClick: () => void newCodes(ctx, reload) }),
+    if (state.on) return section('Two-step sign-in', text, row('Authenticator app', `Set up on ${state.since ? formatDate(new Date(state.since * 1000).toISOString()) : 'an earlier day'} from ${state.agent || 'a browser'}. ${state.codes} backup code${state.codes === 1 ? '' : 's'} left.`,
+      [Button({ label: 'Make new codes', size: 'small', onClick: () => newCodes(ctx, reload) }),
         Button({ label: 'Turn off', size: 'small', variant: state.required ? 'default' : 'soft-danger', disabled: state.required, tip: state.required ? 'Required for your role' : null, onClick: () => turnOff(ctx, reload) })],
       badge('On', 'green')));
     return section('Two-step sign-in', text, row('Authenticator app', state.required ? "You'll be asked to set it up at your next sign-in." : 'Recommended for everyone.',
-      Button({ label: 'Set up', size: 'small', variant: 'primary', onClick: () => void setUp(ctx, reload) }), state.required ? badge('Required', 'red') : badge('Off', 'grey')));
+      Button({ label: 'Set up', size: 'small', variant: 'primary', onClick: () => setUp(ctx, reload) }), state.required ? badge('Required', 'red') : badge('Off', 'grey')));
   };
   const agent = (text: string) => /evlet-connector/.test(text) ? 'Command line (evlet login)' : /iPhone|Android/i.test(text) ? 'Phone browser' : text ? 'Browser' : 'Unknown device';
   const sessions = () => {
@@ -399,10 +423,12 @@ function confirmDialog(title: string, text: string, yes: string, run: () => void
 }
 
 /** Turn on two-step sign-in: the key for the authenticator app, then a code from it, then the backup codes. */
-export async function setUp(ctx: SettingsContext, reload: () => Promise<void>) {
-  let secret: { secret: string; uri: string };
-  try { secret = (await ctx.api.request<{ secret: string; uri: string }>('POST', '/api/_settings/me/two-step', { body: {} })).data; }
-  catch (failure) { fail(failure); return; }
+export function setUp(ctx: SettingsContext, reload: () => Promise<void>) {
+  confirmIdentity<{ secret: string; uri: string }>(ctx, { title: 'Set up two-step sign-in', icon: 'lock', yes: 'Continue', path: '/api/_settings/me/two-step',
+    text: 'Enter your password to start.', done: secret => enterCode(ctx, secret, reload) });
+}
+
+function enterCode(ctx: SettingsContext, secret: { secret: string; uri: string }, reload: () => Promise<void>) {
   const code = cell(''), error = cell(''), busy = cell(false);
   openModal({ title: 'Set up two-step sign-in', icon: 'lock', narrow: true,
     body: () => TwoStepSetup(secret.secret, code, error),
@@ -439,19 +465,14 @@ export function showCodes(codes: string[]) {
     footer: close => html`${Button({ label: 'Copy', icon: 'copy', onClick: () => void copyText(codes.join(' '), 'the codes') })}${Button({ label: 'Done', variant: 'primary', onClick: close })}` });
 }
 
-async function newCodes(ctx: SettingsContext, reload: () => Promise<void>) {
-  try {
-    const { data } = await ctx.api.request<{ codes: string[] }>('POST', '/api/_settings/me/two-step/codes', { body: {} });
-    toast('New codes made. The old ones no longer work.');
-    showCodes(data.codes);
-    await reload();
-  } catch (failure) { fail(failure); }
+function newCodes(ctx: SettingsContext, reload: () => Promise<void>) {
+  confirmIdentity<{ codes: string[] }>(ctx, { title: 'Make new backup codes', icon: 'lock', yes: 'Make new codes', path: '/api/_settings/me/two-step/codes',
+    text: 'The old codes stop working.', done: data => { toast('New codes made. The old ones no longer work.'); showCodes(data.codes); void reload(); } });
 }
 
 function turnOff(ctx: SettingsContext, reload: () => Promise<void>) {
-  confirmDialog('Turn off two-step sign-in?', 'Anyone with your password could then sign in as you.', 'Turn off', async () => {
-    try { await ctx.api.request('DELETE', '/api/_settings/me/two-step'); toast('Two-step sign-in is off'); await reload(); } catch (failure) { fail(failure); }
-  });
+  confirmIdentity(ctx, { title: 'Turn off two-step sign-in?', icon: 'lock', yes: 'Turn off', danger: true, path: '/api/_settings/me/two-step/off',
+    text: 'Anyone with your password could then sign in as you.', done: () => { toast('Two-step sign-in is off'); void reload(); } });
 }
 
 // ---------- notifications ----------

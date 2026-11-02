@@ -74,6 +74,12 @@ def parser():
     controls_grant.add_argument('instance')
     controls_grant.add_argument('username')
     controls_grant.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
+    users = commands.add_parser('users', help='Account recovery from the server shell')
+    users_commands = users.add_subparsers(dest='users_command', required=True)
+    reset_two_step = users_commands.add_parser('reset-two-step', help="Clear a user's two-step sign-in; they set it up again at next sign-in. Audited as cli")
+    reset_two_step.add_argument('instance')
+    reset_two_step.add_argument('username')
+    reset_two_step.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     effects = commands.add_parser('effects', help='Check the rows records post to other models')
     effects_commands = effects.add_subparsers(dest='effects_command', required=True)
     effects_check = effects_commands.add_parser('check', help='Recompute effect rows and report differences without writing')
@@ -227,6 +233,14 @@ def main(argv=None):
                 limits = ('the networks in its ControlsAccess, if any',)
             if limits:
                 print(f'routes.py still limits Controls to {", ".join(limits)}. Edit instances/{args.instance}/routes.py to open it from elsewhere.')
+        elif args.command == 'users':
+            from .project import child
+            from ..controls import reset_two_step_from_shell
+            from ..instances import read_instance
+            path = child(root, 'instances', args.instance)
+            read_instance(path)
+            reset_two_step_from_shell(path / 'data/database.sqlite3', args.username)
+            print(f'Two-step sign-in is reset for {args.username}. They set it up again at their next sign-in.')
         elif args.command == 'effects':
             from .effects import check_instance
             from ..effects import describe

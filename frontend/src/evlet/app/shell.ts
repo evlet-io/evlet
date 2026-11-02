@@ -42,8 +42,10 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const groups = ['Documents', 'Records'].map(name => [name, models.filter(model => groupOf(model) === name)] as const).filter(([, list]) => list.length);
   // Record counts beside each model, when the person turned them on in Settings.
   const counts = cell<Record<string, number>>({});
+  // Only turning counts on fetches them; saving other preferences does not.
+  const showCounts = derive(() => Boolean(ctx.me.get()?.prefs.counts));
   effect(() => {
-    if (!ctx.me.get()?.prefs.counts) return;
+    if (!showCounts.get()) return;
     for (const model of models) void ctx.api.list(model.name, { limit: 1 }).then(page => counts.set({ ...counts.peek(), [model.name]: page.total }), () => {});
   });
   const modelItem = (model: ScreenModel) => {

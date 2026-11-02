@@ -43,6 +43,11 @@ PHOTO_LIMIT = 2 * 1024 * 1024
 CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'
 TICKET_SECONDS, TICKET_TRIES = 300, 5
 SIGN_IN_AGAIN = 'Your sign-in expired. Sign in again.'
+KEY_PROBLEM = 'Two-step sign-in is unavailable: the secret key is missing or changed. Ask your admin.'
+CODE_TRIES, CODE_WINDOW = 10, 900
+TOO_MANY_CODES = 'Too many wrong codes. Try again in 15 minutes.'
+NO_EMAIL = "Email is not set up yet, so your address can't be changed here. Ask your admin."
+
 
 
 class _Declared:
@@ -187,7 +192,26 @@ class Settings:
 
     @property
     def key(self):
-        return getattr(self.business, 'secret_key', None)
+        return vault.secret_key(getattr(self.business, 'secret_key', None))
+
+    def sealed_exists(self, connection):
+        """Whether anything is sealed with the secret key; then a missing key is an error, never a new key."""
+        return connection.execute('SELECT 1 FROM evlet_user_profile WHERE two_step_secret IS NOT NULL OR backup_codes IS NOT NULL '
+                                  'OR two_step_pending IS NOT NULL UNION ALL SELECT 1 FROM evlet_two_step_tickets WHERE secret IS NOT NULL LIMIT 1').fetchone() is not None
+
+    def seal(self, connection, value, purpose):
+        return vault.seal(self.key, value, purpose, create=not self.sealed_exists(connection))
+
+    def possible(self):
+        """Two-step sign-in can run here: a secret key is configured and cryptography is installed."""
+        return self.key.configured and vault.cryptography_installed()
+
+    def ready(self, connection=None):
+        """The key can be used now. With sealed data it must already exist."""
+        if connection is None:
+            with self.database._connection() as db:
+                return self.ready(db)
+        return self.possible() and vault.available(self.key, existing=self.sealed_exists(connection))
 
     def initialize(self):
         with self.database.transaction() as tx:
@@ -206,7 +230,18 @@ class Settings:
                 'realm TEXT NOT NULL, expires INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, secret BLOB)',
             ):
                 tx.connection.execute(statement)
+            if 'two_step_agent' not in self.database.columns(tx.connection, 'evlet_user_profile'):
+                tx.connection.execute("ALTER TABLE evlet_user_profile ADD COLUMN two_step_agent TEXT NOT NULL DEFAULT ''")
         self.business.auth.second_step = self
+        if self.key.configured and self.business.controls.settings['security.two_step_roles']:
+            if not vault.cryptography_installed():
+                logger.warning('Roles %s need two-step sign-in, but the cryptography package is not installed. They sign in with a password only '
+                               'until it is.', ', '.join(self.business.controls.settings['security.two_step_roles']))
+            else:
+                try:
+                    self.key.check()
+                except (vault.SecretKeyError, OSError) as exc:
+                    logger.warning('Two-step sign-in is unavailable: %s', exc)
 
     # ---------- shared values ----------
 
@@ -286,7 +321,7 @@ class Settings:
         return connection.execute('SELECT * FROM evlet_user_profile WHERE user_id=?', (user_id,)).fetchone()
 
     def required(self, role, realm='desk'):
-        return realm == 'desk' and role in self.business.controls.settings['security.two_step_roles'] and vault.available(self.key)
+        return realm == 'desk' and role in self.business.controls.settings['security.two_step_roles'] and self.possible()
 
     def two_step_on(self, user_id):
         with self.database._connection() as connection:
@@ -300,7 +335,11 @@ class Settings:
             prefs = self.core(user.id, tx.connection)
             sessions = tx.connection.execute('SELECT token, realm, started, expires, agent FROM evlet_sessions WHERE user_id=? AND expires>? ORDER BY started DESC',
                                              (user.id, int(time.time()))).fetchall()
-            codes = len(self.codes(row)) if row['backup_codes'] else 0
+            available = self.ready(tx.connection)
+            try:
+                codes = len(self.codes(row)) if row['backup_codes'] and available else 0
+            except vault.SecretKeyError:
+                codes, available = 0, False
         current = self.business.auth.token(scope)
         events = [{'group': group, 'items': [{'key': key, 'label': label, 'locked': locked,
                                               'channels': prefs.get('notify.' + key, [True, True])} for key, label, locked in items]}
@@ -310,7 +349,6 @@ class Settings:
             entry = self.apps[app]
             labels = [_label(name, field) for kind in ('settings', 'preferences') if entry[kind] for name, field in entry[kind].__fields__.items()]
             apps.append({'id': app, 'title': app.replace('_', ' ').title(), 'can_edit': self.can_edit(user, app), 'labels': labels})
-        available = vault.available(self.key)
         controls = self.business.controls
         return {
             'user': user.public(), 'portal': portal, 'pages': list(self.pages(scope, user)), 'apps': apps,
@@ -322,8 +360,9 @@ class Settings:
             'notifications': {'events': events, 'quiet': prefs.get('quiet', QUIET)},
             'security': {
                 'password_min': self.business.auth.password_min,
-                'two_step': {'on': row['two_step_secret'] is not None, 'since': row['two_step_since'], 'codes': codes,
-                             'required': self.required(user.role, 'portal' if portal else 'desk'), 'available': available},
+                'two_step': {'on': row['two_step_secret'] is not None, 'since': row['two_step_since'], 'agent': row['two_step_agent'], 'codes': codes,
+                             'required': self.required(user.role, 'portal' if portal else 'desk'), 'available': available,
+                             'verified': user.two_step},
                 'sessions': [{'id': item['token'][:16], 'current': item['token'] == current, 'started': item['started'], 'expires': item['expires'],
                               'agent': item['agent'], 'realm': item['realm']} for item in sessions],
             },
@@ -357,10 +396,10 @@ class Settings:
         }
         if not portal:
             routes.update({
-                ('POST', '/me/two-step'): lambda: self.start_two_step(user),
-                ('POST', '/me/two-step/confirm'): lambda: self.confirm_two_step(user, body),
-                ('POST', '/me/two-step/codes'): lambda: self.new_codes(user),
-                ('DELETE', '/me/two-step'): lambda: self.turn_off(user),
+                ('POST', '/me/two-step'): lambda: self.start_two_step(user, body),
+                ('POST', '/me/two-step/confirm'): lambda: self.confirm_two_step(scope, user, body),
+                ('POST', '/me/two-step/codes'): lambda: self.new_codes(user, body),
+                ('POST', '/me/two-step/off'): lambda: self.turn_off(user, body),
             })
         match = re.fullmatch(r'/me/sessions/([0-9a-f]{16})', path)
         if match and method == 'DELETE':
@@ -368,7 +407,10 @@ class Settings:
         handler = routes.get((method, path))
         if handler is None:
             raise AccessError(404, 'Route not found')
-        result = handler()
+        try:
+            result = handler()
+        except vault.SecretKeyError:
+            raise AccessError(503, KEY_PROBLEM) from None
         return result if isinstance(result, tuple) else (200, result, [])
 
     @staticmethod
@@ -422,26 +464,47 @@ class Settings:
             old = self.profile(tx.connection, user.id)['photo_file']
             file = self.business.storage.add(tx, 'evlet_user_photo', user.id, 'photo' + {'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp'}[kind], content)
             tx.connection.execute('UPDATE evlet_user_profile SET photo_file=? WHERE user_id=?', (file, user.id))
-            if old is not None:
-                tx.connection.execute("DELETE FROM evlet_attachments WHERE id=? AND model='evlet_user_photo'", (old,))
+            removed = self._drop_photo(tx.connection, old)
+        self._remove_file(removed)
         return {'photo': True}
+
+    def _drop_photo(self, connection, file):
+        if file is None:
+            return None
+        row = connection.execute("SELECT storage_key, storage_kind FROM evlet_attachments WHERE id=? AND model='evlet_user_photo'", (file,)).fetchone()
+        connection.execute("DELETE FROM evlet_attachments WHERE id=? AND model='evlet_user_photo'", (file,))
+        return row
+
+    def _remove_file(self, row):
+        """Delete a replaced photo's file once its row is gone."""
+        remove = getattr(self.business.storage, 'remove', None)
+        if row is not None and row['storage_key'] is not None and remove is not None:
+            try:
+                remove(row['storage_key'])
+            except Exception:
+                logger.warning('A replaced photo file could not be removed; storage collection removes it later.')
 
     def remove_photo(self, user):
         with self.database.transaction() as tx:
             old = self.profile(tx.connection, user.id)['photo_file']
             tx.connection.execute('UPDATE evlet_user_profile SET photo_file=NULL WHERE user_id=?', (user.id,))
-            if old is not None:
-                tx.connection.execute("DELETE FROM evlet_attachments WHERE id=? AND model='evlet_user_photo'", (old,))
+            removed = self._drop_photo(tx.connection, old)
+        self._remove_file(removed)
         return {'photo': False}
 
     def change_email(self, scope, user, body):
-        address = self._body(body, ('email',)).get('email')
+        routes = self.business.routes
+        if routes.primary is not None:
+            raise AccessError(409, NO_EMAIL)
+        body = self._body(body, ('email', 'password', 'code'))
+        address = body.get('email')
         try:
             address = Email().clean(address.strip() if isinstance(address, str) else address)
         except ValueError:
             address = None
         if not address:
             raise ValidationError({'email': 'Enter a valid email address.'})
+        self.reauthenticate(user, body)
         token, now = secrets.token_urlsafe(32), int(time.time())
         with self.database.transaction() as tx:
             tx.connection.execute('DELETE FROM evlet_email_tokens WHERE user_id=? OR expires<=?', (user.id, now))
@@ -449,12 +512,10 @@ class Settings:
                                   (hashlib.sha256(token.encode()).hexdigest(), user.id, address, now + 86400))
         from .routing import host_name
         host = host_name(dict(scope.get('headers', [])).get(b'host', b'')) or 'localhost'
-        routes = self.business.routes
-        origin = f'https://{host}' if routes.primary else f'http://{host}:{routes.port}'
-        link = f'{origin}/settings/profile?confirm={token}'
-        # Until outgoing mail is set up, the link is logged; in development the page shows it too.
+        link = f'http://{host}:{routes.port}/settings/profile?confirm={token}'
+        # Development only, until outgoing mail is set up: the link is logged and shown on the page.
         logger.info('Email change for %s to %s: %s', user.username, address, link)
-        return {'sent': address, **({'link': link} if routes.primary is None else {})}
+        return {'sent': address, 'link': link}
 
     def confirm_email(self, user, body):
         token = self._body(body, ('token',)).get('token')
@@ -510,7 +571,8 @@ class Settings:
             raise ValueError('Dark theme is coming in a later release.' if key == 'theme' else 'Choose one of the options.')
         if key == 'counts' and type(value) is not bool:
             raise ValueError('Use true or false.')
-        if key == 'start' and (not isinstance(value, str) or value and value != 'docs' and value not in self.business.registry.models):
+        if key == 'start' and (not isinstance(value, str) or value and value != 'docs' and (
+                value not in self.business.registry.models or not self.business.policy.allows(user, self.business.registry.models[value], 'read'))):
             raise ValueError('Choose a page you can open.')
         if key == 'tz':
             try:
@@ -657,30 +719,168 @@ class Settings:
         sealed = base64.b64decode(row['backup_codes'])
         return json.loads(vault.open(self.key, sealed, f'backup_codes:{row["user_id"]}'))
 
-    def _store_codes(self, connection, user_id):
-        codes = ['-'.join(''.join(secrets.choice(CODE_ALPHABET) for _ in range(4)) for _ in range(2)) for _ in range(8)]
-        sealed = vault.seal(self.key, json.dumps([_code_hash(user_id, code) for code in codes]).encode(), f'backup_codes:{user_id}')
+    def _store_codes(self, connection, user_id, hashes=None):
+        codes = [] if hashes is not None else ['-'.join(''.join(secrets.choice(CODE_ALPHABET) for _ in range(4)) for _ in range(2)) for _ in range(8)]
+        hashes = hashes if hashes is not None else [_code_hash(user_id, code) for code in codes]
+        sealed = self.seal(connection, json.dumps(hashes).encode(), f'backup_codes:{user_id}')
         connection.execute('UPDATE evlet_user_profile SET backup_codes=? WHERE user_id=?', (base64.b64encode(sealed).decode(), user_id))
         return codes
 
     def _need_vault(self):
-        if not vault.available(self.key):
+        if not self.possible():
             raise AccessError(409, 'Two-step sign-in needs the cryptography package and a secret key on the server. Ask your admin.')
+        if not self.ready():
+            raise AccessError(503, KEY_PROBLEM)
 
     def _uri(self, user, raw):
         issuer = (self.business.application or {}).get('name', 'Evlet')
         return f'otpauth://totp/{quote(issuer + ":" + user.username)}?secret={_b32(raw)}&issuer={quote(issuer)}&digits=6&period=30'
 
-    def start_two_step(self, user):
+    @staticmethod
+    def _agent(scope):
+        agent = dict(scope.get('headers', [])).get(b'user-agent', b'').decode('latin1')
+        return 'the command line' if 'evlet-connector' in agent else 'a phone browser' if re.search('iPhone|Android', agent) else 'a browser' if agent else 'an unknown device'
+
+    # ---------- wrong codes and passwords, per account ----------
+
+    @staticmethod
+    def _tries(connection, key):
+        now = int(time.time())
+        connection.execute('DELETE FROM evlet_login_limits WHERE resets<=?', (now,))
+        row = connection.execute('SELECT attempts FROM evlet_login_limits WHERE client=?', (key,)).fetchone()
+        return row['attempts'] if row else 0
+
+    @staticmethod
+    def _miss(connection, key):
+        connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1',
+                           (key, int(time.time()) + CODE_WINDOW))
+
+    @staticmethod
+    def _code_key(user_id):
+        return hashlib.sha256(f'code:{user_id}'.encode()).hexdigest()
+
+    def _use_code(self, connection, user_id, profile, code):
+        """Check a code from the app (each once) or an unused backup code, and record its use."""
+        code = code.strip().lower().replace(' ', '') if isinstance(code, str) else ''
+        raw = vault.open(self.key, profile['two_step_secret'], f'two_step:{user_id}')
+        if re.fullmatch(r'[0-9]{6}', code):
+            counter = check_totp(raw, code, profile['two_step_last'] if profile['two_step_last'] is not None else -1)
+            if counter is not None:
+                connection.execute('UPDATE evlet_user_profile SET two_step_last=? WHERE user_id=?', (counter, user_id))
+                return True
+        elif re.fullmatch(r'[a-z0-9]{4}-?[a-z0-9]{4}', code) and profile['backup_codes']:
+            hashes = self.codes(profile)
+            digest = _code_hash(user_id, code if '-' in code else code[:4] + '-' + code[4:])
+            if digest in hashes:
+                hashes.remove(digest)
+                self._store_codes(connection, user_id, hashes)
+                return True
+        return False
+
+    def _check_password(self, user, password, field):
+        auth, key = self.business.auth, hashlib.sha256(f'password:{user.id}'.encode()).hexdigest()
+        with hashing_slot():
+            with self.database.transaction() as tx:
+                if self._tries(tx.connection, key) >= auth.lockout:
+                    raise AccessError(429, 'Too many tries. Try again in 15 minutes.')
+                self._miss(tx.connection, key)
+                stored = tx.connection.execute('SELECT password FROM evlet_users WHERE id=?', (user.id,)).fetchone()['password']
+            try:
+                candidate = _scrypt(_encode(password, 1), stored.split(':')[1])
+            except (ValueError, UnicodeError):
+                candidate = ''
+        if not hmac.compare_digest(candidate, stored):
+            raise ValidationError({field: 'Your current password is not right.' if field == 'current' else 'Your password is not right.'})
+        with self.database.transaction() as tx:
+            tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (key,))
+        return stored
+
+    def reauthenticate(self, user, body):
+        """Sensitive changes need the password and, when two-step sign-in is on, a current code or a backup code."""
+        password, code = body.get('password'), body.get('code')
+        if not isinstance(password, str) or not password:
+            raise ValidationError({'password': 'Enter your password.'})
+        self._check_password(user, password, 'password')
+        wrong = None
+        with self.database.transaction() as tx:
+            profile = self.profile(tx.connection, user.id)
+            if profile['two_step_secret'] is None:
+                return
+            key = self._code_key(user.id)
+            if self._tries(tx.connection, key) >= CODE_TRIES:
+                raise AccessError(429, TOO_MANY_CODES)
+            if self._use_code(tx.connection, user.id, profile, code):
+                tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (key,))
+                return
+            self._miss(tx.connection, key)
+            wrong = 'Enter a current code from your app, or a backup code.'
+        raise ValidationError({'code': wrong})
+
+    # ---------- password and sessions ----------
+
+    def change_password(self, scope, user, body):
+        from .controls import audit
+        body = self._body(body, ('current', 'new'))
+        current, new = body.get('current'), body.get('new')
+        auth = self.business.auth
+        if not isinstance(current, str) or not current:
+            raise ValidationError({'current': 'Enter your current password.'})
+        if not isinstance(new, str) or len(new) < auth.password_min:
+            raise ValidationError({'new': f'Your workspace needs at least {auth.password_min} characters.'})
+        if new == current:
+            raise ValidationError({'new': "Choose a password you haven't used here before."})
+        stored = self._check_password(user, current, 'current')
+        try:
+            hashed = password_hash(new, minimum=auth.password_min)
+        except ValidationError:
+            raise ValidationError({'new': f'Use between {auth.password_min} and 128 characters.'}) from None
+        token = auth.token(scope)
+        with self.database.transaction() as tx:
+            if tx.connection.execute('SELECT password FROM evlet_users WHERE id=?', (user.id,)).fetchone()['password'] != stored:
+                raise AccessError(409, 'Your password changed meanwhile. Reload the page.')
+            tx.connection.execute('UPDATE evlet_users SET password=? WHERE id=?', (hashed, user.id))
+            tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=? AND token<>?', (user.id, token))
+            audit(tx.connection, user.username, 'Users', user.username, 'Password changed in Settings · Signed out other devices')
+        return {'changed': True}
+
+    def end_sessions(self, scope, user, session_id):
+        token = self.business.auth.token(scope)
+        with self.database.transaction() as tx:
+            if session_id is None:
+                ended = tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=? AND token<>?', (user.id, token)).rowcount
+            else:
+                if token.startswith(session_id):
+                    raise ValidationError({'session': 'Use Sign out to end this session.'})
+                ended = tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=? AND substr(token,1,16)=?', (user.id, session_id)).rowcount
+        return {'ended': ended}
+
+    # ---------- two-step: settings ----------
+
+    def start_two_step(self, user, body):
         self._need_vault()
+        with self.database._connection() as connection:
+            if self.profile_read(connection, user.id)['two_step_secret'] is not None:
+                raise ValidationError({'_form': 'Two-step sign-in is already on.'})
+        self.reauthenticate(user, body or {})
         raw = secrets.token_bytes(20)
         with self.database.transaction() as tx:
-            if self.profile(tx.connection, user.id)['two_step_secret'] is not None:
-                raise ValidationError({'_form': 'Two-step sign-in is already on.'})
-            tx.connection.execute('UPDATE evlet_user_profile SET two_step_pending=? WHERE user_id=?', (vault.seal(self.key, raw, f'two_step_pending:{user.id}'), user.id))
+            self.profile(tx.connection, user.id)
+            tx.connection.execute('UPDATE evlet_user_profile SET two_step_pending=? WHERE user_id=?', (self.seal(tx.connection, raw, f'two_step_pending:{user.id}'), user.id))
         return {'secret': _b32(raw), 'uri': self._uri(user, raw)}
 
-    def confirm_two_step(self, user, body):
+    @staticmethod
+    def profile_read(connection, user_id):
+        return connection.execute('SELECT * FROM evlet_user_profile WHERE user_id=?', (user_id,)).fetchone() or {'two_step_secret': None}
+
+    def _enrol(self, connection, scope, account, raw, counter):
+        from .controls import audit
+        agent = self._agent(scope)
+        connection.execute('UPDATE evlet_user_profile SET two_step_secret=?, two_step_pending=NULL, two_step_since=?, two_step_last=?, two_step_agent=? WHERE user_id=?',
+                           (self.seal(connection, raw, f'two_step:{account["id"]}'), int(time.time()), counter, agent, account['id']))
+        audit(connection, account['username'], 'Users', account['username'], f'Two-step sign-in set up from {agent}')
+        return self._store_codes(connection, account['id'])
+
+    def confirm_two_step(self, scope, user, body):
         self._need_vault()
         code = str(self._body(body, ('code',)).get('code', '')).strip()
         with self.database.transaction() as tx:
@@ -691,40 +891,44 @@ class Settings:
             counter = check_totp(raw, code) if re.fullmatch(r'[0-9]{6}', code) else None
             if counter is None:
                 raise ValidationError({'code': 'Enter the 6 digits from the app.'})
-            tx.connection.execute('UPDATE evlet_user_profile SET two_step_secret=?, two_step_pending=NULL, two_step_since=?, two_step_last=? WHERE user_id=?',
-                                  (vault.seal(self.key, raw, f'two_step:{user.id}'), int(time.time()), counter, user.id))
-            codes = self._store_codes(tx.connection, user.id)
+            codes = self._enrol(tx.connection, scope, {'id': user.id, 'username': user.username}, raw, counter)
         return {'codes': codes}
 
-    def new_codes(self, user):
+    def new_codes(self, user, body):
         self._need_vault()
-        with self.database.transaction() as tx:
-            if self.profile(tx.connection, user.id)['two_step_secret'] is None:
+        with self.database._connection() as connection:
+            if self.profile_read(connection, user.id)['two_step_secret'] is None:
                 raise ValidationError({'_form': 'Turn on two-step sign-in first.'})
+        self.reauthenticate(user, body or {})
+        with self.database.transaction() as tx:
             return {'codes': self._store_codes(tx.connection, user.id)}
 
-    def turn_off(self, user):
+    def turn_off(self, user, body):
+        from .controls import audit
         if user.role in self.business.controls.settings['security.two_step_roles']:
             raise AccessError(409, 'Required for your role')
+        self.reauthenticate(user, body or {})
         with self.database.transaction() as tx:
-            tx.connection.execute('UPDATE evlet_user_profile SET two_step_secret=NULL, backup_codes=NULL, two_step_since=NULL, two_step_last=NULL, two_step_pending=NULL WHERE user_id=?', (user.id,))
+            clear_two_step(tx.connection, user.id)
+            audit(tx.connection, user.username, 'Users', user.username, 'Two-step sign-in turned off')
         return {'on': False}
 
     # ---------- two-step: sign-in (LocalAuth.second_step) ----------
 
     def challenge(self, tx, account, realm):
-        """After a correct password: None to sign in, or a ticket asking for a code (or for set-up when the role requires it)."""
+        """After a correct password: None to sign in, or a ticket asking for a code (or for set-up when the role requires it).
+        Set-up at sign-in is trust on first use: whoever signs in first with the password binds the authenticator app."""
         row = self.profile(tx.connection, account['id'])
         enabled = row['two_step_secret'] is not None
         if not enabled and not self.required(account['role'], realm):
             return None
-        if enabled and not vault.available(self.key):
-            raise AccessError(503, 'Two-step sign-in is unavailable on this server. Ask your admin.')
+        if not self.ready(tx.connection):
+            raise AccessError(503, KEY_PROBLEM)
         ticket, now = secrets.token_urlsafe(32), int(time.time())
         answer, secret = {'two_step': 'code', 'ticket': ticket}, None
         if not enabled:
             raw = secrets.token_bytes(20)
-            secret = vault.seal(self.key, raw, f'two_step_ticket:{account["id"]}')
+            secret = self.seal(tx.connection, raw, f'two_step_ticket:{account["id"]}')
             user = User(account['id'], account['username'], account['role'])
             answer = {'two_step': 'setup', 'ticket': ticket, 'secret': _b32(raw), 'uri': self._uri(user, raw)}
         tx.connection.execute('DELETE FROM evlet_two_step_tickets WHERE expires<=? OR user_id=?', (now, account['id']))
@@ -733,56 +937,63 @@ class Settings:
         return answer
 
     def finish(self, scope, body):
-        """POST /api/auth/login {ticket, code}: a code from the app, or an unused backup code, starts the session."""
+        """POST /api/auth/login {ticket, code}: a code from the app, or an unused backup code, starts a verified session."""
         auth = self.business.auth
         ticket, code = body.get('ticket'), body.get('code')
         if not isinstance(ticket, str) or not isinstance(code, str):
             raise AccessError(401, SIGN_IN_AGAIN)
         code, now = code.strip().lower().replace(' ', ''), int(time.time())
         realm, wrong = auth.realm(scope), None
-        with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT * FROM evlet_two_step_tickets WHERE token_hash=? AND expires>?', (hashlib.sha256(ticket.encode()).hexdigest(), now)).fetchone()
-            account = row and tx.connection.execute('SELECT u.*, r.realm AS role_realm FROM evlet_users u LEFT JOIN evlet_roles r ON r.id=u.role WHERE u.id=?', (row['user_id'],)).fetchone()
-            if row is None or row['realm'] != realm or not account or not account['active'] or account['role_realm'] != realm:
-                raise AccessError(401, SIGN_IN_AGAIN)
-            profile = self.profile(tx.connection, account['id'])
-            codes, counter, used = None, None, False
-            if row['secret'] is not None:
-                raw = vault.open(self.key, row['secret'], f'two_step_ticket:{account["id"]}')
-                counter = check_totp(raw, code) if re.fullmatch(r'[0-9]{6}', code) else None
-                if counter is not None:
-                    tx.connection.execute('UPDATE evlet_user_profile SET two_step_secret=?, two_step_since=?, two_step_last=?, two_step_pending=NULL WHERE user_id=?',
-                                          (vault.seal(self.key, raw, f'two_step:{account["id"]}'), now, counter, account['id']))
-                    codes = self._store_codes(tx.connection, account['id'])
-            elif profile['two_step_secret'] is not None:
-                raw = vault.open(self.key, profile['two_step_secret'], f'two_step:{account["id"]}')
-                last = profile['two_step_last'] if profile['two_step_last'] is not None else -1
-                counter = check_totp(raw, code, last) if re.fullmatch(r'[0-9]{6}', code) else None
-                if counter is not None:
-                    tx.connection.execute('UPDATE evlet_user_profile SET two_step_last=? WHERE user_id=?', (counter, account['id']))
-                elif re.fullmatch(r'[a-z0-9]{4}-?[a-z0-9]{4}', code) and profile['backup_codes']:
-                    hashes = self.codes(profile)
-                    digest = _code_hash(account['id'], code if '-' in code else code[:4] + '-' + code[4:])
-                    if digest in hashes:
-                        hashes.remove(digest)
-                        sealed = vault.seal(self.key, json.dumps(hashes).encode(), f'backup_codes:{account["id"]}')
-                        tx.connection.execute('UPDATE evlet_user_profile SET backup_codes=? WHERE user_id=?', (base64.b64encode(sealed).decode(), account['id']))
-                        used = True
-            if counter is None and not used:
-                attempts = row['attempts'] + 1
-                if attempts >= TICKET_TRIES:
-                    tx.connection.execute('DELETE FROM evlet_two_step_tickets WHERE token_hash=?', (row['token_hash'],))
-                    wrong = 'That code is not right. Sign in again.'
+        try:
+            with self.database.transaction() as tx:
+                row = tx.connection.execute('SELECT * FROM evlet_two_step_tickets WHERE token_hash=? AND expires>?', (hashlib.sha256(ticket.encode()).hexdigest(), now)).fetchone()
+                account = row and tx.connection.execute('SELECT u.*, r.realm AS role_realm FROM evlet_users u LEFT JOIN evlet_roles r ON r.id=u.role WHERE u.id=?', (row['user_id'],)).fetchone()
+                if row is None or row['realm'] != realm or not account or not account['active'] or account['role_realm'] != realm:
+                    raise AccessError(401, SIGN_IN_AGAIN)
+                limit = self._code_key(account['id'])
+                if self._tries(tx.connection, limit) >= CODE_TRIES:
+                    raise AccessError(429, TOO_MANY_CODES)
+                profile = self.profile(tx.connection, account['id'])
+                codes, right = None, False
+                if row['secret'] is not None:
+                    raw = vault.open(self.key, row['secret'], f'two_step_ticket:{account["id"]}')
+                    counter = check_totp(raw, code) if re.fullmatch(r'[0-9]{6}', code) else None
+                    if counter is not None:
+                        codes, right = self._enrol(tx.connection, scope, account, raw, counter), True
+                elif profile['two_step_secret'] is not None:
+                    right = self._use_code(tx.connection, account['id'], profile, code)
+                if not right:
+                    self._miss(tx.connection, limit)
+                    attempts = row['attempts'] + 1
+                    if attempts >= TICKET_TRIES:
+                        tx.connection.execute('DELETE FROM evlet_two_step_tickets WHERE token_hash=?', (row['token_hash'],))
+                        wrong = 'That code is not right. Sign in again.'
+                    else:
+                        tx.connection.execute('UPDATE evlet_two_step_tickets SET attempts=? WHERE token_hash=?', (attempts, row['token_hash']))
+                        wrong = 'That code is not right. Try again.'
                 else:
-                    tx.connection.execute('UPDATE evlet_two_step_tickets SET attempts=? WHERE token_hash=?', (attempts, row['token_hash']))
-                    wrong = 'That code is not right. Try again.'
-            else:
-                tx.connection.execute('DELETE FROM evlet_two_step_tickets WHERE token_hash=?', (row['token_hash'],))
-                address = client_network(auth.client_address(scope))
-                pair = hashlib.sha256(('account:' + address + ':' + account['username']).encode()).hexdigest()
-                tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (pair,))
-                payload, headers = auth.start_session(tx, scope, account, realm)
-                if codes:
-                    payload['backup_codes'] = codes
-                return payload, headers
+                    tx.connection.execute('DELETE FROM evlet_two_step_tickets WHERE token_hash=?', (row['token_hash'],))
+                    address = client_network(auth.client_address(scope))
+                    pair = hashlib.sha256(('account:' + address + ':' + account['username']).encode()).hexdigest()
+                    tx.connection.execute('DELETE FROM evlet_login_limits WHERE client IN (?,?)', (pair, limit))
+                    payload, headers = auth.start_session(tx, scope, account, realm, verified=True)
+                    if codes:
+                        payload['backup_codes'] = codes
+                    return payload, headers
+        except vault.SecretKeyError:
+            raise AccessError(503, KEY_PROBLEM) from None
         raise AccessError(401, wrong)
+
+
+def clear_two_step(connection, user_id):
+    connection.execute("UPDATE evlet_user_profile SET two_step_secret=NULL, backup_codes=NULL, two_step_since=NULL, two_step_last=NULL, "
+                       "two_step_pending=NULL, two_step_agent='' WHERE user_id=?", (user_id,))
+    connection.execute('DELETE FROM evlet_two_step_tickets WHERE user_id=?', (user_id,))
+
+
+def reset_two_step(connection, actor, user_id, username):
+    """Clear a person's two-step sign-in and end their sessions; they set it up again at their next sign-in. Audited."""
+    from .controls import audit
+    clear_two_step(connection, user_id)
+    connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (user_id,))
+    audit(connection, actor, 'Users', username, 'Two-step sign-in reset. They set it up again at their next sign-in.')

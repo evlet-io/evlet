@@ -51,6 +51,7 @@ evlet routes acme
 evlet proxy acme --caddy --check
 evlet link-user acme buyer customer 42
 evlet controls grant acme mariam
+evlet users reset-two-step acme mariam
 evlet playground --port 8000
 evlet docs --port 8001
 ```
@@ -60,7 +61,7 @@ evlet docs --port 8001
 shadowed by files there; run it with `python -P -m evlet` (or set
 `PYTHONSAFEPATH=1`) when working inside an app folder. Project commands that
 delegate to `.venv` already use `-P`. The original `new` command keeps its
-existing contract. `evlet controls grant` makes a user an active admin from the server shell when nobody can open Controls ([controls.md](controls.md)). `login`, `logout`, `describe` and `mcp` are the connector
+existing contract. `evlet controls grant` makes a user an active admin from the server shell when nobody can open Controls ([controls.md](controls.md)). `evlet users reset-two-step` clears a user's two-step sign-in so they set it up again ([settings.md](settings.md#set-up-at-sign-in-trust-on-first-use)). `login`, `logout`, `describe` and `mcp` are the connector
 commands described in the [connector guide](connector.md). Each one shows its
 options with `--help`, for example `evlet login --help`.
 `evlet dev` selects the sole instance in a project. With several instances it
@@ -220,7 +221,7 @@ instances/acme/
   data/database.sqlite3
   data/backups/
   files/private/
-  secret.key       (created when a secret is first kept, mode 0600)
+  secret.key       (URL-safe base64 keys, mode 0600; created when a secret is first kept)
 ```
 
 Creation writes only `config.py` and an empty `apps.lock`. The database and private

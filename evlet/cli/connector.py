@@ -33,7 +33,7 @@ def run(args):
                 raise ValueError('Session file already exists; sign out or choose a new private file')
             client = HTTPClient(args.url)
             password = getpass.getpass('Application password: ')
-            signed_in = client.login(args.username, password, code=lambda: input('Two-step code: '))
+            signed_in = client.login(args.username, password, code=lambda: getpass.getpass('Two-step code: '))
             try:
                 signed_in.save(args.session)
             except Exception:

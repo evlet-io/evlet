@@ -44,8 +44,11 @@ describe('personal pages', () => {
     expect(text(document.querySelector('.modal .err'))).toBe('Enter a valid email address.');
     typeInto(document.querySelector<HTMLInputElement>('#ce')!, 'new@example.com');
     click(byText(document.body, '.modal button', 'Send link'));
+    expect(text(document.querySelector('.modal .err'))).toBe('Enter your password.');
+    typeInto(document.querySelector<HTMLInputElement>('#ra-password')!, 'my password');
+    click(byText(document.body, '.modal button', 'Send link'));
     await until(() => expect(text(document.querySelector('.modal h2'))).toBe('Confirmation link'));
-    expect(requests(sent, 'POST', /email$/)[0].body).toEqual({ email: 'new@example.com' });
+    expect(requests(sent, 'POST', /email$/)[0].body).toEqual({ email: 'new@example.com', password: 'my password' });
     // The last page is remembered on the server.
     expect(requests(sent, 'PATCH', /prefs$/).map(item => item.body)).toEqual([]);
   });
@@ -63,6 +66,16 @@ describe('personal pages', () => {
     await until(() => expect(text(host.querySelector('tbody tr[data-key]'))).toContain('2026-10-20'));
   });
 
+  it('shows sidebar counts once, without fetching them again on every saved preference', async () => {
+    const { host, sent } = start(routes([['GET', /\/api\/(customer|product|order|contact)\?/, screen.contacts]], me(body => { body.prefs.counts = true; })), '/settings/appearance');
+    await until(() => expect(host.querySelector('.nav-item .count')).not.toBeNull());
+    const counted = () => sent.filter(item => /\/api\/(customer|product|order|contact)\?/.test(item.url)).length;
+    const before = counted();
+    click(byText(host, '.set-choice', /^Compact/));
+    await until(() => expect(lastToast()).toBe('Saved'));
+    expect(counted()).toBe(before);
+  });
+
   it('starts with the region from the server and switches Arabic to right-to-left', async () => {
     const { host } = start(routes([['GET', /\/api\/order\?/, screen.orders_open]], me(body => { body.prefs.date = 'd MMM yyyy'; body.prefs.lang = 'ar'; })), '/app/order');
     await until(() => expect(text(host.querySelector('tbody tr[data-key]'))).toContain('20 Oct 2026'));
@@ -76,8 +89,12 @@ describe('personal pages', () => {
     ], me(body => { body.security.two_step.available = true; })), '/settings/security');
     await until(() => expect(byText(host, 'button', 'Set up')).not.toBeNull());
     click(byText(host, 'button', 'Set up'));
-    await until(() => expect(text(document.querySelector('.modal h2'))).toBe('Set up two-step sign-in'));
-    expect(text(document.querySelector('.set-key code'))).toBe('JBSW Y3DP EHPK 3PXP');
+    await until(() => expect(document.querySelector('#ra-password')).not.toBeNull());
+    expect(document.querySelector('#ra-code')).toBeNull();
+    typeInto(document.querySelector<HTMLInputElement>('#ra-password')!, 'my password');
+    click(byText(document.body, '.modal button', 'Continue'));
+    await until(() => expect(text(document.querySelector('.set-key code'))).toBe('JBSW Y3DP EHPK 3PXP'));
+    expect(requests(sent, 'POST', /two-step$/)[0].body).toEqual({ password: 'my password' });
     typeInto(document.querySelector<HTMLInputElement>('#tfa-code')!, '123456');
     click(byText(document.body, '.modal button', 'Turn on'));
     await until(() => expect(text(document.querySelector('.modal h2'))).toBe('Backup codes'));
@@ -85,8 +102,21 @@ describe('personal pages', () => {
     expect(requests(sent, 'POST', /confirm$/)[0].body).toEqual({ code: '123456' });
   });
 
+  it('asks for the password and a code before making new backup codes', async () => {
+    const { host, sent } = start(routes([['POST', /\/api\/_settings\/me\/two-step\/codes$/, { status: 200, etag: null, body: { codes: ['abcd-efgh'] } }]],
+      me(body => { body.security.two_step = { on: true, since: 1793534400, agent: 'a browser', codes: 3, required: false, available: true, verified: true }; })), '/settings/security');
+    await until(() => expect(byText(host, 'button', 'Make new codes')).not.toBeNull());
+    expect(text(host.querySelector('.set-sec:nth-of-type(2) .set-row p'))).toContain('from a browser. 3 backup codes left.');
+    click(byText(host, 'button', 'Make new codes'));
+    typeInto(document.querySelector<HTMLInputElement>('#ra-password')!, 'my password');
+    typeInto(document.querySelector<HTMLInputElement>('#ra-code')!, '123456');
+    click(byText(document.body, '.modal button', 'Make new codes'));
+    await until(() => expect(text(document.querySelector('.modal h2'))).toBe('Backup codes'));
+    expect(requests(sent, 'POST', /codes$/)[0].body).toEqual({ password: 'my password', code: '123456' });
+  });
+
   it('cannot turn two-step sign-in off when the role requires it', async () => {
-    const { host } = start(routes([], me(body => { body.security.two_step = { on: true, since: 1793534400, codes: 8, required: true, available: true }; })), '/settings/security');
+    const { host } = start(routes([], me(body => { body.security.two_step = { on: true, since: 1793534400, agent: 'a browser', codes: 8, required: true, available: true, verified: true }; })), '/settings/security');
     await until(() => expect(byText(host, 'button', 'Turn off')).not.toBeNull());
     expect((byText(host, 'button', 'Turn off') as HTMLButtonElement).disabled).toBe(true);
     expect(text(host.querySelector('.set-sec:nth-of-type(2) .set-sec-h p'))).toBe('Required for the admin role in this workspace.');

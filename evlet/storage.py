@@ -122,6 +122,17 @@ class LocalFileStorage(SQLiteStorage):
         except (OSError, UnicodeError) as exc:
             raise StorageError('Private file storage is unavailable') from exc
 
+    def remove(self, key):
+        """Delete one file whose metadata row is already gone, such as a replaced photo."""
+        try:
+            self._check_binding()
+            with self.database._connection() as connection:
+                if connection.execute('SELECT 1 FROM evlet_attachments WHERE storage_key=?', (key,)).fetchone():
+                    return
+            self._path(key).unlink(missing_ok=True)
+        except (OSError, UnicodeError) as exc:
+            raise StorageError('Private file storage is unavailable') from exc
+
     def collect(self):
         """Reclaim unreferenced generated files, including rolled-back uploads."""
         try:

@@ -32,11 +32,24 @@ function validZone(zone: string) { try { new Intl.DateTimeFormat('en', { timeZon
 const separators = () => region.number === '1.234,56' ? ['.', ','] : region.number === '1 234.56' ? [' ', '.'] : [',', '.'];
 function group(digits: string) { return digits.replace(/\B(?=(\d{3})+(?!\d))/g, separators()[0]); }
 
-/** Typed number text in the person's format as a plain decimal: '1.234,5' -> '1234.5' with 1.234,56. */
-export function plainNumber(text: string): string {
+/** The decimal mark of the person's number format. */
+export const decimalMark = () => separators()[1];
+
+/**
+ * Typed number text in the person's format as a plain decimal: '1.234,5' -> '1234.5' with 1.234,56.
+ * null when the text uses the other decimal mark, such as '12.50' with 1.234,56: a separator that
+ * does not group thousands is never dropped.
+ */
+export function plainNumber(text: string): string | null {
   const [thousands, decimal] = separators();
-  const clean = text.replace(/\s/g, '');
-  return decimal === ',' ? clean.split(thousands).join('').replace(/,/g, '.') : clean.replace(/,/g, '');
+  const clean = text.replace(/\s/g, '').replace(/^[A-Z]{3}/, '').replace(/%$/, '');
+  const other = decimal === ',' ? '.' : ',';
+  if (clean.includes(other)) {
+    const escape = (mark: string) => mark.replace('.', '\\.');
+    const grouped = new RegExp(`^-?\\d{1,3}(${escape(other)}\\d{3})+(${escape(decimal)}\\d*)?$`);
+    if (other !== thousands || !grouped.test(clean)) return null;
+  }
+  return clean.split(thousands === ' ' ? '\u0000' : thousands).join('').replace(decimal, '.');
 }
 
 /**

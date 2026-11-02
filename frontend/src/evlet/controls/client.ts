@@ -16,7 +16,7 @@ export interface RoleRow {
   id: string; kind: 'framework' | 'custom'; base: string | null; realm: 'desk' | 'portal'; opens_controls: boolean;
   description: string; users: number; app: string | null; declared: boolean;
 }
-export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number }
+export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; two_step?: { since: number | null; agent: string } | null }
 export interface ModelInfo { name: string; label: string; app: string | null; fields: Array<{ name: string; label: string; read_only: boolean }>; scopes: Array<string | null> }
 export interface AuditRow { id: number; at: number; actor: string; area: string; target: string; detail: string }
 export interface Attention { tone: string; icon: string; page: string; title: string; text: string }

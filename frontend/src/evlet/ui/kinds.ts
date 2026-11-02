@@ -5,7 +5,14 @@
 // dates, date-times in UTC, times as HH:MM:SS, durations as ISO 8601 (PT1H30M), tags as lists.
 
 import { parse as parseNumber, quantize, text as numberText } from '../model/finite';
-import { formatDate, formatDateTime, formatMoney, formatNumber, parseDate, plainNumber, wallToUtc } from '../model/format';
+import { decimalMark, formatDate, formatDateTime, formatMoney, formatNumber, parseDate, plainNumber as plain, wallToUtc } from '../model/format';
+
+/** Typed number text as a plain decimal, or an error that names the person's decimal mark. */
+function plainNumber(text: string): string {
+  const value = plain(text);
+  if (value === null) throw new InputError(`Use ${decimalMark()} for decimals`);
+  return value;
+}
 import type { FieldSchema } from '../model/schema';
 
 /** A message for the user when typed text is not a valid value. */
@@ -43,7 +50,7 @@ function bounds(value: number | string, meta: FieldSchema, show: (value: string)
 
 function decimal(scale: (meta: FieldSchema) => number) {
   return (text: string, meta: FieldSchema) => {
-    const clean = plainNumber(text).replace(/%$/, '').replace(/^[A-Z]{3}/, '');
+    const clean = plainNumber(text);
     if (!clean) return null;
     if (!/^-?(\d+\.?\d*|\.\d+)$/.test(clean)) throw new InputError('Enter a number, for example 1250.50');
     const places = (clean.split('.')[1] ?? '').length, allowed = scale(meta);
