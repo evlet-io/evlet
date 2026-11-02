@@ -86,7 +86,7 @@ No database server, Redis, Docker or worker is required for a local SQLite app.
 See [the contributor guide](docs/contributing.md) for a source checkout, frontend
 builds and package checks. [Milestone notes](docs/milestones.md) record the
 completed backend work. Development builds use a `.dev0` version so they can be
-distinguished from published packages. This branch contains unreleased fixes.
+distinguished from published packages. This release is version 0.1.3.
 
 ## License
 
