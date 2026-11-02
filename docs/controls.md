@@ -35,7 +35,14 @@ has no two-step sign-in, and nothing is listed for it.
   `trusted_proxies=(...)` line to add to `Instance(...)`; the header stays ignored until then.
 - `ControlsAccess(require_two_step=True)` opens Controls only to sessions that finished two-step
   sign-in; others get a message that sends them to Settings and back through sign-in. Roles in
-  `security.two_step_roles` need such a session too, when the instance can keep secrets.
+  `security.two_step_roles` need such a session too, when the instance can keep secrets: they
+  can't use anything until two-step sign-in is set up (see [settings.md](settings.md#when-the-code-is-asked)).
+- **Changes ask for a fresh code.** For a person with two-step sign-in on, every request that
+  changes something in Controls (any `POST`, `PUT`, `PATCH` or `DELETE` under `/api/_controls/`,
+  except trying a naming series) needs a code from the last 10 minutes on this session. Signing
+  in with a code counts. Otherwise the answer is 403 `VERIFY_TWO_STEP: ...`; the page shows a code
+  dialog, sends the code to `POST /api/_settings/me/two-step/verify` and sends the change again.
+  Reading Controls never asks. An admin setting someone else's password is a Controls change.
 - Admins can **Reset two-step** for a user (`PATCH /api/_controls/users/<id>`
   `{"two_step": "reset"}`), and `evlet users reset-two-step <instance> <username>` does the same
   from the server shell. Both are audited and revoke all the user's access, API keys included
@@ -61,15 +68,18 @@ revokes their API keys.
 
 | What happened | Browser sessions | AI assistants and codes | API keys |
 |---|---|---|---|
-| Password changed in Settings | Others end, this one stays | End | Kept |
-| Controls: Sign out everywhere, password set, role change | End | End | Kept |
+| Password changed in Settings | Others end, this one stays | End | Kept, unless "Also revoke API keys" is ticked (`"revoke_keys": true`) |
+| Controls: Sign out everywhere | End | End | Kept, unless "Also revoke API keys" is ticked (`"revoke_keys": true`) |
+| Controls: password set, role change | End | End | Kept |
 | Controls: Reset two-step, `evlet users reset-two-step` | End | End | Revoked |
 | Controls: Deactivate | End | End | Revoked, and stay revoked if the person is activated again |
 | `evlet controls grant` (break glass) | End | End | Revoked |
 
-A password change keeps keys because scripts usually belong to the person who changed it on
-purpose. A two-step reset, deactivation and the break-glass grant are how an account is taken
-back, so whatever the other party could have created goes too.
+The two choices show a checkbox, "Also revoke API keys (N active)", unticked by default; the
+routes take an explicit `revoke_keys` boolean that defaults to false, and the audit row says how
+many keys were revoked. Keys are kept by default because scripts usually belong to the person
+on purpose. A two-step reset, deactivation and the break-glass grant are how an account is
+taken back, so whatever the other party could have created always goes too.
 
 ## Roles
 
@@ -122,10 +132,13 @@ job and rebuilds its `Policy` and settings when it moved. Open pages get a
 `{"ops": [...], "read": [...] | null, "write": [...] | null, "scope": id | null}`):
 operations (`read`, `create`, `update`, `delete`, `journal`, `void`, `revise`, `unpost`, `repost`), readable and
 writable fields must stay within the file rule. Stricter only applies to the fields declared in
-app files: an instance field (`x_`, added by Controls) may be made readable or writable for a
-role even when the app rule lists `read_fields` or `write_fields`, as long as the role has read
-(and create or update, to write). Without such an override, a role whose app rule lists fields
-does not see instance fields. Write needs read, no access clears fields and
+app files. An instance field (`x_`, added by Controls) follows the record: every role that reads
+the model reads it, and every role that creates or updates the model writes it, also when the app
+rule lists `read_fields` or `write_fields`. The file value on the Permissions page includes it, so
+an override can hide it from a role or make it read only, like any field. Adding a field also adds
+it to the field lists of existing overrides, so it stays hidden only where an admin unticks it.
+The API, generated screens, API keys, exports and AI assistants all read fields through the same
+`Policy`. Write needs read, no access clears fields and
 rows, revise needs create. Admin rules can't be overridden. The page shows the first four;
 `journal`, `void`, `revise`, `unpost` and `repost` named in the file rule are kept on save. A role based on the
 editor journals like the editor when its rule reads and updates the model (`docs/journal.md`).
@@ -639,7 +652,7 @@ newest first, 50 rows at a time.
 |---|---|
 | `GET /api/_controls/state` | Instance, apps, models, roles, routes, settings, attention list, recent audit rows |
 | `GET/POST /api/_controls/overrides` | File value, override, who and when; save changes |
-| `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end"}` |
+| `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end", "revoke_keys": false}`. Each user row counts active `keys` |
 | `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules and audit rows; refused access is a 403 there |
 | `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls" and descriptions |
 | `POST /api/_controls/fields/<Model>`, `DELETE /api/_controls/fields/<Model>/<x_name>` | Add or remove an instance field: `{name, type, label, help_text, required, default, options, target}` |
