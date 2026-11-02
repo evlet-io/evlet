@@ -368,8 +368,9 @@ class Business:
         return result
 
     def dispatch(self, scope, body):
-        # A request sees one set of instance fields throughout; adding or removing one waits for the rest.
-        schema = scope['path'].startswith('/api/_controls/fields/') and scope['method'] in ('POST', 'DELETE')
+        # A request sees one set of instance fields throughout; adding or removing one, or a migration, waits for the rest.
+        schema = (scope['path'].startswith('/api/_controls/fields/') and scope['method'] in ('POST', 'DELETE')
+                  or scope['path'] == '/api/_controls/apps/migrate')
         with self.gate.exclusive() if schema else self.gate.shared():
             if schema:
                 return self._dispatch(scope, body)

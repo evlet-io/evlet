@@ -75,6 +75,12 @@ class Field:
     kind = "field"
     sql_type = "TEXT"
 
+    def __new__(cls, *args, **kwargs):
+        # The arguments as written in models.py, so Controls can export a field line with its overrides.
+        field = super().__new__(cls)
+        field.arguments = (args, dict(kwargs))
+        return field
+
     def __init__(self, *, required=False, default=MISSING, unique=False, index=False, validator=None,
                  label=None, help_text="", placeholder="", hidden=False, read_only=False,
                  compute=None, stored=True, query=None, fetch=None, filters=None,

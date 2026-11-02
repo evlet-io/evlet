@@ -286,7 +286,7 @@ def test_an_override_that_no_longer_validates_fails_closed_and_is_reported(secur
     assert editor('GET', '/api/project')[0] == 200
     assert (secured.business.auth.lockout, secured.business.auth.password_min) == (10, 64)
     attention = admin('GET', '/api/_controls/state')[1]['attention']
-    assert {item['title'] for item in attention} >= {'An override no longer applies: editor · Customer', 'An override no longer applies: security.lockout'}
+    assert {item['title'] for item in attention} >= {'No access for editor on Customer until this is fixed', 'security.lockout uses its strictest value until this is fixed'}
 
 
 def test_a_policy_that_cannot_be_built_denies_everyone_but_admin(secured, monkeypatch):
@@ -302,7 +302,7 @@ def test_a_policy_that_cannot_be_built_denies_everyone_but_admin(secured, monkey
     assert save(admin, ('perm', 'viewer|Customer', {'ops': ['read'], 'read': ['name'], 'write': None, 'scope': None}))[0] == 200
     assert editor('GET', '/api/project')[0] == 403
     assert admin('GET', '/api/project')[0] == 200
-    assert any(item['title'].endswith('all') for item in admin('GET', '/api/_controls/state')[1]['attention'])
+    assert any(item['title'] == 'Every role but admin is denied' for item in admin('GET', '/api/_controls/state')[1]['attention'])
 
 
 def ops_user(app):

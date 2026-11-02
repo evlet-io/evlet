@@ -352,7 +352,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
                       apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
                       storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, **options)
     app.business.timezone = config.timezone
-    app.business.controls.load(definitions, pinned)
+    app.business.controls.load(definitions, pinned, path)
     app.business.build_manifest = manifest
     app._source_packages = pinned
     app.business.build_directory = path.parent.parent / '.evlet' / 'builds' / manifest['fingerprint']
