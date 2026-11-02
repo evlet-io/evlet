@@ -35,7 +35,7 @@ form template, table columns, or navigation entry is required.
 | Option | Default |
 | --- | --- |
 | `label` | Class name split into words |
-| `plural` | Label plus `s`; override irregular plurals |
+| `plural` | Label plus `s`, `es` after s, x, z, ch or sh, and `ies` for a y after a consonant (Ledger entries); override irregular plurals |
 | `description` | Empty text |
 | `title_field` | Visible `name`, `title`, `reference`, first short text field, or `id` |
 | `list_fields` | ID plus the first four visible fields excluding LongText |

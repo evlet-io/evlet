@@ -1,0 +1,3834 @@
+{
+ "attachment_refused": {
+  "body": {
+   "error": "Validation failed",
+   "fields": {
+    "attachment": "Use a nonempty file up to 1 MiB"
+   }
+  },
+  "etag": null,
+  "status": 422
+ },
+ "attachment_upload": {
+  "body": {
+   "id": 1,
+   "name": "brief.txt",
+   "size": 5
+  },
+  "etag": null,
+  "status": 201
+ },
+ "attachments": {
+  "body": {
+   "items": [
+    {
+     "id": 1,
+     "name": "brief.txt",
+     "size": 5
+    }
+   ]
+  },
+  "etag": null,
+  "status": 200
+ },
+ "attachments_empty": {
+  "body": {
+   "items": []
+  },
+  "etag": null,
+  "status": 200
+ },
+ "contact_create": {
+  "body": {
+   "email": "mariam@example.com",
+   "id": 1,
+   "name": "Mariam Haddad",
+   "notes": "Prefers email.",
+   "phone": "+971 4 555 0101"
+  },
+  "etag": "\"60b3306d6c64a5ddb6742446c66173fe56e39302b48e7fcf9667550be5a91220\"",
+  "status": 201
+ },
+ "contact_detail": {
+  "body": {
+   "email": "mariam@example.com",
+   "id": 1,
+   "name": "Mariam Haddad",
+   "notes": "Prefers email.",
+   "phone": "+971 4 555 0101"
+  },
+  "etag": "\"60b3306d6c64a5ddb6742446c66173fe56e39302b48e7fcf9667550be5a91220\"",
+  "status": 200
+ },
+ "contacts": {
+  "body": {
+   "items": [
+    {
+     "email": "mariam@example.com",
+     "id": 1,
+     "name": "Mariam Haddad",
+     "notes": "Prefers email.",
+     "phone": "+971 4 555 0101"
+    }
+   ],
+   "limit": 20,
+   "offset": 0,
+   "total": 1
+  },
+  "etag": null,
+  "status": 200
+ },
+ "customers_by_rate_desc": {
+  "body": {
+   "items": [
+    {
+     "credit_days": 69,
+     "id": 55,
+     "name": "Trading house 55",
+     "rate": "64.50"
+    },
+    {
+     "credit_days": 68,
+     "id": 54,
+     "name": "Trading house 54",
+     "rate": "63.50"
+    },
+    {
+     "credit_days": 67,
+     "id": 53,
+     "name": "Trading house 53",
+     "rate": "62.50"
+    },
+    {
+     "credit_days": 66,
+     "id": 52,
+     "name": "Trading house 52",
+     "rate": "61.50"
+    },
+    {
+     "credit_days": 65,
+     "id": 51,
+     "name": "Trading house 51",
+     "rate": "60.50"
+    },
+    {
+     "credit_days": 64,
+     "id": 50,
+     "name": "Trading house 50",
+     "rate": "59.50"
+    },
+    {
+     "credit_days": 63,
+     "id": 49,
+     "name": "Trading house 49",
+     "rate": "58.50"
+    },
+    {
+     "credit_days": 62,
+     "id": 48,
+     "name": "Trading house 48",
+     "rate": "57.50"
+    },
+    {
+     "credit_days": 61,
+     "id": 47,
+     "name": "Trading house 47",
+     "rate": "56.50"
+    },
+    {
+     "credit_days": 60,
+     "id": 46,
+     "name": "Trading house 46",
+     "rate": "55.50"
+    },
+    {
+     "credit_days": 59,
+     "id": 45,
+     "name": "Trading house 45",
+     "rate": "54.50"
+    },
+    {
+     "credit_days": 58,
+     "id": 44,
+     "name": "Trading house 44",
+     "rate": "53.50"
+    },
+    {
+     "credit_days": 57,
+     "id": 43,
+     "name": "Trading house 43",
+     "rate": "52.50"
+    },
+    {
+     "credit_days": 56,
+     "id": 42,
+     "name": "Trading house 42",
+     "rate": "51.50"
+    },
+    {
+     "credit_days": 55,
+     "id": 41,
+     "name": "Trading house 41",
+     "rate": "50.50"
+    },
+    {
+     "credit_days": 54,
+     "id": 40,
+     "name": "Trading house 40",
+     "rate": "49.50"
+    },
+    {
+     "credit_days": 53,
+     "id": 39,
+     "name": "Trading house 39",
+     "rate": "48.50"
+    },
+    {
+     "credit_days": 52,
+     "id": 38,
+     "name": "Trading house 38",
+     "rate": "47.50"
+    },
+    {
+     "credit_days": 51,
+     "id": 37,
+     "name": "Trading house 37",
+     "rate": "46.50"
+    },
+    {
+     "credit_days": 50,
+     "id": 36,
+     "name": "Trading house 36",
+     "rate": "45.50"
+    },
+    {
+     "credit_days": 49,
+     "id": 35,
+     "name": "Trading house 35",
+     "rate": "44.50"
+    },
+    {
+     "credit_days": 48,
+     "id": 34,
+     "name": "Trading house 34",
+     "rate": "43.50"
+    },
+    {
+     "credit_days": 47,
+     "id": 33,
+     "name": "Trading house 33",
+     "rate": "42.50"
+    },
+    {
+     "credit_days": 46,
+     "id": 32,
+     "name": "Trading house 32",
+     "rate": "41.50"
+    },
+    {
+     "credit_days": 45,
+     "id": 31,
+     "name": "Trading house 31",
+     "rate": "40.50"
+    },
+    {
+     "credit_days": 44,
+     "id": 30,
+     "name": "Trading house 30",
+     "rate": "39.50"
+    },
+    {
+     "credit_days": 43,
+     "id": 29,
+     "name": "Trading house 29",
+     "rate": "38.50"
+    },
+    {
+     "credit_days": 42,
+     "id": 28,
+     "name": "Trading house 28",
+     "rate": "37.50"
+    },
+    {
+     "credit_days": 41,
+     "id": 27,
+     "name": "Trading house 27",
+     "rate": "36.50"
+    },
+    {
+     "credit_days": 40,
+     "id": 26,
+     "name": "Trading house 26",
+     "rate": "35.50"
+    },
+    {
+     "credit_days": 39,
+     "id": 25,
+     "name": "Zayed Medical Supplies",
+     "rate": "34.50"
+    },
+    {
+     "credit_days": 38,
+     "id": 24,
+     "name": "Zabeel Printing",
+     "rate": "33.50"
+    },
+    {
+     "credit_days": 37,
+     "id": 23,
+     "name": "Yas Fitness",
+     "rate": "32.50"
+    },
+    {
+     "credit_days": 36,
+     "id": 22,
+     "name": "Wadi Textiles",
+     "rate": "31.50"
+    },
+    {
+     "credit_days": 35,
+     "id": 21,
+     "name": "Umm Suqeim Bakery",
+     "rate": "30.50"
+    },
+    {
+     "credit_days": 34,
+     "id": 20,
+     "name": "Tilal Farms",
+     "rate": "29.50"
+    },
+    {
+     "credit_days": 33,
+     "id": 19,
+     "name": "Sahara Labs",
+     "rate": "28.50"
+    },
+    {
+     "credit_days": 32,
+     "id": 18,
+     "name": "Ras Al Khor Motors",
+     "rate": "27.50"
+    },
+    {
+     "credit_days": 31,
+     "id": 17,
+     "name": "Qasr Events",
+     "rate": "26.50"
+    },
+    {
+     "credit_days": 30,
+     "id": 16,
+     "name": "Palm Realty",
+     "rate": "25.50"
+    },
+    {
+     "credit_days": 29,
+     "id": 15,
+     "name": "Oasis Water",
+     "rate": "24.50"
+    },
+    {
+     "credit_days": 28,
+     "id": 14,
+     "name": "Noor Pharmacy",
+     "rate": "23.50"
+    },
+    {
+     "credit_days": 27,
+     "id": 13,
+     "name": "Marina Yachts",
+     "rate": "22.50"
+    },
+    {
+     "credit_days": 26,
+     "id": 12,
+     "name": "Lulu Packaging",
+     "rate": "21.50"
+    },
+    {
+     "credit_days": 25,
+     "id": 11,
+     "name": "Khalifa Steel",
+     "rate": "20.50"
+    },
+    {
+     "credit_days": 24,
+     "id": 10,
+     "name": "Jumeirah Dental",
+     "rate": "19.50"
+    },
+    {
+     "credit_days": 23,
+     "id": 9,
+     "name": "Ibn Battuta Travel",
+     "rate": "18.50"
+    },
+    {
+     "credit_days": 22,
+     "id": 8,
+     "name": "Hamdan Engineering",
+     "rate": "17.50"
+    },
+    {
+     "credit_days": 21,
+     "id": 7,
+     "name": "Gulf Pearl Hotels",
+     "rate": "16.50"
+    },
+    {
+     "credit_days": 20,
+     "id": 6,
+     "name": "Falcon Logistics",
+     "rate": "15.50"
+    }
+   ],
+   "limit": 50,
+   "offset": 0,
+   "total": 55
+  },
+  "etag": null,
+  "status": 200
+ },
+ "customers_page1": {
+  "body": {
+   "items": [
+    {
+     "credit_days": 15,
+     "id": 1,
+     "name": "Al Sahra Trading",
+     "rate": "10.50"
+    },
+    {
+     "credit_days": 16,
+     "id": 2,
+     "name": "Bayan Medical",
+     "rate": "11.50"
+    },
+    {
+     "credit_days": 17,
+     "id": 3,
+     "name": "Corniche Foods",
+     "rate": "12.50"
+    },
+    {
+     "credit_days": 18,
+     "id": 4,
+     "name": "Desert Rose Interiors",
+     "rate": "13.50"
+    },
+    {
+     "credit_days": 19,
+     "id": 5,
+     "name": "Emirates Glass",
+     "rate": "14.50"
+    },
+    {
+     "credit_days": 20,
+     "id": 6,
+     "name": "Falcon Logistics",
+     "rate": "15.50"
+    },
+    {
+     "credit_days": 21,
+     "id": 7,
+     "name": "Gulf Pearl Hotels",
+     "rate": "16.50"
+    },
+    {
+     "credit_days": 22,
+     "id": 8,
+     "name": "Hamdan Engineering",
+     "rate": "17.50"
+    },
+    {
+     "credit_days": 23,
+     "id": 9,
+     "name": "Ibn Battuta Travel",
+     "rate": "18.50"
+    },
+    {
+     "credit_days": 24,
+     "id": 10,
+     "name": "Jumeirah Dental",
+     "rate": "19.50"
+    },
+    {
+     "credit_days": 25,
+     "id": 11,
+     "name": "Khalifa Steel",
+     "rate": "20.50"
+    },
+    {
+     "credit_days": 26,
+     "id": 12,
+     "name": "Lulu Packaging",
+     "rate": "21.50"
+    },
+    {
+     "credit_days": 27,
+     "id": 13,
+     "name": "Marina Yachts",
+     "rate": "22.50"
+    },
+    {
+     "credit_days": 28,
+     "id": 14,
+     "name": "Noor Pharmacy",
+     "rate": "23.50"
+    },
+    {
+     "credit_days": 29,
+     "id": 15,
+     "name": "Oasis Water",
+     "rate": "24.50"
+    },
+    {
+     "credit_days": 30,
+     "id": 16,
+     "name": "Palm Realty",
+     "rate": "25.50"
+    },
+    {
+     "credit_days": 31,
+     "id": 17,
+     "name": "Qasr Events",
+     "rate": "26.50"
+    },
+    {
+     "credit_days": 32,
+     "id": 18,
+     "name": "Ras Al Khor Motors",
+     "rate": "27.50"
+    },
+    {
+     "credit_days": 33,
+     "id": 19,
+     "name": "Sahara Labs",
+     "rate": "28.50"
+    },
+    {
+     "credit_days": 34,
+     "id": 20,
+     "name": "Tilal Farms",
+     "rate": "29.50"
+    },
+    {
+     "credit_days": 40,
+     "id": 26,
+     "name": "Trading house 26",
+     "rate": "35.50"
+    },
+    {
+     "credit_days": 41,
+     "id": 27,
+     "name": "Trading house 27",
+     "rate": "36.50"
+    },
+    {
+     "credit_days": 42,
+     "id": 28,
+     "name": "Trading house 28",
+     "rate": "37.50"
+    },
+    {
+     "credit_days": 43,
+     "id": 29,
+     "name": "Trading house 29",
+     "rate": "38.50"
+    },
+    {
+     "credit_days": 44,
+     "id": 30,
+     "name": "Trading house 30",
+     "rate": "39.50"
+    },
+    {
+     "credit_days": 45,
+     "id": 31,
+     "name": "Trading house 31",
+     "rate": "40.50"
+    },
+    {
+     "credit_days": 46,
+     "id": 32,
+     "name": "Trading house 32",
+     "rate": "41.50"
+    },
+    {
+     "credit_days": 47,
+     "id": 33,
+     "name": "Trading house 33",
+     "rate": "42.50"
+    },
+    {
+     "credit_days": 48,
+     "id": 34,
+     "name": "Trading house 34",
+     "rate": "43.50"
+    },
+    {
+     "credit_days": 49,
+     "id": 35,
+     "name": "Trading house 35",
+     "rate": "44.50"
+    },
+    {
+     "credit_days": 50,
+     "id": 36,
+     "name": "Trading house 36",
+     "rate": "45.50"
+    },
+    {
+     "credit_days": 51,
+     "id": 37,
+     "name": "Trading house 37",
+     "rate": "46.50"
+    },
+    {
+     "credit_days": 52,
+     "id": 38,
+     "name": "Trading house 38",
+     "rate": "47.50"
+    },
+    {
+     "credit_days": 53,
+     "id": 39,
+     "name": "Trading house 39",
+     "rate": "48.50"
+    },
+    {
+     "credit_days": 54,
+     "id": 40,
+     "name": "Trading house 40",
+     "rate": "49.50"
+    },
+    {
+     "credit_days": 55,
+     "id": 41,
+     "name": "Trading house 41",
+     "rate": "50.50"
+    },
+    {
+     "credit_days": 56,
+     "id": 42,
+     "name": "Trading house 42",
+     "rate": "51.50"
+    },
+    {
+     "credit_days": 57,
+     "id": 43,
+     "name": "Trading house 43",
+     "rate": "52.50"
+    },
+    {
+     "credit_days": 58,
+     "id": 44,
+     "name": "Trading house 44",
+     "rate": "53.50"
+    },
+    {
+     "credit_days": 59,
+     "id": 45,
+     "name": "Trading house 45",
+     "rate": "54.50"
+    },
+    {
+     "credit_days": 60,
+     "id": 46,
+     "name": "Trading house 46",
+     "rate": "55.50"
+    },
+    {
+     "credit_days": 61,
+     "id": 47,
+     "name": "Trading house 47",
+     "rate": "56.50"
+    },
+    {
+     "credit_days": 62,
+     "id": 48,
+     "name": "Trading house 48",
+     "rate": "57.50"
+    },
+    {
+     "credit_days": 63,
+     "id": 49,
+     "name": "Trading house 49",
+     "rate": "58.50"
+    },
+    {
+     "credit_days": 64,
+     "id": 50,
+     "name": "Trading house 50",
+     "rate": "59.50"
+    },
+    {
+     "credit_days": 65,
+     "id": 51,
+     "name": "Trading house 51",
+     "rate": "60.50"
+    },
+    {
+     "credit_days": 66,
+     "id": 52,
+     "name": "Trading house 52",
+     "rate": "61.50"
+    },
+    {
+     "credit_days": 67,
+     "id": 53,
+     "name": "Trading house 53",
+     "rate": "62.50"
+    },
+    {
+     "credit_days": 68,
+     "id": 54,
+     "name": "Trading house 54",
+     "rate": "63.50"
+    },
+    {
+     "credit_days": 69,
+     "id": 55,
+     "name": "Trading house 55",
+     "rate": "64.50"
+    }
+   ],
+   "limit": 50,
+   "offset": 0,
+   "total": 55
+  },
+  "etag": null,
+  "status": 200
+ },
+ "customers_page2": {
+  "body": {
+   "items": [
+    {
+     "credit_days": 35,
+     "id": 21,
+     "name": "Umm Suqeim Bakery",
+     "rate": "30.50"
+    },
+    {
+     "credit_days": 36,
+     "id": 22,
+     "name": "Wadi Textiles",
+     "rate": "31.50"
+    },
+    {
+     "credit_days": 37,
+     "id": 23,
+     "name": "Yas Fitness",
+     "rate": "32.50"
+    },
+    {
+     "credit_days": 38,
+     "id": 24,
+     "name": "Zabeel Printing",
+     "rate": "33.50"
+    },
+    {
+     "credit_days": 39,
+     "id": 25,
+     "name": "Zayed Medical Supplies",
+     "rate": "34.50"
+    }
+   ],
+   "limit": 50,
+   "offset": 50,
+   "total": 55
+  },
+  "etag": null,
+  "status": 200
+ },
+ "customers_search": {
+  "body": {
+   "items": [
+    {
+     "credit_days": 39,
+     "id": 25,
+     "name": "Zayed Medical Supplies",
+     "rate": "34.50"
+    },
+    {
+     "credit_days": 16,
+     "id": 2,
+     "name": "Bayan Medical",
+     "rate": "11.50"
+    }
+   ],
+   "limit": 50,
+   "offset": 0,
+   "total": 2
+  },
+  "etag": null,
+  "status": 200
+ },
+ "orders_open": {
+  "body": {
+   "items": [
+    {
+     "customer": 1,
+     "due": "2026-11-04",
+     "id": 3,
+     "issued": "2026-10-20",
+     "line_count": 0,
+     "reason": null,
+     "remark": null,
+     "stage": "open",
+     "title": "Warehouse racks",
+     "total": "0.00"
+    },
+    {
+     "customer": 1,
+     "due": "2026-11-04",
+     "id": 1,
+     "issued": "2026-10-20",
+     "line_count": 0,
+     "reason": null,
+     "remark": null,
+     "stage": "open",
+     "title": "Office fit-out",
+     "total": "0.00"
+    }
+   ],
+   "limit": 20,
+   "offset": 0,
+   "total": 2
+  },
+  "etag": null,
+  "status": 200
+ },
+ "schema": {
+  "body": {
+   "models": [
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "credit_days": {},
+      "name": {},
+      "rate": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "customer",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "name",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Rate",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "rate",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": 30,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Credit days",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "credit_days",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "integer",
+       "unique": false
+      }
+     ],
+     "label": "Customer",
+     "layout": [
+      {
+       "fields": [
+        "name",
+        "rate",
+        "credit_days"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "name",
+      "rate",
+      "credit_days"
+     ],
+     "name": "customer",
+     "order": [
+      "name",
+      "rate",
+      "credit_days"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Customers",
+     "relations": [
+      {
+       "label": "Orders",
+       "limit": 10,
+       "link": "customer",
+       "model": "order",
+       "name": "order.customer",
+       "order": [
+        "-id"
+       ]
+      }
+     ],
+     "resource": "customer",
+     "search_fields": [
+      "name"
+     ],
+     "sources": {},
+     "title_field": "name"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "name": {},
+      "price": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "product",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "name",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Price",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "price",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      }
+     ],
+     "label": "Product",
+     "layout": [
+      {
+       "fields": [
+        "name",
+        "price"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "name",
+      "price"
+     ],
+     "name": "product",
+     "order": [
+      "name",
+      "price"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Products",
+     "resource": "product",
+     "search_fields": [
+      "name"
+     ],
+     "sources": {},
+     "title_field": "name"
+    },
+    {
+     "actions": [
+      {
+       "arguments": [
+        {
+         "default": "",
+         "name": "note",
+         "required": false,
+         "type": "str"
+        }
+       ],
+       "available_when": null,
+       "guarded": false,
+       "inputs": [],
+       "label": "Close",
+       "name": "close",
+       "roles": [
+        "admin",
+        "editor"
+       ]
+      }
+     ],
+     "attachments": false,
+     "behavior": {
+      "customer": {},
+      "due": {
+       "finite": true
+      },
+      "issued": {},
+      "line_count": {
+       "finite": true
+      },
+      "reason": {},
+      "remark": {},
+      "stage": {},
+      "title": {},
+      "total": {
+       "finite": true
+      }
+     },
+     "calculation": {
+      "capabilities": {
+       "due": "local_universal",
+       "line_count": "local_universal",
+       "lines[*].amount": "local_universal",
+       "total": "local_universal"
+      },
+      "language": "finite-v1",
+      "model_schema_hash": "sha256:7ba3061f8b8bc4d3d41cfe5a1b56e757c6f02ad8db9428cf3627cb1d03d9eaeb",
+      "numeric_profile": "finite40-hu18-v1",
+      "plan": {
+       "compiler_version": "evlet-finite-1",
+       "expression_version": 1,
+       "fields": [
+        {
+         "expression": {
+          "$expr": "date_add",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "issued",
+            "scope": "self"
+           },
+           {
+            "$expr": "hop",
+            "field": "customer",
+            "steps": [
+             [
+              "customer",
+              "credit_days",
+              "decimal"
+             ]
+            ]
+           }
+          ]
+         },
+         "field": "due",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "issued"
+          ],
+          [
+           "self",
+           null,
+           "customer"
+          ],
+          [
+           "lookup",
+           "customer",
+           "credit_days"
+          ]
+         ],
+         "result_type": "date",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "due",
+         "target_type": "date"
+        },
+        {
+         "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "stage",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "text",
+            "value": "lost"
+           }
+          ]
+         },
+         "field": "reason",
+         "kind": "applies_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "stage"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "reason:applies_when",
+         "target_type": "text"
+        },
+        {
+         "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "stage",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "text",
+            "value": "lost"
+           }
+          ]
+         },
+         "field": "reason",
+         "kind": "required_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "stage"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "reason:required_when",
+         "target_type": "text"
+        },
+        {
+         "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "stage",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "text",
+            "value": "won"
+           }
+          ]
+         },
+         "field": "remark",
+         "kind": "locked_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "stage"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "remark:locked_when",
+         "target_type": "text"
+        },
+        {
+         "expression": {
+          "$expr": "hop",
+          "field": "product",
+          "steps": [
+           [
+            "product",
+            "price",
+            "decimal"
+           ]
+          ]
+         },
+         "field": "rate",
+         "kind": "initial",
+         "path": [
+          "lines"
+         ],
+         "reads": [
+          [
+           "self",
+           null,
+           "product"
+          ],
+          [
+           "lookup",
+           "product",
+           "price"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 2,
+         "stored": true,
+         "target": "lines[*].rate:initial",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "round",
+          "args": [
+           {
+            "$expr": "mul",
+            "args": [
+             {
+              "$expr": "ref",
+              "field": "qty",
+              "scope": "self"
+             },
+             {
+              "$expr": "ref",
+              "field": "rate",
+              "scope": "self"
+             }
+            ]
+           },
+           {
+            "$expr": "literal",
+            "type": "integer",
+            "value": 2
+           }
+          ]
+         },
+         "field": "amount",
+         "path": [
+          "lines"
+         ],
+         "reads": [
+          [
+           "self",
+           null,
+           "qty"
+          ],
+          [
+           "self",
+           null,
+           "rate"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 2,
+         "stored": true,
+         "target": "lines[*].amount",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "aggregate",
+          "field": "amount",
+          "kind": "sum",
+          "table": "lines",
+          "where": null
+         },
+         "field": "total",
+         "path": [],
+         "reads": [
+          [
+           "membership",
+           "lines",
+           null
+          ],
+          [
+           "member",
+           "lines",
+           "amount"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 2,
+         "stored": true,
+         "target": "total",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "aggregate",
+          "field": null,
+          "kind": "count",
+          "table": "lines",
+          "where": null
+         },
+         "field": "line_count",
+         "path": [],
+         "reads": [
+          [
+           "membership",
+           "lines",
+           null
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 0,
+         "stored": true,
+         "target": "line_count",
+         "target_type": "integer"
+        }
+       ],
+       "language": "finite-v1",
+       "limits": {
+        "collection_rows": 1000,
+        "decimal_text": 128,
+        "document_rows": 5000,
+        "evaluation_steps": 1000000,
+        "expression_depth": 32,
+        "expression_nodes": 128,
+        "graph_edges": 250000,
+        "graph_nodes": 50000,
+        "table_depth": 8
+       },
+       "model_schema_hash": "sha256:926a0f2b27c2727f26a2e4662e4cece07c2c9084a0611934b8244b18d101dbe4",
+       "numeric_profile": "finite40-hu18-v1",
+       "plan_version": 1,
+       "root_resource": "order",
+       "source_plan_hash": "sha256:7ba3061f8b8bc4d3d41cfe5a1b56e757c6f02ad8db9428cf3627cb1d03d9eaeb",
+       "tables": {
+        "$root": {
+         "fields": {
+          "customer": {
+           "computed": false,
+           "default": null,
+           "kind": "link",
+           "maximum": null,
+           "minimum": "1",
+           "required": false,
+           "scale": 0,
+           "stored": true,
+           "type": "link"
+          },
+          "due": {
+           "computed": true,
+           "default": null,
+           "kind": "date",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "date"
+          },
+          "issued": {
+           "computed": false,
+           "default": null,
+           "kind": "date",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "date"
+          },
+          "line_count": {
+           "computed": true,
+           "default": null,
+           "kind": "integer",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 0,
+           "stored": true,
+           "type": "decimal"
+          },
+          "reason": {
+           "computed": false,
+           "default": null,
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "remark": {
+           "computed": false,
+           "default": null,
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "stage": {
+           "computed": false,
+           "default": {
+            "value": "open"
+           },
+           "kind": "select",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "title": {
+           "computed": false,
+           "default": {
+            "value": "order"
+           },
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "total": {
+           "computed": true,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 2,
+           "stored": true,
+           "type": "decimal"
+          }
+         },
+         "lookups": [
+          {
+           "fields": [
+            "credit_days"
+           ],
+           "model": "customer"
+          }
+         ],
+         "model": "order",
+         "path": [],
+         "tables": [
+          "lines"
+         ]
+        },
+        "lines[*]": {
+         "fields": {
+          "amount": {
+           "computed": true,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 2,
+           "stored": true,
+           "type": "decimal"
+          },
+          "product": {
+           "computed": false,
+           "default": null,
+           "kind": "link",
+           "maximum": null,
+           "minimum": "1",
+           "required": false,
+           "scale": 0,
+           "stored": true,
+           "type": "link"
+          },
+          "qty": {
+           "computed": false,
+           "default": {
+            "value": "1"
+           },
+           "kind": "decimal",
+           "maximum": null,
+           "minimum": "0",
+           "required": false,
+           "scale": 4,
+           "stored": true,
+           "type": "decimal"
+          },
+          "rate": {
+           "computed": false,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 2,
+           "stored": true,
+           "type": "decimal"
+          }
+         },
+         "lookups": [
+          {
+           "fields": [
+            "price"
+           ],
+           "model": "product"
+          }
+         ],
+         "max_rows": 1000,
+         "min_rows": 0,
+         "model": "order_lines",
+         "path": [
+          "lines"
+         ],
+         "tables": [
+          "parts"
+         ]
+        },
+        "lines[*].parts[*]": {
+         "fields": {
+          "hours": {
+           "computed": false,
+           "default": {
+            "value": "0"
+           },
+           "kind": "decimal",
+           "maximum": null,
+           "minimum": "0",
+           "required": false,
+           "scale": 4,
+           "stored": true,
+           "type": "decimal"
+          }
+         },
+         "max_rows": 9,
+         "min_rows": 0,
+         "model": "order_lines_parts",
+         "path": [
+          "lines",
+          "parts"
+         ],
+         "tables": []
+        }
+       }
+      }
+     },
+     "child_only": false,
+     "children": [
+      {
+       "label": "Lines",
+       "link": "evlet_owner",
+       "max_rows": 1000,
+       "min_rows": 0,
+       "model": "order_lines",
+       "name": "lines"
+      }
+     ],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "order",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Title",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Customer",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": 1,
+       "name": "customer",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "target": "customer",
+       "type": "link",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "choices": [
+        "open",
+        "won",
+        "lost"
+       ],
+       "compute": null,
+       "default": "open",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Stage",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "stage",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "select",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Issued",
+       "locked_when": null,
+       "name": "issued",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "date",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "date_add",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "issued",
+          "scope": "self"
+         },
+         {
+          "$expr": "hop",
+          "field": "customer",
+          "steps": [
+           [
+            "customer",
+            "credit_days",
+            "decimal"
+           ]
+          ]
+         }
+        ]
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Due",
+       "locked_when": null,
+       "name": "due",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "date",
+       "unique": false
+      },
+      {
+       "applies_when": {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "stage",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "lost"
+         }
+        ]
+       },
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Reason",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "reason",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "stage",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "lost"
+         }
+        ]
+       },
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Remark",
+       "locked_when": {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "stage",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "won"
+         }
+        ]
+       },
+       "max_length": 255,
+       "name": "remark",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "aggregate",
+        "field": "amount",
+        "kind": "sum",
+        "table": "lines",
+        "where": null
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Total",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "total",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "aggregate",
+        "field": null,
+        "kind": "count",
+        "table": "lines",
+        "where": null
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Line count",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "line_count",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "integer",
+       "unique": false
+      }
+     ],
+     "label": "Order",
+     "layout": [
+      {
+       "fields": [
+        "title",
+        "customer",
+        "stage",
+        "issued",
+        "due",
+        "reason",
+        "remark",
+        "total",
+        "line_count"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "title",
+      "customer",
+      "stage",
+      "issued"
+     ],
+     "name": "order",
+     "order": [
+      "title",
+      "customer",
+      "stage",
+      "issued",
+      "due",
+      "reason",
+      "remark",
+      "total",
+      "line_count",
+      "lines.product",
+      "lines.qty",
+      "lines.rate",
+      "lines.amount"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Orders",
+     "resource": "order",
+     "search_fields": [
+      "title",
+      "stage",
+      "reason",
+      "remark"
+     ],
+     "sources": {},
+     "title_field": "title"
+    },
+    {
+     "actions": [
+      {
+       "arguments": [
+        {
+         "default": "",
+         "name": "note",
+         "required": false,
+         "type": "str"
+        }
+       ],
+       "available_when": null,
+       "guarded": false,
+       "inputs": [],
+       "label": "Mark contacted",
+       "name": "contacted",
+       "roles": [
+        "admin",
+        "editor"
+       ]
+      }
+     ],
+     "attachment_limits": {
+      "max_files": 10,
+      "max_size": 1048576
+     },
+     "attachments": true,
+     "behavior": {
+      "email": {},
+      "name": {},
+      "notes": {},
+      "phone": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "name",
+       "placeholder": "",
+       "read_only": false,
+       "required": true,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Email",
+       "locked_when": null,
+       "max_length": 254,
+       "name": "email",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "email",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Phone",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "phone",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Notes",
+       "locked_when": null,
+       "max_length": 65535,
+       "name": "notes",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "longtext",
+       "unique": false
+      }
+     ],
+     "label": "Contact",
+     "layout": [
+      {
+       "fields": [
+        "name",
+        "email",
+        "phone",
+        "notes"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "name",
+      "email",
+      "phone"
+     ],
+     "name": "contact",
+     "order": [
+      "name",
+      "email",
+      "phone",
+      "notes"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Contacts",
+     "resource": "contact",
+     "search_fields": [
+      "name",
+      "email",
+      "phone"
+     ],
+     "sources": {},
+     "title_field": "name"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "amount": {
+       "finite": true
+      },
+      "product": {},
+      "qty": {},
+      "rate": {}
+     },
+     "child_only": true,
+     "children": [
+      {
+       "label": "Parts",
+       "link": "evlet_owner",
+       "max_rows": 9,
+       "min_rows": 0,
+       "model": "order_lines_parts",
+       "name": "parts"
+      }
+     ],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Product",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": 1,
+       "name": "product",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "target": "product",
+       "type": "link",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "1.0000",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Qty",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": "0",
+       "name": "qty",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": {
+        "$expr": "hop",
+        "field": "product",
+        "steps": [
+         [
+          "product",
+          "price",
+          "decimal"
+         ]
+        ]
+       },
+       "label": "Rate",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "rate",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "round",
+        "args": [
+         {
+          "$expr": "mul",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "qty",
+            "scope": "self"
+           },
+           {
+            "$expr": "ref",
+            "field": "rate",
+            "scope": "self"
+           }
+          ]
+         },
+         {
+          "$expr": "literal",
+          "type": "integer",
+          "value": 2
+         }
+        ]
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Amount",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "amount",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      }
+     ],
+     "label": "Line",
+     "layout": [
+      {
+       "fields": [
+        "product",
+        "qty",
+        "rate",
+        "amount"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "product",
+      "qty",
+      "rate",
+      "amount"
+     ],
+     "name": "order_lines",
+     "order": [],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Lines",
+     "resource": "Order.lines",
+     "search_fields": [],
+     "sources": {},
+     "title_field": "id"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "child_only": true,
+     "children": [],
+     "description": "",
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.0000",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Hours",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": "0",
+       "name": "hours",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal",
+       "unique": false
+      }
+     ],
+     "label": "Part",
+     "layout": [
+      {
+       "fields": [
+        "hours"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "hours"
+     ],
+     "name": "order_lines_parts",
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Parts",
+     "search_fields": [],
+     "title_field": "id"
+    }
+   ],
+   "ui_version": 1,
+   "version": 1
+  },
+  "etag": null,
+  "status": 200
+ },
+ "session_setup": {
+  "body": {
+   "application": {
+    "name": "Evlet",
+    "playground": false
+   },
+   "setup": true,
+   "user": null
+  },
+  "etag": null,
+  "status": 200
+ },
+ "setup": {
+  "body": {
+   "created": true
+  },
+  "etag": null,
+  "status": 201
+ },
+ "viewer_contact_detail": {
+  "body": {
+   "email": "mariam@example.com",
+   "id": 1,
+   "name": "Mariam Haddad"
+  },
+  "etag": "\"14bde37f0e169a04eef02e93394f96e65bcb88976b5f70321fcbbcb91d487789\"",
+  "status": 200
+ },
+ "viewer_contacts": {
+  "body": {
+   "items": [
+    {
+     "email": "mariam@example.com",
+     "id": 1,
+     "name": "Mariam Haddad"
+    }
+   ],
+   "limit": 20,
+   "offset": 0,
+   "total": 1
+  },
+  "etag": null,
+  "status": 200
+ },
+ "viewer_schema": {
+  "body": {
+   "models": [
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "credit_days": {},
+      "name": {},
+      "rate": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "customer",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "name",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Rate",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "rate",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": 30,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Credit days",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "credit_days",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "integer",
+       "unique": false
+      }
+     ],
+     "label": "Customer",
+     "layout": [
+      {
+       "fields": [
+        "name",
+        "rate",
+        "credit_days"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "name",
+      "rate",
+      "credit_days"
+     ],
+     "name": "customer",
+     "order": [
+      "name",
+      "rate",
+      "credit_days"
+     ],
+     "permissions": {
+      "create": false,
+      "delete": false,
+      "update": false
+     },
+     "plural": "Customers",
+     "relations": [
+      {
+       "label": "Orders",
+       "limit": 10,
+       "link": "customer",
+       "model": "order",
+       "name": "order.customer",
+       "order": [
+        "-id"
+       ]
+      }
+     ],
+     "resource": "customer",
+     "search_fields": [
+      "name"
+     ],
+     "sources": {},
+     "title_field": "name"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "name": {},
+      "price": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "product",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "name",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Price",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "price",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      }
+     ],
+     "label": "Product",
+     "layout": [
+      {
+       "fields": [
+        "name",
+        "price"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "name",
+      "price"
+     ],
+     "name": "product",
+     "order": [
+      "name",
+      "price"
+     ],
+     "permissions": {
+      "create": false,
+      "delete": false,
+      "update": false
+     },
+     "plural": "Products",
+     "resource": "product",
+     "search_fields": [
+      "name"
+     ],
+     "sources": {},
+     "title_field": "name"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "customer": {},
+      "due": {
+       "finite": true
+      },
+      "issued": {},
+      "line_count": {
+       "finite": true
+      },
+      "reason": {},
+      "remark": {},
+      "stage": {},
+      "title": {},
+      "total": {
+       "finite": true
+      }
+     },
+     "calculation": {
+      "capabilities": {
+       "due": "local_universal",
+       "line_count": "local_universal",
+       "lines[*].amount": "local_universal",
+       "total": "local_universal"
+      },
+      "language": "finite-v1",
+      "model_schema_hash": "sha256:7ba3061f8b8bc4d3d41cfe5a1b56e757c6f02ad8db9428cf3627cb1d03d9eaeb",
+      "numeric_profile": "finite40-hu18-v1",
+      "plan": {
+       "compiler_version": "evlet-finite-1",
+       "expression_version": 1,
+       "fields": [
+        {
+         "expression": {
+          "$expr": "date_add",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "issued",
+            "scope": "self"
+           },
+           {
+            "$expr": "hop",
+            "field": "customer",
+            "steps": [
+             [
+              "customer",
+              "credit_days",
+              "decimal"
+             ]
+            ]
+           }
+          ]
+         },
+         "field": "due",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "issued"
+          ],
+          [
+           "self",
+           null,
+           "customer"
+          ],
+          [
+           "lookup",
+           "customer",
+           "credit_days"
+          ]
+         ],
+         "result_type": "date",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "due",
+         "target_type": "date"
+        },
+        {
+         "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "stage",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "text",
+            "value": "lost"
+           }
+          ]
+         },
+         "field": "reason",
+         "kind": "applies_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "stage"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "reason:applies_when",
+         "target_type": "text"
+        },
+        {
+         "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "stage",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "text",
+            "value": "lost"
+           }
+          ]
+         },
+         "field": "reason",
+         "kind": "required_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "stage"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "reason:required_when",
+         "target_type": "text"
+        },
+        {
+         "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "stage",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "text",
+            "value": "won"
+           }
+          ]
+         },
+         "field": "remark",
+         "kind": "locked_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "stage"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "remark:locked_when",
+         "target_type": "text"
+        },
+        {
+         "expression": {
+          "$expr": "hop",
+          "field": "product",
+          "steps": [
+           [
+            "product",
+            "price",
+            "decimal"
+           ]
+          ]
+         },
+         "field": "rate",
+         "kind": "initial",
+         "path": [
+          "lines"
+         ],
+         "reads": [
+          [
+           "self",
+           null,
+           "product"
+          ],
+          [
+           "lookup",
+           "product",
+           "price"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 2,
+         "stored": true,
+         "target": "lines[*].rate:initial",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "round",
+          "args": [
+           {
+            "$expr": "mul",
+            "args": [
+             {
+              "$expr": "ref",
+              "field": "qty",
+              "scope": "self"
+             },
+             {
+              "$expr": "ref",
+              "field": "rate",
+              "scope": "self"
+             }
+            ]
+           },
+           {
+            "$expr": "literal",
+            "type": "integer",
+            "value": 2
+           }
+          ]
+         },
+         "field": "amount",
+         "path": [
+          "lines"
+         ],
+         "reads": [
+          [
+           "self",
+           null,
+           "qty"
+          ],
+          [
+           "self",
+           null,
+           "rate"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 2,
+         "stored": true,
+         "target": "lines[*].amount",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "aggregate",
+          "field": "amount",
+          "kind": "sum",
+          "table": "lines",
+          "where": null
+         },
+         "field": "total",
+         "path": [],
+         "reads": [
+          [
+           "membership",
+           "lines",
+           null
+          ],
+          [
+           "member",
+           "lines",
+           "amount"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 2,
+         "stored": true,
+         "target": "total",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "aggregate",
+          "field": null,
+          "kind": "count",
+          "table": "lines",
+          "where": null
+         },
+         "field": "line_count",
+         "path": [],
+         "reads": [
+          [
+           "membership",
+           "lines",
+           null
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 0,
+         "stored": true,
+         "target": "line_count",
+         "target_type": "integer"
+        }
+       ],
+       "language": "finite-v1",
+       "limits": {
+        "collection_rows": 1000,
+        "decimal_text": 128,
+        "document_rows": 5000,
+        "evaluation_steps": 1000000,
+        "expression_depth": 32,
+        "expression_nodes": 128,
+        "graph_edges": 250000,
+        "graph_nodes": 50000,
+        "table_depth": 8
+       },
+       "model_schema_hash": "sha256:926a0f2b27c2727f26a2e4662e4cece07c2c9084a0611934b8244b18d101dbe4",
+       "numeric_profile": "finite40-hu18-v1",
+       "plan_version": 1,
+       "root_resource": "order",
+       "source_plan_hash": "sha256:7ba3061f8b8bc4d3d41cfe5a1b56e757c6f02ad8db9428cf3627cb1d03d9eaeb",
+       "tables": {
+        "$root": {
+         "fields": {
+          "customer": {
+           "computed": false,
+           "default": null,
+           "kind": "link",
+           "maximum": null,
+           "minimum": "1",
+           "required": false,
+           "scale": 0,
+           "stored": true,
+           "type": "link"
+          },
+          "due": {
+           "computed": true,
+           "default": null,
+           "kind": "date",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "date"
+          },
+          "issued": {
+           "computed": false,
+           "default": null,
+           "kind": "date",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "date"
+          },
+          "line_count": {
+           "computed": true,
+           "default": null,
+           "kind": "integer",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 0,
+           "stored": true,
+           "type": "decimal"
+          },
+          "reason": {
+           "computed": false,
+           "default": null,
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "remark": {
+           "computed": false,
+           "default": null,
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "stage": {
+           "computed": false,
+           "default": {
+            "value": "open"
+           },
+           "kind": "select",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "title": {
+           "computed": false,
+           "default": {
+            "value": "order"
+           },
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "total": {
+           "computed": true,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 2,
+           "stored": true,
+           "type": "decimal"
+          }
+         },
+         "lookups": [
+          {
+           "fields": [
+            "credit_days"
+           ],
+           "model": "customer"
+          }
+         ],
+         "model": "order",
+         "path": [],
+         "tables": [
+          "lines"
+         ]
+        },
+        "lines[*]": {
+         "fields": {
+          "amount": {
+           "computed": true,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 2,
+           "stored": true,
+           "type": "decimal"
+          },
+          "product": {
+           "computed": false,
+           "default": null,
+           "kind": "link",
+           "maximum": null,
+           "minimum": "1",
+           "required": false,
+           "scale": 0,
+           "stored": true,
+           "type": "link"
+          },
+          "qty": {
+           "computed": false,
+           "default": {
+            "value": "1"
+           },
+           "kind": "decimal",
+           "maximum": null,
+           "minimum": "0",
+           "required": false,
+           "scale": 4,
+           "stored": true,
+           "type": "decimal"
+          },
+          "rate": {
+           "computed": false,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 2,
+           "stored": true,
+           "type": "decimal"
+          }
+         },
+         "lookups": [
+          {
+           "fields": [
+            "price"
+           ],
+           "model": "product"
+          }
+         ],
+         "max_rows": 1000,
+         "min_rows": 0,
+         "model": "order_lines",
+         "path": [
+          "lines"
+         ],
+         "tables": [
+          "parts"
+         ]
+        },
+        "lines[*].parts[*]": {
+         "fields": {
+          "hours": {
+           "computed": false,
+           "default": {
+            "value": "0"
+           },
+           "kind": "decimal",
+           "maximum": null,
+           "minimum": "0",
+           "required": false,
+           "scale": 4,
+           "stored": true,
+           "type": "decimal"
+          }
+         },
+         "max_rows": 9,
+         "min_rows": 0,
+         "model": "order_lines_parts",
+         "path": [
+          "lines",
+          "parts"
+         ],
+         "tables": []
+        }
+       }
+      }
+     },
+     "child_only": false,
+     "children": [
+      {
+       "label": "Lines",
+       "link": "evlet_owner",
+       "max_rows": 1000,
+       "min_rows": 0,
+       "model": "order_lines",
+       "name": "lines"
+      }
+     ],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "order",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Title",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Customer",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": 1,
+       "name": "customer",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "target": "customer",
+       "type": "link",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "choices": [
+        "open",
+        "won",
+        "lost"
+       ],
+       "compute": null,
+       "default": "open",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Stage",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "stage",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "select",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Issued",
+       "locked_when": null,
+       "name": "issued",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "date",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "date_add",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "issued",
+          "scope": "self"
+         },
+         {
+          "$expr": "hop",
+          "field": "customer",
+          "steps": [
+           [
+            "customer",
+            "credit_days",
+            "decimal"
+           ]
+          ]
+         }
+        ]
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Due",
+       "locked_when": null,
+       "name": "due",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "date",
+       "unique": false
+      },
+      {
+       "applies_when": {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "stage",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "lost"
+         }
+        ]
+       },
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Reason",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "reason",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "stage",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "lost"
+         }
+        ]
+       },
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Remark",
+       "locked_when": {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "stage",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "won"
+         }
+        ]
+       },
+       "max_length": 255,
+       "name": "remark",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "aggregate",
+        "field": "amount",
+        "kind": "sum",
+        "table": "lines",
+        "where": null
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Total",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "total",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "aggregate",
+        "field": null,
+        "kind": "count",
+        "table": "lines",
+        "where": null
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Line count",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "line_count",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "integer",
+       "unique": false
+      }
+     ],
+     "label": "Order",
+     "layout": [
+      {
+       "fields": [
+        "title",
+        "customer",
+        "stage",
+        "issued",
+        "due",
+        "reason",
+        "remark",
+        "total",
+        "line_count"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "title",
+      "customer",
+      "stage",
+      "issued"
+     ],
+     "name": "order",
+     "order": [
+      "title",
+      "customer",
+      "stage",
+      "issued",
+      "due",
+      "reason",
+      "remark",
+      "total",
+      "line_count",
+      "lines.product",
+      "lines.qty",
+      "lines.rate",
+      "lines.amount"
+     ],
+     "permissions": {
+      "create": false,
+      "delete": false,
+      "update": false
+     },
+     "plural": "Orders",
+     "resource": "order",
+     "search_fields": [
+      "title",
+      "stage",
+      "reason",
+      "remark"
+     ],
+     "sources": {},
+     "title_field": "title"
+    },
+    {
+     "actions": [],
+     "attachment_limits": {
+      "max_files": 10,
+      "max_size": 1048576
+     },
+     "attachments": true,
+     "behavior": {
+      "email": {},
+      "name": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "name",
+       "placeholder": "",
+       "read_only": false,
+       "required": true,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Email",
+       "locked_when": null,
+       "max_length": 254,
+       "name": "email",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "email",
+       "unique": false
+      }
+     ],
+     "label": "Contact",
+     "layout": [
+      {
+       "fields": [
+        "name",
+        "email"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "name",
+      "email"
+     ],
+     "name": "contact",
+     "order": [
+      "name",
+      "email"
+     ],
+     "permissions": {
+      "create": false,
+      "delete": false,
+      "update": false
+     },
+     "plural": "Contacts",
+     "resource": "contact",
+     "search_fields": [
+      "name",
+      "email"
+     ],
+     "sources": {},
+     "title_field": "name"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "amount": {
+       "finite": true
+      },
+      "product": {},
+      "qty": {},
+      "rate": {}
+     },
+     "child_only": true,
+     "children": [
+      {
+       "label": "Parts",
+       "link": "evlet_owner",
+       "max_rows": 9,
+       "min_rows": 0,
+       "model": "order_lines_parts",
+       "name": "parts"
+      }
+     ],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Product",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": 1,
+       "name": "product",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "target": "product",
+       "type": "link",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "1.0000",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Qty",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": "0",
+       "name": "qty",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": {
+        "$expr": "hop",
+        "field": "product",
+        "steps": [
+         [
+          "product",
+          "price",
+          "decimal"
+         ]
+        ]
+       },
+       "label": "Rate",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "rate",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "round",
+        "args": [
+         {
+          "$expr": "mul",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "qty",
+            "scope": "self"
+           },
+           {
+            "$expr": "ref",
+            "field": "rate",
+            "scope": "self"
+           }
+          ]
+         },
+         {
+          "$expr": "literal",
+          "type": "integer",
+          "value": 2
+         }
+        ]
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Amount",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "amount",
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      }
+     ],
+     "label": "Line",
+     "layout": [
+      {
+       "fields": [
+        "product",
+        "qty",
+        "rate",
+        "amount"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "product",
+      "qty",
+      "rate",
+      "amount"
+     ],
+     "name": "order_lines",
+     "order": [],
+     "permissions": {
+      "create": false,
+      "delete": false,
+      "update": false
+     },
+     "plural": "Lines",
+     "resource": "Order.lines",
+     "search_fields": [],
+     "sources": {},
+     "title_field": "id"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "child_only": true,
+     "children": [],
+     "description": "",
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.0000",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Hours",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": "0",
+       "name": "hours",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal",
+       "unique": false
+      }
+     ],
+     "label": "Part",
+     "layout": [
+      {
+       "fields": [
+        "hours"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "hours"
+     ],
+     "name": "order_lines_parts",
+     "permissions": {
+      "create": false,
+      "delete": false,
+      "update": false
+     },
+     "plural": "Parts",
+     "search_fields": [],
+     "title_field": "id"
+    }
+   ],
+   "ui_version": 1,
+   "version": 1
+  },
+  "etag": null,
+  "status": 200
+ },
+ "viewer_session": {
+  "body": {
+   "application": {
+    "name": "Evlet",
+    "playground": false
+   },
+   "csrf": "fixture-csrf-token",
+   "user": {
+    "id": 2,
+    "role": "viewer",
+    "username": "viewer"
+   }
+  },
+  "etag": null,
+  "status": 200
+ }
+}

@@ -49,6 +49,8 @@ export function BulkBar(props: { count: Prop<number>; actions: BulkAction[]; onC
 // ---------- board ----------
 
 export interface BoardColumn { value: string; label: string; tint: Tint }
+/** A column's totals from the server: the record count, a formatted amount and its share (0 to 100). */
+export interface BoardTotal { count: number; amount?: string; share?: number }
 
 export interface BoardProps<T> {
   columns: BoardColumn[];
@@ -58,6 +60,13 @@ export interface BoardProps<T> {
   group: (card: T) => string;
   /** The card's value for column totals (a number of money units). */
   measure?: (card: T) => number;
+  /**
+   * Column totals from the server, by column value. When set, they replace the count and
+   * measure of the loaded cards; null (not known yet) falls back to the loaded cards' count.
+   */
+  totals?: () => Record<string, BoardTotal> | null;
+  /** Show an amount and share bar from `totals`. */
+  amounts?: boolean;
   card: (card: () => T) => Node;
   /** Move a card; return a reason to refuse it. The board confirms with Undo. */
   onMove: (card: T, to: string) => string | null | void;
@@ -89,6 +98,11 @@ export function Board<T>(props: BoardProps<T>): HTMLElement {
   const column = (item: BoardColumn) => {
     const cards = () => groups.get().get(item.value) ?? [];
     const total = () => sumOf(cards());
+    const server = () => props.totals?.() ?? null;
+    const count = () => server() ? server()![item.value]?.count ?? 0 : cards().length;
+    const amount = () => server() ? server()![item.value]?.amount ?? '' : props.measure ? compact(total()) : '';
+    const share = () => server() ? Math.round(server()![item.value]?.share ?? 0) : grand.get() ? Math.round(total() / grand.get() * 100) : 0;
+    const showAmount = Boolean(props.measure || props.amounts);
     const body = html`<div class="col-b" role="list" aria-label=${item.label}>${each(cards, props.key, card => {
       const element = props.card(card) as HTMLElement;
       element.setAttribute('draggable', 'true');
@@ -105,10 +119,10 @@ export function Board<T>(props: BoardProps<T>): HTMLElement {
       });
       return element;
     }, { fallback: () => html`<div class="col-empty">Nothing here. Drag a card in.</div>` })}</div>` as HTMLElement;
-    const section = html`<section class="col-k" class:over=${() => over.get() === item.value} aria-label=${() => `${item.label}, ${cards().length}`}>
-      <div class="col-h"><div class="r1">${StatusPill({ label: item.label, tint: item.tint })}<span class="ct num">${() => String(cards().length)}</span><span class="grow"></span>
-        ${props.measure ? html`<span class="amt num">${() => compact(total())}</span>` : null}</div>
-        ${props.measure ? ProgressBar({ value: () => grand.get() ? Math.round(total() / grand.get() * 100) : 0, tint: item.tint, showValue: false, label: `${item.label} share of value` }) : null}</div>
+    const section = html`<section class="col-k" class:over=${() => over.get() === item.value} aria-label=${() => `${item.label}, ${count()}`}>
+      <div class="col-h"><div class="r1">${StatusPill({ label: item.label, tint: item.tint })}<span class="ct num">${() => String(count())}</span><span class="grow"></span>
+        ${showAmount ? html`<span class="amt num">${amount}</span>` : null}</div>
+        ${showAmount ? ProgressBar({ value: share, tint: item.tint, showValue: false, label: `${item.label} share of value` }) : null}</div>
       ${body}${props.onAdd ? html`<button type="button" class="col-add" on:click=${() => props.onAdd!(item)}>${Icon('plus', { size: 'sm' })}${props.addLabel ?? 'Add'}</button>` : null}</section>` as HTMLElement;
     section.addEventListener('dragover', event => { if (dragged) { event.preventDefault(); over.set(item.value); } });
     section.addEventListener('dragleave', event => { if (!section.contains(event.relatedTarget as Node)) over.set(null); });

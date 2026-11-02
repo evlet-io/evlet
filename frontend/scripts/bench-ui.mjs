@@ -198,4 +198,72 @@ function changes(target) {
   host.remove();
 }
 
+// 6. and 7. Screens: a generated list page of 100 rows, and a record view opening on its
+// 1,000-line table. Measured from building the page to its rows in the DOM, with the record
+// opened (rows parsed, calculations attached) inside the measurement.
+{
+  const { AppClient } = await import('../src/evlet/app/client.ts');
+  const { appRouter, newPageState } = await import('../src/evlet/app/context.ts');
+  const { Prefs } = await import('../src/evlet/app/prefs.ts');
+  const { ListPage } = await import('../src/evlet/app/list-page.ts');
+  const { RecordPage } = await import('../src/evlet/app/record-page.ts');
+  const { SchemaIndex } = await import('../src/evlet/model/schema.ts');
+  const { apiLinks } = await import('../src/evlet/ui/fields.ts');
+  const { scope } = await import('../src/evlet/reactive.ts');
+  globalThis.location = window.location; globalThis.history = window.history;
+  const base = fixture.list.body.items[0];
+  const listRows = Array.from({ length: 100 }, (_, index) => ({ ...base, id: index + 1, title: `Order ${index + 1}`, stage: ['open', 'won', 'lost'][index % 3] }));
+  const line = fixture.detail.body.children.lines[1];
+  const detail = { ...fixture.detail.body, children: { lines: Array.from({ length: 1000 }, (_, index) => ({ ...line, id: index + 1, children: { parts: [] } })) }, total: '2500.00', line_count: 1000 };
+  delete detail.children_pages;
+  const reply = body => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json', etag: '"bench"' } });
+  const fetch = async url => {
+    const path = String(url);
+    if (path.includes('/api/order?')) return reply({ items: listRows, total: 100, limit: 100, offset: 0 });
+    if (path.endsWith('/api/order/1')) return reply(detail);
+    return reply(path.includes('/api/customer') ? fixture.customer.body : fixture.product.body);
+  };
+  const api = new AppClient({ fetch });
+  const schema = new SchemaIndex(fixture.schema.body);
+  const router = appRouter({ base: '/ui', window });
+  const ctx = { api, router, schema, session: fixture.session.body, user: fixture.session.body.user, prefs: new Prefs('bench', null),
+    links: apiLinks(api, schema), dev: false, libraryHref: '/evlet.html', ...newPageState(), openPalette() {}, toggleSidebar() {}, async signOut() {} };
+  const until = async (check, host) => {
+    const limit = performance.now() + 5000;
+    while (!check()) {
+      if (performance.now() > limit) throw new Error(`The page did not render: ${host.textContent.slice(0, 300)}`);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  };
+  const measure = async (path, build, ready) => {
+    window.history.replaceState(null, '', path);
+    const stopRouter = router.start();
+    const host = document.createElement('div');
+    document.body.append(host);
+    const start = performance.now();
+    let dispose;
+    dispose = scope(() => { host.append(build()); });
+    await until(() => ready(host), host);
+    const time = performance.now() - start;
+    const rows = host.querySelectorAll('tbody tr[data-key]').length;
+    dispose();
+    stopRouter();
+    host.remove();
+    return { time, rows };
+  };
+  const lists = [], records = [];
+  let listRowsShown = 0, recordRowsShown = 0;
+  for (let run = 0; run < 15; run++) {
+    const list = await measure('/ui/m/order', () => ListPage(ctx, 'order'), host => host.querySelectorAll('tbody tr[data-key]').length > 0);
+    lists.push(list.time); listRowsShown = list.rows;
+    const record = await measure('/ui/m/order/1?tab=t-lines', () => RecordPage(ctx, 'order', '1'), host => host.querySelectorAll('.grid tbody tr[data-key]').length > 0);
+    records.push(record.time); recordRowsShown = record.rows;
+  }
+  report('List page, 100 rows: build, load and first render', lists, 50);
+  console.log(`  list rows in the DOM: ${listRowsShown} of 100 (virtualized at a 640 px viewport)`);
+  report('Record view, 1,000-line table tab: open and first screen', records, 100);
+  console.log(`  grid rows in the DOM: ${recordRowsShown} of 1000`);
+  ctx.prefs.dispose();
+}
+
 console.log(JSON.stringify({ environment: `jsdom ${JSON.parse(readFileSync(new URL('../node_modules/jsdom/package.json', import.meta.url), 'utf8')).version}, node ${process.version}`, results }));

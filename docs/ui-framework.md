@@ -1,8 +1,8 @@
 # Evlet UI framework
 
-Status: core and component library in place (phases `ui/01-core` and `ui/02-components` of
-[handoff-plan.md](handoff-plan.md)). Screens and the switch away from SolidJS follow in later
-phases. The code lives in
+Status: core, component library and generated screens in place (phases `ui/01-core`,
+`ui/02-components` and `ui/03-screens` of [handoff-plan.md](handoff-plan.md)). The switch away
+from SolidJS follows in a later phase. The code lives in
 `frontend/src/evlet/` and imports nothing from SolidJS, the current views or
 `frontend/legacy`. It has no dependencies of its own.
 
@@ -357,19 +357,107 @@ lightness moved.
 Text that used `--fg-4` (field hints, grid placeholders, hidden-column labels, the palette
 placeholder, empty quick-access labels) uses `--fg-3` instead.
 
+## Screens
+
+`frontend/src/evlet/app/` is a model-driven app: sign in, Docs, and a list and a record view for
+every model the role can read. It needs no per-app frontend code. Everything it shows comes from
+`/api/schema`, record details and the list routes, so a model-only application (a `models.py`)
+gets all of its screens. Run it with `npm run dev` and open `/ui` (the backend runs on the port
+in `EVLET_BACKEND_PORT`, 8000 by default). It is not in the production build yet; the SolidJS app
+stays the installed UI until the switch.
+
+| Module | What it does |
+|---|---|
+| `app.ts` | Session, sign in and first-run setup, the shell and the route table |
+| `shell.ts` | Sidebar (models grouped, recent records, Library in development), top bar, keyboard |
+| `docs.ts` | The Docs landing page after sign-in |
+| `list-page.ts` | List page and board per model |
+| `record-page.ts` | Record (doc) view, new records, action, void and revise dialogs |
+| `palette.ts` | Command palette (Cmd or Ctrl K) |
+| `client.ts` | The API client plus the routes the screens use, and the last detail per record |
+| `meta.ts` | What the screens read from the schema, with the optional keys of later phases |
+| `prefs.ts` | Per-user preferences |
+
+Routes, under `/ui`: `/docs` and `/docs/:topic`, `/m/:model` (list), `/m/:model/new` (a new
+record; field values in the query fill it, `?customer=4`), `/m/:model/:id` (a record; `?tab=`
+keeps the tab). A list keeps its search, sort, page, view, saved view and filters in the query, so
+a link opens the same list. A record with unsaved changes asks before the page changes or the
+tab closes. Signing in keeps the address the user opened.
+
+### What the model decides
+
+| Model | Screen |
+|---|---|
+| Fields the role can read | The only fields shown anywhere; the rest are absent, not hidden |
+| `permissions.create`, `update`, `delete` | New buttons and menu entries, editing in place, bulk Delete and the record's Delete |
+| `Meta.list_fields` | List columns (up to eight, without `id`); without it the first eight visible fields |
+| `Meta.title_field` | The record title (edited in place) and the pinned first list column |
+| `Meta.search_fields` | The list search box and record search in the palette |
+| `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other |
+| `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
+| `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
+| `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. Form dialog actions (`dialog: true`) are not shown: these screens cannot open them yet |
+| `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board, the status flow, move buttons; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column |
+| Locked states, `editable_when_locked` | Lock banner; only the declared fields stay editable; lines lock |
+| Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |
+| `Sequence` (Phase 7) | The number in mono as the title; "Number assigned on ..." until then |
+| `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
+| `Meta.key_fields` (Phase 10) | Header facts, the summary strip and the Key fields side block (without it: the first fields) |
+| `Meta.relations` (Phase 10) | The Related tab and side block |
+| `attachments` | The Files side block, with upload for roles that can update while the record is not locked |
+| `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
+| Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system"), field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
+
+A section appears only when the schema or the detail carries its key. The screen tests replay
+these keys as the engine sends them, recorded from an invoice with a State, a Sequence, effects,
+measures, key fields, relations, files and a journal (engine and user entries, follow ups, and a
+viewer who sees the posting entry only in part). A record that has posted nothing yet still lists each
+effect target with zero rows; the Postings tab treats that as nothing posted. The files of a
+locked record cannot change, so the upload control hides while `_locked` is true. Every response
+is recorded by `scripts/generate_ui_framework_fixtures.py`; none is written by hand.
+
+Model icons and accents come from the model name (invoice: receipt, blue; contact: people,
+violet), since the schema has no presentation keys. Models with a State or a Table are listed as
+Documents in the sidebar, the others as Records.
+
+Per-user preferences (theme, sidebar, density, list column widths, child table columns, quick
+access) are kept in browser storage under `evlet.<username>.` until the backend has user
+settings. They never hold record data: recent records and recent searches stay in memory for the
+signed-in session and go on sign-out. The sign-in screen uses the default theme.
+
+Signing out ends the local session only after the server confirms it (or answers that the
+session had already ended). If the request fails, the user stays signed in and a dialog says so,
+with Try again.
+
+A create link (`/m/{model}/new?field=value`) fills only fields the form shows and the role can
+write: hidden, read-only (including fields the role cannot write), calculated, State and
+Sequence fields are ignored.
+
+Bulk moves and deletes read each record first and act only when the values the list showed
+(its columns and State) are unchanged; records that changed since the list loaded are left as
+they are and counted in the result. They send four requests at a time, show progress, and stop
+when the user leaves the page.
+
 ## Tests and benchmarks
 
 The tests in `frontend/src/evlet/tests/` run in jsdom with `npm test`. API and record store
-tests replay responses recorded from the real ASGI routes in `api-fixture.json`
-(regenerate with `.venv/bin/python -m scripts.generate_ui_framework_fixtures` and review the
+tests replay responses recorded from the real ASGI routes in `api-fixture.json`, and the
+screen tests also those in `screens-fixture.json` (regenerate both with
+`.venv/bin/python -m scripts.generate_ui_framework_fixtures` and review the
 diff). The record store also replays the shared finite-v1 scenarios through its public API.
 `npm run bench:ui` measures the budgets; see "UI framework" in
 [performance.md](performance.md).
 
 ## Limits of this phase
 
-- The screens still run on SolidJS. Shell, palette, journal, home and report components come
-  with the screens (they show as "later" in the Library).
+- The installed UI still runs on SolidJS; the generated screens run from `/ui` in development.
+  Home, reports, the notification panel, the layout control and Doc layout page are not built.
+- Bulk moves and deletes read each record first, one request per record.
+- The board loads the first 100 records of the filter. Column counts and totals come from the
+  server; the aggregate route has no search, so while searching columns count the loaded cards
+  and show no totals.
+- Postings show what each target received (rows, reversals, balance); listing the posted rows
+  waits for a filter by source on the target's list route.
 - Date fields take typed DD-MM-YYYY text; there is no calendar picker yet. Reference fields
   are read only until the schema lists the models they may point to.
 - State metadata (`record.state`) is read when the schema sends it.
