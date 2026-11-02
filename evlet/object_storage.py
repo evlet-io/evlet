@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import secrets
 
-from .storage import SQLiteStorage, StorageError
+from .storage import MAX_FILE, SQLiteStorage, StorageError
 
 
 class S3Storage(SQLiteStorage):
@@ -77,9 +77,9 @@ class S3Storage(SQLiteStorage):
             response = self.client.get_object(Bucket=self.bucket, Key=self._key(row['storage_key']))
             stream = response['Body']
             try:
-                if response['ContentLength'] != row['file_size'] or not 1 <= row['file_size'] <= 1024 * 1024:
+                if response['ContentLength'] != row['file_size'] or not 1 <= row['file_size'] <= MAX_FILE:
                     raise StorageError('Private object has an invalid size')
-                content = stream.read(1024 * 1024 + 1)
+                content = stream.read(MAX_FILE + 1)
                 if len(content) != row['file_size'] or hashlib.sha256(content).hexdigest() != response.get('Metadata', {}).get('sha256'):
                     raise StorageError('Private object is damaged')
                 return content

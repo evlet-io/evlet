@@ -220,6 +220,7 @@ instances/acme/
   data/database.sqlite3
   data/backups/
   files/private/
+  secret.key       (created when a secret is first kept, mode 0600)
 ```
 
 Creation writes only `config.py` and an empty `apps.lock`. The database and private
@@ -332,7 +333,8 @@ registers schedules there. Only after validation does it publish the database,
 record the installed manifest and atomically replace `apps.lock`. A failed staged
 migration leaves the active database, lock and private files intact. Backups stay
 under `data/backups/`; unchanged migrations validate without another backup; retain matching source revisions and private files as part
-of your backup policy. SQL backups alone do not include uploaded file bytes.
+of your backup policy. SQL backups alone do not include uploaded file bytes, and a database
+restored without its `secret.key` can't open two-step sign-in secrets; keep the key with it.
 
 The lock records each app's version, source, full Git commit when available, and
 SHA-256 of included source files. Flat apps include their package root; legacy apps

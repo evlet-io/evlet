@@ -24,8 +24,8 @@ Permissions and Security.
   `LocalAuth.client_address(scope)`: `X-Forwarded-For` counts only when the connection
   comes from one of the instance's `trusted_proxies` ([routing.md](routing.md)). Sign-in
   throttling and the public endpoint limit read the same address.
-- `ControlsAccess(require_two_step=True)` refuses Controls with a message until two-step
-  sign-in exists.
+- `ControlsAccess(require_two_step=True)` opens Controls only to people who use two-step
+  sign-in; others get a message that sends them to Settings.
 - Break glass from the server shell:
 
   ```
@@ -102,7 +102,7 @@ no customer links sees no records. Link users with `evlet link-user` or
 | `security.password_min` | 15 | Up only, 64 at most. Applies to new passwords. |
 | `security.session_hours` | 8 | Down only. Sets the session and cookie length in every realm. Lowering it ends sessions already older than the new length, desk and portal alike. |
 | `security.lockout` | 10 | Down only, 3 at least. Failed sign-ins per network and account. |
-| `security.two_step_roles` | `["admin"]` | Admin stays. Saved now, enforced once two-step sign-in exists. |
+| `security.two_step_roles` | `["admin"]` | Admin stays. These roles must use two-step sign-in ([settings.md](settings.md#two-step-sign-in)) when the instance can keep secrets. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
 
 ## Audit log

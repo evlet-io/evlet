@@ -300,6 +300,9 @@ class RouteTable:
             return None
         root = self._subs.get(host_name(host))
         if root is not None:
+            # Portal hosts serve the personal settings subset at /settings.
+            if (path == '/settings' or path.startswith('/settings/')) and self.realm(host) == 'portal':
+                return 'evlet.settings', '/settings', path.removeprefix('/settings')
             # Framework pages such as /controls and /docs live on the primary host only.
             if reserved(path) and path.split('/')[1].lower() not in SUB_HOST_OWNS:
                 return None

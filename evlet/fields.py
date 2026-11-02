@@ -51,7 +51,7 @@ class Field:
     sql_type = "TEXT"
 
     def __init__(self, *, required=False, default=MISSING, unique=False, index=False, validator=None,
-                 label=None, help_text="", placeholder="", hidden=False, read_only=False,
+                 label=None, help_text="", placeholder="", suffix="", hidden=False, read_only=False,
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
                  initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False):
@@ -63,11 +63,11 @@ class Field:
         self.name = ""
         if label is not None and (not isinstance(label, str) or not label):
             raise ValueError("label must be nonempty text")
-        if not isinstance(help_text, str) or not isinstance(placeholder, str):
-            raise ValueError("Field help and placeholder must be text")
+        if not isinstance(help_text, str) or not isinstance(placeholder, str) or not isinstance(suffix, str) or len(suffix) > 20:
+            raise ValueError("Field help, placeholder and suffix must be text; a suffix has at most 20 characters")
         if type(hidden) is not bool or type(read_only) is not bool:
             raise ValueError("hidden and read_only must be booleans")
-        self.label, self.help_text, self.placeholder = label, help_text, placeholder
+        self.label, self.help_text, self.placeholder, self.suffix = label, help_text, placeholder, suffix
         self.hidden, self.read_only = hidden, read_only
         self.compute, self.stored, self.query, self.fetch = compute, stored, query, fetch
         self.filters = dict(filters or {})
@@ -683,6 +683,34 @@ class Tags(Field):
 
     def serialize(self, value):
         return None if value is None else list(value)
+
+
+class MultiSelect(Tags):
+    """Some of a fixed list of choices, stored as a JSON array in the order of the choices.
+
+    The contains filter matches one choice, as it does for Tags.
+    """
+    kind = "multiselect"
+
+    def __init__(self, choices, **kwargs):
+        if not isinstance(choices, (list, tuple)) or not choices or len(set(choices)) != len(choices):
+            raise ValueError("choices must be a nonempty list of distinct strings")
+        for choice in choices:
+            Tags.tag(choice)
+        if len(choices) > TAG_LIMIT:
+            raise ValueError(f"Use at most {TAG_LIMIT} choices")
+        super().__init__(**kwargs)
+        self.choices = tuple(choices)
+
+    def validate(self, value):
+        chosen = super().validate(value)
+        unknown = [item for item in chosen if item not in self.choices]
+        if unknown:
+            raise ValueError("Choose from: " + ", ".join(self.choices))
+        return tuple(choice for choice in self.choices if choice in chosen)
+
+    def metadata(self):
+        return {**super().metadata(), "choices": list(self.choices)}
 
 
 class Reference(Field):

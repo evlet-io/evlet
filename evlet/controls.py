@@ -23,7 +23,7 @@ SETTINGS = MappingProxyType({
 })
 NOT_FOUND = 'Route not found'
 ADMIN_ONLY = 'Only an admin can do this: change admin accounts, give the admin role, manage roles or decide who opens Controls.'
-TWO_STEP = 'Controls needs two-step sign-in, which this instance does not have yet. Remove require_two_step from routes.py for now.'
+TWO_STEP = 'Controls needs two-step sign-in. Turn it on in Settings, under Sign-in & security, then open Controls again.'
 LABELS = {None: 'All records', 'created_by': 'Records they created', 'owner': 'Records they own',
           'account_manager': 'Customers they manage', 'assignee': 'Tasks assigned to them', 'own_customer': 'Their own customer only'}
 
@@ -263,7 +263,7 @@ class Controls:
     def check(self, scope, user):
         if not self.allows(scope, user):
             raise AccessError(404, NOT_FOUND)
-        if self.routes.controls.require_two_step:
+        if self.routes.controls.require_two_step and not self.business.settings.two_step_on(user.id):
             raise AccessError(403, TWO_STEP)
 
     def page(self, scope, path):
@@ -686,8 +686,8 @@ class Controls:
             'scopes': {key or '': label for key, label in LABELS.items()} | {key: key.replace('_', ' ').capitalize() for key in self.scopes},
             'settings': {key: {'file': SETTINGS[key], 'value': self.settings[key]} for key in SETTINGS},
             'controls': {'allow_ips': list(controls.allow_ips), 'require_two_step': controls.require_two_step},
-            'attention': attention, 'overrides': overrides, 'users': {'active': active or 0, 'total': total},
-            'audit': recent, 'two_step': False, 'client': str(client_ip(scope, self.business.auth) or ''),
+            'attention': attention, 'overrides': overrides, 'users': {'active': int(active or 0), 'total': total},
+            'audit': recent, 'two_step': True, 'client': str(client_ip(scope, self.business.auth) or ''),
         }
 
     # ---------- HTTP ----------

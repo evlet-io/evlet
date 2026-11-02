@@ -653,3 +653,31 @@ def test_postgres_reference_index_migrations(pg_dsn):
 def test_postgres_effects_beside_numbers_measures_and_relations(pg_dsn, check):
     from tests import test_effects as effects
     getattr(effects, check)(effects.stacked_books(PostgreSQLDatabase(pg_dsn, Registry(*effects.STACKED))))
+
+
+@pytest.fixture
+def settled(secured, tmp_path):
+    secured.business.secret_key = tmp_path / 'secret.key'
+    return secured
+
+
+from tests.test_settings import (  # noqa: E402
+    test_personal_pages_save_and_the_last_page_is_remembered as test_postgres_settings_personal_pages,
+    test_app_settings_respect_editors_audit_and_the_config_version as test_postgres_app_settings,
+    test_password_change_needs_the_current_password_and_signs_out_other_sessions as test_postgres_settings_password,
+    test_photo_type_size_and_private_storage as test_postgres_settings_photo,
+    test_email_change_goes_through_a_one_time_link as test_postgres_settings_email,
+    test_two_step_enrollment_login_with_codes_and_backup_codes_once as test_postgres_two_step,
+    test_a_role_that_requires_two_step_sets_it_up_at_sign_in_and_cannot_turn_it_off as test_postgres_two_step_required,
+)
+
+
+def test_postgres_multiselect_storage_and_filters(pg_dsn):
+    from evlet import MultiSelect
+    shift = type('Shift', (Model,), {'name': Text(required=True), 'days': MultiSelect(['mon', 'tue', 'wed'], default=['mon']),
+                                     'hours': Integer(default=8, suffix='hours')})
+    db = PostgreSQLDatabase(pg_dsn, Registry(shift))
+    db.initialize()
+    db.create(shift, name='Early', days=['wed', 'mon'])
+    db.create(shift, name='Late', days=['tue'])
+    assert [item.days for item in db.list(shift, filters={'days__contains': 'mon'})] == [('mon', 'wed')]

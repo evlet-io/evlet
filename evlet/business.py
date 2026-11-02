@@ -72,7 +72,11 @@ class Business:
         if self.policy.registry is not self.registry:
             raise ValueError('Policy must use the application registry')
         from .controls import Controls
+        from .settings import Settings
         self.controls = Controls(self)
+        self.settings = Settings(self)
+        # instances/<name>/secret.key for evlet.secrets; None keeps two-step sign-in off.
+        self.secret_key = None
         self.actions, self.children, self.child_models = {}, {}, set()
         self.attachments = set(attachments)
         self.storage = storage if storage is not None else SQLiteStorage()
@@ -136,6 +140,7 @@ class Business:
         self.auth.initialize()
         self.controls.initialize()
         self.storage.initialize(self.database)
+        self.settings.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
             with self.database.transaction() as tx:
                 tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_public_limits (client TEXT NOT NULL, period INTEGER NOT NULL, calls INTEGER NOT NULL, resets INTEGER NOT NULL, PRIMARY KEY (client, period))')
@@ -355,6 +360,8 @@ class Business:
         user, csrf = self.auth.session(scope)
         if path == '/api/_controls' or path.startswith('/api/_controls/'):
             return self.controls.dispatch(scope, body, user)
+        if path.startswith('/api/_settings/'):
+            return self.settings.dispatch(scope, body, user)
         if path.startswith('/api/_services/'):
             from .services import dispatch
             return dispatch(self, scope, body, user)

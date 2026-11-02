@@ -433,10 +433,12 @@ Model icons and accents come from the model name (invoice: receipt, blue; contac
 violet), since the schema has no presentation keys. Models with a State or a Table are listed as
 Documents in the sidebar, the others as Records.
 
-Per-user preferences (theme, sidebar, density, list column widths, child table columns, quick
-access) are kept in browser storage under `evlet.<username>.` until the backend has user
-settings. They never hold record data: recent records and recent searches stay in memory for the
-signed-in session and go on sign-out. The sign-in screen uses the default theme.
+Appearance, region, start page and sidebar counts are the person's Settings, kept on the server
+([settings.md](settings.md)); the theme is light for now. Layout preferences (sidebar, list column
+widths, child table columns, quick access) are kept in browser storage under `evlet.<username>.`.
+They never hold record data: recent records and recent searches stay in memory for the signed-in
+session and go on sign-out. The account area is at the bottom of the sidebar; the top bar keeps
+search and notifications.
 
 Signing out ends the local session only after the server confirms it (or answers that the
 session had already ended). If the request fails, the user stays signed in and a dialog says so,

@@ -88,7 +88,8 @@ class Application:
                     if event["type"] == "http.disconnect":
                         return
                     data.extend(event.get("body", b""))
-                    maximum = 1500000 if self.business and scope['path'].endswith('/attachments') else MAX_BODY_BYTES
+                    maximum = (1500000 if scope['path'].endswith('/attachments') else 2900000 if scope['path'] == '/api/_settings/me/photo'
+                               else MAX_BODY_BYTES) if self.business else MAX_BODY_BYTES
                     if len(data) > maximum:
                         raise HTTPError(413, "Request body exceeds the allowed size")
                     if not event.get("more_body", False):
@@ -140,8 +141,12 @@ class Application:
         path = scope['path']
         if path != '/api' and not path.startswith('/api/'):
             return
-        scopes = self.routes.scopes(dict(scope.get('headers', [])).get(b'host', b''))
+        host = dict(scope.get('headers', [])).get(b'host', b'')
+        scopes = self.routes.scopes(host)
         if scopes is None or path in ('/api/auth/session', '/api/auth/login', '/api/auth/logout'):
+            return
+        # Portal hosts serve the personal settings subset; the settings routes refuse the rest there.
+        if path.startswith('/api/_settings/me') and self.routes.realm(host) == 'portal':
             return
         parts = path.split('/')
         if path.startswith('/api/_services/'):

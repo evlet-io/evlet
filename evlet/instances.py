@@ -80,6 +80,8 @@ class AppDefinition:
     api_scopes: tuple = ()
     roles: dict = field(default_factory=dict)
     scopes: dict = field(default_factory=dict)
+    settings: type | None = None
+    preferences: type | None = None
 
     def __post_init__(self):
         for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes'):
@@ -98,6 +100,11 @@ class AppDefinition:
         from .services import CalendarSchedule
         if any(not isinstance(schedule, (Schedule, CalendarSchedule)) for schedule in self.schedules):
             raise ValueError('Register Schedule definitions')
+        from .settings import AppSettings, UserPreferences
+        for name, base in (('settings', AppSettings), ('preferences', UserPreferences)):
+            value = getattr(self, name)
+            if value is not None and not (isinstance(value, type) and issubclass(value, base) and value is not base):
+                raise ValueError(f'{name} takes a subclass of {base.__name__}')
         from .routing import ApiScope, Frontend
         if any(not isinstance(frontend, Frontend) for frontend in self.frontends):
             raise ValueError('Register Frontend definitions')
@@ -108,7 +115,7 @@ class AppDefinition:
 def read_instance(path):
     if not path.is_dir() or not (path / 'config.py').is_file() or (path / 'config.py').is_symlink():
         raise ValueError(f'Instance does not exist or has invalid configuration: {path.name}')
-    for relative in ('data', 'data/database.sqlite3', 'data/backups', 'files', 'files/private', 'apps.lock', '.evlet.lock', 'routes.py'):
+    for relative in ('data', 'data/database.sqlite3', 'data/backups', 'files', 'files/private', 'apps.lock', '.evlet.lock', 'routes.py', 'secret.key'):
         target = path / relative
         if target.is_symlink() or not target.resolve().is_relative_to(path.resolve()):
             raise ValueError(f'Instance path cannot escape through a symbolic link: {relative}')
@@ -349,7 +356,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     if len({schedule.name for schedule in schedules}) != len(schedules):
         raise ValueError('Duplicate schedule names across apps')
     storage = LocalFileStorage(storage_path or path / 'files/private')
-    services = SimpleNamespace(database=database, auth=auth, policy=policy, jobs=jobs, events=events, storage=storage)
+    services = SimpleNamespace(database=database, auth=auth, policy=policy, jobs=jobs, events=events, storage=storage, settings=None, preferences=None)
     actions = []
     for _, definition in definitions:
         actions.extend(definition.actions(services) if callable(definition.actions) else definition.actions)
@@ -359,7 +366,12 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
                       apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
                       storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, **options)
     app.business.timezone = config.timezone
+    app.business.secret_key = path / 'secret.key'
     app.business.controls.load(definitions, pinned)
+    for name, definition in definitions:
+        if definition.settings or definition.preferences:
+            app.business.settings.register(name, definition.settings, definition.preferences, definition.models)
+    services.settings, services.preferences = app.business.settings.values, app.business.settings.preferences
     app.business.build_manifest = manifest
     app._source_packages = pinned
     app.business.build_directory = path.parent.parent / '.evlet' / 'builds' / manifest['fingerprint']
