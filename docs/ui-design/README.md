@@ -176,7 +176,7 @@ green, unqualified slate, converted violet.
   grids). Modals and floating panels go to 14 to 16px. Pills 6px, chips 5px,
   switches fully round.
 - Controls: buttons and inputs 32px high, small 28px; nav items 32px; table
-  rows 44px; grid rows 38px; top bar and workspace row 52px; app bar 48px.
+  rows 44px; grid rows 38px; top bar and brand row 52px.
 - Gutters: page padding 24px top, 28px sides (16px on phones). Gaps between
   panels 16px, between cards 12px, inside toolbars 8px.
 - Shadows: `--shadow-sm` on resting controls, `--shadow-md` on hover and cards
@@ -197,11 +197,10 @@ icon only (`.c-*`), not the background. The full subset used:
 
 ```
 ┌──────────────────────┬─────────────────────────────────────────────┐
-│ Workspace switcher   │ Top bar: toggle │ crumbs │ search bell ? New │
-├──────────────────────┼─────────────────────────────────────────────┤
-│ App bar (tabs)       │                                             │
-├──── grey body ───────┤ View (the only scrolling area)              │
-│ App name             │                                             │
+│ Brand: mark, evlet   │ Top bar: crumbs │ search bell ? New        │
+├──── grey body ───────┼─────────────────────────────────────────────┤
+│ App switcher (card)  │ View (the only scrolling area)              │
+│                      │                                             │
 │ Nav groups           │                                             │
 │ …                    │                                             │
 │ Doc layout, Library  │                                             │
@@ -210,28 +209,24 @@ icon only (`.c-*`), not the background. The full subset used:
 ```
 
 - Grid: sidebar 248px, collapses to 60px (icons only, tooltips to the right).
-  Under 760px the sidebar becomes a drawer opened from the top bar toggle.
-- **Row 1, workspace switcher** (white, 52px, grey line under it): logo tile
-  `D`, workspace name, small "Workspace" label, up-down arrows. Opens a menu
-  with workspaces and settings.
-- **Row 2, app bar** (white, 48px, grey line under it): app tabs (CRM, Sales,
-  Accounting, Inventory, HR and Payroll) as 26px tinted tiles in 34px buttons,
-  and an All apps grid button on the right. The **active app** is a grey tab,
-  41px high, radius 10px on top, with a 1px border on top and sides. It
-  overlaps the line by 1px and opens into the grey body below. Its bottom
-  corners flare outward with 10px concave curves:
-
-  ```css
-  .ab-app.on::before{left:-11px;background:radial-gradient(circle at 0 0,transparent 9.4px,var(--border) 9.6px,var(--border) 10.4px,var(--side-bg) 10.6px)}
-  .ab-app.on::after{right:-11px;background:radial-gradient(circle at 100% 0,transparent 9.4px,var(--border) 9.6px,var(--border) 10.4px,var(--side-bg) 10.6px)}
-  ```
-
-- **Sidebar body** (`--side-bg`): app name with workspace beside it; Home,
+  A 24px round button on the sidebar's right edge, just above the account card,
+  collapses and expands it (chevron left or right, also `[`). Under 760px the
+  sidebar becomes a drawer opened from the top bar's menu button.
+- **Row 1, brand** (white, 52px, grey line under it): the Evlet mark (three bars
+  on the accent square, 26px) and the `evlet` wordmark. Collapsed, the mark only.
+- **App switcher** (top of the sidebar body): a white card, radius 9px, hairline
+  border, no shadow, with the app's tinted tile, the app name and its workspace
+  under it, and up-down arrows. It opens a small grid of the apps in this
+  workspace, the current one tinted. Collapsed, the tile only.
+- **Workspace switcher**: the first breadcrumb in the top bar, shown only when
+  the person can reach more than one workspace.
+- **Sidebar body** (`--side-bg`): Home,
   Inbox (unread badge), My tasks (due count); group "Records" (Leads, Deals,
   Invoices, Contacts, Organizations, Reports, with counts); group "Saved views"
   (coloured dots). Bottom: Doc layout, Library. Footer: account and theme
-  toggle. The active nav item is white with a hairline ring.
-- **Top bar** (52px): sidebar toggle (`[`), divider, breadcrumbs, then search
+  toggle. The active nav item is a white card, radius 9px, with a hairline ring
+  and no shadow.
+- **Top bar** (52px): breadcrumbs (menu button first on phones), then search
   field (240px, `⌘K` hint), notifications bell with a dot, shortcuts help, and a
   primary **New** menu button. On phones the search becomes an icon.
 - **Floating layer**: popovers, drawer from the right (440px), centred modals,
@@ -802,7 +797,7 @@ Contact channel with a preferred flag and a copy action.
 ### Layout areas (18)
 
 **AppShell** · Section  
-The frame of every screen: sidebar with app bar on the left, top bar and one scrolling view on the right. Collapses the sidebar to icons; becomes a drawer on phones.
+The frame of every screen: sidebar with the brand and app switcher on the left, top bar and one scrolling view on the right. Collapses the sidebar to icons; becomes a drawer on phones.
 
 - Props: `collapsed` (cell) Saved per user; `view` (route)
 - Built from: WorkspaceSwitcher, AppBar, SidebarNav, TopBar
