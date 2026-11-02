@@ -84,7 +84,9 @@ complete tree. No backend runtime dependency was added.
 → `/api/ui` and `/api/ui/resolve`. The browser interface does not render these
 pages. `/api/ui` is separate from the existing model schema.
 See [Evlet UI](ui.md) for state, extension order, route resolution, and packaging.
-`evlet/ui/routes.py` owns UI HTTP routes and browser fallbacks;
+`evlet/routing.py` resolves frontends, hosts and reserved paths into the frozen
+route table each instance builds at start-up ([routing.md](routing.md));
+`evlet/ui/routes.py` owns UI HTTP routes and browser fallbacks through that table;
 `evlet/ui/metadata.py` owns model screen metadata. The old `evlet.metadata` imports
 remain supported. Recorded API, screen, page, record and event fixtures are checked
 against real HTTP responses; the browser tests replay the API and screen fixtures.

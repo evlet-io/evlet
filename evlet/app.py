@@ -24,8 +24,12 @@ class HTTPError(Exception):
 
 
 class Application:
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None):
         from .ui import ViewRegistry
+        from .routing import RouteTable, resolve_routes
+        if routes is not None and not isinstance(routes, RouteTable):
+            raise ValueError('Pass a RouteTable from resolve_routes')
+        self.routes = resolve_routes() if routes is None else routes
         if isinstance(hosts, (str, bytes)):
             raise ValueError("Pass a collection of explicit Host header values")
         self.hosts = None if hosts is None else frozenset(hosts)
@@ -43,7 +47,7 @@ class Application:
             raise ValueError("Business features require authentication")
         self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
-            self.business.application = {"name": name, "playground": bool(playground)}
+            self.business.application = {"name": name, "playground": bool(playground), "docs": "/docs" if self.routes.docs else None}
             from .forms import Forms
             self.business.forms = Forms(self.business, reports)
             self.business.apis = tuple(apis)

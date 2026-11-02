@@ -141,13 +141,28 @@ def development_factory():
                           lambda: instance_guard(child(root, 'instances', name), serving=True), jobs=True, debug=os.environ.get('EVLET_CLI_DEBUG') == '1')
 
 
+def declares_primary(path):
+    """Whether instances/<name>/routes.py assigns primary, read without running it or importing apps."""
+    import ast
+    target = path / 'routes.py'
+    if not target.is_file() or target.is_symlink():
+        return False
+    for node in ast.parse(target.read_text(encoding='utf-8')).body:
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        if any(isinstance(item, ast.Name) and item.id == 'primary' for item in targets):
+            return True
+    return False
+
+
 def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=False, debug=False):
     from ..instances import read_instance
     path = child(root, 'instances', name)
     config = read_instance(path)
-    if development and (host not in ('127.0.0.1', 'localhost') or config.domain):
+    primary = declares_primary(path)
+    if development and (host not in ('127.0.0.1', 'localhost') or config.domain or primary):
         raise ValueError('Development serving requires a local instance and loopback host')
-    if host not in ('127.0.0.1', 'localhost') and not config.domain:
+    public = host not in ('127.0.0.1', 'localhost')
+    if public and not config.domain and not primary:
         raise ValueError('Configure an HTTPS domain before binding an instance beyond loopback')
     if development:
         values = {'EVLET_CLI_PROJECT': str(root), 'EVLET_CLI_INSTANCE': name, 'EVLET_CLI_PORT': str(port), 'EVLET_CLI_DEBUG': '1' if debug else '0'}
@@ -163,6 +178,6 @@ def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=Fa
                 else:
                     os.environ[key] = value
     else:
-        application = ManagedRuntime(lambda: load_runtime(root, name, port=port),
+        application = ManagedRuntime(lambda: load_runtime(root, name, port=port, public=public),
                                      lambda: instance_guard(path, serving=True), jobs=jobs, debug=debug)
         run_server(application, host=host, port=port, lifespan='on', proxy_headers=False)

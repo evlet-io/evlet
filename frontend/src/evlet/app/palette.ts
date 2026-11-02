@@ -7,7 +7,7 @@ import { cell, derive, effect, untrack } from '../reactive';
 import { Icon, SegmentedControl, Button } from '../ui/base';
 import { tint as safeTint, type Tint } from '../ui/core';
 import { openModal } from '../ui/layers';
-import type { AppContext } from './context';
+import { docsOn, type AppContext } from './context';
 import { identity, rootModels, titleOf, type ScreenModel } from './meta';
 import { applyTheme } from './prefs';
 
@@ -18,7 +18,7 @@ const columns = () => { try { return window.matchMedia?.('(max-width: 760px)')?.
 
 /** Every quick access tile this user may use: lists, new records and pages. */
 export function quickTiles(ctx: AppContext): Tile[] {
-  const tiles: Tile[] = [{ id: 'p-docs', group: 'Pages', icon: 'file-text', tint: 'slate', label: 'Docs', run: () => void ctx.router.go('docs', {}) }];
+  const tiles: Tile[] = docsOn(ctx.session) ? [{ id: 'p-docs', group: 'Pages', icon: 'file-text', tint: 'slate', label: 'Docs', run: () => void ctx.router.go('docs', {}) }] : [];
   for (const model of rootModels(ctx.schema)) {
     const { icon, tint } = identity(model);
     tiles.push({ id: `l-${model.name}`, group: 'Lists', icon, tint, label: model.plural, badge: 'list', run: () => void ctx.router.go('list', { model: model.name }) });

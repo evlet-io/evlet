@@ -66,8 +66,12 @@ content security policy (`default-src 'self'`). It uses the system font stack.
 
 ## Routes
 
-The Python server returns the app for these paths (`evlet/ui/routes.py`); anything else
-outside `/api/` is a 404.
+The Python server returns the app for these paths (`evlet/ui/routes.py`, through the
+instance route table in [routing.md](routing.md)). Any other path outside `/api/` and
+`/assets/` returns the app with status 404, so the browser shows its own page.
+`/docs` is on in development and off once an instance sets a domain, unless its
+`routes.py` turns it on. The session's `application.docs` tells the browser; with
+Docs off it starts on the first list the role can open and hides the Docs links.
 
 | Path | Screen |
 | --- | --- |
@@ -191,8 +195,10 @@ Panel and FormLayout. A FormLayout uses 12 columns; a Field can set `width=6` or
 Generated page names keep the routes `/app/note`, `/app/note/new`, `/app/note/123`
 and `/app/note/123/view`. Explicit pages use their registered routes. Custom parameters
 use `/orders/{reference}` or `/orders/{id:int}` and are available in view state.
-The route resolver rejects ambiguous routes. The namespaces `/api`, `/app`,
-`/assets`, `/docs`, `/login`, `/settings` and `/health` are reserved.
+The route resolver rejects ambiguous routes. Routes start with a fixed segment, and
+the first segments in `evlet.routing.RESERVED` (such as `/api`, `/app`, `/assets`,
+`/docs`, `/login`, `/reports`, `/settings`, `/health` and anything starting with `_`)
+are reserved, ignoring case. See [routing.md](routing.md).
 
 `Navigate.to`, `to_list`, `to_record`, `to_new` and `back` are page operations.
 `GET /api/ui/resolve?path=/app/note/123` resolves only views available to the

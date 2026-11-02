@@ -7,6 +7,7 @@ from .compiler import SchemaCompiler, safe_path
 from .contracts import default_components
 from .definitions import View, ListView, FormView, DetailView, Column, FormLayout, Field
 from .expressions import model_key
+from ..routing import reserved
 
 LAYERS = ("application", "site")
 
@@ -99,15 +100,9 @@ class ViewRegistry:
             )
         if view.route:
             route_pattern(view.route)
-            if view.route == "/" or view.route.split("/")[1] in (
-                "api",
-                "app",
-                "assets",
-                "login",
-                "docs",
-                "health",
-                "settings",
-            ):
+            if view.route.split("/")[1].startswith("{"):
+                raise ValueError(f"Routes start with a fixed segment: {view.route}")
+            if view.route == "/" or reserved(view.route):
                 raise ValueError(f"Reserved route namespace: {view.route}")
             for existing in self.views.values():
                 if existing.route and ambiguous(existing.route, view.route):
