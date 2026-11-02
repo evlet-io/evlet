@@ -435,8 +435,21 @@ once; only admins sign out an admin's client. Per-request detail is only on each
 AI page. Clients also count in the Users page sessions, and "Sign out everywhere", a password
 or role change and deactivation sign them out too.
 
-The personal page is the `MyAIPage` component (`frontend/src/evlet/settings/ai.ts`), ready for
-the Settings shell. It shows the connect steps, the person's assistants with "Can make changes"
+**Desk only.** `/_/mcp`, the OAuth endpoints and the consent page answer only on the primary
+host, so portal and other sub-hosts get 404. Consent needs a desk session, and a token or
+refresh token stops working (401, `invalid_grant`) once its person's role is a portal role. The
+client address used for the per-network limits is read through the trusted proxies, like
+sign-in. An assistant acts as the person's role through the same policy as the browser, so
+Controls permission and field overrides and custom roles apply to it; the `mcp.*` settings and
+the person's own app choice only narrow it further.
+
+**Journal.** A record changed through an assistant is journaled with the person as the actor,
+like any of their writes, and the entry names the client: `"via": "Claude"` on the entry
+(`"Local MCP connector"` for `evlet mcp`). The Activity tab shows "Sara changed it via Claude".
+The client name is the one the client registered, so it is a label, not proof of identity.
+
+The personal page is `/settings/ai` in the Settings shell (the `MyAIPage` component,
+`frontend/src/evlet/settings/ai.ts`). It shows the connect steps, the person's assistants with "Can make changes"
 and Disconnect, the apps assistants can use (only narrower than the person's own access; once
 chosen, apps installed later stay off), their last 50 requests from the past 30 days and the
 local `evlet mcp` steps. "Can make changes" has effect only while

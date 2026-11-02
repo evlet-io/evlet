@@ -246,4 +246,13 @@ describe('transaction document (recorded fixtures)', () => {
     expect(requests(sent, 'POST', /\/journal$/)).toHaveLength(0);
     expect(invoice.invoice_viewer_note_refused.status).toBe(403);
   });
+
+  it('names the AI assistant a change came through, after the person', async () => {
+    const journal = copy(invoice.invoice_draft_journal);
+    journal.body.items[1].via = 'Claude';
+    const { host } = start(routes(invoice.invoice_draft, journal), `/app/invoice/${draft}`);
+    await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(3));
+    const items = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));
+    expect(items).toEqual(['sara attached signed-copy.pdf', 'sara changed it via Claude', 'sara created this record']);
+  });
 });

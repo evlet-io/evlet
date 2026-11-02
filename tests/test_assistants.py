@@ -490,3 +490,33 @@ def test_other_requests_have_a_light_rate(secured, monkeypatch):
     monkeypatch.setattr(evlet.assistants, 'LIGHT_RATE', 3)
     _, tokens, _ = connect(secured)
     assert [rpc(secured, tokens['access_token'], 'ping')[0] for _ in range(4)] == [200, 200, 200, 429]
+
+
+def test_assistant_writes_are_journaled_as_the_person_via_the_client(tmp_path):
+    from evlet import Database, Registry
+    from tests import test_journal as journal
+    from tests.test_rules_types import start
+    app = journal.seed(start(Database(tmp_path / 'journal.sqlite3', Registry(*journal.MODELS))))
+    settings(app, allow_writes=True)
+    _, tokens, person = connect(app, 'editor')
+    created = tool(app, tokens['access_token'], 'create_record', {'model': 'memo', 'values': {'title': 'From Claude'}})
+    assert not created.get('isError') and created['structuredContent']['title'] == 'From Claude', created
+    record_id = created['structuredContent']['id']
+    # The local connector (evlet mcp) is named too; the browser is not.
+    status, _, _ = person('PATCH', f'/api/memo/{record_id}', {'title': 'By hand'}, headers={b'if-match': person('GET', f'/api/memo/{record_id}')[2][b'etag']})
+    assert status == 200
+    page = client(app)('GET', f'/api/memo/{record_id}/journal')[1]
+    by_hand, by_claude = page['items']
+    assert page['users'][str(by_claude['actor'])] == 'editor' and by_claude['actor'] == by_hand['actor']
+    assert by_claude['kind'] == 'created' and by_claude['via'] == 'Claude' and 'via' not in by_claude['data']
+    assert 'via' not in by_hand
+
+
+def test_portal_roles_lose_their_assistants(secured):
+    client_id, tokens, _ = connect(secured, 'editor')
+    assert tool(secured, tokens['access_token'], 'discover_models', {})['structuredContent']['models']
+    with secured.database.transaction() as tx:
+        tx.connection.execute("UPDATE evlet_users SET role='portal' WHERE username='editor'")
+    assert rpc(secured, tokens['access_token'], 'tools/list')[0] == 401
+    status, payload, _ = form(secured, '/_/oauth/token', {'grant_type': 'refresh_token', 'refresh_token': tokens['refresh_token'], 'client_id': client_id})
+    assert status == 400 and payload['error'] == 'invalid_grant'

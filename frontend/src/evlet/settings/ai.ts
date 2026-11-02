@@ -1,9 +1,10 @@
-// /settings/ai: a person's own AI assistants, mounted by the Settings shell. They connect through
-// /_/mcp and act as this person; only this person sees their requests.
+// /settings/ai: a person's own AI assistants. They connect through /_/mcp and act as this person;
+// only this person sees their requests. The Settings shell passes its client and its local
+// (evlet mcp) steps:
 //
-//   mount(element, () => MyAIPage({}));
+//   MyAIPage({ api: ctx.api, local: () => stdioSteps });
 
-import { html, when } from '../dom';
+import { html, when, type Child } from '../dom';
 import { ApiClient, type ClientOptions } from '../api';
 import { cell } from '../reactive';
 import { Button, StatusPill, Switch } from '../ui/base';
@@ -31,8 +32,15 @@ export class MyAIClient extends ApiClient {
 
 const OUTCOMES: Record<MyRequest['outcome'], [string, 'green' | 'rose' | 'slate']> = { ok: ['Done', 'green'], denied: ['Not allowed', 'rose'], failed: ['Failed', 'slate'] };
 
-export function MyAIPage(options: { api?: MyAIClient }): HTMLElement {
-  const api = options.api ?? new MyAIClient();
+/** api: a MyAIClient, or any client (the Settings shell's); local: the "On this computer" section's content. */
+export function MyAIPage(options: { api?: ApiClient; local?: () => Child }): HTMLElement {
+  const client = options.api ?? new MyAIClient();
+  const api = client instanceof MyAIClient ? client : {
+    load: async () => (await client.request<MyAI>('GET', '/api/_settings/me/ai')).data,
+    apps: async (apps: string[] | null) => (await client.request<MyAI>('PATCH', '/api/_settings/me/ai', { body: { apps } })).data,
+    allowChanges: async (id: number, allow: boolean) => (await client.request<MyAI>('PATCH', `/api/_settings/me/ai/${id}`, { body: { allow_changes: allow } })).data,
+    disconnect: async (id: number) => (await client.request<MyAI>('DELETE', `/api/_settings/me/ai/${id}`)).data,
+  };
   const data = cell<MyAI | null>(null);
   const run = async (step: () => Promise<MyAI>, done?: string) => {
     try { data.set(await step()); if (done) toast(done); } catch (failure) { toast(message(failure), { icon: 'info' }); }
@@ -56,7 +64,7 @@ export function MyAIPage(options: { api?: MyAIClient }): HTMLElement {
     ${Head('AI assistants', 'Use Evlet from Claude or other AI apps that support MCP. They act as you, so they see only what you can see.')}
     ${() => data.get() === null ? html`<div class="ctl-empty">Loading…</div>` : html`<div class="ctl-stack">${notice()}
       <section class="ctl-card pad"><h2>Connect an assistant</h2><ol class="ctl-steps">
-        <li>Copy this address<div class="ctl-line"><code class="ctl-code">${d().address}</code>${Button({ label: 'Copy', icon: 'copy', size: 'small', onClick: () => void copyText(d().address, 'the address') })}</div></li>
+        <li>Copy this address<div class="ctl-line"><code class="ctl-icode">${d().address}</code>${Button({ label: 'Copy', icon: 'copy', size: 'small', onClick: () => void copyText(d().address, 'the address') })}</div></li>
         <li>In Claude, open <strong>Settings → Connectors</strong>, choose <strong>Add custom connector</strong> and paste the address.</li>
         <li>Sign in with your Evlet account when asked, and approve. The assistant shows up below.</li></ol></section>
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Your assistants</h2>${d().clients.length ? null : html`<p>None connected yet.</p>`}</div></div>
@@ -77,8 +85,8 @@ export function MyAIPage(options: { api?: MyAIClient }): HTMLElement {
             <td>${item.model ?? ''}</td><td>${StatusPill({ label: OUTCOMES[item.outcome][0], tint: OUTCOMES[item.outcome][1] })}</td></tr>`)}</tbody></table></div>`
           : html`<div class="ctl-empty">No requests yet.</div>`}</section>
       <section class="ctl-card pad"><h2>On this computer</h2>
-        <p class="muted ctl-small">Assistants that run on your computer can use the local connector instead. Sign in once with <code class="ctl-code">evlet login</code>,
-          then add <code class="ctl-code">${'evlet mcp --session <file>'}</code> to the assistant's MCP settings. It follows the same workspace rules.</p></section>
+        ${options.local ? options.local() : html`<p class="muted ctl-small">Assistants that run on your computer can use the local connector instead. Sign in once with <code class="ctl-icode">evlet login</code>,
+          then add <code class="ctl-icode">${'evlet mcp --session <file>'}</code> to the assistant's MCP settings. It follows the same workspace rules.</p>`}</section>
     </div>`}
   </div>` as HTMLElement;
 }

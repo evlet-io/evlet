@@ -47,7 +47,8 @@ evlet_journal(id, model, record_id, kind, actor, at, data, prev_hash, hash)
 * `model` is the storage name, `record_id` the record's id. An index on
   `(model, record_id, id)` serves the history of one record.
 * `actor` is the user id as text, or `engine` for writes without a signed in user (jobs,
-  schedules and other system sessions).
+  schedules and other system sessions). A write through an AI assistant keeps the person as
+  the actor and adds `"via": "<client name>"` to `data`.
 * `at` is the UTC time, for example `2026-11-02T08:15:30.125Z`.
 * `data` is canonical JSON (sorted keys, no spaces).
 * `prev_hash` and `hash` are set only with `tamper_evident=True`.
@@ -211,6 +212,8 @@ permissions = {
 * `limit` is 1 to 100 (default 50). Other query keys are a 422.
 * `actor` is a user id, or `null` for the engine. `users` names the actors and assignees on
   the page.
+* `via` names the AI assistant a write came through, when it did (see
+  [Controls](controls.md#mcp-and-ai)). It is taken out of `data`.
 * A follow up has `done`: the id of the entry that completed it, or `null`.
 
 Every entry is listed, so `total` matches what the caller can page through. What the caller

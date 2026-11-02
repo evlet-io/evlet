@@ -69,8 +69,8 @@ export function McpPage(ctx: ControlsContext): HTMLElement {
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Server</h2></div>
         ${() => on() ? StatusPill({ label: 'On', tint: 'green' }) : StatusPill({ label: 'Off', tint: 'slate' })}</div>
         ${row('enabled', 'MCP server', 'Turning it off stops every client straight away.', Switch({ on, ariaLabel: 'MCP server', onChange: next => set('enabled', next) }))}
-        ${row(null, 'Address', html`Remote clients connect here. Local clients can run <code class="ctl-code">evlet mcp</code> instead.`,
-          html`<code class="ctl-code">${() => overview.get()?.address ?? ''}</code>${IconButton({ icon: 'copy', tip: 'Copy', onClick: () => void copyText(overview.peek()?.address ?? '', 'the address') })}`)}
+        ${row(null, 'Address', html`Remote clients connect here. Local clients can run <code class="ctl-icode">evlet mcp</code> instead.`,
+          html`<code class="ctl-icode">${() => overview.get()?.address ?? ''}</code>${IconButton({ icon: 'copy', tip: 'Copy', onClick: () => void copyText(overview.peek()?.address ?? '', 'the address') })}`)}
         ${row('allow_writes', 'Allow writes', "Off by default. When on, clients can create, update and delete records and run actions, within the user's permissions.",
           Switch({ on: writes, ariaLabel: 'Allow writes', disabled: () => !on(), onChange: allowWrites }))}
         ${row('rate', 'Tool calls per minute', 'Per client. The framework allows at most 60.',

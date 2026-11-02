@@ -338,7 +338,7 @@ class Assistants:
                     expected = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
                     if form.get('redirect_uri') != code['redirect_uri'] or not VERIFIER.fullmatch(verifier) or not hmac.compare_digest(expected, code['challenge']):
                         raise invalid
-                    if not connection.execute('SELECT 1 FROM evlet_users WHERE id=? AND active=1', (code['user_id'],)).fetchone():
+                    if not connection.execute("SELECT 1 FROM evlet_users u JOIN evlet_roles r ON r.id=u.role AND r.realm='desk' WHERE u.id=? AND u.active=1", (code['user_id'],)).fetchone():
                         raise invalid
                     latest = connection.execute('SELECT apps FROM evlet_mcp_clients WHERE user_id=? ORDER BY id DESC LIMIT 1', (code['user_id'],)).fetchone()
                     # Connecting the same client again replaces the earlier connection.
@@ -352,7 +352,8 @@ class Assistants:
                     result = self.issue(connection, grant_id)
             elif form.get('grant_type') == 'refresh_token':
                 row = connection.execute("SELECT t.hash, t.client_id, t.used, m.oauth_client, u.active FROM evlet_mcp_tokens t JOIN evlet_mcp_clients m ON m.id=t.client_id "
-                                         "JOIN evlet_users u ON u.id=m.user_id WHERE t.hash=? AND t.kind='refresh' AND m.revoked_at IS NULL", (digest(form.get('refresh_token', '')),)).fetchone()
+                                         "JOIN evlet_users u ON u.id=m.user_id JOIN evlet_roles r ON r.id=u.role AND r.realm='desk' "
+                                         "WHERE t.hash=? AND t.kind='refresh' AND m.revoked_at IS NULL", (digest(form.get('refresh_token', '')),)).fetchone()
                 if row is None or row['oauth_client'] != client['id'] or not row['active']:
                     raise invalid
                 if row['used']:
@@ -388,12 +389,16 @@ class Assistants:
         row = None
         if token and ACCESS.fullmatch(token):
             with self.database._connection() as connection:
+                # Assistants are for the desk: a person whose role is now a portal role is refused like a signed-out one.
                 row = connection.execute('SELECT m.*, u.username, u.role FROM evlet_mcp_tokens t JOIN evlet_mcp_clients m ON m.id=t.client_id JOIN evlet_users u ON u.id=m.user_id '
+                                         "JOIN evlet_roles r ON r.id=u.role AND r.realm='desk' "
                                          "WHERE t.hash=? AND t.kind='access' AND t.expires>? AND m.revoked_at IS NULL AND u.active=1", (digest(token), int(time.time()))).fetchone()
+                links = () if row is None else tuple((item['model'], item['record_id']) for item in connection.execute(
+                    'SELECT model, record_id FROM evlet_user_links WHERE user_id=? ORDER BY model, record_id', (row['user_id'],)))
         if row is None:
             challenge = f'Bearer resource_metadata="{origin}/.well-known/oauth-protected-resource/_/mcp"' + (', error="invalid_token"' if token else '')
             raise HTTPError(401, 'Sign in to continue', [(b'www-authenticate', challenge.encode())])
-        user = self.narrow(User(row['user_id'], row['username'], row['role']), row)
+        user = self.narrow(User(row['user_id'], row['username'], row['role'], links), row)
         if dict(scope.get('headers', [])).get(b'content-type', b'').split(b';', 1)[0].strip().lower() != b'application/json':
             raise HTTPError(415, 'Send application/json')
         try:
@@ -548,7 +553,8 @@ class Assistants:
         """/api/_oauth/authorize (the consent page) and /api/_settings/me/ai (a person's own assistants). Signed-in sessions only."""
         path, method = scope['path'], scope['method']
         origin = self.origin(scope)
-        if origin is None:
+        # Desk only: the primary host (origin), and never a portal session.
+        if origin is None or self.business.settings.portal(scope, user):
             raise AccessError(404, NOT_FOUND)
         self.prune()
         if path == '/api/_oauth/authorize':
