@@ -5,6 +5,7 @@ import { ApiError, ValidationError } from '../api';
 import { cell, derive } from '../reactive';
 import { Avatar, Button, Checkbox, Icon, StatusPill, Switch } from '../ui/base';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
+import { Dropdown } from '../ui/pickers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
 import type { RoleRow, UserRow } from './client';
 
@@ -16,11 +17,10 @@ export const isAdmin = (ctx: ControlsContext) => ctx.state.peek().me.role === 'a
 const assignable = (ctx: ControlsContext) => ctx.state.peek().roles.filter(item => isAdmin(ctx) || item.id !== 'admin');
 export const message = (failure: unknown) => failure instanceof ApiError ? failure.message : 'Something went wrong. Try again.';
 
+/** A Controls select: Evlet's Dropdown over [value, label] pairs. */
 export function Select(props: { id: string; value: () => string; options: () => Array<[string, string]>; onChange: (value: string) => void; label?: string; disabled?: boolean }) {
-  const select = html`<select class="input ctl-select" id=${props.id} aria-label=${props.label ?? null} disabled=${props.disabled ?? false}
-    on:change=${(event: Event) => props.onChange((event.target as HTMLSelectElement).value)}>${() => props.options().map(([value, label]) =>
-      html`<option value=${value} selected=${value === props.value()}>${label}</option>`)}</select>` as HTMLSelectElement;
-  return select;
+  return Dropdown({ id: props.id, label: props.label, ariaLabel: props.label, value: props.value, disabled: props.disabled, className: 'ctl-select',
+    choices: () => props.options().map(([value, label]) => ({ value, label })), onChange: value => { if (value !== null) props.onChange(value); } });
 }
 
 export const field = (label: string, id: string, control: Node, hint: () => string | null = () => null, error: () => string | null = () => null) =>

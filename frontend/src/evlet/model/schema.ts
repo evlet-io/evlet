@@ -11,10 +11,16 @@ export interface FieldSchema {
   read_only: boolean;
   hidden?: boolean;
   help_text?: string;
+  /** Text behind a ? icon at the right end of the input. */
+  tooltip?: string;
   placeholder?: string;
   /** A unit shown after the input, such as % or days. */
   suffix?: string;
   scale?: number | null;
+  /** A Currency field's code when it is fixed (on the field, or an app setting read by the server). */
+  currency?: string;
+  /** Where a Currency field's code comes from on the record: a field, or a field of the record a Link points at. */
+  currency_source?: { field: string; link?: string; model?: string };
   minimum?: string | number | null;
   maximum?: string | number | null;
   max_length?: number;

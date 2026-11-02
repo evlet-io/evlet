@@ -29,7 +29,7 @@ Users: `admin` (admin), `sara`, `omar` and `rahul` (sales people, the editor rol
 (three won, one lost, one with 150 lines), 8 leads and tasks.
 
 testCRM runs as an instance with a secret key, so the admin role needs two-step sign-in
-(`security.two_step_roles`, see [Settings](settings.md)) when the `cryptography` package is
+(`security.two_step_roles`, see [Settings](../settings.md)) when the `cryptography` package is
 installed: admin's first sign-in sets it up with an authenticator app. The HTTP tests and the
 fixture recorder finish it with the set-up secret, then one backup code per sign-in
 (`scripts.testcrm.finish_sign_in`).
@@ -81,7 +81,7 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 |---|---|---|
 | `tests/test_testcrm.py` | The installed app, real SQLite, authenticated ASGI requests | Sign in; schema per role; list sort, search, filter, paging and measures; field edits; line change sets (add from a product, edit, reorder, remove) and totals; 150 lines with paging; the lost reason that Mark lost asks for; guarded moves and their reasons; win: task, customer, booking, revise and its reversal; actions; the row scope and hidden fields for sales and viewers; two sessions editing one deal; the journal of a won deal, notes and follow ups |
 | `frontend/src/evlet/tests/testcrm-*.test.ts` | The real screens in jsdom over responses recorded from testCRM (`testcrm-fixture.json`) | Sign in and the sidebar; list search, saved views per stage, sorting; the board moved with the keyboard; the command palette; lines edited, added from a product, reordered, saved and removed with instant totals; moves to won with the lock, the posting and the created task; a blocked move; Mark lost with its reason dialog, then the reason edited in place; the lead's reason checked in the dialog; 150 lines paged in and one edit saved as a change set; a conflict and Reload; another person's deal; a viewer and an admin; the Activity tab and a note |
-| `npm run bench:ui` | jsdom | The 100-deal list, the 1,000-line deal and one line edit ([performance.md](performance.md)) |
+| `npm run bench:ui` | jsdom | The 100-deal list, the 1,000-line deal and one line edit ([performance.md](../performance.md)) |
 
 Regenerate the recordings with `.venv/bin/python -m scripts.generate_testcrm_fixtures` and
 review the diff. Each scenario is a list of phases: the reads the screens make, one write, then
@@ -117,4 +117,4 @@ the field (a layout leaves the rest for Other).
   Undo after a board move only when a move back exists; a dialog commits the field being typed in
   when it is submitted (Convert to deal kept its date).
 - **Performance.** Opening a 1,000-line deal took about 160 ms in jsdom, over the 100 ms budget. It
-  takes about 80 ms now, and a line edit about 5 ms ([performance.md](performance.md)).
+  takes about 80 ms now, and a line edit about 5 ms ([performance.md](../performance.md)).

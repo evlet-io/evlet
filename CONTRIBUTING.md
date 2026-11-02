@@ -1,7 +1,7 @@
 # Work on the framework
 
 These steps are for changing Evlet itself. To build an app, start with
-[your first site](getting-started.md).
+[your first site](docs/getting-started.md).
 
 ## Open the Playground on macOS
 
@@ -38,7 +38,7 @@ For an existing Milestone 1, 2, or 3 database, stop the launcher and run
 `.venv/bin/python -m examples.playground.migrate` before restarting it. SQLite upgrades create
 a backup and preserve existing records. When `EVLET_POSTGRES_DSN` is set, the
 command upgrades PostgreSQL instead; take an operator-managed PostgreSQL backup
-first, as described in the [PostgreSQL guide](postgresql.md). See the [model engine guide](model-engine.md)
+first, as described in the [PostgreSQL guide](docs/postgresql.md). See the [model engine guide](docs/model-engine.md)
 for the API, migration operations, and current limits.
 
 ## Install for development
@@ -144,7 +144,7 @@ An application registers models explicitly, so unrelated classes are not exposed
 When shipping migrations, declare the complete history with
 `Database(path, registry, migrations=migrations)` so fresh initialization records
 its baseline. Apply later schema changes explicitly with `database.migrate(migrations)`.
-See the [migration guide](model-engine.md#explicit-migrations).
+See the [migration guide](docs/model-engine.md#explicit-migrations).
 
 ## Test and build
 
@@ -183,7 +183,8 @@ This is a development preview, not a deployment recipe.
   The Playground uses them; a bare `Application(database)` stays unauthenticated
   for compatibility. Keep development servers on loopback. SSO and email recovery
   remain outside the implemented scope.
-- Currency has two decimal places and no currency-code conversion. The Playground
+- Currency has two decimal places and no currency-code conversion; `currency=` only says
+  which code to show ([model-engine.md](docs/model-engine.md#where-a-currency-fields-code-comes-from)). The Playground
   is a persistence example, not a ledger or payment processor.
 - Email is a bounded text field; browser email validation is convenience only.
 - Lists, counts, search, filters, and relationship choices use bounded server queries.
@@ -194,14 +195,14 @@ This is a development preview, not a deployment recipe.
   management keep their APIs but are not rendered. No performance or scalability
   guarantees are claimed.
 
-See [Evlet UI](ui.md) for the browser routes, generated screens and the Python
-page API, and [UI framework](ui-framework.md) for the browser code.
+See [Evlet UI](docs/ui.md) for the browser routes, generated screens and the Python
+page API, and [UI framework](docs/ui-framework.md) for the browser code.
 
-Read [architecture decisions](architecture.md), the [full specification](specification.md),
-and [agent instructions](../AGENTS.md). The [model engine guide](model-engine.md)
-covers the model engine. See [application generation](application-generation.md)
+Read [architecture decisions](docs/architecture.md), the [full specification](docs/internal/specification.md),
+and [agent instructions](AGENTS.md). The [model engine guide](docs/model-engine.md)
+covers the model engine. See [application generation](docs/application-generation.md)
 for Milestone 3 metadata, defaults, generated screens, and upgrade instructions.
-See [business capabilities](business-capabilities.md) for Milestone 4 APIs,
+See [business capabilities](docs/business-capabilities.md) for Milestone 4 APIs,
 account setup, permissions, actions, children, attachments, and limits.
 
 

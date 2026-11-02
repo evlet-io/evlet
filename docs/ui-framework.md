@@ -1,7 +1,7 @@
 # Evlet UI framework
 
 Status: the browser interface Evlet ships (phases `ui-final/01-core` to `ui-final/03-screens`
-and `ui-final/05-remove-solid` of [handoff-plan.md](handoff-plan.md)). `frontend/index.html` loads it,
+and `ui-final/05-remove-solid` of [handoff-plan.md](internal/handoff-plan.md)). `frontend/index.html` loads it,
 `npm run build` bundles it and the Python package serves it. The code lives in
 `frontend/src/evlet/`. It has no runtime dependencies; SolidJS and the Vue harness are gone.
 
@@ -265,7 +265,8 @@ system fonts (`system-ui`, `ui-monospace` and the rest of the stack) until they 
 | `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, Stat, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
 | `tooltip.ts` | `tooltip(element, text)`: one page-wide tooltip on hover and focus, never on touch |
 | `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `openModal`, `openDrawer`, `toast` (with Undo), `copyText` |
-| `fields.ts`, `kinds.ts` | BaseField and one component per field type, `FieldControl`, `displayValue`, `localField`, Link search |
+| `fields.ts`, `kinds.ts` | BaseField and one component per field type, `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
+| `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table` |
@@ -281,6 +282,108 @@ a lock hint says why ("Locked when Stage is won"), a calculated value shows its 
 GST date-times, exact decimals, `1h 30m` durations) and a wrong value stays in the input with
 a message that says how to fix it. `localField()` makes the same cells for forms that are not
 records, such as action dialogs.
+
+### Typing dates and times
+
+Date, date-time, time and duration inputs read typed text the forgiving way Frappe does, through
+one pure module, `ui/dateparse.ts` (`parseDay`, `parseClock`, `parseDayTime`, `parseLength`). The
+text is read on blur and on Enter, and the input then shows the value in the person's format at
+once. Text that can't be read, or names a day that doesn't exist (31-02), changes nothing: the
+field keeps its value and the input shows it again. The field's error says what was typed,
+"Couldn't read 1.62 as a duration", and goes with the next edit. Nothing is guessed.
+
+These forms are a browser convenience only. The API takes the stored forms and nothing else:
+`YYYY-MM-DD` dates, ISO date-times with a time zone, `HH:MM` or `HH:MM:SS` times, and ISO 8601
+durations (`PT1H30M`) or whole seconds. Anything else sent to it directly (`2027-02-31`, `120627`,
+`25:00`, `9am`, `1.62`, `1.5`, `1h 30m`) is a validation error, never coerced.
+
+| Typed (day first) | Reads as (today 02-11-2026) |
+| --- | --- |
+| `12062027`, `120627`, `12/06/27`, `12-06-2027`, `12.06.2027`, `12 06 2027`, `12 Jun 2027` | 12-06-2027 |
+| `1/6/27` | 01-06-2027 |
+| `1206`, `12/06` | 12-06-2026 (this year) |
+| `12` | 12-11-2026 (this month) |
+| `today` or `t`, `tomorrow`, `yesterday`, `+3`, `-3` | days from today |
+| `2027-06-12` | always year first |
+
+The order of day, month and year follows the person's date format in Settings (Appearance &
+region): `MM/dd/yyyy` reads month first (`061227` is 12 June), `yyyy-MM-dd` reads year first,
+and the other formats day first. No separate setting is needed. A two-digit year is the year
+ending in those digits that is nearest this year: up to 50 years ahead, otherwise in the past
+(in 2026, `76` is 2076 and `77` is 1977).
+
+Times: `1235` is 12:35, `120627` 12:06:27, `935` 09:35, `9` 09:00; `12:35`, `12.35`, `9am`,
+`12.35pm`, `12:35 pm`, `2:05 p.m.`. `12am` is 00:00 and `12pm` 12:00. Minutes always have two
+digits, so `9.5` is refused rather than guessed. A date-time is a date, then a time after a space,
+a comma or `T` (`120627 1235`, `12/06/27 9am`, `today 14:30`); a date alone is midnight.
+Durations:
+
+- A whole number without a unit is minutes: `90` is 1h 30m.
+- `h:mm` or `h:mm:ss` is hours, minutes and seconds, with a colon or a dot: `1:30`, `1.30`
+  (1h 30m), `1.05` (1h 5m), `1:30:20`, `1.30.20`. A dot without a unit must be followed by exactly
+  two digits from 00 to 59, so `1.5`, `1.62`, `1.300` and `1.5.` are refused.
+- With units, spaces and words are fine: `1h 30m`, `1h30m`, `1 h 30 min`, `1hr 30mins`, `2 hours`,
+  `45 sec`, `2d 4h`. A number with a unit may be a decimal fraction of that unit: `1.5h` is 1h 30m,
+  `1.30h` is 1h 18m, `1.62h` is 1h 37m 12s, `1.5m` is 1m 30s. A total that is not a whole number of
+  seconds is refused.
+The date range filter's From and To boxes read days the same way.
+
+### Form fields
+
+BaseField follows the Untitled UI input structure in Evlet's colours. Inputs, Link and Select
+buttons, unit boxes and tag fields are 40 px tall with 14 px text and 14 px side padding, so a
+form row lines up. At rest an input has a 1 px light grey border and a faint shadow; on focus
+a lighter blue border and a soft 4 px blue ring; with an error the same in rose. The label is
+14 px, weight 500, 6 px above the input, and the required `*` is the accent blue (its
+`required_when` tooltip stays). `help_text` reads under the input in grey and is linked with
+`aria-describedby`; an error replaces it while there is one. A field with `tooltip` gets a ? icon
+at the right end of the input (before a Select's or Link's chevron, between the input and a unit
+box) that shows the text on hover and focus. Compact places keep their sizes: the record side
+panel (`.fields`), child table cells, list filters and quick add. Inter is the font, as before.
+
+### Pickers
+
+No field uses a browser control for picking (no native `<select>`, no `type="date"`). The
+pickers open in a popover (`openPopover`), close on Esc or a click outside and give focus back
+to the field. Every value they pick goes through the same parsing as typed text, and the server
+checks it again.
+
+- **Select** is a `Dropdown`: a button that shows the choice (or "Choose one"). Settings and
+  Controls use the same `Dropdown`, so no page shows the browser's `<select>`. Click, Down or Up opens the
+  list with the current choice ticked (`aria-selected`). Up and Down move, Home and End jump,
+  Enter or Space picks, a letter jumps to the next choice that starts with it. From 8 choices
+  the list has a search box. Clear shows when the field is optional and set. A retired choice is
+  listed, disabled, only on the record that still holds it. Typing a letter on the closed
+  button opens the list at it.
+- **Date** keeps its DD-MM-YYYY input (or the person's date format) and adds a calendar button.
+  Clicking the input or the button opens a month grid (weeks start on Monday, today is marked);
+  Down or Alt+Down opens it and moves focus to the chosen day. Arrows move by day and week, Page
+  Up and Page Down by month (with Shift by year), Home and End to the week's ends, Enter picks.
+  The title opens a month grid, and its title a 12-year grid. Today and Clear (optional fields)
+  sit below. Picking a day writes it and closes; in an InlineValue it saves at once, like Enter.
+- **Date-time** adds hour and minute steppers (`role="spinbutton"`; arrows move by 1, the
+  buttons move minutes by 5) and Now, Clear and Done. Times are the person's zone (GST by
+  default); the value is stored in UTC.
+- **Time** has the steppers, common times (09:00, 12:00, 13:00, 17:00), Now, Clear and Done.
+- **Duration** has hour and minute steppers and common lengths (15m to 8h).
+- **Date range** (`DateRangePanel`) offers presets (Today, Yesterday, This week, Last 7 days,
+  This month, Last month, Last 30 days, This quarter, This year, Last year) or a first and last
+  day on the calendar, in either order, with the days between shaded. Apply reports
+  `[first, last]`. List pages use it to filter a date field: the filter is sent as
+  `<field>__gte` and `<field>__lte` and kept in the address as `{"gte", "lte"}`.
+
+### Side boxes
+
+A Currency field shows its code in a box before the input, a Percent field `%` after it, and an
+Integer or Decimal its `suffix` after it (and after the value at rest: `5.00%`, `8 hours`). The
+currency code comes from the schema: `currency` when it is fixed (on the field, or an app
+setting the server read), or `currency_source` when it lives on the record (`{"field"}`) or on a
+linked record (`{"link", "field", "model"}`). `currencyFor(field)` follows the source as it
+changes, so picking another customer changes the box from AED to USD. Linked records are read
+through `LinkSource.record()`, batched with Link titles (one list request per model). Lists use
+`currencyIn(meta, value)` with the row's values. An empty or unreadable source shows AED.
+
+The Link field's record mark is the 20 px `org-mark`; it never stretches.
 
 A screen composed by hand from a record store:
 
@@ -490,7 +593,6 @@ record store replay the shared finite-v1 scenarios (`finite-fixtures.json`).
   and show no totals.
 - Postings show what each target received (rows, reversals, balance); listing the posted rows
   waits for a filter by source on the target's list route.
-- Date fields take typed DD-MM-YYYY text; there is no calendar picker yet. Reference fields
-  are read only until the schema lists the models they may point to.
+- Reference fields are read only until the schema lists the models they may point to.
 - State metadata (`record.state`) is read when the schema sends it.
 - Lookups that a role cannot read stay pending; their saved results keep showing.

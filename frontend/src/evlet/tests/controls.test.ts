@@ -8,6 +8,7 @@ import { normalize, toggleOp } from '../controls/access';
 import { ipAllowed } from '../controls/drafts';
 import { server, type Sent } from './server';
 import { byText, click, stopAll, text, until, lastToast } from './screens-helpers';
+import { choiceValues, choose } from './ui-helpers';
 
 const all: PermValue = { ops: ['read', 'create', 'update', 'delete'], read: null, write: null, scope: null };
 const roles = [
@@ -118,11 +119,10 @@ describe('Controls change bar', () => {
   it('keeps every draft and shows the server message per item when a save is refused', async () => {
     const { host, sent } = open('/controls/security', () => ({ status: 422,
       body: { error: 'Validation failed', fields: { 'changes.0': 'Session length can only go down, from 12 hours to 1.' } } }));
-    await until(() => expect(host.querySelector('select[aria-label="Session length"]')).toBeTruthy());
-    const select = host.querySelector<HTMLSelectElement>('select[aria-label="Session length"]')!;
-    expect([...select.options].map(option => option.value)).toEqual(['1', '4', '8', '12']);
-    select.value = '4';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await until(() => expect(host.querySelector('button[aria-label="Session length"]')).toBeTruthy());
+    const select = host.querySelector<HTMLElement>('button[aria-label="Session length"]')!;
+    expect(choiceValues(select)).toEqual(['1', '4', '8', '12']);
+    choose(select, '4');
     await until(() => expect(text(bar())).toContain('1 unsaved change'));
     expect(text(host.querySelector('.ctl-setrow'))).not.toContain('Changed');
     click(byText(bar()!, 'button', 'Save changes'));
@@ -183,7 +183,7 @@ describe('Controls safety', () => {
     await until(() => expect(byText(host, 'tr', /owner/)).toBeTruthy());
     click(byText(host, 'tr', /owner/));
     await until(() => expect(text(document.querySelector('.drawer'))).toContain('Only an admin can change an admin account.'));
-    expect(document.querySelector<HTMLSelectElement>('.drawer select')!.disabled).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>('.drawer .in-select')!.disabled).toBe(true);
   });
   it('asks for a two-step code when a change needs one, then sends the change again', async () => {
     let asked = 0;
@@ -248,10 +248,8 @@ describe('Controls safety', () => {
     expect(host.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Opens Controls for portal"]')!.disabled).toBe(true);
     click(byText(host, 'button', 'New role'));
     await until(() => expect(document.querySelector('#ctl-r-realm')).toBeTruthy());
-    const realm = document.querySelector<HTMLSelectElement>('#ctl-r-realm')!;
-    realm.value = 'portal';
-    realm.dispatchEvent(new Event('change'));
-    await until(() => expect(document.querySelector<HTMLSelectElement>('#ctl-r-base')!.disabled).toBe(true));
+    choose(document.querySelector<HTMLElement>('#ctl-r-realm')!, 'portal');
+    await until(() => expect(document.querySelector<HTMLButtonElement>('#ctl-r-base')!.disabled).toBe(true));
     const id = document.querySelector<HTMLInputElement>('#ctl-r-id')!;
     id.value = 'partner';
     id.dispatchEvent(new Event('input'));

@@ -1,12 +1,14 @@
-// The app shell (docs/ui-design/README.md section 4): sidebar with the workspace row, the app
-// bar, the models grouped and recent records; the top bar with the sidebar toggle, breadcrumbs,
-// search, shortcuts and New; one scrolling view. Under 760 px the sidebar is a drawer.
+// The app shell (docs/ui-design/README.md section 4): sidebar with the Evlet brand, the app switcher,
+// the models grouped and recent records, and an edge button that collapses it; the top bar with
+// breadcrumbs, search, shortcuts and New; one scrolling view. Under 760 px the sidebar is a drawer
+// opened from the top bar.
 
 import { html, listen, when, type Child } from '../dom';
 import { cell, derive, effect } from '../reactive';
-import { Icon, IconButton, Key } from '../ui/base';
+import { Icon, IconButton, IconTile, Key } from '../ui/base';
 import { tooltip } from '../ui/tooltip';
 import { MenuButton, mountToasts, openModal, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
+import { Logo } from './login';
 import { applyTheme } from './prefs';
 import { docsOn, goSettings, type AppContext } from './context';
 import { displayName, PersonMark } from './settings';
@@ -68,7 +70,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
       ...(me.controls ? ['separator' as const, { label: 'Controls', icon: 'sliders-horizontal', hint: '↗', onSelect: () => { window.open('/controls', '_blank', 'noopener'); } }] : []),
       'separator',
     ] : [];
-    return html`<div class="me-head">${PersonMark(fullName, () => Boolean(settings.get()?.profile.photo), ctx.photo, 'lg')}<span><strong>${fullName}</strong>
+    return html`<div class="me-head">${PersonMark(fullName, () => Boolean(settings.get()?.profile.photo), ctx.photo, 'lg')}<span class="me-who"><strong>${fullName}</strong>
       <small>${() => settings.get()?.profile.email || ctx.user.role}</small></span></div>${Menu([...items, { label: 'Sign out', icon: 'log-out', onSelect: () => void ctx.signOut() }], close)}`;
   }, { label: 'Account' });
 
@@ -77,13 +79,21 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     <div style="min-width:0"><div class="n">${() => displayName(settings.get(), ctx.user.username)}</div><div class="e">${() => settings.get()?.profile.title || ctx.user.role}</div></div>
     ${Icon('chevrons-up-down', { size: 'xs', className: 'me-chev' })}</button>` as HTMLElement;
 
+  // The app switcher: the current app over its workspace; it opens a grid of the apps in this workspace.
+  const apps = [{ name: appName, icon: 'layers', tint: 'blue' as const }];
+  const appMenu = (anchor: HTMLElement) => openPopover(anchor, close => html`<div class="app-grid-h">Apps in ${workspace}</div>
+    <div class="app-grid" role="list">${apps.map(app => html`<button type="button" role="listitem" class="app-tile" class:on=${app.name === appName}
+      aria-current=${app.name === appName ? 'true' : null} on:click=${close}>${IconTile(app.icon, { tint: app.tint, size: 32 })}<span>${app.name}</span></button>`)}</div>`,
+  { label: 'Apps', role: 'dialog', className: 'app-pop', align: 'left' });
+  const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="dialog" aria-label=${`App: ${appName}, ${workspace}. Switch app`}
+    on:click=${(event: MouseEvent) => appMenu(event.currentTarget as HTMLElement)}
+    ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? `${appName} · ${workspace}` : null, 'right')}>${IconTile('layers', { tint: 'blue', size: 28 })}
+    <span class="as-text"><b>${appName}</b><small>${workspace}</small></span>${Icon('chevrons-up-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
+
   const sidebar = html`<aside class="sidebar" id="ev-sidebar" aria-label="Main navigation">
-    <div class="ws"><div class="ws-btn"><span class="logo">${appName.slice(0, 1).toUpperCase()}</span><span class="ws-text" style="min-width:0;flex:1">
-      <div class="ws-name">${appName}</div><div class="ws-sub">${workspace}</div></span></div></div>
-    <div class="appbar" role="tablist" aria-label="Apps"><button type="button" class="ab-app on" role="tab" aria-selected="true" aria-label=${appName}
-      ref=${(el: HTMLElement) => tooltip(el, appName)}><span class="b-blue">${Icon('layers', { size: 'sm' })}</span></button><span class="grow"></span></div>
+    <div class="brand">${Logo()}<span class="brand-name">evlet</span></div>
     <div class="side-body">
-      <div class="side-app"><b>${appName}</b><span>${workspace}</span></div>
+      ${appSwitch}
       <nav class="nav">
         ${docsOn(ctx.session) ? navItem({ href: router.href('docs', {}), icon: 'file-text', tint: 'slate', label: 'Docs', active: () => ['docs', 'topic', 'home'].includes(route.get()?.name ?? '') }) : null}
         ${groups.map(([name, list]) => html`<div class="nav-group"><div class="nav-label">${name}</div>${list.map(modelItem)}</div>`)}
@@ -103,8 +113,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     ? html`<span class="cur" aria-current="page">${crumb.label}</span>`
     : [html`<a class="hide-sm" href=${crumb.href ?? '#'}>${crumb.label}</a>`, Icon('chevron-right', { size: 'xs', className: 'hide-sm' })]);
   const topbar = html`<header class="topbar">
-    ${IconButton({ icon: 'panel-left', tip: 'Toggle sidebar  [', onClick: () => ctx.toggleSidebar() })}
-    <span class="sep desktop-only" style="margin:0 2px"></span>
+    <span class="mobile-only">${IconButton({ icon: 'panel-left', tip: 'Menu', onClick: () => ctx.toggleSidebar() })}</span>
     <nav class="crumbs" aria-label="Breadcrumbs">${crumbs}</nav>
     <div class="top-actions">
       <button type="button" class="top-search desktop-only" on:click=${() => ctx.openPalette()}>${Icon('search', { size: 'sm' })}<span>Search</span>${Key('⌘K')}</button>
@@ -115,9 +124,14 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
           onSelect: () => void router.go('create', { model: model.name }) })) })] : null}
     </div></header>` as HTMLElement;
 
+  // Collapse and expand from a small button on the sidebar's edge, just above the account card.
+  const edge = html`<button type="button" class="side-edge desktop-only" aria-controls="ev-sidebar" aria-expanded=${() => String(!collapsed.get())}
+    aria-label=${() => collapsed.get() ? 'Expand sidebar' : 'Collapse sidebar'} on:click=${() => ctx.toggleSidebar()}
+    ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? 'Expand  [' : 'Collapse  [', 'right')}>${() => Icon(collapsed.get() ? 'chevron-right' : 'chevron-left', { size: 'xs' })}</button>` as HTMLElement;
+
   const shell = html`<div class="app" class:collapsed=${collapsed} class:mobile-open=${mobileOpen} class:compact=${() => (ctx.me.get()?.prefs.density ?? prefs.density.get()) === 'compact'}
     class:large=${() => ctx.me.get()?.prefs.text === 'large'}>
-    ${sidebar}<div class="main">${topbar}<main class="view" id="ev-view" tabindex="-1">${view}</main></div>
+    ${sidebar}${edge}<div class="main">${topbar}<main class="view" id="ev-view" tabindex="-1">${view}</main></div>
     <div class="scrim ev-side-scrim" class:show=${mobileOpen} on:click=${() => mobileOpen.set(false)}></div></div>` as HTMLElement;
   listen(document, 'keydown', event => keys(ctx, event as KeyboardEvent));
   mountToasts();

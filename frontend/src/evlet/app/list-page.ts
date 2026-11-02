@@ -9,11 +9,13 @@ import { html, match, when, type Child } from '../dom';
 import { ApiError, type RecordData } from '../api';
 import { batch, cell, derive, effect, onCleanup, untrack, type Cell } from '../reactive';
 import { Button, EmptyState, Icon, IconButton, SearchInput, SegmentedControl, StatusPill, SummaryStrip, type StatProps } from '../ui/base';
-import { displayValue, localField, stateTint } from '../ui/fields';
+import { currencyIn, displayValue, localField, stateTint } from '../ui/fields';
+import { formatMoney } from '../model/format';
 import { humanize } from '../ui/kinds';
 import { closeDialogs, DialogFooter, Menu, openModal, openPopover, toast } from '../ui/layers';
 import { Board, BoardCard, BulkBar, Filters, PageHeader, Toolbar, type ActiveFilter, type BoardColumn, type BoardTotal } from '../ui/list';
 import { Tabs } from '../ui/doc';
+import { DateRangePanel, rangeText } from '../ui/pickers';
 import { DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
@@ -25,6 +27,16 @@ const BOARD_SIZE = 100;
 const BULK_AT_ONCE = 4;
 
 interface Filter extends ActiveFilter { field: string; value: unknown }
+/** A date filter's value: the first and last day, both included. */
+interface DayRange { gte: string; lte: string }
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const isRange = (value: unknown): value is DayRange => typeof value === 'object' && value !== null
+  && DAY.test(String((value as DayRange).gte)) && DAY.test(String((value as DayRange).lte));
+
+/** "Status: Sent", "Active: Yes" or "Posting date: 01-11-2026 to 30-11-2026". */
+function filterLabel(meta: FieldSchema, value: unknown) {
+  return `${meta.label}: ${meta.type === 'boolean' ? (value ? 'Yes' : 'No') : isRange(value) ? rangeText([value.gte, value.lte]) : humanize(String(value))}`;
+}
 
 /** A list cell: state pill, record title for links, formatted value. */
 export function cellView(ctx: AppContext, model: ScreenModel, meta: FieldSchema, row: () => RecordData): Child {
@@ -37,6 +49,12 @@ export function cellView(ctx: AppContext, model: ScreenModel, meta: FieldSchema,
     effect(() => field.value.set(row()[meta.name]));
     return displayValue(field, { links: ctx.links, empty: '' });
   }
+  // A Currency field whose code comes from the record (or a record it links to) shows that code.
+  if (meta.type === 'currency' && meta.currency_source) return () => {
+    const value = row()[meta.name];
+    return value === null || value === undefined || value === '' ? ''
+      : formatMoney(String(value), { currency: currencyIn(meta, name => row()[name], ctx.links), scale: typeof meta.scale === 'number' ? meta.scale : 2 });
+  };
   return () => formatOf(meta, row()[meta.name]);
 }
 
@@ -70,7 +88,11 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   const serverFilters = derive(() => {
     const result: Record<string, unknown> = {};
-    for (const filter of filters.get()) result[filter.field] = filter.value;
+    for (const filter of filters.get()) {
+      // A date range is two conditions: on or after the first day, on or before the last.
+      if (isRange(filter.value)) { result[`${filter.field}__gte`] = filter.value.gte; result[`${filter.field}__lte`] = filter.value.lte; }
+      else result[filter.field] = filter.value;
+    }
     if (state && tab.get() !== 'all') result[state.field] = tab.get();
     return result;
   });
@@ -160,14 +182,22 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   if (canCreate) ctx.createHere.set(create);
   onCleanup(() => { if (ctx.createHere.peek() === create) ctx.createHere.set(null); });
 
-  const filterable = model.fields.filter(field => !field.hidden && !isStateField(model, field) && ((field.type === 'select' && field.choices?.length) || field.type === 'boolean'));
+  const filterable = model.fields.filter(field => !field.hidden && !isStateField(model, field)
+    && ((field.type === 'select' && field.choices?.length) || field.type === 'boolean' || (field.type === 'date' && field.stored !== false)));
   const addFilter = (meta: FieldSchema, value: unknown) => {
-    const label = `${meta.label}: ${meta.type === 'boolean' ? (value ? 'Yes' : 'No') : humanize(String(value))}`;
-    batch(() => { filters.set([...filters.peek().filter(item => item.field !== meta.name), { key: meta.name, field: meta.name, value, label }]); page.set(1); });
+    batch(() => { filters.set([...filters.peek().filter(item => item.field !== meta.name), { key: meta.name, field: meta.name, value, label: filterLabel(meta, value) }]); page.set(1); });
   };
+  const removeFilter = (meta: FieldSchema) => batch(() => { filters.set(filters.peek().filter(item => item.field !== meta.name)); page.set(1); });
+  // Dates filter by a range: a preset (This month, Last 30 days) or two days on the calendar.
+  const rangeFilter = (meta: FieldSchema, anchor: HTMLElement) => openPopover(anchor, close => DateRangePanel({
+    label: `${meta.label}: choose the first and last day`,
+    value: () => { const found = filters.peek().find(item => item.field === meta.name)?.value; return isRange(found) ? [found.gte, found.lte] : null; },
+    onApply: range => { close(); if (range) addFilter(meta, { gte: range[0], lte: range[1] }); else removeFilter(meta); },
+  }), { role: 'dialog', label: `Filter by ${meta.label.toLowerCase()}`, className: 'pick-pop' });
   const filterMenu = (anchor: HTMLElement) => openPopover(anchor, close => Menu(filterable.flatMap(meta => [
     { heading: meta.label },
-    ...(meta.type === 'boolean' ? [true, false] : meta.choices!).map(value => ({ label: meta.type === 'boolean' ? (value ? 'Yes' : 'No') : humanize(String(value)), onSelect: () => addFilter(meta, value) })),
+    ...(meta.type === 'date' ? [{ label: 'Choose dates', icon: 'calendar', onSelect: () => rangeFilter(meta, anchor) }]
+      : (meta.type === 'boolean' ? [true, false] : meta.choices!).map(value => ({ label: meta.type === 'boolean' ? (value ? 'Yes' : 'No') : humanize(String(value)), onSelect: () => addFilter(meta, value) }))),
   ]), close), { label: 'Filter' });
 
   const header = PageHeader({ icon, tint, title: model.plural, count: () => total.get(), actions: [
@@ -385,8 +415,8 @@ function parseFilters(model: ScreenModel, text: string | undefined): Filter[] {
     const raw = JSON.parse(text) as Record<string, unknown>;
     return Object.entries(raw).flatMap(([name, value]) => {
       const meta = fieldOf(model, name);
-      if (!meta || isStateField(model, meta)) return [];
-      return [{ key: name, field: name, value, label: `${meta.label}: ${meta.type === 'boolean' ? (value ? 'Yes' : 'No') : humanize(String(value))}` }];
+      if (!meta || isStateField(model, meta) || (meta.type === 'date' && !isRange(value))) return [];
+      return [{ key: name, field: name, value, label: filterLabel(meta, value) }];
     });
   } catch { return []; }
 }

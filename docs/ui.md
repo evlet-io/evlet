@@ -24,7 +24,7 @@ Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_
 ## Not rendered by this interface
 
 These keep their Python APIs, HTTP routes, permission checks and tests. The browser
-interface does not show them (owner decision 3 in [handoff-plan.md](handoff-plan.md)):
+interface does not show them (owner decision 3 in [handoff-plan.md](internal/handoff-plan.md)):
 
 | Python API | Status |
 | --- | --- |
@@ -119,7 +119,11 @@ Authenticated record GET/PATCH responses include ETag headers. The record view s
 If-Match on edits, deletes, moves and actions. A stale revision returns 409 and keeps
 the draft. Clients without If-Match keep their behavior. Revision comparison happens
 inside the same transaction as the mutation and includes permitted child rows.
-Currency and decimal values stay exact strings.
+Currency and decimal values stay exact strings. A Currency field shows its code from
+`currency=` on the field: a fixed code, a field of the record, a field of a linked record or an
+app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)).
+Selects, dates, date-times, times and durations open Evlet's own pickers, and list pages filter
+dates by range ([ui-framework.md](ui-framework.md#pickers)).
 
 ## Python page API
 
