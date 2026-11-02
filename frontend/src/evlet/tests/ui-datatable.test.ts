@@ -143,4 +143,12 @@ describe('DataTable', () => {
     const host = render(() => DataTable({ columns, rows: [], key: (item: Item) => item.id, label: 'Deals', empty: () => 'No deals yet. Create the first one.' }));
     expect(host.querySelector('.dt-empty')!.textContent).toBe('No deals yet. Create the first one.');
   });
+
+  it('fills a frame wider than its columns: the last column takes the rest, set widths stay', () => {
+    const host = render(() => DataTable({ columns, rows: items(2), key: item => item.id, label: 'Deals' }));
+    const cols = [...host.querySelectorAll('col')];
+    expect(cols.map(col => col.style.width)).toEqual(['200px', '120px', '140px']);
+    // jsdom does no layout; tests/test_ui.py checks the stylesheet rules that stretch this last column.
+    expect(cols.at(-1)!.matches('.dt.fixed col:last-child')).toBe(true);
+  });
 });

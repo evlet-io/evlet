@@ -132,6 +132,8 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
   const editor = () => {
     control = FieldControl(field, {
       commitOn: 'manual', links: props.links, label: meta.label,
+      // A day picked in a calendar (or Done in a picker) saves like Enter.
+      onPicked: () => { void finish(true); },
       // Selects, switches, links and tags write on change; save straight away.
       onCommit: textual ? undefined : () => { void finish(true); },
     });

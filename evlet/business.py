@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import threading
 import base64
 import binascii
@@ -20,6 +21,8 @@ from .query import SqlQuery
 from .storage import SQLiteStorage
 from .jobs import JobReceipt
 from .discovery import Discovery
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -212,6 +215,10 @@ class Business:
             with self.database.transaction() as tx:
                 # Document number and naming counters, updated in each assigning write transaction.
                 upgrade_counters(tx.connection)
+        if any(getattr(model, 'confirmable', False) for model in self.registry.models.values()):
+            from .lifecycle import ensure_tables
+            with self.database.transaction() as tx:
+                ensure_tables(tx.connection, postgres=getattr(self.database, 'driver', None) is not None)
         if self.journals:
             from .journal import ensure_table
             with self.database.transaction() as tx:
@@ -249,10 +256,10 @@ class Business:
         self.database.timezone = value
 
     @contextmanager
-    def context(self, user, *, readonly=False):
+    def context(self, user, *, readonly=False, source=None, correlation_id=None):
         from .documents import Context
         with self.gate.shared(), self.database.transaction() as tx:
-            yield Context(self, tx, user, readonly=readonly)
+            yield Context(self, tx, user, readonly=readonly, source=source, correlation_id=correlation_id)
 
     def event_page(self, scope):
         with self.gate.shared(), using(self.database):
@@ -277,6 +284,31 @@ class Business:
         except (ValueError, UnicodeError):
             raise ValidationError({'cursor': 'Invalid event cursor'})
         return self.events.page(user, self.policy, after=cursor)
+
+    def currency_for(self, user, model, field, readable):
+        """A Currency field's source for this user: a setting becomes its code, a field they can't read is left out."""
+        source = field.pop('currency_source', None)
+        if source is None:
+            return field
+        if 'setting' in source:
+            from .settings import _default
+            app, key = source['setting']['app'], source['setting']['key']
+            try:
+                # Before the instance is initialized (no settings table yet) the declared default applies.
+                code = self.settings.values.get(app, key) if self.controls.ready else _default(self.settings.declared(app, 'settings').__fields__[key])
+            except KeyError:
+                logger.warning('%s.%s: no setting %s.%s for its currency', model.__name__, field['name'], app, key)
+                code = None
+            if isinstance(code, str) and re.fullmatch('[A-Z]{3}', code):
+                field['currency'] = code
+            return field
+        if 'link' in source:
+            link = model.__declared_fields__[source['link']]
+            if source['link'] in readable and self.policy.allows(user, link.target, 'read') and source['field'] in self.policy.fields(user, link.target):
+                field['currency_source'] = {**source, 'model': self.registry.name_for(link.target)}
+        elif source['field'] in readable:
+            field['currency_source'] = source
+        return field
 
     def schema(self, user):
         result = self.registry.ui_schema()
@@ -344,6 +376,7 @@ class Business:
             entry['fields'] = [{**field, 'read_only': field['name'] not in writable, 'stored': model.__declared_fields__[field['name']].stored,
                                 **expressions.get(field['name'], EMPTY_EXPRESSIONS)}
                                for field in entry['fields'] if field['name'] in readable]
+            entry['fields'] = [self.currency_for(user, model, field, readable) for field in entry['fields']]
             entry['list_fields'] = [name for name in entry['list_fields'] if name == 'id' or name in readable]
             entry['search_fields'] = [name for name in entry['search_fields'] if name in readable]
             entry['layout'] = [{**group, 'fields': [name for name in group['fields'] if name in readable]} for group in entry.get('layout', [])]
@@ -378,6 +411,10 @@ class Business:
                 entry['attachment_limits'] = self.attachment_limits[model].public()
             from .journal import schema as journal_schema
             entry.update(journal_schema(self, user, model))
+            if getattr(model, 'confirmable', False):
+                from .lifecycle import labels
+                entry['lifecycle'] = {'confirmable': True, 'labels': labels(model),
+                                      'permissions': {op: self.policy.allows(user, model, op) and self.policy.allows(user, model, 'update') for op in ('confirm', 'cancel', 'reopen')}}
             meaning = self.registry.meaning[model]
             if meaning.key_fields:
                 entry['key_fields'] = [name for name in meaning.key_fields if name in readable]
@@ -590,6 +627,9 @@ class Business:
 
     def model_dispatch(self, scope, body, user, model, parts):
         path, method = scope['path'], scope['method']
+        if len(parts) >= 5 and parts[4] in ('confirm', 'cancel', 'reopen', 'history', 'revisions', 'snapshot', 'diff'):
+            from .lifecycle import route
+            return route(self, scope, body, user, model, parts)
         if len(parts) == 5 and parts[4] in CORRECTIONS:
             if method != 'POST':
                 raise AccessError(405, 'Method not allowed')
@@ -742,6 +782,13 @@ class Business:
         """
         from .journal import summary as journal_summary
         result = journal_summary(self, context._tx, model, record.id)
+        if getattr(model, 'confirmable', False):
+            from .lifecycle import metadata
+            lifecycle = metadata(context, model, record.id)
+            result['_locked'] = lifecycle['state'] != 'draft'
+            result['_deletable'] = lifecycle['state'] == 'draft' and lifecycle['revision'] == 0
+            result['_lifecycle_actions'] = [op for op, state in (('confirm', 'draft'), ('cancel', 'confirmed'), ('reopen', 'cancelled'))
+                                            if lifecycle['state'] == state and self.policy.allows(context.user, model, op) and self.policy.allows(context.user, model, 'update')]
         if model in self.registry.effects:
             from .effects import ever_posted
             if ever_posted(context._tx.connection, self.registry, model, record.id):
@@ -989,6 +1036,10 @@ class Business:
         """
         result = self.policy.serialize(tx, user, record)
         self.embed(tx, user, type(record), {record.id: result}, row_limit, loaded)
+        if getattr(type(record), 'confirmable', False):
+            from .lifecycle import metadata
+            from .documents import Context
+            result['_lifecycle'] = metadata(Context(self, tx, user, readonly=True), type(record), record.id)
         if getattr(type(record), '__revisable__', False) and 'revises' in self.policy.fields(user, type(record)):
             # The other direction of `revises`, found by a lookup; there is no column for it.
             from .corrections import revised_by

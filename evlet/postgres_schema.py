@@ -163,6 +163,9 @@ def initialize(database):
         if baseline:
             db.executemany('INSERT INTO evlet_migrations(position,name,checksum) VALUES(?,?,?)',
                            [(i+1, m.name, checksums[i]) for i,m in enumerate(migrations)])
+        if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
+            from .lifecycle import ensure_tables
+            ensure_tables(db, postgres=True)
         save(db, database.registry)
 
 
@@ -220,6 +223,9 @@ def migrate(database, migrations, *, recompute_posted=False):
                 if not fresh and not baseline:
                     for operation in migration.operations: apply(db, operation)
                 db.execute('INSERT INTO evlet_migrations(position,name,checksum) VALUES(?,?,?)', (position, migration.name, checksums[position-1]))
+            if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
+                from .lifecycle import ensure_tables
+                ensure_tables(db, postgres=True)
             applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
                 applied.skipped, applied.posted = _recompute(db, database.registry, recomputes(pending), lambda connection: connection.execute(

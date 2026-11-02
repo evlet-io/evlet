@@ -191,9 +191,11 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
                                             policy.rule(user, model).scope is not None]
         return result
     # Recorded before void and revise existed: every create, read, update, delete and field permission is the same.
+    # Re-recorded when the Playground added Customer.currency and Payment.currency (0004_currencies); without
+    # those two fields the table hashes to the earlier 58ecf53f... value.
     data = {'playground': table(playground), 'states': table(Registry(*test_states.MODELS))}
     assert hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest() == \
-        '58ecf53f011fbaabd6b4decb5a492041098faf64ab9d012632a78a0135554092'
+        'cf1f61c2c32a69d23612c029ae4375329672951a600ec3ad047ff5b07bff3ec1'
     policy = Policy(Registry(*MODELS))
     assert dict(policy.corrections) == {(Quote, 'void'): {'admin', 'editor'}, (Quote, 'revise'): {'admin', 'editor'},
                                         (Order, 'void'): {'admin'}, (Ticket, 'void'): {'admin'}}

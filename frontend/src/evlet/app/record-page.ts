@@ -23,6 +23,7 @@ import type { JournalEntry, JournalPage } from './client';
 import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, screenModel, sections, sequenceField,
   summaryFields, titleOf, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
 import { cellView } from './list-page';
+import { Revisions } from './revisions';
 
 const RESERVED = new Set(['tab']);
 // A reactive part inside a list of children (arrays are read once; a template hole stays live).
@@ -306,6 +307,25 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return items;
   };
 
+  const runLifecycle = async (operation: 'confirm' | 'cancel' | 'reopen', reason?: string): Promise<string | null> => {
+    if (store.dirty.peek()) return 'Save or discard your changes first';
+    try {
+      const response = await api.lifecycle(name, store.id!, operation, store.etag.peek(), reason);
+      store.applyServer(response.data, response.etag);
+      await store.loadAll();
+      toast(`${model.lifecycle?.labels[operation] ?? humanize(operation)} done`);
+      return null;
+    } catch (error) { return error instanceof ApiError ? error.fields.reason ?? error.message : 'The operation failed'; }
+  };
+  const lifecycleAction = (operation: 'confirm' | 'cancel' | 'reopen') => {
+    const label = model.lifecycle?.labels[operation] ?? humanize(operation);
+    if (operation === 'cancel') {
+      ActionDialog({ name: operation, label } as ActionMeta,
+        [{ name: 'reason', type: 'longtext', label: 'Reason', required: true, max_length: 1000 } as FieldSchema],
+        values => runLifecycle(operation, String(values.reason ?? '')));
+    } else void runLifecycle(operation).then(error => { if (error) toast(error, { icon: 'info' }); });
+  };
+
   const headerActions = (): Child => {
     if (isNew) return null;
     const moves = extras.get()._moves ?? [];
@@ -315,7 +335,12 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       onMove: () => void runMove(move.to) }));
     const actionButtons = actions().map(action => MoveButton({ label: action.label, icon: 'zap', blocked: () => actionBlocked(action),
       variant: !moves.length && action === actions()[0] ? 'primary' : 'default', onMove: () => runAction(action) }));
-    return [...moveButtons, ...actionButtons, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items: moreItems, menuLabel: 'More actions' })];
+    const lifecycleButtons = (extras.get()._lifecycle_actions ?? []).map(operation => MoveButton({
+      label: model.lifecycle?.labels[operation] ?? humanize(operation), icon: operation === 'cancel' ? 'rotate-ccw' : 'arrow-right',
+      blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null,
+      variant: 'primary', onMove: () => lifecycleAction(operation),
+    }));
+    return [...lifecycleButtons, ...moveButtons, ...actionButtons, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items: moreItems, menuLabel: 'More actions' })];
   };
 
   // ---------- header ----------
@@ -332,7 +357,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     type: model.label, icon: look.icon, mark,
     title: titleProp,
     mono: () => Boolean(sequence && model.title_field === sequence.name && has(sequence.name) && store.field(sequence.name).value.get()),
-    meta: [...metaFacts, numberFact].filter(Boolean) as Child[],
+    meta: [...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
+      const current = extras.get()._lifecycle;
+      return current ? Chip({ label: `${model.lifecycle!.labels[current.state]} · Revision ${current.revision}`, tone: current.state === 'confirmed' ? 'green' : 'slate' }) : null;
+    }) : null].filter(Boolean) as Child[],
     actions: [live(headerActions)],
   });
 
@@ -406,6 +434,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const tabItems: TabItem[] = [
     ...(journal ? [{ id: 'activity', label: 'Activity' }] : []),
     { id: 'details', label: 'Details' },
+    ...(model.lifecycle && !isNew ? [{ id: 'revisions', label: 'Revisions' }] : []),
     ...tables.map(child => ({ id: `t-${child.name}`, label: child.label, count: () => store.table(child.name).rows.get().length })),
     ...(relations.length ? [{ id: 'related', label: 'Related' }] : []),
   ];
@@ -449,6 +478,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const panels = [
     journal ? TabPanel(tabs, 'activity', active, () => Activity(ctx, model, store)) : null,
     TabPanel(tabs, 'details', active, details),
+    model.lifecycle && !isNew ? TabPanel(tabs, 'revisions', active, () => Revisions(ctx, model, store.id!)) : null,
     ...tables.map(child => TabPanel(tabs, `t-${child.name}`, active, () => tablePanel(child))),
     relations.length ? TabPanel(tabs, 'related', active, () => Related(ctx, model, store.id!, relations)) : null,
     postings ? TabPanel(tabs, 'postings', active, () => Postings(ctx, postings)) : null,
@@ -635,7 +665,7 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
   const text = cell('');
   const canNote = Boolean(model.journal?.kinds?.includes('note'));
   const label = (field: string) => fieldOf(model, field)?.label ?? humanize(field);
-  const value = (field: string, raw: unknown) => { const meta = fieldOf(model, field); return raw === null || raw === undefined || raw === '' ? 'empty' : meta ? formatOf(meta, raw) : String(raw); };
+  const value = (field: string, raw: unknown) => { const meta = fieldOf(model, field); return raw === '[masked]' ? '[masked]' : raw === null || raw === undefined || raw === '' ? 'empty' : meta ? formatOf(meta, raw) : String(raw); };
   const table = (name: string) => model.children?.find(child => child.name === name)?.label ?? humanize(name);
   const target = (name: string) => { try { return ctx.schema.model(name).plural; } catch { return humanize(name); } };
   const action = (name: string) => model.actions?.find(item => item.name === name)?.label ?? humanize(name);
@@ -683,6 +713,7 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
     const data = item.data ?? {};
     switch (item.kind) {
       case 'created': return null;
+      case 'confirmed': case 'reconfirmed': case 'cancelled': case 'reopened': case 'post_confirmation_edit':
       case 'changed': case 'moved': case 'recomputed': { const list = changes(data); return list.length ? html`<div class="note">${list}</div>` : null; }
       case 'effects': return (data.targets ?? []).some((posted: any) => posted.balanced !== undefined)
         ? html`<div class="note">${(data.targets ?? []).filter((posted: any) => posted.balanced !== undefined).map((posted: any) =>

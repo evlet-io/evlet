@@ -41,6 +41,12 @@ class ProjectTask(Model):
 
 migrations.append(Migration('0003_project_tasks', CreateModel(ProjectTask)))
 
+# Currency sources: the customer's currency for invoices, the payment's own currency.
+migrations.append(Migration('0004_currencies',
+    AddField('customer', 'currency', Select(['AED', 'SAR', 'USD', 'EUR', 'INR'], required=True, default='AED')),
+    AddField('payment', 'currency', Select(['AED', 'SAR', 'USD', 'EUR', 'INR'], required=True, default='AED')),
+))
+
 
 def legacy_registry():
     """Frozen Milestone 1 definitions used only to validate a legacy baseline."""

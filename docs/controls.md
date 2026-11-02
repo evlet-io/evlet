@@ -188,7 +188,7 @@ instance. These are overrides too, saved with the change bar.
 
 | Prop | Rule |
 |---|---|
-| `label`, `help_text`, `placeholder` | Text. A label can't be empty. |
+| `label`, `help_text`, `tooltip`, `placeholder` | Text of at most 200 characters (80 for a label). A label can't be empty. |
 | `hidden` | Left out of forms and lists. The API still returns the field. A required field can't be hidden. |
 | `required` | Can be turned on, not off. Rows saved before stay empty until someone edits them; an API create or update must fill the field (see below). |
 | `read_only` | Can be turned on, not off. No role can write it through the API; actions and server code still can. |
@@ -674,7 +674,7 @@ newest first, 50 rows at a time.
 | `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end", "revoke_keys": false}`. Each user row counts active `keys` |
 | `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules, fresh two-step code and audit rows; refused access is a 403 there |
 | `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls" and descriptions |
-| `POST /api/_controls/fields/<Model>`, `DELETE /api/_controls/fields/<Model>/<x_name>` | Add or remove an instance field: `{name, type, label, help_text, required, default, options, target}` |
+| `POST /api/_controls/fields/<Model>`, `DELETE /api/_controls/fields/<Model>/<x_name>` | Add or remove an instance field: `{name, type, label, help_text, tooltip, required, default, options, target}` |
 | `GET/POST /api/_controls/naming/<Model>/counters` | Counters; set one with `{prefix, value, note}` |
 | `POST /api/_controls/naming/<Model>/try` | `{values, series?}`: the matching series and name, and a check of each draft series. No counter changes |
 | `GET /api/_controls/overrides/export?kind=&key=` | Export as code: `[{file, code}]` |

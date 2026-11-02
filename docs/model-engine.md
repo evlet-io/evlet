@@ -57,7 +57,7 @@ class Visit(Model):
     days = MultiSelect(["mon", "tue", "wed"], default=["mon"])  # ["mon", "wed"], in the order of the choices
     nights = Integer(default=1, suffix="nights")  # suffix: a unit shown after the input
     about = Reference()                   # {"model": "customer", "id": 4}, any registered model
-    fee = Currency(currency="AED")        # or currency="code_field" naming a text field
+    fee = Currency(currency="AED")        # a fixed code; see "Where a Currency field's code comes from"
     code_field = Text(default="AED")
 ```
 
@@ -73,8 +73,20 @@ class Visit(Model):
 | `State` | TEXT like `Select` | one of its states; set only to the default on create, then changed only by its `Move`s; at most one per root document; see [states-actions.md](states-actions.md) | text filters |
 | `Sequence` | TEXT, null until assigned, unique with its scope fields | a document number such as `INV-{year}-{n:05}` written only by the engine on create or when a move enters `assign_on`; root documents only; see [sequences.md](sequences.md) | text filters |
 
-Every field takes `suffix=` (at most 20 characters), a unit the forms show after the input,
-such as `"%"` or `"days"`. It is display metadata only, like `prefix` on a UI control.
+Every field takes `help_text=` and `tooltip=`, both text. Forms show `help_text` in grey under
+the input (an error takes its place while there is one) and `tooltip` behind a small ? icon at
+the right end of the input, on hover and keyboard focus. The icon shows only when `tooltip` is
+set. Controls can change both, and its code export writes them back:
+
+```python
+reference = Text(help_text="The number printed on the invoice.",
+                 tooltip="Use the customer's purchase order number if they ask for one.")
+```
+
+Every field takes `suffix=` (at most 20 characters), a unit the forms show in a box after the
+input and after the value at rest, such as `"%"` or `"days"`. It is display metadata only, like
+`prefix` on a UI control. `Percent` fields always show `%`; a `Decimal` with `suffix="%"` looks
+the same and keeps its own scale.
 
 Any editable field may declare `editable_when_locked=True` so that ordinary writes can still
 change it while its document is in a locked State (for example remarks).
@@ -89,8 +101,34 @@ every model for any other form such as `isnull`. Renaming a reference with `Rena
 renames both columns. `Database.related()` does not
 follow references; read the target with `get`.
 
-`currency=` on `Currency` is display metadata in `/api/schema` (`"currency"`): an ISO 4217
-code or the name of a text or select field on the same model. Evlet never converts amounts.
+### Where a Currency field's code comes from
+
+`currency=` on `Currency` says which currency code the forms and lists show beside the amount.
+It is display metadata only: Evlet never converts amounts. It takes one of four forms:
+
+```python
+class Invoice(Model):
+    company = Link(Company)
+    currency_code = Select(["AED", "USD"], default="AED")
+    fee = Currency(currency="AED")                               # a fixed ISO 4217 code
+    total = Currency(currency="currency_code")                   # a Text or Select field on the record
+    paid = Currency(currency="company.company_currency")         # a field of the record a Link points at
+    budget = Currency(currency="settings.billing.currency")      # an app setting ("For everyone")
+```
+
+| Form | Checked | In `/api/schema` | The browser |
+| --- | --- | --- | --- |
+| `"AED"` | three capital letters | `"currency": "AED"` | shows it |
+| `"field"` | when the registry is built: a `Text` or `Select` field of the model | `"currency_source": {"field"}` | reads the field and follows it as it changes |
+| `"link.field"` | when the registry is built: a `Link` of the model and a `Text` or `Select` field of its target | `"currency_source": {"link", "field", "model"}` | reads the linked record through the list route (batched with Link titles) and follows the Link |
+| `"settings.app.key"` | the app's settings are read on each `/api/schema` request | `"currency": <the setting's value>` | shows it |
+
+The schema is resolved for the person asking. A field or linked field they cannot read is left
+out, and so is a setting that is not declared (the server logs it). A value that is not three
+capital letters is ignored. In every such case, and when the source is empty, the browser shows
+AED. The setting's value reaches everyone who can read the model, so use a setting that names a
+currency, not one that holds anything private. Before an instance is initialized the setting's
+declared default is used.
 
 `Percent` and `Duration` work as numbers in finite expressions; `Phone` works as text.
 `Time`, `Tags` and references cannot be used in calculations.

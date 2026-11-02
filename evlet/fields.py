@@ -96,10 +96,13 @@ class Field:
         return field
 
     def __init__(self, *, required=False, default=MISSING, unique=False, index=False, validator=None,
-                 label=None, help_text="", placeholder="", suffix="", hidden=False, read_only=False,
+                 label=None, help_text="", tooltip="", placeholder="", suffix="", hidden=False, read_only=False,
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
-                 initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False):
+                 initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False, tracking="value"):
+        if tracking not in ("value", "mask", "exclude"):
+            raise ValueError("tracking is value, mask or exclude")
+        self.tracking = tracking
         self.required = required
         self.default = default
         if default is CurrentUser and self.kind not in ('text', 'integer'):
@@ -110,11 +113,12 @@ class Field:
         self.name = ""
         if label is not None and (not isinstance(label, str) or not label):
             raise ValueError("label must be nonempty text")
-        if not isinstance(help_text, str) or not isinstance(placeholder, str) or not isinstance(suffix, str) or len(suffix) > 20:
-            raise ValueError("Field help, placeholder and suffix must be text; a suffix has at most 20 characters")
+        if not isinstance(help_text, str) or not isinstance(tooltip, str) or not isinstance(placeholder, str) or not isinstance(suffix, str) or len(suffix) > 20:
+            raise ValueError("Field help, tooltip, placeholder and suffix must be text; a suffix has at most 20 characters")
         if type(hidden) is not bool or type(read_only) is not bool:
             raise ValueError("hidden and read_only must be booleans")
-        self.label, self.help_text, self.placeholder, self.suffix = label, help_text, placeholder, suffix
+        # help_text shows under the input; tooltip behind a ? icon at its right end.
+        self.label, self.help_text, self.tooltip, self.placeholder, self.suffix = label, help_text, tooltip, placeholder, suffix
         self.hidden, self.read_only = hidden, read_only
         self.compute, self.stored, self.query, self.fetch = compute, stored, query, fetch
         self.filters = dict(filters or {})
@@ -373,16 +377,39 @@ class Decimal(Field):
                 "maximum": None if self.maximum is None else str(self.maximum)}
 
 
+CURRENCY_SOURCE = re.compile(r"[A-Z]{3}|[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?|settings\.[a-z][a-z0-9_]{0,62}\.[a-z][a-z0-9_]{0,40}")
+
+
 class Currency(Decimal):
     kind = "currency"
     default_rounding = "half_up"
 
     def __init__(self, *, currency=None, **kwargs):
         super().__init__(scale=2, **kwargs)
-        # Display metadata only: an ISO 4217 code or the name of a field holding the code. No conversion.
-        if currency is not None and (not isinstance(currency, str) or not re.fullmatch(r"[A-Z]{3}|[A-Za-z][A-Za-z0-9_]*", currency)):
-            raise ValueError("currency takes an ISO 4217 code such as 'AED' or the name of a field holding the code")
+        # Display metadata only, never a conversion. Where the code comes from:
+        #   "AED"                            an ISO 4217 code
+        #   "currency"                       a Text or Select field on the same record
+        #   "company.company_currency"       a Text or Select field of the record a Link points at
+        #   "settings.billing.currency"      an app setting ("For everyone"), read when the UI loads
+        if currency is not None and (not isinstance(currency, str) or not CURRENCY_SOURCE.fullmatch(currency)):
+            raise ValueError("currency takes an ISO 4217 code such as 'AED', a field name, link.field "
+                             "or settings.app.key")
         self.currency = currency
+
+    def currency_source(self):
+        """The currency source as the UI schema sends it: {'code'}, {'field'}, {'link', 'field'} or {'setting'}."""
+        code = self.currency
+        if code is None:
+            return None
+        if re.fullmatch("[A-Z]{3}", code):
+            return {"code": code}
+        if code.startswith("settings.") and code.count(".") == 2:
+            _, app, key = code.split(".")
+            return {"setting": {"app": app, "key": key}}
+        if "." in code:
+            link, field = code.split(".")
+            return {"link": link, "field": field}
+        return {"field": code}
 
 
 class Percent(Decimal):
@@ -492,7 +519,7 @@ class State(Select):
     out and `voidable` names the states a void (and a revise) may start from. A State with voidable
     states must have a "void" state that is locked and final.
     """
-    OPTIONS = ("label", "help_text", "placeholder", "hidden", "index", "max_length")
+    OPTIONS = ("label", "help_text", "tooltip", "placeholder", "hidden", "index", "max_length")
 
     def __init__(self, choices, *, default=MISSING, moves=(), locked=(), final=(), voidable=(), **kwargs):
         from .declarations import Move

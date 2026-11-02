@@ -8,6 +8,8 @@ from .migrations import AddField, AddIndex, CreateModel, Migration, Recompute, R
 from .models import Model, Registry, ValidationError, Child
 from .declarations import Move, Ref, Table, Query, action, depends
 from .sequences import Naming, Sequence, Series
+from .lifecycle import validate, install_decorators
+install_decorators(action)
 
 __all__ = [
     "AddField", "AddIndex", "Application", "Boolean", "ConflictError", "CreateModel",
@@ -60,7 +62,7 @@ from .auth import Security
 __all__ += ["AppDefinition", "Instance", "Schedule", "Security"]
 from .routing import ApiScope, ControlsAccess, Docs, Frontend, Host, Request, Response
 __all__ += ["ApiScope", "ControlsAccess", "Docs", "Frontend", "Host", "Request", "Response"]
-__all__ += ["Child", "Move", "Table", "Ref", "Query", "action", "depends"]
+__all__ += ["Child", "Move", "Table", "Ref", "Query", "action", "validate", "depends"]
 from .forms import Dialog, Report, Column
 from .effects import Effect, Negate, Swap
 __all__ += ["Effect", "Negate", "Swap"]

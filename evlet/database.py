@@ -198,6 +198,9 @@ class Session:
             self._maintenance = previous
 
     def _guard(self, model):
+        if not self._maintenance and (getattr(self.registry.root_of(model), 'confirmable', False)
+                                     or getattr(self.registry.root_of(model), 'track_changes', False)):
+            raise ValueError(f'{model.__name__} has lifecycle or history tracking; write it through Context')
         if not self._maintenance and model in getattr(self.registry, 'effect_targets', ()):
             raise ValueError(f'{model.__name__} rows are posted by the effects of other records and are read only; '
                              'use session.maintenance() for an audited repair')

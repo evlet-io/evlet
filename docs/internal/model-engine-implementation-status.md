@@ -223,7 +223,7 @@ Branch `model/02-rules`, stacked on `model/01-expressions`. Contract:
   can read its inputs.
 * **Schema.** Every field in `/api/schema` gains `stored` and `compute`, `initial`,
   `applies_when`, `required_when`, `locked_when` (finite IR or null). The registry's neutral
-  schema (`ui_schema`) is unchanged except `currency` on Currency fields that declare it.
+  schema (`ui_schema`) is unchanged except `currency` (a fixed code) or `currency_source` (a field or linked field) on Currency fields that declare one.
 * **`Recompute(model, fields)`.** Runs after the batch's structural changes inside the
   migration transaction; failures roll back the batch. Updates recorded formula versions
   when a batch recalculates every stored result of a document.

@@ -118,12 +118,14 @@ class ModelType(type):
         if revisable:
             fields['revises'].target = cls
             unique_and_required(name, fields, tables)
+        from .lifecycle import configure_model
+        configure_model(cls)
         # Meta.journal = Journal(...) makes a document, so every write goes through the journaled pipeline.
         journaled = False
         if hasattr(meta, 'journal'):
             from .journal import Journal
             journaled = isinstance(meta.journal, Journal)
-        if journaled or states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
+        if getattr(cls, "confirmable", False) or getattr(cls, "track_changes", False) or journaled or states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
         reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}
@@ -303,11 +305,9 @@ class Registry:
                     field.target = target
                 if isinstance(field, Link) and field.target not in models:
                     raise ValueError(f"Link target for {model.__name__}.{field.name} is not registered")
-                code = getattr(field, 'currency', None)
-                if code is not None and not re.fullmatch('[A-Z]{3}', code):
-                    holder = model.__declared_fields__.get(code)
-                    if holder is None or holder.kind not in ('text', 'select'):
-                        raise ValueError(f'{model.__name__}.{field.name}: currency must be an ISO 4217 code or a text field on the same model')
+        for model in models:
+            for field in model.__declared_fields__.values():
+                check_currency_source(model, field)
         from .ui.metadata import view_for
         for model in models:
             view_for(model)
@@ -335,7 +335,7 @@ class Registry:
         from .states import compile_guards, kept_plan
         self.guards, self.guard_plans, self.guard_root_plans = compile_guards(self, models, plans, child_models)
         # Ordinary writes on a locked record evaluate rules over the results it keeps.
-        self.kept_plans = MappingProxyType({root: kept_plan(plan) for root, plan in plans.items() if root.__state__ is not None})
+        self.kept_plans = MappingProxyType({root: kept_plan(plan) for root, plan in plans.items() if root.__state__ is not None or getattr(root, 'confirmable', False)})
         # Document numbers: {model: {field name: Sequence}}.
         from .sequences import compile_sequences
         self.sequences = compile_sequences(self, models, plans, child_models)
@@ -416,6 +416,23 @@ class Registry:
 
 class Child(Model):
     """Owned row definition. Register it through a parent's Table declaration."""
+
+
+def check_currency_source(model, field):
+    """A Currency field's currency names a Text or Select field: on the record, or behind one of its Links."""
+    source = field.currency_source() if hasattr(field, 'currency_source') else None
+    if source is None or 'code' in source or 'setting' in source:
+        return
+    owner = model
+    if 'link' in source:
+        link = model.__declared_fields__.get(source['link'])
+        if not isinstance(link, Link) or not isinstance(link.target, type):
+            raise ValueError(f'{model.__name__}.{field.name}: currency {field.currency} must start with a Link field of {model.__name__}')
+        owner = link.target
+    holder = owner.__declared_fields__.get(source['field'])
+    if holder is None or holder.kind not in ('text', 'select'):
+        raise ValueError(f'{model.__name__}.{field.name}: currency must be an ISO 4217 code or a Text or Select field '
+                         f'({field.currency} is not one on {owner.__name__})')
 
 
 def resolve_sources(registry, definition):

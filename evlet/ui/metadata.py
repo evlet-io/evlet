@@ -68,13 +68,21 @@ def view_for(model):
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search)}
 
 
+def currency_schema(field):
+    """A fixed code as currency; any other source as currency_source, resolved per user by /api/schema."""
+    source = field.currency_source() if hasattr(field, 'currency_source') else None
+    if source is None:
+        return {}
+    return {'currency': source['code']} if 'code' in source else {'currency_source': source}
+
+
 def field_schema(field):
     result = {**field.metadata(), 'label': field.label or label_for(field.name),
-              'help_text': field.help_text, 'placeholder': field.placeholder,
+              'help_text': field.help_text, **({'tooltip': field.tooltip} if field.tooltip else {}), 'placeholder': field.placeholder,
               **({'suffix': field.suffix} if field.suffix else {}),
               'hidden': field.hidden, 'read_only': field.read_only,
               **({'stored': field.stored} if field.compute is not None or field.query is not None or not field.stored else {}),
-              **({'currency': field.currency} if getattr(field, 'currency', None) is not None else {}),
+              **currency_schema(field),
               **({'editable_when_locked': True} if getattr(field, 'editable_when_locked', False) else {}),
               **({'sequence': field.schema()} if field.kind == 'sequence' else {}),
               'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'user' if field.default is CurrentUser
