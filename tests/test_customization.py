@@ -807,3 +807,91 @@ def test_jobs_and_event_pages_wait_for_a_schema_change(app):
         assert not done.wait(0.2)
     thread.join(2)
     assert done.is_set()
+
+
+# ---------- reconciliation with the model engine ----------
+
+def test_a_current_user_default_cannot_be_replaced(tmp_path, hashed):
+    from evlet import CurrentUser
+    from test_rules_types import ALL
+
+    class Visit(Model):
+        permissions = ALL
+        title = Text()
+        host = Text(default=CurrentUser)
+
+    app = build(tmp_path, Visit)
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    status, payload, _ = save(admin, ('field', 'Visit.host', {'default': 'someone'}))
+    assert status == 422 and 'filled with the signed-in user' in payload['fields']['changes.0'], payload
+    # Its label still changes, and new records still take the signed-in user.
+    assert save(admin, ('field', 'Visit.host', {'label': 'Host'}))[0] == 200
+    status, record, _ = admin('POST', '/api/visit', {'title': 'Call'})
+    assert status == 201 and record['host'] == 'admin', record
+
+
+def test_unplaced_fields_follow_a_file_layout_under_other_and_an_override_in_its_last_section(tmp_path, hashed):
+    class Site(Model):
+        name = Text(required=True)
+        city = Text()
+
+        class Meta:
+            layout = (('Site', ('name', 'city')),)
+
+    class Room(Model):
+        name = Text(required=True)
+        floor = Text()
+        notes = LongText()
+
+        class Meta:
+            layout = (('Room', ('name',)),)
+
+    class Desk(Model):
+        name = Text(required=True)
+
+    app = build(tmp_path, Site, Room, Desk)
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    for model in ('Site', 'Room', 'Desk'):
+        assert admin('POST', f'/api/_controls/fields/{model}', {'name': 'zone', 'type': 'Text', 'label': 'Zone'})[0] == 201
+    # A declared layout leaves unplaced fields to Other, joining the Other group it already has.
+    assert [(group['label'], group['fields']) for group in schema_of(admin, 'site')['layout']] == [('Site', ['name', 'city']), ('Other', ['x_zone'])]
+    assert [(group['label'], group['fields']) for group in schema_of(admin, 'room')['layout']] == [('Room', ['name']), ('Other', ['floor', 'notes', 'x_zone'])]
+    # The default Details group takes every field.
+    assert [(group['label'], group['fields']) for group in schema_of(admin, 'desk')['layout']] == [('Details', ['name', 'x_zone'])]
+    # A Controls layout puts them in its last section.
+    layout = [{'title': 'Where', 'fields': [{'name': 'city', 'width': 6}]}, {'title': 'Site', 'fields': [{'name': 'name', 'width': 6}]}]
+    assert save(admin, ('layout', 'Site', layout))[0] == 200
+    assert [(group['label'], group['fields']) for group in schema_of(admin, 'site')['layout']] == [('Where', ['city']), ('Site', ['name', 'x_zone'])]
+
+
+def test_recompute_keeps_instance_fields_and_skips_posted_records(tmp_path, hashed):
+    from evlet import AddIndex, Migration, Recompute
+    from test_effects import etag, move, new_bill, posting_models
+    path, base = tmp_path / 'db.sqlite3', Migration('0000_base', AddIndex('bill', 'memo'))
+    database = Database(path, Registry(*posting_models(1)), migrations=[base])
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+    app.initialize()
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    assert admin('POST', '/api/_controls/fields/Bill', {'name': 'region', 'type': 'Text', 'label': 'Region'})[0] == 201
+    customer = admin('POST', '/api/customer', {})[1]['id']
+    draft, issued = new_bill(admin, customer), new_bill(admin, customer)
+    for url in (draft, issued):
+        status, body, _ = admin('PATCH', url, {'x_region': 'north'}, headers=etag(admin, url))
+        assert status == 200 and body['x_region'] == 'north', body
+    assert move(admin, issued, 'issued')[0] == 200
+    app.database.close()
+    # Instance columns are not part of the app schema, so the migration check passes and Recompute leaves them.
+    steps = [base, Migration('0001_recompute', Recompute('bill_lines', ('amount',)), Recompute('bill', ('fee', 'total', 'charged')))]
+    database = Database(path, Registry(*posting_models(2)), migrations=steps)
+    applied = database.migrate(database.migrations)
+    assert applied == ['0001_recompute'] and applied.skipped == 1
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+    app.initialize()
+    admin = client(app)
+    assert [(admin('GET', url)[1]['total'], admin('GET', url)[1]['x_region']) for url in (draft, issued)] == [('6.00', 'north'), ('3.00', 'north')]
+    # A locked, posted record refuses an ordinary write to an instance field like any other field.
+    status, body, _ = admin('PATCH', issued, {'x_region': 'south'}, headers=etag(admin, issued))
+    assert status in (409, 422) and admin('GET', issued)[1]['x_region'] == 'north', body

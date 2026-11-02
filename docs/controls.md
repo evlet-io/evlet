@@ -129,7 +129,8 @@ A field can't be made both required and read only without a default, since no on
 create a record.
 
 Fields the app or the server fills (calculated fields, State, Sequence and naming fields) take
-only the label, help text, placeholder and hidden. Required and hidden options apply to what people
+only the label, help text, placeholder and hidden. A field declared with `default=CurrentUser` keeps
+that default; Controls can't replace it with a fixed value. Required and hidden options apply to what people
 send through the API (create and update, legacy and document models alike); actions, services, jobs
 and other app code may still leave a field empty or set a hidden option. Read only applies to every
 role in the API. Added options and defaults apply on every write path. `/api/schema` and `/api/ui`
@@ -138,7 +139,9 @@ sections and labels of fields a role can't read are left out.
 
 **Form layout** (kind `layout`, key `Model`): `[{"title": ..., "fields": [{"name": ..., "width": 6 | 12}]}]`,
 1 to 12 sections, each with a title and at least one field, each field placed once. Fields placed nowhere, such as a field an
-app adds later, go to the last section. Section ids stay positional (`main_details`, `section_2`, ...).
+app adds later or an instance field, go to the last section. Without a Controls layout the app file's rule holds: a declared
+`Meta.layout` leaves such fields to its Other group (added when the file layout has none), and the default Details group
+takes every field. Section ids stay positional (`main_details`, `section_2`, ...).
 The browser renders forms from this layout; `width: 12` makes a field full width.
 
 **List view** (kind `list`, key `Model`): `{"columns": [...], "page_size": 25 | 50 | 100, "sort": "field" | "-field"}`,
@@ -171,6 +174,10 @@ its own field override, list columns and sort, layout, permission field lists (a
 readable field loses access) and naming series that use it. Removal needs SQLite 3.35 or later; on
 an older SQLite the page says so and only adding works. On PostgreSQL the change runs in one
 transaction and backups are the operator's job. Each tenant has its own instance fields.
+
+Instance fields are plain values. No formula reads them, so finite calculation plans leave them
+out, and `Recompute` neither names nor changes them; it still skips records with posted effects. A
+posted or locked record follows the same write rules for an instance field as for any other field.
 
 ### When an override no longer applies
 

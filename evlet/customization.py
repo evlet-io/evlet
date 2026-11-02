@@ -17,7 +17,7 @@ from types import MappingProxyType
 
 from .auth import AccessError
 from .declarations import Ref
-from .fields import (ACTIVE, MISSING, Boolean, Currency, Date, Decimal, Integer, Layer, Link, LongText, Select,
+from .fields import (ACTIVE, MISSING, Boolean, Currency, CurrentUser, Date, Decimal, Integer, Layer, Link, LongText, Select,
                      State, Text, active_layer)
 from .database import ConflictError
 from .models import ValidationError, identifier
@@ -277,6 +277,8 @@ class Customization:
         if file['default'] in out.get('options_hidden', ()) and value.get('default') in (None, file['default']):
             raise ValueError(f"{file['default']} is the default in models.py, so it can't be hidden. Choose another default first.")
         if value.get('default') is not None:
+            if field.default is CurrentUser:
+                raise ValueError(f'{name} is filled with the signed-in user in models.py, so its default stays.')
             if isinstance(field, Link):
                 raise ValueError("Links don't take a default.")
             if options is not None and value['default'] not in visible:
@@ -417,13 +419,20 @@ class Customization:
         self.layouts, self.lists, self.naming = layouts, lists, MappingProxyType(naming)
 
     def layout(self, model):
-        """The effective layout: the override with fields placed nowhere added to the last section."""
-        sections = self.layouts.get(model) or self.file_value('layout', model)
+        """The effective layout. Fields placed nowhere (instance fields, fields an app adds later) go to the
+        last section of a Controls layout. Without one, they follow the app file's rule: a declared
+        Meta.layout leaves them to an Other group, and the default Details group takes every field."""
+        override = self.layouts.get(model)
+        sections = override or self.file_value('layout', model)
         fields = self.fields(model)
         placeable = [name for name, field in fields.items() if not field.hidden]
         placed = {item['name'] for section in sections for item in section['fields']}
         result = [{'title': section['title'], 'fields': [item for item in section['fields'] if item['name'] in placeable]} for section in sections]
-        result[-1]['fields'] += [{'name': name, 'width': width(fields[name])} for name in placeable if name not in placed]
+        rest = [{'name': name, 'width': width(fields[name])} for name in placeable if name not in placed]
+        declared = getattr(getattr(model, 'Meta', None), 'layout', None) is not None
+        if rest and not override and declared and result[-1]['title'] != 'Other':
+            result.append({'title': 'Other', 'fields': []})
+        result[-1]['fields'] += rest
         return result
 
     def merge(self, entry, model, readable, writable):
