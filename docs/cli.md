@@ -63,7 +63,7 @@ evlet docs --port 8001
 shadowed by files there; run it with `python -P -m evlet` (or set
 `PYTHONSAFEPATH=1`) when working inside an app folder. Project commands that
 delegate to `.venv` already use `-P`. The original `new` command keeps its
-existing contract. `evlet controls grant` makes a user an active admin from the server shell when nobody can open Controls ([controls.md](controls.md)). `evlet users reset-two-step` clears a user's two-step sign-in so they set it up again ([settings.md](settings.md#set-up-at-sign-in-trust-on-first-use)). `evlet secrets rotate` re-encrypts saved connector secrets under a new `secret.key` ([controls.md](controls.md)). `login`, `logout`, `describe` and `mcp` are the connector
+existing contract. `evlet controls grant` makes a user an active admin from the server shell when nobody can open Controls ([controls.md](controls.md)). `evlet users reset-two-step` clears a user's two-step sign-in so they set it up again ([settings.md](settings.md#set-up-at-sign-in-trust-on-first-use)). `evlet secrets rotate` re-encrypts connector secrets, two-step secrets and backup codes under a new `secret.key` ([controls.md](controls.md)). `login`, `logout`, `describe` and `mcp` are the connector
 commands described in the [connector guide](connector.md). Each one shows its
 options with `--help`, for example `evlet login --help`.
 `evlet dev` selects the sole instance in a project. With several instances it

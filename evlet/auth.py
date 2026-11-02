@@ -306,15 +306,20 @@ class LocalAuth:
         prefix (and per network overall) only after the lookup.
         """
         token = self.bearer(scope)
+        # Keys are for the desk: a portal or public host refuses them, and so does a user whose role is a portal role.
+        if self.realm(scope) != 'desk':
+            raise AccessError(403, 'API keys work on desk hosts only.')
         match = API_KEY.fullmatch(token or '')
-        row = None
+        row, links = None, ()
         if match:
             with self.database._connection() as connection:
                 row = connection.execute('SELECT k.id AS key_id, k.hash, k.scope, k.last_used, u.id, u.username, u.role FROM evlet_api_keys k JOIN evlet_users u ON u.id=k.user_id '
-                                         'WHERE k.prefix=? AND k.revoked_at IS NULL AND u.active=1', (match[1],)).fetchone()
+                                         "JOIN evlet_roles r ON r.id=u.role AND r.realm='desk' WHERE k.prefix=? AND k.revoked_at IS NULL AND u.active=1", (match[1],)).fetchone()
+                if row is not None:
+                    links = tuple((item['model'], item['record_id']) for item in connection.execute(
+                        'SELECT model, record_id FROM evlet_user_links WHERE user_id=? ORDER BY model, record_id', (row['id'],)))
         if row is None or not hmac.compare_digest(row['hash'], hashlib.sha256(token.encode()).hexdigest()):
-            reader = getattr(self, 'client_address', None)
-            network = 'key-failure:' + client_network(str(reader(scope) if reader is not None else (scope.get('client') or ('unknown',))[0]))
+            network = 'key-failure:' + client_network(self.client_address(scope))
             prefix = network + ':' + (match[1] if match else (token or '')[:12])
             with self._key_lock:
                 current = self._key_window == int(time.time()) // 60
@@ -330,7 +335,7 @@ class LocalAuth:
         if row['last_used'] is None or row['last_used'] < now - 60:
             with self.database.transaction() as tx:
                 tx.connection.execute('UPDATE evlet_api_keys SET last_used=? WHERE id=?', (now, row['key_id']))
-        return User(row['id'], row['username'], row['role'], access=self.key_access(row['key_id'], row['scope']))
+        return User(row['id'], row['username'], row['role'], links, access=self.key_access(row['key_id'], row['scope']))
 
     def key_access(self, key_id, scope):
         """The KeyAccess of a key's stored scope: models named by the key, with their child rows."""

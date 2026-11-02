@@ -17,7 +17,7 @@ import pytest
 
 from evlet import Application, ConnectionFailed, Connector, ConnectorField, Database, LocalAuth
 from evlet import connectors as module
-from evlet.connectors import SecretKey, SecretKeyError, rotate
+from evlet.secrets import SecretKey, SecretKeyError, rotate
 from examples.playground.models import registry
 from test_business import PASSWORD, client, hashed
 from test_cli_lifecycle import environment_stub, project
@@ -365,7 +365,7 @@ def test_an_instance_keeps_its_key_in_the_instance_folder_and_rotates_it(project
         assert stat.S_IMODE(os.stat(key_file).st_mode) == 0o600
         before = key_file.read_text()
         main(['secrets', 'rotate', 'acme', '--project', str(project)])
-        assert 'Re-encrypted 1 connector.' in capsys.readouterr().out
+        assert 'Re-encrypted 1 saved secret.' in capsys.readouterr().out
         assert key_file.read_text() != before
         assert app.business.connectors.values('imap:support')['password'] == MAIL_PASSWORD
     finally:

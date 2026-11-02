@@ -64,8 +64,8 @@ The integrated CLI installs Uvicorn so `pip install evlet` can immediately serve
 an instance, and packaging to validate Python requirement and version standards.
 These avoid a custom HTTP server or an incomplete dependency parser.
 `cryptography` (44.0.1 or later, below 52; locked at 50.0.2) seals secrets at rest with
-AES-GCM: two-step sign-in secrets and backup codes now, and passwords and API keys for
-other services later. The server must read them back (a TOTP secret is needed to check a
+AES-GCM: two-step sign-in secrets, backup codes, and connector passwords and API keys for
+other services. The server must read them back (a TOTP secret is needed to check a
 code), so they can't be hashed, and the standard library has no authenticated cipher. It is
 the maintained, audited library for this in Python; its wheels bring cffi and pycparser.
 44.0.1 is the first release with the OpenSSL fix for CVE-2024-12797. Only `evlet/secrets.py`

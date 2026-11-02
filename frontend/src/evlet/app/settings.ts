@@ -10,6 +10,7 @@ import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Icon, Switch } from '../ui/base';
 import { DialogFooter, copyText, openModal, toast } from '../ui/layers';
 import { humanize, InputError, kindOf } from '../ui/kinds';
+import { MyKeysPage } from '../settings/keys';
 import './settings.css';
 
 export interface Me {
@@ -49,7 +50,7 @@ export interface SettingsContext {
 export const PAGES: Record<string, [title: string, icon: string, group: string]> = {
   profile: ['Profile', 'user', 'Your account'], appearance: ['Appearance & region', 'sun', 'Your account'],
   security: ['Sign-in & security', 'lock', 'Your account'], notifications: ['Notifications', 'bell', 'Your account'],
-  email: ['Your email', 'mail', 'Connections'], ai: ['AI assistants', 'sparkles', 'Connections'],
+  email: ['Your email', 'mail', 'Connections'], ai: ['AI assistants', 'sparkles', 'Connections'], keys: ['API keys', 'hash', 'Connections'],
 };
 const INDEX: Record<string, string[]> = {
   profile: ['Photo', 'Full name', 'Short name', 'Job title', 'Mobile', 'Email', 'Email signature', 'Username'],
@@ -58,6 +59,7 @@ const INDEX: Record<string, string[]> = {
   notifications: ['Notifications', 'Quiet hours'],
   email: ['Your email', 'Mailbox'],
   ai: ['MCP', 'Claude', 'AI assistants', 'Connectors'],
+  keys: ['API keys', 'Scripts', 'Bearer token'],
 };
 const ZONES: Array<[string, string]> = [['Asia/Dubai', 'Gulf Standard Time (UTC+4)'], ['Asia/Riyadh', 'Arabia Standard Time (UTC+3)'],
   ['Asia/Kolkata', 'India Standard Time (UTC+5:30)'], ['Europe/London', 'London (UTC+0)'], ['UTC', 'UTC']];
@@ -160,7 +162,7 @@ export function SettingsView(ctx: SettingsContext, page: string): HTMLElement {
     }}</nav>`;
   const options: Array<[string, string]> = [...me.pages.map(id => [id, PAGES[id][0]] as [string, string]), ...me.apps.map(app => [`app/${app.id}`, `${app.title} settings`] as [string, string])];
   const content = page.startsWith('app/') ? AppSettingsPage(ctx, page.slice(4)) : ({ profile: ProfilePage, appearance: AppearancePage, security: SecurityPage,
-    notifications: NotificationsPage, email: EmailPage, ai: AiPage } as Record<string, (ctx: SettingsContext) => Node>)[page]?.(ctx) ?? null;
+    notifications: NotificationsPage, email: EmailPage, ai: AiPage, keys: (ctx: SettingsContext) => MyKeysPage({ api: ctx.api }) } as Record<string, (ctx: SettingsContext) => Node>)[page]?.(ctx) ?? null;
   return html`<div class="set-wrap">${nav}<div class="set-main">${select(page, options, value => ctx.go(value), 'Settings page')}${content}</div></div>` as HTMLElement;
 }
 

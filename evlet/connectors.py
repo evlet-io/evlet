@@ -1,36 +1,31 @@
 """Connectors to other services: declarations, settings, encrypted secrets, tests and shared email accounts.
 
-Secrets are encrypted with AES-GCM (the `cryptography` package) under a key kept outside the
-database: instances/<name>/secret.key, or EVLET_SECRET_KEY. No API ever returns a secret.
+Secrets are sealed with evlet.secrets (AES-GCM) under the instance key kept outside the database:
+instances/<name>/secret.key, or EVLET_SECRET_KEY. No API ever returns a secret.
 """
 
-import base64
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import make_msgid
 from collections import deque
-import hashlib
 import imaplib
 import ipaddress
 import json
 import logging
-import os
-from pathlib import Path
 import re
-import secrets
 import smtplib
 import socket
 import ssl
-import stat
 import threading
 import time
 from urllib.parse import quote, quote_plus
 
 from .auth import ROLE_ID, AccessError
 from .models import ValidationError
+from . import secrets as vault
+from .secrets import SecretKeyError
 
 logger = logging.getLogger(__name__)
-KEY_ENV = 'EVLET_SECRET_KEY'
 TIMEOUT = 10
 TYPES = ('text', 'number', 'select', 'toggle', 'role', 'secret')
 ID = re.compile(r'[a-z][a-z0-9_]{1,30}')
@@ -52,9 +47,6 @@ METADATA = tuple(ipaddress.ip_network(net) for net in ('fd00:ec2::254/128', '100
 class ConnectionFailed(Exception):
     """Raised by a connector test with a plain message for the person setting it up."""
 
-
-class SecretKeyError(ValueError):
-    pass
 
 
 @dataclass(frozen=True)
@@ -109,151 +101,6 @@ class Connector:
             raise ValueError(f'{self.id}: fields are ConnectorField definitions with unique names')
         if self.test is not None and not callable(self.test):
             raise ValueError(f'{self.id}: test must be callable')
-
-
-# ---------- the secret key ----------
-
-class SecretKey:
-    """AES-GCM keys from EVLET_SECRET_KEY or a 0600 key file; the first key encrypts, any listed key decrypts."""
-
-    def __init__(self, path=None):
-        self.path = None if path is None else Path(path)
-        self.lock = threading.Lock()
-
-    @property
-    def from_environment(self):
-        return bool(os.environ.get(KEY_ENV))
-
-    @staticmethod
-    def parse(text, source):
-        keys = []
-        for item in (part.strip() for part in text.replace(',', '\n').splitlines()):
-            if not item:
-                continue
-            try:
-                raw = base64.urlsafe_b64decode(item + '=' * (-len(item) % 4))
-            except (ValueError, TypeError):
-                raw = b''
-            if len(raw) != 32:
-                raise SecretKeyError(f'{source} must hold 32-byte keys in URL-safe base64, one per line.')
-            keys.append(raw)
-        if not keys:
-            raise SecretKeyError(f'{source} is empty.')
-        return keys
-
-    def check(self):
-        """Refuse a key file that others can read, a link, or another owner's file. Called on start."""
-        if self.from_environment:
-            self.parse(os.environ[KEY_ENV], KEY_ENV)
-            return
-        if self.path is None or not (self.path.exists() or self.path.is_symlink()):
-            return
-        info = os.lstat(self.path)
-        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-            raise SecretKeyError(f'{self.path} must be a regular file, not a link.')
-        if hasattr(os, 'getuid') and info.st_uid != os.getuid():
-            raise SecretKeyError(f'{self.path} belongs to another user. The server must own its secret key.')
-        if info.st_mode & 0o077:
-            raise SecretKeyError(f'{self.path} can be read by other users. Run chmod 600 {self.path} and start again.')
-
-    def keys(self, create=False):
-        with self.lock:
-            if self.from_environment:
-                return self.parse(os.environ[KEY_ENV], KEY_ENV)
-            if self.path is None:
-                raise SecretKeyError(f'No secret key is set up. Set {KEY_ENV}, or give the application a secret key file.')
-            # Read on every use, so a rotation is picked up without a restart.
-            self.check()
-            if not self.path.exists():
-                if not create:
-                    return []
-                try:
-                    self.write([secrets.token_bytes(32)], new=True)
-                except FileExistsError:
-                    self.check()  # Another process created it first.
-            return self.parse(self.path.read_text(), str(self.path))
-
-    def write(self, keys, new=False):
-        """Write the key file with mode 0600: a new file exclusively, a replacement atomically."""
-        text = ''.join(base64.urlsafe_b64encode(key).decode().rstrip('=') + '\n' for key in keys)
-        target = self.path if new else self.path.with_name(self.path.name + '.new')
-        if not new and target.exists():
-            target.unlink()
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0)
-        descriptor = os.open(target, flags, 0o600)
-        with os.fdopen(descriptor, 'w') as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        if not new:
-            os.replace(target, self.path)
-
-    @staticmethod
-    def key_id(key):
-        return hashlib.sha256(key).digest()[:4]
-
-    def encrypt(self, data, context):
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        key = self.keys(create=True)[0]
-        nonce = secrets.token_bytes(12)
-        return b'\x01' + self.key_id(key) + nonce + AESGCM(key).encrypt(nonce, data, context)
-
-    def decrypt(self, blob, context):
-        from cryptography.exceptions import InvalidTag
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        blob = bytes(blob)
-        if len(blob) < 33 or blob[:1] != b'\x01':
-            raise SecretKeyError(UNREADABLE)
-        for key in self.keys():
-            if self.key_id(key) == blob[1:5]:
-                try:
-                    return AESGCM(key).decrypt(blob[5:17], blob[17:], context)
-                except InvalidTag:
-                    break
-        raise SecretKeyError(UNREADABLE)
-
-
-def rotate(database_path, key):
-    """Re-encrypt every saved secret of a SQLite instance under a new key file.
-
-    The old key stays in the file, after the new one, until every row is re-encrypted, so a
-    crash at any point leaves every secret readable. A row that can't be read is skipped and
-    reported, and the old key is then kept for it. Returns (re-encrypted count, unreadable ids).
-    """
-    import sqlite3
-    if key.from_environment:
-        raise SecretKeyError(f'{KEY_ENV} is set, so the key is kept outside Evlet. Rotation works on a secret.key file.')
-    if not Path(database_path).is_file():
-        raise ValueError('This instance has no database yet, so there is nothing to rotate.')
-    old = key.keys()
-    if not old:
-        return 0, []
-    key.write([secrets.token_bytes(32), *old])
-    connection = sqlite3.connect(Path(database_path).as_uri() + '?mode=rw', uri=True, isolation_level=None)
-    done, failed = 0, []
-    try:
-        connection.execute('BEGIN IMMEDIATE')
-        exists = connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_connectors'").fetchone()
-        rows = connection.execute('SELECT id, secrets FROM evlet_connectors WHERE secrets IS NOT NULL').fetchall() if exists else []
-        for row_id, blob in rows:
-            context = row_context(row_id)
-            try:
-                plain = key.decrypt(blob, context)
-            except SecretKeyError:
-                failed.append(row_id)
-                continue
-            connection.execute('UPDATE evlet_connectors SET secrets=? WHERE id=?', (key.encrypt(plain, context), row_id))
-            done += 1
-        connection.execute('COMMIT')
-    except BaseException:
-        if connection.in_transaction:
-            connection.execute('ROLLBACK')
-        raise
-    finally:
-        connection.close()
-    if not failed:
-        key.write(key.keys()[:1])
-    return done, failed
 
 
 def row_context(row_id):
@@ -423,7 +270,10 @@ class Connectors:
     def __init__(self, business):
         self.business, self.database = business, business.database
         self.declared, self.app_of = {}, {}
-        self.key = SecretKey()
+        # An application built in code without a secret key keeps connector secrets in a key file next
+        # to its SQLite file (Application sets it); instances use business.secret_key, shared with two-step sign-in.
+        self.fallback = None
+        self._key = None
         # Connection tests run on at most two threads; an abandoned test keeps its slot until it ends.
         self.slots = threading.BoundedSemaphore(2)
         self.recent, self.recent_lock = {}, threading.Lock()
@@ -436,6 +286,22 @@ class Connectors:
         if connector.id in self.declared:
             raise ValueError(f'Connector {connector.id} is declared twice')
         self.declared[connector.id], self.app_of[connector.id] = connector, app
+
+    @property
+    def key(self):
+        """The instance's SecretKey (evlet.secrets): the same key file as two-step sign-in and backup codes."""
+        if self._key is not None:
+            return self._key
+        configured = getattr(self.business, 'secret_key', None)
+        return vault.secret_key(configured if configured is not None else self.fallback)
+
+    @key.setter
+    def key(self, value):
+        self._key = None if value is None else vault.secret_key(value)
+
+    def seal(self, connection, data, row_id):
+        """Encrypt a connector's secrets. The key file is created only while nothing else is sealed with it."""
+        return self.key.encrypt(data, row_context(row_id), create=not vault.sealed_exists(connection))
 
     def initialize(self):
         self.key.check()
@@ -612,7 +478,7 @@ class Connectors:
             default = bool(saved_settings.get('default')) if current is not None else (
                 connector is SMTP and not tx.connection.execute("SELECT 1 FROM evlet_connectors WHERE id LIKE 'smtp:%'").fetchone())
             stored = {**settings, **({'default': True} if default else {}), '_secrets': json.dumps(sorted(secret_values))}
-            blob = self.key.encrypt(json.dumps(secret_values, sort_keys=True).encode(), row_context(row_id)) if secret_values else None
+            blob = self.seal(tx.connection, json.dumps(secret_values, sort_keys=True).encode(), row_id) if secret_values else None
             tx.connection.execute('INSERT INTO evlet_connectors(id,app,status,settings,secrets,changed_by,changed_at) VALUES (?,?,?,?,?,?,?) '
                                   'ON CONFLICT(id) DO UPDATE SET status=excluded.status, settings=excluded.settings, secrets=excluded.secrets, '
                                   'changed_by=excluded.changed_by, changed_at=excluded.changed_at',
@@ -695,7 +561,7 @@ class Connectors:
             try:
                 values.update({name: value for name, value in json.loads(self.key.decrypt(row['secrets'], row_context(row_id))).items() if name in kept})
             except SecretKeyError as exc:
-                return {'ok': False, 'error': str(exc)}
+                return {'ok': False, 'error': UNREADABLE if str(exc) == vault.UNREADABLE else str(exc)}
         values.update(replaced)
         hidden = [value for name, value in values.items() if isinstance(value, str) and name in {field.name for field in connector.fields if field.type == 'secret'}]
         check = connector.test if to is None else lambda values: self.deliver(values, to, 'Test email from Evlet', 'This is a test email from Evlet. The account works.')

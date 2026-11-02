@@ -1,6 +1,6 @@
-// /settings/keys: a person's own API keys, mounted by the Settings shell.
+// /settings/keys: a person's own API keys. The Settings shell shows it with its own client:
 //
-//   mount(element, () => MyKeysPage({}));
+//   MyKeysPage({ api: ctx.api });
 
 import { ApiClient, type ClientOptions } from '../api';
 import { cell } from '../reactive';
@@ -19,13 +19,14 @@ export class MyKeysClient extends ApiClient implements KeysApi {
   async revokeKey(id: number) { return (await this.request<{ items: ApiKeyRow[] }>('DELETE', `/api/_settings/me/keys/${id}`)).data; }
 }
 
-export function MyKeysPage(options: { api?: MyKeysClient }): HTMLElement {
+export function MyKeysPage(options: { api?: ApiClient }): HTMLElement {
   const api = options.api ?? new MyKeysClient();
   const models = cell<Listing['models']>([]);
   // The listing also names the models this person can read; keep them for the scope choice.
   const keys: KeysApi = {
-    keys: async () => { const listing = await api.keys(); models.set(listing.models); return listing; },
-    createKey: body => api.createKey(body), revokeKey: id => api.revokeKey(id),
+    keys: async () => { const listing = (await api.request<Listing>('GET', '/api/_settings/me/keys')).data; models.set(listing.models); return listing; },
+    createKey: async body => (await api.request<CreatedKey>('POST', '/api/_settings/me/keys', { body })).data,
+    revokeKey: async id => (await api.request<{ items: ApiKeyRow[] }>('DELETE', `/api/_settings/me/keys/${id}`)).data,
   };
   mountToasts();
   return KeysPage({ api: keys, models: () => models.get(), title: 'API keys',

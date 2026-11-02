@@ -22,6 +22,7 @@ person used, kept on the server: `GET /settings` redirects to `/settings/<last p
 | `/settings/notifications` | Event by channel (in Evlet, email), quiet hours | Instantly |
 | `/settings/email` | Personal mailboxes come in a later release; this page says so | |
 | `/settings/ai` | The command line steps for an MCP assistant (`evlet login`, then `evlet mcp`) and the assistants signed in that way | |
+| `/settings/keys` | Your API keys for scripts: create (shown once), scope and revoke ([controls.md](controls.md#api-keys)). Desk only | Instantly |
 | `/settings/app/<app>` | An app's settings: "For everyone" and "Just for you" | Save bar; instantly |
 
 A search box above the page list finds any setting by its label, app settings included.
@@ -97,14 +98,18 @@ their next sign-in (a required role) or in Settings.
 
 ### The secret key
 
-`evlet.secrets` is the one place secrets are kept; connectors use the same key and file.
+`evlet.secrets` is the one place secrets are kept: connector secrets, two-step secrets, two-step
+set-ups and sign-ins in progress, and backup codes all use the same key and file, and
+`evlet secrets rotate <instance>` re-encrypts all of them ([controls.md](controls.md#connectors-and-secrets)).
 
 ```python
 from evlet import secrets
 sealed = secrets.seal(key, b"value", "two_step:42")   # purpose binds the value to its place
 secrets.open(key, sealed, "two_step:42")              # b"value"; another purpose fails
 secrets.available(key)                                # cryptography installed, key configured and valid
-key = secrets.SecretKey(path)                         # .check(), .keys(), .write(), rotation
+secrets.sealed_exists(connection)                     # anything in secrets.SEALED holds a value
+secrets.rotate(database_path, key)                    # (re-encrypted count, unreadable rows)
+key = secrets.SecretKey(path)                         # .check(), .keys(), .write()
 ```
 
 - Keys come from `EVLET_SECRET_KEY` (comma-separated) or `instances/<name>/secret.key`: one
@@ -119,7 +124,7 @@ key = secrets.SecretKey(path)                         # .check(), .keys(), .writ
   for required roles, answer 503 "Two-step sign-in is unavailable: the secret key is missing
   or changed. Ask your admin." Restore `secret.key` from the backup taken with the database.
 - AES-GCM comes from the `cryptography` package, a core dependency. If it can't be imported, or
-  on an application that is not an instance, two-step sign-in is unavailable: Settings says so, it can't be turned
+  on an application that is not an instance and passes no `secret_key`, two-step sign-in is unavailable: Settings says so, it can't be turned
   on, and required roles sign in with their password. The instance logs a warning on start
   when required roles exist but the package is missing or the key file is refused.
 
@@ -183,6 +188,7 @@ sign-in, appearance and the other pages answer 404.
 | `POST /api/_settings/me/password` | `{"current", "new"}` |
 | `POST /api/_settings/me/two-step`, `.../two-step/confirm`, `.../two-step/codes`, `.../two-step/off` | Start (`{"password", "code"?}`), confirm with `{"code"}`, new backup codes and turn off (`{"password", "code"}`) |
 | `DELETE /api/_settings/me/sessions[/<id>]` | Sign out one other session, or every other one |
+| `GET/POST /api/_settings/me/keys`, `DELETE /api/_settings/me/keys/<id>` | Your API keys: list (with the models you can read), create `{"name", "scope"}` (the key is in this reply only), revoke. Desk sessions only |
 | `GET /api/_settings/app/<app>` | Sections with values and defaults, `can_edit`, and the person's preferences |
 | `PATCH /api/_settings/app/<app>` | `{"values": {key: value or null}}`, editors only; one invalid value saves none |
 | `PATCH /api/_settings/me/app/<app>` | The person's preferences in that app |

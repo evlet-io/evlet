@@ -299,16 +299,21 @@ Trusted server code reads a saved connector with `business.connectors.values("wh
   a save changes an identifying setting, the saved secrets are not used: the form asks for
   them again ("Enter the password again. The server details changed..."). So a saved password
   is never sent to a different server, by a test or by a save.
-- **Encryption.** Secrets are encrypted with AES-GCM (the `cryptography` package), bound to
-  their connector id, so a changed or moved value is detected and refused. The key lives
-  outside the database: `instances/<name>/secret.key`, created with mode 0600 the first time
-  a secret is saved, or `EVLET_SECRET_KEY` (32 bytes, URL-safe base64) for containers.
-  An application built in code keeps it next to its SQLite file unless it passes
-  `Application(secret_key=path)`; a PostgreSQL application needs `EVLET_SECRET_KEY`.
+- **Encryption.** Secrets are sealed with `evlet.secrets` (AES-GCM, the `cryptography`
+  package), bound to their connector id (purpose `evlet-connector:<id>`), so a changed or moved
+  value is detected and refused. It is the same key as two-step secrets and backup codes
+  ([settings.md](settings.md#the-secret-key)): `instances/<name>/secret.key`, created with mode
+  0600 the first time anything is sealed, or `EVLET_SECRET_KEY` (32 bytes, URL-safe base64) for
+  containers. Once anything is sealed, a missing key file is an error and never replaced.
+  An application built in code uses `Application(secret_key=path)` for both; without it,
+  connector secrets use a key file next to its SQLite file and two-step sign-in stays off.
+  A PostgreSQL application needs `EVLET_SECRET_KEY` or `secret_key`.
   The instance refuses to start when the key file is a link, belongs to another user, or
   can be read by anyone but its owner.
 - **Rotation.** `evlet secrets rotate <instance>` writes a new key and re-encrypts every
-  saved secret. The old key stays in the file until all rows are done, so an interruption
+  sealed value listed in `evlet.secrets.SEALED`: connector secrets, two-step secrets, two-step
+  set-ups and sign-ins in progress, and backup codes. API keys are stored as SHA-256 hashes, not
+  sealed, so rotation leaves them alone. The old key stays in the file until all rows are done, so an interruption
   loses nothing. A row that can't be read is reported and left as it is, the others are
   re-encrypted, and the old key stays in the file until that row is entered again and rotation
   runs once more. The command refuses an instance without a database. The key file is read on
@@ -378,6 +383,15 @@ whole key are stored in `evlet_api_keys`.
   (`evk_` + 8 characters + `_` + 43 characters) skips the request protection header; other
   Authorization values don't. `GET /api/auth/session` answers with the key's user. Keys never
   open Controls (404) and can't use the other `/api/auth/*` routes or `/api/_settings/*` (403).
+- **Desk only.** Keys belong to the desk realm. A portal or public host refuses every key
+  (403 "API keys work on desk hosts only."), a key can't be created for a user whose role is a
+  portal role (422), a key stops working (401) when its user moves to a portal role, and
+  `/api/_settings/me/keys` is 404 for portal sessions. Portal users have no API keys; portal
+  API access goes through the portal's own sessions and API scopes.
+- **Controls and custom roles.** A key is checked against its user's role through the same
+  policy as a session, so Controls permission and field overrides and custom roles (with their
+  base) apply to it at once, without changing the key. A key scope only narrows: creating a key
+  for models the role no longer reads is refused.
 - **Limits.** 300 requests a minute per key, per process; then 429. Invalid keys are counted
   per network and prefix (20 a minute) and per network (100 a minute) after the key is
   looked up, so a valid key is never slowed by someone else's failures. The network is the
@@ -391,8 +405,8 @@ whole key are stored in `evlet_api_keys`.
   signed in. Revoking is immediate: the key gets 401 from then on. Creating and revoking
   write audit rows, without the key.
 
-The personal page is the `MyKeysPage` component (`frontend/src/evlet/settings/keys.ts`),
-ready for the Settings shell.
+The personal page is `/settings/keys` in the Settings shell (the `MyKeysPage` component,
+`frontend/src/evlet/settings/keys.ts`), for desk users.
 
 ## Audit log
 

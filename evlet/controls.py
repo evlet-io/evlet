@@ -814,6 +814,8 @@ class Controls:
             count = connection.execute('SELECT count(*) FROM evlet_api_keys WHERE user_id=? AND revoked_at IS NULL', (owner['id'] if owner else 0,)).fetchone()[0]
         if owner is None or not owner['active']:
             raise ValidationError({'user': 'Choose an active user.'})
+        if (self.roles.get(owner['role']) or {}).get('realm') != 'desk':
+            raise ValidationError({'user': f"{owner['username']} signs in on the portal. API keys are for desk users only."})
         if not personal and owner['role'] == 'admin' and actor.role != 'admin':
             raise AccessError(403, ADMIN_ONLY)
         if count >= 20:
@@ -832,8 +834,10 @@ class Controls:
         self.business.auth.revoke_key(key_id, actor.id if personal else None, check)
 
     def my_keys(self, scope, body, user):
-        """/api/_settings/me/keys: a person's own keys. Signed-in sessions only."""
+        """/api/_settings/me/keys: a person's own keys. Signed-in desk sessions only."""
         path, method = scope['path'].removeprefix('/api/_settings/me/keys'), scope['method']
+        if self.business.settings.portal(scope, user):
+            raise AccessError(404, NOT_FOUND)
         if path == '' and method == 'GET':
             # The models a key may be narrowed to: the ones this person can read.
             models = [{'name': name, 'label': getattr(model.Meta, 'label', None) or name} for name, model in self.models().items()

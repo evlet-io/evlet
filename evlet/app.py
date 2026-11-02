@@ -57,12 +57,14 @@ class Application:
             self.business.apis = tuple(apis)
             self.business.ui = self.ui
             self.business.controls.routes = self.routes
-            from .connectors import SecretKey
             for connector in connectors:
                 self.business.connectors.register('app', connector)
-            # Secrets are encrypted with a key outside the database: EVLET_SECRET_KEY, this file, or one next to a SQLite file.
+            # Secrets are sealed with a key outside the database: EVLET_SECRET_KEY or secret_key, shared with
+            # two-step sign-in. Without either, connector secrets use a key file next to a SQLite file.
+            if secret_key is not None:
+                self.business.secret_key = secret_key
             path = getattr(database, 'path', None)
-            self.business.connectors.key = SecretKey(secret_key or (path.parent / 'secret.key' if path is not None else None))
+            self.business.connectors.fallback = path.parent / 'secret.key' if path is not None else None
         elif reports or apis or connectors:
             raise ValueError('Reports, APIs and connectors require authentication')
 

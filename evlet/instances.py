@@ -370,9 +370,9 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
                       apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
                       storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, **options)
     app.business.timezone = config.timezone
-    app.business.secret_key = path / 'secret.key'
-    from .connectors import SecretKey
-    app.business.connectors.key = SecretKey(path / 'secret.key')
+    # One key for connector secrets, two-step secrets and backup codes (evlet.secrets).
+    from .secrets import SecretKey
+    app.business.secret_key = SecretKey(path / 'secret.key')
     for name, definition in definitions:
         for connector in definition.connectors:
             app.business.connectors.register(name, connector)

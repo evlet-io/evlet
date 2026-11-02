@@ -11,6 +11,7 @@ from evlet import Policy, Rule
 from evlet import auth as auth_module
 from examples.playground.models import Customer, Invoice, Project, registry
 from test_business import client, hashed, http, secured
+from test_hosts_realms import portal  # noqa: F401
 
 
 def with_key(app, token, method, path, data=None, client='127.0.0.1'):
@@ -186,3 +187,38 @@ def test_guard_checks_are_cached_per_key_scope(secured):
     policy = secured.business.policy
     assert readable(policy, User(2, 'editor', 'editor'), guard)
     assert not readable(policy, User(2, 'editor', 'editor', access=KeyAccess(True, frozenset({Project}))), guard)
+
+
+# ---------- realms, Controls overrides and custom roles ----------
+
+def test_keys_are_for_desk_users_on_desk_hosts(portal):
+    from test_hosts_realms import DESK, PORTAL, sign_in
+    _, _, admin = sign_in(portal, 'admin', DESK)
+    status, payload, _ = admin('POST', '/api/_controls/keys', {'name': 'Shop', 'user': 'buyer', 'scope': {'access': 'read', 'models': None}})
+    assert status == 422 and 'API keys are for desk users only' in payload['fields']['user']
+    token = admin('POST', '/api/_controls/keys', {'name': 'Desk', 'user': 'viewer', 'scope': {'access': 'read', 'models': None}})[1]['token']
+    bearer = {b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b''}
+    assert http(portal, 'GET', '/api/customer', headers={**bearer, b'host': DESK})[0] == 200
+    assert http(portal, 'GET', '/api/customer', headers={**bearer, b'host': PORTAL})[:2] == (403, {'error': 'API keys work on desk hosts only.'})
+    # A key whose user now has a portal role stops working.
+    with portal.database.transaction() as tx:
+        tx.connection.execute("UPDATE evlet_users SET role='portal' WHERE username='viewer'")
+    assert http(portal, 'GET', '/api/customer', headers={**bearer, b'host': DESK})[0] == 401
+    _, _, buyer = sign_in(portal, 'buyer', PORTAL)
+    assert buyer('GET', '/api/_settings/me/keys')[0] == 404
+
+
+def test_a_key_follows_controls_overrides_and_custom_roles(secured):
+    admin = client(secured)
+    assert admin('POST', '/api/_controls/roles', {'id': 'clerk', 'base': 'editor'})[0] == 201
+    assert admin('POST', '/api/_controls/users', {'username': 'casey', 'password': 'a long enough password', 'role': 'clerk'})[0] in (200, 201)
+    token = create(admin, 'Clerk script', {'access': 'write', 'models': None}, user='casey')[1]['token']
+    assert with_key(secured, token, 'GET', '/api/customer')[0] == 200
+    # Controls takes read away from the role: the key loses it at once, without being changed.
+    change = {'kind': 'perm', 'key': 'clerk|Customer', 'value': {'ops': [], 'read': None, 'write': None, 'scope': None}}
+    assert admin('POST', '/api/_controls/overrides', {'changes': [change]})[0] == 200
+    assert with_key(secured, token, 'GET', '/api/customer')[0] in (403, 404)
+    assert with_key(secured, token, 'GET', '/api/project')[0] == 200
+    # A new key can't name what the role can no longer read.
+    status, payload, _ = create(admin, 'Too much', {'access': 'read', 'models': ['Customer']}, user='casey')
+    assert status == 422 and "can't read Customer" in payload['fields']['scope']
