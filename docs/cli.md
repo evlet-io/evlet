@@ -70,7 +70,11 @@ options with `--help`, for example `evlet login --help`.
 asks in a terminal; automation must pass `--instance`. Development rebuilds/reloads
 Python, TS/JS and configuration changes, including file additions/deletions, and
 runs the existing queue. It never applies model migrations
-implicitly. Stop the server and run `migrate` after adding a migration. Normal
+implicitly. Stop the server and run `migrate` after adding a migration.
+`migrate --recompute-posted` lets the `Recompute` operations of that run recalculate posted
+records too; it prints how many changed, and each one gets a journal entry
+([model-engine.md](model-engine.md#recalculating-stored-values)). Without the flag, posted
+records keep their saved results. Normal
 `serve` checks locked source versions and content; run `migrate` to record an
 intentional source change. Use `serve --jobs` to enable the short-task queue in
 that process. No worker is mandatory.

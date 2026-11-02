@@ -3,8 +3,8 @@
 An effect is a set of rows a document posts to another model when a move takes it into a
 state. An issued invoice posts ledger entries and stock moves, for example. The rows are a
 pure function of the record. The engine writes them in the move's transaction, and they are
-read only for every caller. When the record is voided, the engine writes mirror rows that
-cancel them. Original rows are never changed or deleted.
+read only for every caller. When the record is voided or unposted, the engine writes mirror
+rows that cancel them. Original rows are never changed or deleted.
 
 This guide covers Phase 6 of the model handoff. Read [states-actions.md](states-actions.md)
 first for states, moves, void and revise.
@@ -156,8 +156,9 @@ Reads follow the target's normal permissions and row scopes.
 
 ## Posted records keep their totals
 
-Once a record has posted (it is the source of effect rows and is not void), its stored
-calculated values are frozen for every writer, so the rows it posted keep matching it:
+Once a record has posted (it has live effect rows: the latest row of some effect is an
+original, not a reversal, and the record is not void), its stored calculated values are
+frozen for every writer, so the rows it posted keep matching it:
 
 * Moves and actions on it keep the saved calculated values at every depth, like ordinary
   writes on a locked record, even when a linked record or a formula changed since. They need
@@ -170,9 +171,13 @@ calculated values are frozen for every writer, so the rows it posted keep matchi
   postings. To change its totals, void or revise it.`
 * A draft preview (`/api/_draft`) of it shows the saved values, as the save would keep them.
 * The `Recompute` migration operation skips it, voided or not, and reports how many records
-  it kept. Locked records that never posted are recalculated.
+  it kept. Locked records that never posted, and unposted records, are recalculated. An admin
+  may include posted records with `evlet migrate <instance> --recompute-posted`; each one that
+  changes gets a `recomputed` Journal entry with `"posted": true`, and its saved rows no longer
+  match it until it is unposted and reposted (the check below reports them as `changed`).
 
-To correct the totals of a posted record, void it or revise it.
+To correct the totals of a posted record, void it or revise it, or (an admin) unpost it,
+correct it and repost it.
 
 ## Void and revise
 
@@ -191,6 +196,27 @@ each original row of every effect with a `reverse`:
 * Revising a void record that has no revision yet does not void it again, so nothing is
   reversed a second time. The revision is a new draft with no rows; it posts its own rows when
   it enters `on`.
+
+## Unpost and repost
+
+An admin can unpost a posted record (see
+[states-actions.md](states-actions.md#unpost-and-repost)): the record goes back to the state
+it posted from, keeps its number, and every live row gets a mirror row exactly as on void. A
+repost runs the posting move again, which writes fresh original rows from the record as it is
+then. A record's rows are therefore a series of postings, each a batch of originals followed,
+once it is cancelled, by its batch of mirror rows:
+
+```
+originals (issue) | mirrors (unpost) | originals (repost) | mirrors (void)
+```
+
+* The live rows are the originals after the last mirror batch. A void or a further unpost
+  reverses only those, so nothing is reversed twice.
+* `_effects` counts every original and every mirror row of the record.
+* Unpost needs a `reverse` on every effect of the model (`Rule` operations `unpost` and
+  `repost` fail at startup otherwise).
+* Unpost is refused while a live record depends on this one, for example a confirmed payment
+  that links to the invoice, or a record whose effect rows link to it.
 
 ## Details and schema
 
@@ -264,6 +290,13 @@ can only be reached through `on` must have rows. When a state could also be reac
 way, the record is compared only when it has rows. A void record that posted must also have
 one mirror row for each row it should have posted.
 
+With unposts, the rows are split into postings (above). Each cancelled posting is checked on
+its own: its mirror rows must mirror its originals. The last posting is compared with the
+rows the record produces now, as before. A record in a state before `on` (an unposted one)
+must have no live rows. One case is not told apart: a record unposted, changed and then voided
+from a voidable state before `on` (no declared model does this today) is compared as if its
+last posting came from its current values.
+
 A posted record keeps its saved totals (see above), so moves, actions and `Recompute`
 leave the check clean. A record changed after posting by other means, for example a
 maintenance write, is reported as `changed`: the saved rows no longer match the record.
@@ -280,7 +313,7 @@ maintenance write, is reported as `changed`: the saved rows no longer match the 
   ```
 
   Without it, startup reports that an explicit index migration is required.
-* Effects post only on a move. Creating a record in a state, or changing it inside
-  `tx.maintenance()`, posts nothing.
+* Effects post only on a move (a repost runs one). Creating a record in a state, or changing it
+  inside `tx.maintenance()`, posts nothing.
 * The record view shows `_effects` in its Postings tab; the connector and the MCP server
   do not show them yet.

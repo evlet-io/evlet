@@ -1,7 +1,7 @@
 # The Journal
 
 The Journal is the history of one record. It lists every change the engine made (created,
-changed, moved, voided, revised, numbered, files and deletion) and the notes, logged
+changed, moved, voided, revised, unposted, reposted, numbered, files and deletion) and the notes, logged
 messages, calls and follow ups people added. Entries are only ever added. Nothing edits or
 deletes them.
 
@@ -76,11 +76,13 @@ commits, no entry is left behind.
 | `moved` | a move is saved | `from`, `to`, `move` (the label), and `fields` and `rows` for anything else the move changed |
 | `voided` | a record is voided | `from`, `to` (`void`) and `reason` |
 | `revised` | a record is revised (after its `voided` entry) | `copy` (the new record's id) and `reason` |
+| `unposted` | an admin unposts a posted record (before the `effects` entry of its reversal rows) | `from`, `to` (the state it posted from) and `reason` |
+| `reposted` | an unposted record is posted again (after the move's `moved` and `effects` entries) | `to`, `move` (the label), and `reason` when given |
 | `number` | a Sequence number is assigned | `field` and `number` |
 | `file` | an attachment is added or removed | `action` (`added` or `removed`), `id`, `name`, and `size` when added |
 | `deleted` | the record is deleted | `{}` |
-| `effects` | a move posted [effect](effects.md) rows, or a void wrote their mirror rows | `targets` |
-| `recomputed` | a `Recompute` migration changed stored results (actor: the engine) | `fields` and `rows` (`updated` only) |
+| `effects` | a move posted [effect](effects.md) rows, or a void or unpost wrote their mirror rows | `targets` |
+| `recomputed` | a `Recompute` migration changed stored results (actor: the engine) | `fields` and `rows` (`updated` only), and `posted: true` for a posted record an admin included |
 
 `fields` maps each changed stored field to its old and new values in their HTTP form:
 
@@ -108,11 +110,15 @@ creating a document with 1,000 lines stores an entry of about 400 KB, and a page
 entries can carry several such entries. Read the journal in pages (`limit` and `offset`)
 and keep the page small for documents with many rows.
 
-`Recompute` never changes a record with postings (see
-[finite-calculations.md](finite-calculations.md)), so `recomputed` entries appear only on
-records that never posted, locked or not.
+`Recompute` changes a record with postings only when an admin migrates with
+`--recompute-posted` (see [finite-calculations.md](finite-calculations.md)); its entry then
+has `"posted": true`, shown to readers of the State. Otherwise `recomputed` entries appear only
+on records without live postings, locked or not.
 
-An `effects` entry follows the `moved` or `voided` entry of the same operation and lists
+Unpost and repost also write a row in the Controls audit log (area `Records`), in the same
+transaction as the entries.
+
+An `effects` entry follows the `moved`, `voided` or `unposted` entry of the same operation and lists
 each target model that received rows:
 
 ```json
@@ -120,7 +126,7 @@ each target model that received rows:
              {"target": "stockmove", "rows": 2, "reversal": false}]}
 ```
 
-`rows` counts the rows written, `reversal` is true for the mirror rows of a void, and
+`rows` counts the rows written, `reversal` is true for the mirror rows of a void or an unpost, and
 `balanced` is present for an effect that declares a balanced pair. Targets that received no
 rows are left out, and no entry is written when no rows were written.
 
@@ -229,8 +235,8 @@ cannot read is removed, and the entry is marked `"partial": true`:
 * Rows of a collection the caller cannot read are left out. Under a row scope on the rows,
   rows the caller cannot see are left out, and so are all removed rows, because they can no
   longer be checked against the scope. Updated rows with nothing readable left are dropped.
-* For a caller who cannot read the State, `moved`, `voided`, `revised` and `effects`
-  entries are shown as `changed` with only the readable field and row changes. A `number`
+* For a caller who cannot read the State, `moved`, `voided`, `revised`, `unposted`,
+  `reposted` and `effects` entries are shown as `changed` with only the readable field and row changes. A `number`
   entry for a field the caller cannot read is shown as `changed` with no data. This keeps
   states and numbers private, as the rest of the API does.
 * In an `effects` entry, targets the caller does not read fully (read permission and no row
@@ -248,7 +254,7 @@ already tell readers the same. An action's name is shown only to roles that can 
 
 ## Details, schema and events
 
-* Record details (GET, writes, moves, void and revise answers) of a journaled model carry
+* Record details (GET, writes, moves, void, revise, unpost and repost answers) of a journaled model carry
   `_journal`: `{"count": 12, "open_follow_ups": 1}`. It is outside the ETag, so adding a note
   does not change the record's revision. It costs one statement.
 * `/api/schema` entries of journaled models carry

@@ -457,7 +457,11 @@ one is refused with 409 (`This record has postings. To change its totals, void o
 it.`). Its actions and moves may not change what those results read (409, naming the
 field). `Recompute` skips posted records only and reports how many it kept, so the effect
 rows a record posted always match its saved totals; a locked record that never posted is
-recalculated. Draft previews of a locked or posted record show the values a save keeps.
+recalculated. An admin may include posted records for one migration run with
+`evlet migrate <instance> --recompute-posted`; each changed one is journaled with
+`"posted": true` ([model-engine.md](model-engine.md#recalculating-stored-values)). An admin
+can also unpost a posted record, correct it and repost it
+([states-actions.md](states-actions.md#unpost-and-repost)). Draft previews of a locked or posted record show the values a save keeps.
 
 ## Permissions and the browser plan
 
