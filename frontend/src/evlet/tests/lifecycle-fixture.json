@@ -140,6 +140,7 @@
               "model": "order_lines",
               "link": "evlet_owner",
               "label": "Lines",
+              "row_changes": true,
               "min_rows": 1,
               "max_rows": 100
             }

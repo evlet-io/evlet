@@ -229,7 +229,9 @@ await record.save();                       // the server's answer replaces the d
   the next edit; `reload()` reads them again.
 - `save()` sends only changes for a saved record: changed fields, and each Table as
   `{create, update, delete, order}` (with `order` only when rows moved), nested for rows of
-  rows. A new record sends everything with full row lists. A plan's hash goes along as
+  rows. A new record sends everything with full row lists. A collection whose schema entry has
+  `row_changes: false` (a `ChildTable` on a plain model) is always sent as a full list:
+  saved rows as `{id, ...changed values}`, new rows without `_key`. A plan's hash goes along as
   `_calculation`. Conflicts land in `conflict`, field errors on their fields (by row id or
   `_key`, at any depth) and the rest in `formError`. `revert()` and `reload()` discard the
   draft. `runAction()` and `move()` require a clean record. `preview()` asks the server to
