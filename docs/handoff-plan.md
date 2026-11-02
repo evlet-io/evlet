@@ -126,10 +126,11 @@ Decisions taken while building them (the owner's where marked):
 - **Trusted proxies.** `X-Forwarded-For` counts only from the instance's `trusted_proxies`;
   sign-in throttling, Controls networks and the public limits read the same address.
   `trusted_proxies` stays an explicit `Instance(...)` setting, empty by default, and a header is
-  never trusted on its own. A proxy on this machine or a private network that sends forwarded
-  headers without being listed is shown under Controls' Needs attention with the exact line to
-  add, noted cheaply (in memory, and written at most every 10 minutes per peer); `evlet proxy`
-  prints the same line (owner's decision, 02-11-2026).
+  never trusted on its own. A peer on this machine or a private network that keeps sending
+  forwarded headers (20 within 10 minutes) without being listed is shown under Controls' Needs
+  attention, each peer on its own line, to add only if it is the reverse proxy. It is noted
+  cheaply: counted in memory and written at most every 10 minutes per peer, 50 peers kept.
+  `evlet proxy` prints the line for the local proxy (owner's decision, 02-11-2026).
 - **Security defaults** (owner's decision, 02-11-2026). Sessions last 12 hours and sign-in locks
   after 5 failed attempts. Controls can only make them stricter (down to 1 hour and 3 attempts).
 - **Opens Controls is not admin.** A role may open Controls without being admin. Only admins

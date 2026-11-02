@@ -935,20 +935,21 @@ class Controls:
         }
 
     def proxy_attention(self):
-        """A Needs attention item when a proxy on this machine or network forwards requests but is not trusted."""
+        """One Needs attention item per peer on this machine or network that sends forwarded headers but is not a trusted
+        proxy. Any device on the network can send such headers, so each address is shown on its own, never merged."""
         from .auth import trusted_proxies_line
         auth = self.business.auth
-        peers = auth.forwarded_peers()
-        if not peers:
-            return []
         name = self.system.instance_name()
         where = f'Instance(...) in instances/{name}/config.py' if name else 'LocalAuth(...) where the application is built'
-        line = trusted_proxies_line(auth.trusted_proxies, peers)
-        listed = ', '.join(peers[:3]) + (f' and {len(peers) - 3} more' if len(peers) > 3 else '')
-        return [{'tone': 'amber', 'icon': 'globe', 'page': 'security', 'title': f'Requests through {listed} are not from a trusted proxy',
-                 'text': f'These requests name a forwarded client address, which Evlet ignores, so sign-in limits and allowed networks see '
-                         f'the proxy instead of each person. If Evlet runs behind a proxy at this address, add {line} to {where} and restart.',
-                 'line': line}]
+        items = []
+        for peer in auth.forwarded_peers()[:5]:
+            line = trusted_proxies_line(auth.trusted_proxies, [peer])
+            items.append({'tone': 'amber', 'icon': 'globe', 'page': 'security', 'title': f'Requests from {peer} name a forwarded client address',
+                          'text': f'Evlet ignores the forwarded address because {peer} is not a trusted proxy, so sign-in limits and allowed networks '
+                                  f'see {peer} instead of each person. Add this only if {peer} is your reverse proxy: put {line} in {where} and restart. '
+                                  'Any other device can send these headers, so otherwise leave it out.',
+                          'line': line})
+        return items
 
     # ---------- HTTP ----------
 

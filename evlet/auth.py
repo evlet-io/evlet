@@ -1,5 +1,6 @@
 """Local accounts and revocable cookie sessions for a single application database."""
 
+from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
@@ -32,8 +33,10 @@ _HASH_SLOTS = BoundedSemaphore(2)
 # API keys: evk_<8-character prefix>_<secret>. Only the SHA-256 of the whole key is stored.
 API_KEY = re.compile(r'(evk_[a-z0-9]{8})_[A-Za-z0-9_-]{43}')
 KEY_RATE, KEY_FAILURES = 300, 20  # requests per key and failed keys per network, each per minute and process
-# A peer that sends forwarded headers without being a trusted proxy is written at most this often per process.
-FORWARDED_NOTE_SECONDS = 600
+# A peer that sends forwarded headers without being a trusted proxy is noted after FORWARDED_REQUESTS such
+# requests within FORWARDED_NOTE_SECONDS, and written at most that often per peer and process. Each process
+# remembers FORWARDED_CACHE peers (the oldest is dropped) and the table keeps the newest FORWARDED_ROWS.
+FORWARDED_NOTE_SECONDS, FORWARDED_REQUESTS, FORWARDED_CACHE, FORWARDED_ROWS = 600, 20, 64, 50
 logger = logging.getLogger(__name__)
 
 
@@ -181,7 +184,7 @@ class LocalAuth:
         self.trusted_proxies = proxy_networks(trusted_proxies)
         self._proxy_networks = [ipaddress.ip_network(value) for value in self.trusted_proxies]
         # Peers whose forwarded headers were ignored, with when this process last wrote them down.
-        self._forwarded = {}
+        self._forwarded = OrderedDict()
         if cookie_name not in ('evlet_session', '__Host-evlet_session') or (cookie_name.startswith('__Host-') and not secure_cookies):
             raise ValueError('Invalid session cookie configuration')
         self.cookie_name = cookie_name
@@ -306,16 +309,25 @@ class LocalAuth:
             return
         address, now = str(ip), int(time.time())
         with self._key_lock:
-            if now - self._forwarded.get(address, 0) < FORWARDED_NOTE_SECONDS:
+            # [window start, requests in the window, last written]
+            entry = self._forwarded.get(address) or [now, 0, 0]
+            if now - entry[0] >= FORWARDED_NOTE_SECONDS:
+                entry[0], entry[1] = now, 0
+            entry[1] += 1
+            self._forwarded[address] = entry
+            self._forwarded.move_to_end(address)
+            while len(self._forwarded) > FORWARDED_CACHE:
+                self._forwarded.popitem(last=False)
+            # One stray request is not a proxy: only a steady stream from the peer is noted.
+            if entry[1] < FORWARDED_REQUESTS or now - entry[2] < FORWARDED_NOTE_SECONDS:
                 return
-            if len(self._forwarded) >= 64:
-                self._forwarded.clear()
-            self._forwarded[address] = now
+            entry[2] = now
         try:
             with self.database.transaction() as tx:
                 tx.connection.execute('INSERT INTO evlet_forwarded_peers(peer,last_seen) VALUES (?,?) ON CONFLICT(peer) DO UPDATE SET last_seen=excluded.last_seen',
                                       (address, now))
-                tx.connection.execute('DELETE FROM evlet_forwarded_peers WHERE last_seen<?', (now - 7 * 86400,))
+                tx.connection.execute('DELETE FROM evlet_forwarded_peers WHERE last_seen<? OR peer NOT IN '
+                                      '(SELECT peer FROM evlet_forwarded_peers ORDER BY last_seen DESC, peer LIMIT ?)', (now - 7 * 86400, FORWARDED_ROWS))
         except Exception:
             logger.warning('Could not note that %s sends forwarded headers without being a trusted proxy.', address, exc_info=True)
 

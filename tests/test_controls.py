@@ -196,39 +196,66 @@ def test_forwarded_headers_from_an_untrusted_proxy_are_ignored_and_shown_under_n
     app.initialize()
     add_user(app, 'admin', 'admin')
     admin = client(app)
-    assert admin('GET', '/api/_controls/state')[1]['attention'] == []
-    writes = []
-    note = LocalAuth.note_forwarded
-    monkeypatch.setattr(LocalAuth, 'note_forwarded', lambda self, scope: (writes.append(scope['client'][0]), note(self, scope))[1])
+    forwarded = {b'x-forwarded-for': b'203.0.113.5'}
+    def peers():
+        with database._connection() as db:
+            return [row[0] for row in db.execute('SELECT peer FROM evlet_forwarded_peers ORDER BY peer')]
+    globe = lambda: [item for item in admin('GET', '/api/_controls/state')[1]['attention'] if item['icon'] == 'globe']
     # Normal use: the header is ignored, so the proxy's own address is the client.
-    state = admin('GET', '/api/_controls/state', headers={b'x-forwarded-for': b'203.0.113.5'})[1]
-    assert state['client'] == '127.0.0.1'
-    item = next(item for item in state['attention'] if item['icon'] == 'globe')
-    assert item['page'] == 'security' and '127.0.0.1' in item['title'] and item['line'] == 'trusted_proxies=("127.0.0.1",)'
-    assert 'add trusted_proxies=("127.0.0.1",) to LocalAuth(...)' in item['text']
-    # Further requests are noted in memory only: no write until ten minutes have passed.
-    with database._connection() as db:
-        before = db.execute('SELECT last_seen FROM evlet_forwarded_peers').fetchall()
-    for _ in range(5):
+    assert admin('GET', '/api/_controls/state', headers=forwarded)[1]['client'] == '127.0.0.1'
+    # A few requests are not a proxy: nothing is noted until a steady stream arrives.
+    for _ in range(auth_module.FORWARDED_REQUESTS - 2):
         admin('GET', '/api/schema', headers={b'forwarded': b'for=203.0.113.5'})
+    assert peers() == [] and globe() == []
+    admin('GET', '/api/schema', headers=forwarded)
+    [item] = globe()
+    assert item['page'] == 'security' and item['title'] == 'Requests from 127.0.0.1 name a forwarded client address'
+    assert item['line'] == 'trusted_proxies=("127.0.0.1",)' and 'Add this only if 127.0.0.1 is your reverse proxy' in item['text']
+    assert 'put trusted_proxies=("127.0.0.1",) in LocalAuth(...)' in item['text']
+    # Further requests stay in memory: no write until ten minutes have passed.
     with database._connection() as db:
-        assert db.execute('SELECT last_seen FROM evlet_forwarded_peers').fetchall() == before
-    monkeypatch.setattr(auth_module.time, 'time', lambda: before[0][0] + 601)
-    admin('GET', '/api/schema', headers={b'x-forwarded-for': b'203.0.113.5'})
-    monkeypatch.undo()
+        before = db.execute('SELECT last_seen FROM evlet_forwarded_peers').fetchone()[0]
+    for _ in range(30):
+        admin('GET', '/api/schema', headers=forwarded)
     with database._connection() as db:
-        assert db.execute('SELECT last_seen FROM evlet_forwarded_peers').fetchone()[0] == before[0][0] + 601
-    # Public peers are people behind their own proxies, and trusted peers are working as configured.
-    admin('GET', '/api/schema', client='93.184.216.34', headers={b'x-forwarded-for': b'10.0.0.1'})
-    with database._connection() as db:
-        assert [row[0] for row in db.execute('SELECT peer FROM evlet_forwarded_peers')] == ['127.0.0.1']
-    # Once the proxy is listed the item goes away, without waiting for the note to expire.
+        assert db.execute('SELECT last_seen FROM evlet_forwarded_peers').fetchone()[0] == before
+    # Another device on the network, even without signing in, gets its own item and line, never a merged one.
+    for _ in range(auth_module.FORWARDED_REQUESTS):
+        http(app, 'GET', '/api/auth/session', client='10.0.0.7', headers=forwarded)
+    items = globe()
+    assert sorted(item['line'] for item in items) == ['trusted_proxies=("10.0.0.7",)', 'trusted_proxies=("127.0.0.1",)']
+    assert all(item['text'].count('Add this only if') == 1 for item in items)
+    # Public peers are people behind their own proxies.
+    for _ in range(auth_module.FORWARDED_REQUESTS):
+        admin('GET', '/api/schema', client='93.184.216.34', headers={b'x-forwarded-for': b'10.0.0.1'})
+    assert peers() == ['10.0.0.7', '127.0.0.1']
+    # Once the proxy is listed its item goes away, without waiting for the note to expire.
     database.close()
     database = Database(tmp_path / 'proxy.sqlite3', registry)
     trusted = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, trusted_proxies=('127.0.0.1',)))
     trusted.initialize()
     state = client(trusted)('GET', '/api/_controls/state', headers={b'x-forwarded-for': b'10.9.9.9'})[1]
-    assert state['client'] == '10.9.9.9' and not any(item['icon'] == 'globe' for item in state['attention'])
+    assert state['client'] == '10.9.9.9' and [item['line'] for item in state['attention'] if item['icon'] == 'globe'] == ['trusted_proxies=("127.0.0.1", "10.0.0.7")']
+    database.close()
+
+
+def test_forwarded_peer_notes_stay_bounded(tmp_path, monkeypatch):
+    import evlet.auth as auth_module
+    database = Database(tmp_path / 'bounded.sqlite3', registry)
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False)
+    auth.initialize()
+    scope = lambda index: {'client': (f'10.1.{index // 250}.{index % 250 + 1}', 1), 'headers': []}
+    # The in-memory cache drops the peer it saw longest ago, so a busy proxy keeps its count.
+    for index in range(auth_module.FORWARDED_CACHE + 6):
+        auth.note_forwarded(scope(0))
+        auth.note_forwarded(scope(index + 1))
+    assert len(auth._forwarded) == auth_module.FORWARDED_CACHE and '10.1.0.1' in auth._forwarded and '10.1.0.2' not in auth._forwarded
+    # The table keeps the newest peers only.
+    monkeypatch.setattr(auth_module, 'FORWARDED_REQUESTS', 1)
+    for index in range(auth_module.FORWARDED_ROWS + 10):
+        auth.note_forwarded(scope(500 + index))
+    with database._connection() as db:
+        assert db.execute('SELECT count(*) FROM evlet_forwarded_peers').fetchone()[0] == auth_module.FORWARDED_ROWS
     database.close()
 
 

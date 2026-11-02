@@ -183,14 +183,17 @@ default, and `routes.py` can't set it. The public limit, sign-in throttling, fir
 setup, the Controls allowlist and `/_/tls-allowed` use this address. Python code reads it with
 `LocalAuth.client_address(scope)`, or `evlet.auth.client_address(scope, trusted_proxies)`.
 
-Evlet never trusts a proxy on its own. When an API request carries `X-Forwarded-For` or
+Evlet never trusts a proxy on its own. When API requests carry `X-Forwarded-For` or
 `Forwarded` from a peer on this machine or a private network that is not a trusted proxy,
-the header is still ignored, and the peer is noted: in memory per process, and in the
-`evlet_forwarded_peers` table at most once every 10 minutes per peer, so a busy proxy causes
-no stream of writes. Controls then shows it under **Needs attention** for a day, with the
-exact line to add, such as `trusted_proxies=("127.0.0.1",)`. The item goes away as soon as
-the instance trusts that address. Peers with public addresses are clients behind their own
-proxies and are not noted.
+the header is still ignored. A peer that sends 20 such requests within 10 minutes is noted:
+each process counts in memory (64 peers at most, the one seen longest ago dropped first) and
+writes the `evlet_forwarded_peers` table at most once every 10 minutes per peer; the table keeps
+the newest 50 peers. Controls then shows each peer under **Needs attention** for a day, as its
+own item with its own line, such as `trusted_proxies=("127.0.0.1",)`, and the advice to add it
+only if that address is your reverse proxy: any device on the network can send these headers,
+before signing in, so the lines are never merged. The item goes away as soon as the instance
+trusts that address. Peers with public addresses are clients behind their own proxies and are
+not noted.
 
 The Playground has a working example: `examples/playground/portal` is a static portal
 served at `http://portal.localhost:8000` (and `/portal`), limited to customers and
