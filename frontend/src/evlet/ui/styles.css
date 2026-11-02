@@ -769,6 +769,10 @@ th:hover>.rz::after{background:var(--border-strong)}
 
 /* ---------- list tables ---------- */
 .dt.fixed{table-layout:fixed}
+/* Columns keep their set widths; when the frame is wider than their total, the last column takes the rest,
+   so the header band and row rules reach the right edge. */
+.dt.fixed,table.g{min-width:100%}
+.dt.fixed col:last-child,table.g col:last-child{width:auto!important}
 .dt.fixed td,.dt.fixed th{overflow:hidden;text-overflow:ellipsis}
 .dt th{position:sticky;top:0}
 .dt .stk{position:sticky;z-index:1;background:var(--surface)}
