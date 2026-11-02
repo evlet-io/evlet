@@ -876,3 +876,121 @@ def check_an_effect_source_is_not_a_relation(books):
                                    check_measures_over_a_target_follow_row_scope, check_an_effect_source_is_not_a_relation])
 def test_effects_beside_numbers_measures_and_relations(tmp_path, check):
     check(stacked_books(Database(tmp_path / 'stacked.sqlite3', Registry(*STACKED))))
+
+
+# The Journal (Phase 8): `effects` entries when a move posts rows and when a void writes their mirrors
+
+def history(c, url):
+    status, body, _ = c('GET', f'{url}/journal')
+    assert status == 200, body
+    return body['items']
+
+
+def check_the_journal_records_postings_and_reversals(books):
+    app, c, account = books
+    url = invoice(c, account)
+    assert move(c, url, 'issued')[0] == 200
+    # Newest first: the move, then the rows it posted in the same transaction.
+    posted, moved = history(c, url)[:2]
+    assert moved['kind'] == 'moved' and moved['data']['to'] == 'issued'
+    assert posted['kind'] == 'effects' and 'partial' not in posted
+    assert posted['data'] == {'targets': [{'target': 'ledgerentry', 'rows': 3, 'reversal': False, 'balanced': True},
+                                          {'target': 'stockmove', 'rows': 2, 'reversal': False}]}
+    # Moving on posts nothing, so no entry is written.
+    assert move(c, url, 'paid')[0] == 200 and [item['kind'] for item in history(c, url)][:2] == ['moved', 'effects']
+    url = invoice(c, account)
+    move(c, url, 'issued')
+    assert c('POST', f'{url}/void', {'reason': 'Wrong customer'}, headers=etag(c, url))[0] == 200
+    reversed_rows, voided = history(c, url)[:2]
+    assert voided['kind'] == 'voided' and voided['data']['reason'] == 'Wrong customer'
+    assert reversed_rows['kind'] == 'effects' and reversed_rows['data'] == {
+        'targets': [{'target': 'ledgerentry', 'rows': 3, 'reversal': True, 'balanced': True},
+                    {'target': 'stockmove', 'rows': 2, 'reversal': True}]}
+    assert c('GET', url)[1]['_journal']['count'] == len(history(c, url))
+    from evlet import journal
+    assert journal.verify(app.database)[1] == []
+
+
+def test_the_journal_records_postings_and_reversals(books):
+    check_the_journal_records_postings_and_reversals(books)
+
+
+def test_journal_effects_entries_hide_targets_the_reader_cannot_read(books, tmp_path):
+    app, c, account = books
+    editor, viewer = add_user(app, 'editor'), add_user(app, 'viewer')
+    url = invoice(c, account)
+    move(c, url, 'issued')
+    # The editor reads ledger entries but not their amounts, so the balance is removed.
+    entry = history(editor, url)[0]
+    assert entry['kind'] == 'effects' and entry['partial'] is True
+    assert entry['data'] == {'targets': [{'target': 'ledgerentry', 'rows': 3, 'reversal': False},
+                                         {'target': 'stockmove', 'rows': 2, 'reversal': False}]}
+    # The viewer cannot read ledger entries at all.
+    entry = history(viewer, url)[0]
+    assert entry['partial'] is True and entry['data'] == {'targets': [{'target': 'stockmove', 'rows': 2, 'reversal': False}]}
+
+    class Hidden(Model):
+        permissions = {'admin': Rule(('read',)), 'editor': Rule(()), 'viewer': Rule(())}
+        item = Text(default='')
+        source = Reference()
+        reversal = Boolean(default=False)
+
+    class Job(Model):
+        Meta = type('Meta', (FiniteMeta,), {'effects': (Effect(Hidden, rows='rows', on='done'),)})
+        permissions = ALL
+        status = State(('open', 'done'), moves=(Move('open', 'done', 'Done'),), locked=('done',))
+
+        def rows(self):
+            return [{'item': 'x'}]
+    other = start(Database(tmp_path / 'hidden.sqlite3', Registry(Hidden, Job)))
+    admin, editor = client(other), add_user(other, 'editor')
+    url = f"/api/job/{editor('POST', '/api/job', {})[1]['id']}"
+    assert move(editor, url, 'done')[0] == 200
+    # A reader of no target sees a `changed` entry with nothing in it, like a move whose State it cannot read.
+    assert history(editor, url)[0] == {**history(editor, url)[0], 'kind': 'changed', 'data': {}, 'partial': True}
+    assert history(admin, url)[0]['data'] == {'targets': [{'target': 'hidden', 'rows': 1, 'reversal': False}]}
+
+
+def check_a_rolled_back_move_leaves_no_effects_entry(books, monkeypatch):
+    from evlet import journal
+    from evlet.auth import User
+    app, c, office = books
+    record_id = bill(c, office)
+    # The number entry is written after the effects entry; failing there rolls the savepoint back.
+    def fail(*args):
+        raise RuntimeError('number entry failed')
+    with app.business.context(User(1, 'admin', 'admin')) as context:
+        monkeypatch.setattr(journal, 'number', fail)
+        with pytest.raises(RuntimeError):
+            context.move(Bill, record_id, 'issued')
+        monkeypatch.undo()
+    assert [item['kind'] for item in history(c, f'/api/bill/{record_id}')] == ['created']
+    assert entries(app, 'posting') == [] and entries(app, 'audit') == []
+    assert move(c, f'/api/bill/{record_id}', 'issued')[0] == 200
+    assert [item['kind'] for item in history(c, f'/api/bill/{record_id}')] == ['number', 'effects', 'moved', 'created']
+
+
+def test_a_rolled_back_move_leaves_no_effects_entry(tmp_path, monkeypatch):
+    check_a_rolled_back_move_leaves_no_effects_entry(stacked_books(Database(tmp_path / 'stacked.sqlite3', Registry(*STACKED))), monkeypatch)
+
+
+def test_models_with_effects_journal_by_default(tmp_path):
+    from evlet import Journal
+    from evlet.journal import compile_journals
+    assert Registry(*MODELS).journals[Invoice] == Journal()
+    # Effects need a State, which journals already; the rule names Effects too, so a model is journaled by either.
+    plain = type('Loose', (Model,), {'name': Text(default='')})
+    assert compile_journals((plain,), (), {plain: ()}) == {plain: Journal()} and compile_journals((plain,), ()) == {}
+    # Meta.journal = None is the one way out: rows are posted, no entry is written.
+    class Quiet(Model):
+        Meta = type('Meta', (FiniteMeta,), {'journal': None, 'effects': (Effect(StockMove, rows='rows', on='done'),)})
+        permissions = ALL
+        status = State(('open', 'done'), moves=(Move('open', 'done', 'Done'),), locked=('done',))
+
+        def rows(self):
+            return [{'item': 'x', 'qty': '1'}]
+    app = start(Database(tmp_path / 'quiet.sqlite3', Registry(StockMove, Quiet)))
+    c = client(app)
+    url = f"/api/quiet/{c('POST', '/api/quiet', {})[1]['id']}"
+    assert Quiet not in app.business.journals and move(c, url, 'done')[0] == 200
+    assert len(entries(app, 'stockmove')) == 1 and c('GET', f'{url}/journal')[0] == 404

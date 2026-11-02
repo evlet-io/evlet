@@ -259,6 +259,8 @@ class Context:
         if reaction:
             freeze_draft(before)
             reaction(before, Change('delete', user, freeze(before.stored_values()), None, (), freeze(child_changes)))
+        from . import journal
+        journal.deleted(self, model, record.id)
         business.changed(tx, model, record_id, deleted=True)
 
     def _write(self, model, record_id, values, *, action=None, arguments=None, move=None):
@@ -1292,10 +1294,16 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     if reaction is not None:
         freeze_draft(draft)
         reaction(draft, change)
+    # The Journal entry of this write: `moved` through the move hook, otherwise `created` or `changed`.
     if declared_move is not None:
         from .effects import post
-        post(context, model, record.id, declared_move.to)
-        states.moved(context, model, record.id, before._values.get(model.__state__), declared_move)
+        from . import journal
+        posted = post(context, model, record.id, declared_move.to)
+        states.moved(context, model, record.id, before._values.get(model.__state__), declared_move, before, draft)
+        journal.effects_posted(context, model, record.id, posted)
+    else:
+        from . import journal
+        journal.written(context, model, record.id, before, draft, action=action)
     for name, number in numbers:
         sequences.assigned(context, model, record.id, name, number)
     business.changed(tx, model, record.id)

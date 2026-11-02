@@ -204,5 +204,5 @@ existing rows should get the lower numbers.
 * `evlet.sequences.clear_for_copy(model, values)` returns a copy of `values` with every
   Sequence set to null. `evlet.corrections.prepare_copy()` calls it on a revision's copy.
 * `evlet.sequences.assigned(context, model, record_id, field, number)` is called once per
-  assigned number after the record is saved, in its transaction. The Journal (Phase 8)
-  records the assignment there.
+  assigned number after the record is saved, in its transaction. It writes the Journal's
+  `number` entry ([journal.md](journal.md)).

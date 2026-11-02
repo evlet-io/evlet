@@ -696,7 +696,10 @@ def test_reading_a_stated_document_costs_at_most_one_more_statement(tmp_path):
         (status, body, _), counts[name] = counted(c, 'GET', f"/api/{name}/{record['id']}")
         assert status == 200
     assert body['_moves'] == [{'to': 'issued', 'label': 'Issue', 'allowed': True}] and body['_actions'][0]['allowed'] is True
-    assert counts['bigstated'] <= counts['bigplain'] + 1, counts
+    # One statement for the guards over saved values, and one for the journal summary (`_journal`),
+    # since a model with a State journals by default.
+    assert body['_journal'] == {'count': 1, 'open_follow_ups': 0}
+    assert counts['bigstated'] <= counts['bigplain'] + 2, counts
 
 
 # Remaining lock and leak gaps
@@ -884,4 +887,5 @@ def test_guards_over_rows_reuse_the_rows_the_detail_loaded(tmp_path):
         (status, body, _), counts[name] = counted(c, 'GET', f"/api/{name}/{record['id']}")
         assert status == 200
     assert body['_moves'] == [{'to': 'issued', 'label': 'Issue', 'allowed': True}] and body['_actions'][0]['allowed'] is True
-    assert counts['bigrowguard'] <= counts['bigplain'] + 1, counts
+    # The second extra statement is the journal summary (`_journal`) of a model with a State.
+    assert counts['bigrowguard'] <= counts['bigplain'] + 2, counts

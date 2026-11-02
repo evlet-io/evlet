@@ -1,6 +1,6 @@
 """A finite-v1 document: one formula definition for browser previews and server saves."""
 from evlet import (Model, Child, Table, Decimal, Currency, Boolean, Text, Rule, Link, Date, Integer, Percent, Tags, State, Move,
-                   Sequence, Reference, Effect, action, Count, Sum)
+                   Sequence, Reference, Effect, action, Count, Sum, Journal)
 from evlet.calc import F, days, parent, round, when
 from amendment.models.masters import Company
 
@@ -33,6 +33,9 @@ class Quote(Model):
         # Winning a quote posts one row to the sales ledger in the same transaction. A won quote is final,
         # so it is never voided and the effect needs no reverse.
         effects = (Effect(SalesLedger, rows='ledger_rows', on='won'),)
+        # A quote has a State, so it keeps a journal anyway; tamper_evident also chains each entry's hash
+        # (GET or POST /api/quote/{id}/journal; evlet journal verify <instance> checks the chains).
+        journal = Journal(tamper_evident=True)
 
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}

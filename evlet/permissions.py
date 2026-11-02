@@ -71,8 +71,11 @@ class Policy:
         self.rules = MappingProxyType(self.rules)
         for (role, model), rule in self.rules.items():
             registry.name_for(model)
-            if role not in ROLES or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', *CORRECTIONS}:
+            if role not in ROLES or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', 'journal', *CORRECTIONS}:
                 raise ValueError('Invalid permission rule')
+            if 'journal' in rule.operations and model not in registry.journals:
+                raise ValueError(f'{model.__name__}: Rule names \'journal\', but the model has no journal '
+                                 '(declare Meta.journal = Journal() or a State)')
             if 'revise' in rule.operations and 'create' not in rule.operations:
                 raise ValueError(f'{model.__name__}: Rule names \'revise\' without \'create\'; a revise creates a draft copy')
             for operation in CORRECTIONS:
@@ -99,6 +102,20 @@ class Policy:
                     named.add('admin')
                 corrections[model, operation] = frozenset(named)
         self.corrections = MappingProxyType(corrections)
+        # Journal entries (notes, messages, calls, follow ups): admin when its Rule reads the model, the
+        # editor when its Rule reads and updates it, and every role whose Rule names 'journal'. Naming a
+        # role only adds it, like void and revise.
+        journalers = {}
+        for model in registry.journals:
+            operations = {role: self.rules.get((role, model), Rule(('read',) if role == 'viewer' else ('read', 'create', 'update', 'delete'))).operations
+                          for role in ROLES}
+            named = {role for role in ROLES if 'journal' in operations[role]}
+            if 'read' in operations['admin']:
+                named.add('admin')
+            if {'read', 'update'} <= set(operations['editor']):
+                named.add('editor')
+            journalers[model] = frozenset(named)
+        self.journalers = MappingProxyType(journalers)
 
     def rule(self, user, model):
         return self.rules.get((user.role, model), Rule(('read',) if user.role == 'viewer' else ('read', 'create', 'update', 'delete')))
@@ -109,6 +126,8 @@ class Policy:
             return False
         if operation in CORRECTIONS:
             return user.role in self.corrections.get((model, operation), ())
+        if operation == 'journal':
+            return user.role in self.journalers.get(model, ())
         return operation in self.rule(user, model).operations
 
     def require(self, user, model, operation):

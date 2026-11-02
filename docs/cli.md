@@ -47,6 +47,7 @@ evlet serve acme --port 8000
 evlet dev --instance acme
 evlet migrate acme --trust
 evlet effects check acme
+evlet journal verify acme
 evlet playground --port 8000
 evlet docs --port 8001
 ```
@@ -67,6 +68,10 @@ implicitly. Stop the server and run `migrate` after adding a migration. Normal
 `serve` checks locked source versions and content; run `migrate` to record an
 intentional source change. Use `serve --jobs` to enable the short-task queue in
 that process. No worker is mandatory.
+
+`journal verify` checks the hash chains of tamper-evident record journals in an
+instance's database, read only and in one snapshot. It prints one line per break and
+exits with 1 when there is any; see the [journal guide](journal.md).
 
 `playground` works outside a project, uses temporary demo data, and removes that
 data on exit. It runs the existing framework examples, layouts and Projects demo.

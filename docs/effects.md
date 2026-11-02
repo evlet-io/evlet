@@ -166,6 +166,8 @@ each original row of every effect with a `reverse`:
   rolls back. A balanced effect also checks the balance of the mirror rows.
 * Original rows are never changed or deleted. A record whose rows were reversed already is
   not reversed again.
+* The record's [Journal](journal.md) gets an `effects` entry with `"reversal": true` after the
+  `voided` entry; a move that posts rows gets one with `"reversal": false` after `moved`.
 * Revising a void record that has no revision yet does not void it again, so nothing is
   reversed a second time. The revision is a new draft with no rows; it posts its own rows when
   it enters `on`.

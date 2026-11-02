@@ -289,8 +289,10 @@ def fixed(sequence, values, saved, shown=True):
 def assigned(context, model, record_id, name, number):
     """Called once per assigned number after the record is saved, in its transaction.
 
-    The Journal (Phase 8) records the assignment here.
+    Writes the Journal's `number` entry; numbers never appear in `created` or `changed` entries.
     """
+    from . import journal
+    journal.number(context, model, record_id, name, number)
 
 
 def clear_for_copy(model, values):

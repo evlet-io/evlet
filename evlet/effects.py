@@ -534,12 +534,24 @@ def rows_of(context, bound, document):
                       f'{bound.source.__name__}.{bound.rows} could not produce the {bound.target.__name__} rows') from None
 
 
+def journal_item(business, bound, drafts, *, reversal):
+    """One target of a Journal `effects` entry: how many rows were written, whether they reverse
+    earlier rows and, for a balanced effect, whether they balance (always true once written)."""
+    item = {'target': business.registry.name_for(bound.target), 'rows': len(drafts), 'reversal': reversal}
+    if bound.balanced is not None:
+        item['balanced'] = is_balanced(bound, [normalized(draft) for draft in drafts])
+    return item
+
+
 def post(context, model, record_id, state):
-    """Called once a move into `state` is saved, in its transaction: write the rows of every effect on it."""
+    """Called once a move into `state` is saved, in its transaction: write the rows of every effect on it.
+
+    Returns the Journal items of the targets that received rows (see `journal_item`)."""
     business, tx = context._business, context._tx
     bounds = [bound for bound in business.registry.effects.get(model, ()) if bound.on == state]
     if not bounds:
-        return
+        return []
+    written = []
     document = load_document(business, tx, model, record_id)
     engine = engine_context(business, tx)
     for bound in bounds:
@@ -552,6 +564,9 @@ def post(context, model, record_id, state):
             raise failure(business, context.user, bound, balance_message(business, context.user, bound, values))
         for draft in drafts:
             write(engine, bound, draft)
+        if drafts:
+            written.append(journal_item(business, bound, drafts, reversal=False))
+    return written
 
 
 def posted(tx, registry, bound, record_ids):
@@ -581,9 +596,12 @@ def mirror_values(bound, values):
 
 
 def reverse(context, model, record_id):
-    """Called when a record is voided: write a mirror row for each original row, marked as a reversal."""
+    """Called when a record is voided: write a mirror row for each original row, marked as a reversal.
+
+    Returns the Journal items of the targets that received mirror rows."""
     business, tx = context._business, context._tx
     engine = engine_context(business, tx)
+    written = []
     for bound in business.registry.effects.get(model, ()):
         if bound.reverse is None:
             continue
@@ -602,6 +620,8 @@ def reverse(context, model, record_id):
             raise failure(business, context.user, bound, balance_message(business, context.user, bound, values, 'The reversal of the '))
         for draft in drafts:
             write(engine, bound, draft)
+        written.append(journal_item(business, bound, drafts, reversal=True))
+    return written
 
 
 # Details and schema
