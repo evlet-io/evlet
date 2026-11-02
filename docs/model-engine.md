@@ -243,6 +243,13 @@ fields whose `applies_when` is false are stored as null, matching the results. S
 models without tables or query sources. Like other operations, Recompute is not replayed
 when a database adopts its baseline (a fresh database, or one initialized without history).
 
+Recompute skips records whose document is in a locked state or has posted effects: they keep
+their saved results and their recorded formula version, so the effect rows they posted still
+match. `database.migrate()` returns the applied migration names as a list whose `skipped`
+attribute counts the records kept, and the `evlet.migrations` logger reports the count. Each
+record Recompute changes gets a `recomputed` [Journal](journal.md) entry when its model
+journals.
+
 Back up existing databases before migrating. A backup is not a rollback command:
 restoring it after later writes would discard those newer writes.
 

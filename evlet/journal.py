@@ -33,8 +33,9 @@ INDEX = 'CREATE INDEX IF NOT EXISTS evlet_journal_record ON evlet_journal (model
 # Models that have declared tamper_evident=True; verify() treats their unhashed entries as breaks.
 HASHED = 'CREATE TABLE IF NOT EXISTS evlet_journal_hashed (model TEXT PRIMARY KEY)'
 APPEND_ONLY = 'The journal is append only'
-# Kinds the engine writes; `effects` is written by effects_posted() after a move posts or a void reverses effect rows.
-ENGINE_KINDS = ('created', 'changed', 'moved', 'voided', 'revised', 'number', 'file', 'deleted', 'effects')
+# Kinds the engine writes; `effects` is written by effects_posted() after a move posts or a void reverses effect rows,
+# and `recomputed` by a Recompute migration that changed a record's stored results.
+ENGINE_KINDS = ('created', 'changed', 'moved', 'voided', 'revised', 'number', 'file', 'deleted', 'effects', 'recomputed')
 # Kinds people write through HTTP (or journal.post), and the values each takes.
 USER_KINDS = ('note', 'message', 'call', 'follow_up', 'follow_up_done')
 VALUES = {'note': ('text',), 'message': ('text', 'subject', 'party', 'direction'),
@@ -133,20 +134,36 @@ def actor_of(user):
 
 def append(business, tx, user, model, record_id, kind, data):
     """Write one entry in this transaction and return its id. Callers have checked permissions."""
-    name = business.registry.name_for(model)
-    actor, at, text = actor_of(user), now(), canonical(data)
+    return insert(tx.connection, business.registry, model, record_id, kind, actor_of(user), data)
+
+
+def insert(connection, registry, model, record_id, kind, actor, data):
+    name = registry.name_for(model)
+    at, text = now(), canonical(data)
     prev_hash = digest = None
-    if business.journals[model].tamper_evident:
+    if registry.journals[model].tamper_evident:
         # Writers are serialized (SQLite BEGIN IMMEDIATE, a PostgreSQL transaction lock), so the
         # previous entry cannot change before this one commits.
-        row = tx.connection.execute('SELECT hash FROM evlet_journal WHERE model=? AND record_id=? ORDER BY id DESC LIMIT 1',
-                                    (name, record_id)).fetchone()
+        row = connection.execute('SELECT hash FROM evlet_journal WHERE model=? AND record_id=? ORDER BY id DESC LIMIT 1',
+                                 (name, record_id)).fetchone()
         prev_hash = None if row is None else row[0]
         digest = entry_hash(name, record_id, kind, actor, at, text, prev_hash)
-    row = tx.connection.execute('INSERT INTO evlet_journal (model, record_id, kind, actor, at, data, prev_hash, hash) '
-                                'VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
-                                (name, record_id, kind, actor, at, text, prev_hash, digest)).fetchone()
+    row = connection.execute('INSERT INTO evlet_journal (model, record_id, kind, actor, at, data, prev_hash, hash) '
+                             'VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+                             (name, record_id, kind, actor, at, text, prev_hash, digest)).fetchone()
     return row[0]
+
+
+def recomputed(connection, registry, changes, *, postgres=False):
+    """`recomputed` entries, as the engine, for the records a Recompute migration changed:
+    {(model, record_id): {"fields": ..., "rows": ...}} in the shape of a `changed` entry."""
+    changes = {key: data for key, data in changes.items() if key[0] in registry.journals}
+    if not changes:
+        return
+    ensure_table(connection, postgres=postgres,
+                 hashed=[registry.name_for(model) for model, journal in registry.journals.items() if journal.tamper_evident])
+    for (model, record_id), data in sorted(changes.items(), key=lambda item: (registry.name_for(item[0][0]), item[0][1])):
+        insert(connection, registry, model, record_id, 'recomputed', ENGINE, data)
 
 
 def skipped(business, model):
@@ -487,7 +504,7 @@ def present(business, user, model, row, visibility, done):
     readable = policy.fields(user, model)
     state_shown = model.__state__ is not None and model.__state__ in readable
     partial = False
-    if kind in ('created', 'changed', 'moved'):
+    if kind in ('created', 'changed', 'moved', 'recomputed'):
         shown, partial = shown_changes(business, user, model, data, visibility)
         # Which action ran says something about the state it was available in.
         if 'action' in data and (model.__state__ is None or state_shown):

@@ -96,7 +96,8 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
 * A locked record keeps its saved results. An ordinary write changes only the
   `editable_when_locked` fields; every calculated value, at every depth, keeps the value it
   had when the record was locked, even if a linked record or today's date changed since.
-  Moves and actions settle normally and recalculate. So that this stays consistent, a
+  Moves and actions settle normally and recalculate, unless the record has postings (below).
+  So that this stays consistent, a
   stored result (at any depth of the document) may not read an `editable_when_locked`
   field; registration fails with a message naming the field. This covers finite formulas,
   legacy string formulas (`compute="sum(lines.extra)"`), reads through virtual results,
@@ -113,6 +114,14 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
   or action on such a record recalculates, so it answers 409 `SCHEMA_VERSION_MISMATCH`;
   send `{"_calculation": {"model_schema_hash": "<active hash>", "recalculate": true}}` as
   the body of the move (or with the action) to recalculate with the active formulas.
+* A record with posted [effects](effects.md) (it is the source of effect rows and is not
+  void) keeps its stored calculated values for every writer. Moves and actions on it keep
+  the saved values, at every depth, like ordinary locked writes do, even after a linked
+  record or a formula changed; they need no recalculation request. `"recalculate": true`
+  on such a record is refused with 409 `This record has postings. To change its totals,
+  void or revise it.` Corrections go through void or revise only.
+* The `Recompute` migration operation skips locked records and records with postings; a
+  locked record keeps its saved results.
 * Deleting a record in a locked state is refused with 409. Corrections use void and revise
   (below).
 * Uploading or removing an attachment is an ordinary write: on a locked record it is

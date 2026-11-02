@@ -154,6 +154,21 @@ the engine:
 
 Reads follow the target's normal permissions and row scopes.
 
+## Posted records keep their totals
+
+Once a record has posted (it is the source of effect rows and is not void), its stored
+calculated values are frozen for every writer, so the rows it posted keep matching it:
+
+* Moves and actions on it keep the saved calculated values at every depth, like ordinary
+  writes on a locked record, even when a linked record or a formula changed since. They need
+  no recalculation request after a deploy that changes formulas.
+* `"_calculation": {"recalculate": true}` on it is refused with 409: `This record has
+  postings. To change its totals, void or revise it.`
+* The `Recompute` migration operation skips it (and every locked record) and reports how
+  many records it kept.
+
+To correct the totals of a posted record, void it or revise it.
+
 ## Void and revise
 
 When a record is voided (or revised, which voids it), the engine writes one mirror row for
@@ -244,8 +259,9 @@ can only be reached through `on` must have rows. When a state could also be reac
 way, the record is compared only when it has rows. A void record that posted must also have
 one mirror row for each row it should have posted.
 
-A record changed after posting, for example by an action on a locked record, is reported as
-`changed`: the saved rows no longer match the record.
+A posted record keeps its saved totals (see above), so moves, actions and `Recompute`
+leave the check clean. A record changed after posting by other means, for example a
+maintenance write, is reported as `changed`: the saved rows no longer match the record.
 
 ## Notes and limits
 

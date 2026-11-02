@@ -450,6 +450,13 @@ route first. Formula changes never backfill stored totals on their own; use the 
 migration operation ([model-engine.md](model-engine.md#recalculating-stored-values)) to
 recalculate them explicitly.
 
+Locked records and records with posted [effects](effects.md) are the exception. A locked
+record keeps its saved results on ordinary writes. A record with postings keeps them on
+every write, moves and actions included, and needs no recalculation request; asking for
+one is refused with 409 (`This record has postings. To change its totals, void or revise
+it.`). `Recompute` skips both kinds of record and reports how many it kept, so the effect
+rows a record posted always match its saved totals.
+
 ## Permissions and the browser plan
 
 A calculated result is readable only when every input it reads is readable and every
