@@ -765,3 +765,45 @@ def test_the_list_sort_is_the_default_order_on_the_server(app):
 def test_try_it_takes_draft_series_without_ids(app):
     result = client(app)('POST', '/api/_controls/naming/Invoice/try', {'values': {}, 'series': [{'format': 'A-{####}', 'when': ''}]})[1]
     assert (result['match'], result['name']) == ('series_1', 'A-0001')
+
+
+def test_records_keep_their_instance_fields_outside_requests(app):
+    admin = client(app)
+    assert admin('POST', '/api/_controls/fields/Lead', {'name': 'region', 'type': 'Text', 'label': 'R'})[0] == 201
+    Lead = model_of(app, 'Lead')
+    with app.database.transaction() as tx:
+        record = tx.create(Lead, title='t', x_region='north')
+        with pytest.raises(AttributeError, match='Records are snapshots'):
+            record.x_region = 'south'
+        tx.update(Lead, record.id, x_region='south')
+    assert record.x_region == 'north' and 'x_region' not in record.__dict__
+    with app.database.transaction() as tx:
+        stored = tx.get(Lead, record.id)
+    assert stored.x_region == 'south' and stored.to_dict()['x_region'] == 'south'
+    with pytest.raises(Exception, match='x_region is an instance field. Build the record inside database.transaction'):
+        Lead(title='q', x_region='east')
+    with app.database.activated():
+        built = Lead(title='q', x_region='east')
+    assert built.x_region == 'east'
+    with app.database.transaction() as tx:
+        assert tx.create(Lead, **built._values).x_region == 'east'
+
+
+def test_jobs_and_event_pages_wait_for_a_schema_change(app):
+    from evlet.auth import AccessError
+    from evlet.jobs import JobQueue
+    business, done = app.business, threading.Event()
+    queue = JobQueue(app.database, [])
+    queue.business, queue._execute = business, lambda claim, **options: done.set()
+
+    def later():
+        try:
+            business.event_page({'method': 'GET', 'headers': []})
+        except AccessError:
+            queue.execute((1, 'lease'))
+    with business.gate.exclusive():
+        thread = threading.Thread(target=later)
+        thread.start()
+        assert not done.wait(0.2)
+    thread.join(2)
+    assert done.is_set()

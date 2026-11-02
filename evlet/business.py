@@ -240,6 +240,10 @@ class Business:
             yield Context(self, tx, user, readonly=readonly)
 
     def event_page(self, scope):
+        with self.gate.shared(), using(self.database):
+            return self._event_page(scope)
+
+    def _event_page(self, scope):
         if self.events is None or scope['method'] != 'GET':
             raise AccessError(404, 'Events are unavailable')
         self.auth.guard(scope)
