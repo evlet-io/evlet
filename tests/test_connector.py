@@ -40,6 +40,9 @@ def live_connector(tmp_path, hashed):
         with app.database.transaction() as tx:
             for role in ('admin', 'viewer', 'editor'):
                 tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (role, hashed, role))
+            # The stdio tests change records, so this workspace lets AI assistants make changes.
+            tx.connection.execute("INSERT INTO evlet_overrides(kind,key,value) VALUES ('setting','mcp.allow_writes','true')")
+            tx.connection.execute('UPDATE evlet_config SET version=version+1')
         app.database.create(Project, name=slug)
         catalog.set_active(slug, True)
     env = {**os.environ, 'EVLET_TENANT_ROOT': str(catalog.root)}

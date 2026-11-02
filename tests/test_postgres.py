@@ -680,3 +680,19 @@ def test_postgres_connectors_secrets_and_api_keys(secured, monkeypatch):
     assert admin('DELETE', f"/api/_controls/keys/{created['key']['id']}")[1] == {'items': []}
     assert http(secured, 'GET', '/api/project', headers=bearer)[0] == 401
     assert 'pg-secret-value' not in audit and token.split('_', 2)[2] not in audit and 'Created for editor' in audit
+
+
+def test_postgres_remote_mcp_oauth_and_assistant_tables(secured):
+    from tests.test_assistants import connect, form, rpc, settings, tool
+    client_id, tokens, person = connect(secured, 'editor')
+    assert tool(secured, tokens['access_token'], 'discover_models', {})['structuredContent']['total'] >= 1
+    settings(secured, allow_writes=True)
+    assert tool(secured, tokens['access_token'], 'create_record', {'model': 'project', 'values': {'name': 'From an assistant'}})['structuredContent']['name'] == 'From an assistant'
+    status, fresh, _ = form(secured, '/_/oauth/token', {'grant_type': 'refresh_token', 'refresh_token': tokens['refresh_token'], 'client_id': client_id})
+    assert status == 200
+    page = person('GET', '/api/_settings/me/ai')[1]
+    assert page['clients'][0]['calls'] == 2 and [item['tool'] for item in page['requests']] == ['create_record', 'discover_models']
+    overview = client(secured)('GET', '/api/_controls/mcp')[1]
+    assert overview['totals'] == {'reads': 1, 'writes': 1, 'denied': 0} and overview['clients'][0]['username'] == 'editor'
+    assert form(secured, '/_/oauth/token', {'grant_type': 'refresh_token', 'refresh_token': tokens['refresh_token'], 'client_id': client_id})[1]['error'] == 'invalid_grant'
+    assert rpc(secured, fresh['access_token'], 'ping')[0] == 401

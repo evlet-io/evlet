@@ -60,6 +60,10 @@ segment starting with `_` is locked for framework internals, such as `/_/mcp`.
 | `report`, `dashboard`, `search`, `print` | Reserved, 404 until built |
 | anything starting with `_` | Locked |
 
+The framework serves `/_/mcp`, `/_/oauth/*` and `/.well-known/oauth-*` for AI assistants
+([connector.md](connector.md#remote-mcp-with-oauth)), on the primary host only. Other paths
+under `/_/` and `/.well-known/` are 404.
+
 No app frontend, `PageView` route or `routes.py` entry may use one. Python page
 routes must also start with a fixed segment, not a parameter. Boot fails with a
 message that names the app and the path.

@@ -16,10 +16,11 @@ from .permissions import CORRECTIONS, Policy, Rule, default_rule
 
 OPERATIONS = ('read', 'create', 'update', 'delete', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
-PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'keys')
+PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'keys')
 SETTINGS = MappingProxyType({
     'security.password_min': 15, 'security.session_hours': 8, 'security.lockout': 10,
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
+    'mcp.enabled': True, 'mcp.allow_writes': False, 'mcp.rate': 60, 'mcp.disabled_tools': [], 'mcp.hidden_models': [],
 })
 NOT_FOUND = 'Route not found'
 ADMIN_ONLY = 'Only an admin can do this: change admin accounts, give the admin role, manage roles or decide who opens Controls.'
@@ -121,6 +122,16 @@ def _networks(values):
 def strictest(key, value, roles):
     """The strictest safe value of a stored setting that no longer validates."""
     number = type(value) is int
+    if key in ('mcp.enabled', 'mcp.allow_writes'):
+        return False
+    if key == 'mcp.rate':
+        return min(max(value, 1), 60) if number else 1
+    if key in ('mcp.disabled_tools', 'mcp.hidden_models'):
+        # Names are kept as they are; a value that is not a list turns every tool off or hides every model ('*').
+        from .mcp import BY_NAME
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, str)]
+        return list(BY_NAME) if key == 'mcp.disabled_tools' else ['*']
     if key == 'security.password_min':
         return min(max(value, 15), 64) if number else 64
     if key == 'security.session_hours':
@@ -445,6 +456,16 @@ class Controls:
                 except ValueError:
                     raise ValueError(f"{item} isn't an IP address or range.") from None
             value = list(dict.fromkeys(networks))
+        if key in ('mcp.enabled', 'mcp.allow_writes') and type(value) is not bool:
+            raise ValueError('Use on or off.')
+        if key == 'mcp.rate' and not (number and 1 <= value <= 60):
+            raise ValueError('Use 1 to 60 tool calls a minute. The framework allows at most 60.')
+        if key in ('mcp.disabled_tools', 'mcp.hidden_models'):
+            from .mcp import BY_NAME
+            known = list(BY_NAME) if key == 'mcp.disabled_tools' else list(self.models())
+            if not isinstance(value, list) or any(item not in known for item in value) or len(set(value)) != len(value):
+                raise ValueError('Choose known tools, each once.' if key == 'mcp.disabled_tools' else 'Choose models from this instance, each once.')
+            value = [item for item in known if item in value]
         return value
 
     # ---------- overrides ----------
@@ -515,7 +536,7 @@ class Controls:
                 else:
                     connection.execute('INSERT INTO evlet_overrides(kind,key,value,changed_by,changed_at) VALUES (?,?,?,?,?) ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value, changed_by=excluded.changed_by, changed_at=excluded.changed_at',
                                        (kind, key, json.dumps(value, sort_keys=True), user.id, now))
-                area, target = ('Permissions', key.replace('|', ' · ')) if kind == 'perm' else ('Security', key)
+                area, target = ('Permissions', key.replace('|', ' · ')) if kind == 'perm' else ('MCP' if key.startswith('mcp.') else 'Security', key)
                 audit(connection, user.username, area, target, 'Reset to the file value' if value is None else 'Changed', before, value)
                 if key == 'security.session_hours':
                     # Sessions keep their start: a shorter length ends the ones already older than it.
@@ -538,8 +559,9 @@ class Controls:
         page = self.business.auth.user_page(offset)
         with self.database._connection() as connection:
             sessions = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_sessions WHERE expires>? GROUP BY user_id', (int(time.time()),))}
+            assistants = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_mcp_clients WHERE revoked_at IS NULL GROUP BY user_id')}
         for item in page['items']:
-            item['active'], item['sessions'] = bool(item['active']), sessions.get(item['id'], 0)
+            item['active'], item['sessions'], item['assistants'] = bool(item['active']), sessions.get(item['id'], 0), assistants.get(item['id'], 0)
         return page
 
     def add_user(self, actor, body):
@@ -581,7 +603,7 @@ class Controls:
             if row is None:
                 raise AccessError(404, 'Account not found')
             after = check(tx.connection, row, {})
-            tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (user_id,))
+            self.business.auth.end_sessions(tx.connection, user_id)
             after()
 
     def role_list(self):
@@ -837,6 +859,12 @@ class Controls:
                 return self.connector(user, method, match[1], match[2], body)
             except SecretKeyError as exc:
                 raise AccessError(503, str(exc)) from None
+        if path == '/mcp' and method == 'GET':
+            return 200, self.business.assistants.overview(scope), []
+        match = re.fullmatch(r'/mcp/([1-9][0-9]{0,18})', path)
+        if match and method == 'DELETE' and int(match[1]) <= 2**63 - 1:
+            self.business.assistants.revoke(user, int(match[1]), personal=False)
+            return 200, self.business.assistants.overview(scope), []
         if path == '/keys':
             if method == 'GET':
                 return 200, {'items': self.business.auth.keys()}, []

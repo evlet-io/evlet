@@ -1,4 +1,4 @@
-# Discovery and local connectors
+# Discovery, local and remote MCP connectors
 
 Milestone 7 adds a compact discovery contract, a local MCP stdio connector, and
 commands for starting a small application. The MCP connector needs only Python's
@@ -8,6 +8,8 @@ standard library. The core has one third-party library besides Uvicorn and packa
 writing our own cipher is not an option. The connector calls the same authenticated HTTP routes used by
 the browser, so tenant, account, model, row, field, and action checks stay on the
 server. It has no database handle, arbitrary SQL, Python execution, or file tool.
+The same tools are also served over HTTP at `/_/mcp` with OAuth sign-in; see
+[Remote MCP with OAuth](#remote-mcp-with-oauth).
 
 ## Start an application
 
@@ -128,8 +130,8 @@ configuration depends on the client:
 The installed `evlet` command is equivalent to `python -m evlet`. It writes only
 newline-delimited JSON-RPC to stdout and generic diagnostics to stderr. It supports
 MCP protocol `2025-11-25`, initialization, ping, `tools/list`, and `tools/call`.
-It advertises tools only. Resources, prompts, sampling, tasks, remote MCP HTTP,
-OAuth, and provider-specific installation are outside this milestone.
+It advertises tools only. Resources, prompts, sampling, tasks and provider-specific
+installation are not supported.
 
 | Tool | Purpose |
 | --- | --- |
@@ -149,6 +151,14 @@ choice, not a tool argument. Write tools are advertised only when the account ha
 an applicable operation; every invocation still goes through current backend
 checks. The flag does not grant additional account permissions.
 
+The connector follows the instance's MCP settings in Controls ([controls.md](controls.md#mcp-and-ai)).
+It marks its requests with `X-Evlet-Client: mcp`, and the server then narrows the session the
+way it narrows a remote client: nothing while `mcp.enabled` is off, no writes while
+`mcp.allow_writes` is off (even with `--allow-writes`), and no hidden models. Discovery
+reports `capabilities.assistant` (`writes`, `rate`, `disabled_tools`), which the connector
+reads at most once a minute to drop disabled tools and lower its rate. These two are applied
+by the connector itself; a client that leaves out the header is an ordinary session.
+
 Configure the client to ask for approval before writes, deletion, or business
 actions. The connector cannot enforce a client's user-approval UI. Tool annotations
 and descriptions mark writes; they are guidance, not an authorization boundary.
@@ -162,6 +172,57 @@ write. A timeout or lost reply may mean the server already committed; inspect th
 record or job before deciding whether to retry. Requests are sequential; cancellation
 notifications do not undo an admitted HTTP write. Authentication expiry requires
 signing in again and restarting the connector with the new private session.
+
+## Remote MCP with OAuth
+
+People add `https://<primary host>/_/mcp` as a custom connector in their AI assistant and
+sign in with their Evlet account. The endpoint speaks MCP Streamable HTTP without sessions:
+one JSON-RPC message per `POST`, answered with JSON (`202` for notifications). It offers the
+same nine tools. Each call runs in process through `Business.dispatch` as the person who
+approved the client, narrowed like an API key: reads only unless `mcp.allow_writes` is on
+and the person turned on "Can make changes" for that client, hidden models removed, and the
+apps the person chose. Account, tenant, row, field and action checks are the browser's.
+
+OAuth 2.1, served on the primary host only (any other host gets 404):
+
+| Route | Purpose |
+|---|---|
+| `GET /.well-known/oauth-protected-resource[/_/mcp]` | Protected resource metadata (RFC 9728) |
+| `GET /.well-known/oauth-authorization-server` | Authorization server metadata (RFC 8414) |
+| `POST /_/oauth/register` | Dynamic client registration (RFC 7591), JSON |
+| `GET /_/oauth/authorize` | The consent page, for a signed-in desk user |
+| `POST /_/oauth/token` | `authorization_code` with PKCE, `refresh_token`; form encoded |
+| `POST /_/oauth/revoke` | Token revocation (RFC 7009); either token signs the client out |
+| `GET/POST /api/_oauth/authorize` | What the consent page reads and posts (session and CSRF token) |
+| `GET/PATCH /api/_settings/me/ai`, `PATCH/DELETE /api/_settings/me/ai/<id>` | A person's own clients, requests and app choice |
+
+- **Registration.** Redirect URIs (1 to 5) must be `https`, `http` on a loopback address, or
+  a reverse-domain app scheme (`com.example.app:/cb`), with no fragment or credentials.
+  Clients are public (`none`) by default; `client_secret_post` or `client_secret_basic` gets
+  a secret, shown once and stored hashed. Registrations nobody connected within a day are
+  removed. 20 registrations an hour per network.
+- **Authorization.** `response_type=code`, PKCE with `S256` only, and a `redirect_uri` that
+  matches a registered one exactly. An unknown client or address is shown on the page and
+  never redirected to. `resource`, when sent, must be this server's `/_/mcp`. Consent is
+  asked every time; the answer is a POST with the session's CSRF token. The redirect carries
+  `code`, `state` and `iss`. Codes last 5 minutes and work once; using one twice signs out the
+  client it created.
+- **Tokens.** Access tokens (`evm_...`) last an hour; refresh tokens (`evr_...`) last 30 days
+  and rotate on every use. A rotated refresh token used again signs the client out. Tokens
+  are bound to the client and the person, stored as SHA-256 hashes and never logged. The token
+  and revocation endpoints allow 60 requests a minute per network. Networks are read through
+  the trusted proxy settings when they are configured.
+- **The endpoint.** Requests need `Authorization: Bearer evm_...`; without a valid one the
+  answer is 401 with `WWW-Authenticate: Bearer resource_metadata="..."`. A request with an
+  `Origin` header that isn't one of the instance's origins is refused. Tokens only work here,
+  never on `/api`. Bodies are at most 128 KiB.
+- **Clients and calls.** `evlet_oauth_clients` holds registrations, `evlet_mcp_clients(id,
+  user_id, oauth_client, client_name, created_at, last_used, calls, allow_changes, apps,
+  revoked_at)` each person's connected clients, `evlet_oauth_codes` and `evlet_mcp_tokens`
+  the hashed codes and tokens, and `evlet_mcp_calls` one row per tool call (tool, model,
+  read or write, outcome) for 30 days. Connecting the same client again replaces the
+  earlier connection. The rate limit counts these rows, so it holds across processes.
+- **Jobs.** An action an assistant queues runs as the person, like one queued from the browser.
 
 ## Transport limits and verification
 

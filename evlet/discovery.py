@@ -86,6 +86,10 @@ class Discovery:
         matches = [entry for entry in roots if search in (entry['name'] + ' ' + entry['label']).casefold()]
         capabilities = {'operations': sorted({operation for entry in roots for operation in self.operations(entry)}),
                         'actions': any(entry['actions'] for entry in roots), 'jobs': self.business.jobs is not None}
+        access = getattr(self.user, 'access', None)
+        if access is not None and access.assistant is not None:
+            settings = self.business.controls.settings
+            capabilities['assistant'] = {'writes': access.write, 'rate': settings['mcp.rate'], 'disabled_tools': settings['mcp.disabled_tools']}
         return {'discovery_version': 1, 'models': [
             {'name': entry['name'], 'label': entry['label'], 'operations': self.operations(entry), 'actions': entry['actions']}
             for entry in matches[offset:offset + limit]], 'total': len(matches), 'limit': limit, 'offset': offset,
