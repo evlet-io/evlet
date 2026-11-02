@@ -272,6 +272,7 @@ system fonts (`system-ui`, `ui-monospace` and the rest of the stack) until they 
 | `childtable.ts` | ChildTable over a record store `Table` |
 | `doc.ts` | DocFrame, DocHeader, MoveButton, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
+| `../app/filters.ts` | The list filter builder: filterBuilder, FilterPanel, FilterChips, filterFields, conditionsFor, encode, decode, compact |
 | `library.ts` | The Library page; open `/evlet.html` on the dev server (`npm run dev`) |
 
 Fields bind to the record store's field cells: the value, `error`, the `applies`, `required`
@@ -369,8 +370,12 @@ checks it again.
 - **Date range** (`DateRangePanel`) offers presets (Today, Yesterday, This week, Last 7 days,
   This month, Last month, Last 30 days, This quarter, This year, Last year) or a first and last
   day on the calendar, in either order, with the days between shaded. Apply reports
-  `[first, last]`. List pages use it to filter a date field: the filter is sent as
-  `<field>__gte` and `<field>__lte` and kept in the address as `{"gte", "lte"}`.
+  `[first, last]`.
+- **Grouped search** (`GroupedChoiceList`, and `GroupedPicker`, the button that opens it) searches a
+  long list of choices in groups, such as a model's fields and then each child table's: every
+  word typed must appear in the group, label or value. It draws at most `limit` (100) matches,
+  says how many more there are, and picks with arrows and Enter. The list filter builder uses it
+  for the field of each row ([ui.md](ui.md#filters)).
 
 ### Side boxes
 

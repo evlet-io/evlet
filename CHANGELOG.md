@@ -5,6 +5,23 @@ say what to change. Evlet is not production ready.
 
 ## Unreleased
 
+- **List filters like Frappe's.** The Filter button opens rows of field, condition and value,
+  any number of them, combined with AND. The field picker searches hundreds of fields and each
+  child table's fields; conditions follow the field type (like, in, between, timespan and more);
+  values use the form's own pickers; active filters show as chips and stay in the address
+  ([docs/ui.md](docs/ui.md#filters)). Links in the old `?f={"field": value}` form still open.
+- **Filter lists and child table filters.** `filters` also takes a list of `[field, operator, value]`
+  conditions and child groups `{"child": "prices", "match": "any" | "none", "where": [...]}`,
+  compiled to `EXISTS` / `NOT EXISTS`, in Python queries and the list, aggregate and measures
+  routes ([docs/model-engine.md](docs/model-engine.md#filter-lists-and-child-tables)). New
+  operators: `between`, `nin`, `nicontains`. Each field kind now takes only its own operators
+  (a `gt` on a Boolean or `icontains` on a number is a 422), and the schema sends them as each
+  field's `operators`; child tables in the schema say whether they are `filterable`. A query
+  takes up to 50 conditions (was 20 filters). Filtering on a field or child table the role
+  cannot read is a 403, the same as an unknown one.
+- **Playground items.** A new Item model has about 200 fields and two child tables (prices,
+  barcodes), to try filters at scale. Run `.venv/bin/python -m examples.playground.migrate` (migration `0005_items`) on an
+  existing Playground database.
 - **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
   lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
   duration fields keep their typed input and add a calendar or steppers. List pages filter
