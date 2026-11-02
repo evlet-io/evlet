@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import json
 import sqlite3
+import threading
 
 import pytest
 
@@ -365,7 +366,7 @@ def test_the_first_matching_series_wins_and_the_last_catches_everything_else(app
     ([{'id': 'a', 'label': 'A', 'format': 'A-{####', 'when': ''}], 'A brace is not closed.'),
     ([{'id': 'a', 'label': 'A', 'format': 'A-{branch}-{####}', 'when': ''}], "{branch} isn't a token or a field on Invoice."),
     ([{'id': 'a', 'label': 'A', 'format': 'A-{total}-{####}', 'when': ''}], 'must be a short text field'),
-    ([{'id': 'a', 'label': 'A', 'format': 'A' * 41 + '{####}', 'when': ''}], 'Keep it under 40 characters.'),
+    ([{'id': 'a', 'label': 'A', 'format': 'A' * 37 + '{####}', 'when': ''}], 'Names from this format would be longer than 40 characters.'),
 ])
 def test_naming_overrides_are_checked_when_saved(app, series, message):
     status, payload, _ = save(client(app), ('naming', 'Invoice', series))
@@ -532,6 +533,17 @@ def test_postgresql_field_overrides_and_naming(pg):
     assert {record['reference'] for _, record, _ in results} == {f'INV-2026-{number:04d}' for number in range(42, 92)}
 
 
+def test_postgresql_two_processes_add_the_same_field(pg, pg_dsn):
+    from evlet import PostgreSQLDatabase
+    database = PostgreSQLDatabase(pg_dsn, Registry(*models()))
+    other = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+    other.initialize()
+    callers = [client(pg), client(other)]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = sorted(pool.map(lambda c: c('POST', '/api/_controls/fields/Lead', {'name': 'zone', 'type': 'Text', 'label': 'Zone'})[0], callers))
+    assert statuses == [201, 422]
+
+
 def test_postgresql_instance_fields(pg):
     admin = client(pg)
     admin('POST', '/api/lead', {'title': 'Before'})
@@ -568,3 +580,188 @@ def test_a_revision_gets_a_new_name(tmp_path, hashed):
     assert status == 200, record
     status, copy, _ = admin('POST', '/api/quote/1/revise', {'reason': 'Wrong price'}, headers={b'if-match': headers[b'etag']})
     assert status == 201 and copy['reference'] == 'Q-002', copy
+
+
+# ---------- review findings ----------
+
+def test_two_applications_sharing_classes_keep_their_own_instance_fields(tmp_path, hashed):
+    classes = models()
+    (tmp_path / 'a').mkdir()
+    (tmp_path / 'b').mkdir()
+    first, second = build(tmp_path / 'a', *classes), build(tmp_path / 'b', *classes)
+    for app in (first, second):
+        add_user(app, 'admin', 'admin')
+    a, b = client(first), client(second)
+    assert a('POST', '/api/_controls/fields/Customer', {'name': 'region', 'type': 'Text', 'label': 'Region'})[0] == 201
+    assert b('POST', '/api/_controls/fields/Customer', {'name': 'tier', 'type': 'Integer', 'label': 'Tier'})[0] == 201
+    assert b('POST', '/api/customer', {'name': 'y', 'x_tier': 2})[1]['x_tier'] == 2
+    assert b('POST', '/api/customer', {'name': 'y', 'x_region': 'n'})[0] == 403
+    assert save(b, ('field', 'Lead.title', {'label': 'Topic'}))[0] == 200
+    record = a('POST', '/api/customer', {'name': 'z', 'x_region': 'n'})[1]
+    assert record['x_region'] == 'n' and 'x_tier' not in record
+    assert [field['name'] for field in schema_of(a, 'customer')['fields']] == ['name', 'x_region']
+    assert 'x_region' not in classes[0].__declared_fields__ and not hasattr(classes[0], 'x_region')
+
+
+@pytest.mark.parametrize('phase', ['add', 'remove'])
+def test_requests_during_instance_field_changes_never_fail(app, phase):
+    admin, editor = client(app), client(app, 'editor')
+    record = admin('POST', '/api/lead', {'title': 'seed'})[1]
+    if phase == 'remove':
+        for index in range(4):
+            assert admin('POST', '/api/_controls/fields/Lead', {'name': f'f{index}', 'type': 'Text', 'label': 'F'})[0] == 201
+    stop, failures = threading.Event(), []
+
+    def work(index):
+        while not stop.is_set():
+            for status, payload, _ in (editor('POST', '/api/lead', {'title': f'w{index}'}), editor('GET', '/api/lead'),
+                                       editor('GET', f'/api/lead/{record["id"]}'), editor('PATCH', f'/api/lead/{record["id"]}', {'title': 'p'})):
+                if status >= 500:
+                    failures.append((status, payload))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        running = [pool.submit(work, index) for index in range(4)]
+        for index in range(4):
+            if phase == 'add':
+                assert admin('POST', '/api/_controls/fields/Lead', {'name': f'f{index}', 'type': 'Text', 'label': 'F'})[0] == 201
+            else:
+                assert admin('DELETE', f'/api/_controls/fields/Lead/x_f{index}')[0] == 200
+        stop.set()
+        for future in running:
+            future.result()
+    assert failures == []
+
+
+def test_added_options_hold_on_every_write_path(app):
+    from evlet.auth import User
+    admin = client(app)
+    assert save(admin, ('field', 'Lead.source', {'options_add': ['exhibition']}))[0] == 200
+    Lead = model_of(app, 'Lead')
+    record = app.database.create(Lead, title='a', source='exhibition')
+    assert app.database.update(Lead, record.id, title='b').source == 'exhibition'
+    with app.database.transaction() as tx:
+        assert tx.create(Lead, title='c', source='exhibition').source == 'exhibition'
+    with app.business.context(User(0, 'job', 'admin')) as context:
+        assert context._tx.create(Lead, title='d', source='exhibition').source == 'exhibition'
+    with pytest.raises(Exception):
+        app.database.create(Lead, title='e', source='nowhere')
+
+
+def test_a_required_instance_field_stays_required_and_shown(app):
+    admin = client(app)
+    assert admin('POST', '/api/_controls/fields/Customer', {'name': 'code', 'type': 'Text', 'label': 'Code', 'required': True})[0] == 201
+    assert save(admin, ('field', 'Customer.x_code', {'hidden': True}))[1]['fields']['changes.0'] == "A required field can't be hidden. People couldn't fill it in."
+    assert save(admin, ('field', 'Customer.x_code', {'required': False}))[1]['fields']['changes.0'].startswith('x_code is required on this instance.')
+    assert field_of(schema_of(admin, 'customer'), 'x_code')['required'] is True
+
+
+def test_trusted_sessions_date_names_in_the_instance_timezone(tmp_path, hashed):
+    from evlet.database import today
+
+    class Memo(Model):
+        reference = Text(unique=True)
+
+        class Meta:
+            naming = Naming('reference', Series('M-{YYYY}{MM}{DD}-{###}'))
+
+    app = build(tmp_path, Memo)
+    for zone in ('Pacific/Kiritimati', 'Pacific/Pago_Pago'):
+        app.business.timezone = zone
+        with app.database.transaction() as tx:
+            assert tx.create(Memo).reference.startswith('M-' + today(zone).replace('-', ''))
+
+
+@pytest.mark.parametrize('when, message', [
+    ('status == "snet"', "snet isn't an option of status. Use draft, sent."),
+    ('posting_date >= "1/1/2026"', 'Write dates as year-month-day'),
+    ('total > empty', 'Compare with empty using == or !=, like total != empty.'),
+    ('status == "a"\x00', "A condition can't contain control characters."),
+])
+def test_condition_values_are_checked_against_the_field(app, when, message):
+    series = [{'id': 'big', 'label': 'Big', 'format': 'BIG-{####}', 'when': when}, {'id': 'default', 'label': 'Inv', 'format': 'INV-{####}', 'when': ''}]
+    assert save(client(app), ('naming', 'Invoice', series))[1]['fields']['changes.0'].startswith(message)
+
+
+def test_a_format_counts_its_length_after_expansion(app):
+    admin = client(app)
+    series = [{'id': 'default', 'label': 'Inv', 'format': 'A-{customer}-{YYYY}-{MM}-{DD}-{########}-LONGER', 'when': ''}]
+    assert save(admin, ('naming', 'Invoice', series))[0] == 200
+    assert admin('POST', '/api/invoice', {'customer': 'Gulf', 'posting_date': '2026-03-04'})[1]['reference'] == 'A-Gulf-2026-03-04-00000001-LONGER'
+    assert admin('POST', '/api/invoice', {'customer': 'x' * 20})[1]['fields'] == {'reference': 'This name would be longer than 40 characters'}
+    assert admin('POST', '/api/invoice', {'customer': 'B', 'reference': None})[0] == 201
+
+
+@pytest.mark.parametrize('key, value, message', [
+    ('Invoice.status', {'options_hidden': ['draft']}, "draft is the default in models.py, so it can't be hidden."),
+    ('Lead.value', {'required': True, 'read_only': True}, 'A field that is required and read only needs a default'),
+])
+def test_overrides_that_would_block_every_create_are_refused(app, key, value, message):
+    assert message in save(client(app), ('field', key, value))[1]['fields']['changes.0']
+
+
+def test_layouts_keep_section_ids_and_hide_unreadable_sections(app):
+    admin, editor = client(app), client(app, 'editor')
+    empty = [{'title': 'One', 'fields': []}, {'title': 'Two', 'fields': [{'name': 'title', 'width': 12}]}]
+    assert save(admin, ('layout', 'Lead', empty))[1]['fields']['changes.0'].startswith('Every section needs at least one field')
+    assert save(admin, ('perm', 'editor|Lead', {'ops': ['read'], 'read': ['title'], 'write': None, 'scope': None}),
+                ('field', 'Lead.notes', {'label': 'Secret label'}),
+                ('layout', 'Lead', [{'title': 'Secret section', 'fields': [{'name': 'notes', 'width': 12}]}, {'title': 'Main', 'fields': [{'name': 'title', 'width': 6}]}]),
+                ('list', 'Lead', {'columns': ['notes', 'title'], 'page_size': 25, 'sort': '-notes'}))[0] == 200
+    seen = json.dumps(schema_of(editor, 'lead')) + json.dumps(editor('GET', '/api/ui')[1])
+    assert 'Secret' not in seen and '"notes"' not in seen
+
+
+def test_people_meet_required_overrides_and_app_code_does_not(tmp_path, hashed):
+    from evlet import Integer, action
+
+    class Ticket(Model):
+        title = Text(required=True)
+        kind = Select(('bug', 'task', 'idea'), default='task')
+        estimate = Integer()
+        status = State(('open', 'done'), moves=(Move('open', 'done', 'Close'),))
+
+        @action('Spawn')
+        def spawn(self):
+            self.context.create(Ticket, title='child', kind='idea')
+
+    app = build(tmp_path, Ticket)
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    assert admin('POST', '/api/_controls/fields/Ticket', {'name': 'region', 'type': 'Text', 'label': 'Region', 'required': True})[0] == 201
+    assert save(admin, ('field', 'Ticket.estimate', {'required': True}), ('field', 'Ticket.kind', {'options_hidden': ['idea']}))[0] == 200
+    assert admin('POST', '/api/ticket', {'title': 'a'})[1]['fields'] == {'estimate': 'This field is required', 'x_region': 'This field is required'}
+    status, record, headers = admin('POST', '/api/ticket', {'title': 'a', 'estimate': 1, 'x_region': 'n'})
+    assert status == 201
+    assert admin('POST', f'/api/ticket/{record["id"]}/actions/spawn', {}, headers={b'if-match': headers[b'etag']})[0] == 200
+
+
+def test_instance_field_names_clash_ignoring_case_and_with_reference_columns(tmp_path, hashed):
+    from evlet import Reference
+
+    class Thing(Model):
+        X_code = Text()
+
+    class Note(Model):
+        body = Text()
+        x = Reference()
+
+    app = build(tmp_path, Thing, Note)
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    assert admin('POST', '/api/_controls/fields/Thing', {'name': 'code', 'type': 'Text', 'label': 'Code'})[1]['fields']['name'] == 'Thing already has a field called x_code.'
+    assert admin('POST', '/api/_controls/fields/Note', {'name': 'id', 'type': 'Integer', 'label': 'Id'})[1]['fields']['name'] == 'Note already has a field called x_id.'
+    assert build(tmp_path, Thing, Note).registry.models['note'] is Note
+
+
+def test_the_list_sort_is_the_default_order_on_the_server(app):
+    admin, editor = client(app), client(app, 'editor')
+    for value in ('3', '1', '2'):
+        admin('POST', '/api/lead', {'title': 't' + value, 'value': value})
+    assert save(admin, ('list', 'Lead', {'columns': ['title', 'value'], 'page_size': 25, 'sort': 'value'}))[0] == 200
+    assert [item['title'] for item in editor('GET', '/api/lead')[1]['items']] == ['t1', 't2', 't3']
+    assert save(admin, ('perm', 'editor|Lead', {'ops': ['read'], 'read': ['title'], 'write': None, 'scope': None}))[0] == 200
+    assert [item['title'] for item in editor('GET', '/api/lead')[1]['items']] == ['t2', 't1', 't3']
+
+
+def test_try_it_takes_draft_series_without_ids(app):
+    result = client(app)('POST', '/api/_controls/naming/Invoice/try', {'values': {}, 'series': [{'format': 'A-{####}', 'when': ''}]})[1]
+    assert (result['match'], result['name']) == ('series_1', 'A-0001')

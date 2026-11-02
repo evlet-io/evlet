@@ -225,19 +225,22 @@ class Invoice(Model):
   fills it on create; it is read only for every role in the API and forms.
 * Series are checked from the top; the first whose condition matches is used. The last series has
   no condition, and only the last, so every record gets a name.
-* A trusted `Session.create` may pass a name (imports); it is kept. Without one the series names it.
+* A trusted `Session.create` may pass a name (imports); it is kept. Without one the series names it,
+  dated in the instance timezone. Sending `null` for the field on create is the same as leaving it out.
   A revision's copy gets a new name.
 
 **Format.** `{YYYY}`, `{YY}`, `{MM}`, `{DD}`, exactly one counter `{###}` to `{########}` (the `#`
 count is the zero padding) and `{field}`, the value of a short text field of the model with `/` and
-spaces replaced by `-`. 40 characters at most, before and after expansion. Date tokens use
+spaces replaced by `-`. Names are 40 characters at most after expansion: a format whose fixed part
+is longer is refused when saved, and a field value that makes a name longer is refused on create. Date tokens use
 `date_field`, or the creation day in the instance timezone.
 
 **Conditions** are text, parsed by `evlet/expressions.py`: `field op value`, `field in (a, b)`,
 `and`, `or`, `not` and brackets, with `==`, `!=`, `>`, `>=`, `<`, `<=`. Values are quoted text,
 numbers, `true`, `false` or `empty` (matches null and ""). Numbers compare as decimals, dates as ISO
 text, a Link by its id. No functions, attributes, arithmetic or other names; 500 characters and 10
-levels of brackets and `not` at most. Errors read like `Use == to compare, not =.`,
+levels of brackets and `not` at most. Values must suit the field: an option of a choice field, a
+date as `"2026-01-31"`, and `empty` only with `==` or `!=`. Errors read like `Use == to compare, not =.`,
 `totl isn't a field on this model. Did you mean total?`, `Put text values in quotes, like "export".`
 and `A quote is not closed.`
 

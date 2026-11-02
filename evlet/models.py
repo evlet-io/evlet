@@ -3,7 +3,7 @@
 import re
 from types import MappingProxyType
 
-from .fields import Field, Link, MISSING, RULES, Reference, State
+from .fields import Field, Link, MISSING, RULES, Reference, State, active_layer
 from .declarations import Table, ReactiveQuery, DEFAULT_TABLE_ROWS
 
 
@@ -58,7 +58,7 @@ class ModelType(type):
         tables = {}
         sources = {}
         for base in bases:
-            fields.update(getattr(base, "__declared_fields__", getattr(base, '__fields__', {})))
+            fields.update(getattr(base, "__app_fields__", {}))
             tables.update(getattr(base, '__tables__', {}))
             sources.update(getattr(base, '__sources__', {}))
         # Meta.revisable = True: the engine adds `revises`, a Reference to the record a revision replaced.
@@ -103,8 +103,8 @@ class ModelType(type):
         if len(set(columns)) != len(columns) or 'id' in columns:
             raise ValueError("Reference columns (<name>_model, <name>_id) must not collide with other fields")
         cls = super().__new__(mcls, name, bases, namespace)
-        cls.__declared_fields__ = MappingProxyType(fields)
-        cls.__fields__ = MappingProxyType({key: value for key, value in fields.items() if value.stored})
+        cls.__app_fields__ = MappingProxyType(fields)
+        cls.__app_stored__ = MappingProxyType({key: value for key, value in fields.items() if value.stored})
         cls.__tables__ = MappingProxyType(tables)
         cls.__sources__ = MappingProxyType(sources)
         states = [key for key, value in fields.items() if isinstance(value, State)]
@@ -129,10 +129,34 @@ class ModelType(type):
             raise ValueError('A document field conflicts with its draft interface')
         return cls
 
+    # The fields of a model: those its class declares, plus the instance fields (x_) of the database in
+    # use (see fields.Layer). Each database keeps its own, so applications that share classes stay apart.
+    @property
+    def __declared_fields__(cls):
+        return active_layer().declared.get(cls, cls.__app_fields__)
+
+    @property
+    def __fields__(cls):
+        return active_layer().stored.get(cls, cls.__app_stored__)
+
 
 class Model(metaclass=ModelType):
     class Meta:
         pass
+
+    @property
+    def __declared_fields__(self):
+        return type(self).__declared_fields__
+
+    @property
+    def __fields__(self):
+        return type(self).__fields__
+
+    def __getattr__(self, name):
+        # Instance fields have no descriptor on the shared class.
+        if name.startswith('x_') and name in type(self).__declared_fields__:
+            return self._values.get(name)
+        raise AttributeError(name)
 
     def __init__(self, /, **values):
         errors = {key: "Unknown field" for key in values if key not in self.__fields__}
@@ -167,6 +191,8 @@ class Model(metaclass=ModelType):
         instance = cls.__new__(cls)
         instance._values = MappingProxyType({
             name: field.from_columns(row, name) for name, field in cls.__fields__.items()
+            # A column another process just dropped reads as empty.
+            if not getattr(field, 'instance', None) or name in row.keys()
         })
         instance._id = row["id"]
         return instance
@@ -353,7 +379,7 @@ class Registry:
         """The stored schema app migrations work from. Instance fields (x_) belong to Controls, not to it."""
         return {"version": 1, "models": [
             {"name": name, "label": model.__name__,
-             "fields": [field.metadata() for name, field in model.__fields__.items() if not name.startswith('x_')]}
+             "fields": [field.metadata() for field in model.__app_stored__.values()]}
             for name, model in self.models.items()
         ]}
 

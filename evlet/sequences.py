@@ -389,8 +389,8 @@ def parse_series(text):
     """The parts of a series format: literal text, ('date', token), ('n', width) or ('field', name). Raises ValueError."""
     if not isinstance(text, str) or not text.strip():
         raise ValueError('Enter a format.')
-    if len(text) > MAX_NAME:
-        raise ValueError(f'Keep it under {MAX_NAME} characters.')
+    if len(text) > MAX_FORMAT:
+        raise ValueError(f'Keep the format under {MAX_FORMAT} characters.')
     if any(not character.isprintable() for character in text):
         raise ValueError('A format cannot contain control characters.')
     parts, position, counters = [], 0, 0
@@ -419,6 +419,10 @@ def parse_series(text):
         parts.append(text[position:])
     if counters != 1:
         raise ValueError('Use exactly one counter, like {####}.')
+    # Names are at most 40 characters after expansion; field values are checked when a name is made.
+    if sum(len(part) if isinstance(part, str) else 4 if part == ('date', 'YYYY') else 2 if part[0] == 'date' else
+           part[1] if part[0] == 'n' else 0 for part in parts) > MAX_NAME:
+        raise ValueError(f'Names from this format would be longer than {MAX_NAME} characters.')
     return tuple(parts)
 
 
@@ -613,7 +617,8 @@ def preview_name(connection, resource, rules, parts, values, today):
 
 def name_new(connection, registry, model, values, today, actor=None):
     """The name for a new record without one, or None when the model has no naming or a name was given."""
-    rules = registry.naming.get(model)
+    from .fields import active_layer
+    rules = active_layer().naming.get(model) or registry.naming.get(model)
     if rules is None or values.get(rules.field) not in (None, ''):
         return None
     connection.execute(COUNTER_TABLE)

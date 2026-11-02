@@ -10,7 +10,8 @@ from types import MappingProxyType
 from urllib.parse import parse_qs, quote
 
 from .auth import ROLE_ID, ROLES, AccessError
-from .customization import Customization, attach
+from .customization import Customization, activated, instance_fields
+from .fields import Layer
 from .fields import Link
 from .models import ValidationError
 from .permissions import CORRECTIONS, Policy, Rule, default_rule
@@ -203,13 +204,29 @@ class Controls:
             self.apply(version, roles, stored, fields)
 
     def apply(self, version, roles, stored, fields=()):
-        """Build the Policy, settings and model customization. An override that no longer validates fails
-        closed and is reported. Instance fields are attached first, so the rest sees them."""
-        problems, perms, settings = [], {}, dict(SETTINGS)
+        """Build the Policy, settings and model customization, then swap in the database's new Layer.
+
+        An override that no longer validates fails closed and is reported. Everything is built against
+        the new instance fields, which become live for requests that start after the swap."""
+        problems = []
         self.roles = roles
-        if not self.business.tenant:
-            attach(self.registry, fields)
-        self.custom.apply([row for row in stored if row['kind'] in ('field', 'layout', 'list', 'naming')], problems)
+        previous = self.database.layer
+        fields = instance_fields(self.registry, fields, previous.fields)
+        with activated(self.database, Layer(fields, previous.choices, previous.naming)):
+            self.custom.apply([row for row in stored if row['kind'] in ('field', 'layout', 'list', 'naming')], problems)
+        layer = Layer(fields, self.custom.choices, self.custom.naming)
+        with activated(self.database, layer):
+            policy, settings = self.build(roles, stored, problems)
+        self.database.layer = layer
+        self.business.policy = policy
+        if self.business.jobs is not None:
+            self.business.jobs.policy = policy
+        auth = self.business.auth
+        auth.password_min, auth.session_hours, auth.lockout = settings['security.password_min'], settings['security.session_hours'], settings['security.lockout']
+        self.settings, self.problems, self.version = settings, problems, version
+
+    def build(self, roles, stored, problems):
+        perms, settings = {}, dict(SETTINGS)
         self.base = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles))
         for row in stored:
             try:
@@ -239,12 +256,7 @@ class Controls:
             problems.append({'kind': 'perm', 'key': 'all', 'error': f'{exc}. Every role except admin is denied until this is fixed.'})
             policy = Policy(self.registry, rules=self.file.declared, roles=self.role_bases(roles), read_only=self.custom.read_only,
                             overrides={(role, model): Rule(()) for role in roles if role != 'admin' for model in self.registry.models.values()})
-        self.business.policy = policy
-        if self.business.jobs is not None:
-            self.business.jobs.policy = policy
-        auth = self.business.auth
-        auth.password_min, auth.session_hours, auth.lockout = settings['security.password_min'], settings['security.session_hours'], settings['security.lockout']
-        self.settings, self.problems, self.version = settings, problems, version
+        return policy, settings
 
     @staticmethod
     def role_bases(roles):
@@ -719,7 +731,7 @@ class Controls:
             'controls': {'allow_ips': list(controls.allow_ips), 'require_two_step': controls.require_two_step},
             'attention': attention, 'overrides': overrides, 'users': {'active': active or 0, 'total': total},
             'audit': recent, 'two_step': False, 'links': self.links_ready(), 'client': str(client_ip(scope, self.business.auth) or ''),
-            'remove_fields': self.custom.drop, 'instance_fields': not self.business.tenant,
+            'remove_fields': self.custom.drop, 'instance_fields': True,
         }
 
     # ---------- HTTP ----------

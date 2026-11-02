@@ -214,8 +214,10 @@ class Application:
             return 200, {"status": "ok"}, []
         if self.business:
             self.business.controls.refresh()
+        from .database import using
         from .ui.routes import dispatch
-        response = dispatch(self, scope)
+        with using(self.database):
+            response = dispatch(self, scope)
         if response is not None:
             return response
         if self.business:

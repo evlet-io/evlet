@@ -18,9 +18,10 @@ import difflib
 from decimal import Decimal
 import re
 
-from .fields import Boolean, Decimal as DecimalField, Integer
+from .fields import Boolean, Date, Decimal as DecimalField, Integer, Select, active_layer
 
 MAX_LENGTH, MAX_DEPTH = 500, 10
+ISO_DATE = re.compile(r'[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])')
 EMPTY = object()
 TOKEN = re.compile(r'\s*(?:(==|!=|>=|<=|>|<)|(-?[0-9]+(?:\.[0-9]+)?)(?![A-Za-z0-9_.])|([A-Za-z_][A-Za-z0-9_]*)|([(),]))')
 
@@ -48,6 +49,8 @@ def tokens(source):
             position += 1
             continue
         character = source[position]
+        if not character.isprintable():
+            raise ConditionError("A condition can't contain control characters.", position)
         if character in '"\'':
             end = source.find(character, position + 1)
             if end < 0:
@@ -158,7 +161,10 @@ class Parser:
         self.position += 1
         if isinstance(field, Boolean) and following[1] not in ('==', '!='):
             raise ConditionError(f'Compare {name} with == or !=.', following[2])
-        return ('cmp', name, following[1], self.value(field))
+        value = self.value(field)
+        if value is EMPTY and following[1] not in ('==', '!='):
+            raise ConditionError(f'Compare with empty using == or !=, like {name} != empty.', following[2])
+        return ('cmp', name, following[1], value)
 
     def value(self, field):
         item = self.peek()
@@ -184,6 +190,12 @@ class Parser:
         if kind == 'str':
             if numeric:
                 raise ConditionError(f'{field.name} is a number, so leave out the quotes.', at)
+            if isinstance(field, Select):
+                options = (*field.choices, *active_layer().choices.get(field, ()))
+                if value not in options:
+                    raise ConditionError(f"{value} isn't an option of {field.name}. Use {', '.join(options)}.", at)
+            if isinstance(field, Date) and not ISO_DATE.fullmatch(value):
+                raise ConditionError(f'Write dates as year-month-day, like {field.name} >= "2026-01-31".', at)
             return value
         raise ConditionError('A value is missing.', at)
 

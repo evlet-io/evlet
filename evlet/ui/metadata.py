@@ -28,7 +28,8 @@ def view_for(model):
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
             raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
-    visible = {name: field for name, field in model.__declared_fields__.items() if not field.hidden}
+    # App fields only: instance fields (x_) differ per database and are added by Controls.
+    visible = {name: field for name, field in model.__app_fields__.items() if not field.hidden}
     texts = [name for name, field in visible.items() if isinstance(field, Text) and not isinstance(field, LongText)]
     label = getattr(meta, 'label', label_for(model.__name__))
     plural = getattr(meta, 'plural', plural_for(label))
@@ -43,10 +44,7 @@ def view_for(model):
     for value, maximum, names in ((columns, 8, {'id', *visible}), (search, 8, {name for name, field in visible.items() if isinstance(field, Text)})):
         if not isinstance(value, (tuple, list)) or len(value) > maximum or any(not isinstance(name, str) or name not in names for name in value) or len(set(value)) != len(value):
             raise ValueError('View fields must be distinct visible field names, with at most eight entries')
-    # Instance fields (x_) the app file can't name go to the last group of a declared layout.
-    added = [name for name in visible if name.startswith('x_')]
-    layout = getattr(meta, 'layout', None)
-    layout = (('Details', tuple(visible)),) if layout is None else (*layout[:-1], (layout[-1][0], (*layout[-1][1], *added))) if added and layout else layout
+    layout = getattr(meta, 'layout', (('Details', tuple(visible)),))
     used = []
     groups = []
     if not isinstance(layout, (tuple, list)) or len(layout) > 8:
@@ -79,7 +77,7 @@ def field_schema(field):
 
 def ui_schema(registry):
     return {'version': 1, 'ui_version': 1, 'models': [
-        {'name': name, **view_for(model), 'fields': [field_schema(field) for field in model.__declared_fields__.values()],
+        {'name': name, **view_for(model), 'fields': [field_schema(field) for field in model.__app_fields__.values()],
          **behavior(model, registry)}
         for name, model in registry.models.items()
     ]}

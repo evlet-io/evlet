@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 
-from .fields import Link, MISSING, Reference
+from .fields import ACTIVE, EMPTY_LAYER, Link, MISSING, Reference
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .sequences import name_new, raw_write
@@ -21,7 +21,26 @@ class ConflictError(ValueError):
     pass
 
 
+@contextmanager
+def using(database):
+    """Make a database's Layer (its instance fields and added options) active. Nested uses of the same
+    database keep the Layer the outer use took, so one request sees one set of fields throughout."""
+    current = ACTIVE.get()
+    if current is not None and current[0] is database:
+        yield
+        return
+    token = ACTIVE.set((database, database.layer))
+    try:
+        yield
+    finally:
+        ACTIVE.reset(token)
+
+
 class Database:
+    # Set by Controls: this database's instance fields and added options, and the instance timezone.
+    layer = EMPTY_LAYER
+    timezone = 'UTC'
+
     def __init__(self, path, registry, *, migrations=None, must_exist=False):
         if str(path) == ":memory:":
             raise ValueError("Use a SQLite file (a temporary file in tests)")
@@ -40,7 +59,8 @@ class Database:
         connection.row_factory = sqlite3.Row
         try:
             connection.execute("PRAGMA foreign_keys = ON")
-            yield connection
+            with using(self):
+                yield connection
         finally:
             connection.close()
 
@@ -67,7 +87,7 @@ class Database:
         with self._connection() as connection:
             try:
                 connection.execute("BEGIN IMMEDIATE")
-                yield Session(connection, self.registry)
+                yield Session(connection, self.registry, self.timezone)
                 connection.commit()
             except sqlite3.IntegrityError as exc:
                 connection.rollback()
@@ -135,6 +155,13 @@ class Database:
             connection.execute("SELECT 1").fetchone()
 
 
+def today(zone):
+    """Today's date in a timezone, as YYYY-MM-DD."""
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    return datetime.now(timezone.utc if zone == 'UTC' else ZoneInfo(zone)).date().isoformat()
+
+
 def storage_columns(model, values, names):
     """Column names and storage values for the named fields; a Reference field fills two columns."""
     columns, stored = [], []
@@ -149,9 +176,10 @@ def storage_columns(model, values, names):
 class Session:
     """Available inside Database.transaction(); do not retain it afterwards."""
 
-    def __init__(self, connection, registry):
+    def __init__(self, connection, registry, timezone='UTC'):
         self.connection = connection
         self.registry = registry
+        self.timezone = timezone
         self._maintenance = False
 
     @contextmanager
@@ -190,8 +218,7 @@ class Session:
         record = model(**values)
         numbers = raw_write(self, model, values, None, record._values)
         # A trusted session may give a naming field a value (imports); otherwise the series names it.
-        from datetime import datetime, timezone
-        name = name_new(self.connection, self.registry, model, record._values, datetime.now(timezone.utc).date().isoformat())
+        name = name_new(self.connection, self.registry, model, record._values, today(self.timezone))
         if name:
             numbers = {**numbers, self.registry.naming[model].field: name}
         if numbers:

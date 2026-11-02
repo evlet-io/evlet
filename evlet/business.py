@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import threading
 import base64
 import binascii
 from contextlib import ExitStack, contextmanager
@@ -10,8 +11,8 @@ import re
 from urllib.parse import parse_qs, quote
 
 from .auth import AccessError
-from .database import ROW_LIMIT, Session
-from .fields import ADDED_CHOICES, Link
+from .database import ROW_LIMIT, Session, using
+from .fields import Link
 from .ui.metadata import view_for
 from .models import ValidationError, identifier
 from .permissions import Policy
@@ -57,10 +58,51 @@ def size_text(size):
     return '1 byte' if size == 1 else f'{size} bytes'
 
 
+class Gate:
+    """Requests and jobs pass in shared; a schema change (adding or removing an instance field) passes
+    alone, after the work in flight has finished. A thread already inside may enter again."""
+
+    def __init__(self):
+        self.condition, self.readers, self.writer, self.waiting = threading.Condition(), 0, False, 0
+        self.local = threading.local()
+
+    @contextmanager
+    def shared(self):
+        depth = getattr(self.local, 'depth', 0)
+        with self.condition:
+            while depth == 0 and (self.writer or self.waiting):
+                self.condition.wait()
+            self.readers += 1
+        self.local.depth = depth + 1
+        try:
+            yield
+        finally:
+            self.local.depth = depth
+            with self.condition:
+                self.readers -= 1
+                self.condition.notify_all()
+
+    @contextmanager
+    def exclusive(self):
+        with self.condition:
+            self.waiting += 1
+            while self.writer or self.readers:
+                self.condition.wait()
+            self.waiting -= 1
+            self.writer = True
+        try:
+            yield
+        finally:
+            with self.condition:
+                self.writer = False
+                self.condition.notify_all()
+
+
 class Business:
     def __init__(self, database, auth, *, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None):
         self.database, self.registry, self.auth = database, database.registry, auth
         self.tenant = None
+        self.gate = Gate()
         self.application = None
         self.jobs, self.events = jobs, events
         if jobs is not None: jobs.business = self
@@ -156,9 +198,10 @@ class Business:
             self.events.initialize()
         if getattr(self, 'ui', None):
             from .auth import User
-            for role in self.policy.roles:
-                user = User(0, 'schema', role)
-                self.ui.compile(self.schema(user), user)
+            with using(self.database):
+                for role in self.policy.roles:
+                    user = User(0, 'schema', role)
+                    self.ui.compile(self.schema(user), user)
         if self.jobs:
             self.jobs.policy = self.policy
             self.jobs.initialize()
@@ -171,15 +214,20 @@ class Business:
         if self.events:
             self.events.publish(tx, model, record_id, deleted=deleted)
 
+    @property
+    def timezone(self):
+        """The instance timezone, kept on the database so trusted sessions date names like the API does."""
+        return self.database.timezone
+
+    @timezone.setter
+    def timezone(self, value):
+        self.database.timezone = value
+
     @contextmanager
     def context(self, user, *, readonly=False):
         from .documents import Context
-        token = ADDED_CHOICES.set(self.controls.custom.choices)
-        try:
-            with self.database.transaction() as tx:
-                yield Context(self, tx, user, readonly=readonly)
-        finally:
-            ADDED_CHOICES.reset(token)
+        with self.gate.shared(), self.database.transaction() as tx:
+            yield Context(self, tx, user, readonly=readonly)
 
     def event_page(self, scope):
         if self.events is None or scope['method'] != 'GET':
@@ -271,7 +319,7 @@ class Business:
             entry['search_fields'] = [name for name in entry['search_fields'] if name in readable]
             entry['layout'] = [{**group, 'fields': [name for name in group['fields'] if name in readable]} for group in entry.get('layout', [])]
             # Controls overrides: labels, rules, options, layout and list view on this instance.
-            self.controls.custom.merge(entry, model, readable)
+            self.controls.custom.merge(entry, model, readable, writable)
             if entry['title_field'] not in readable:
                 entry['title_field'] = 'id'
             entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
@@ -316,12 +364,13 @@ class Business:
         return result
 
     def dispatch(self, scope, body):
-        # Options Controls added to choice fields are valid for this request.
-        token = ADDED_CHOICES.set(self.controls.custom.choices)
-        try:
-            return self._dispatch(scope, body)
-        finally:
-            ADDED_CHOICES.reset(token)
+        # A request sees one set of instance fields throughout; adding or removing one waits for the rest.
+        schema = scope['path'].startswith('/api/_controls/fields/') and scope['method'] in ('POST', 'DELETE')
+        with self.gate.exclusive() if schema else self.gate.shared():
+            if schema:
+                return self._dispatch(scope, body)
+            with using(self.database):
+                return self._dispatch(scope, body)
 
     def _dispatch(self, scope, body):
         path, method = scope['path'], scope['method']
@@ -508,6 +557,7 @@ class Business:
                 raise ValidationError({'_form': 'A move takes no values'})
             with self.context(user) as context:
                 context._recalculate = (model, record_id) if recalculate and record_id else None
+                context._person = None if action or move else (model, record_id)
                 if record_id:
                     record = self.policy.record(context._tx, user, model, record_id, 'update')
                     if b'if-match' not in dict(scope.get('headers', [])):
@@ -528,6 +578,8 @@ class Business:
             with self.database.transaction() as tx:
                 self.policy.require(user, model, 'create')
                 values, children = self.split_body(body)
+                from .documents import drop_empty_name
+                drop_empty_name(self.registry, model, values)
                 self.policy.check_values(tx, user, model, values)
                 values = self.controls.custom.prepare(model, values)
                 cleaned = dict(model(**values)._values)
@@ -1001,7 +1053,7 @@ class Business:
                 raise ValueError()
             import json
             filters = json.loads(query.get('filters', ['{}'])[0])
-            order = query.get('order_by', ['-id'])[0].split(',')
+            order = query.get('order_by', [self.controls.custom.default_order(self.policy, user, model)])[0].split(',')
             limit, offset = int(query.get('limit', ['50'])[0]), int(query.get('offset', ['0'])[0])
             if not isinstance(filters, dict) or not 1 <= limit <= ROW_LIMIT or not 0 <= offset <= 2**63-1:
                 raise ValueError()

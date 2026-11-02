@@ -88,20 +88,34 @@ def _tables(connection):
 def app_fields(model):
     """Stored fields from the app files. Instance fields (x_) are added and removed by Controls, so
     schema checks and app migrations leave their columns alone."""
-    return {key: field for key, field in model.__fields__.items() if not key.startswith('x_')}
+    return model.__app_stored__
+
+
+def instance_columns(connection, postgres=False):
+    """{table: {column}} of the instance fields Controls added, from evlet_custom_fields."""
+    exists = "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_custom_fields'" if postgres \
+        else "SELECT 1 FROM sqlite_master WHERE name='evlet_custom_fields'"
+    if connection.execute(exists).fetchone() is None:
+        return {}
+    result = {}
+    for row in connection.execute('SELECT model, name FROM evlet_custom_fields'):
+        result.setdefault(row[0], set()).add(row[1])
+    return result
 
 
 def _check(connection, registry, *, rows=False):
+    added = instance_columns(connection)
     for name, model in registry.models.items():
         table = identifier(name)
+        skip = added.get(name, set())
         columns = connection.execute(f'PRAGMA table_info({table})').fetchall()
-        actual = {row['name']: (row['type'].upper(), bool(row['notnull']), row['pk']) for row in columns if not row['name'].startswith('x_')}
+        actual = {row['name']: (row['type'].upper(), bool(row['notnull']), row['pk']) for row in columns if row['name'] not in skip}
         expected = {'id': ('INTEGER', False, 1), **{
             column: (sql_type, field.required, 0) for key, field in app_fields(model).items() for column, sql_type in field.columns(key)}}
         if actual != expected:
             raise SchemaError(f'{name}: database columns differ from models; run explicit migrations')
         links = {(row['from'], row['table'], row['to'], row['on_delete'])
-                 for row in connection.execute(f'PRAGMA foreign_key_list({table})') if not row['from'].startswith('x_')}
+                 for row in connection.execute(f'PRAGMA foreign_key_list({table})') if row['from'] not in skip}
         expected_links = {(key, storage_name(field.target), 'id', 'NO ACTION')
                           for key, field in app_fields(model).items() if isinstance(field, Link)}
         if links != expected_links:
