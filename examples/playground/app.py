@@ -11,7 +11,9 @@ from pathlib import Path
 
 from evlet import (Action, ApiScope, AppDefinition, Application, ChildTable, EventStore, Frontend, Host, JobQueue, LocalAuth,
                    Policy, Rule, Security, Task, ValidationError, own_customer)
+from evlet import api
 from evlet.routing import resolve_routes
+from evlet.services import Endpoint
 from .models import Customer, Invoice, Project, ProjectTask, registry
 from .migrate import configured_database
 from .settings import ProjectPreferences, ProjectSettings
@@ -65,6 +67,19 @@ def refresh_progress(tx, job, payload):
     tx.update(Project, project.id, progress=progress)
 
 
+@api(method='GET', permission=(Project, 'read'), tool=True)
+def project_overview(context, project: int):
+    """One project at a glance: its status, progress, budget and how many of its tasks are done."""
+    record = context.get(Project, project)
+    tasks = getattr(record, 'tasks', ())
+    return {'project': record.name, 'status': record.status, 'progress': record.progress, 'budget': getattr(record, 'budget', None),
+            'tasks': len(tasks), 'done': sum(1 for task in tasks if task.done)}
+
+
+# Business services offered to AI assistants through the Tool Engine (list_services and call_service).
+SERVICES = (Endpoint('playground.project_overview', project_overview, 'GET', (Project, 'read'), tool=True),)
+
+
 def build_app(database, auth, *, storage=None, tenant='local', routes=None):
     events = EventStore(database)
     policy = Policy(registry, rules=PORTAL_RULES)
@@ -76,7 +91,7 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None):
                       actions=(Action(Project, 'start', 'Start project', start_project),
                                Action(Project, 'complete', 'Complete project', complete_project),
                                Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress)),
-                      attachments=(Project,), slips=SLIPS)
+                      attachments=(Project,), slips=SLIPS, apis=SERVICES)
     # Settings > Projects: people who can read projects see it; editors and admins change it.
     app.business.settings.register('projects', ProjectSettings, ProjectPreferences, (Project,))
     return app
