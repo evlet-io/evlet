@@ -1,11 +1,11 @@
 // The API client the screens use: the framework client plus the routes the screens need and a
 // cell per record holding its last detail, so the availability keys of a detail (_moves,
-// _actions, _locked, _void, _revise, _effects, revised_by) are at hand next to the record store.
+// _actions, _locked, _void, _revise, _unpost, _repost, _effects, revised_by) are at hand next to the record store.
 
 import { ApiClient, type ApiResponse, type ClientOptions, type Page, type RecordData, type RequestOptions, type Session } from '../api';
 import { cell, type Cell } from '../reactive';
 
-const DETAIL = /^\/api\/([A-Za-z][A-Za-z0-9_]*)\/(\d+)(?:\/(?:moves\/[^/]+|actions\/[^/]+|void|revise))?$/;
+const DETAIL = /^\/api\/([A-Za-z][A-Za-z0-9_]*)\/(\d+)(?:\/(?:moves\/[^/]+|actions\/[^/]+|void|revise|unpost|repost))?$/;
 const NAME = /^[A-Za-z][A-Za-z0-9_.]*$/;
 
 export interface Attachment { id: number; name: string; size: number }
@@ -118,6 +118,16 @@ export class AppClient extends ApiClient {
   /** Void and copy a record into a new draft (Phase 5). Answers the copy, with _original. */
   async revise(model: string, id: number, reason: string, etag: string | null) {
     return this.request<RecordData>('POST', `/api/${model}/${id}/revise`, { body: { reason }, ifMatch: etag });
+  }
+
+  /** Take a posted record back to the state it posted from, cancelling what it posted. Admin by default. */
+  async unpost(model: string, id: number, reason: string, etag: string | null) {
+    return this.request<RecordData>('POST', `/api/${model}/${id}/unpost`, { body: { reason }, ifMatch: etag });
+  }
+
+  /** Post an unposted record again through its posting move; the reason is optional. */
+  async repost(model: string, id: number, reason: string, etag: string | null) {
+    return this.request<RecordData>('POST', `/api/${model}/${id}/repost`, { body: reason ? { reason } : {}, ifMatch: etag });
   }
 }
 

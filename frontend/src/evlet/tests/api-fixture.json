@@ -4804,6 +4804,23 @@
   "etag": "\"e78be22ba00659bdfeeb56054faaa63a1ef93c56936fa17eb2dfd98e6679a35a\"",
   "status": 200
  },
+ "invoice_admin_session": {
+  "body": {
+   "application": {
+    "docs": "/docs",
+    "name": "Evlet",
+    "playground": false
+   },
+   "csrf": "fixture-csrf-token",
+   "user": {
+    "id": 1,
+    "role": "admin",
+    "username": "admin"
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
  "invoice_aggregate_by_status": {
   "body": {
    "group_by": [
@@ -5002,7 +5019,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.414Z",
+     "at": "2026-11-02T06:25:40.680Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5014,7 +5031,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.405Z",
+     "at": "2026-11-02T06:25:40.664Z",
      "data": {
       "fields": {
        "total": {
@@ -5076,7 +5093,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.396Z",
+     "at": "2026-11-02T06:25:40.651Z",
      "data": {
       "fields": {
        "customer": {
@@ -5270,7 +5287,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-02T02:05:46.442Z",
+     "at": "2026-11-02T06:25:40.725Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5282,7 +5299,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.441Z",
+     "at": "2026-11-02T06:25:40.724Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5294,7 +5311,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.440Z",
+     "at": "2026-11-02T06:25:40.721Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -5304,7 +5321,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.438Z",
+     "at": "2026-11-02T06:25:40.719Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -5316,7 +5333,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.437Z",
+     "at": "2026-11-02T06:25:40.716Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5325,7 +5342,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.427Z",
+     "at": "2026-11-02T06:25:40.699Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5340,7 +5357,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.421Z",
+     "at": "2026-11-02T06:25:40.690Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5350,7 +5367,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.421Z",
+     "at": "2026-11-02T06:25:40.690Z",
      "data": {
       "targets": [
        {
@@ -5366,7 +5383,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.421Z",
+     "at": "2026-11-02T06:25:40.690Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5383,7 +5400,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.414Z",
+     "at": "2026-11-02T06:25:40.680Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5395,7 +5412,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.405Z",
+     "at": "2026-11-02T06:25:40.664Z",
      "data": {
       "fields": {
        "total": {
@@ -5457,7 +5474,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.396Z",
+     "at": "2026-11-02T06:25:40.651Z",
      "data": {
       "fields": {
        "customer": {
@@ -5507,7 +5524,7 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-02T02:05:46.438Z",
+   "at": "2026-11-02T06:25:40.719Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5523,7 +5540,7 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-02T02:05:46.440Z",
+   "at": "2026-11-02T06:25:40.721Z",
    "data": {
     "follow_up": 19,
     "text": "Balance due by the end of the month"
@@ -5537,7 +5554,7 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-02T02:05:46.437Z",
+   "at": "2026-11-02T06:25:40.716Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -5637,6 +5654,81 @@
    "total": 0
   },
   "etag": null,
+  "status": 200
+ },
+ "invoice_repost": {
+  "body": {
+   "_actions": [
+    {
+     "allowed": true,
+     "label": "Record payment",
+     "name": "record_payment"
+    }
+   ],
+   "_calculation": {
+    "language": "finite-v1",
+    "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
+   },
+   "_effects": [
+    {
+     "balanced": true,
+     "reversals": 3,
+     "rows": 6,
+     "target": "ledgerentry"
+    }
+   ],
+   "_journal": {
+    "count": 9,
+    "open_follow_ups": 0
+   },
+   "_locked": true,
+   "_moves": [
+    {
+     "allowed": true,
+     "label": "Mark paid",
+     "to": "paid"
+    }
+   ],
+   "_revise": {
+    "allowed": true
+   },
+   "_unpost": {
+    "allowed": true
+   },
+   "_void": {
+    "allowed": true
+   },
+   "children": {
+    "lines": [
+     {
+      "amount": "2500.00",
+      "id": 9,
+      "item": "Support hours",
+      "qty": "10.0000",
+      "rate": "250.00"
+     },
+     {
+      "amount": "180.00",
+      "id": 10,
+      "item": "Licence",
+      "qty": "2.0000",
+      "rate": "90.00"
+     }
+    ]
+   },
+   "customer": 1,
+   "due_on": "2026-12-01",
+   "id": 5,
+   "number": "INV-2026-00004",
+   "outstanding": "2680.00",
+   "posting_date": "2026-11-01",
+   "remarks": "",
+   "revised_by": null,
+   "revises": null,
+   "status": "issued",
+   "total": "2680.00"
+  },
+  "etag": "\"3565d4025bfe924aa6a7e0d8d4d957a4458849907838cf4ec1ab180ae25e2ffc\"",
   "status": 200
  },
  "invoice_revise_before": {
@@ -6915,7 +7007,9 @@
      "permissions": {
       "create": true,
       "delete": false,
+      "repost": false,
       "revise": true,
+      "unpost": false,
       "update": true,
       "void": true
      },
@@ -7012,6 +7106,7 @@
       ]
      },
      "title_field": "number",
+     "unpostable": true,
      "voidable": true
     },
     {
@@ -7314,6 +7409,234 @@
   "etag": null,
   "status": 200
  },
+ "invoice_unpost": {
+  "body": {
+   "_actions": [
+    {
+     "allowed": false,
+     "label": "Record payment",
+     "name": "record_payment",
+     "reason": "The condition for this action is not met"
+    }
+   ],
+   "_calculation": {
+    "language": "finite-v1",
+    "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
+   },
+   "_effects": [
+    {
+     "balanced": true,
+     "reversals": 3,
+     "rows": 3,
+     "target": "ledgerentry"
+    }
+   ],
+   "_journal": {
+    "count": 6,
+    "open_follow_ups": 0
+   },
+   "_locked": false,
+   "_moves": [
+    {
+     "allowed": true,
+     "label": "Issue",
+     "to": "issued"
+    }
+   ],
+   "_repost": {
+    "allowed": true
+   },
+   "_revise": {
+    "allowed": false,
+    "reason": "This record cannot be revised in its current state"
+   },
+   "_void": {
+    "allowed": false,
+    "reason": "This record cannot be voided in its current state"
+   },
+   "children": {
+    "lines": [
+     {
+      "amount": "2500.00",
+      "id": 9,
+      "item": "Support hours",
+      "qty": "10.0000",
+      "rate": "250.00"
+     },
+     {
+      "amount": "180.00",
+      "id": 10,
+      "item": "Licence",
+      "qty": "2.0000",
+      "rate": "90.00"
+     }
+    ]
+   },
+   "customer": 1,
+   "due_on": "2026-12-01",
+   "id": 5,
+   "number": "INV-2026-00004",
+   "outstanding": "2680.00",
+   "posting_date": "2026-11-01",
+   "remarks": "",
+   "revised_by": null,
+   "revises": null,
+   "status": "draft",
+   "total": "2680.00"
+  },
+  "etag": "\"89e0ace87ddde9330f255a1ffbdbbaee1ab2ed8f2fadbdaff669c47de8e85230\"",
+  "status": 200
+ },
+ "invoice_unpost_before": {
+  "body": {
+   "_actions": [
+    {
+     "allowed": true,
+     "label": "Record payment",
+     "name": "record_payment"
+    }
+   ],
+   "_effects": [
+    {
+     "balanced": true,
+     "reversals": 0,
+     "rows": 3,
+     "target": "ledgerentry"
+    }
+   ],
+   "_journal": {
+    "count": 4,
+    "open_follow_ups": 0
+   },
+   "_locked": true,
+   "_moves": [
+    {
+     "allowed": true,
+     "label": "Mark paid",
+     "to": "paid"
+    }
+   ],
+   "_revise": {
+    "allowed": true
+   },
+   "_unpost": {
+    "allowed": true
+   },
+   "_void": {
+    "allowed": true
+   },
+   "children": {
+    "lines": [
+     {
+      "amount": "2500.00",
+      "id": 9,
+      "item": "Support hours",
+      "qty": "10.0000",
+      "rate": "250.00"
+     },
+     {
+      "amount": "180.00",
+      "id": 10,
+      "item": "Licence",
+      "qty": "2.0000",
+      "rate": "90.00"
+     }
+    ]
+   },
+   "customer": 1,
+   "due_on": "2026-12-01",
+   "id": 5,
+   "number": "INV-2026-00004",
+   "outstanding": "2680.00",
+   "posting_date": "2026-11-01",
+   "remarks": "",
+   "revised_by": null,
+   "revises": null,
+   "status": "issued",
+   "total": "2680.00"
+  },
+  "etag": "\"3565d4025bfe924aa6a7e0d8d4d957a4458849907838cf4ec1ab180ae25e2ffc\"",
+  "status": 200
+ },
+ "invoice_unpost_editor": {
+  "body": {
+   "_actions": [
+    {
+     "allowed": true,
+     "label": "Record payment",
+     "name": "record_payment"
+    }
+   ],
+   "_effects": [
+    {
+     "balanced": true,
+     "reversals": 0,
+     "rows": 3,
+     "target": "ledgerentry"
+    }
+   ],
+   "_journal": {
+    "count": 4,
+    "open_follow_ups": 0
+   },
+   "_locked": true,
+   "_moves": [
+    {
+     "allowed": false,
+     "label": "Mark paid",
+     "reason": "Your role cannot use this move",
+     "to": "paid"
+    }
+   ],
+   "_revise": {
+    "allowed": true
+   },
+   "_void": {
+    "allowed": true
+   },
+   "children": {
+    "lines": [
+     {
+      "amount": "2500.00",
+      "id": 9,
+      "item": "Support hours",
+      "qty": "10.0000",
+      "rate": "250.00"
+     },
+     {
+      "amount": "180.00",
+      "id": 10,
+      "item": "Licence",
+      "qty": "2.0000",
+      "rate": "90.00"
+     }
+    ]
+   },
+   "customer": 1,
+   "due_on": "2026-12-01",
+   "id": 5,
+   "number": "INV-2026-00004",
+   "outstanding": "2680.00",
+   "posting_date": "2026-11-01",
+   "remarks": "",
+   "revised_by": null,
+   "revises": null,
+   "status": "issued",
+   "total": "2680.00"
+  },
+  "etag": "\"3565d4025bfe924aa6a7e0d8d4d957a4458849907838cf4ec1ab180ae25e2ffc\"",
+  "status": 200
+ },
+ "invoice_unpost_reason_missing": {
+  "body": {
+   "error": "Validation failed",
+   "fields": {
+    "reason": "Give a reason"
+   }
+  },
+  "etag": null,
+  "status": 422
+ },
  "invoice_viewer_detail": {
   "body": {
    "_actions": [],
@@ -7376,7 +7699,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-02T02:05:46.442Z",
+     "at": "2026-11-02T06:25:40.725Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -7388,7 +7711,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.441Z",
+     "at": "2026-11-02T06:25:40.724Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -7400,7 +7723,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.440Z",
+     "at": "2026-11-02T06:25:40.721Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -7410,7 +7733,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.438Z",
+     "at": "2026-11-02T06:25:40.719Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -7422,7 +7745,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.437Z",
+     "at": "2026-11-02T06:25:40.716Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -7431,7 +7754,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.427Z",
+     "at": "2026-11-02T06:25:40.699Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -7446,7 +7769,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.421Z",
+     "at": "2026-11-02T06:25:40.690Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -7456,7 +7779,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.421Z",
+     "at": "2026-11-02T06:25:40.690Z",
      "data": {},
      "id": 15,
      "kind": "changed",
@@ -7464,7 +7787,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.421Z",
+     "at": "2026-11-02T06:25:40.690Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -7481,7 +7804,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.414Z",
+     "at": "2026-11-02T06:25:40.680Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -7493,7 +7816,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.405Z",
+     "at": "2026-11-02T06:25:40.664Z",
      "data": {
       "fields": {
        "total": {
@@ -7555,7 +7878,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T02:05:46.396Z",
+     "at": "2026-11-02T06:25:40.651Z",
      "data": {
       "fields": {
        "customer": {
@@ -8386,7 +8709,9 @@
      "permissions": {
       "create": false,
       "delete": false,
+      "repost": false,
       "revise": false,
+      "unpost": false,
       "update": false,
       "void": false
      },
@@ -8483,6 +8808,7 @@
       ]
      },
      "title_field": "number",
+     "unpostable": true,
      "voidable": true
     },
     {

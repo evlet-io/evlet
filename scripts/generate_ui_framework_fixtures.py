@@ -345,6 +345,17 @@ def documents(out, folder):
     # Revising voids the issued invoice and opens a draft copy.
     keep('invoice_revision', write('POST', revised, '/revise', {'reason': 'Wrong quantity on line 2'}))
     keep('invoice_revised_original', editor('GET', revised))
+    # An admin unposts an issued invoice (a reason is required) and posts it again; the editor has neither.
+    def admin_write(method, record, route='', body=None):
+        return admin(method, record + route, body, headers={b'if-match': admin('GET', record)[2][b'etag']})
+    unposted = invoice(children={'lines': lines})
+    assert write('POST', unposted, '/moves/issued', {})[0] == 200
+    keep('invoice_unpost_before', admin('GET', unposted))
+    keep('invoice_unpost_editor', editor('GET', unposted))
+    keep('invoice_unpost_reason_missing', admin_write('POST', unposted, '/unpost', {'reason': ''}))
+    keep('invoice_unpost', admin_write('POST', unposted, '/unpost', {'reason': 'Wrong customer'}))
+    keep('invoice_repost', admin_write('POST', unposted, '/repost', {}))
+    keep('invoice_admin_session', admin('GET', '/api/auth/session'))
     database.close()
 
 

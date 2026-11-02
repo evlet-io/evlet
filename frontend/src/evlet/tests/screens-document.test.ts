@@ -145,6 +145,48 @@ describe('transaction document (recorded fixtures)', () => {
     expect([...host.querySelectorAll('.doc-main .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '3', 'Balanced']);
   });
 
+  it('unposts with a required reason as admin, then reposts from the banner', async () => {
+    const before = invoice.invoice_unpost_before, unposted = invoice.invoice_unpost, id = before.body.id;
+    const admin: Route[] = routes(before).map(route => route[1].source.includes('session') ? ['GET', route[1], invoice.invoice_admin_session] : route);
+    const { host, sent } = start([...admin, ['POST', path(id, '/unpost$'), unposted], ['POST', path(id, '/repost$'), invoice.invoice_repost]],
+      `/app/invoice/${id}`);
+    await until(() => expect(byText(host, '.inv-banner button', 'Unpost')).not.toBeNull());
+    click(byText(host, '.inv-banner button', 'Unpost'));
+    const dialog = document.querySelector('.modal')!;
+    expect(text(dialog.querySelector('h2'))).toBe(`Unpost ${before.body.number}`);
+    click(byText(dialog, '.modal-f button', 'Unpost invoice'));
+    expect(text(dialog.querySelector('.err'))).toBe(invoice.invoice_unpost_reason_missing.body.fields.reason);
+    expect(requests(sent, 'POST', /unpost$/)).toHaveLength(0);
+    typeInto(dialog.querySelector('textarea')!, 'Wrong customer');
+    click(byText(dialog, '.modal-f button', 'Unpost invoice'));
+    await until(() => expect(banner(host)).toContain('Draft, unposted.'));
+    const request = requests(sent, 'POST', /unpost$/)[0];
+    expect(request.body).toEqual({ reason: 'Wrong customer' });
+    expect(request.headers['if-match']).toBe(before.etag);
+    expect(lastToast()).toBe('Unposted. You can edit it, then repost it.');
+    // The number stays; the reversal rows show beside the posted ones.
+    expect(unposted.body.number).toBe(before.body.number);
+    click(byText(host, '.doc-tabs [role="tab"]', /^Postings/));
+    expect([...host.querySelectorAll('.doc-main .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '3', 'Balanced']);
+    // Repost needs no reason.
+    click(byText(host, '.inv-banner button', 'Repost'));
+    const again = document.querySelector('.modal')!;
+    expect(text(again.querySelector('h2'))).toBe(`Repost ${before.body.number}`);
+    click(byText(again, '.modal-f button', 'Repost invoice'));
+    await until(() => expect(banner(host)).toContain('Issued and locked.'));
+    const repost = requests(sent, 'POST', /repost$/)[0];
+    expect(repost.body).toEqual({});
+    expect(repost.headers['if-match']).toBe(unposted.etag);
+    expect(lastToast()).toBe('Reposted.');
+  });
+
+  it('offers no unpost to a role without it', async () => {
+    const { host } = start(routes(invoice.invoice_unpost_editor), `/app/invoice/${invoice.invoice_unpost_editor.body.id}`);
+    await until(() => expect(byText(host, '.inv-banner button', 'Void')).not.toBeNull());
+    expect(byText(host, '.inv-banner button', 'Unpost')).toBeNull();
+    expect(banner(host)).toContain('To correct it, void or revise.');
+  });
+
   it('revises: voids, then opens the editable copy on its lines with a link back', async () => {
     const before = invoice.invoice_revise_before;
     const { host, sent } = start([...routes(before),
