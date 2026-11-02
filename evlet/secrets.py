@@ -4,7 +4,7 @@ Keys come from EVLET_SECRET_KEY (comma-separated) or from instances/<name>/secre
 32-byte key per line in URL-safe base64, mode 0600, owned by the server's user, never a link.
 The first key seals; any listed key opens, so a rotation can keep the old key after the new one.
 Each sealed value is bound to a purpose string (such as "two_step:42") that must match to open it.
-AES-GCM comes from the optional `cryptography` package.
+AES-GCM comes from the `cryptography` package, a core dependency.
 
     seal(key, b"value", "two_step:42") -> bytes
     open(key, sealed, "two_step:42")   -> b"value"

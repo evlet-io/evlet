@@ -118,8 +118,8 @@ key = secrets.SecretKey(path)                         # .check(), .keys(), .writ
   a missing or changed key is never replaced: sign-in for people with two-step on, and set-up
   for required roles, answer 503 "Two-step sign-in is unavailable: the secret key is missing
   or changed. Ask your admin." Restore `secret.key` from the backup taken with the database.
-- AES-GCM comes from the optional `cryptography` package. Without it, or on an application
-  that is not an instance, two-step sign-in is unavailable: Settings says so, it can't be turned
+- AES-GCM comes from the `cryptography` package, a core dependency. If it can't be imported, or
+  on an application that is not an instance, two-step sign-in is unavailable: Settings says so, it can't be turned
   on, and required roles sign in with their password. The instance logs a warning on start
   when required roles exist but the package is missing or the key file is refused.
 
