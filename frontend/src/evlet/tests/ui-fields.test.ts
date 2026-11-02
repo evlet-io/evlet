@@ -233,3 +233,42 @@ describe('fields bound to the record store', () => {
     expect(host.querySelector('input')!.value).toBe('42');
   });
 });
+
+describe('hint and tooltip', () => {
+  it('shows help text under the input, linked to it, and the error in its place', () => {
+    const field = localField({ name: 'reference', type: 'text', label: 'Reference', help_text: 'The number on the customer’s order', required: true });
+    const host = render(() => BaseField({ field }));
+    const input = host.querySelector('input')!, help = host.querySelector<HTMLElement>('.fld-help')!;
+    expect(help.textContent).toBe('The number on the customer’s order');
+    expect(input.getAttribute('aria-describedby')!.split(' ')).toContain(help.id);
+    expect(help.hidden).toBe(false);
+    change(input, '');
+    expect(field.error.peek()).toBe('Reference is required');
+    expect(help.hidden).toBe(true);
+    expect(host.querySelector('.err')!.textContent).toBe('Reference is required');
+    change(input, 'PO-7');
+    expect(help.hidden).toBe(false);
+    expect(render(() => BaseField({ field: localField({ name: 'x', type: 'text', label: 'X' }) })).querySelector('.fld-help')).toBeNull();
+  });
+
+  it('puts a ? icon with the tooltip inside the input, and only when one is set', () => {
+    const tip = 'Leave empty to use the customer’s rate';
+    const host = render(() => [
+      BaseField({ field: localField({ name: 'note', type: 'text', label: 'Note', tooltip: tip }) }),
+      BaseField({ field: localField({ name: 'rate', type: 'percent', label: 'Rate', scale: 2, tooltip: tip }) }),
+      BaseField({ field: localField({ name: 'kind', type: 'select', label: 'Kind', choices: ['a', 'b'], tooltip: tip }) }),
+      BaseField({ field: localField({ name: 'plain', type: 'text', label: 'Plain' }) }),
+    ]);
+    const icon = (name: string) => host.querySelector<HTMLElement>(`[data-field="${name}"] .fld-tip`);
+    expect(icon('note')!.closest('.fld-ctl')!.classList.contains('tip-in')).toBe(true);
+    expect(icon('note')!.getAttribute('aria-label')).toBe('About note');
+    // Inside a unit box it sits between the input and the % box.
+    expect(icon('rate')!.previousElementSibling!.tagName).toBe('INPUT');
+    expect(icon('rate')!.nextElementSibling!.textContent).toBe('%');
+    expect(icon('kind')!.closest('.fld-ctl')!.classList.contains('tip-chev')).toBe(true);
+    expect(icon('plain')).toBeNull();
+    icon('note')!.dispatchEvent(new FocusEvent('focus'));
+    expect(tipText()).toBe(tip);
+  });
+});
+

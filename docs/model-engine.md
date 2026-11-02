@@ -73,6 +73,16 @@ class Visit(Model):
 | `State` | TEXT like `Select` | one of its states; set only to the default on create, then changed only by its `Move`s; at most one per root document; see [states-actions.md](states-actions.md) | text filters |
 | `Sequence` | TEXT, null until assigned, unique with its scope fields | a document number such as `INV-{year}-{n:05}` written only by the engine on create or when a move enters `assign_on`; root documents only; see [sequences.md](sequences.md) | text filters |
 
+Every field takes `help_text=` and `tooltip=`, both text. Forms show `help_text` in grey under
+the input (an error takes its place while there is one) and `tooltip` behind a small ? icon at
+the right end of the input, on hover and keyboard focus. The icon shows only when `tooltip` is
+set. Controls can change both, and its code export writes them back:
+
+```python
+reference = Text(help_text="The number printed on the invoice.",
+                 tooltip="Use the customer's purchase order number if they ask for one.")
+```
+
 Every field takes `suffix=` (at most 20 characters), a unit the forms show in a box after the
 input and after the value at rest, such as `"%"` or `"days"`. It is display metadata only, like
 `prefix` on a UI control. `Percent` fields always show `%`; a `Decimal` with `suffix="%"` looks

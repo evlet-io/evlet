@@ -25,7 +25,9 @@ class Invoice(Model):
         list_fields = ('reference', 'customer', 'total', 'status', 'posting_date')
 
     customer = Link(Customer, required=True)
-    reference = Text(required=True, unique=True, max_length=40)
+    # help_text reads under the input; tooltip sits behind a ? icon at its right end.
+    reference = Text(required=True, unique=True, max_length=40, help_text="The number printed on the invoice.",
+                     tooltip="Use the customer's purchase order number if they ask for one.")
     # The currency comes from the customer the invoice is for.
     total = Currency(required=True, minimum="0.01", currency='customer.currency')
     posting_date = Date()

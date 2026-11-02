@@ -641,19 +641,34 @@ export interface FieldProps {
 
 /**
  * The reactive core every field type wraps: label, value, required, locked and applies rules,
- * error and hint. Hidden while its applies_when rule is false.
+ * error and hint. Hidden while its applies_when rule is false. help_text reads under the input
+ * (an error takes its place) and tooltip behind a ? icon at the input's right end.
  */
 export function BaseField(props: FieldProps): HTMLElement {
-  const { field } = props, meta = field.meta, id = uid('f'), errorId = `${id}-err`;
+  const { field } = props, meta = field.meta, id = uid('f'), errorId = `${id}-err`, helpId = `${id}-help`;
   const label = props.label ?? meta.label;
-  const control = FieldControl(field, { id, describedBy: errorId, links: props.links, onCommit: props.onCommit });
+  const describedBy = meta.help_text ? `${errorId} ${helpId}` : errorId;
+  const control = FieldControl(field, { id, describedBy, links: props.links, onCommit: props.onCommit });
   const star = html`<span class="req" aria-hidden="true">*</span>` as HTMLElement;
   if (meta.required_when) tooltip(star, `Required when ${phrase(meta.required_when, labelsOf(field))}`);
   const labelled = ['switch', 'link', 'select'].includes(kindOf(meta.type).control ?? '') || control.element.tagName !== 'DIV' || control.element.classList.contains('in-affix') || control.element.classList.contains('in-tags');
   return html`<div class="fld" class:full=${Boolean(props.full) || meta.type === 'longtext'} class:invalid=${() => Boolean(field.error.get())}
     hidden=${() => !field.rules.get().applies} data-field=${meta.name}>
     <label for=${labelled ? id : null} id=${`${id}-label`}>${label}${when(() => field.rules.get().required && !field.calculated, () => star)}${FieldHints(field)}${props.hint ?? null}</label>
-    ${control.element}<span class="err" id=${errorId} role="alert">${() => field.error.get() ?? ''}</span></div>` as HTMLElement;
+    ${meta.tooltip ? withTip(control.element, meta.tooltip, meta.label) : control.element}<span class="err" id=${errorId} role="alert">${() => field.error.get() ?? ''}</span>${meta.help_text
+      ? html`<span class="fld-help" id=${helpId} hidden=${() => Boolean(field.error.get())}>${meta.help_text}</span>` : null}</div>` as HTMLElement;
+}
+
+// The ? icon at the right end of a control: inside an input's box, before a select's or link's
+// chevron, before a unit box. Hover or focus shows the text.
+function withTip(control: HTMLElement, text: string, label: string): HTMLElement {
+  const tip = html`<button type="button" class="fld-tip" aria-label=${`About ${label.toLowerCase()}`}>${Icon('circle-help', { size: 'sm' })}</button>` as HTMLElement;
+  tooltip(tip, text);
+  // A unit box or picker: the icon is one more part of the box, right after the input.
+  if (control.classList.contains('in-affix')) { control.querySelector('input')!.after(tip); return control; }
+  const kind = control.tagName === 'INPUT' ? 'tip-in' : control.tagName === 'TEXTAREA' ? 'tip-area'
+    : control.classList.contains('in-select') || control.classList.contains('in-link') ? 'tip-chev' : 'tip-end';
+  return html`<div class=${`fld-ctl ${kind}`}>${control}${tip}</div>` as HTMLElement;
 }
 
 const typed = (type: string) => (props: FieldProps) => {

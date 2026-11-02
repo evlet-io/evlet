@@ -96,7 +96,7 @@ class Field:
         return field
 
     def __init__(self, *, required=False, default=MISSING, unique=False, index=False, validator=None,
-                 label=None, help_text="", placeholder="", suffix="", hidden=False, read_only=False,
+                 label=None, help_text="", tooltip="", placeholder="", suffix="", hidden=False, read_only=False,
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
                  initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False, tracking="value"):
@@ -113,11 +113,12 @@ class Field:
         self.name = ""
         if label is not None and (not isinstance(label, str) or not label):
             raise ValueError("label must be nonempty text")
-        if not isinstance(help_text, str) or not isinstance(placeholder, str) or not isinstance(suffix, str) or len(suffix) > 20:
-            raise ValueError("Field help, placeholder and suffix must be text; a suffix has at most 20 characters")
+        if not isinstance(help_text, str) or not isinstance(tooltip, str) or not isinstance(placeholder, str) or not isinstance(suffix, str) or len(suffix) > 20:
+            raise ValueError("Field help, tooltip, placeholder and suffix must be text; a suffix has at most 20 characters")
         if type(hidden) is not bool or type(read_only) is not bool:
             raise ValueError("hidden and read_only must be booleans")
-        self.label, self.help_text, self.placeholder, self.suffix = label, help_text, placeholder, suffix
+        # help_text shows under the input; tooltip behind a ? icon at its right end.
+        self.label, self.help_text, self.tooltip, self.placeholder, self.suffix = label, help_text, tooltip, placeholder, suffix
         self.hidden, self.read_only = hidden, read_only
         self.compute, self.stored, self.query, self.fetch = compute, stored, query, fetch
         self.filters = dict(filters or {})
@@ -518,7 +519,7 @@ class State(Select):
     out and `voidable` names the states a void (and a revise) may start from. A State with voidable
     states must have a "void" state that is locked and final.
     """
-    OPTIONS = ("label", "help_text", "placeholder", "hidden", "index", "max_length")
+    OPTIONS = ("label", "help_text", "tooltip", "placeholder", "hidden", "index", "max_length")
 
     def __init__(self, choices, *, default=MISSING, moves=(), locked=(), final=(), voidable=(), **kwargs):
         from .declarations import Move

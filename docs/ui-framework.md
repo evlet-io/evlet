@@ -281,6 +281,19 @@ GST date-times, exact decimals, `1h 30m` durations) and a wrong value stays in t
 a message that says how to fix it. `localField()` makes the same cells for forms that are not
 records, such as action dialogs.
 
+### Form fields
+
+BaseField follows the Untitled UI input structure in Evlet's colours. Inputs, Link and Select
+buttons, unit boxes and tag fields are 40 px tall with 14 px text and 14 px side padding, so a
+form row lines up. At rest an input has a 1 px light grey border and a faint shadow; on focus
+a lighter blue border and a soft 4 px blue ring; with an error the same in rose. The label is
+14 px, weight 500, 6 px above the input, and the required `*` is the accent blue (its
+`required_when` tooltip stays). `help_text` reads under the input in grey and is linked with
+`aria-describedby`; an error replaces it while there is one. A field with `tooltip` gets a ? icon
+at the right end of the input (before a Select's or Link's chevron, between the input and a unit
+box) that shows the text on hover and focus. Compact places keep their sizes: the record side
+panel (`.fields`), child table cells, list filters and quick add. Inter is the font, as before.
+
 ### Pickers
 
 No field uses a browser control for picking (no native `<select>`, no `type="date"`). The

@@ -17,7 +17,7 @@ def test_playground_round_trip_survives_reopening(database):
     assert reopened.get(Customer, customer.id).name == "Acme"
     assert reopened.get(Invoice, invoice.id).total == Decimal("100.10")
     assert reopened.get(Payment, payment.id).to_dict() == {
-        "id": payment.id, "invoice": invoice.id, "reference": "PAY-1", "amount": "100.10", "received_at": None,
+        "id": payment.id, "invoice": invoice.id, "reference": "PAY-1", "currency": "AED", "amount": "100.10", "received_at": None,
     }
     with sqlite3.connect(database.path) as conn:
         assert conn.execute("SELECT total, typeof(total) FROM invoice").fetchone() == (10010, "integer")

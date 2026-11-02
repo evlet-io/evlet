@@ -11,6 +11,8 @@ export interface FieldSchema {
   read_only: boolean;
   hidden?: boolean;
   help_text?: string;
+  /** Text behind a ? icon at the right end of the input. */
+  tooltip?: string;
   placeholder?: string;
   /** A unit shown after the input, such as % or days. */
   suffix?: string;

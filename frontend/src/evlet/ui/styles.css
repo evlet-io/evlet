@@ -14,6 +14,7 @@
   --border:#e8eaef; --border-strong:#d8dce3; --divider:#eef0f3;
   --fg:#151821; --fg-2:#4b5263; --fg-3:#696f7e; --fg-4:#868d9c;
   --accent:#2f5be8; --accent-hover:#244ed4; --accent-fg:#ffffff; --accent-soft:#eef2fe; --accent-ring:rgba(47,91,232,.22);
+  --focus-border:#8fa8f3; --focus-ring:rgba(47,91,232,.14); --error-ring:rgba(207,45,71,.14); --shadow-xs:0 1px 2px rgba(16,24,40,.05);
   --t-blue:#3365e6;  --t-blue-bg:#eef2fd;
   --t-green:#128047; --t-green-bg:#e9f7ef;
   --t-amber:#9e6308; --t-amber-bg:#fdf4e3;
@@ -34,6 +35,7 @@
   --border:#252a33; --border-strong:#323844; --divider:#1e222a;
   --fg:#e8eaf0; --fg-2:#b2b8c5; --fg-3:#7e8595; --fg-4:#626978;
   --accent:#5b80f5; --accent-hover:#6d8ef7; --accent-fg:#ffffff; --accent-soft:#1b2440; --accent-ring:rgba(91,128,245,.3);
+  --focus-border:#4f6fd6; --focus-ring:rgba(91,128,245,.2); --error-ring:rgba(240,123,141,.18); --shadow-xs:0 1px 2px rgba(0,0,0,.3);
   --t-blue:#7a9cf7; --t-blue-bg:#1a2340; --t-green:#43c27f; --t-green-bg:#13281d; --t-amber:#e2a53e; --t-amber-bg:#2a2112;
   --t-rose:#f07b8d; --t-rose-bg:#2e1820; --t-violet:#a48df0; --t-violet-bg:#221c38; --t-teal:#3fc2bc; --t-teal-bg:#10292a;
   --t-slate:#9aa1b0; --t-slate-bg:#1e222a;
@@ -44,6 +46,7 @@
   --border:#252a33; --border-strong:#323844; --divider:#1e222a;
   --fg:#e8eaf0; --fg-2:#b2b8c5; --fg-3:#7e8595; --fg-4:#626978;
   --accent:#5b80f5; --accent-hover:#6d8ef7; --accent-fg:#ffffff; --accent-soft:#1b2440; --accent-ring:rgba(91,128,245,.3);
+  --focus-border:#4f6fd6; --focus-ring:rgba(91,128,245,.2); --error-ring:rgba(240,123,141,.18); --shadow-xs:0 1px 2px rgba(0,0,0,.3);
   --t-blue:#7a9cf7; --t-blue-bg:#1a2340; --t-green:#43c27f; --t-green-bg:#13281d; --t-amber:#e2a53e; --t-amber-bg:#2a2112;
   --t-rose:#f07b8d; --t-rose-bg:#2e1820; --t-violet:#a48df0; --t-violet-bg:#221c38; --t-teal:#3fc2bc; --t-teal-bg:#10292a;
   --t-slate:#9aa1b0; --t-slate-bg:#1e222a;
@@ -1068,3 +1071,37 @@ th:hover>.rz::after{background:var(--border-strong)}
   .range-presets{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--divider);padding:0 0 8px;min-width:0}
   .range-presets .mi{width:auto}
 }
+/* form fields (BaseField): 40px inputs, a soft focus ring, hint under the input, ? tooltip icon.
+   Compact places keep their own sizes: the record sidebar (.fields), child table cells, filters, quick add. */
+.fld{gap:6px}
+.fld>label{font-size:14px;font-weight:500;color:var(--fg-2)}
+.fld>label .req{color:var(--accent)}
+.fld .input,.fld .in-affix,.fld .in-tags{box-shadow:var(--shadow-xs);border-color:var(--border-strong)}
+.fld .input{height:40px;font-size:14px;padding:0 14px}
+.fld textarea.input{height:auto;padding:10px 14px}
+.fld .in-affix .input,.fld .in-link .input{box-shadow:none}
+.fld .in-affix .input{height:38px}
+.fld .in-affix{height:40px}
+.fld .in-affix>.in-box{font-size:13px;padding:0 12px}
+.fld .in-link,.fld .in-select{height:40px;padding:0 14px}
+.fld .in-tags{min-height:40px;padding:5px 8px}
+.fld .in-tags input{font-size:14px}
+.fld .input:focus,.fld .in-affix:focus-within,.fld .in-tags:focus-within,.fld .in-link.input:focus-visible,.fld .in-select.input:focus-visible{
+  border-color:var(--focus-border);box-shadow:var(--shadow-xs),0 0 0 4px var(--focus-ring);outline:none}
+.fld.invalid .input,.fld.invalid .in-affix,.fld.invalid .in-tags,.fld.invalid .in-link,.fld.invalid .in-select{border-color:var(--t-rose)}
+.fld.invalid .input:focus,.fld.invalid .in-affix:focus-within,.fld.invalid .in-tags:focus-within,.fld.invalid .in-link.input:focus-visible,.fld.invalid .in-select.input:focus-visible{
+  border-color:var(--t-rose);box-shadow:var(--shadow-xs),0 0 0 4px var(--error-ring)}
+.fld .in-affix .input:focus{box-shadow:none}
+.fld .err{font-size:13px;line-height:1.4}
+.fld-help{font-size:13px;line-height:1.4;color:var(--fg-3)}
+.fld-ctl{position:relative;min-width:0}
+.fld-tip{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;color:var(--fg-4);flex:none;cursor:help}
+.fld-tip:hover,.fld-tip:focus-visible{color:var(--fg-2);outline:none;box-shadow:0 0 0 3px var(--focus-ring)}
+.fld-ctl>.fld-tip{position:absolute;right:12px;top:50%;transform:translateY(-50%)}
+.fld-ctl.tip-in .input{padding-right:40px}
+.fld-ctl.tip-chev>.fld-tip{right:38px}
+.fld-ctl.tip-chev .input{padding-right:64px}
+.fld-ctl.tip-area>.fld-tip{top:10px;transform:none}
+.fld-ctl.tip-area .input{padding-right:40px}
+.fld-ctl.tip-end>.fld-tip{right:10px}
+.fld .in-affix>.fld-tip{align-self:center;margin:0 10px 0 2px}

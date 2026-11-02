@@ -78,7 +78,7 @@ def currency_schema(field):
 
 def field_schema(field):
     result = {**field.metadata(), 'label': field.label or label_for(field.name),
-              'help_text': field.help_text, 'placeholder': field.placeholder,
+              'help_text': field.help_text, **({'tooltip': field.tooltip} if field.tooltip else {}), 'placeholder': field.placeholder,
               **({'suffix': field.suffix} if field.suffix else {}),
               'hidden': field.hidden, 'read_only': field.read_only,
               **({'stored': field.stored} if field.compute is not None or field.query is not None or not field.stored else {}),

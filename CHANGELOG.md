@@ -16,6 +16,10 @@ say what to change. Evlet is not production ready.
   A client that read the field name from `currency` should read `currency_source`.
 - Integer and Decimal fields show their `suffix` after the value at rest too (`5.00%`).
 - The Link field's record mark no longer stretches across the input.
+- **Form fields** are 40 px tall with a soft focus ring, a 14 px label and a blue required
+  mark. `help_text` now shows under the input (an error takes its place). The new
+  `tooltip=` field option puts its text behind a ? icon at the end of the input; Controls can
+  change it and exports it.
 
 ## 0.2.0 (02-11-2026)
 
