@@ -22,11 +22,11 @@ logger = logging.getLogger(__name__)
 PAGES = ('profile', 'appearance', 'security', 'notifications', 'email', 'ai', 'keys')
 PORTAL_PAGES = ('profile', 'security', 'notifications')
 APPEARANCE = {
-    'theme': 'light', 'density': 'comfortable', 'text': 'default', 'start': '', 'counts': False, 'lang': 'en',
+    'theme': 'system', 'density': 'comfortable', 'text': 'default', 'start': '', 'counts': False, 'lang': 'en',
     'tz': 'Asia/Dubai', 'date': 'dd-MM-yyyy', 'num': '1,234.56', 'week': 'mon',
 }
 CHOICES = {
-    'theme': ('light',), 'density': ('comfortable', 'compact'), 'text': ('default', 'large'), 'lang': ('en', 'ar'),
+    'theme': ('light', 'dark', 'system'), 'density': ('comfortable', 'compact'), 'text': ('default', 'large'), 'lang': ('en', 'ar'),
     'date': ('d MMM yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'MM/dd/yyyy'), 'num': ('1,234.56', '1.234,56', '1 234.56'),
     'week': ('mon', 'sun', 'sat'),
 }
@@ -324,6 +324,11 @@ class Settings:
 
     # ---------- personal values ----------
 
+    def theme(self, user):
+        """The person's theme for the page the server sends: light, dark or system."""
+        value = self.core(user.id).get('theme')
+        return value if value in CHOICES['theme'] else APPEARANCE['theme']
+
     def core(self, user_id, connection=None):
         def read(db):
             return {row['key']: json.loads(row['value']) for row in db.execute("SELECT key, value FROM evlet_user_prefs WHERE user_id=? AND scope='core'", (user_id,))}
@@ -587,7 +592,7 @@ class Settings:
         if portal or key not in APPEARANCE:
             raise ValueError('Choose a known preference.')
         if key in CHOICES and value not in CHOICES[key]:
-            raise ValueError('Dark theme is coming in a later release.' if key == 'theme' else 'Choose one of the options.')
+            raise ValueError('Choose one of the options.')
         if key == 'counts' and type(value) is not bool:
             raise ValueError('Use true or false.')
         if key == 'start' and (not isinstance(value, str) or value and value != 'docs' and (

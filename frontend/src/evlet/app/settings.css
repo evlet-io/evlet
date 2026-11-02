@@ -60,7 +60,13 @@ img.set-photo{object-fit:cover;padding:0}
 .set-choice.on{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring)}
 .set-choice[disabled]{opacity:.55;cursor:not-allowed}
 .set-choice span{font-size:12px;color:var(--fg-3);line-height:1.4}
-.set-choice .tick{position:absolute;top:10px;right:10px;width:18px;height:18px;border-radius:50%;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center}
+.set-choice .set-thumb{display:flex;gap:4px;height:54px;padding:5px;border-radius:7px;border:1px solid var(--swatch-light-line);background:var(--swatch-light);overflow:hidden}
+.set-choice .set-thumb i{display:block;border-radius:3px;background:var(--swatch-light-card);border:1px solid var(--swatch-light-line)}
+.set-choice .set-thumb i:first-child{width:22%}.set-choice .set-thumb i:last-child{flex:1}
+.set-choice .set-thumb.dark{background:var(--swatch-dark);border-color:var(--swatch-dark-line)}
+.set-choice .set-thumb.dark i{background:var(--swatch-dark-card);border-color:var(--swatch-dark-line)}
+.set-choice .set-thumb.system{background:linear-gradient(90deg,var(--swatch-light) 50%,var(--swatch-dark) 50%)}
+.set-choice .tick{position:absolute;top:10px;right:10px;width:18px;height:18px;border-radius:50%;background:var(--accent-solid);color:var(--accent-fg);display:grid;place-items:center}
 .set-badge{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:5px;font-size:11px;font-weight:600;background:var(--bg-muted);color:var(--fg-2);margin:0 2px}
 .set-badge.green{background:var(--t-green-bg);color:var(--t-green)}
 .set-badge.red{background:var(--t-rose-bg);color:var(--t-rose)}
@@ -98,7 +104,7 @@ img.set-photo{object-fit:cover;padding:0}
 .set-multi .chip.on,.in-multi .chip.on{background:var(--accent-soft);color:var(--accent)}
 .in-multi{display:flex;flex-wrap:wrap;gap:6px}
 .set-tabs{margin-bottom:0}
-.set-bar{position:sticky;bottom:16px;z-index:20;display:flex;align-items:center;gap:12px;background:var(--fg);color:var(--bg);border-radius:12px;padding:10px 10px 10px 18px;box-shadow:var(--shadow-lg);flex-wrap:wrap;max-width:780px;margin:16px 0 0 268px}
+.set-bar{position:sticky;bottom:16px;z-index:20;display:flex;align-items:center;gap:12px;background:var(--inverse-bg);color:var(--inverse-fg);border-radius:12px;padding:10px 10px 10px 18px;box-shadow:var(--shadow-lg);flex-wrap:wrap;max-width:780px;margin:16px 0 0 268px}
 .set-bar .dot{width:8px;height:8px;border-radius:50%;background:var(--t-amber)}
 .set-bar .m{opacity:.75;font-size:12.5px}
 .set-bar .grow{flex:1}

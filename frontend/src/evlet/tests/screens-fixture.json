@@ -2744,7 +2744,7 @@
     "num": "1,234.56",
     "start": "",
     "text": "default",
-    "theme": "light",
+    "theme": "system",
     "tz": "Asia/Dubai",
     "week": "mon"
    },

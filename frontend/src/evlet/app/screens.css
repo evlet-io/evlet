@@ -5,7 +5,7 @@
 
 /* ---------- sign in ---------- */
 .ev-connecting{height:100%;display:grid;place-content:center;justify-items:center;gap:10px;color:var(--fg-3)}
-.ev-logo{width:30px;height:30px;border-radius:8px;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center;flex:none}
+.ev-logo{width:30px;height:30px;border-radius:8px;background:var(--accent-solid);color:var(--accent-fg);display:grid;place-items:center;flex:none}
 .ev-logo svg{width:18px;height:18px}
 .ev-login{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:32px 16px;background:var(--bg-subtle)}
 .ev-login-brand{display:flex;align-items:center;gap:10px;font-size:15px}
