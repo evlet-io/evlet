@@ -14,7 +14,7 @@ wins, and this document should be corrected.
 
 Companion documents in the repo:
 
-- `docs/handoff-model.md`: model engine amendments (expressions, Lines, State,
+- `docs/internal/handoff-model.md`: model engine amendments (expressions, Lines, State,
   void and revise, Effects, Sequence, Journal, Measures). The UI below is
   designed against those concepts.
 - `docs/ui.md` and `AGENTS.md`: current UI contract rules. Python stays the
@@ -1341,7 +1341,7 @@ they belong in server-side user settings so they follow the user.
 
 ## 11. Model to UI mapping
 
-| Model concept (`docs/handoff-model.md`) | UI |
+| Model concept (`docs/internal/handoff-model.md`) | UI |
 |---|---|
 | Field types | One field component per type over BaseField |
 | `compute=` | ComputedField or `ƒ calculated` hint; read only; tooltip shows the rule |

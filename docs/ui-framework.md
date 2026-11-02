@@ -1,7 +1,7 @@
 # Evlet UI framework
 
 Status: the browser interface Evlet ships (phases `ui-final/01-core` to `ui-final/03-screens`
-and `ui-final/05-remove-solid` of [handoff-plan.md](handoff-plan.md)). `frontend/index.html` loads it,
+and `ui-final/05-remove-solid` of [handoff-plan.md](internal/handoff-plan.md)). `frontend/index.html` loads it,
 `npm run build` bundles it and the Python package serves it. The code lives in
 `frontend/src/evlet/`. It has no runtime dependencies; SolidJS and the Vue harness are gone.
 

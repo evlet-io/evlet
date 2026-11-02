@@ -28,6 +28,13 @@ say what to change. Evlet is not production ready.
   mark. `help_text` now shows under the input (an error takes its place). The new
   `tooltip=` field option puts its text behind a ? icon at the end of the input; Controls can
   change it and exports it.
+- **Offline docs show user guides only.** Handoff plans, the model engine ledger,
+  milestone notes, the specification and the testCRM notes moved to `docs/internal/`.
+  They are no longer in the wheel or shown by `evlet docs`. The contributor guide moved
+  to `CONTRIBUTING.md`.
+- **Smaller source distribution.** The sdist no longer carries tests, scripts, lock
+  files, internal docs or the browser test fixtures. It keeps what building and
+  installing Evlet needs, including the browser interface source.
 
 ## 0.2.0 (02-11-2026)
 

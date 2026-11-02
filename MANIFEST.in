@@ -1,17 +1,15 @@
-include README.md AGENTS.md requirements-dev.lock requirements-server.lock requirements-s3.lock requirements-mcp.in requirements-mcp.lock requirements-postgres.lock
-recursive-include docs *.md *.json
-recursive-include examples *.py *.toml *.ts *.js *.md *.html *.css
-recursive-include tests *.py *.json
-recursive-include scripts *.py *.sh
+include README.md CHANGELOG.md build_support.py
+include docs/*.md
+include examples/playground/*.py
+recursive-include examples/playground/portal *.html *.css *.js
 include frontend/package.json frontend/package-lock.json frontend/index.html frontend/vite.config.js
-include frontend/.node-version frontend/.npmrc
+include frontend/.node-version frontend/.npmrc frontend/tsconfig.json
 recursive-include frontend/src *.ts *.css *.json
+prune frontend/src/evlet/tests
 recursive-include frontend/scripts *.mjs
 recursive-include frontend/public *.svg
 recursive-include frontend/fonts *.woff2 *.txt
-include frontend/tsconfig.json
 recursive-include evlet/ui/static *.html *.js *.css *.svg *.woff2 *-OFL.txt
 recursive-include evlet *.pyi py.typed
-include build_support.py
 recursive-include evlet/resources *.tpl
-exclude docs/handoff.md
+prune tests

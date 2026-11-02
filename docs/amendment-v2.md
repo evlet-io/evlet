@@ -338,5 +338,5 @@ existing regressions:
 
 Run `python -m scripts.generate_document_fixtures` only after an intentional
 contract change and inspect the diff. Release checks and exact run results are
-recorded in [the release notes](amendment-v2-release-notes.md). This amendment does not establish production
+recorded in [the release notes](internal/amendment-v2-release-notes.md). This amendment does not establish production
 readiness or replace the existing deployment limits.
