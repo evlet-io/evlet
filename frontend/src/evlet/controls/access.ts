@@ -163,7 +163,7 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
     ${when(() => drafts.errors.get().has(id(key)), () => html`<span class="ctl-err">${() => drafts.errors.get().get(id(key))}</span>`)}</div><div class="ctl-setctl">${control}</div></div>`;
   const choose = (key: string, unit: string, options: number[]) => html`<select class="input ctl-select" aria-label=${SETTING_LABELS[key]}
     on:change=${(event: Event) => drafts.set(id(key), Number((event.target as HTMLSelectElement).value))}>
-    ${options.filter(option => option <= file<number>(key)).map(option => html`<option value=${String(option)} selected=${() => get<number>(key) === option}>${option} ${unit}</option>`)}</select>`;
+    ${[...new Set([...options, file<number>(key)])].filter(option => option <= file<number>(key)).sort((a, b) => a - b).map(option => html`<option value=${String(option)} selected=${() => get<number>(key) === option}>${option} ${unit}</option>`)}</select>`;
   const minimum = (event: Event) => {
     const input = event.target as HTMLInputElement, low = file<number>('security.password_min');
     let value = Number.parseInt(input.value, 10);
