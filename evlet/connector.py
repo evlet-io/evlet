@@ -66,6 +66,8 @@ class HTTPClient:
         if not isinstance(csrf, str) or (csrf and not re.fullmatch('[0-9a-f]{64}', csrf)):
             raise ValueError('Invalid session CSRF token')
         self.cookie, self.csrf = cookie, csrf
+        # Set by MCPServer: the application then applies the workspace's AI assistant settings.
+        self.assistant = False
         parsed = urlsplit(self.url)
         # .localhost is loopback by contract, without depending on system DNS.
         self.connection_url = self.url if parsed.scheme == 'https' else 'http://127.0.0.1' + (f':{parsed.port}' if parsed.port else '')
@@ -81,6 +83,8 @@ class HTTPClient:
         headers = {'Host': self.authority, 'Origin': self.url, 'Accept': 'application/json', 'User-Agent': 'evlet-connector'}
         if self.cookie:
             headers['Cookie'] = self.cookie
+        if self.assistant:
+            headers['X-Evlet-Client'] = 'mcp'
         if method != 'GET':
             headers.update({'X-Evlet-Request': '1', 'X-CSRF-Token': self.csrf, 'Content-Type': 'application/json'})
         request = Request(self.connection_url + path, data=encoded, method=method, headers=headers)

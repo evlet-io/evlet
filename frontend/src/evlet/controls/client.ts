@@ -17,7 +17,7 @@ export interface RoleRow {
   id: string; kind: 'framework' | 'custom'; base: string | null; realm: 'desk' | 'portal'; opens_controls: boolean;
   description: string; users: number; app: string | null; declared: boolean;
 }
-export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; two_step?: { since: number | null; agent: string } | null }
+export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; assistants?: number; two_step?: { since: number | null; agent: string } | null }
 /** A field as models.py declares it: the props Controls can override. */
 export interface FieldProps {
   label: string; help_text: string; placeholder: string; hidden: boolean; required: boolean; read_only: boolean;
@@ -117,6 +117,10 @@ export interface KeysApi {
   revokeKey(id: number): Promise<unknown>;
 }
 
+/** A connected AI assistant, as Controls lists it. Per-request detail stays on each person's own page. */
+export interface AssistantRow { id: number; client_name: string; username: string; role: string; created_at: number; last_used: number | null; calls: number }
+export interface McpOverview { address: string; clients: AssistantRow[]; totals: { reads: number; writes: number; denied: number } }
+
 export class ControlsClient extends ApiClient implements KeysApi {
   constructor(options: ClientOptions = {}) { super(options); }
 
@@ -179,6 +183,8 @@ export class ControlsClient extends ApiClient implements KeysApi {
   async keys() { return (await this.request<{ items: ApiKeyRow[] }>('GET', '/api/_controls/keys')).data; }
   async createKey(body: { name: string; scope: KeyScope; user?: string }) { return (await this.request<CreatedKey>('POST', '/api/_controls/keys', { body })).data; }
   async revokeKey(id: number) { return (await this.request<{ items: ApiKeyRow[] }>('DELETE', `/api/_controls/keys/${id}`)).data; }
+  async mcp() { return (await this.request<McpOverview>('GET', '/api/_controls/mcp')).data; }
+  async signOutAssistant(id: number) { return (await this.request<McpOverview>('DELETE', `/api/_controls/mcp/${id}`)).data; }
   async deleteRole(id: string) {
     return (await this.request<{ items: RoleRow[] }>('DELETE', `/api/_controls/roles/${encodeURIComponent(id)}`)).data.items;
   }

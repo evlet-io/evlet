@@ -2,7 +2,7 @@
 
 `/controls` is the locked admin page of an instance. It is the framework frontend
 `evlet.controls`, not a generated model. This release has Overview, Users, Roles,
-Permissions, Security, Connectors, Email, API keys, Apps, Models, Naming, Routing, Jobs, Overrides and the Audit log.
+Permissions, Security, Connectors, Email, MCP & AI, API keys, Apps, Models, Naming, Routing, Jobs, Overrides and the Audit log.
 
 The Overview lists what needs attention: an app waiting to be migrated or a server that still
 runs the old version, overrides that no longer apply (and what fails closed meanwhile), skipped
@@ -260,6 +260,8 @@ they are removed on the Models page.
 
 Paste the code, deploy, then reset the overrides. Overrides that no longer apply are left out.
 
+**MCP & AI** (kind `setting`) is described under [MCP and AI](#mcp-and-ai).
+
 ## Connectors and secrets
 
 Connectors are connections to other services. Apps declare them; the framework declares
@@ -408,10 +410,56 @@ whole key are stored in `evlet_api_keys`.
 The personal page is `/settings/keys` in the Settings shell (the `MyKeysPage` component,
 `frontend/src/evlet/settings/keys.ts`), for desk users.
 
+## MCP and AI
+
+People connect AI assistants (MCP clients such as Claude) to the instance. Remote clients
+use `https://<primary host>/_/mcp` and sign in with OAuth; local ones run `evlet mcp`
+([connector.md](connector.md)). Both act as the person who signed in and go through the same
+API routes and permission checks as the browser.
+
+| Key | File value | Rule |
+|---|---|---|
+| `mcp.enabled` | true | Off stops every client at once: `/_/mcp` answers 403 and sign-in pages are gone. |
+| `mcp.allow_writes` | false | The page asks before turning it on. Write tools need it on, and each write still needs the user's permission. |
+| `mcp.rate` | 60 | Tool calls a minute per client, 1 to 60. The framework cap stays at 60. |
+| `mcp.disabled_tools` | `[]` | Tool names. A disabled tool isn't listed and is refused. |
+| `mcp.hidden_models` | `[]` | Model names. Hidden models (and their child rows) never reach an AI client, even an admin's. |
+
+A stored value that no longer validates fails closed: the switches turn off, the rate becomes
+1, and a list that isn't a list disables every tool or hides every model. Changes are audited
+under `MCP`.
+
+The page also lists connected clients (who, last call, number of calls) and totals for the
+last 24 hours: reads, writes and calls denied by permissions or by these settings. Admins can sign a client out at
+once; only admins sign out an admin's client. Per-request detail is only on each person's own
+AI page. Clients also count in the Users page sessions, and "Sign out everywhere", a password
+or role change and deactivation sign them out too.
+
+**Desk only.** `/_/mcp`, the OAuth endpoints and the consent page answer only on the primary
+host, so portal and other sub-hosts get 404. Consent needs a desk session, and a token or
+refresh token stops working (401, `invalid_grant`) once its person's role is a portal role. The
+client address used for the per-network limits is read through the trusted proxies, like
+sign-in. An assistant acts as the person's role through the same policy as the browser, so
+Controls permission and field overrides and custom roles apply to it; the `mcp.*` settings and
+the person's own app choice only narrow it further.
+
+**Journal.** A record changed through an assistant is journaled with the person as the actor,
+like any of their writes, and the entry names the client: `"via": "Claude"` on the entry
+(`"Local MCP connector"` for `evlet mcp`). The Activity tab shows "Sara changed it via Claude".
+The client name is the one the client registered, so it is a label, not proof of identity.
+
+The personal page is `/settings/ai` in the Settings shell (the `MyAIPage` component,
+`frontend/src/evlet/settings/ai.ts`). It shows the connect steps, the person's assistants with "Can make changes"
+and Disconnect, the apps assistants can use (only narrower than the person's own access; once
+chosen, apps installed later stay off), their last 50 requests from the past 30 days and the
+local `evlet mcp` steps. "Can make changes" has effect only while
+`mcp.allow_writes` is on.
+
 ## Audit log
 
 `evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles,
-overrides, connectors, email accounts, API keys, migrations and jobs all write to it. The Audit log page searches who, what and the
+overrides, connectors, email accounts, API keys, AI assistants (consent, sign-out, "Can make changes",
+MCP settings), migrations and jobs all write to it. The Audit log page searches who, what and the
 detail, filters by area and pages newest first, 50 rows at a time.
 
 ## API
@@ -435,4 +483,5 @@ detail, filters by area and pages newest first, 50 rows at a time.
 | `GET /api/_controls/connectors` | Declared connectors with their fields, and every saved connector and email account |
 | `GET/PUT/DELETE /api/_controls/connectors/<id>` | One connector (`whatsapp`) or account (`smtp:accounts`): read, save `{"settings", "secrets"}`, disconnect |
 | `POST /api/_controls/connectors/<id>/test`, `POST .../default` | Test within 10 seconds; make an outgoing account the default |
+| `GET /api/_controls/mcp`, `DELETE /api/_controls/mcp/<id>` | MCP address, connected clients, 24-hour totals; sign a client out |
 | `GET/POST /api/_controls/keys`, `DELETE /api/_controls/keys/<id>` | API keys: list, create `{"name", "user", "scope"}` (the key is in this reply only), revoke |

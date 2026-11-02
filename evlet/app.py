@@ -86,8 +86,22 @@ class Application:
                 await self._event_stream(scope, receive, send)
                 return
             body = None
+            internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/'))
+            if internal:
+                # OAuth and the remote MCP endpoint read their own bodies (JSON or form), at most 64 KiB like /api.
+                data = bytearray()
+                while scope['method'] == 'POST':
+                    event = await receive()
+                    if event['type'] == 'http.disconnect':
+                        return
+                    data.extend(event.get('body', b''))
+                    if len(data) > MAX_BODY_BYTES:
+                        raise HTTPError(413, 'Request body exceeds the allowed size')
+                    if not event.get('more_body', False):
+                        break
+                status, payload, headers = await asyncio.to_thread(self._internal, scope, bytes(data))
             # PUT carries a body only on the Controls routes (connectors); elsewhere it stays a 405.
-            if scope["method"] in ("POST", "PATCH") or scope["method"] == "PUT" and scope["path"].startswith("/api/_controls/"):
+            elif scope["method"] in ("POST", "PATCH") or scope["method"] == "PUT" and scope["path"].startswith("/api/_controls/"):
                 content_type = dict(scope.get("headers", [])).get(b"content-type", b"")
                 if content_type.split(b";", 1)[0].strip().lower() != b"application/json":
                     raise HTTPError(415, "Send application/json")
@@ -109,7 +123,8 @@ class Application:
                     raise HTTPError(400, "Malformed JSON") from exc
                 if not isinstance(body, dict):
                     raise HTTPError(422, "Expected a JSON object")
-            status, payload, headers = await asyncio.to_thread(self._dispatch, scope, body)
+            if not internal:
+                status, payload, headers = await asyncio.to_thread(self._dispatch, scope, body)
         except AccessError as exc:
             status, payload = exc.status, {"error": exc.message}
         except HTTPError as exc:
@@ -261,6 +276,10 @@ class Application:
             raise HTTPError(405, "Method not allowed", [
                 (b"allow", ", ".join(allowed).encode())
             ])
+
+    def _internal(self, scope, raw):
+        self.business.controls.refresh()
+        return self.business.assistants.dispatch(scope, raw)
 
     def _dispatch(self, scope, body):
         path, method = scope["path"], scope["method"]

@@ -10,6 +10,7 @@ import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Icon, Switch } from '../ui/base';
 import { DialogFooter, copyText, openModal, toast } from '../ui/layers';
 import { humanize, InputError, kindOf } from '../ui/kinds';
+import { MyAIPage } from '../settings/ai';
 import { MyKeysPage } from '../settings/keys';
 import './settings.css';
 
@@ -510,22 +511,22 @@ function EmailPage(): Node {
     ${callout('info', 'mail', 'Connecting your own mailbox comes in a later release. Until then, emails from records go from the workspace address.')}`;
 }
 
+/** /settings/ai: remote assistants (MyAIPage) with the local `evlet mcp` steps and its signed-in command line sessions. */
 function AiPage(ctx: SettingsContext): Node {
   const origin = window.location.origin;
   const steps = [`evlet login --url ${origin} --username ${ctx.me.peek().user.username} --session ~/.evlet/session.json`, 'evlet mcp --session ~/.evlet/session.json'];
   const clients = derive(() => ctx.me.get().security.sessions.filter(item => /evlet-connector/.test(item.agent)));
   const command = (text: string) => html`<div class="set-key"><code>${text}</code>${Button({ label: 'Copy', size: 'small', icon: 'copy', onClick: () => void copyText(text, 'the command') })}</div>`;
-  return html`${head('AI assistants', 'Use Evlet from Claude or other AI apps that support MCP. They act as you, so they see only what you can see.')}
-    ${callout('warn', 'lock', 'Assistants connect through the command line for now. Changes stay off unless the person who starts it allows them, and your own access still applies.')}
-    ${section('Connect an assistant', '', html`<ol class="set-steps"><li>Sign in from a terminal on your computer. Your password is not stored.${command(steps[0])}</li>
+  const local = () => html`<p class="muted ctl-small">Assistants that run on your computer can use the local connector instead. It acts as you and follows the same workspace rules.</p>
+    <ol class="set-steps"><li>Sign in from a terminal on your computer. Your password is not stored.${command(steps[0])}</li>
       <li>Add Evlet to your assistant as an MCP server that runs this command.${command(steps[1])}</li>
-      <li>Ask your assistant about your records. It shows up below while it is signed in.</li></ol>`, true)}
-    ${section('Your assistants', '', () => clients.get().length ? clients.get().map(item => row('Command line session', `Signed in ${item.started ? formatDateTime(new Date(item.started * 1000).toISOString()) : 'earlier'}`,
+      <li>Ask your assistant about your records. It shows up below while it is signed in.</li></ol>
+    ${() => clients.get().length ? clients.get().map(item => row('Command line session', `Signed in ${item.started ? formatDateTime(new Date(item.started * 1000).toISOString()) : 'earlier'}`,
       Button({ label: 'Disconnect', size: 'small', variant: 'soft-danger', onClick: async () => {
         try { await ctx.api.request('DELETE', `/api/_settings/me/sessions/${item.id}`); toast('Disconnected'); ctx.me.set({ ...ctx.me.peek(), security: { ...ctx.me.peek().security, sessions: ctx.me.peek().security.sessions.filter(each => each.id !== item.id) } }); }
         catch (failure) { fail(failure); }
-      } }))) : html`<div class="set-empty">None connected yet. Follow the steps above to connect one.</div>`)}
-    ${section('Recent requests', '', html`<div class="set-empty">No requests to show yet. Request counts arrive with remote connections.</div>`)}`;
+      } }))) : html`<div class="set-empty">No command line session is signed in.</div>`}`;
+  return MyAIPage({ api: ctx.api, local });
 }
 
 // ---------- app settings ----------

@@ -142,6 +142,16 @@ describe('connections', () => {
     expect(text(host.querySelector('.crumbs .cur'))).toBe('API keys');
     expect(requests(sent, 'GET', /\/api\/_settings\/me\/keys$/)).toHaveLength(1);
   });
+
+  it('shows remote assistants and keeps the local evlet mcp steps on the AI page', async () => {
+    const ai = { enabled: true, writes: false, address: 'http://127.0.0.1:8000/_/mcp', clients: [], requests: [], apps: ['sales'], chosen: null };
+    const { host } = start(routes([['GET', /\/api\/_settings\/me\/ai$/, { status: 200, etag: null, body: ai }]]), '/settings/ai');
+    await until(() => expect(text(host)).toContain('http://127.0.0.1:8000/_/mcp'));
+    expect(text(host)).toContain('Add custom connector');
+    expect(text(host)).toContain('evlet mcp --session ~/.evlet/session.json');
+    expect(text(host)).toContain('evlet login --url');
+    expect(text(host.querySelector('.crumbs .cur'))).toBe('AI assistants');
+  });
 });
 
 describe('app settings', () => {

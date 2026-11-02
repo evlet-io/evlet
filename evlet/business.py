@@ -116,11 +116,13 @@ class Business:
         from .controls import Controls
         from .connectors import Connectors
         from .settings import Settings
+        from .assistants import Assistants
         self.controls = Controls(self)
         self.settings = Settings(self)
         self.connectors = Connectors(self)
         # instances/<name>/secret.key for evlet.secrets; None keeps two-step sign-in off.
         self.secret_key = None
+        self.assistants = Assistants(self)
         self.actions, self.children, self.child_models = {}, {}, set()
         self.attachments = set(attachments)
         self.storage = storage if storage is not None else SQLiteStorage()
@@ -187,6 +189,7 @@ class Business:
         self.auth.initialize()
         self.controls.initialize()
         self.connectors.initialize()
+        self.assistants.initialize()
         self.storage.initialize(self.database)
         self.settings.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
@@ -438,11 +441,17 @@ class Business:
             if endpoint is not None and endpoint.public:
                 return dispatch(self, scope, body, None)
         user, csrf = self.auth.session(scope)
+        if user.access is None and dict(scope.get('headers', [])).get(b'x-evlet-client') == b'mcp':
+            # The local MCP connector: the same narrowing as a remote assistant.
+            user = self.assistants.narrow(user)
         if user.access is not None:
-            if path.startswith(('/api/auth/', '/api/_settings/')):
-                raise AccessError(403, 'API keys cannot be used here. Sign in instead.')
+            assistant = user.access.assistant is not None
+            if path.startswith(('/api/auth/', '/api/_settings/', '/api/_oauth/')):
+                raise AccessError(403, 'AI assistants cannot use this.' if assistant else 'API keys cannot be used here. Sign in instead.')
             if method not in ('GET', 'HEAD') and not user.access.write:
-                raise AccessError(403, 'This key can only read.')
+                raise AccessError(403, 'AI assistants can only read here.' if assistant else 'This key can only read.')
+        if path == '/api/_settings/me/ai' or path.startswith(('/api/_settings/me/ai/', '/api/_oauth/')):
+            return self.assistants.api(scope, body, user)
         if path == '/api/_settings/me/keys' or path.startswith('/api/_settings/me/keys/'):
             return self.controls.my_keys(scope, body, user)
         if path == '/api/_controls' or path.startswith('/api/_controls/'):

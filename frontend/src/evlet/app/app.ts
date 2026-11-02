@@ -71,9 +71,9 @@ export function App(options: AppOptions): Node {
     error.set('');
     phase.set('ready');
     const now = router.route.peek();
-    // Controls is its own page: after signing in from /login?next=/controls, open it there.
+    // Controls and the AI consent page are their own pages: after signing in from /login?next=..., open them there.
     const next = now?.name === 'login' ? now.query.next ?? '' : '';
-    if (/^\/controls(\/[a-z]+)?$/.test(next)) { window.location.assign(next); return; }
+    if (/^\/controls(\/[a-z]+)?$/.test(next) || /^\/_\/oauth\/authorize\?[^#]*$/.test(next)) { window.location.assign(next); return; }
     // Python page routes match no route here; they, sign-in and the root open the start page.
     if (!now || now.name === 'login' || now.name === 'home') await goStart(ctx, true);
   };

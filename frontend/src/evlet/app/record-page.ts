@@ -674,7 +674,7 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
     const [icon, tint] = KINDS[item.kind] ?? ['activity', 'slate'];
     const hidden = item.partial ? html`<span class="muted ev-partial" title="Parts of this entry are hidden from your role">${Icon('eye-off', { size: 'xs' })} Some details are hidden</span>` : null;
     return html`<div class="tl-item"><span class=${`ic b-${tint}`}>${Icon(icon, { size: 'sm' })}</span><div class="bd">
-      <div class="hd"><b>${person(item.actor) ?? 'The system'}</b> ${sentence(item)}<span class="tm">${formatDateTime(item.at).slice(11)}</span></div>${body(item)}${hidden}</div></div>`;
+      <div class="hd"><b>${person(item.actor) ?? 'The system'}</b> ${sentence(item)}${item.via ? ` via ${item.via}` : ''}<span class="tm">${formatDateTime(item.at).slice(11)}</span></div>${body(item)}${hidden}</div></div>`;
   };
   return [
     InfoNote(model.journal?.tamper_evident ? 'Append-only history, chained so tampering shows. Entries are never edited or removed.' : 'Append-only history. Entries are never edited or removed.', 'lock'),

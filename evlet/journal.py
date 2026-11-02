@@ -132,8 +132,22 @@ def actor_of(user):
     return str(user.id) if user is not None and user.id else ENGINE
 
 
+def via(tx, user):
+    """The AI assistant a request came through, or None. The actor stays the person it acts as."""
+    access = getattr(user, 'access', None)
+    assistant = None if access is None else access.assistant
+    if assistant is None:
+        return None
+    row = tx.connection.execute('SELECT client_name FROM evlet_mcp_clients WHERE id=?', (assistant,)).fetchone() if assistant else None
+    return row[0] if row is not None else 'Local MCP connector'
+
+
 def append(business, tx, user, model, record_id, kind, data):
-    """Write one entry in this transaction and return its id. Callers have checked permissions."""
+    """Write one entry in this transaction and return its id. Callers have checked permissions.
+    An AI assistant's write keeps the person as the actor and names the assistant in data["via"]."""
+    through = via(tx, user)
+    if through is not None:
+        data = {**data, 'via': through}
     return insert(tx.connection, business.registry, model, record_id, kind, actor_of(user), data)
 
 
@@ -501,6 +515,7 @@ def present(business, user, model, row, visibility, done):
     caller cannot read are shown as `changed` with what remains."""
     policy = business.policy
     kind, data = row['kind'], json.loads(row['data'])
+    through = data.pop('via', None)
     readable = policy.fields(user, model)
     state_shown = model.__state__ is not None and model.__state__ in readable
     partial = False
@@ -534,6 +549,8 @@ def present(business, user, model, row, visibility, done):
     item = {'id': row['id'], 'kind': kind, 'actor': None if actor == ENGINE else int(actor), 'at': row['at'], 'data': shown}
     if kind == 'follow_up':
         item['done'] = done.get(row['id'])
+    if through is not None:
+        item['via'] = through
     if partial:
         item['partial'] = True
     return item

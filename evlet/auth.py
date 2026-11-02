@@ -43,6 +43,8 @@ class KeyAccess:
     models: frozenset | None = None
     # The key's row, so background jobs it queues can check it is still valid.
     key_id: int | None = None
+    # Set for AI assistants: the evlet_mcp_clients row, or 0 for a local (stdio) connector.
+    assistant: int | None = None
 
 
 @dataclass(frozen=True)
@@ -205,6 +207,26 @@ class LocalAuth:
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_login_reset ON evlet_login_limits(resets)')
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_api_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, name TEXT NOT NULL, prefix TEXT NOT NULL UNIQUE, hash TEXT NOT NULL, scope TEXT NOT NULL, created_at INTEGER NOT NULL, last_used INTEGER, revoked_at INTEGER)')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_api_key_user ON evlet_api_keys(user_id)')
+            # AI assistants: registered OAuth clients, each person's connections, their tokens (hashed) and calls.
+            for statement in (
+                "CREATE TABLE IF NOT EXISTS evlet_oauth_clients (id TEXT PRIMARY KEY, name TEXT NOT NULL, redirect_uris TEXT NOT NULL, secret TEXT, "
+                "auth_method TEXT NOT NULL DEFAULT 'none' CHECK(auth_method IN ('none','client_secret_post','client_secret_basic')), created_at INTEGER NOT NULL)",
+                'CREATE TABLE IF NOT EXISTS evlet_mcp_clients (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
+                'oauth_client TEXT NOT NULL REFERENCES evlet_oauth_clients(id) ON DELETE CASCADE, client_name TEXT NOT NULL, created_at INTEGER NOT NULL, last_used INTEGER, '
+                'calls INTEGER NOT NULL DEFAULT 0, allow_changes INTEGER NOT NULL DEFAULT 0, apps TEXT, revoked_at INTEGER)',
+                'CREATE INDEX IF NOT EXISTS evlet_mcp_client_user ON evlet_mcp_clients(user_id)',
+                'CREATE TABLE IF NOT EXISTS evlet_oauth_codes (hash TEXT PRIMARY KEY, oauth_client TEXT NOT NULL REFERENCES evlet_oauth_clients(id) ON DELETE CASCADE, '
+                'user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, redirect_uri TEXT NOT NULL, challenge TEXT NOT NULL, '
+                'allow_changes INTEGER NOT NULL, expires INTEGER NOT NULL, grant_id INTEGER)',
+                "CREATE TABLE IF NOT EXISTS evlet_mcp_tokens (hash TEXT PRIMARY KEY, client_id INTEGER NOT NULL REFERENCES evlet_mcp_clients(id) ON DELETE CASCADE, "
+                "kind TEXT NOT NULL CHECK(kind IN ('access','refresh')), expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0)",
+                'CREATE INDEX IF NOT EXISTS evlet_mcp_token_client ON evlet_mcp_tokens(client_id)',
+                "CREATE TABLE IF NOT EXISTS evlet_mcp_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER NOT NULL REFERENCES evlet_mcp_clients(id) ON DELETE CASCADE, "
+                "at INTEGER NOT NULL, tool TEXT NOT NULL, model TEXT, kind TEXT NOT NULL CHECK(kind IN ('read','write')), outcome TEXT NOT NULL CHECK(outcome IN ('ok','denied','failed')))",
+                'CREATE INDEX IF NOT EXISTS evlet_mcp_call_client ON evlet_mcp_calls(client_id, at)',
+                'CREATE INDEX IF NOT EXISTS evlet_mcp_call_at ON evlet_mcp_calls(at)',
+            ):
+                tx.connection.execute(statement)
             tx.connection.execute("CREATE TABLE IF NOT EXISTS evlet_roles (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('framework','custom')), base TEXT, realm TEXT NOT NULL DEFAULT 'desk' CHECK(realm IN ('desk','portal')), opens_controls INTEGER NOT NULL DEFAULT 0, description TEXT NOT NULL DEFAULT '')")
             # A role's realm decides where its users sign in: desk roles on desk hosts, portal roles on portal hosts.
             for role, realm, description in (('admin', 'desk', 'Full access to every app. Opens Controls.'), ('editor', 'desk', 'Reads and changes records.'),
@@ -270,6 +292,9 @@ class LocalAuth:
             return ''
 
     def session(self, scope):
+        # A tool call of a remote AI assistant, dispatched in process with its already checked user.
+        if scope.get('evlet.assistant') is not None:
+            return scope['evlet.assistant'], None
         if self.bearer(scope) is not None:
             return self.key_session(scope), None
         realm = self.realm(scope)
@@ -337,18 +362,31 @@ class LocalAuth:
                 tx.connection.execute('UPDATE evlet_api_keys SET last_used=? WHERE id=?', (now, row['key_id']))
         return User(row['id'], row['username'], row['role'], links, access=self.key_access(row['key_id'], row['scope']))
 
+    def address(self, scope):
+        """The client address as text, through the configured trusted proxies (client_address)."""
+        return str(self.client_address(scope))
+
+    def covered(self, keep):
+        """The models whose top-level model passes keep(name), with their child rows."""
+        def root(model):
+            while model in self.owners:
+                model = self.owners[model]
+            return model
+        return frozenset(model for model in self.database.registry.models.values() if keep(root(model).__name__))
+
     def key_access(self, key_id, scope):
         """The KeyAccess of a key's stored scope: models named by the key, with their child rows."""
         value = json.loads(scope)
-        models = None
-        if value['models'] is not None:
-            names = set(value['models'])
-            def root(model):
-                while model in self.owners:
-                    model = self.owners[model]
-                return model
-            models = frozenset(model for model in self.database.registry.models.values() if root(model).__name__ in names)
+        models = None if value['models'] is None else self.covered(set(value['models']).__contains__)
         return KeyAccess(value['access'] == 'write', models, key_id)
+
+    @staticmethod
+    def end_sessions(connection, user_id):
+        """Sign a user out everywhere: browser sessions and connected AI assistants."""
+        connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (user_id,))
+        connection.execute('DELETE FROM evlet_oauth_codes WHERE user_id=?', (user_id,))
+        connection.execute('DELETE FROM evlet_mcp_tokens WHERE client_id IN (SELECT id FROM evlet_mcp_clients WHERE user_id=?)', (user_id,))
+        connection.execute('UPDATE evlet_mcp_clients SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', (int(time.time()), user_id))
 
     def create_key(self, user_id, name, scope, check=None):
         """Store a new key and return (row, key). The key itself is shown once and only its hash is kept."""
@@ -559,6 +597,6 @@ class LocalAuth:
                     raise AccessError(409, LAST_ADMIN)
             for key, value in changes.items():
                 tx.connection.execute(f'UPDATE evlet_users SET {key}=? WHERE id=?', (value, user_id))
-            tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (user_id,))
+            self.end_sessions(tx.connection, user_id)
             if after is not None:
                 after()

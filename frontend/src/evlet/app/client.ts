@@ -123,6 +123,7 @@ export class AppClient extends ApiClient {
 
 /** A journal entry (docs/journal.md). `actor` is a user id, or null for the engine; `partial` marks an entry
  * the caller sees only in part; `done` is set on follow ups (the completing entry's id, or null). */
-export interface JournalEntry { id: number; kind: string; actor: number | null; at: string; data: Record<string, any>; partial?: true; done?: number | null }
+/** `via` names the AI assistant a person's write came through; `actor` stays the person. */
+export interface JournalEntry { id: number; kind: string; actor: number | null; at: string; data: Record<string, any>; partial?: true; done?: number | null; via?: string }
 /** A page of a journal: `users` names the actors and assignees on it by user id. */
 export interface JournalPage extends Page<JournalEntry> { users: Record<string, string> }

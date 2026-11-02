@@ -88,6 +88,8 @@ class JobQueue:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_identities (job_id INTEGER PRIMARY KEY, role TEXT NOT NULL)')
             # Jobs queued with an API key run with that key's scope, and not at all once it is revoked.
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_keys (job_id INTEGER PRIMARY KEY, key_id INTEGER NOT NULL)')
+            # Likewise for AI assistants: the connection (0 for the local connector), narrowed again when the job runs.
+            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_assistants (job_id INTEGER PRIMARY KEY, client_id INTEGER NOT NULL)')
             tx.connection.execute('''CREATE TABLE IF NOT EXISTS evlet_schedules (
                 name TEXT PRIMARY KEY, task TEXT NOT NULL, payload TEXT NOT NULL, actor INTEGER,
                 model TEXT, record_id INTEGER, interval INTEGER NOT NULL, next_run INTEGER NOT NULL,
@@ -122,6 +124,7 @@ class JobQueue:
         actor = None if user is None else user.id
         access = getattr(user, 'access', None)
         key_id = None if access is None else access.key_id
+        assistant = None if access is None else access.assistant
         if system_role is not None and (user is not None or system_role not in ('admin', 'editor', 'viewer')):
             raise ValueError('System jobs require an explicit supported role and no browser actor')
         if key is not None:
@@ -131,12 +134,15 @@ class JobQueue:
                 if (identity[0] if identity else None) != system_role: raise ValueError('Idempotency key was already used for another execution identity')
                 queued_by = tx.connection.execute('SELECT key_id FROM evlet_job_keys WHERE job_id=?', (old['id'],)).fetchone()
                 if (queued_by[0] if queued_by else None) != key_id: raise ValueError('Idempotency key was already used for another execution identity')
+                queued_by = tx.connection.execute('SELECT client_id FROM evlet_job_assistants WHERE job_id=?', (old['id'],)).fetchone()
+                if (queued_by[0] if queued_by else None) != assistant: raise ValueError('Idempotency key was already used for another execution identity')
                 if (old['task'], old['payload'], old['actor'], old['model'], old['record_id']) != (task, encoded, actor, model, record_id):
                     raise ValueError('Idempotency key was already used for another job')
                 return JobReceipt(old['id'], old['state'])
         job_id = tx.connection.execute('INSERT INTO evlet_jobs(task,payload,actor,model,record_id,state,max_attempts,run_at,created_at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)', (task, encoded, actor, model, record_id, 'queued', definition.max_attempts, due, now, key)).lastrowid
         if system_role is not None: tx.connection.execute('INSERT INTO evlet_job_identities(job_id,role) VALUES (?,?)', (job_id, system_role))
         if key_id is not None: tx.connection.execute('INSERT INTO evlet_job_keys(job_id,key_id) VALUES (?,?)', (job_id, key_id))
+        if assistant is not None: tx.connection.execute('INSERT INTO evlet_job_assistants(job_id,client_id) VALUES (?,?)', (job_id, assistant))
         return JobReceipt(job_id, 'queued')
 
     def schedule(self, schedule, task, payload, *, every, start_at=None, user=None, target=None, calendar=None):
@@ -239,6 +245,14 @@ class JobQueue:
                         if queued_by['id'] is None or queued_by['revoked_at'] is not None:
                             raise AccessError(403, 'The API key that queued this job was revoked.')
                         user = User(*account, access=self.business.auth.key_access(queued_by['id'], queued_by['scope']))
+                    queued_by = tx.connection.execute('SELECT client_id FROM evlet_job_assistants WHERE job_id=?', (job_id,)).fetchone()
+                    if queued_by is not None:
+                        connection = None
+                        if queued_by[0]:
+                            connection = tx.connection.execute('SELECT * FROM evlet_mcp_clients WHERE id=? AND user_id=? AND revoked_at IS NULL', (queued_by[0], account['id'])).fetchone()
+                            if connection is None:
+                                raise AccessError(403, 'The AI assistant that queued this job was disconnected.')
+                        user = self.business.assistants.narrow(user, connection)
                 else:
                     identity = tx.connection.execute('SELECT role FROM evlet_job_identities WHERE job_id=?', (job_id,)).fetchone()
                     if identity: user = User(0, 'schedule', identity[0])
