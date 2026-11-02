@@ -251,12 +251,22 @@ plain value is set once, a reactive one updates only the node bound to it. Impor
 class names.
 
 The fonts are bundled, so pages load nothing from another host and the CSP stays
-`default-src 'self'`. `frontend/fonts` holds Inter 4.1 (`InterVariable.woff2`, weights 100 to 900)
-and JetBrains Mono 2.304 (`JetBrainsMono-Regular.woff2` and `-Medium.woff2`), taken from the
-official GitHub releases (`rsms/inter`, `JetBrains/JetBrainsMono`), with their SIL Open Font
-License 1.1 files beside them. The build copies them to `/assets` with a content hash (538,228
-bytes of woff2 in all); the server sends them as `font/woff2`. `font-display: swap` shows the
-system fonts (`system-ui`, `ui-monospace` and the rest of the stack) until they load.
+`default-src 'self'`. `frontend/fonts` holds Inter 4.1 (`InterVariable.woff2` and
+`InterVariable-Italic.woff2`, weights 100 to 900) and JetBrains Mono 2.304
+(`JetBrainsMono-Regular.woff2` and `-Medium.woff2`), taken from the official GitHub releases
+(`rsms/inter`, `JetBrains/JetBrainsMono`), with their SIL Open Font License 1.1 files beside them.
+The Inter files are byte for byte the ones evlet.io serves, and the family name
+(`"Inter Variable"`) and fallback stack match the site's brand tokens. The build copies them to
+`/assets` with a content hash (926,204 bytes of woff2 in all); the server sends them as
+`font/woff2`. `font-display: swap` shows the system fonts (`system-ui`, `ui-monospace` and the
+rest of the stack) until they load. The italic file downloads only when italic text shows.
+
+The Evlet logo is the evlet.io artwork as the site serves it, in `frontend/public/assets`:
+`evlet-logo-primary.svg` (the horizontal logo), `evlet-icon-blue.svg` (the folded leaf mark, also
+the favicon) and `evlet-logo-white.svg`, the primary logo with its wordmark filled white for dark
+themes (the site publishes no dark variant; only the fill changes). `Lockup()` and `Logo()` in
+`app/login.ts` place them in the sidebar, sign-in and Controls; the collapsed sidebar shows the
+mark only.
 
 | Module | Components |
 |---|---|

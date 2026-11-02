@@ -8,7 +8,7 @@ import { cell, derive, effect } from '../reactive';
 import { Icon, IconButton, IconTile, Key } from '../ui/base';
 import { tooltip } from '../ui/tooltip';
 import { MenuButton, mountToasts, openModal, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
-import { Logo } from './login';
+import { Lockup, Logo } from './login';
 import { applyTheme } from './prefs';
 import { docsOn, goSettings, type AppContext } from './context';
 import { displayName, PersonMark } from './settings';
@@ -91,7 +91,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     <span class="as-text"><b>${appName}</b><small>${workspace}</small></span>${Icon('chevrons-up-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
 
   const sidebar = html`<aside class="sidebar" id="ev-sidebar" aria-label="Main navigation">
-    <div class="brand">${Logo()}<span class="brand-name">evlet</span></div>
+    <div class="brand">${Lockup()}${Logo('Evlet')}</div>
     <div class="side-body">
       ${appSwitch}
       <nav class="nav">

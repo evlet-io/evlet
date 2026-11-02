@@ -110,8 +110,10 @@ describe('app shell', () => {
     const { host } = start([...adminRoutes()]);
     await until(() => expect(host.querySelector('.app')).not.toBeNull());
     const app = host.querySelector('.app')!;
-    expect(text(host.querySelector('.sidebar .brand'))).toBe('evlet');
-    expect(host.querySelector('.sidebar .brand .ev-logo')).not.toBeNull();
+    // The evlet.io artwork: the horizontal logo for each theme, and the mark the collapsed sidebar shows.
+    const brand = [...host.querySelectorAll<HTMLImageElement>('.sidebar .brand img')].map(img => [img.className, img.getAttribute('src'), img.alt]);
+    expect(brand).toEqual([['ev-lockup-light', '/assets/evlet-logo-primary.svg', 'Evlet'],
+      ['ev-lockup-dark', '/assets/evlet-logo-white.svg', 'Evlet'], ['ev-logo', '/assets/evlet-icon-blue.svg', 'Evlet']]);
     const appSwitch = host.querySelector<HTMLElement>('.sidebar .app-switch')!;
     const appName = text(appSwitch.querySelector('.as-text b'));
     expect(appName).not.toBe('');

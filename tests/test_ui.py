@@ -304,8 +304,8 @@ def test_fonts_are_bundled_and_served_from_assets(secured):
     css = "\n".join(path.read_text() for path in styles)
     # Inter and JetBrains Mono come from /assets, never from another host, and swap in when loaded.
     fonts = sorted(set(re.findall(r"url\((?:/assets/)?([^)/]+\.woff2)\)", css)))
-    assert len(fonts) == 3 and "fonts.googleapis.com" not in css and "font-display:swap" in css.replace(" ", "")
-    assert "font-family:Inter;" in css and "font-family:JetBrains Mono;" in css and "ui-monospace" in css and "system-ui" in css
+    assert len(fonts) == 4 and "fonts.googleapis.com" not in css and "font-display:swap" in css.replace(" ", "")
+    assert "font-family:Inter Variable;" in css and "font-family:JetBrains Mono;" in css and "ui-monospace" in css and "system-ui" in css
     for name in fonts:
         status, payload, headers = http(secured, "GET", "/assets/" + name)
         assert status == 200 and payload[:4] == b"wOF2" and headers[b"content-type"] == b"font/woff2"
