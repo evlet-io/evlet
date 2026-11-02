@@ -3,6 +3,16 @@
 Evlet is pre-1.0. A minor version (0.2, 0.3) may change public APIs; the notes below
 say what to change. Evlet is not production ready.
 
+## Unreleased
+
+- **Offline docs show user guides only.** Handoff plans, the model engine ledger,
+  milestone notes, the specification and the testCRM notes moved to `docs/internal/`.
+  They are no longer in the wheel or shown by `evlet docs`. The contributor guide moved
+  to `CONTRIBUTING.md`.
+- **Smaller source distribution.** The sdist no longer carries tests, scripts, lock
+  files, internal docs or the browser test fixtures. It keeps what building and
+  installing Evlet needs, including the browser interface source.
+
 ## 0.2.0 (02-11-2026)
 
 This release replaces the browser interface with Evlet's own UI framework, adds the

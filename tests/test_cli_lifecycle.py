@@ -625,9 +625,12 @@ def test_instance_session_uses_its_name_and_unique_preference_identity(project):
     assert http(runtime(project), 'GET', '/api/auth/session')[1]['application']['id'] == a['id']
 
 
-def test_offline_docs_exclude_internal_handoff():
+def test_offline_docs_exclude_internal_notes():
     from evlet.cli.docs import documentation
-    assert 'handoff.md' not in documentation()
+    documents = documentation()
+    internal = {path.name for path in (Path(__file__).parents[1] / 'docs/internal').glob('*.md')}
+    assert internal and not internal & set(documents)
+    assert 'amendment-v2.md' in documents
 
 
 def test_config_security_sets_the_starting_sign_in_rules(project):

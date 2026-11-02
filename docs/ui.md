@@ -24,7 +24,7 @@ Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_
 ## Not rendered by this interface
 
 These keep their Python APIs, HTTP routes, permission checks and tests. The browser
-interface does not show them (owner decision 3 in [handoff-plan.md](handoff-plan.md)):
+interface does not show them (owner decision 3 in [handoff-plan.md](internal/handoff-plan.md)):
 
 | Python API | Status |
 | --- | --- |

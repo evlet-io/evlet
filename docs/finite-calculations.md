@@ -3,7 +3,7 @@
 A document's formulas are declared once in Python. Evlet compiles them into a typed,
 versioned plan. The browser runs the plan as a preview. The server runs the same plan
 as the authority before it saves. This guide is the public contract. The implementation
-ledger is in [model-engine-implementation-status.md](model-engine-implementation-status.md).
+ledger is in [model-engine-implementation-status.md](internal/model-engine-implementation-status.md).
 
 ## Declaring a document
 
