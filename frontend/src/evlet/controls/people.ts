@@ -29,6 +29,9 @@ export const field = (label: string, id: string, control: Node, hint: () => stri
 
 // ---------- users ----------
 
+/** "2 sessions · 1 AI assistant": browser sessions and connected assistants both sign out with the user. */
+const sessionText = (user: UserRow) => [user.sessions ? plural(user.sessions, 'session') : '', user.assistants ? plural(user.assistants, 'AI assistant') : ''].filter(Boolean).join(' · ');
+
 export function UsersPage(ctx: ControlsContext): HTMLElement {
   const users = cell<UserRow[]>([]), total = cell(0), loaded = cell(false);
   const tab = cell<'all' | 'active' | 'inactive'>('all'), query = cell(''), role = cell('');
@@ -64,7 +67,7 @@ export function UsersPage(ctx: ControlsContext): HTMLElement {
         <td><span class="ctl-user">${Avatar({ name: user.username, size: 'sm' })}<strong>${user.username}</strong></span></td>
         <td>${RoleChip(user.role)}</td>
         <td>${required().includes(user.role) ? StatusPill({ label: 'Off · required', tint: 'rose' }) : html`<span class="muted">Off</span>`}</td>
-        <td class="muted num">${user.sessions ? plural(user.sessions, 'session') : 'None'}</td>
+        <td class="muted num">${sessionText(user) || 'None'}</td>
         <td>${user.active ? StatusPill({ label: 'Active', tint: 'green' }) : StatusPill({ label: 'Inactive', tint: 'slate' })}</td>
         <td class="r">${Icon('chevron-right', { size: 'sm' })}</td></tr>`)
         : html`<tr><td colspan="6"><div class="ctl-empty">${() => loaded.get() ? 'No users match.' : 'Loading users…'}</div></td></tr>`}</tbody></table>
@@ -121,8 +124,8 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
           ctx.state.peek().me.role === 'admin' ? Button({ label: 'Reset two-step', size: 'small', onClick: () => void resetTwoStep() }) : null]
         : [required.includes(user.role) ? StatusPill({ label: 'Required, not set up', tint: 'rose' }) : StatusPill({ label: 'Not set up', tint: 'slate' }),
           html`<span class="muted ctl-small">${required.includes(user.role) ? 'They set it up at their next sign-in.' : 'People set it up in Settings, under Sign-in & security.'}</span>`]}</div></section>
-      <section class="ctl-section"><h3>Sessions</h3><div class="ctl-line"><span class="grow">${user.sessions ? `${plural(user.sessions, 'active session')}` : 'No active sessions.'}</span>
-        ${user.sessions && !locked ? Button({ label: 'Sign out everywhere', size: 'small', icon: 'log-out', onClick: () => void signOut() }) : null}</div></section>
+      <section class="ctl-section"><h3>Sessions</h3><div class="ctl-line"><span class="grow">${sessionText(user) || 'No active sessions.'}</span>
+        ${(user.sessions || user.assistants) && !locked ? Button({ label: 'Sign out everywhere', size: 'small', icon: 'log-out', onClick: () => void signOut() }) : null}</div></section>
       ${locked ? null : html`<section class="ctl-section"><h3>Password</h3>
         ${field('New password', 'ctl-u-pass', html`<input class="input" id="ctl-u-pass" type="password" autocomplete="new-password"
           placeholder=${`At least ${ctx.state.peek().settings['security.password_min'].value} characters`} prop:value=${password}
