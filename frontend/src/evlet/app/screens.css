@@ -96,3 +96,24 @@
 .ev-revision-record dl { display: grid; grid-template-columns: minmax(100px, 1fr) 3fr; gap: 8px 16px; }
 .ev-revision-record dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ev-revision-record article { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
+
+/* ---------- slips ---------- */
+.modal.slip { width: min(760px, 100%); }
+.slip .slip-group { grid-column: 1 / -1; margin: 6px 0 -4px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-3); }
+.slip .slip-group:first-child { margin-top: 0; }
+.slip-table { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.slip-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r); }
+.slip-table table { width: 100%; min-width: 420px; border-collapse: collapse; font-size: 13px; }
+.slip-table th { padding: 7px 8px; text-align: left; font-size: 11.5px; font-weight: 600; color: var(--fg-3); background: var(--bg-subtle); border-bottom: 1px solid var(--border); }
+.slip-table th .req { color: var(--t-rose); margin-left: 2px; }
+.slip-table td { padding: 4px 6px; border-bottom: 1px solid var(--divider); vertical-align: top; }
+.slip-table tr:last-child td { border-bottom: 0; }
+.slip-table td.idx, .slip-table th.idx { width: 28px; color: var(--fg-4); text-align: center; padding-top: 10px; }
+.slip-table td.num .input { text-align: right; }
+.slip-table td .err { display: none; font-size: 11.5px; color: var(--t-rose); padding: 2px 2px 0; }
+.slip-table td.invalid .err { display: block; }
+.slip-table td.invalid .input { border-color: var(--t-rose); }
+.slip-table .slip-empty { margin: 0; font-size: 12.5px; }
+.slip-table-err:empty { display: none; }
+.slip-table-err { font-size: 12px; color: var(--t-rose); }
+.slip .ev-error { grid-column: 1 / -1; }

@@ -16,6 +16,8 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 - Generated model screens: lists, boards for models with a State, record views, new
   records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
   files.
+- Slips ([slips.md](slips.md)): forms presented from a record, the New menu, an action or browser
+  code, checked on the server and handed in to a handler or turned into a record.
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout`, `key_fields`, `relations` and `measures`. See "What the model decides" in
@@ -31,7 +33,7 @@ interface does not show them (owner decision 3 in [handoff-plan.md](internal/han
 | Python pages: `PageView`, `ListView`, `FormView`, layouts, `ViewRegistry` extensions and `CustomComponent` | Compiled and served by `GET /api/ui` and `GET /api/ui/resolve`. A page route opens Docs in the browser. Use generated screens and `Meta` options instead |
 | The Playground's Projects demo and Layouts page (`examples/playground/ui.py`) | Registered as Python pages, so not rendered |
 | Native TS/JS panels (`evlet/native.py`, `views/` modules in an app) | Built, hashed and served from `/assets/apps/...` for signed-in users as before. No screen mounts them |
-| Reports and form dialogs (`dialog: true` actions) | Run through their existing routes. `/reports/<name>` shows a notice |
+| Reports and the older record-bound forms (`dialog: true` actions) | Run through their existing routes. `/reports/<name>` shows a notice. Use [slips](slips.md) for forms |
 | Account management | `/api/auth/users` routes are unchanged. `/settings/accounts` shows a notice |
 
 ## Build and run

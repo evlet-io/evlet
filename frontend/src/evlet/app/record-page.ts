@@ -24,8 +24,9 @@ import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFie
   summaryFields, titleOf, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { Revisions } from './revisions';
+import { presentSlip, takePrefill } from './slips';
 
-const RESERVED = new Set(['tab']);
+const RESERVED = new Set(['tab', 'slip']);
 // A reactive part inside a list of children (arrays are read once; a template hole stays live).
 const live = (render: () => Child) => html`${render}`;
 
@@ -82,13 +83,17 @@ export function RecordPage(ctx: AppContext, name: string, idText: string): HTMLE
   const detail = isNew ? cell<RecordData | null>(null) : api.detail(name, id!);
   const extras = derive<DetailExtras>(() => extrasOf(detail.get()));
   const query = router.route.peek()?.query ?? {};
+  // Values a slip handed over for review (outcome becomes, review): shown as a new record, not saved.
+  const prefill = isNew ? takePrefill(name) : null;
 
   const load = async () => {
     status.set('loading');
     try {
-      if (isNew) await store.create(initialValues(model, query));
+      if (isNew) await store.create({ ...initialValues(model, query), ...(prefill?.values ?? {}) });
       else await store.open(id!);
       status.set('ready');
+      // A link such as /app/customer/4?slip=start_project presents that slip from the record.
+      if (!isNew && query.slip && (model.slips ?? []).some(slip => slip.name === query.slip)) void presentSlip(query.slip, { source: { model: name, id: id! } });
     } catch (error) {
       if (error instanceof ApiError && (error.kind === 'not_found' || error.kind === 'forbidden')) status.set('missing');
       else if (error instanceof ApiError && error.kind === 'aborted') return;
@@ -102,7 +107,7 @@ export function RecordPage(ctx: AppContext, name: string, idText: string): HTMLE
     loading: () => html`<div class="page"><p class="muted" role="status">Loading…</p></div>`,
     missing: () => missing(ctx, model),
     error: () => html`<div class="page">${EmptyState({ icon: 'info', tint: 'rose', title: 'This record could not be opened', text: () => failure.get(), action: Button({ label: 'Try again', onClick: () => void load() }) })}</div>`,
-    ready: () => RecordView(ctx, model, store, { isNew, extras, detail, query }),
+    ready: () => RecordView(ctx, model, store, { isNew, extras, detail, query, prefill: prefill?.from ?? null }),
   })}</div>` as HTMLElement;
   return page;
 }
@@ -113,7 +118,7 @@ function missing(ctx: AppContext, model: ScreenModel): HTMLElement {
     text: 'It may have been deleted, or your role cannot open it.', action: Button({ label: `Open ${model.plural.toLowerCase()}`, onClick: () => void ctx.router.go('list', { model: model.name }) }) })}</div>` as HTMLElement;
 }
 
-interface ViewOptions { isNew: boolean; extras: Readable<DetailExtras>; detail: Readable<RecordData | null>; query: Record<string, string> }
+interface ViewOptions { isNew: boolean; extras: Readable<DetailExtras>; detail: Readable<RecordData | null>; query: Record<string, string>; /** The slip that filled this new record. */ prefill?: string | null }
 
 function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, options: ViewOptions): HTMLElement {
   const { api, router, prefs } = ctx;
@@ -222,15 +227,26 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const runAction = (action: ActionMeta) => {
     const inputs = actionInputs(action);
     if (!inputs.length) {
-      void store.runAction(action.name).then(ok => toast(ok ? `${action.label} done` : store.formError.peek() ?? `${action.label} did not run`, { icon: ok ? 'check' : 'info' }));
+      void store.runAction(action.name).then(ok => { if (!ok || !presentNext()) toast(ok ? `${action.label} done` : store.formError.peek() ?? `${action.label} did not run`, { icon: ok ? 'check' : 'info' }); });
       return;
     }
     ActionDialog(action, inputs, async values => {
       const ok = await store.runAction(action.name, values);
-      if (ok) toast(`${action.label} done`);
+      if (ok && !presentNext()) toast(`${action.label} done`);
       return ok ? null : store.formError.peek() ?? store.conflict.peek()?.message ?? `${action.label} did not run`;
     });
   };
+  // An action may answer with a slip to present next: return present(Slip, ...) in Python.
+  const presentNext = () => {
+    const next = (store.outcome as { present?: { slip: string; source?: { model: string; id: number } | null; values?: Record<string, unknown> } } | null)?.present;
+    if (next) void presentSlip(next.slip, { source: next.source, values: next.values });
+    return Boolean(next);
+  };
+  const slipBlocked = (): string | null => isNew ? 'Save the record first' : store.dirty.get() ? 'Save or discard your changes first' : null;
+  const openSlip = (slip: string) => void presentSlip(slip, { source: { model: name, id: store.id! } }).then(outcome => {
+    // The handler may have changed this record; a document or a record it opened is another page.
+    if (outcome && !outcome.document && !outcome.open) void store.reload().catch(() => {});
+  });
   const correct = (kind: 'void' | 'revise' | 'unpost' | 'repost') => {
     // A repost's reason is optional; the other corrections need one.
     const optional = kind === 'repost';
@@ -335,12 +351,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       onMove: () => void runMove(move.to) }));
     const actionButtons = actions().map(action => MoveButton({ label: action.label, icon: 'zap', blocked: () => actionBlocked(action),
       variant: !moves.length && action === actions()[0] ? 'primary' : 'default', onMove: () => runAction(action) }));
+    const slipButtons = (model.slips ?? []).map(slip => MoveButton({ label: slip.label, icon: 'file-text', blocked: slipBlocked, variant: 'default', onMove: () => openSlip(slip.name) }));
     const lifecycleButtons = (extras.get()._lifecycle_actions ?? []).map(operation => MoveButton({
       label: model.lifecycle?.labels[operation] ?? humanize(operation), icon: operation === 'cancel' ? 'rotate-ccw' : 'arrow-right',
       blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null,
       variant: 'primary', onMove: () => lifecycleAction(operation),
     }));
-    return [...lifecycleButtons, ...moveButtons, ...actionButtons, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items: moreItems, menuLabel: 'More actions' })];
+    return [...lifecycleButtons, ...moveButtons, ...actionButtons, ...slipButtons, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items: moreItems, menuLabel: 'More actions' })];
   };
 
   // ---------- header ----------
@@ -500,7 +517,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const side = isNew ? undefined : SidePanel(ctx, model, store, view, relations, active);
 
   const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right',
-    main: [header, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
+    main: [header, options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
   frame.addEventListener('keydown', event => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && (isNew || store.dirty.peek())) { event.preventDefault(); void save(); }
   });

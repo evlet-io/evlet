@@ -368,6 +368,8 @@ export class RecordStore {
   /** A message for the whole form: an error the server did not tie to a field. */
   readonly formError = cell<string | null>(null, { name: 'record.formError' });
   readonly saving = cell(false, { name: 'record.saving' });
+  /** What the last action returned (`_outcome`), such as a slip to present next. */
+  outcome: unknown = null;
   /** Every row is loaded and calculations are attached: the record can be edited. */
   readonly ready = cell(false, { name: 'record.ready' });
   /** Set when rows could not be paged in; call loadAll() again to retry. */
@@ -534,6 +536,7 @@ export class RecordStore {
     // Done on the server. Reading the result again can fail; loadError says so.
     try {
       const data = response.data && 'job' in response.data && 'record' in response.data ? response.data.record : response.data;
+      this.outcome = data?._outcome ?? null;
       // Routes that answer without an ETag (legacy actions, jobs) are read again to get one.
       if (response.etag) { this.applyServer(data, response.etag); await this.loadAll(); }
       else await this.reload();
