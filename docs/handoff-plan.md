@@ -113,7 +113,7 @@ open as draft PRs #52 to #60, and a tenth PR closes the findings of a review acr
 | 7 | #58 | `h2/07-connectors` | Connectors, encrypted secrets, email accounts and API keys | [controls.md](controls.md#connectors-and-secrets) |
 | 8 | #59 | `h2/08-remote-mcp` | Remote MCP for AI assistants with OAuth | [connector.md](connector.md#remote-mcp-with-oauth) |
 | 9 | #60 | `h2/09-mailboxes` | Personal mailboxes | [controls.md](controls.md#personal-mailboxes) |
-| 10 | | `h2/10-cross-review-fixes` | One revocation function, export grouped by setting prefix, instance fields grantable, every PostgreSQL variant in CI, the mailbox page with the switch off | this section |
+| 10 | #61 | `h2/10-cross-review-fixes` | One revocation function, export grouped by setting prefix, instance fields grantable, every PostgreSQL variant in CI, the mailbox page with the switch off, a dropped IMAP connection during sign-in kept apart from a rejected password | this section |
 
 Decisions taken while building them (the owner's where marked):
 
@@ -138,13 +138,13 @@ Decisions taken while building them (the owner's where marked):
 - **No migration from the browser.** Controls shows an app waiting to be migrated; only
   `evlet migrate` changes the database, never a request.
 - **Mail matching is opt-in.** A model takes part in mailbox matching only through `Meta.mail`.
-- **One revocation matrix** (owner's decision). Every revocation goes through
+- **One revocation matrix.** Every revocation goes through
   `LocalAuth.end_sessions`. A Settings password change and Controls "Sign out everywhere" end
   browser sessions (the current one stays after a password change), AI assistants and unused
   authorization codes, and keep API keys. A two-step reset (Controls or the shell),
   deactivation and the break-glass grant also revoke API keys
   ([controls.md](controls.md#ending-access)).
-- **Instance fields are grantable** (owner's decision). Stricter only applies to fields
+- **Instance fields are grantable.** Stricter only applies to fields
   declared in app files. A permission override may make an instance field readable or writable
   for a role whose app rule lists `read_fields` or `write_fields`.
 

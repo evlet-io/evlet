@@ -741,6 +741,36 @@ def test_a_server_that_sends_too_much_or_too_slowly_is_cut_off(app, mail, monkey
         drip.server_close()
 
 
+def test_a_connection_dropped_during_sign_in_keeps_the_saved_sign_in(app, mail):
+    imap, smtp, _ = mail
+    switch(app, True)
+    client(app, 'editor')('POST', '/api/_settings/me/mailbox', mailbox(imap, smtp))
+    drain(app)
+
+    class HangUp(socketserver.StreamRequestHandler):
+        def handle(self):
+            self.wfile.write(b'* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN] fake\r\n')
+            while line := self.rfile.readline():
+                tag, command = line.split(b' ', 2)[:2]
+                if command.upper().startswith(b'LOGIN'):
+                    return
+                self.wfile.write(b'* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\n' + tag + b' OK done\r\n')
+
+    server = serve(HangUp)
+    try:
+        with app.database.transaction() as tx:
+            settings = json.loads(tx.connection.execute('SELECT settings FROM evlet_mailboxes').fetchone()[0])
+            settings['imap']['port'] = server.server_address[1]
+            tx.connection.execute('UPDATE evlet_mailboxes SET settings=?', (json.dumps(settings),))
+        assert app.business.mailboxes.sync(mailbox_id(app)) == 0
+        assert page_of(app)['status'] == 'error'
+        with app.database.transaction() as tx:
+            assert tx.connection.execute('SELECT secrets FROM evlet_mailboxes').fetchone()[0] is not None
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_a_hidden_email_field_is_not_shown_as_the_party(app, mail):
     imap, smtp, _ = mail
     switch(app, True)
