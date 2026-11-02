@@ -14,10 +14,11 @@ import type { FieldSchema, SchemaIndex } from '../model/schema';
 import { Chip, Icon, IconButton, RecordMark, StatusPill, Switch } from './base';
 import { read, tintFor, uid, type Prop, type Tint } from './core';
 import { formula, labeller, phrase, source } from './explain';
-import { checkTag, currencyOf, durationText, humanize, InputError, kindOf, parseDuration, parseTime } from './kinds';
+import { checkTag, currencyOf, durationText, humanize, InputError, kindOf } from './kinds';
 import { copyText, openPopover } from './layers';
 import { DatePanel, DateTimePanel, Dropdown, DurationPanel, focusCalendar, TimePanel, type DateTimeValue } from './pickers';
-import { formatDate, formatMoney, parseDate, zoneOffset } from '../model/format';
+import { formatDate, formatMoney, zoneOffset } from '../model/format';
+import { parseClock, parseDay, parseDayTime, parseLength } from './dateparse';
 import { tooltip } from './tooltip';
 
 // ---------- the field contract ----------
@@ -424,21 +425,10 @@ function wallNow(): DateTimeValue {
   return { day: `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`, hours: local.getUTCHours(), minutes: local.getUTCMinutes() };
 }
 
-// The day and time typed in a date-time input ('01-11-2026 14:05'), or null.
-function typedDateTime(text: string): DateTimeValue | null {
-  const match = /^(.+?)[ T,]+(\d{1,2})[:.](\d{2})$/.exec(text.trim());
-  const day = parseDate(match ? match[1] : text);
-  if (!day) return null;
-  return { day, hours: match ? Math.min(23, Number(match[2])) : 0, minutes: match ? Math.min(59, Number(match[3])) : 0 };
-}
-
-function typedTime(text: string): { hours: number; minutes: number } | null {
-  try { const value = parseTime(text); return { hours: Number(value.slice(0, 2)), minutes: Number(value.slice(3, 5)) }; } catch { return null; }
-}
-
-function typedSeconds(text: string): number | null {
-  try { return text.trim() ? parseDuration(text) : null; } catch { return null; }
-}
+// What is typed in the input, read as the picker should open on it (dateparse.ts), or null.
+const typedDateTime = (text: string): DateTimeValue | null => parseDayTime(text);
+const typedTime = (text: string) => parseClock(text);
+const typedSeconds = (text: string) => parseLength(text);
 
 /**
  * The button at the end of a date, date-time, time or duration input that opens its picker.
@@ -453,7 +443,7 @@ function PickerButton(field: FieldLike, input: HTMLInputElement, picker: 'date' 
   const finish = () => { close?.(); input.focus(); if (commit()) picked(); };
   const render = (done: () => void): Node => {
     if (picker === 'date') return DatePanel({ label: `Choose ${meta.label.toLowerCase()}`, clearable: clearable(),
-      value: () => parseDate(input.value), onPick: day => { done(); input.focus(); if (put(day ? formatDate(day) : '')) picked(); } });
+      value: () => parseDay(input.value), onPick: day => { done(); input.focus(); if (put(day ? formatDate(day) : '')) picked(); } });
     if (picker === 'datetime') return DateTimePanel({ label: `Choose ${meta.label.toLowerCase()}`, clearable: clearable(), now: wallNow, onDone: finish,
       value: () => typedDateTime(input.value), onChange: value => put(value ? `${formatDate(value.day)} ${pad(value.hours)}:${pad(value.minutes)}` : '') });
     if (picker === 'time') return TimePanel({ clearable: clearable(), now: wallNow, onDone: finish, value: () => typedTime(input.value),

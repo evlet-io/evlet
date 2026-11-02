@@ -9,6 +9,7 @@
 import { html, when, type Child } from '../dom';
 import { cell, derive, untrack, type Cell } from '../reactive';
 import { formatDate, todayGst } from '../model/format';
+import { dateOrder, parseDay } from './dateparse';
 import { Icon } from './base';
 import { read, uid } from './core';
 import { openPopover } from './layers';
@@ -453,12 +454,29 @@ export function DateRangePanel(props: DateRangePanelProps): HTMLElement {
   const chosen = (): DateRange | null => from.get() && to.get() ? [from.get()!, to.get()!] : null;
   const presets = rangePresets();
   const same = (range: DateRange) => from.get() === range[0] && to.get() === range[1];
+  // The ends can be typed too, the same forgiving way as a date field (120627, 1/6/27, today).
+  const typedError = cell<string | null>(null);
+  const typed = (end: 'from' | 'to') => html`<input class="input" placeholder=${end === 'from' ? 'From' : 'To'} aria-label=${end === 'from' ? 'First day' : 'Last day'} autocomplete="off"
+    prop:value=${() => { const day = (end === 'from' ? from : to).get(); return day ? formatDate(day) : ''; }}
+    on:change=${(event: Event) => {
+      const input = event.target as HTMLInputElement, text = input.value.trim();
+      const day = text ? parseDay(text) : null;
+      if (text && !day) { typedError.set(`Enter a date as ${({ DMY: 'DD-MM-YYYY', MDY: 'MM/DD/YYYY', YMD: 'YYYY-MM-DD' })[dateOrder()]}`); return; }
+      typedError.set(null);
+      (end === 'from' ? from : to).set(day);
+      const first = from.peek(), last = to.peek();
+      if (first && last && last < first) { from.set(last); to.set(first); }
+      input.value = day ? formatDate((end === 'from' ? from : to).peek() ?? day) : '';
+    }}
+    on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); (event.target as HTMLInputElement).dispatchEvent(new Event('change')); } }}>`;
   return html`<div class="pick pick-range">
     <div class="range-presets" role="group" aria-label="Ranges">${presets.map(preset => html`<button type="button" class="mi" class:on=${() => same(preset.range)}
       aria-pressed=${() => String(same(preset.range))} on:click=${() => { from.set(preset.range[0]); to.set(preset.range[1]); }}>${preset.label}</button>`)}</div>
     <div class="range-main">${Calendar({ value: () => null, range: shown, onPick: pick, onHover: day => { if (picking.peek()) hover.set(day); },
       label: props.label ?? 'Choose the first and last day', start: start?.[0] })}
-      <div class="range-note muted" role="status">${() => chosen() ? rangeText(chosen()!) : from.get() ? `From ${formatDate(from.get()!)}: choose the last day` : 'Choose the first day'}</div>
+      <div class="range-typed">${typed('from')}<span aria-hidden="true">to</span>${typed('to')}</div>
+      <div class="range-note" class:muted=${() => !typedError.get()} class:err-inline=${() => Boolean(typedError.get())} role="status">${() => typedError.get()
+        ?? (chosen() ? rangeText(chosen()!) : from.get() ? `From ${formatDate(from.get()!)}: choose the last day` : 'Choose the first day')}</div>
       ${footer(textButton('Clear', () => props.onApply(null)), html`<span class="grow"></span>`,
         html`<button type="button" class="btn primary sm" disabled=${() => !chosen()} on:click=${() => props.onApply(chosen())}>Apply</button>`)}</div></div>` as HTMLElement;
 }

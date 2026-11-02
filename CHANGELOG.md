@@ -14,6 +14,9 @@ say what to change. Evlet is not production ready.
   `/api/schema`, `currency` now only ever holds a code; a field on the record (`"code_field"`)
   is sent as `currency_source: {"field": "code_field"}` instead of `currency: "code_field"`.
   A client that read the field name from `currency` should read `currency_source`.
+- **Typed dates and times** are read the forgiving way: `120627`, `1/6/27`, `1206`, `today`,
+  `+3`, `935`, `12.35pm`, `9am`, `120627 1235`, `90m`, in the day, month and year order of the
+  person's date format. Impossible dates are refused, never guessed ([docs/ui-framework.md](docs/ui-framework.md#typing-dates-and-times)).
 - Integer and Decimal fields show their `suffix` after the value at rest too (`5.00%`).
 - The Link field's record mark no longer stretches across the input.
 - **Form fields** are 40 px tall with a soft focus ring, a 14 px label and a blue required

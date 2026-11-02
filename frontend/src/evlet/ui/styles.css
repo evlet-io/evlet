@@ -1065,6 +1065,8 @@ th:hover>.rz::after{background:var(--border-strong)}
 .range-presets .mi.on{background:var(--accent-soft);color:var(--accent);font-weight:550}
 .range-main{display:flex;flex-direction:column;gap:8px;width:252px}
 .range-note{font-size:12px;text-align:center}
+.range-typed{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-3)}
+.range-typed .input{height:30px;flex:1;min-width:0;padding:0 8px;font-size:12.5px}
 @media (max-width:640px){
   .pick.pick-range{flex-direction:column}
   .range-presets{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--divider);padding:0 0 8px;min-width:0}

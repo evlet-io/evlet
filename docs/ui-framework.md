@@ -281,6 +281,36 @@ GST date-times, exact decimals, `1h 30m` durations) and a wrong value stays in t
 a message that says how to fix it. `localField()` makes the same cells for forms that are not
 records, such as action dialogs.
 
+### Typing dates and times
+
+Date, date-time, time and duration inputs read typed text the forgiving way Frappe does, through
+one pure module, `ui/dateparse.ts` (`parseDay`, `parseClock`, `parseDayTime`, `parseLength`). The
+text is read on blur and on Enter, and the input then shows the value in the person's format at
+once. Text that can't be read, or names a day that doesn't exist (31-02), stays as typed with the
+field's error; nothing is guessed. The server validates again.
+
+| Typed (day first) | Reads as (today 02-11-2026) |
+| --- | --- |
+| `12062027`, `120627`, `12/06/27`, `12-06-2027`, `12.06.2027`, `12 06 2027`, `12 Jun 2027` | 12-06-2027 |
+| `1/6/27` | 01-06-2027 |
+| `1206`, `12/06` | 12-06-2026 (this year) |
+| `12` | 12-11-2026 (this month) |
+| `today` or `t`, `tomorrow`, `yesterday`, `+3`, `-3` | days from today |
+| `2027-06-12` | always year first |
+
+The order of day, month and year follows the person's date format in Settings (Appearance &
+region): `MM/dd/yyyy` reads month first (`061227` is 12 June), `yyyy-MM-dd` reads year first,
+and the other formats day first. No separate setting is needed. A two-digit year is the year
+ending in those digits that is nearest this year: up to 50 years ahead, otherwise in the past
+(in 2026, `76` is 2076 and `77` is 1977).
+
+Times: `1235` is 12:35, `120627` 12:06:27, `935` 09:35, `9` 09:00; `12:35`, `12.35`, `9am`,
+`12.35pm`, `12:35 pm`, `2:05 p.m.`. `12am` is 00:00 and `12pm` 12:00. Minutes always have two
+digits, so `9.5` is refused rather than guessed. A date-time is a date, then a time after a space,
+a comma or `T` (`120627 1235`, `12/06/27 9am`, `today 14:30`); a date alone is midnight.
+Durations take `1h 30m`, `1h30m`, `90m`, `1:30`, `1.5h`, `2d 4h`, `45s` or a number of minutes.
+The date range filter's From and To boxes read days the same way.
+
 ### Form fields
 
 BaseField follows the Untitled UI input structure in Evlet's colours. Inputs, Link and Select
