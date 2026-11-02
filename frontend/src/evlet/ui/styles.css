@@ -37,7 +37,7 @@
   --accent-solid:#2f5be8; --accent-solid-hover:#244ed4; --on-tint:#ffffff; --knob:#ffffff;
   --inverse-bg:#151821; --inverse-fg:#ffffff; --inverse-ok:#4ade80; --inverse-hover:rgba(127,127,127,.25);
   /* The two themes' grounds, cards and lines in every theme, for the theme pictures in Settings. */
-  --swatch-light:#f4f5f8; --swatch-light-card:#ffffff; --swatch-light-line:#e8eaef; --swatch-dark:#14171c; --swatch-dark-card:#1a1e25; --swatch-dark-line:#323844;
+  --swatch-light:#f4f5f8; --swatch-light-card:#ffffff; --swatch-light-line:#d8dce3; --swatch-dark:#14171c; --swatch-dark-card:#1a1e25; --swatch-dark-line:#323844;
   --shadow-edge:rgba(16,24,40,.18); --shadow-accent:0 1px 2px rgba(47,91,232,.25),inset 0 1px 0 rgba(255,255,255,.12);
   color-scheme:light;
 }

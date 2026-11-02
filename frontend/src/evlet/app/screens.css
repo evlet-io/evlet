@@ -10,7 +10,7 @@
 .ev-login{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:32px 16px;background:var(--bg-subtle)}
 .ev-login-brand{display:flex;align-items:center;gap:10px;font-size:15px}
 .ev-login-brand strong{font-weight:650;letter-spacing:-.02em}
-.ev-login-brand span{color:var(--fg-3)}
+.ev-login-brand span:not(.ev-logo){color:var(--fg-3)}
 .ev-login-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-md);padding:28px}
 .ev-login-card h1{font-size:21px;font-weight:650;letter-spacing:-.02em;margin:14px 0 4px}
 .ev-login-card>p{color:var(--fg-3);margin:0 0 20px}

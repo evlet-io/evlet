@@ -229,6 +229,8 @@ describe('choosing a theme', () => {
     expect([...choices].map(choice => text(choice.querySelector('strong')))).toEqual(['Light', 'Match my device', 'Dark']);
     expect([...choices].some(choice => choice.disabled)).toBe(false);
     expect([...choices].map(choice => choice.querySelector('.set-thumb')?.className)).toEqual(['set-thumb light', 'set-thumb system', 'set-thumb dark']);
+    // Match my device shows half of each.
+    expect([...choices[1].querySelectorAll('.set-thumb.system > .set-thumb')].map(node => node.className)).toEqual(['set-thumb light', 'set-thumb dark']);
     click(choices[2]);
     await until(() => expect(document.documentElement.dataset.theme).toBe('dark'));
     expect(choices[2].getAttribute('aria-pressed')).toBe('true');

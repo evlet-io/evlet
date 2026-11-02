@@ -65,7 +65,8 @@ img.set-photo{object-fit:cover;padding:0}
 .set-choice .set-thumb i:first-child{width:22%}.set-choice .set-thumb i:last-child{flex:1}
 .set-choice .set-thumb.dark{background:var(--swatch-dark);border-color:var(--swatch-dark-line)}
 .set-choice .set-thumb.dark i{background:var(--swatch-dark-card);border-color:var(--swatch-dark-line)}
-.set-choice .set-thumb.system{background:linear-gradient(90deg,var(--swatch-light) 50%,var(--swatch-dark) 50%)}
+.set-choice .set-thumb.system{padding:0;gap:0}
+.set-choice .set-thumb.system>.set-thumb{flex:1;height:auto;border:0;border-radius:0}
 .set-choice .tick{position:absolute;top:10px;right:10px;width:18px;height:18px;border-radius:50%;background:var(--accent-solid);color:var(--accent-fg);display:grid;place-items:center}
 .set-badge{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:5px;font-size:11px;font-weight:600;background:var(--bg-muted);color:var(--fg-2);margin:0 2px}
 .set-badge.green{background:var(--t-green-bg);color:var(--t-green)}

@@ -5,6 +5,13 @@ say what to change. Evlet is not production ready.
 
 ## Unreleased
 
+- **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
+  follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
+  the default). The server writes the theme on `<html>` before the page paints, so nothing
+  flashes, and the sign-in page keeps the browser's last theme. The sidebar, account menu,
+  palette and Docs switch it. The config block gains `"theme"`. Components use colour tokens
+  only, and a test checks WCAG AA contrast of the token pairs in both themes
+  ([docs/ui-framework.md](docs/ui-framework.md#themes)).
 - **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
   lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
   duration fields keep their typed input and add a calendar or steppers. List pages filter

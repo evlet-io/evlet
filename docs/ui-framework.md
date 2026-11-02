@@ -270,6 +270,7 @@ system fonts (`system-ui`, `ui-monospace` and the rest of the stack) until they 
 | `childtable.ts` | ChildTable over a record store `Table` |
 | `doc.ts` | DocFrame, DocHeader, MoveButton, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
+| `theme.ts` | `applyTheme`, `resolveTheme`, `systemScheme`, `currentTheme`, `THEMES`, `isTheme` ([Themes](#themes)) |
 | `library.ts` | The Library page; open `/evlet.html` on the dev server (`npm run dev`) |
 
 Fields bind to the record store's field cells: the value, `error`, the `applies`, `required`
@@ -459,18 +460,74 @@ lightness moved.
 
 | Token | Theme | Mockup | Now | Contrast now |
 |---|---|---|---|---|
-| `--fg-3` (secondary text) | light | `#858b99` | `#696f7e` | 5.0:1 on white, 4.6:1 on `--bg-muted` |
+| `--fg-3` (secondary text) | light | `#858b99` | `#676d7c` | 5.2:1 on white, 4.6:1 on `--accent-soft` |
 | `--fg-4` (icons, faint marks) | light | `#a9aeb9` | `#868d9c` | 3.3:1 on white (non-text, 3:1) |
 | `--t-blue` | light | `#3466e6` | `#3365e6` | 4.5:1 on its pill |
 | `--t-green` | light | `#159452` | `#128047` | 4.5:1 on its pill |
 | `--t-amber` | light | `#c27a0a` | `#9e6308` | 4.5:1 on its pill |
 | `--t-rose` | light | `#d6435b` | `#cf2d47` | 4.5:1 on its pill |
 | `--t-teal` | light | `#0e8f8a` | `#0c7c78` | 4.5:1 on its pill |
-| `--fg-3` | dark | `#7d8494` | `#7e8595` | 4.5:1 on `--bg-muted` |
+| `--fg-3` | dark | `#7d8494` | `#868d9d` | 5.0:1 on `--bg-muted`, 4.6:1 on `--accent-soft` |
+| `--accent` (links, marks) | dark | `#5b80f5` | `#6488f6` | 4.7:1 on `--accent-soft` |
+| `--accent-hover` | dark | `#6d8ef7` | `#7593f7` | follows `--accent` |
 | `--fg-4` | dark | `#5c6270` | `#626978` | 3.0:1 (non-text) |
 
 Text that used `--fg-4` (field hints, grid placeholders, hidden-column labels, the palette
 placeholder, empty quick-access labels) uses `--fg-3` instead.
+
+White text on the mockup's dark `--accent` is 3.6:1, so filled accent surfaces (primary
+buttons, ticked checkboxes, the current step, chosen calendar days, badges) use
+`--accent-solid` instead; text on a solid `--t-*` fill (Success, Delete, a document's current
+step) uses `--on-tint`, which is dark in the dark theme.
+
+### Themes
+
+Light, dark and system ("match my device") are a person's Settings choice, kept on the server
+([settings.md](settings.md)). All colours are custom properties on `:root` in `ui/styles.css`:
+light values on `:root`, dark values under `@media (prefers-color-scheme: dark)` guarded by
+`:root:not([data-theme="light"])`, and the same dark values again under
+`:root[data-theme="dark"]`, so an explicit choice wins in both directions and "system" needs
+no script. Each block also sets `color-scheme`, so scrollbars and native controls match.
+
+| Token group | Use |
+|---|---|
+| `--bg`, `--bg-subtle`, `--bg-muted`, `--side-bg`, `--surface`, `--overlay` | Grounds, cards, popovers and the dialog scrim |
+| `--border`, `--border-strong`, `--divider` | Lines |
+| `--fg`, `--fg-2`, `--fg-3`, `--fg-4` | Text from strongest to faint; `--fg-4` is for icons and marks only |
+| `--accent`, `--accent-hover`, `--accent-soft`, `--accent-ring` | Links, active marks, selected rows, focus rings |
+| `--accent-solid`, `--accent-solid-hover`, `--accent-fg` | A filled accent surface and the text on it |
+| `--t-{blue,green,amber,rose,violet,teal,slate}` and `-bg` | Tints: icons, pills, charts, validation (`--t-rose`) |
+| `--on-tint` | Text on a solid `--t-*` fill |
+| `--inverse-bg`, `--inverse-fg`, `--inverse-ok`, `--inverse-hover` | Toasts, tooltips, the bulk bar and the Settings save bar (dark in light, light in dark) |
+| `--focus-border`, `--focus-ring`, `--error-ring`, `--knob`, `--shadow-*` | Focus, the switch knob, shadows, sticky column edges |
+| `--swatch-*` | The theme pictures in Settings (the same in both themes) |
+
+Components and screens use tokens only; `color-mix()` over a token is fine for a translucent
+shade. `tests/theme.test.ts` fails on any colour literal (hex, `rgb()`, `hsl()`, named white or
+black) in a stylesheet outside the token blocks or in an inline style, checks that both dark
+blocks are the same and that every colour token has a dark value, and checks WCAG AA contrast of
+the token pairs in both themes: 4.5:1 for text (each text token on each ground, the accent on its
+soft ground, text on solid fills, each tint on its pill) and 3:1 for icons, the focus outline and
+error lines. Add a pair there when a new token carries text.
+
+`ui/theme.ts` is the runtime API:
+
+```ts
+import { applyTheme, resolveTheme, systemScheme, currentTheme } from './evlet/ui';
+
+applyTheme('dark');              // data-theme="dark" on <html>, browser bar colour, evlet_theme cookie
+applyTheme('system');            // removes data-theme: the stylesheet follows the device
+systemScheme().get();            // 'light' | 'dark', a cell updated when the OS setting changes
+resolveTheme('system');          // what shows now: 'light' or 'dark'
+currentTheme();                  // the theme the page was served with
+```
+
+No flash on load: the server writes `data-theme` on `<html>` (and `"theme"` in the config
+block) for the signed-in person before any script runs, and the stylesheet is in `<head>`. The
+sign-in page reads the `evlet_theme` cookie that `applyTheme` leaves, so it opens in the
+browser's last theme. `index.html` also carries `<meta name="color-scheme" content="light dark">`
+and a `theme-color` for each scheme. The Vite development server has no config block, so there
+the page follows the device until the person's settings load.
 
 ## Screens
 
@@ -485,7 +542,7 @@ not part of the build.
 | Module | What it does |
 |---|---|
 | `app.ts` | Session, sign in and first-run setup, the shell and the route table |
-| `shell.ts` | Sidebar (models grouped, recent records, Library in development), top bar, keyboard |
+| `shell.ts` | Sidebar (models grouped, recent records, Library in development, the account and the theme button), top bar, keyboard |
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
 | `record-page.ts` | Record (doc) view, new records, action, void, revise, unpost and repost dialogs |
@@ -496,7 +553,7 @@ not part of the build.
 | `config.ts` | Reads the runtime config block the server puts in every page |
 
 Every page the server serves carries one non-executable block in `<head>`:
-`<script id="evlet-config" type="application/json">{"frontend":"evlet.desk","base":"/app","api":"/api",...}</script>`.
+`<script id="evlet-config" type="application/json">{"frontend":"evlet.desk","base":"/app","api":"/api",...,"theme":"dark"}</script>`.
 The router reads `base` (where the model screens are mounted) and `docs` from it, and the API
 client sends `/api/...` paths to `api`, so the same build runs under any mount path. Nothing
 in the app hardcodes `/app` or a host; a page without the block (the Vite server) uses the desk
@@ -550,7 +607,7 @@ violet), since the schema has no presentation keys. Models with a State or a Tab
 Documents in the sidebar, the others as Records.
 
 Appearance, region, start page and sidebar counts are the person's Settings, kept on the server
-([settings.md](settings.md)); the theme is light for now. Layout preferences (sidebar, list column
+([settings.md](settings.md)), and so is the theme ([Themes](#themes)). Layout preferences (sidebar, list column
 widths, child table columns, quick access) are kept in browser storage under `evlet.<username>.`.
 They never hold record data: recent records and recent searches stay in memory for the signed-in
 session and go on sign-out. The account area is at the bottom of the sidebar; the top bar keeps

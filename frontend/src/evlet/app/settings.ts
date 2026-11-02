@@ -349,7 +349,9 @@ function AppearancePage(ctx: SettingsContext): Node {
   const pick = (key: keyof Me['prefs'], value: string, title: string, text: string, disabled = false, preview: Child = null) =>
     choice(() => prefs.get()[key] === value, title, text, () => set(key, value), disabled, preview);
   // A small picture of each theme, drawn in that theme's colours whatever the page shows now.
-  const thumb = (scheme: Theme) => html`<span class=${`set-thumb ${scheme}`} aria-hidden="true"><i></i><i></i></span>`;
+  const thumb = (scheme: Theme): Node => scheme === 'system'
+    ? html`<span class="set-thumb system" aria-hidden="true">${thumb('light')}${thumb('dark')}</span>` as Node
+    : html`<span class=${`set-thumb ${scheme}`} aria-hidden="true"><i></i><i></i></span>` as Node;
   return html`${head('Appearance & region', 'How Evlet looks and shows dates and numbers for you. Other people are not affected.')}
     ${section('Theme', '', html`<div class="set-choices">${pick('theme', 'light', 'Light', '', false, thumb('light'))}
       ${pick('theme', 'system', 'Match my device', 'Changes when your device does.', false, thumb('system'))}${pick('theme', 'dark', 'Dark', '', false, thumb('dark'))}</div>`, true)}
