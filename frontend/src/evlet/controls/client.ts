@@ -17,7 +17,7 @@ export interface RoleRow {
   id: string; kind: 'framework' | 'custom'; base: string | null; realm: 'desk' | 'portal'; opens_controls: boolean;
   description: string; users: number; app: string | null; declared: boolean;
 }
-export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number }
+export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; two_step?: { since: number | null; agent: string } | null }
 /** A field as models.py declares it: the props Controls can override. */
 export interface FieldProps {
   label: string; help_text: string; placeholder: string; hidden: boolean; required: boolean; read_only: boolean;

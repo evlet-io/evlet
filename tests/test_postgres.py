@@ -693,6 +693,14 @@ from tests.test_settings import (  # noqa: E402
 )
 
 
+from tests.test_settings_security import (  # noqa: E402
+    test_a_lost_key_is_never_replaced_and_sign_in_answers_503 as test_postgres_lost_key,
+    test_required_roles_need_a_verified_session_for_controls as test_postgres_verified_sessions,
+    test_sensitive_changes_need_the_password_and_a_current_code as test_postgres_reauthentication,
+    test_wrong_codes_are_limited_per_account_across_networks as test_postgres_code_limit,
+)
+
+
 def test_postgres_multiselect_storage_and_filters(pg_dsn):
     from evlet import MultiSelect
     shift = type('Shift', (Model,), {'name': Text(required=True), 'days': MultiSelect(['mon', 'tue', 'wed'], default=['mon']),

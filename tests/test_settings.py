@@ -160,8 +160,9 @@ def test_photo_is_kept_in_private_file_storage(tmp_path, monkeypatch, hashed):
 def test_email_change_goes_through_a_one_time_link(secured, caplog):
     c = client(secured, 'editor')
     assert c('POST', '/api/_settings/me/email', {'email': 'nope'})[1]['fields'] == {'email': 'Enter a valid email address.'}
+    assert c('POST', '/api/_settings/me/email', {'email': 'sara@example.com'})[1]['fields'] == {'password': 'Enter your password.'}
     with caplog.at_level('INFO', logger='evlet.settings'):
-        sent = c('POST', '/api/_settings/me/email', {'email': 'sara@example.com'})[1]
+        sent = c('POST', '/api/_settings/me/email', {'email': 'sara@example.com', 'password': PASSWORD})[1]
     assert sent['sent'] == 'sara@example.com' and sent['link'].startswith('http://127.0.0.1:8000/settings/profile?confirm=')
     assert sent['link'] in caplog.text
     token = sent['link'].split('confirm=')[1]
@@ -178,8 +179,9 @@ def test_email_change_goes_through_a_one_time_link(secured, caplog):
 def test_two_step_enrollment_login_with_codes_and_backup_codes_once(settled):
     app = settled
     editor = client(app, 'editor')
-    assert editor('GET', '/api/_settings/me')[1]['security']['two_step'] == {'on': False, 'since': None, 'codes': 0, 'required': False, 'available': True}
-    started = editor('POST', '/api/_settings/me/two-step', {})[1]
+    assert editor('GET', '/api/_settings/me')[1]['security']['two_step'] == {'on': False, 'since': None, 'agent': '', 'codes': 0, 'required': False, 'available': True, 'verified': False}
+    assert editor('POST', '/api/_settings/me/two-step', {})[1]['fields'] == {'password': 'Enter your password.'}
+    started = editor('POST', '/api/_settings/me/two-step', {'password': PASSWORD})[1]
     raw = base64.b32decode(started['secret'] + '=' * (-len(started['secret']) % 8))
     assert started['uri'].startswith('otpauth://totp/') and len(raw) == 20
     assert editor('POST', '/api/_settings/me/two-step/confirm', {'code': '000000' if totp(raw, int(time.time() // 30)) != '000000' else '111111'})[0] == 422
@@ -214,7 +216,9 @@ def test_two_step_enrollment_login_with_codes_and_backup_codes_once(settled):
     me = http(app, 'GET', '/api/_settings/me', cookie=cookie)[1]
     assert me['security']['two_step']['codes'] == 6 and me['security']['two_step']['on']
     # Not required for editor: it can be turned off.
-    assert http(app, 'DELETE', '/api/_settings/me/two-step', cookie=cookie, csrf=data['csrf'])[1] == {'on': False}
+    off = {'password': PASSWORD, 'code': codes[2]}
+    assert http(app, 'POST', '/api/_settings/me/two-step/off', {'password': PASSWORD}, cookie=cookie, csrf=data['csrf'])[1]['fields'] == {'code': 'Enter a current code from your app, or a backup code.'}
+    assert http(app, 'POST', '/api/_settings/me/two-step/off', off, cookie=cookie, csrf=data['csrf'])[1] == {'on': False}
     assert http(app, 'POST', '/api/auth/login', {'username': 'editor', 'password': PASSWORD})[1]['user']['username'] == 'editor'
 
 
@@ -228,8 +232,8 @@ def test_a_role_that_requires_two_step_sets_it_up_at_sign_in_and_cannot_turn_it_
     assert status == 200 and len(payload['backup_codes']) == 8
     cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], payload['csrf']
     me = http(app, 'GET', '/api/_settings/me', cookie=cookie)[1]
-    assert me['security']['two_step'] | {'since': None} == {'on': True, 'since': None, 'codes': 8, 'required': True, 'available': True}
-    status, body, _ = http(app, 'DELETE', '/api/_settings/me/two-step', cookie=cookie, csrf=csrf)
+    assert me['security']['two_step'] | {'since': None} == {'on': True, 'since': None, 'agent': 'an unknown device', 'codes': 8, 'required': True, 'available': True, 'verified': True}
+    status, body, _ = http(app, 'POST', '/api/_settings/me/two-step/off', {'password': PASSWORD, 'code': payload['backup_codes'][0]}, cookie=cookie, csrf=csrf)
     assert (status, body) == (409, {'error': 'Required for your role'})
     # Controls' two_step_roles decides who must use it.
     admin = lambda method, path, data=None: http(app, method, path, data, cookie=cookie, csrf=csrf)
@@ -240,8 +244,8 @@ def test_a_role_that_requires_two_step_sets_it_up_at_sign_in_and_cannot_turn_it_
 
 def test_without_a_secret_key_two_step_is_unavailable_and_sign_in_is_unchanged(secured):
     c = client(secured)
-    assert c('GET', '/api/_settings/me')[1]['security']['two_step'] == {'on': False, 'since': None, 'codes': 0, 'required': False, 'available': False}
-    status, payload, _ = c('POST', '/api/_settings/me/two-step', {})
+    assert c('GET', '/api/_settings/me')[1]['security']['two_step'] == {'on': False, 'since': None, 'agent': '', 'codes': 0, 'required': False, 'available': False, 'verified': False}
+    status, payload, _ = c('POST', '/api/_settings/me/two-step', {'password': PASSWORD})
     assert status == 409 and 'cryptography package and a secret key' in payload['error']
 
 
@@ -250,8 +254,9 @@ def test_controls_require_two_step_lets_in_only_people_who_use_it(settled):
     app.routes = app.business.routes = app.business.controls.routes = type(app.routes)(**{**app.routes.__dict__, 'controls': ControlsAccess(require_two_step=True)})
     admin = client(app)
     assert admin('GET', '/api/_controls/state')[0] == 200
+    # The session, not only the account, must have finished two-step sign-in.
     with app.database.transaction() as tx:
-        tx.connection.execute("UPDATE evlet_user_profile SET two_step_secret=NULL WHERE user_id=(SELECT id FROM evlet_users WHERE username='admin')")
+        tx.connection.execute('UPDATE evlet_sessions SET two_step=NULL')
     assert admin('GET', '/api/_controls/state')[1] == {'error': TWO_STEP}
 
 

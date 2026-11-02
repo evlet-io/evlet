@@ -28,8 +28,13 @@ naming series, screen extensions that no longer fit a form layout, and failed jo
   `LocalAuth.client_address(scope)`: `X-Forwarded-For` counts only when the connection
   comes from one of the instance's `trusted_proxies` ([routing.md](routing.md)). Sign-in
   throttling and the public endpoint limit read the same address.
-- `ControlsAccess(require_two_step=True)` opens Controls only to people who use two-step
-  sign-in; others get a message that sends them to Settings.
+- `ControlsAccess(require_two_step=True)` opens Controls only to sessions that finished two-step
+  sign-in; others get a message that sends them to Settings and back through sign-in. Roles in
+  `security.two_step_roles` need such a session too, when the instance can keep secrets.
+- Admins can **Reset two-step** for a user (`PATCH /api/_controls/users/<id>`
+  `{"two_step": "reset"}`), and `evlet users reset-two-step <instance> <username>` does the same
+  from the server shell. Both are audited and end the user's sessions; see
+  [settings.md](settings.md#set-up-at-sign-in-trust-on-first-use) for why it exists.
 - Break glass from the server shell:
 
   ```
@@ -109,7 +114,7 @@ no customer links sees no records. Link users with `evlet link-user` or
 | `security.password_min` | 15 | Up only, 64 at most. Applies to new passwords. |
 | `security.session_hours` | 8 | Down only. Sets the session and cookie length in every realm. Lowering it ends sessions already older than the new length, desk and portal alike. |
 | `security.lockout` | 10 | Down only, 3 at least. Failed sign-ins per network and account. |
-| `security.two_step_roles` | `["admin"]` | Admin stays. These roles must use two-step sign-in ([settings.md](settings.md#two-step-sign-in)) when the instance can keep secrets. |
+| `security.two_step_roles` | `["admin"]` | Admin stays. These roles must use two-step sign-in ([settings.md](settings.md#two-step-sign-in)) when the instance can keep secrets: people who have not set it up do so at their next sign-in (trust on first use), and Controls needs a verified session. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
 
 ## Models

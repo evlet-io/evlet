@@ -17,7 +17,7 @@ person used, kept on the server: `GET /settings` redirects to `/settings/<last p
 | Path | What it holds | Saves |
 | --- | --- | --- |
 | `/settings/profile` | Photo, full name, short name, job title, mobile, email signature, email (through a link) and the read-only username | Instantly |
-| `/settings/appearance` | Theme (light; dark comes later), density, text size, start page, sidebar counts, language (Arabic is right-to-left), time zone, date format, number format, first day of the week | Instantly |
+| `/settings/appearance` | Theme (light; dark is shown as coming later), density, text size, start page, sidebar counts, language (Arabic is right-to-left), time zone, date format, number format, first day of the week | Instantly |
 | `/settings/security` | Password, two-step sign-in, where you are signed in | On submit |
 | `/settings/notifications` | Event by channel (in Evlet, email), quiet hours | Instantly |
 | `/settings/email` | Personal mailboxes come in a later release; this page says so | |
@@ -34,41 +34,94 @@ Standard Time.
 **Photo.** PNG, JPG or WebP, 2 MB at most, checked by its first bytes. It is kept in the
 instance's private file storage and served only to its owner at `GET /api/_settings/me/photo`.
 
-**Email change.** `POST /api/_settings/me/email` records a one-time token (stored hashed in
-`evlet_email_tokens`, 24 hours) and the address changes when its owner opens
-`/settings/profile?confirm=<token>`. Outgoing mail is not set up yet, so the link is written
-to the `evlet.settings` log; on a development instance the page also shows it.
+**Email change.** It needs the password (and a code, with two-step sign-in on).
+`POST /api/_settings/me/email` records a one-time token (stored hashed in `evlet_email_tokens`,
+24 hours) and the address changes when its owner opens `/settings/profile?confirm=<token>`.
+Outgoing mail is not set up yet, so this works on development instances only: the page shows the
+link and the `evlet.settings` log has it. An instance with a domain answers "Email is not set up
+yet" and records and logs nothing.
 
 **Password.** The current password is needed and the instance minimum applies
-(`security.password_min`). Every other session of the person ends.
+(`security.password_min`). Every other session of the person ends. Wrong current passwords
+count against the account's sign-in lockout.
+
+**Start page.** Only Docs or a model the person can read.
+
+**Theme.** The dark theme's styles and `applyTheme` stay in the frontend; only the choice is
+hidden until it is ready, so everyone sees the light theme.
 
 **Notifications.** Only the choices are stored for now. Security emails (a new device, a
 changed password) can't be turned off.
 
 ## Two-step sign-in
 
-Two-step sign-in uses an authenticator app (TOTP, 6 digits every 30 seconds) and 8 backup
-codes that each work once.
+Two-step sign-in uses an authenticator app (TOTP, 6 digits every 30 seconds, one step either
+side) and 8 backup codes that each work once.
 
-- **Turning it on.** Settings shows a key to add to the app and asks for a code from it.
-  The backup codes are shown once, after that.
+- **Turning it on.** Settings asks for the password, then shows a key to add to the app and
+  asks for a code from it. The backup codes are shown once, after that.
 - **Signing in.** After a correct password, `POST /api/auth/login` answers
-  `{"two_step": "code", "ticket": ...}` with no session. The browser sends
-  `{"ticket", "code"}` to the same route; a code from the app or an unused backup code
-  starts the session. A ticket lasts 5 minutes and allows 5 tries. A code is accepted once.
-- **Required roles.** Roles in Controls' `security.two_step_roles` (admin always) must use
-  it. Someone in such a role who has not set it up gets `{"two_step": "setup", "ticket",
-  "secret", "uri"}` and turns it on while signing in. They can't turn it off.
-- **Controls.** `ControlsAccess(require_two_step=True)` opens Controls only to people who
-  use two-step sign-in.
-- **The command line.** `evlet login` asks for the code. Accounts that still need to set it
-  up do that in the browser first.
+  `{"two_step": "code", "ticket": ...}` with no session. The browser sends `{"ticket", "code"}`
+  to the same route; a code from the app or an unused backup code starts the session. A ticket
+  lasts 5 minutes and allows 5 tries; a code is accepted once. Wrong codes also count per
+  account, from any network: after 10 in 15 minutes the answer is "Too many wrong codes. Try
+  again in 15 minutes."
+- **Verified sessions.** A session that finished the code step (or set the app up while signing
+  in) is marked verified in `evlet_sessions.two_step`. Turning two-step on from Settings does not
+  verify the session it was done from; signing in again does.
+- **Required roles.** Roles in Controls' `security.two_step_roles` (admin always) must use it.
+  Someone in such a role who has not set it up gets `{"two_step": "setup", "ticket", "secret",
+  "uri"}` and turns it on while signing in. They can't turn it off.
+- **Controls.** Controls opens only for verified sessions when `ControlsAccess(require_two_step=True)`
+  is set or the person's role is in `security.two_step_roles` (when the instance can keep secrets).
+- **Re-authentication.** Turning it off, making new backup codes, starting the set-up again and
+  changing the email need the password, and a current code or a backup code when two-step is on.
+- **The command line.** `evlet login` asks for the code without showing it. Accounts that still
+  need to set it up get "Set up two-step sign-in in the browser first".
+- **Who set it up.** Each set-up writes an audit row and records when and from which kind of
+  browser. Settings and Controls show it.
 
-The secret and the hashed backup codes are sealed with the instance's secret key
-(`instances/<name>/secret.key`, created on first use, mode 0600) using AES-GCM from the
-`cryptography` package, through `evlet.secrets.seal` and `open`. Without that package, or
-on an application that is not an instance, two-step sign-in is unavailable: Settings says so,
-it can't be turned on, and required roles sign in with their password.
+### Set-up at sign-in: trust on first use
+
+Setting the app up while signing in means that whoever first signs in with a person's password
+binds their own authenticator app. Someone who learned an admin's password before the admin
+signed in after the upgrade could do that, and the admin would then be asked for a code they
+don't have. Admins should sign in and set it up right after an instance upgrades. If an account
+was taken this way, or a phone is lost:
+
+- an admin uses **Reset two-step** on the user in Controls (audited), or
+- on the server, `evlet users reset-two-step <instance> <username>` (audited as `cli`).
+
+Both clear the app and the backup codes and end the person's sessions. They set it up again at
+their next sign-in (a required role) or in Settings.
+
+### The secret key
+
+`evlet.secrets` is the one place secrets are kept; connectors use the same key and file.
+
+```python
+from evlet import secrets
+sealed = secrets.seal(key, b"value", "two_step:42")   # purpose binds the value to its place
+secrets.open(key, sealed, "two_step:42")              # b"value"; another purpose fails
+secrets.available(key)                                # cryptography installed, key configured and valid
+key = secrets.SecretKey(path)                         # .check(), .keys(), .write(), rotation
+```
+
+- Keys come from `EVLET_SECRET_KEY` (comma-separated) or `instances/<name>/secret.key`: one
+  32-byte key per line in URL-safe base64. The file must be a regular file owned by the
+  server's user with mode 0600; a link, another owner or a readable mode is refused. It is
+  written atomically with `O_NOFOLLOW`.
+- The first key seals; any listed key opens, so a rotation puts the new key first and keeps the
+  old one until everything is sealed again. Two-step secrets (`two_step:<user id>`) and backup
+  codes (`backup_codes:<user id>`) are sealed with their purpose.
+- The key file is created on first use only while nothing is sealed yet. Once something is,
+  a missing or changed key is never replaced: sign-in for people with two-step on, and set-up
+  for required roles, answer 503 "Two-step sign-in is unavailable: the secret key is missing
+  or changed. Ask your admin." Restore `secret.key` from the backup taken with the database.
+- AES-GCM comes from the optional `cryptography` package. Without it, or on an application
+  that is not an instance, two-step sign-in is unavailable: Settings says so, it can't be turned
+  on, and required roles sign in with their password. The instance logs a warning on start
+  when required roles exist but the package is missing or the key file is refused.
 
 ## App settings
 
@@ -126,9 +179,9 @@ sign-in, appearance and the other pages answer 404.
 | `PATCH /api/_settings/me/profile` | `full_name`, `short_name`, `title`, `phone`, `signature` |
 | `PATCH /api/_settings/me/prefs` | Appearance and region keys, `notify.<event>` as `[in Evlet, email]`, `quiet` as `{on, from, to}`, `last_page` |
 | `GET/POST/DELETE /api/_settings/me/photo` | `{"type", "data"}` with base64 data |
-| `POST /api/_settings/me/email`, `POST /api/_settings/me/email/confirm` | Ask for a link; confirm with `{"token"}` |
+| `POST /api/_settings/me/email`, `POST /api/_settings/me/email/confirm` | Ask for a link (`{"email", "password", "code"?}`); confirm with `{"token"}` |
 | `POST /api/_settings/me/password` | `{"current", "new"}` |
-| `POST /api/_settings/me/two-step`, `.../two-step/confirm`, `.../two-step/codes`, `DELETE .../two-step` | Start, confirm with `{"code"}`, new backup codes, turn off |
+| `POST /api/_settings/me/two-step`, `.../two-step/confirm`, `.../two-step/codes`, `.../two-step/off` | Start (`{"password", "code"?}`), confirm with `{"code"}`, new backup codes and turn off (`{"password", "code"}`) |
 | `DELETE /api/_settings/me/sessions[/<id>]` | Sign out one other session, or every other one |
 | `GET /api/_settings/app/<app>` | Sections with values and defaults, `can_edit`, and the person's preferences |
 | `PATCH /api/_settings/app/<app>` | `{"values": {key: value or null}}`, editors only; one invalid value saves none |
@@ -138,15 +191,15 @@ sign-in, appearance and the other pages answer 404.
 
 ```sql
 evlet_user_profile(user_id PRIMARY KEY, full_name, short_name, title, phone, email, photo_file, signature,
-                   two_step_secret BLOB, backup_codes TEXT, two_step_since, two_step_last, two_step_pending BLOB)
+                   two_step_secret BLOB, backup_codes TEXT, two_step_since, two_step_last, two_step_pending BLOB, two_step_agent)
 evlet_user_prefs(user_id, scope, key, value, PRIMARY KEY (user_id, scope, key))  -- scope 'core' or the app
 evlet_email_tokens(token_hash PRIMARY KEY, user_id, new_email, expires)
 evlet_app_settings(app, key, value, changed_by, changed_at, PRIMARY KEY (app, key))
 evlet_two_step_tickets(token_hash PRIMARY KEY, user_id, realm, expires, attempts, secret BLOB)
 ```
 
-`evlet_sessions` also records when each session started and its browser, for the sessions
-list. SQLite and PostgreSQL both create these tables on start.
+`evlet_sessions` also records when each session started, its browser and when it finished
+two-step sign-in. SQLite and PostgreSQL both create these tables on start.
 
 ## Not built yet
 

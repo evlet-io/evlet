@@ -2769,11 +2769,13 @@
      }
     ],
     "two_step": {
+     "agent": "",
      "available": false,
      "codes": 0,
      "on": false,
      "required": false,
-     "since": null
+     "since": null,
+     "verified": false
     }
    },
    "user": {

@@ -88,6 +88,17 @@ class S3Storage(SQLiteStorage):
         except Exception as exc:
             raise StorageError('Private object download failed') from exc
 
+    def remove(self, key):
+        """Delete one object whose metadata row is already gone, such as a replaced photo."""
+        with self.database._connection() as connection:
+            if connection.execute('SELECT 1 FROM evlet_attachments WHERE storage_key=?', (key,)).fetchone():
+                return
+        try:
+            self._binding()
+            self.client.delete_object(Bucket=self.bucket, Key=self._key(key))
+        except Exception as exc:
+            raise StorageError('Private object removal failed') from exc
+
     def collect(self):
         """Explicit collection with the same writer lock as attachment creation."""
         try:
