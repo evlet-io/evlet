@@ -97,6 +97,8 @@ export function MyEmailPage(options: { api?: ApiClient; go?: (url: string) => vo
       toast(`${address} connected`);
     } catch (failure) {
       error.set(failure instanceof ValidationError ? Object.values(failure.fields).join(' ') : message(failure));
+      // The workspace may have turned personal mailboxes off meanwhile: reload, so the banner and buttons agree.
+      if (!(failure instanceof ValidationError)) await api.load().then(next => data.set(next), () => undefined);
     } finally { busy.set(false); }
   };
   const disconnect = () => ask('Disconnect your mailbox?',
@@ -144,7 +146,7 @@ export function MyEmailPage(options: { api?: ApiClient; go?: (url: string) => vo
     <div class="ctl-grid g3 ctl-pad">${PROVIDERS.map(([id, title, logo, text]) => {
       const ready = id === 'imap' || d().providers[id];
       return html`<div class="ctl-card ctl-conn"><div class="ctl-conn-top"><span class="ctl-conn-logo">${logo}</span><span class="grow"><h3>${title}</h3></span></div>
-        <p>${ready ? text : `Ask an admin to set up ${title} sign-in in Controls first.`}</p>
+        <p>${ready || !d().allowed ? text : `Ask an admin to set up ${title} sign-in in Controls first.`}</p>
         <div class="ctl-conn-foot"><span class="grow"></span>${Button({ label: 'Connect', size: 'small', variant: 'primary', disabled: !ready || !d().allowed,
           onClick: () => void choose(id) })}</div></div>`;
     })}</div></section>`;
@@ -153,6 +155,6 @@ export function MyEmailPage(options: { api?: ApiClient; go?: (url: string) => vo
     ${() => Head('Your email', data.get()?.mailbox ? 'Send emails from records as yourself, and see replies on the record.'
       : `Connect your mailbox to send emails from records as yourself.${data.get()?.shared ? ` Without it, emails go from ${data.get()!.shared}.` : ''}`)}
     ${() => data.get() === null ? html`<div class="ctl-empty">Loading…</div>`
-      : html`<div class="ctl-stack">${policy()}${d().mailbox ? connected() : () => form.get() ? details() : choices()}</div>`}
+      : html`<div class="ctl-stack">${policy()}${d().mailbox ? connected() : () => form.get() && d().allowed ? details() : choices()}</div>`}
   </div>` as HTMLElement;
 }

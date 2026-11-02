@@ -134,8 +134,13 @@ to create and drop databases. Tests generate uniquely named databases and remove
 only those databases, including after failure.
 
 ```sh
-python -m pytest tests/test_postgres.py tests/test_hardening.py
+python -m pytest tests/test_hardening.py $(grep -l pg_dsn tests/test_*.py)
 ```
+
+Every test file that uses the `pg_dsn` fixture has PostgreSQL variants (today
+`test_postgres.py`, `test_customization.py`, `test_lines.py`, `test_measures.py` and
+`test_mailboxes.py`). CI runs exactly this command, so a new file with variants is covered
+without editing the workflow.
 
 Tests exercise real server constraints, migration history/rollback, snapshot reads,
 concurrent read-modify-write operations, authentication, field and row permissions,

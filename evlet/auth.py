@@ -9,6 +9,7 @@ import ipaddress
 import json
 import re
 import secrets
+import sqlite3
 import time
 from threading import BoundedSemaphore, Lock
 from urllib.parse import urlsplit
@@ -381,12 +382,24 @@ class LocalAuth:
         return KeyAccess(value['access'] == 'write', models, key_id)
 
     @staticmethod
-    def end_sessions(connection, user_id):
-        """Sign a user out everywhere: browser sessions and connected AI assistants."""
-        connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (user_id,))
-        connection.execute('DELETE FROM evlet_oauth_codes WHERE user_id=?', (user_id,))
-        connection.execute('DELETE FROM evlet_mcp_tokens WHERE client_id IN (SELECT id FROM evlet_mcp_clients WHERE user_id=?)', (user_id,))
-        connection.execute('UPDATE evlet_mcp_clients SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', (int(time.time()), user_id))
+    def end_sessions(connection, user_id, *, keep=None, keys=False):
+        """End a person's access. Every revocation goes through here.
+
+        Always ends their browser sessions (except the session token keep), their connected AI assistants
+        (access and refresh tokens) and their unused authorization codes. keys=True also revokes their API keys,
+        for takeover recovery: a two-step reset, deactivation and the break-glass grant."""
+        now = int(time.time())
+        present = None
+        if isinstance(connection, sqlite3.Connection):
+            # The server-shell commands may meet a database from before assistants or keys existed.
+            present = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        connection.execute('DELETE FROM evlet_sessions WHERE user_id=?' + (' AND token<>?' if keep else ''), (user_id,) + ((keep,) if keep else ()))
+        if present is None or 'evlet_mcp_clients' in present:
+            connection.execute('DELETE FROM evlet_oauth_codes WHERE user_id=?', (user_id,))
+            connection.execute('DELETE FROM evlet_mcp_tokens WHERE client_id IN (SELECT id FROM evlet_mcp_clients WHERE user_id=?)', (user_id,))
+            connection.execute('UPDATE evlet_mcp_clients SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', (now, user_id))
+        if keys and (present is None or 'evlet_api_keys' in present):
+            connection.execute('UPDATE evlet_api_keys SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', (now, user_id))
 
     def create_key(self, user_id, name, scope, check=None):
         """Store a new key and return (row, key). The key itself is shown once and only its hash is kept."""
@@ -597,6 +610,6 @@ class LocalAuth:
                     raise AccessError(409, LAST_ADMIN)
             for key, value in changes.items():
                 tx.connection.execute(f'UPDATE evlet_users SET {key}=? WHERE id=?', (value, user_id))
-            self.end_sessions(tx.connection, user_id)
+            self.end_sessions(tx.connection, user_id, keys=changes.get('active') is False)
             if after is not None:
                 after()

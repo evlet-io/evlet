@@ -68,6 +68,35 @@ describe('Your email', () => {
     expect(byText(host, 'button', 'Connect')!.hasAttribute('disabled')).toBe(true);
   });
 
+  it('disables every way to connect while the workspace switch is off, like the banner says', async () => {
+    const { host } = personal([['GET', /\/api\/_settings\/me\/mailbox$/, () => reply(page({ allowed: false, providers: { microsoft: true, google: false } }))]] as any);
+    await until(() => expect(text(host)).toContain("Ask an admin to turn it on in Controls, under Email."));
+    const cards = [...host.querySelectorAll('.ctl-conn')];
+    expect(cards.map(card => byText(card, 'button', 'Connect')!.hasAttribute('disabled'))).toEqual([true, true, true]);
+    // One reason only: the switch. No card asks for a sign-in setup the banner doesn't mention.
+    expect(text(host)).not.toContain('Ask an admin to set up');
+  });
+
+  it('closes the app-password form when the workspace turns the switch off meanwhile', async () => {
+    let allowed = true;
+    const { host } = personal([
+      ['GET', /\/api\/_settings\/me\/mailbox$/, () => reply(page({ allowed }))],
+      ['POST', /\/api\/_settings\/me\/mailbox$/, () => { allowed = false; return reply({ error: "Your workspace doesn't let people connect their own mailbox." }, 409); }],
+    ] as any);
+    await until(() => expect(text(host)).toContain('Other mailbox'));
+    click(byText(host.querySelectorAll('.ctl-conn')[2], 'button', 'Connect'));
+    await until(() => expect(host.querySelector('#my-mail-address')).toBeTruthy());
+    typeInto(host.querySelector<HTMLInputElement>('#my-mail-address')!, 'daniel@acme.test');
+    typeInto(host.querySelector<HTMLInputElement>('#my-mail-imap')!, 'imap.acme.test:993');
+    typeInto(host.querySelector<HTMLInputElement>('#my-mail-smtp')!, 'smtp.acme.test:587');
+    typeInto(host.querySelector<HTMLInputElement>('#my-mail-password')!, 'app-password');
+    click(byText(host, '.ctl-form button', 'Connect'));
+    await until(() => expect(text(host)).toContain('Ask an admin to turn it on in Controls, under Email.'));
+    expect(host.querySelector('#my-mail-password')).toBeNull();
+    const cards = [...host.querySelectorAll('.ctl-conn')];
+    expect(cards.map(card => byText(card, 'button', 'Connect')!.hasAttribute('disabled'))).toEqual([true, true, true]);
+  });
+
   it('connects another mailbox with an app password and checks the form first', async () => {
     const { host, sent } = personal([
       ['GET', /\/api\/_settings\/me\/mailbox$/, () => reply(page())],

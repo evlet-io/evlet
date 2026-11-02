@@ -287,6 +287,9 @@ def open_imap(values):
                 client.authenticate('XOAUTH2', lambda challenge: xoauth2(values['address'], values['token']).encode())
             else:
                 client.login(values.get('username') or values['address'], values['password'])
+        except imaplib.IMAP4.abort:
+            # The connection dropped or timed out mid sign-in; the server never said no.
+            raise
         except imaplib.IMAP4.error:
             raise ConnectionFailed(REJECTED) from None
     except (OSError, imaplib.IMAP4.error) as exc:

@@ -895,3 +895,40 @@ def test_recompute_keeps_instance_fields_and_skips_posted_records(tmp_path, hash
     # A locked, posted record refuses an ordinary write to an instance field like any other field.
     status, body, _ = admin('PATCH', issued, {'x_region': 'south'}, headers=etag(admin, issued))
     assert status in (409, 422) and admin('GET', issued)[1]['x_region'] == 'north', body
+
+
+def test_instance_fields_can_be_granted_where_the_app_lists_fields(tmp_path, hashed):
+    """Stricter only applies to fields the app declares. Instance fields belong to Controls, so overrides may grant them."""
+    from evlet import Policy, Rule
+
+    class Deal(Model):
+        title = Text(required=True)
+        amount = Decimal(scale=2)
+        notes = Text()
+    database = Database(tmp_path / 'deal.sqlite3', Registry(Deal))
+    rules = {('editor', Deal): Rule(('read', 'create', 'update'), read_fields=('title', 'amount'), write_fields=('title',)),
+             ('viewer', Deal): Rule(('read',), read_fields=('title',))}
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False),
+                      policy=Policy(database.registry, rules=rules))
+    app.initialize()
+    for role in ('admin', 'editor', 'viewer'):
+        add_user(app, role, role)
+    admin, editor, viewer = client(app), client(app, 'editor'), client(app, 'viewer')
+    assert admin('POST', '/api/_controls/fields/Deal', {'name': 'region', 'type': 'Text', 'label': 'Region'})[0] == 201
+    assert admin('POST', '/api/deal', {'title': 'Payroll', 'amount': '10.00', 'notes': 'n', 'x_region': 'dxb'})[0] == 201
+    assert 'x_region' not in viewer('GET', '/api/deal/1')[1] and 'x_region' not in editor('GET', '/api/deal/1')[1]
+    status, data, _ = save(admin, ('perm', 'editor|Deal', {'ops': ['read', 'create', 'update'], 'read': ['title', 'amount', 'x_region'],
+                                                           'write': ['title', 'x_region'], 'scope': None}),
+                           ('perm', 'viewer|Deal', {'ops': ['read'], 'read': ['title', 'x_region'], 'write': None, 'scope': None}))
+    assert status == 200, data
+    seen = viewer('GET', '/api/deal/1')[1]
+    assert seen['x_region'] == 'dxb' and 'amount' not in seen and 'notes' not in seen
+    assert editor('PATCH', '/api/deal/1', {'x_region': 'auh'})[0] == 200
+    assert editor('GET', '/api/deal/1')[1]['x_region'] == 'auh'
+    assert editor('PATCH', '/api/deal/1', {'amount': '1.00'})[0] in (403, 422)
+    # Fields from the app file stay stricter only.
+    status, data, _ = save(admin, ('perm', 'viewer|Deal', {'ops': ['read'], 'read': ['title', 'amount'], 'write': None, 'scope': None}))
+    assert status == 422 and 'can only hide more' in json.dumps(data)
+    status, data, _ = save(admin, ('perm', 'editor|Deal', {'ops': ['read', 'update'], 'read': ['title', 'amount'], 'write': ['amount'], 'scope': None}))
+    assert status == 422 and 'can only allow fewer' in json.dumps(data)
+    app.database.close()

@@ -360,3 +360,27 @@ def test_export_writes_callables_as_set_in_code_and_names_the_real_file(tmp_path
         app.business.controls.app_of['Gadget'] = 'notes'
         assert exporter.models_file(Gadget, module, init) == expected
     assert exporter.folder(Gadget) == 'apps/notes/test_controls_pages'
+
+
+def test_every_setting_kind_exports_under_its_own_prefix_and_round_trips(secured):
+    admin = client(secured)
+    secured.business.jobs.schedule('nightly', 'project_progress', {'project_id': 404}, every=3600)
+    values = {'security.password_min': 20, 'security.session_hours': 4, 'security.lockout': 5, 'security.two_step_roles': ['admin', 'editor'],
+              'security.controls_ips': ['127.0.0.0/8'], 'mcp.enabled': False, 'mcp.allow_writes': True, 'mcp.rate': 30,
+              'mcp.disabled_tools': ['delete_record'], 'mcp.hidden_models': ['Customer'], 'mail.personal': True, 'schedule.nightly.active': False}
+    status, payload, _ = save(admin, *(('setting', key, value) for key, value in values.items()))
+    assert status == 200, payload
+    exported = {item['file']: item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1]}
+    config, routes = exported['instances/<name>/config.py'], exported['instances/<name>/routes.py']
+    assert 'Security() is not read from config.py yet' in config and 'not read from config.py yet' in config.split('security =')[1]
+    names, found = {'Security': lambda **options: options, 'ControlsAccess': lambda **options: options}, {}
+    exec(config, names, found)
+    exec(routes, names, found)
+    back = {f'security.{key}': list(value) if isinstance(value, tuple) else value for key, value in found['security'].items()}
+    back |= found['assistants'] | found['mail'] | {'security.controls_ips': list(found['controls']['allow_ips'])}
+    paused = [item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1] if item['file'] == 'hooks.py']
+    assert paused == ['# nightly is paused on this instance. Remove its Schedule here to stop it everywhere.\n']
+    assert back | {'schedule.nightly.active': False} == values
+    # Nothing loses its prefix: a Security() argument is never an assistant or mail setting.
+    assert set(found['security']) == {'password_min', 'session_hours', 'lockout', 'two_step_roles'}
+    assert config.count("'mail.personal': True") == 1

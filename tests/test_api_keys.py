@@ -53,12 +53,16 @@ def test_revoked_keys_inactive_users_and_bad_keys_are_refused(secured):
     assert admin('PATCH', f'/api/_controls/users/{viewer_id}', {'active': False})[0] == 204
     assert with_key(secured, token, 'GET', '/api/customer')[0] == 401
     assert admin('PATCH', f'/api/_controls/users/{viewer_id}', {'active': True})[0] == 204
+    # Deactivation revoked the key for good: reactivating the person does not bring it back.
+    assert admin('GET', '/api/_controls/keys')[1]['items'] == []
+    assert with_key(secured, token, 'GET', '/api/customer')[:2] == (401, {'error': 'This API key is not valid. It may have been revoked.'})
+    token = create(admin, user='viewer')[1]['token']
     key_id = admin('GET', '/api/_controls/keys')[1]['items'][0]['id']
     assert admin('DELETE', f'/api/_controls/keys/{key_id}')[1] == {'items': []}
     assert with_key(secured, token, 'GET', '/api/customer')[:2] == (401, {'error': 'This API key is not valid. It may have been revoked.'})
     assert admin('DELETE', f'/api/_controls/keys/{key_id}')[0] == 404
     with secured.database._connection() as connection:
-        assert [row[0] for row in connection.execute("SELECT detail FROM evlet_audit WHERE area='API keys' ORDER BY id")] == ['Created for viewer', 'Revoked']
+        assert [row[0] for row in connection.execute("SELECT detail FROM evlet_audit WHERE area='API keys' ORDER BY id")] == ['Created for viewer', 'Created for viewer', 'Revoked']
 
 
 def test_a_key_follows_its_scope_and_reads_only_unless_it_may_write(secured):

@@ -36,7 +36,8 @@ has no two-step sign-in, and nothing is listed for it.
   `security.two_step_roles` need such a session too, when the instance can keep secrets.
 - Admins can **Reset two-step** for a user (`PATCH /api/_controls/users/<id>`
   `{"two_step": "reset"}`), and `evlet users reset-two-step <instance> <username>` does the same
-  from the server shell. Both are audited and end the user's sessions; see
+  from the server shell. Both are audited and revoke all the user's access, API keys included
+  (see [Ending access](#ending-access)); see
   [settings.md](settings.md#set-up-at-sign-in-trust-on-first-use) for why it exists.
 - Break glass from the server shell:
 
@@ -44,10 +45,29 @@ has no two-step sign-in, and nothing is listed for it.
   evlet controls grant <instance> <username>
   ```
 
-  It makes the user an active admin, ends their sessions, clears the `security.controls_ips`
+  It makes the user an active admin, revokes all their access including API keys, clears the `security.controls_ips`
   setting and writes audit rows by `cli`. It can't change `routes.py`: when `ControlsAccess`
   there limits the networks, the command says so and you edit `routes.py`.
 - Saving allowed networks that leave out your own address asks first.
+
+### Ending access
+
+Every revocation goes through one function, `LocalAuth.end_sessions(connection, user_id, *,
+keep=None, keys=False)`. It always ends the person's browser sessions, their connected AI
+assistants (access and refresh tokens) and their unused authorization codes. `keys=True` also
+revokes their API keys.
+
+| What happened | Browser sessions | AI assistants and codes | API keys |
+|---|---|---|---|
+| Password changed in Settings | Others end, this one stays | End | Kept |
+| Controls: Sign out everywhere, password set, role change | End | End | Kept |
+| Controls: Reset two-step, `evlet users reset-two-step` | End | End | Revoked |
+| Controls: Deactivate | End | End | Revoked, and stay revoked if the person is activated again |
+| `evlet controls grant` (break glass) | End | End | Revoked |
+
+A password change keeps keys because scripts usually belong to the person who changed it on
+purpose. A two-step reset, deactivation and the break-glass grant are how an account is taken
+back, so whatever the other party could have created goes too.
 
 ## Roles
 
@@ -84,7 +104,8 @@ that users still have can't be deleted; deleting one removes its permission over
 ## Overrides
 
 Overrides are stored in `evlet_overrides(kind, key, value)` and never change app files.
-They can only make a rule stricter. Saving sends every change at once
+They can only make a rule stricter than the app files. Instance fields are the exception, since
+Controls owns them: see [Permissions](#overrides) below. Saving sends every change at once
 (`POST /api/_controls/overrides`, `{"changes": [{kind, key, value}]}`, `null` resets); one
 invalid change saves none, and the reply names each invalid item as `changes.<index>`.
 A value equal to the file value is removed instead of stored. A stored override that no
@@ -98,7 +119,11 @@ job and rebuilds its `Policy` and settings when it moved. Open pages get a
 **Permissions** (kind `perm`, key `role|Model`, value
 `{"ops": [...], "read": [...] | null, "write": [...] | null, "scope": id | null}`):
 operations (`read`, `create`, `update`, `delete`, `journal`, `void`, `revise`), readable and
-writable fields must stay within the file rule. Write needs read, no access clears fields and
+writable fields must stay within the file rule. Stricter only applies to the fields declared in
+app files: an instance field (`x_`, added by Controls) may be made readable or writable for a
+role even when the app rule lists `read_fields` or `write_fields`, as long as the role has read
+(and create or update, to write). Without such an override, a role whose app rule lists fields
+does not see instance fields. Write needs read, no access clears fields and
 rows, revise needs create. Admin rules can't be overridden. The page shows the first four;
 `journal`, `void` and `revise` named in the file rule are kept on save. A role based on the
 editor journals like the editor when its rule reads and updates the model (`docs/journal.md`).
@@ -131,11 +156,17 @@ instance. These are overrides too, saved with the change bar.
 |---|---|
 | `label`, `help_text`, `placeholder` | Text. A label can't be empty. |
 | `hidden` | Left out of forms and lists. The API still returns the field. A required field can't be hidden. |
-| `required` | Can be turned on, not off. Rows saved before stay empty until someone edits them; an API create or update must fill the field. |
+| `required` | Can be turned on, not off. Rows saved before stay empty until someone edits them; an API create or update must fill the field (see below). |
 | `read_only` | Can be turned on, not off. No role can write it through the API; actions and server code still can. |
 | `default` | Must pass the field's own check. New records only. Links take no default. |
 | `options_add` | Choice fields: new options in lowercase letters, digits and underscores. |
 | `options_hidden` | Choice fields: options from the app hidden from new values. A record that holds one keeps it, and saving it unchanged is allowed. One option stays shown, and the default from models.py can't be hidden until another default is set. |
+
+**Turning on required affects existing records.** Records saved before keep an empty value.
+The next time anyone changes such a record through the API, the PATCH must also fill the
+field, even when it only changes something else; otherwise it is refused with "This field is
+required" (422). Actions, jobs and other app code are not checked. Fill old records first, or expect
+people to be asked for the value the next time they save one.
 
 A field can't be made both required and read only without a default, since no one could then
 create a record.
@@ -256,7 +287,7 @@ they are removed on the Models page.
 | `perm` | `apps/<app>/<package>/permissions.py` | `rules = {("editor", Lead): Rule(operations=..., read_fields=..., write_fields=..., scope=...)}`. The `own_customer` preset is written as the public `own_customer()`, or `own_customer(field='id')` on the customer model |
 | `field`, `custom`, `naming` | The file that declares the model, such as `apps/notes/models/item.py` | The field lines as models.py writes them, with the changes merged in, and `Meta.naming = Naming(...)`. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. Arguments set in code, such as a callable default or validator, are written as `...` with a comment to copy them from models.py, so the code always compiles. |
 | `layout`, `list` | `apps/<app>/<package>/views/__init__.py` | `FormView(model=..., layout=Column(children=[FormLayout(...)]))`, `ListView(model=..., columns=..., page_size=..., order_by=...)` |
-| `setting` | `instances/<name>/routes.py` or `config.py` | `ControlsAccess(allow_ips=...)`; `Security(...)`, which config.py does not read yet; a comment for a paused schedule |
+| `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for the other `security.*` settings; `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read any of these yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
 
 Paste the code, deploy, then reset the overrides. Overrides that no longer apply are left out.
 
@@ -314,7 +345,8 @@ Trusted server code reads a saved connector with `business.connectors.values("wh
   can be read by anyone but its owner.
 - **Rotation.** `evlet secrets rotate <instance>` writes a new key and re-encrypts every
   sealed value listed in `evlet.secrets.SEALED`: connector secrets, two-step secrets, two-step
-  set-ups and sign-ins in progress, and backup codes. API keys are stored as SHA-256 hashes, not
+  set-ups and sign-ins in progress, backup codes, personal mailbox secrets (passwords and
+  Microsoft or Google tokens) and mailbox sign-ins in progress. API keys are stored as SHA-256 hashes, not
   sealed, so rotation leaves them alone. The old key stays in the file until all rows are done, so an interruption
   loses nothing. A row that can't be read is reported and left as it is, the others are
   re-encrypted, and the old key stays in the file until that row is entered again and rotation
@@ -373,7 +405,7 @@ mailbox" on the Email page:
 
 | Key | File value | Rule |
 |---|---|---|
-| `mail.personal` | false | Off refuses new connections and pauses every personal mailbox: nothing is read and emails go from the shared account. People can still change options and disconnect. |
+| `mail.personal` | false | Off refuses new connections and pauses every personal mailbox: nothing is read and emails go from the shared account. People can still change options and disconnect. Settings, Your email says so and disables every Connect button and the app-password form. |
 
 A stored value that no longer validates turns it off. Changes are audited under `Email`.
 
@@ -566,7 +598,8 @@ The page also lists connected clients (who, last call, number of calls) and tota
 last 24 hours: reads, writes and calls denied by permissions or by these settings. Admins can sign a client out at
 once; only admins sign out an admin's client. Per-request detail is only on each person's own
 AI page. Clients also count in the Users page sessions, and "Sign out everywhere", a password
-or role change and deactivation sign them out too.
+or role change, a two-step reset, deactivation and the break-glass grant sign them out too
+([Ending access](#ending-access)).
 
 **Desk only.** `/_/mcp`, the OAuth endpoints and the consent page answer only on the primary
 host, so portal and other sub-hosts get 404. Consent needs a desk session, and a token or

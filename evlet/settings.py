@@ -672,59 +672,6 @@ class Settings:
                                           (user.id, app, key, json.dumps(declared.__fields__[key].serialize(value))))
         return {'saved': sorted(clean)}
 
-    # ---------- password and sessions ----------
-
-    def change_password(self, scope, user, body):
-        from .controls import audit
-        body = self._body(body, ('current', 'new'))
-        current, new = body.get('current'), body.get('new')
-        if not isinstance(current, str) or not current:
-            raise ValidationError({'current': 'Enter your current password.'})
-        if not isinstance(new, str) or len(new) < self.business.auth.password_min:
-            raise ValidationError({'new': f'Your workspace needs at least {self.business.auth.password_min} characters.'})
-        if new == current:
-            raise ValidationError({'new': "Choose a password you haven't used here before."})
-        auth, now = self.business.auth, int(time.time())
-        key = hashlib.sha256(f'password:{user.id}'.encode()).hexdigest()
-        with hashing_slot():
-            with self.database.transaction() as tx:
-                tx.connection.execute('DELETE FROM evlet_login_limits WHERE resets<=?', (now,))
-                row = tx.connection.execute('SELECT attempts FROM evlet_login_limits WHERE client=?', (key,)).fetchone()
-                if row and row['attempts'] >= auth.lockout:
-                    raise AccessError(429, 'Too many tries. Try again in 15 minutes.')
-                tx.connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1', (key, now + 900))
-                stored = tx.connection.execute('SELECT password FROM evlet_users WHERE id=?', (user.id,)).fetchone()['password']
-            try:
-                candidate = _scrypt(_encode(current, 1), stored.split(':')[1])
-            except (ValueError, UnicodeError):
-                candidate = ''
-        if not hmac.compare_digest(candidate, stored):
-            raise ValidationError({'current': 'Your current password is not right.'})
-        try:
-            hashed = password_hash(new, minimum=auth.password_min)
-        except ValidationError:
-            raise ValidationError({'new': f'Use between {auth.password_min} and 128 characters.'}) from None
-        token = auth.token(scope)
-        with self.database.transaction() as tx:
-            if tx.connection.execute('SELECT password FROM evlet_users WHERE id=?', (user.id,)).fetchone()['password'] != stored:
-                raise AccessError(409, 'Your password changed meanwhile. Reload the page.')
-            tx.connection.execute('UPDATE evlet_users SET password=? WHERE id=?', (hashed, user.id))
-            tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=? AND token<>?', (user.id, token))
-            tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (key,))
-            audit(tx.connection, user.username, 'Users', user.username, 'Password changed in Settings · Signed out other devices')
-        return {'changed': True}
-
-    def end_sessions(self, scope, user, session_id):
-        token = self.business.auth.token(scope)
-        with self.database.transaction() as tx:
-            if session_id is None:
-                ended = tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=? AND token<>?', (user.id, token)).rowcount
-            else:
-                if token.startswith(session_id):
-                    raise ValidationError({'session': 'Use Sign out to end this session.'})
-                ended = tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=? AND substr(token,1,16)=?', (user.id, session_id)).rowcount
-        return {'ended': ended}
-
     # ---------- two-step: settings ----------
 
     def codes(self, row):
@@ -851,8 +798,8 @@ class Settings:
             if tx.connection.execute('SELECT password FROM evlet_users WHERE id=?', (user.id,)).fetchone()['password'] != stored:
                 raise AccessError(409, 'Your password changed meanwhile. Reload the page.')
             tx.connection.execute('UPDATE evlet_users SET password=? WHERE id=?', (hashed, user.id))
-            tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=? AND token<>?', (user.id, token))
-            audit(tx.connection, user.username, 'Users', user.username, 'Password changed in Settings · Signed out other devices')
+            auth.end_sessions(tx.connection, user.id, keep=token)
+            audit(tx.connection, user.username, 'Users', user.username, 'Password changed in Settings · Signed out other devices and AI assistants')
         return {'changed': True}
 
     def end_sessions(self, scope, user, session_id):
@@ -1004,8 +951,9 @@ def clear_two_step(connection, user_id):
 
 
 def reset_two_step(connection, actor, user_id, username):
-    """Clear a person's two-step sign-in and end their sessions; they set it up again at their next sign-in. Audited."""
+    """Clear a person's two-step sign-in and revoke every credential, API keys included; they set it up again at their next sign-in. Audited."""
+    from .auth import LocalAuth
     from .controls import audit
     clear_two_step(connection, user_id)
-    connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (user_id,))
-    audit(connection, actor, 'Users', username, 'Two-step sign-in reset. They set it up again at their next sign-in.')
+    LocalAuth.end_sessions(connection, user_id, keys=True)
+    audit(connection, actor, 'Users', username, 'Two-step sign-in reset. Sessions, AI assistants and API keys ended. They set up two-step again at their next sign-in.')

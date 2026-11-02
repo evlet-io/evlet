@@ -99,17 +99,54 @@ Users are now managed in Controls (`/controls/users`, second handoff PR 3);
 
 [handoff-routing-controls-settings.md](handoff-routing-controls-settings.md) lists nine PRs.
 PRs 1 to 3 were built on `ui-final/05-remove-solid` and then replayed, commit by commit, on
-`stack/07-cross-phase-fixes`, so each branch below stacks on the one before it.
+`stack/07-cross-phase-fixes`, so each branch below stacks on the one before it. All nine are
+open as draft PRs #52 to #60, and a tenth PR closes the findings of a review across all of them.
 
-| PR | Branch | Scope | Docs |
-|---|---|---|---|
-| 1 | `h2/01-route-table` | `Frontend`, `Host`, `routes.py`, reserved paths, `resolve_routes`, `evlet routes`; dispatch through the table with no behavior change | [routing.md](routing.md) |
-| 2 | `h2/02-hosts-realms` | Sub-hosts, sign-in realms and cookies, API scopes, `static` and `server` frontends, user links and `own_customer`, the page config block, `evlet proxy`, `evlet link-user`, the Playground customer portal | [routing.md](routing.md) |
-| 3 | `h2/03-controls` | Roles, overrides, audit log and config version; Controls access, Users, Roles, Permissions and Security pages; `evlet controls grant`; `/settings/accounts` redirect | [controls.md](controls.md) |
+| PR | # | Branch | Scope | Docs |
+|---|---|---|---|---|
+| 1 | #52 | `h2/01-route-table` | `Frontend`, `Host`, `routes.py`, reserved paths, `resolve_routes`, `evlet routes`; dispatch through the table with no behavior change | [routing.md](routing.md) |
+| 2 | #53 | `h2/02-hosts-realms` | Sub-hosts, sign-in realms and cookies, API scopes, `static` and `server` frontends, user links and `own_customer`, the page config block, `evlet proxy`, `evlet link-user`, the Playground customer portal | [routing.md](routing.md) |
+| 3 | #54 | `h2/03-controls` | Roles, overrides, audit log and config version; Controls access, Users, Roles, Permissions and Security pages; `evlet controls grant`; `/settings/accounts` redirect | [controls.md](controls.md) |
+| 4 | #55 | `h2/04-models` | Field overrides, instance fields and naming series | [controls.md](controls.md#models) |
+| 5 | #56 | `h2/05-pages` | Apps, Routing, Jobs, Overrides with export as code, and Audit | [controls.md](controls.md) |
+| 6 | #57 | `h2/06-settings` | Account menu, personal settings, two-step sign-in and app settings | [settings.md](settings.md) |
+| 7 | #58 | `h2/07-connectors` | Connectors, encrypted secrets, email accounts and API keys | [controls.md](controls.md#connectors-and-secrets) |
+| 8 | #59 | `h2/08-remote-mcp` | Remote MCP for AI assistants with OAuth | [connector.md](connector.md#remote-mcp-with-oauth) |
+| 9 | #60 | `h2/09-mailboxes` | Personal mailboxes | [controls.md](controls.md#personal-mailboxes) |
+| 10 | #61 | `h2/10-cross-review-fixes` | One revocation function, export grouped by setting prefix, instance fields grantable, every PostgreSQL variant in CI, the mailbox page with the switch off, a dropped IMAP connection during sign-in kept apart from a rejected password | this section |
 
-Decisions taken from section 7 of the handoff: portal users link to records through the
-framework table `evlet_user_links` (decision 3); Docs are on in development and off when a
-primary host or `Instance.domain` is set, unless `Docs(enabled=...)` says otherwise (decision 4).
+Decisions taken while building them (the owner's where marked):
+
+- **Portal links.** Portal users link to records through the framework table
+  `evlet_user_links` (section 7, decision 3).
+- **Docs.** Docs are on in development and off when a primary host or `Instance.domain` is
+  set, so off in production, unless `Docs(enabled=...)` says otherwise (section 7, decision 4).
+- **Trusted proxies.** `X-Forwarded-For` counts only from the instance's `trusted_proxies`;
+  sign-in throttling, Controls networks and the public limits read the same address.
+- **Opens Controls is not admin.** A role may open Controls without being admin. Only admins
+  change admin accounts, give the admin role, manage roles and decide who opens Controls.
+- **Overrides fail closed.** A stored override that no longer validates becomes no access, the
+  strictest setting, or (when the policy can't be built) admin only, and is listed under Needs attention.
+- **Two-step sign-in.** It is recorded per session. Required roles set it up at their next
+  sign-in, trusting the first use, so admins should sign in right after an upgrade. Admins and
+  `evlet users reset-two-step` reset it.
+- **cryptography is a core dependency** (owner's decision), chosen over an optional extra so
+  encrypted secrets and two-step sign-in work on every install.
+- **Jobs keep their narrowing.** A job queued by an AI assistant or an API key runs with the
+  same narrowing, rebuilt from current settings, and fails plainly when the assistant was
+  disconnected or the key revoked.
+- **No migration from the browser.** Controls shows an app waiting to be migrated; only
+  `evlet migrate` changes the database, never a request.
+- **Mail matching is opt-in.** A model takes part in mailbox matching only through `Meta.mail`.
+- **One revocation matrix.** Every revocation goes through
+  `LocalAuth.end_sessions`. A Settings password change and Controls "Sign out everywhere" end
+  browser sessions (the current one stays after a password change), AI assistants and unused
+  authorization codes, and keep API keys. A two-step reset (Controls or the shell),
+  deactivation and the break-glass grant also revoke API keys
+  ([controls.md](controls.md#ending-access)).
+- **Instance fields are grantable.** Stricter only applies to fields
+  declared in app files. A permission override may make an instance field readable or writable
+  for a role whose app rule lists `read_fields` or `write_fields`.
 
 Fitting them onto the first program:
 
@@ -118,7 +155,8 @@ Fitting them onto the first program:
 - The `journal` operation from Phase 8 is a Rule operation like `void` and `revise`: a public
   or custom role may name it, Controls keeps it on save and can take it away, and a custom
   role based on the editor posts like the editor.
-- PRs 4 to 9 are not started.
+- The PostgreSQL CI job runs every test file that uses the `pg_dsn` fixture, so the variants
+  added by PRs 4 to 9 run there too ([postgresql.md](postgresql.md#verification)).
 
 ## Quality gates for every phase
 

@@ -94,11 +94,8 @@ def grant(database_path, username):
         if row is None:
             raise ValueError(f'No user is named {username}.')
         connection.execute("UPDATE evlet_users SET role='admin', active=1 WHERE id=?", (row[0],))
-        if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_mcp_clients'").fetchone():
-            LocalAuth.end_sessions(connection, row[0])
-        else:
-            connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (row[0],))
-        audit(connection, 'cli', 'Users', username.lower(), 'Made an active admin from the server shell',
+        LocalAuth.end_sessions(connection, row[0], keys=True)
+        audit(connection, 'cli', 'Users', username.lower(), 'Made an active admin from the server shell · Sessions, AI assistants and API keys ended',
               {'role': row[1], 'active': bool(row[2])}, {'role': 'admin', 'active': True})
         # An allowlist that shuts everyone out is cleared too; routes.py stays as it is.
         ips = connection.execute("SELECT value FROM evlet_overrides WHERE kind='setting' AND key='security.controls_ips'").fetchone()
@@ -452,8 +449,10 @@ class Controls:
         if set(ops) - set(file.operations):
             missing = ', '.join(op for op in OPERATIONS if op in set(ops) - set(file.operations))
             raise ValueError(f'The app does not give {role} {missing} on {model.__name__}. An override can only take access away.')
-        readable = set(fields if file.read_fields is None else file.read_fields)
-        writable = set(fields if file.write_fields is None else file.write_fields) & readable
+        # Stricter only covers fields the app declares. Instance fields belong to Controls, so an override may grant them.
+        owned = {name for name in fields if getattr(model.__declared_fields__[name], 'instance', None)}
+        readable = set(fields if file.read_fields is None else file.read_fields) | owned
+        writable = (set(fields if file.write_fields is None else file.write_fields) | owned) & readable
         if read is not None and set(read) - readable or read is None and readable != set(fields):
             raise ValueError(f'The app hides some fields of {model.__name__} from {role}. An override can only hide more.')
         if set(ops) - {'read'} and (set(fields if write is None else write) & set(fields if read is None else read)) - writable:
