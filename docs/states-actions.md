@@ -119,7 +119,7 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
   the saved values, at every depth, like ordinary locked writes do, even after a linked
   record or a formula changed; they need no recalculation request. `"recalculate": true`
   on such a record is refused with 409 `This record has postings. To change its totals,
-  void or revise it.` Corrections go through void or revise only.
+  void or revise it.` Corrections go through void or revise, or an admin's unpost (below).
 * Actions, move `run` methods and move values on a posted record may not change anything a
   stored result reads: a source field (directly or through virtual results, fetched copies
   and Link paths, where the Link field counts) or the rows of a Table that holds or feeds a
@@ -127,8 +127,10 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
   naming it, for example `Quantity feeds posted totals. To change it, void or revise the
   record.` or `Lines feed posted totals. To change them, void or revise the record.` Fields
   no stored result reads, such as notes and `editable_when_locked` fields, still change.
-* The `Recompute` migration operation skips only records with postings. A locked record
-  that never posted is recalculated like any other and gets a `recomputed` Journal entry.
+* The `Recompute` migration operation skips only records with postings, unless an admin
+  migrates with `evlet migrate <instance> --recompute-posted` (see
+  [finite-calculations.md](finite-calculations.md)). A locked record that never posted, or
+  was unposted, is recalculated like any other and gets a `recomputed` Journal entry.
 * Deleting a record in a locked state is refused with 409. Corrections use void and revise
   (below).
 * Uploading or removing an attachment is an ordinary write: on a locked record it is
@@ -378,13 +380,123 @@ permission), `You cannot void this record` (outside the row scope), the state re
 never names the state, `This record already has a revision`, and for revise the three copy
 reasons above. They never include counts or names.
 
+## Unpost and repost
+
+A posted record is a record with live [effect](effects.md) rows: it is the source of effect
+rows, and the latest row of some effect is an original, not a reversal. An admin may take
+such a record back to the state it posted from, correct it and post it again, without voiding
+it or creating a copy. The record keeps its id and its Sequence numbers.
+
+### Unpost
+
+`POST /api/{model}/{id}/unpost` with `{"reason": "..."}`, or `context.unpost(Invoice,
+record_id, reason)` from Python.
+
+* The model must declare `Meta.effects`, each with a `reverse`; otherwise 404 `This record
+  cannot be unposted`.
+* The checks run in the order of void: the `unpost` permission and the row scope (403 or
+  404), `If-Match` over HTTP (428 without it, 409 when stale), the body and the reason (422,
+  required, trimmed, up to 1,000 characters, no other keys), then the saved record (409):
+  * `This record is void, so it cannot be unposted`.
+  * `This record has nothing posted to cancel` for a record without live rows (never posted,
+    or unposted already).
+  * `This record cannot be unposted while Payment 4 depends on it. Void or unpost it first.`
+    when a live record depends on it (below). Up to five records the caller can open are
+    named, and the rest are counted (`2 records you cannot open`).
+  * `The state this record posted from is not known, so it cannot be unposted` (below).
+* In one transaction the engine writes the earlier state, writes one reversal row for each
+  live effect row (as a void does, see [effects.md](effects.md)), calls the model's
+  `changed()` hook with the operation `"unpost"`, and writes the Journal's `unposted` entry,
+  the `effects` entry of the reversal rows and a Controls audit row (area `Records`). Nothing
+  is deleted. A failure anywhere rolls all of it back.
+* The record is not recalculated: every value stays as saved. Its Sequence numbers stay, so no
+  number is taken or given back, and a number's scope fields and date period stay fixed.
+* Afterwards the record is an ordinary record in that state, with that state's rules. When it
+  posted from an unlocked state (draft), it can be edited, recalculated and moved like any
+  other, and `Recompute` recalculates it. When it posted from a locked state (for example
+  draft, then issued and locked, then paid, with the effect posting on paid), it goes back to
+  that locked state: that is the real state it was in before it posted, so it stays locked,
+  only its `editable_when_locked` fields change, and it posts again by Repost.
+* It is never deleted, even when its state would allow it: its reversed rows still name it as
+  their source and its number stays used. Delete answers 409 `This record has posted before,
+  so it cannot be deleted. Void it instead.` (or `Repost it and void it instead.` from a state
+  that cannot be voided), and details carry `_deletable: false` so screens do not offer it.
+* The response is the permission-filtered detail with a new ETag.
+
+**The state it returns to** is the state the posting move started from. The engine takes
+the states a record can be in before it posts (reachable from the default without entering a
+state an effect posts on) and keeps those a posting move starts from. When there is one, that
+is the state. When moves from several states post (testCRM's Mark won starts from proposal or
+negotiation), the record's Journal names the one it took last, in its latest `moved` entry
+into a posting state. A model without a journal and with several such states cannot unpost.
+
+**Dependent records.** A record depends on this one when it, or one of its Table rows, links
+with a `Link` or a `Reference` to the record, to one of its Table rows at any depth, or to one
+of the effect rows it posted (an allocation matching one of its ledger entries, say), or when
+it posted effect rows that do. It blocks the unpost while it is live: it has a State, is not
+void, and is in a locked state or has live postings itself. A draft payment does not block; a
+confirmed one does until it is voided or unposted. The record's own Table rows and effect rows
+are not dependents. Only Link fields whose target is the model, one of its Table row models
+or one of its effect targets are read, plus every `Reference` field (a Reference may name any
+model); see [performance.md](performance.md#unpost-dependents) for the cost.
+
+### Repost
+
+`POST /api/{model}/{id}/repost` with `{}` or `{"reason": "..."}`, or `context.repost(Invoice,
+record_id)`.
+
+* The record must have been unposted: it has effect rows, none of them live, and it is not
+  void. Otherwise 409 `This record is posted already`, `This record was never posted. Use its
+  moves to post it` or `This record is void, so it cannot be reposted`.
+* The reason is optional; when given it is checked like an unpost reason and recorded.
+* The move that posts from the current state must ask for no value it may require (a
+  `required` or `required_when` field it asks for); otherwise 409 `Send asks for values, so
+  post the record with Send itself`, since a repost sends no values.
+* The engine runs the move that posts from the record's current state, through the normal
+  move pipeline: the move's roles and guard, recalculation, validation and the version check
+  (a stale record answers 409 `SCHEMA_VERSION_MISMATCH` and is recalculated first), then the
+  effects post fresh rows. When no single move posts from the current state, the answer is 409
+  and the record's own moves are the way to post it.
+* The Journal gets the move's `moved` and `effects` entries, then `reposted` with `to`,
+  `move` and the reason when given. A Controls audit row is written. A failed check rolls
+  everything back.
+
+### Permissions for unpost and repost
+
+* `Rule.operations` accepts `"unpost"` and `"repost"` on models whose effects all declare a
+  `reverse`; naming them on another model fails at startup. A Rule naming `repost` must also
+  name `update` (a Controls override likewise), since a repost runs the posting move.
+* Admin always has both while its Rule on the model allows `read` and `update`, like void.
+  A Rule naming one adds that role and never removes admin. A Controls override can keep or
+  take away a role's grant, like `void`.
+* Every surface uses the same check: the HTTP routes (sessions, API keys, AI assistants and
+  scoped sub-host frontends, which must list `(Model, "unpost")` or `(Model, "repost")` in
+  their `ApiScope`), and `Context.unpost()` and `Context.repost()`. An API key needs write
+  access and the model in its scope. The connector and the MCP server do not offer them.
+
+### Availability in details
+
+For roles that have the operation and can read the State, details add `_unpost` on a posted
+record and `_repost` on an unposted one, outside the ETag:
+
+```json
+{"_unpost": {"allowed": true}}
+```
+
+They are left out for other roles and when they do not apply. `_repost` is also left out
+when the caller could not run the posting move: its role is not among the move's roles, it
+cannot update the record (permission or row scope), or the move asks for a required value. Dependent records are checked
+when the unpost is sent, not in details, so `_unpost` can be allowed and the unpost still be
+refused with the names of the records that depend on it.
+
 ## Schema metadata
 
 `/api/schema` model entries gain, additively:
 
 * Entries of voidable models gain `voidable: true` and `revisable`, and their `permissions`
-  gain `void` (and `revise` when revisable), for roles that can read the State. Other entries
-  are unchanged. The `revises` field is listed with the other fields (type `link`, read only).
+  gain `void` (and `revise` when revisable), for roles that can read the State. Entries of
+  models that can unpost gain `unpostable: true` and `unpost` and `repost` in `permissions`.
+  Other entries are unchanged. The `revises` field is listed with the other fields (type `link`, read only).
 * `state`: `field`, `states`, `default`, `locked`, `final`, `voidable` and `moves`, each
   with `from`, `to`, `label`, `roles`, `guarded`, `when` and, when the move asks for values,
   `asks`. `when` is the serialized
@@ -397,15 +509,17 @@ reasons above. They never include counts or names.
 
 ## Not yet
 
-* The Journal ([journal.md](journal.md)) records each move, void (with its reason) and
-  revise. `evlet.states.moved()`, `evlet.corrections.voided()` and
-  `evlet.corrections.revised()` write those entries in the operation's transaction.
+* The Journal ([journal.md](journal.md)) records each move, void (with its reason),
+  revise, unpost and repost. `evlet.states.moved()`, `evlet.corrections.voided()`,
+  `evlet.corrections.revised()`, `evlet.corrections.unposted()` and
+  `evlet.corrections.reposted()` write those entries in the operation's transaction; the
+  last two also write the Controls audit row.
 * Effects are reversed in `evlet.corrections.reverse_effects()`; see [effects.md](effects.md).
 * Document numbers are described in [sequences.md](sequences.md). A void record keeps its
   number; `evlet.corrections.prepare_copy()` clears the numbers on a revision's copy, which
   is numbered again when it reaches `assign_on`.
 * Draft previews (`/api/_draft`) do not report the State lock; the save does. A preview
   of a locked or posted record shows the calculated values it keeps, like the save.
-* The connector and the MCP server do not offer moves, void or revise yet.
+* The connector and the MCP server do not offer moves, void, revise, unpost or repost yet.
 * The record view shows the State as steps with its moves, and offers void and revise
-  from `_moves`, `_void` and `_revise`.
+  from `_moves`, `_void` and `_revise`, and unpost and repost from `_unpost` and `_repost`.

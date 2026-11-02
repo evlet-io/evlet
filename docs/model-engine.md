@@ -252,10 +252,21 @@ when a database adopts its baseline (a fresh database, or one initialized withou
 
 Recompute skips records whose document has posted effects, voided or not: they keep their
 saved results and their recorded formula version, so the effect rows they posted still match.
-A locked record that never posted is recalculated and moves to the active formula version. `database.migrate()` returns the applied migration names as a list whose `skipped`
-attribute counts the records kept, and the `evlet.migrations` logger reports the count. Each
-record Recompute changes gets a `recomputed` [Journal](journal.md) entry when its model
-journals.
+A locked record that never posted, or was unposted, is recalculated and moves to the active
+formula version. `database.migrate()` returns the applied migration names as a list whose
+`skipped` attribute counts the records kept, and the `evlet.migrations` logger reports the
+count. Each record Recompute changes gets a `recomputed` [Journal](journal.md) entry when its
+model journals.
+
+Posted records are recalculated only when an admin asks for it, for one migration run:
+`evlet migrate <instance> --recompute-posted`, or `database.migrate(migrations,
+recompute_posted=True)` from Python. The default stays off. Every Recompute operation of that
+run then includes posted records; each one that changes gets a `recomputed` entry with
+`"posted": true` (void records are still skipped, so their rows and reversals keep matching
+them), the run writes one Controls audit row (actor `cli`, area `Records`) and logs
+a warning with the count, and `posted` on the returned list counts them. Their effect rows are
+not rewritten, so `evlet effects check` reports them as `changed` until each is unposted and
+reposted. Browser requests never run migrations, so Controls has no such switch.
 
 Back up existing databases before migrating. A backup is not a rollback command:
 restoring it after later writes would discard those newer writes.

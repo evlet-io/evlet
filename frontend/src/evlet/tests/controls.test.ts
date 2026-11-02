@@ -73,6 +73,9 @@ describe('permission rules', () => {
     expect(toggleOp({ ops: [], read: null, write: null, scope: null }, all, 'update')).toEqual({ ops: ['read', 'update'], read: null, write: null, scope: null });
     expect(normalize({ ops: ['read', 'revise'], read: ['name'], write: ['name'], scope: 'owner' }, all)).toEqual({ ops: ['read'], read: ['name'], write: null, scope: 'owner' });
     expect(normalize({ ops: ['read'], read: null, write: null, scope: null }, { ...all, scope: 'owner' }).scope).toBe('owner');
+    // Unpost and repost grants are kept; repost needs update, like the server says.
+    expect(normalize({ ops: ['read', 'update', 'unpost', 'repost'], read: null, write: null, scope: null }, all).ops).toEqual(['read', 'update', 'unpost', 'repost']);
+    expect(normalize({ ops: ['read', 'unpost', 'repost'], read: null, write: null, scope: null }, all).ops).toEqual(['read', 'unpost']);
   });
 });
 

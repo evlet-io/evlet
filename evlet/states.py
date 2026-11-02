@@ -395,6 +395,12 @@ def check_delete(context, model, record):
     if state is not None:
         named = f'is {state}, so it ' if state_shown(context, model) else ''
         raise AccessError(409, f'This record {named}is locked and cannot be deleted')
+    from .effects import ever_posted
+    if ever_posted(context._tx.connection, context._business.registry, model, record.id):
+        # Its effect rows, reversed or not, name it as their source, and its number stays used.
+        voidable = record._values.get(model.__state__) in model.__declared_fields__[model.__state__].voidable
+        raise AccessError(409, 'This record has posted before, so it cannot be deleted. '
+                               + ('Void it instead.' if voidable else 'Repost it and void it instead.'))
 
 
 def check_attachments(context, model, record):

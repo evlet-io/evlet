@@ -56,7 +56,9 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 
 ### Permissions
 
-- admin: everything, plus void and revise on deals.
+- admin: everything, plus void and revise on deals, and unpost and repost of a won deal
+  (Mark won books it; unpost cancels the booking and takes the deal back to negotiation or
+  proposal, whichever it was won from).
 - Sales people (editor): read and write organizations, contacts, leads and tasks; read products
   and bookings; on deals a row scope (`owner` is their username) and field lists without
   `internal_notes`. A deal they create is theirs: the owner fills in with their username.

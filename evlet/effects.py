@@ -14,7 +14,7 @@ document, read with full access and frozen, so the rows are a pure function of t
 enters `on`, the engine validates every row as a new record of the target model, checks the balance and
 writes the rows in the move's transaction with `source` pointing at the record. A target model declares
 `source = Reference()` and `reversal = Boolean(default=False)`; its rows are read only for every caller.
-On void the engine writes mirror rows (`reverse`) marked `reversal=True`. Originals are never changed.
+On void or unpost the engine writes mirror rows (`reverse`) marked `reversal=True`. Originals are never changed.
 """
 
 from collections import deque
@@ -587,16 +587,58 @@ def posted(tx, registry, bound, record_ids):
 
 
 def has_postings(connection, registry, model, record, *, voided=False):
-    """Whether a record has posted effects: rows with it as source, and it is not void (unless `voided`).
+    """Whether a record has live posted effects: its latest row of some effect is an original, so it was posted
+    and has not been unposted since. A void record counts only with `voided`, and then any row counts.
 
-    Its stored calculated values are then frozen: corrections go through void or revise."""
+    Its stored calculated values are then frozen: corrections go through void, revise or unpost."""
     bounds = registry.effects.get(model, ())
-    if not bounds or not voided and model.__state__ is not None and record._values.get(model.__state__) == 'void':
+    if not bounds:
+        return False
+    void = model.__state__ is not None and record._values.get(model.__state__) == 'void'
+    if void and not voided:
         return False
     name = registry.name_for(model)
+    for bound in bounds:
+        row = connection.execute(f'SELECT "{REVERSAL}" FROM {identifier(registry.name_for(bound.target))} '
+                                 f'WHERE "{SOURCE}_model"=? AND "{SOURCE}_id"=? ORDER BY id DESC LIMIT 1', (name, record.id)).fetchone()
+        if row is not None and (void or not row[0]):
+            return True
+    return False
+
+
+def ever_posted(connection, registry, model, record_id):
+    """Whether a record ever posted rows of an effect, live or reversed since. Such a record is never deleted:
+    its rows name it as their source."""
+    name = registry.name_for(model)
     return any(connection.execute(f'SELECT 1 FROM {identifier(registry.name_for(bound.target))} '
-                                  f'WHERE "{SOURCE}_model"=? AND "{SOURCE}_id"=? LIMIT 1', (name, record.id)).fetchone()
-               for bound in bounds)
+                                  f'WHERE "{SOURCE}_model"=? AND "{SOURCE}_id"=? LIMIT 1', (name, record_id)).fetchone()
+               for bound in registry.effects.get(model, ()))
+
+
+def live(rows):
+    """The original rows not cancelled yet, from one effect's rows of a record in id order.
+
+    Each reversal batch (a void or an unpost) cancels every original written before it, so the live rows are the
+    originals after the last reversal: all of them before any reversal, none right after one."""
+    last = max((row.id for row in rows if row._values[REVERSAL]), default=0)
+    return [row for row in rows if not row._values[REVERSAL] and row.id > last]
+
+
+def cycles(rows):
+    """One effect's rows of a record split into postings: [(originals, reversals)] in id order.
+
+    A posting is a batch of originals and the reversal batch that cancelled it (empty while it is live)."""
+    result = []
+    for row in rows:
+        if row._values[REVERSAL]:
+            if not result:
+                result.append(([], []))
+            result[-1][1].append(row)
+        elif not result or result[-1][1]:
+            result.append(([row], []))
+        else:
+            result[-1][0].append(row)
+    return result
 
 
 def mirror_values(bound, values):
@@ -609,7 +651,8 @@ def mirror_values(bound, values):
 
 
 def reverse(context, model, record_id):
-    """Called when a record is voided: write a mirror row for each original row, marked as a reversal.
+    """Called when a record is voided or unposted: write a mirror row for each live original row, marked as a
+    reversal. Rows are only ever added, so earlier postings and their reversals stay as they are.
 
     Returns the Journal items of the targets that received mirror rows."""
     business, tx = context._business, context._tx
@@ -619,8 +662,9 @@ def reverse(context, model, record_id):
         if bound.reverse is None:
             continue
         rows = posted(tx, business.registry, bound, [record_id]).get(record_id, [])
-        originals = [row for row in rows if not row._values[REVERSAL]]
-        if not originals or len(originals) != len(rows):
+        # Only the live rows: those of earlier postings were reversed when they were unposted.
+        originals = live(rows)
+        if not originals:
             # Nothing was posted, or this record's rows were reversed already.
             continue
         try:
@@ -767,19 +811,32 @@ def target_name(bound):
 
 
 def compare(engine, bound, model_name, record_id, state, document, rows):
-    """Differences between what a record should have posted for one effect and the saved rows."""
-    originals = [row for row in rows if not row._values[REVERSAL]]
-    reversals = [row for row in rows if row._values[REVERSAL]]
+    """Differences between what a record should have posted for one effect and the saved rows.
+
+    The rows are split into postings (see `cycles`). Postings an unpost cancelled are checked on their own:
+    their reversals must mirror their originals. The record's current posting, the last one, is compared
+    with the rows the record produces now, as is the only posting of a record that was never unposted.
+    """
+    postings = cycles(rows)
     result = []
-    for batch, flag in ((originals, False), (reversals, True)):
-        if batch and not is_balanced(bound, [row._values for row in batch]):
-            first, second = totals(bound, [row._values for row in batch])
-            result.append(difference(bound, model_name, record_id, 'unbalanced', flag,
-                                     message=f'{bound.balanced[0]} totals {first} and {bound.balanced[1]} totals {second}'))
+    for originals, reversals in postings:
+        for batch, flag in ((originals, False), (reversals, True)):
+            if batch and not is_balanced(bound, [row._values for row in batch]):
+                first, second = totals(bound, [row._values for row in batch])
+                result.append(difference(bound, model_name, record_id, 'unbalanced', flag,
+                                         message=f'{bound.balanced[0]} totals {first} and {bound.balanced[1]} totals {second}'))
     if state not in bound.after:
-        # The record has not entered the effect's state, so it should have no rows at all.
-        return result + [difference(bound, model_name, record_id, 'extra', row._values[REVERSAL], actual=row,
-                                    message='The record has not posted this effect') for row in rows]
+        # The record has not entered the effect's state, or was unposted: every posting it made must be cancelled.
+        for originals, reversals in postings:
+            if originals and not reversals:
+                result += [difference(bound, model_name, record_id, 'extra', False, actual=row,
+                                      message='The record has not posted this effect') for row in originals]
+            else:
+                result += settled(engine, bound, model_name, record_id, originals, reversals)
+        return result
+    for originals, reversals in postings[:-1]:
+        result += settled(engine, bound, model_name, record_id, originals, reversals)
+    originals, reversals = postings[-1] if postings else ([], [])
     if state not in bound.implied and not originals:
         # The record may have reached its state without entering `on`; with no rows there is nothing to compare.
         return result + [difference(bound, model_name, record_id, 'extra', True, actual=row,
@@ -797,6 +854,18 @@ def compare(engine, bound, model_name, record_id, state, document, rows):
     result += match(bound, model_name, record_id, expected, originals, False)
     result += match(bound, model_name, record_id, mirrors, reversals, True)
     return result
+
+
+def settled(engine, bound, model_name, record_id, originals, reversals):
+    """Differences of a cancelled posting: its reversal rows must mirror its original rows."""
+    if bound.reverse is None:
+        return [difference(bound, model_name, record_id, 'extra', True, actual=row, message='The effect has no reverse') for row in reversals]
+    try:
+        mirrors = [normalized(draft) for draft in prepare_all(
+            engine, bound, [mirror_values(bound, row._values) for row in originals], record_id, reversal=True)]
+    except RowError as error:
+        return [difference(bound, model_name, record_id, 'invalid', True, message=str(error))]
+    return match(bound, model_name, record_id, mirrors, reversals, True)
 
 
 def match(bound, model_name, record_id, expected, actual, reversal):

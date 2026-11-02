@@ -44,7 +44,7 @@ records the owner's decision and wins.
 | Savepoints | none | Each document operation runs in a savepoint, so a failure caught by trusted code leaves no partial writes |
 | `ChildTable` on finite models | legacy child rows skip finite rules | A `ChildTable` whose child uses finite features is rejected; use `Table(Child)` |
 | Void, revise, Effects, Sequence, Journal, Measures, meaning metadata | none | New |
-| Posted records | none | Frozen calculated values; actions and moves may not change what they read (409); corrections only by void or revise; Recompute skips posted records only; previews show kept values |
+| Posted records | none | Frozen calculated values; actions and moves may not change what they read (409); corrections by void or revise, or an admin's Unpost and Repost; Recompute never recalculates posted records unless an admin asks (`evlet migrate --recompute-posted`); previews show kept values |
 
 ## Phases and branches
 
@@ -114,6 +114,7 @@ open as draft PRs #52 to #60, and a tenth PR closes the findings of a review acr
 | 8 | #59 | `h2/08-remote-mcp` | Remote MCP for AI assistants with OAuth | [connector.md](connector.md#remote-mcp-with-oauth) |
 | 9 | #60 | `h2/09-mailboxes` | Personal mailboxes | [controls.md](controls.md#personal-mailboxes) |
 | 10 | #61 | `h2/10-cross-review-fixes` | One revocation function, export grouped by setting prefix, instance fields grantable, every PostgreSQL variant in CI, the mailbox page with the switch off, a dropped IMAP connection during sign-in kept apart from a rejected password | this section |
+| 11 | | `h2/11-unpost-repost` | Unpost and Repost of posted documents, `--recompute-posted` for Recompute, `unposted` and `reposted` journal entries and audit rows, record screen actions | [states-actions.md](states-actions.md#unpost-and-repost) |
 
 Decisions taken while building them (the owner's where marked):
 
@@ -144,6 +145,30 @@ Decisions taken while building them (the owner's where marked):
   authorization codes, and keep API keys. A two-step reset (Controls or the shell),
   deactivation and the break-glass grant also revoke API keys
   ([controls.md](controls.md#ending-access)).
+- **Posted records (owner's decision).** Posted records are never recalculated by
+  `Recompute` unless an admin asks, for one migration run, with `evlet migrate <instance>
+  --recompute-posted` (or `migrate(..., recompute_posted=True)`). Each posted record that
+  changes gets a `recomputed` journal entry with `"posted": true`, and the run writes one audit
+  row. Browser requests never migrate, so Controls has no switch for it.
+- **Unpost and Repost (owner's decision).** Unpost takes a posted document back to the state it
+  posted from, with a required reason, keeping its id and number (no number is taken or given
+  back). Everything it posted is cancelled with reversal rows, never deleted. It is refused
+  while a live record (not void, and locked or posted) links to it, directly, through its
+  Table rows or through effect rows, and the refusal names those records. Repost runs the
+  posting move again through the normal move path, which re-validates and posts fresh rows.
+  Both write `unposted` / `reposted` journal entries and a Controls audit row (area
+  `Records`), through `corrections.unposted` and `corrections.reposted`.
+- **A record that ever posted is never deleted.** Its effect rows, reversed or not, name it as
+  their source and its number stays used, so delete answers 409 and details carry
+  `_deletable: false`. Void records are skipped by Recompute even with `--recompute-posted`.
+- **Unpost and repost are Rule operations.** Admin keeps them while its Rule reads and updates
+  the model, like void; a Rule naming `unpost` or `repost` adds a role, and Controls keeps or
+  takes away that grant. Every HTTP surface (sessions, API keys, assistants, `ApiScope`) and
+  `Context` check them. The connector and MCP server do not offer them, as for void and revise.
+- **What "posted" means.** A record is posted when it has live effect rows: the latest row of
+  some effect is an original, not a reversal. Unposting makes it a draft for this purpose, so
+  edits recalculate and `Recompute` includes it. The state it returns to is the start of its
+  posting move; when moves from several states post, the latest `moved` journal entry decides.
 - **Instance fields are grantable.** Stricter only applies to fields
   declared in app files. A permission override may make an instance field readable or writable
   for a role whose app rule lists `read_fields` or `write_fields`.

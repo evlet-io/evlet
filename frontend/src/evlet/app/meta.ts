@@ -29,9 +29,11 @@ export interface ActionMeta {
 export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   state?: StateMeta;
   actions?: ActionMeta[];
-  permissions?: { create: boolean; update: boolean; delete: boolean; void?: boolean; revise?: boolean };
+  permissions?: { create: boolean; update: boolean; delete: boolean; void?: boolean; revise?: boolean; unpost?: boolean; repost?: boolean };
   voidable?: boolean;
   revisable?: boolean;
+  /** Posted records can be unposted and reposted (the model's effects can all be reversed). */
+  unpostable?: boolean;
   measures?: MeasureSchema[];
   key_fields?: string[];
   relations?: RelationSchema[];
@@ -51,6 +53,12 @@ export interface DetailExtras {
   _actions?: Array<{ name: string; label: string; allowed: boolean; reason?: string }>;
   _void?: Availability;
   _revise?: Availability;
+  /** Listed only for roles that may unpost, on a posted record. */
+  _unpost?: Availability;
+  /** Listed only for roles that may repost, on a record that was unposted. */
+  _repost?: Availability;
+  /** false for a record that ever posted: it is kept, so delete is refused. */
+  _deletable?: false;
   _effects?: Array<{ target: string; rows: number; reversals: number; balanced?: boolean }>;
   revised_by?: number | null;
   _original?: number;

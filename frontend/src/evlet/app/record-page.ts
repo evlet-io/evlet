@@ -230,42 +230,56 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       return ok ? null : store.formError.peek() ?? store.conflict.peek()?.message ?? `${action.label} did not run`;
     });
   };
-  const correct = (kind: 'void' | 'revise') => {
-    const reason = localField({ name: 'reason', type: 'longtext', label: 'Reason', required: true, max_length: 1000 } as any, '');
-    const title = kind === 'void' ? `Void ${titleText.peek()}` : `Revise ${titleText.peek()}`;
-    const note = kind === 'void' ? 'Voiding keeps the record and its number, and reverses what it posted. It can’t be undone.'
-      : 'Revising voids this record and opens an editable copy. The copy gets its own number when it is issued.';
+  const correct = (kind: 'void' | 'revise' | 'unpost' | 'repost') => {
+    // A repost's reason is optional; the other corrections need one.
+    const optional = kind === 'repost';
+    const reason = localField({ name: 'reason', type: 'longtext', label: optional ? 'Reason (optional)' : 'Reason', required: !optional, max_length: 1000 } as any, '');
+    const noun = model.label.toLowerCase();
+    const copy = {
+      void: { title: `Void ${titleText.peek()}`, icon: 'circle-x', tint: 'rose' as const, variant: 'danger' as const, submit: `Void ${noun}`,
+        note: 'Voiding keeps the record and its number, and reverses what it posted. It can’t be undone.' },
+      revise: { title: `Revise ${titleText.peek()}`, icon: 'copy', tint: 'blue' as const, variant: 'primary' as const, submit: `Revise ${noun}`,
+        note: 'Revising voids this record and opens an editable copy. The copy gets its own number when it is issued.' },
+      unpost: { title: `Unpost ${titleText.peek()}`, icon: 'rotate-ccw', tint: 'amber' as const, variant: 'danger' as const, submit: `Unpost ${noun}`,
+        note: `Unposting reverses what this ${noun} posted and returns it to the state it was posted from. It keeps its number. Repost it when it is right.` },
+      repost: { title: `Repost ${titleText.peek()}`, icon: 'repeat', tint: 'blue' as const, variant: 'primary' as const, submit: `Repost ${noun}`,
+        note: `Reposting checks this ${noun} again and posts it with fresh entries. It keeps its number.` },
+    }[kind];
     let busy = false;
     const submit = async (close: () => void) => {
       const text = String(reason.value.peek() ?? '').trim();
-      if (!text) { reason.error.set('Give a reason'); return; }
+      if (!text && !optional) { reason.error.set('Give a reason'); return; }
       if (text.length > 1000) { reason.error.set('Use at most 1,000 characters'); return; }
       if (busy) return;
       busy = true;
       try {
         if (store.dirty.peek()) { reason.error.set('Save or discard your changes first'); return; }
-        const response = kind === 'void' ? await api.voidRecord(name, store.id!, text, store.etag.peek()) : await api.revise(name, store.id!, text, store.etag.peek());
+        const etag = store.etag.peek();
+        const response = kind === 'void' ? await api.voidRecord(name, store.id!, text, etag)
+          : kind === 'revise' ? await api.revise(name, store.id!, text, etag)
+          : kind === 'unpost' ? await api.unpost(name, store.id!, text, etag) : await api.repost(name, store.id!, text, etag);
         close();
-        if (kind === 'void') {
-          store.applyServer(response.data, response.etag);
-          await store.loadAll().catch(() => {});
-          toast('Voided. The number stays used.', { icon: 'circle-x' });
-        } else {
+        if (kind === 'revise') {
           toast('Revised. You are editing the new draft.', { icon: 'copy' });
           const firstTable = model.children?.[0]?.name;
           void router.go('record', { model: name, id: String(response.data.id) }, firstTable ? { tab: `t-${firstTable}` } : {});
+        } else {
+          store.applyServer(response.data, response.etag);
+          await store.loadAll().catch(() => {});
+          toast(kind === 'void' ? 'Voided. The number stays used.' : kind === 'unpost' ? 'Unposted. What it posted was reversed.' : 'Reposted.',
+            { icon: copy.icon });
         }
       } catch (error) {
         if (error instanceof ValidationError && error.fields.reason) reason.error.set(error.fields.reason);
+        else if (error instanceof ValidationError && error.fields._effects) reason.error.set(error.fields._effects);
         else reason.error.set(error instanceof ApiError ? error.message : 'This did not work. Try again.');
       } finally { busy = false; }
     };
     let closeDialog = () => {};
-    closeDialog = openModal({ title, icon: kind === 'void' ? 'circle-x' : 'copy', tint: kind === 'void' ? 'rose' : 'blue', narrow: true,
+    closeDialog = openModal({ title: copy.title, icon: copy.icon, tint: copy.tint, narrow: true,
       onSubmit: () => void submit(closeDialog),
-      body: () => [html`<p class="muted">${note}</p>`, fieldFor({ field: reason, full: true })],
-      footer: close => DialogFooter({ cancel: close, submit: { label: kind === 'void' ? `Void ${model.label.toLowerCase()}` : `Revise ${model.label.toLowerCase()}`,
-        variant: kind === 'void' ? 'danger' : 'primary', onClick: () => void submit(close) } }) });
+      body: () => [html`<p class="muted">${copy.note}</p>`, fieldFor({ field: reason, full: true })],
+      footer: close => DialogFooter({ cancel: close, submit: { label: copy.submit, variant: copy.variant, onClick: () => void submit(close) } }) });
   };
   const remove = () => openModal({ title: `Delete ${titleText.peek()}?`, icon: 'trash-2', tint: 'rose', narrow: true,
     body: () => html`<p>This can’t be undone.</p>`,
@@ -285,7 +299,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const now = extras.peek();
     if (now._revise) items.push({ label: `Revise ${model.label.toLowerCase()}`, icon: 'copy', disabled: !now._revise.allowed, onSelect: () => correct('revise') });
     if (now._void) items.push({ label: `Void ${model.label.toLowerCase()}`, icon: 'circle-x', danger: true, disabled: !now._void.allowed, onSelect: () => correct('void') });
-    if (!isNew && model.permissions?.delete && !locked.peek()) items.push('separator', { label: 'Delete', icon: 'trash-2', danger: true, onSelect: remove });
+    if (now._repost) items.push({ label: `Repost ${model.label.toLowerCase()}`, icon: 'repeat', disabled: !now._repost.allowed, onSelect: () => correct('repost') });
+    if (now._unpost) items.push({ label: `Unpost ${model.label.toLowerCase()}`, icon: 'rotate-ccw', danger: true, disabled: !now._unpost.allowed, onSelect: () => correct('unpost') });
+    // A record that ever posted is kept (its entries name it), so the server refuses its delete.
+    if (!isNew && model.permissions?.delete && !locked.peek() && now._deletable !== false) items.push('separator', { label: 'Delete', icon: 'trash-2', danger: true, onSelect: remove });
     return items;
   };
 
@@ -330,7 +347,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       ...(revisedBy ? [' Replaced by ', link(revisedBy, `${model.label} ${revisedBy}`), '.'] : []), ...reviseOf] });
     if (now._locked) {
       const buttons = [now._revise?.allowed ? Button({ label: 'Revise', icon: 'copy', size: 'small', onClick: () => correct('revise') }) : null,
-        now._void?.allowed ? Button({ label: 'Void', icon: 'circle-x', size: 'small', variant: 'soft-danger', onClick: () => correct('void') }) : null].filter(Boolean) as Node[];
+        now._void?.allowed ? Button({ label: 'Void', icon: 'circle-x', size: 'small', variant: 'soft-danger', onClick: () => correct('void') }) : null,
+        now._unpost?.allowed ? Button({ label: 'Unpost', icon: 'rotate-ccw', size: 'small', variant: 'soft-danger', onClick: () => correct('unpost') }) : null,
+        // Unposted into a locked state (it posted from one): it stays locked and posts again by Repost.
+        now._repost?.allowed ? Button({ label: 'Repost', icon: 'repeat', size: 'small', onClick: () => correct('repost') }) : null].filter(Boolean) as Node[];
       const editable = model.fields.filter(field => (field as any).editable_when_locked).map(field => field.label.toLowerCase());
       // Only the corrections this user can make now (the state allows them and so does the role).
       const ways = [now._void?.allowed ? 'void' : null, now._revise?.allowed ? 'revise' : null].filter(Boolean);
@@ -339,6 +359,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         text: [editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.', correction, ...reviseOf] });
     }
     const next = (state.moves.find(move => (Array.isArray(move.from) ? move.from : [move.from]).includes(value) && state.locked?.includes(move.to)));
+    // An unposted record: what it posted was reversed, and it posts again by Repost (listed for roles that may).
+    if (now._repost) return StateBanner({ tone: 'neutral', title: `${humanize(value)}, unposted.`,
+      actions: now._repost.allowed ? [Button({ label: 'Repost', icon: 'repeat', size: 'small', onClick: () => correct('repost') })] : [],
+      text: ['What it posted was reversed and its number is kept. Everything can change until it is reposted.', ...reviseOf] });
     return StateBanner({ tone: 'neutral', title: `${humanize(value)}.`, text: [next ? `Everything can change until it is ${humanize(next.to).toLowerCase()}.` : 'Everything can change.', ...reviseOf] });
   } : null;
   const problems = () => {

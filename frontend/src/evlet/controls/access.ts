@@ -10,7 +10,7 @@ import { OPS, type ModelInfo, type PermValue } from './client';
 import { idOf, SETTING_LABELS } from './drafts';
 import { RoleChip } from './people';
 
-const ORDER = ['read', 'create', 'update', 'delete', 'journal', 'void', 'revise'];
+const ORDER = ['read', 'create', 'update', 'delete', 'journal', 'void', 'revise', 'unpost', 'repost'];
 const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** Keep a rule consistent the way the server expects it: write needs read, no access clears fields and rows. */
@@ -18,6 +18,7 @@ export function normalize(value: PermValue, file: PermValue): PermValue {
   let ops = ORDER.filter(op => value.ops.includes(op));
   if (ops.length && !ops.includes('read')) ops = ['read', ...ops];
   if (!ops.includes('create')) ops = ops.filter(op => op !== 'revise');
+  if (!ops.includes('update')) ops = ops.filter(op => op !== 'repost');
   if (!ops.length) return { ops: [], read: null, write: null, scope: null };
   return { ops, read: value.read, write: ops.some(op => op !== 'read') ? value.write : null, scope: file.scope ?? value.scope };
 }

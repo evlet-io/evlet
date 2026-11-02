@@ -51,7 +51,8 @@ def login(app, username):
     def write(method, path, body=None):
         # Document writes send the ETag of the last read, as the browser does.
         return call(method, path, body, headers={b'if-match': call('GET', path.split('/moves/')[0].split('/actions/')[0]
-                                                                       .removesuffix('/void').removesuffix('/revise'))[2][b'etag']})
+                                                                       .removesuffix('/void').removesuffix('/revise')
+                                                                       .removesuffix('/unpost').removesuffix('/repost'))[2][b'etag']})
     call.write = write
     return call
 
@@ -252,6 +253,26 @@ def test_winning_a_deal_creates_a_task_books_it_and_makes_a_customer(crm):
     assert admin('GET', url)[1]['stage'] == 'void'
     # Sales people cannot void or revise.
     assert rahul.write('POST', '/api/deal/' + str(revision[1]['id']) + '/void', {'reason': 'x'})[0] in (403, 404)
+
+
+def test_admin_unposts_a_won_deal_and_reposts_it(crm):
+    admin, rahul = login(crm, 'admin'), login(crm, 'rahul')
+    deals = admin('GET', '/api/deal?limit=100&offset=0&filters=' + quote(json.dumps({'stage': 'negotiation'})))[1]['items']
+    deal = next(item for item in deals if item['contact'] and Decimal(item['total']) > 0)
+    url = f"/api/deal/{deal['id']}"
+    won = admin.write('POST', url + '/moves/won', {})[1]
+    assert won['stage'] == 'won' and won['_unpost'] == {'allowed': True}
+    # Sales people cannot unpost; the admin gives a reason and the deal goes back to negotiation with its number.
+    assert rahul('POST', url + '/unpost', {'reason': 'x'})[0] in (403, 404)
+    status, body, _ = admin.write('POST', url + '/unpost', {'reason': 'Signed with the wrong entity'})
+    assert status == 200 and (body['stage'], body['number']) == ('negotiation', won['number']), body
+    entry = admin('GET', url + '/journal?limit=5')[1]['items'][1]
+    assert entry['kind'] == 'unposted' and entry['data'] == {'from': 'won', 'to': 'negotiation', 'reason': 'Signed with the wrong entity'}
+    status, body, _ = admin.write('POST', url + '/repost', {})
+    assert status == 200 and (body['stage'], body['number']) == ('won', won['number']), body
+    filters = quote(json.dumps({'memo': f"{won['number']} {won['title']}"}))
+    bookings = admin('GET', f'/api/booking?limit=100&offset=0&filters={filters}')[1]['items']
+    assert [(row['amount'], row['reversal']) for row in bookings] == [(won['total'], False), ('-' + won['total'], True), (body['total'], False)]
 
 
 def test_actions_schedule_follow_up_and_convert_a_lead(crm):

@@ -118,14 +118,14 @@ job and rebuilds its `Policy` and settings when it moved. Open pages get a
 
 **Permissions** (kind `perm`, key `role|Model`, value
 `{"ops": [...], "read": [...] | null, "write": [...] | null, "scope": id | null}`):
-operations (`read`, `create`, `update`, `delete`, `journal`, `void`, `revise`), readable and
+operations (`read`, `create`, `update`, `delete`, `journal`, `void`, `revise`, `unpost`, `repost`), readable and
 writable fields must stay within the file rule. Stricter only applies to the fields declared in
 app files: an instance field (`x_`, added by Controls) may be made readable or writable for a
 role even when the app rule lists `read_fields` or `write_fields`, as long as the role has read
 (and create or update, to write). Without such an override, a role whose app rule lists fields
 does not see instance fields. Write needs read, no access clears fields and
 rows, revise needs create. Admin rules can't be overridden. The page shows the first four;
-`journal`, `void` and `revise` named in the file rule are kept on save. A role based on the
+`journal`, `void`, `revise`, `unpost` and `repost` named in the file rule are kept on save. A role based on the
 editor journals like the editor when its rule reads and updates the model (`docs/journal.md`).
 Row scopes are named presets: `created_by`, `owner`, `account_manager` and `assignee` (for
 models with that field), `own_customer` and the app's own (`AppDefinition(scopes={...})`).
@@ -219,7 +219,8 @@ an older SQLite the page says so and only adding works. On PostgreSQL the change
 transaction and backups are the operator's job. Each tenant has its own instance fields.
 
 Instance fields are plain values. No formula reads them, so finite calculation plans leave them
-out, and `Recompute` neither names nor changes them; it still skips records with posted effects. A
+out, and `Recompute` neither names nor changes them; it still skips records with posted effects (unless an
+admin migrates with `--recompute-posted`). A
 posted or locked record follows the same write rules for an instance field as for any other field.
 
 ### When an override no longer applies
@@ -626,7 +627,8 @@ local `evlet mcp` steps. "Can make changes" has effect only while
 `evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles,
 overrides, connectors, email accounts, personal mailboxes (connect, disconnect, options), API
 keys, AI assistants (consent, sign-out, "Can make changes", MCP settings), migrations and jobs all
-write to it. The Audit log page searches who, what and the detail, filters by area and pages
+write to it. Records (area `Records`) lists each unpost and repost of a posted record (who, the
+record and the reason) and each migration run that recalculated posted records (actor `cli`). The Audit log page searches who, what and the detail, filters by area and pages
 newest first, 50 rows at a time.
 
 ## API

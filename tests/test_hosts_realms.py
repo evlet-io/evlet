@@ -519,17 +519,19 @@ def test_api_scope_lists_each_route_family(portal):
             return True
         except HTTPError:
             return False
-    paths = ('/api/invoice', '/api/invoice/1', '/api/invoice/1/void', '/api/invoice/1/revise', '/api/invoice/1/actions/send',
+    paths = ('/api/invoice', '/api/invoice/1', '/api/invoice/1/void', '/api/invoice/1/revise', '/api/invoice/1/unpost', '/api/invoice/1/repost',
+             '/api/invoice/1/actions/send',
              '/api/invoice/1/moves/send', '/api/invoice/measures', '/api/invoice/aggregate', '/api/invoice/1/measures',
              '/api/invoice/1/related/payment', '/api/invoice/1/lines/rows', '/api/invoice/1/attachments', '/api/_draft/invoice', '/api/invoice/1/other')
     assert [path for path in paths if allowed(portal, path)] == ['/api/invoice', '/api/invoice/1']
     shop = Frontend('shop', kind='static', dist='dist', path='/shop', auth='portal', api=('ops.full',))
-    scope = ApiScope('full', models=(Invoice,), actions=((Invoice, 'void'), (Invoice, 'send')),
+    scope = ApiScope('full', models=(Invoice,), actions=((Invoice, 'void'), (Invoice, 'unpost'), (Invoice, 'send')),
                      extras=('measures', 'related', 'lines', 'attachments', 'drafts'))
     routes = resolve_routes([('ops', AppDefinition(frontends=(shop,), api_scopes=(scope,)))], None, {'hosts': (Host('portal.localhost', root=shop),)})
     auth = LocalAuth(portal.database, origins=routes.origins(), realms=routes.realms(), secure_cookies=False)
     app = Application(portal.database, auth=auth, routes=routes)
-    assert [path for path in paths if not allowed(app, path)] == ['/api/invoice/1/revise', '/api/invoice/1/other']
+    # Each correction is listed on its own: unpost does not open repost.
+    assert [path for path in paths if not allowed(app, path)] == ['/api/invoice/1/revise', '/api/invoice/1/repost', '/api/invoice/1/other']
     with pytest.raises(ValueError, match='extras'):
         ApiScope('bad', models=(Invoice,), extras=('everything',))
 

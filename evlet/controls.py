@@ -441,6 +441,8 @@ class Controls:
             raise ValueError('Write fields need create or update access.')
         if 'revise' in ops and 'create' not in ops:
             raise ValueError('Revise needs create access.')
+        if 'repost' in ops and 'update' not in ops:
+            raise ValueError('Repost needs update access.')
         if read is not None and not read:
             raise ValueError('Keep at least one readable field, or turn off read instead.')
         if read is not None and write is not None and set(write) - set(read):

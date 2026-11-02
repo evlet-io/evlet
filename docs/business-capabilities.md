@@ -109,9 +109,9 @@ Link values. Creates and updates that leave the allowed scope roll back. Write
 permissions require read access. Omitted field sets mean all fields; empty tuples
 mean no fields. `read_only` fields also reject HTTP writes.
 
-Operations may also name `void` and `revise` on models that support them. Admin
-always has them; naming one in a Rule adds that role. See the "Void and revise"
-section of [states-actions.md](states-actions.md).
+Operations may also name `void`, `revise`, `unpost` and `repost` on models that support them.
+Admin always has them; naming one in a Rule adds that role. See the "Void and revise" and
+"Unpost and repost" sections of [states-actions.md](states-actions.md).
 
 Restricted fields are removed from responses, search, and schema metadata. Querying
 or sorting on unavailable fields is rejected. Link IDs are returned as null when

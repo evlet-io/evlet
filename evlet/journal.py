@@ -33,9 +33,12 @@ INDEX = 'CREATE INDEX IF NOT EXISTS evlet_journal_record ON evlet_journal (model
 # Models that have declared tamper_evident=True; verify() treats their unhashed entries as breaks.
 HASHED = 'CREATE TABLE IF NOT EXISTS evlet_journal_hashed (model TEXT PRIMARY KEY)'
 APPEND_ONLY = 'The journal is append only'
-# Kinds the engine writes; `effects` is written by effects_posted() after a move posts or a void reverses effect rows,
-# and `recomputed` by a Recompute migration that changed a record's stored results.
-ENGINE_KINDS = ('created', 'changed', 'moved', 'voided', 'revised', 'number', 'file', 'deleted', 'effects', 'recomputed')
+# Kinds the engine writes; `effects` is written by effects_posted() after a move posts or a void or unpost reverses
+# effect rows, and `recomputed` by a Recompute migration that changed a record's stored results.
+ENGINE_KINDS = ('created', 'changed', 'moved', 'voided', 'revised', 'unposted', 'reposted', 'number', 'file', 'deleted',
+                'effects', 'recomputed')
+# Kinds about the State: shown as `changed` to a reader who cannot read it.
+STATE_KINDS = ('voided', 'revised', 'unposted', 'reposted', 'effects')
 # Kinds people write through HTTP (or journal.post), and the values each takes.
 USER_KINDS = ('note', 'message', 'call', 'follow_up', 'follow_up_done')
 VALUES = {'note': ('text',), 'message': ('text', 'subject', 'party', 'direction'),
@@ -253,6 +256,20 @@ def revised(context, model, original_id, copy_id, reason):
     """`revised` on the original, naming its copy; the copy's own history starts with `created`."""
     if journals(context, model):
         append(context._business, context._tx, context.user, model, original_id, 'revised', {'copy': copy_id, 'reason': reason})
+
+
+def unposted(context, model, record_id, previous, to, reason):
+    """`unposted` after an unpost: the record went back from `previous` to `to`, and what it posted was reversed."""
+    if journals(context, model):
+        append(context._business, context._tx, context.user, model, record_id, 'unposted',
+               {'from': previous, 'to': to, 'reason': reason})
+
+
+def reposted(context, model, record_id, move, reason):
+    """`reposted` after a repost, which follows the move's own `moved` and `effects` entries."""
+    if journals(context, model):
+        append(context._business, context._tx, context.user, model, record_id, 'reposted',
+               {'to': move.to, 'move': move.label, **({'reason': reason} if reason else {})})
 
 
 def number(context, model, record_id, name, value):
@@ -524,12 +541,15 @@ def present(business, user, model, row, visibility, done):
         # Which action ran says something about the state it was available in.
         if 'action' in data and (model.__state__ is None or state_shown):
             shown['action'] = data['action']
+        if kind == 'recomputed' and data.get('posted') and state_shown:
+            # Recompute changed a posted record because an admin asked it to include them.
+            shown['posted'] = True
         if kind == 'moved':
             if state_shown:
                 shown.update({key: data[key] for key in ('from', 'to', 'move')})
             else:
                 kind, partial = 'changed', True
-    elif kind in ('voided', 'revised', 'effects'):
+    elif kind in STATE_KINDS:
         shown = dict(data) if state_shown else {}
         if not state_shown:
             kind, partial = 'changed', True
