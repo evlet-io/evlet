@@ -3,7 +3,7 @@
 
 import { ValidationError } from '../api';
 import { cell, derive } from '../reactive';
-import type { ControlsClient, OverrideItem, PermValue } from './client';
+import type { ControlsClient, FieldOverride, LayoutSection, ListValue, OverrideItem, PermValue, SeriesValue } from './client';
 
 export const idOf = (kind: string, key: string) => `${kind}:${key}`;
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -100,10 +100,39 @@ export function settingText(key: string, value: unknown) {
   return String(value);
 }
 
+const PROPS: Record<string, string> = { label: 'Label', help_text: 'Help', placeholder: 'Placeholder', hidden: 'Hidden', required: 'Required',
+  read_only: 'Read only', default: 'Default', options_add: 'Adds', options_hidden: 'Hides' };
+
+/** "Required · Label: Expected value" for a field override, or the file note. */
+export function fieldSummary(value: FieldOverride | null) {
+  if (!value) return 'As in models.py';
+  return Object.entries(value).map(([prop, item]) => typeof item === 'boolean' ? (item ? PROPS[prop] : `Not ${PROPS[prop].toLowerCase()}`)
+    : `${PROPS[prop]}: ${Array.isArray(item) ? item.join(', ') : String(item)}`).join(' · ');
+}
+
+function modelText(kind: string, value: unknown) {
+  if (kind === 'field') return fieldSummary(value as FieldOverride | null);
+  if (kind === 'layout') {
+    const sections = value as LayoutSection[];
+    return sections.map(section => `${section.title} (${section.fields.length})`).join(' · ');
+  }
+  if (kind === 'list') {
+    const list = value as ListValue;
+    return `${list.columns.join(', ')} · ${list.page_size} rows · sorted by ${list.sort}`;
+  }
+  return (value as SeriesValue[]).map(series => series.when ? `${series.format} when ${series.when}` : series.format).join(' · ');
+}
+
 /** Area, target and the before and after text of one change, for Review. */
 export function describe(change: Change, scopes: Record<string, string>) {
   const { item } = change;
   const shown = (value: unknown) => value === null || value === undefined ? null : value;
+  if (item.kind !== 'perm' && item.kind !== 'setting') {
+    const text = (value: unknown) => item.kind === 'field' ? fieldSummary(shown(value) as FieldOverride | null)
+      : modelText(item.kind, shown(value) ?? item.file) + (shown(value) === null ? ' (file)' : '');
+    return { area: item.kind === 'naming' ? 'Naming' : 'Models', target: item.kind === 'field' ? item.key : `${item.key} ${item.kind === 'naming' ? 'series' : item.kind}`,
+      from: text(change.from), to: text(change.to) };
+  }
   if (item.kind === 'perm') {
     const [role, model] = item.key.split('|');
     return { area: 'Permissions', target: `${role} · ${model}`,

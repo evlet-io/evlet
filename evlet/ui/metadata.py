@@ -24,11 +24,12 @@ def view_for(model):
     meta = getattr(model, 'Meta', None)
     allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments', 'effects',
-               'journal'}
+               'journal', 'naming'}
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
             raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
-    visible = {name: field for name, field in model.__declared_fields__.items() if not field.hidden}
+    # App fields only: instance fields (x_) differ per database and are added by Controls.
+    visible = {name: field for name, field in model.__app_fields__.items() if not field.hidden}
     texts = [name for name, field in visible.items() if isinstance(field, Text) and not isinstance(field, LongText)]
     label = getattr(meta, 'label', label_for(model.__name__))
     plural = getattr(meta, 'plural', plural_for(label))
@@ -85,7 +86,7 @@ def field_schema(field):
 
 def ui_schema(registry):
     return {'version': 1, 'ui_version': 1, 'models': [
-        {'name': name, **view_for(model), 'fields': [field_schema(field) for field in model.__declared_fields__.values()],
+        {'name': name, **view_for(model), 'fields': [field_schema(field) for field in model.__app_fields__.values()],
          **behavior(model, registry)}
         for name, model in registry.models.items()
     ]}

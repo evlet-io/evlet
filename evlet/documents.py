@@ -135,6 +135,7 @@ class Context:
         self.readonly = readonly
         self._active = [] if active is None else active
         self._recalculate = None  # (model, record_id) explicitly allowed to recalculate under the active plan.
+        self._person = None  # (model, record_id) of the write a person sent over HTTP; Controls rules apply to it.
 
     def read_context(self):
         return Context(self._business, self._tx, self.user, readonly=True, active=self._active)
@@ -329,13 +330,17 @@ def load_draft(context, model, record_id, values, *, preview=False):
     business.policy.require(user, model, 'read' if preview and record_id else operation)
     current = business.policy.record(tx, user, model, record_id, 'read' if preview else operation) if record_id else None
     scalars, collections = business.split_body(values)
+    if current is None:
+        drop_empty_name(business.registry, model, scalars)
     from .states import state_write
     from .sequences import sequence_write
     state_write(model, scalars, current)
     sequence_write(model, scalars, current, business.policy.fields(user, model))
     computed_write(business, model, scalars, '')
     business.policy.check_values(tx, user, model, scalars)
-    draft = Draft(model, {**(dict(current._values) if current else {}), **scalars}, context=context, record_id=record_id)
+    # A new record takes the defaults Controls set on this instance for fields the caller left out.
+    values = business.controls.custom.prepare(model, scalars) if current is None else scalars
+    draft = Draft(model, {**(dict(current._values) if current else {}), **values}, context=context, record_id=record_id)
     object.__setattr__(draft, '_submitted', frozenset(scalars))
     old = Draft(model, dict(current._values), context=context, record_id=record_id) if current else None
     # Finite-v1 roots bound the rows they load; legacy roots keep the per-collection limit only.
@@ -347,6 +352,13 @@ def load_draft(context, model, record_id, values, *, preview=False):
     if business.registry.plan_for(model) is not None and sum(1 for _ in walk(draft)) - 1 > LIMITS['document_rows']:
         raise ValidationError({'children': 'This document exceeds the owned row limit'})
     return draft, old
+
+
+def drop_empty_name(registry, model, values):
+    """A null naming field on create is no value: the server names the record."""
+    rules = registry.naming.get(model)
+    if rules is not None and rules.field in values and values[rules.field] is None:
+        del values[rules.field]
 
 
 def computed_write(business, model, values, prefix):
@@ -1081,8 +1093,10 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
 
     def data(item, path=()):
         # A new row leaves out initial fields the caller did not supply, so their suggestions apply.
+        # Instance fields (x_) are plain values no formula can read, so the plan never sees them.
         values = {name: item._values.get(name) for name, field in item._definition.__declared_fields__.items()
                   if (not is_finite(field) or kept and field.stored) and name not in getattr(item._definition, '__internal_fields__', ())
+                  and not name.startswith('x_')
                   and not (item.id is None and (path, name) in initials and name not in item._submitted)}
         # Engine keys are internal: saved rows by ID and new rows by draft, so a client _key never meets a saved ID.
         values['_key'], values['id'] = ('s' + str(item.id)) if item.id else 'n' + str(id(item)), item.id
@@ -1093,7 +1107,7 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
     def sync(session, row, item, old, path):
         """This write's changes to one saved row, then its collections, as session commands."""
         for name, field in item._definition.__declared_fields__.items():
-            if is_finite(field) or name in getattr(item._definition, '__internal_fields__', ()):
+            if is_finite(field) or name in getattr(item._definition, '__internal_fields__', ()) or name.startswith('x_'):
                 continue
             value, before = item._values.get(name), old._values.get(name)
             if name in item._submitted or value != before or type(value) is not type(before):
@@ -1255,6 +1269,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     """
     from . import states
     business, tx, user = context._business, context._tx, context.user
+    # Required fields and retired options set in Controls apply to what people send, not to app code.
+    person, context._person = context._person == (model, record_id) and action is None and move is None, None
     if (action is not None or move is not None) and not record_id:
         raise AccessError(404, 'Record not found')
     declared_move = None
@@ -1308,9 +1324,15 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         states.check_posted(context, draft, before)
     if locked_write:
         states.keep_saved(draft, before)
-    # Document numbers are assigned on the settled draft, in this transaction.
+    if person:
+        business.controls.custom.enforce(model, draft._values, before._values if before else None)
+    # Document numbers and names are assigned on the settled draft, in this transaction.
     from . import sequences
     numbers = sequences.assign(context, model, draft, before, declared_move)
+    if before is None:
+        name = sequences.name_new(tx.connection, business.registry, model, draft._values, host_today(business), user.username)
+        if name:
+            draft._values[business.registry.naming[model].field] = name
     prior = before.stored_values() if before else None
     after = draft.stored_values()
     if prior == after:

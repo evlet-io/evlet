@@ -2,7 +2,7 @@
 
 `/controls` is the locked admin page of an instance. It is the framework frontend
 `evlet.controls`, not a generated model. This release has Overview, Users, Roles,
-Permissions and Security.
+Models, Naming, Permissions and Security.
 
 ## Access
 
@@ -108,6 +108,97 @@ no customer links sees no records. Link users with `evlet link-user` or
 | `security.two_step_roles` | `["admin"]` | Admin stays. Saved now, enforced once two-step sign-in exists. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
 
+## Models
+
+The Models page changes fields, the form layout and the list view of each model on this
+instance. These are overrides too, saved with the change bar.
+
+**Fields** (kind `field`, key `Model.field`). The value holds only what changed:
+
+| Prop | Rule |
+|---|---|
+| `label`, `help_text`, `placeholder` | Text. A label can't be empty. |
+| `hidden` | Left out of forms and lists. The API still returns the field. A required field can't be hidden. |
+| `required` | Can be turned on, not off. Rows saved before stay empty until someone edits them; an API create or update must fill the field. |
+| `read_only` | Can be turned on, not off. No role can write it through the API; actions and server code still can. |
+| `default` | Must pass the field's own check. New records only. Links take no default. |
+| `options_add` | Choice fields: new options in lowercase letters, digits and underscores. |
+| `options_hidden` | Choice fields: options from the app hidden from new values. A record that holds one keeps it, and saving it unchanged is allowed. One option stays shown, and the default from models.py can't be hidden until another default is set. |
+
+A field can't be made both required and read only without a default, since no one could then
+create a record.
+
+Fields the app or the server fills (calculated fields, State, Sequence and naming fields) take
+only the label, help text, placeholder and hidden. A field declared with `default=CurrentUser` keeps
+that default; Controls can't replace it with a fixed value. Required and hidden options apply to what people
+send through the API (create and update, legacy and document models alike); actions, services, jobs
+and other app code may still leave a field empty or set a hidden option. Read only applies to every
+role in the API. Added options and defaults apply on every write path. `/api/schema` and `/api/ui`
+show the merged values (`choices` lists the shown options and `retired_choices` the hidden ones);
+sections and labels of fields a role can't read are left out.
+
+**Form layout** (kind `layout`, key `Model`): `[{"title": ..., "fields": [{"name": ..., "width": 6 | 12}]}]`,
+1 to 12 sections, each with a title and at least one field, each field placed once. Fields placed nowhere, such as a field an
+app adds later or an instance field, go to the last section. Without a Controls layout the app file's rule holds: a declared
+`Meta.layout` leaves such fields to its Other group (added when the file layout has none), and the default Details group
+takes every field. Section ids stay positional (`main_details`, `section_2`, ...).
+The browser renders forms from this layout; `width: 12` makes a field full width.
+
+**List view** (kind `list`, key `Model`): `{"columns": [...], "page_size": 25 | 50 | 100, "sort": "field" | "-field"}`,
+1 to 8 columns. `/api/schema` drops the columns a role can't read and gives `page_size` and `order_by`.
+The sort is also the server's order for a list request that names none, when the role can read it.
+
+### Instance fields
+
+Add field creates a column on this instance only, named `x_` plus a slug, 40 characters at most.
+App models can't declare `x_` names, so an app never clashes with one, and app migrations and
+schema checks leave the columns listed in `evlet_custom_fields` alone. A name may not match an
+existing column ignoring case, a Reference's `<name>_model` and `<name>_id` included. Types: Text,
+LongText, Integer, Decimal, Currency, Date, Boolean, Select and Link.
+
+Adding and removing save at once, one at a time: a SQLite backup into `data/backups/` (next to the
+database file), then `ALTER TABLE` in a transaction with the definition in `evlet_custom_fields`, an
+audit row and a new config version. Model classes from app code are never changed: each database
+keeps its own set of instance fields (with the options Controls added and its naming series) and
+makes it active for each request, job and transaction, so applications that share model classes
+stay apart. A change waits for every request, job and event page in flight in its process and holds
+new ones until it is done, so one slow request delays it; add and remove fields at a quiet time.
+Requests that start after it see the new set; other processes pick it up when they see the new version. A record keeps the instance fields
+it was built with, so reading them works after its transaction ends; instance fields are read only on
+a record, like other fields (use `Database.update`). Code outside a request, job or transaction, such
+as a thread started inside a request or a record built before it is written, runs inside
+`with database.activated():` to see the instance fields. A
+required field needs a default when the table has rows; the default fills them. Required is asked
+for on people's API writes only, so app code that does not know the field keeps working. Removing drops the column and takes the field out of every override that names it:
+its own field override, list columns and sort, layout, permission field lists (a role left with no
+readable field loses access) and naming series that use it. Removal needs SQLite 3.35 or later; on
+an older SQLite the page says so and only adding works. On PostgreSQL the change runs in one
+transaction and backups are the operator's job. Each tenant has its own instance fields.
+
+Instance fields are plain values. No formula reads them, so finite calculation plans leave them
+out, and `Recompute` neither names nor changes them; it still skips records with posted effects. A
+posted or locked record follows the same write rules for an instance field as for any other field.
+
+### When an override no longer applies
+
+An override that fails its check on start fails closed and is listed under Needs attention:
+a field override makes the field read only for every role until it is fixed or reset; a layout,
+list or naming override falls back to the app file. A naming series whose condition names a
+field that no longer exists is skipped, and the rest of the list still applies.
+
+## Naming
+
+Models with `Meta.naming` (see [Document numbers](sequences.md#naming-series)) appear on the
+Naming page. The series list is an override (kind `naming`, key `Model`):
+`[{"id", "label", "format", "when"}]`. Series are checked from the top and the first whose
+condition matches names the record; the last series has no condition, and only it. Conditions
+and formats are checked when saved and again on start.
+
+Counters are instance data and save at once. Each shows its current value, the next name and the
+last change: the last name issued and who issued it, or "Set by hand" with its reason. Setting a
+counter needs a reason, writes an audit row and can't go below the number in the last issued
+name. Try it shows which series a record would use and its name; it never changes a counter.
+
 ## Audit log
 
 `evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles and
@@ -122,3 +213,6 @@ overrides all write to it.
 | `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end"}` |
 | `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules and audit rows; refused access is a 403 there |
 | `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls" and descriptions |
+| `POST /api/_controls/fields/<Model>`, `DELETE /api/_controls/fields/<Model>/<x_name>` | Add or remove an instance field: `{name, type, label, help_text, required, default, options, target}` |
+| `GET/POST /api/_controls/naming/<Model>/counters` | Counters; set one with `{prefix, value, note}` |
+| `POST /api/_controls/naming/<Model>/try` | `{values, series?}`: the matching series and name, and a check of each draft series. No counter changes |

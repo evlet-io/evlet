@@ -14,16 +14,16 @@ export const RoleChip = (role: string) => StatusPill({ label: role, tint: (TINTS
 /** Only admins change admin accounts, give the admin role, manage roles and decide who opens Controls. */
 export const isAdmin = (ctx: ControlsContext) => ctx.state.peek().me.role === 'admin';
 const assignable = (ctx: ControlsContext) => ctx.state.peek().roles.filter(item => isAdmin(ctx) || item.id !== 'admin');
-const message = (failure: unknown) => failure instanceof ApiError ? failure.message : 'Something went wrong. Try again.';
+export const message = (failure: unknown) => failure instanceof ApiError ? failure.message : 'Something went wrong. Try again.';
 
-function Select(props: { id: string; value: () => string; options: () => Array<[string, string]>; onChange: (value: string) => void; label?: string; disabled?: boolean }) {
+export function Select(props: { id: string; value: () => string; options: () => Array<[string, string]>; onChange: (value: string) => void; label?: string; disabled?: boolean }) {
   const select = html`<select class="input ctl-select" id=${props.id} aria-label=${props.label ?? null} disabled=${props.disabled ?? false}
     on:change=${(event: Event) => props.onChange((event.target as HTMLSelectElement).value)}>${() => props.options().map(([value, label]) =>
       html`<option value=${value} selected=${value === props.value()}>${label}</option>`)}</select>` as HTMLSelectElement;
   return select;
 }
 
-const field = (label: string, id: string, control: Node, hint: () => string | null = () => null, error: () => string | null = () => null) =>
+export const field = (label: string, id: string, control: Node, hint: () => string | null = () => null, error: () => string | null = () => null) =>
   html`<div class="ctl-field"><label for=${id}>${label}</label>${control}
     ${() => error() ? html`<span class="ctl-err">${error()}</span>` : hint() ? html`<span class="ctl-hint">${hint()}</span>` : null}</div>`;
 

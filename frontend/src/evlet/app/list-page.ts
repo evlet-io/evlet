@@ -55,7 +55,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   const q = cell(start.q ?? '', { name: `${name}.q` });
   const sortFromUrl = (value: string | undefined): Sort => !value ? null : value.startsWith('-') ? { key: value.slice(1), dir: 'desc' } : { key: value, dir: 'asc' };
-  const sort = cell<Sort>(sortFromUrl(start.sort), { name: `${name}.sort` });
+  const sort = cell<Sort>(sortFromUrl(start.sort ?? model.order_by), { name: `${name}.sort` });
+  // Rows per page from a Controls list view, else the framework default.
+  const size = model.page_size ?? PAGE_SIZE;
   const page = cell(Math.max(1, Number(start.page) || 1), { name: `${name}.page` });
   const view = cell<'list' | 'board'>(state && start.view === 'board' ? 'board' : 'list', { name: `${name}.view` });
   const tab = cell(state && start.tab && state.states.includes(start.tab) ? start.tab : 'all', { name: `${name}.tab` });
@@ -94,8 +96,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   let ticket = 0;
   effect(() => {
     const board = view.get() === 'board';
-    const request = { q: query.get() || undefined, filters: serverFilters.get(), limit: board ? BOARD_SIZE : PAGE_SIZE,
-      offset: board ? 0 : (page.get() - 1) * PAGE_SIZE, orderBy: board ? undefined : sort.get() ? `${sort.get()!.dir === 'desc' ? '-' : ''}${sort.get()!.key}` : undefined };
+    const request = { q: query.get() || undefined, filters: serverFilters.get(), limit: board ? BOARD_SIZE : size,
+      offset: board ? 0 : (page.get() - 1) * size, orderBy: board ? undefined : sort.get() ? `${sort.get()!.dir === 'desc' ? '-' : ''}${sort.get()!.key}` : undefined };
     reload.get();
     const mine = ++ticket;
     loading.set(true);
@@ -103,7 +105,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
       if (mine !== ticket) return;
       batch(() => { rows.set(result.items); total.set(result.total); failure.set(null); loading.set(false); selection.set(new Set()); });
       // A page past the end (after deletes or a narrower filter) goes back to the last page.
-      if (!board && !result.items.length && result.total > 0 && page.peek() > 1) page.set(Math.ceil(result.total / PAGE_SIZE));
+      if (!board && !result.items.length && result.total > 0 && page.peek() > 1) page.set(Math.ceil(result.total / size));
     }, (error: unknown) => {
       if (mine !== ticket || (error instanceof ApiError && error.kind === 'aborted')) return;
       batch(() => { failure.set(error instanceof ApiError ? error.message : 'The list could not be loaded.'); loading.set(false); });
@@ -214,9 +216,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
       action: Button({ label: 'Clear filters', onClick: clearAll }) }) });
   changes(() => sort.get(), () => page.set(1));
 
-  const pages = derive(() => Math.max(1, Math.ceil((total.get() ?? 0) / PAGE_SIZE)));
-  const pager = html`<nav class="ev-pager" aria-label="Pages" hidden=${() => (total.get() ?? 0) <= PAGE_SIZE}>
-    <span class="num">${() => { const from = (page.get() - 1) * PAGE_SIZE + 1; return `${from}–${Math.min(total.get() ?? 0, from + PAGE_SIZE - 1)} of ${total.get() ?? 0}`; }}</span>
+  const pages = derive(() => Math.max(1, Math.ceil((total.get() ?? 0) / size)));
+  const pager = html`<nav class="ev-pager" aria-label="Pages" hidden=${() => (total.get() ?? 0) <= size}>
+    <span class="num">${() => { const from = (page.get() - 1) * size + 1; return `${from}–${Math.min(total.get() ?? 0, from + size - 1)} of ${total.get() ?? 0}`; }}</span>
     ${IconButton({ icon: 'chevron-left', tip: 'Previous page', disabled: () => page.get() <= 1, onClick: () => page.set(Math.max(1, page.peek() - 1)) })}
     ${IconButton({ icon: 'chevron-right', tip: 'Next page', disabled: () => page.get() >= pages.get(), onClick: () => page.set(Math.min(pages.peek(), page.peek() + 1)) })}</nav>`;
 

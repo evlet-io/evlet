@@ -55,13 +55,18 @@ def child_operations(operations):
 
 
 class Policy:
-    def __init__(self, registry, *, rules=None, roles=None, overrides=None):
+    def __init__(self, registry, *, rules=None, roles=None, overrides=None, read_only=None):
         """rules are the app files' rules; overrides (Controls) replace a role's rule on a model.
 
         roles maps each role to its base framework role; a custom role without its own rule on a
-        model inherits the base role's rule from the files.
+        model inherits the base role's rule from the files. read_only ({model: names}) are fields no
+        role may write, from Controls; a naming field is always among them, because the server fills it.
         """
         self.registry = registry
+        locked = {model: {rules.field} for model, rules in getattr(registry, 'naming', {}).items()}
+        for model, names in (read_only or {}).items():
+            locked.setdefault(model, set()).update(names)
+        self.read_only = MappingProxyType({model: frozenset(names) for model, names in locked.items()})
         self.roles = MappingProxyType({**{role: role for role in (*ROLES, PORTAL)}, **dict(roles or {})})
         if any(self.roles.get(role) != role for role in (*ROLES, PORTAL)) or set(self.roles.values()) - {*ROLES, PORTAL} or PUBLIC in self.roles \
                 or 'admin' in [base for role, base in self.roles.items() if role != 'admin']:
@@ -189,7 +194,8 @@ class Policy:
         if not write:
             return readable
         writable = readable & set(model.__declared_fields__ if rule.write_fields is None else rule.write_fields)
-        return {name for name in writable if not model.__declared_fields__[name].read_only and not name.startswith('evlet_')}
+        locked = self.read_only.get(model, ())
+        return {name for name in writable if not model.__declared_fields__[name].read_only and not name.startswith('evlet_') and name not in locked}
 
     def derivation_allowed(self, user, model, name, visiting=frozenset()):
         from .reactivity import plans, references

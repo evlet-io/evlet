@@ -17,6 +17,10 @@ export interface FieldSchema {
   maximum?: string | number | null;
   max_length?: number;
   choices?: string[];
+  /** Options Controls hid from new values; records that hold one keep it. */
+  retired_choices?: string[];
+  /** Full width in the form, from a Controls layout. */
+  wide?: boolean;
   target?: string;
   default?: unknown;
   default_kind?: string;
@@ -58,7 +62,10 @@ export interface ModelSchema {
   fields: FieldSchema[];
   list_fields: string[];
   search_fields?: string[];
-  layout?: Array<{ label: string; fields: string[] }>;
+  layout?: Array<{ label: string; fields: string[]; wide?: string[] }>;
+  /** Rows per page and default order, from a Controls list view. */
+  page_size?: number;
+  order_by?: string;
   children?: ChildSchema[];
   actions?: ActionSchema[];
   permissions?: { create: boolean; update: boolean; delete: boolean };
