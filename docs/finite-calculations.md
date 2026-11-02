@@ -9,7 +9,7 @@ ledger is in [model-engine-implementation-status.md](model-engine-implementation
 
 ```python
 from evlet import Model, Child, Table, Decimal, Currency, Boolean, Rule
-from evlet.calc import D, F, parent, row, round, coalesce, safe_divide
+from evlet.calc import D, F, parent, row, round, coalesce, safe_divide, when, days, today
 
 class InvoiceItem(Child):
     qty = Decimal(default=1, minimum="0")
@@ -54,14 +54,19 @@ The language is closed:
 | `.where(flag=True)`, `.where(row.amount > F("limit"))` | Typed predicates; several filters combine with AND. |
 | `== != < <= > >=` | Typed. Ordering needs numbers. `True == 1` is a type error. |
 | `& | ~` | Boolean predicates only. |
-| `round(x, n)` | HALF_UP to a fixed scale 0..36. |
+| `round(x, n)` | HALF_UP to a fixed scale 0..36, whatever the field's `rounding`. |
 | `coalesce(x, fallback)` | Uses the fallback only when `x` is a ready null. |
 | `safe_divide(a, b, default=d)` | Uses the default only when `b` is numeric zero. |
+| `when(cond, a, b)` | `a` when `cond` is true, else `b`. `cond` is Boolean; `a` and `b` share a type. Only the chosen branch is evaluated, so only its errors count. A null or pending condition makes the result pending. |
+| `date + days(n)`, `days(n) + date`, `date - days(n)` | A date. `n` must be a whole number; a fraction is `COMPUTE_TYPE_ERROR`. |
+| `date - date` | The number of days between them, as a decimal. |
+| `today()` | The current date, supplied by the host. |
+| `F("link.field")` | A field of a linked record, through up to three Link fields. |
 
 `D("0.05")` is an exact decimal literal. `F("name")` refers to a field on the same model,
 including one declared later. `parent.name` is the immediate owner. `row.name` is only
 valid inside `.where(...)`. There is no `parent.parent`, row indexing, string formula,
-`if`/`when`, scan, allocation or callback. Python `if`, `and`, `or`, `not` and chained
+`if`, scan, allocation or callback. Python `if`, `and`, `or`, `not` and chained
 comparisons on expressions raise `EXPRESSION_TRUTH_TEST`.
 
 Field-to-field equality stays identity based so fields remain safe dictionary keys.
@@ -78,13 +83,74 @@ allocated = Currency(compute=round(parent.amount * weight / parent.weights, 2)) 
 residual = Currency(compute=amount - shares.sum("allocated"))                    # on the document
 ```
 
-## Writers, scales and storage
+## Dates
+
+`Date` fields hold ISO `YYYY-MM-DD` values from 0001-01-01 to 9999-12-31. Dates compare
+with `== != < <= > >=`. A result outside that range is `COMPUTE_RANGE_ERROR`. Mixed types
+fail when the registry is built with `COMPUTE_TYPE_ERROR`: `date + 1`, `date * 2`,
+`date + date`, `days(n)` on its own, `days(True)`, or a date compared with a number.
+`DateTime` fields keep their earlier rules: they compare with `==` and `!=` and work in
+`coalesce` and `when`, but they cannot be ordered or used in date arithmetic, and a Link
+path cannot end at one.
+
+```python
+class Bill(Model):
+    issued = Date()
+    due = Date(compute=F("issued") + days(F("customer.credit_days")))
+    age = Integer(compute=today() - F("issued"))
+    overdue = Boolean(compute=today() > F("due"))
+```
+
+`today()` is an input, not a clock read inside the evaluator. The server supplies the date
+in the instance timezone (`Instance(timezone="Asia/Dubai")` in the instance `config.py`; `UTC` by default). The browser
+calls `setToday("2026-11-01")` on its document session; until it does, results that use
+`today()` are pending. A stored result that uses `today()` keeps the date of its last save;
+it is not refreshed when the day changes.
+
+## Link paths
+
+`F("customer.credit_days")` reads `credit_days` from the record that the `customer` Link
+points to. A path follows at most three Links (`F("customer.region.country.vat_rate")`).
+The registry rejects an unknown field (`UNSUPPORTED_EXPRESSION`), a step through a field
+that is not a Link (`COMPUTE_TYPE_ERROR`), a field that is not stored, and more than three
+Links (`CALCULATION_LIMIT_EXCEEDED`). Paths start on the declaring model; `parent.x.y` is
+not supported, so relay the Link with `compute=parent.customer` first.
+
+The evaluator never queries the database. Each plan table lists the `lookups` it needs
+(`{"model": "customer", "fields": [...]}`), and the host supplies the values:
+
+* The server reads them inside the save transaction, one query per looked-up model per
+  Link step, before it validates the document. It reads stored values with full access, so
+  a stored result never depends on who saved it.
+* The browser calls `lookupRequests()` for the `[model, id, fields]` still missing and
+  `setLookups(model, id, values)` with what it read. Only results on those paths are
+  recalculated.
+
+A null Link at any step gives a ready null for the path. The usual rules then apply:
+arithmetic with null stays pending (`COMPUTE_INPUT_MISSING`) and does not become null, so a
+stored `due` over a missing customer blocks the save. Use `coalesce` or `when` to choose a
+value instead. A Link value without supplied lookups is pending.
+
+A stored result that reads a Link path keeps the value from its last save. When the linked
+record changes, the stored value is updated on the next write of the document, not before.
+The formula hash does not track linked values, so such documents are not reported as
+needing recalculation.
+
+## Writers, scales and rounding
 
 * A computed field has one writer: it cannot also have a default, fetch or query.
-* Results must fit the target exactly. `Currency(compute=qty * rate)` that yields
-  `1.005` is a `COMPUTE_SCALE_ERROR`; write `round(qty * rate, 2)`.
+* A result is quantized to the target field's scale with the field's `rounding`:
+  `"half_up"` (ties away from zero) or `"half_even"` (ties to the even digit). The default
+  is `"half_up"` for `Currency` and `Integer` and `"half_even"` for `Decimal`. So
+  `Currency(compute=qty * rate)` that yields `1.005` stores `1.01`, and
+  `Decimal(scale=2, compute=x)` stores `0.12` for `0.125`. Set it per field:
+  `Currency(rounding="half_even", compute=...)`.
+* Range errors stay errors: a value that does not fit the column, or a rounded value
+  outside the field's `minimum` or `maximum`, is `COMPUTE_RANGE_ERROR`.
+* `round(x, n)` always rounds half up. Use it for an intermediate step or a different scale.
 * `Decimal(scale=None, stored=False, compute=...)` keeps the full bounded value for
-  intermediates. It cannot be stored or edited.
+  intermediates. It is never rounded, and it cannot be stored or edited.
+* Legacy string formulas keep their own rules and do not use `rounding`.
 * `stored=False` fields are calculated but are not SQL columns.
 * `default=Ref("parent.warehouse")` copies the value once on creation; it is not live.
   Use `compute=parent.warehouse` for a live relay.
@@ -93,12 +159,12 @@ residual = Currency(compute=amount - shares.sum("allocated"))                   
 
 Each calculated value is `ready` (possibly null), `pending` or `error`:
 
-* Null arithmetic and ordered comparisons with null are pending
-  (`COMPUTE_INPUT_MISSING`), never zero.
+* Null arithmetic, date arithmetic and ordered comparisons with null are pending
+  (`COMPUTE_INPUT_MISSING`), never zero or null.
 * `&` and `|` evaluate both sides; an error beats pending.
 * A row a filter definitely excludes does not block the aggregate. A selected null
   value blocks it.
-* Division by zero, range overflow and scale mismatches are errors.
+* Division by zero, range overflow, invalid dates and fractional day counts are errors.
 
 A save requires every stored result to be ready. Any error blocks the save. A pending
 virtual result that nothing stored depends on may stay pending.
@@ -149,10 +215,14 @@ route first. Formula changes never backfill stored totals on their own.
 ## Permissions and the browser plan
 
 A calculated result is readable only when every input it reads is readable and every
-collection it aggregates is complete for that user (no child row scope). Otherwise the
-result is withheld. A withheld result still has to be valid for a save, so a user who can
+collection it aggregates is complete for that user (no child row scope). A Link path also
+needs every field on the path to be readable and no row scope on any looked-up model.
+Otherwise the result is withheld. A withheld result still has to be valid for a save, so a user who can
 write its sources learns whether a save failed: avoid bounds such as `minimum` on results
-over inputs a writer cannot read. `/api/schema` reports, per finite root, the plan hash and a
+over inputs a writer cannot read. This also applies to values read through Link paths from
+other records. A writer can learn from whether a save succeeds that an unreadable linked
+value makes the result pending, out of bounds or out of range. Avoid bounds and non-null
+requirements on results over linked fields a writer cannot read. `/api/schema` reports, per finite root, the plan hash and a
 capability per calculated field the user can see (`local_universal` or `unavailable`). The plan is included only when every
 calculated field is local for that user. A shipped plan lists only fields that user can
 read (no hidden names, bounds or defaults); it carries its own hash and
@@ -164,7 +234,7 @@ results through `/api/_draft`; it does not edit nested tables below the first le
 `frontend/src/runtime/FiniteEngine.ts` evaluates the same plan with no SolidJS or DOM
 imports. A `FiniteDocument` session offers `set`, `addRow`, `removeRow`, `replaceRows`,
 `reorder`, `moveRow`, nested `batch`, `observe`, `observeTable`, `explain`, `snapshot`
-and `dispose`. A batch publishes once; observers cannot mutate during publication
+and `dispose`, plus the host inputs `setToday`, `setLookups` and `lookupRequests`. A batch publishes once; observers cannot mutate during publication
 (`REACTIVE_REENTRANCY`); an async batch callback is rejected. Python's
 `evlet.calc.Document` has the same interface in snake_case.
 

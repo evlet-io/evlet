@@ -6,6 +6,7 @@ in the browser (preview). Evaluation is pure: no database, clock, network or cal
 """
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from decimal import Decimal as PyDecimal
 import hashlib
 import inspect
@@ -24,7 +25,10 @@ LIMITS = {'expression_nodes': 128, 'expression_depth': 32, 'table_depth': 8, 'co
 MAX_DIGITS, MAX_SCALE, DIVISION_SCALE = 40, 36, 18
 SAFE_INTEGER = 2**53 - 1
 OPERATIONS = {'add', 'sub', 'mul', 'div', 'neg', 'eq', 'ne', 'lt', 'lte', 'gt', 'gte', 'and', 'or', 'not',
-              'round', 'coalesce', 'safe_divide', 'bool_to_decimal'}
+              'round', 'coalesce', 'safe_divide', 'bool_to_decimal', 'when', 'days'}
+ROUNDING = ('half_up', 'half_even')
+MAX_HOPS = 3
+MIN_DAY, MAX_DAY = 1, 3652059  # 0001-01-01 and 9999-12-31 as proleptic Gregorian ordinals
 
 
 class CalcError(ValueError):
@@ -137,6 +141,15 @@ def half_up(numerator, denominator):
     return -quotient if negative else quotient
 
 
+def half_even(numerator, denominator):
+    """Nearest integer to numerator/denominator, exact ties to the even neighbour."""
+    negative = (numerator < 0) != (denominator < 0)
+    quotient, remainder = divmod(abs(numerator), abs(denominator))
+    if 2 * remainder > abs(denominator) or 2 * remainder == abs(denominator) and quotient % 2:
+        quotient += 1
+    return -quotient if negative else quotient
+
+
 def div(a, b):
     if b.coef == 0:
         raise CalcError('COMPUTE_DIVISION_BY_ZERO', 'Division by zero')
@@ -145,10 +158,10 @@ def div(a, b):
     return normalize(half_up(numerator, denominator), DIVISION_SCALE)
 
 
-def quantize(value, scale):
+def quantize(value, scale, rounding='half_up'):
     if value.scale <= scale:
         return value
-    return normalize(half_up(value.coef, 10**(value.scale - scale)), scale)
+    return normalize((half_even if rounding == 'half_even' else half_up)(value.coef, 10**(value.scale - scale)), scale)
 
 
 def total(values):
@@ -157,6 +170,36 @@ def total(values):
         return Num(0, 0)
     scale = max(value.scale for value in values)
     return normalize(sum(value.coef * 10**(scale - value.scale) for value in values), scale)
+
+
+DATE = re.compile(r'[0-9]{4}-[0-9]{2}-[0-9]{2}')
+
+
+def day_number(value):
+    """An ISO date (YYYY-MM-DD) as its proleptic Gregorian ordinal."""
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value.toordinal()
+    if isinstance(value, str) and DATE.fullmatch(value):
+        try:
+            return date.fromisoformat(value).toordinal()
+        except ValueError:
+            pass
+    raise CalcError('COMPUTE_TYPE_ERROR', 'Use a date in YYYY-MM-DD format')
+
+
+def day_text(number):
+    if not MIN_DAY <= number <= MAX_DAY:
+        raise CalcError('COMPUTE_RANGE_ERROR', 'The date is outside 0001-01-01 to 9999-12-31')
+    return date.fromordinal(number).isoformat()
+
+
+def shift(day, count, sign):
+    """A date moved by a whole number of days."""
+    if count.scale:
+        raise CalcError('COMPUTE_TYPE_ERROR', 'days() needs a whole number')
+    if abs(count.coef) > MAX_DAY:
+        raise CalcError('COMPUTE_RANGE_ERROR', 'The date is outside 0001-01-01 to 9999-12-31')
+    return day_text(day_number(day) + sign * count.coef)
 
 
 def to_decimal(value):
@@ -248,9 +291,9 @@ def D(value):
 
 
 def F(name):
-    """A local field by name, for forward references."""
-    if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', name):
-        raise CalcError('UNSUPPORTED_EXPRESSION', 'F() takes one declared field name')
+    """A local field by name, for forward references, or a dotted path through Link fields."""
+    if not isinstance(name, str) or len(name) > 256 or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)*', name):
+        raise CalcError('UNSUPPORTED_EXPRESSION', 'F() takes one declared field name or a link path such as "customer.credit_days"')
     return Expr('ref', scope='self', name=name)
 
 
@@ -284,6 +327,21 @@ def round(value, scale):  # noqa: A001 - the documented finite-language name
 
 def coalesce(value, fallback):
     return Expr('coalesce', (lift(value), lift(fallback)))
+
+
+def when(condition, then, otherwise):
+    """`then` when the Boolean condition is true, else `otherwise`; only the chosen branch is evaluated."""
+    return Expr('when', (lift(condition), lift(then), lift(otherwise)))
+
+
+def days(count):
+    """A whole number of days to add to or subtract from a date."""
+    return Expr('days', (lift(count),))
+
+
+def today():
+    """The current date, supplied by the host (the server uses the instance timezone)."""
+    return Expr('today')
 
 
 def safe_divide(numerator, denominator, *, default):
@@ -361,6 +419,7 @@ class _Context:
     children: dict
     row: object = None
     table: str = None
+    registry: object = None
 
 
 def compile_expression(expr, context, target):
@@ -386,6 +445,33 @@ def compile_expression(expr, context, target):
             fail(code, f'{scope}.{name} is not a declared field' if scope != 'self' else f'unknown field {name}')
         return name, field_type(owner.__declared_fields__[name])
 
+    def link_path(path):
+        """A dotted path through Link fields; every step after the first reads a host-supplied lookup."""
+        from .fields import Link
+        parts = path.split('.')
+        if len(parts) - 1 > MAX_HOPS:
+            fail('CALCULATION_LIMIT_EXCEEDED', f'{path} follows more than {MAX_HOPS} links')
+        first, kind = resolve(Expr('ref', scope='self', name=parts[0]), 'self')
+        reads.append(('self', None, first))
+        link, steps = context.model.__declared_fields__[first], []
+        for index, name in enumerate(parts[1:], 1):
+            if kind != 'link':
+                fail('COMPUTE_TYPE_ERROR', f'{path}: {parts[index - 1]} is not a Link field')
+            target = link.target
+            field = target.__declared_fields__.get(name)
+            if field is None or name in target.__tables__ or name in getattr(target, '__internal_fields__', ()):
+                fail('UNSUPPORTED_EXPRESSION', f'{path}: {target.__name__} has no field {name}')
+            if not field.stored or field.query is not None:
+                fail('UNSUPPORTED_EXPRESSION', f'{path}: {target.__name__}.{name} is not stored, so it cannot be looked up')
+            kind = field_type(field)
+            if kind == 'datetime':
+                fail('COMPUTE_TYPE_ERROR', f'{path}: {name} is a DateTime; Link paths support Date fields only')
+            model_name = context.registry.name_for(target)
+            steps.append([model_name, name, kind])
+            reads.append(('lookup', model_name, name))
+            link = field if isinstance(field, Link) else None
+        return {'$expr': 'hop', 'field': first, 'steps': steps}, kind, False
+
     def visit(node, depth, scope):
         nodes[0] += 1
         if nodes[0] > LIMITS['expression_nodes'] or depth > LIMITS['expression_depth']:
@@ -396,6 +482,11 @@ def compile_expression(expr, context, target):
         if op == 'literal':
             kind, value = node.meta['type'], node.meta['value']
             return {'$expr': 'literal', 'type': kind, 'value': value}, 'decimal' if kind == 'integer' else kind, False
+        if op == 'today':
+            reads.append(('today', None, None))
+            return {'$expr': 'today'}, 'date', False
+        if op == 'ref' and node.meta['scope'] == 'self' and '.' in (node.meta.get('name') or ''):
+            return link_path(node.meta['name'])
         if op == 'ref':
             ref_scope = node.meta['scope']
             if ref_scope == 'parent' and context.parent is None:
@@ -448,6 +539,20 @@ def compile_expression(expr, context, target):
             if kind != 'decimal':
                 fail(error, f'{op} requires numeric or Boolean operands, not {kind}')
             return ir
+        if 'days' in kinds and op not in ('add', 'sub'):
+            fail(error, 'days() can only be added to or subtracted from a date')
+        if op == 'days':
+            if kinds[0] != 'decimal':
+                fail(error, f'days() needs a number, not {kinds[0]}')
+            return args[0][0], 'days', via_parent
+        if op in ('add', 'sub') and ('date' in kinds or 'days' in kinds):
+            if kinds == ['date', 'days']:
+                return {'$expr': 'date_' + op, 'args': [args[0][0], args[1][0]]}, 'date', via_parent
+            if op == 'add' and kinds == ['days', 'date']:
+                return {'$expr': 'date_add', 'args': [args[1][0], args[0][0]]}, 'date', via_parent
+            if op == 'sub' and kinds == ['date', 'date']:
+                return {'$expr': 'date_diff', 'args': [args[0][0], args[1][0]]}, 'decimal', via_parent
+            fail(error, f'cannot {op} {kinds[0]} and {kinds[1]}; use date + days(n), date - days(n) or date - date')
         if op in ('add', 'sub', 'mul', 'div', 'neg', 'safe_divide'):
             return {'$expr': op, 'args': [numeric(item) for item in args]}, 'decimal', via_parent
         if op == 'round':
@@ -457,8 +562,8 @@ def compile_expression(expr, context, target):
                 fail(error, f'cannot compare {kinds[0]} with {kinds[1]}')
             return {'$expr': op, 'args': [item[0] for item in args]}, 'boolean', via_parent
         if op in ('lt', 'lte', 'gt', 'gte'):
-            if any(kind != 'decimal' for kind in kinds):
-                fail(error, 'ordered comparisons require numeric operands')
+            if kinds[0] != kinds[1] or kinds[0] not in ('decimal', 'date'):
+                fail(error, 'ordered comparisons require two numbers or two dates')
             return {'$expr': op, 'args': [item[0] for item in args]}, 'boolean', via_parent
         if op in ('and', 'or', 'not'):
             if any(kind != 'boolean' for kind in kinds):
@@ -468,6 +573,12 @@ def compile_expression(expr, context, target):
             if kinds[0] != 'null' and kinds[1] != 'null' and kinds[0] != kinds[1]:
                 fail(error, 'coalesce() operands must share a type')
             return {'$expr': op, 'args': [item[0] for item in args]}, kinds[0] if kinds[0] != 'null' else kinds[1], via_parent
+        if op == 'when':
+            if kinds[0] != 'boolean':
+                fail(error, 'when() needs a Boolean condition')
+            if kinds[1] != 'null' and kinds[2] != 'null' and kinds[1] != kinds[2]:
+                fail(error, f'when() branches must share a type, not {kinds[1]} and {kinds[2]}')
+            return {'$expr': op, 'args': [item[0] for item in args]}, kinds[1] if kinds[1] != 'null' else kinds[2], via_parent
         fail('UNSUPPORTED_EXPRESSION', f'unknown operation {op!r}')
 
     ir, kind, _ = visit(expr, 0, 'self')
@@ -519,14 +630,22 @@ def compile_plan(registry, root):
                 continue
             if field.default is not MISSING or field.fetch is not None or field.query is not None:
                 raise CalcError('UNSUPPORTED_EXPRESSION', f'{address(path, name)}: a computed field has one writer; remove its default/fetch/query')
-            context = _Context(model, path, parent_model, children)
-            ir, kind, reads = compile_expression(field.compute, context, name)
             target = field_type(field)
-            if target != kind and not (target == 'decimal' and kind == 'decimal'):
+            context = _Context(model, path, parent_model, children, registry=registry)
+            ir, kind, reads = compile_expression(field.compute, context, name)
+            if target != kind:
                 raise CalcError('COMPUTE_TYPE_ERROR', f'{address(path, name)}: expression type {kind} does not match {target}')
             fields.append({'target': address(path, name), 'path': list(path), 'field': name, 'result_type': kind,
                            'target_type': field.kind, 'scale': entry[name]['scale'], 'stored': field.stored,
+                           'rounding': getattr(field, 'rounding', None) if kind == 'decimal' else None,
                            'expression': ir, 'reads': [list(read) for read in reads]})
+        lookups = {}
+        for item in fields:
+            for scope, model_name, name in item['reads']:
+                if scope == 'lookup' and item['path'] == list(path):
+                    lookups.setdefault(model_name, set()).add(name)
+        if lookups:
+            schema[address(path, '').rstrip('.') or '$root']['lookups'] = [{'model': name, 'fields': sorted(lookups[name])} for name in sorted(lookups)]
     order = template_order(fields)
     plan = {'plan_version': PLAN_VERSION, 'language': LANGUAGE, 'numeric_profile': PROFILE,
             'expression_version': EXPRESSION_VERSION, 'compiler_version': COMPILER_VERSION,
@@ -637,6 +756,10 @@ def fingerprint(plan):
     return 'sha256:' + hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
+def default_rounding(kind):
+    return 'half_even' if kind == 'decimal' else 'half_up'
+
+
 def formula_hash(plan):
     """Hash of only what decides calculated results: the formulas and the fields they read or write.
 
@@ -659,7 +782,10 @@ def formula_hash(plan):
             if (tuple(table['path']), name) in used:
                 fields[address(tuple(table['path']), name)] = {key: meta[key] for key in keys}
     body = {key: plan[key] for key in ('plan_version', 'language', 'numeric_profile', 'expression_version', 'compiler_version')}
-    body.update(formulas=plan['fields'], fields=fields)
+    # A field's rounding counts only when it differs from its type default, so plans that predate it keep their hash.
+    formulas = [{key: value for key, value in field.items() if key != 'rounding' or value not in (None, default_rounding(field['target_type']))}
+                for field in plan['fields']]
+    body.update(formulas=formulas, fields=fields)
     return 'sha256:' + hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
@@ -721,6 +847,17 @@ def evaluate(node, scope, budget):
         return scope.read(node['scope'], node['field'])
     if op == 'aggregate':
         return aggregate(node, scope, budget)
+    if op == 'today':
+        return scope.document.today_result()
+    if op == 'hop':
+        return hop(node, scope)
+    if op == 'when':
+        condition = evaluate(node['args'][0], scope, budget)
+        if condition.state != 'ready':
+            return condition
+        if condition.value is None:
+            return pending('COMPUTE_INPUT_MISSING', scope.causes())
+        return evaluate(node['args'][1] if condition.value else node['args'][2], scope, budget)
     if op == 'coalesce':
         first = evaluate(node['args'][0], scope, budget)
         return evaluate(node['args'][1], scope, budget) if first.state == 'ready' and first.value is None else first
@@ -752,11 +889,33 @@ def evaluate(node, scope, budget):
     if op == 'not': return ready(not values[0])
     if op == 'bool_to_decimal': return ready(Num(1 if values[0] else 0, 0))
     if op in ('lt', 'lte', 'gt', 'gte'):
-        order = compare(*values)
+        a, b = values
+        order = compare(a, b) if isinstance(a, Num) else (a > b) - (a < b)
         return ready({'lt': order < 0, 'lte': order <= 0, 'gt': order > 0, 'gte': order >= 0}[op])
     if op == 'neg': return ready(Num(-values[0].coef, values[0].scale))
     if op == 'round': return guarded(lambda: quantize(values[0], values[1]), scope)
+    if op == 'date_add': return guarded(lambda: shift(values[0], values[1], 1), scope)
+    if op == 'date_sub': return guarded(lambda: shift(values[0], values[1], -1), scope)
+    if op == 'date_diff': return guarded(lambda: normalize(day_number(values[0]) - day_number(values[1]), 0), scope)
     return guarded(lambda: {'add': add, 'sub': sub, 'mul': mul, 'div': div}[op](*values), scope)
+
+
+def hop(node, scope):
+    """Follow a Link path through host-supplied lookups. A null link is a ready null at that step."""
+    current = scope.read('self', node['field'])
+    lookups = scope.document.lookups
+    for model, name, kind in node['steps']:
+        if current.state != 'ready' or current.value is None:
+            return current
+        record_id = integer(current.value)
+        if record_id is None or record_id < 1:
+            return error('COMPUTE_TYPE_ERROR', scope.causes())
+        values = lookups.get(model, {}).get(record_id)
+        if values is None or name not in values:
+            scope.misses.add((model, record_id))
+            return pending('COMPUTE_INPUT_MISSING', [f'@{model}.{record_id}.{name}'])
+        current = source_value({'type': kind}, values[name], f'@{model}.{record_id}.{name}')
+    return current
 
 
 def missing(results, scope):
@@ -810,12 +969,13 @@ def aggregate(node, scope, budget):
 
 
 def convert(result, field, at, meta=None):
-    """Strict target assignment: no unrequested rounding, and the target's declared bounds hold."""
+    """Target assignment: quantize to the field's scale with its rounding; the declared bounds hold."""
     if result.state != 'ready' or result.value is None or field['result_type'] != 'decimal':
         return result
     value, scale = result.value, field['scale']
-    if scale is not None and quantize(value, scale) != value:
-        return error('COMPUTE_SCALE_ERROR', [at])
+    if scale is not None and value.scale > scale:
+        value = quantize(value, scale, field.get('rounding') or 'half_up')
+        result = ready(value)
     if field['target_type'] == 'integer' and abs(value.coef) > SAFE_INTEGER:
         return error('COMPUTE_RANGE_ERROR', [at])
     if scale is not None and abs(value.coef * 10**(scale - value.scale)) > 2**63 - 1:
@@ -835,6 +995,8 @@ def source_value(meta, raw, at):
     try:
         if meta['type'] == 'decimal':
             return ready(parse(raw))
+        if meta['type'] == 'date':
+            return ready(day_text(day_number(raw)))
         if meta['type'] == 'boolean' and type(raw) is not bool:
             raise CalcError('COMPUTE_TYPE_ERROR', 'Expected a Boolean')
         return ready(raw)
@@ -861,10 +1023,11 @@ class Row:
 
 class Scope:
     """Lexical scopes for one evaluation: self (declaring row), parent, and a filter row."""
-    __slots__ = ('document', 'row', 'member', 'at')
+    __slots__ = ('document', 'row', 'member', 'at', 'misses')
 
-    def __init__(self, document, row, member=None, at=''):
+    def __init__(self, document, row, member=None, at='', misses=None):
         self.document, self.row, self.member, self.at = document, row, member, at
+        self.misses = set() if misses is None else misses
 
     def read(self, scope, field):
         target = self.member if scope == 'row' else self.row.parent if scope == 'parent' else self.row
@@ -873,7 +1036,7 @@ class Scope:
         return self.document.result(target, field)
 
     def members(self, table):
-        return [Scope(self.document, self.row, member, self.at) for member in self.row.children.get(table, ())]
+        return [Scope(self.document, self.row, member, self.at, self.misses) for member in self.row.children.get(table, ())]
 
     def address(self, field):
         return (self.member or self.row).label + field
@@ -895,6 +1058,13 @@ class Document:
             self.templates.setdefault(tuple(field['path']), []).append((position, field))
         self.budget_limit = plan['limits']['evaluation_steps'] if budget is None else budget
         self.rows, self.results, self.counts = {}, {}, {}
+        # Host inputs: today's date and Link lookups {model: {id: {field: value}}}; misses are lookups still wanted.
+        self.today, self.lookups, self.misses = None, {}, {}
+        self.lookup_fields = {}
+        for field in plan['fields']:
+            for scope, model, name in field['reads']:
+                if scope == 'lookup':
+                    self.lookup_fields.setdefault(model, set()).add(name)
         self.observers, self.table_observers = {}, {}
         self.revision, self.structure_revision, self._next = 0, 0, 0
         self._batch = None
@@ -1007,6 +1177,10 @@ class Document:
                         inputs.add((handle, '#' + table))
                     elif scope == 'member':
                         inputs.update((member.handle, name) for member in row.children.get(table, ()))
+                    elif scope == 'today':
+                        inputs.add(('@', 'today'))
+                    elif scope == 'lookup':
+                        inputs.add(('@' + table, name))
                 deps[node] = inputs
                 edges += len(inputs)
                 order.append((position, self._sort_key(row), node))
@@ -1036,6 +1210,11 @@ class Document:
             return error('UNSUPPORTED_EXPRESSION', [row.label + field])
         return source_value(meta, row.values.get(field), row.label + field)
 
+    def today_result(self):
+        if self.today is None:
+            return pending('COMPUTE_INPUT_MISSING', ['@today'])
+        return source_value({'type': 'date'}, self.today, '@today')
+
     def _settle(self, changed, fresh):
         """Visit the global order once; evaluate a node only if an input changed."""
         budget = Budget(self.budget_limit)
@@ -1048,7 +1227,12 @@ class Document:
             row = self.rows[node[0]]
             field = templates[node[1], row.path]
             at = row.label + node[1]
-            outcome = convert(evaluate(field['expression'], Scope(self, row, at=at), budget), field, at, self.schema[row.path]['fields'][node[1]])
+            scope = Scope(self, row, at=at)
+            outcome = convert(evaluate(field['expression'], scope, budget), field, at, self.schema[row.path]['fields'][node[1]])
+            if scope.misses:
+                self.misses[node] = scope.misses
+            else:
+                self.misses.pop(node, None)
             evaluated += 1
             self.counts[node] = self.counts.get(node, 0) + 1
             if node not in self.results or self.results[node] != outcome:
@@ -1118,6 +1302,33 @@ class Document:
             row.values[field] = value
             self._batch['sources'].add((handle, field))
         self._command(run)
+
+    def set_today(self, value):
+        """The host's current date (YYYY-MM-DD) for today()."""
+        def run():
+            self.today = value
+            self._batch['sources'].add(('@', 'today'))
+        self._command(run)
+
+    def set_lookups(self, model, record_id, values):
+        """Field values of one linked record, as the host read them, for Link path expressions."""
+        def run():
+            fields, key = self.lookup_fields.get(model), integer(record_id)
+            if fields is None or key is None or key < 1 or not isinstance(values, dict) or set(values) - fields:
+                raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'This plan does not look up {model}')
+            # Copy on write so a rolled-back command restores the previous record.
+            self.lookups = {**self.lookups, model: {**self.lookups.get(model, {}), key: {**self.lookups.get(model, {}).get(key, {}), **values}}}
+            self._batch['sources'].update(('@' + model, name) for name in values)
+        self._command(run)
+
+    def lookup_requests(self):
+        """[model, id, fields] the current results still wait for, sorted; the host reads and supplies them."""
+        wanted = {}
+        for node, misses in self.misses.items():
+            if node in self.deps:
+                for model, record_id in misses:
+                    wanted.setdefault(model, set()).add(record_id)
+        return [[model, record_id, sorted(self.lookup_fields[model])] for model in sorted(wanted) for record_id in sorted(wanted[model])]
 
     def add_row(self, owner, table, values=None):
         created = []
@@ -1240,10 +1451,11 @@ class Document:
         return ({handle: (row, dict(row.values), {table: list(items) for table, items in row.children.items()}, row.parent)
                  for handle, row in self.rows.items()}, dict(self.results), self._next, dict(self.counts),
                 {key: list(items) for key, items in self.observers.items()},
-                {key: list(items) for key, items in self.table_observers.items()}, dict(self.trace))
+                {key: list(items) for key, items in self.table_observers.items()}, dict(self.trace),
+                (self.today, self.lookups, dict(self.misses)))
 
     def _restore(self, snapshot):
-        rows, results, counter, counts, observers, tables, trace = snapshot
+        rows, results, counter, counts, observers, tables, trace, (self.today, self.lookups, self.misses) = snapshot
         for handle, (row, values, children, owner) in rows.items():
             row.values, row.children, row.parent = values, children, owner
         self.rows = {handle: state[0] for handle, state in rows.items()}
@@ -1260,6 +1472,7 @@ class Document:
         for node in old - live:
             self.results.pop(node, None)
             self.counts.pop(node, None)
+            self.misses.pop(node, None)
         fresh = (live - old) | {node for node in live if node[0] in batch['moved']}
         updated = self._settle(batch['sources'] | batch['membership'], fresh)
         if not (updated or batch['sources'] or batch['structure']):
@@ -1380,6 +1593,7 @@ class Document:
         self.table_observers.clear()
         self.rows.clear()
         self.results.clear()
+        self.misses.clear()
         self.deps, self.dependents, self.order = {}, {}, []
         self._disposed = True
 
@@ -1402,6 +1616,8 @@ def check_plan(plan):
         scale = field.get('scale')
         if scale is not None and (type(scale) is not int or not 0 <= scale <= MAX_SCALE):
             raise CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target scale')
+        if field.get('rounding') not in (None, *ROUNDING):
+            raise CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target rounding')
         check_node(field['expression'], 0, [0])
     for table in plan['tables'].values():
         for meta in table['fields'].values():
@@ -1412,9 +1628,20 @@ def check_plan(plan):
 
 SCOPES = {'self', 'parent', 'row'}
 ARITY = {'add': 2, 'sub': 2, 'mul': 2, 'div': 2, 'neg': 1, 'eq': 2, 'ne': 2, 'lt': 2, 'lte': 2, 'gt': 2, 'gte': 2,
-         'and': 2, 'or': 2, 'not': 1, 'round': 2, 'coalesce': 2, 'safe_divide': 3, 'bool_to_decimal': 1}
+         'and': 2, 'or': 2, 'not': 1, 'round': 2, 'coalesce': 2, 'safe_divide': 3, 'bool_to_decimal': 1,
+         'when': 3, 'date_add': 2, 'date_sub': 2, 'date_diff': 2}
 LITERALS = {'decimal': str, 'boolean': bool, 'text': str}
 NAME = r'[A-Za-z][A-Za-z0-9_]*'
+MODEL_NAME = r'[a-z0-9_]{1,64}'
+HOP_TYPES = {'decimal', 'boolean', 'date', 'text', 'link'}
+
+
+def hop_steps(steps):
+    """One to three [model, field, type] lookups; every step but the last follows a Link."""
+    return isinstance(steps, list) and 1 <= len(steps) <= MAX_HOPS and all(
+        isinstance(step, list) and len(step) == 3 and isinstance(step[0], str) and re.fullmatch(MODEL_NAME, step[0]) is not None
+        and isinstance(step[1], str) and re.fullmatch(NAME, step[1]) is not None and step[2] in HOP_TYPES
+        and (step[2] == 'link' or index == len(steps) - 1) for index, step in enumerate(steps))
 
 
 def check_node(node, depth, count, scale=False):
@@ -1436,6 +1663,10 @@ def check_node(node, depth, count, scale=False):
                 parse(value)
     elif op == 'ref':
         ok = not scale and node.get('scope') in SCOPES and isinstance(node.get('field'), str) and re.fullmatch(NAME, node['field']) is not None
+    elif op == 'today':
+        ok = not scale
+    elif op == 'hop':
+        ok = not scale and isinstance(node.get('field'), str) and re.fullmatch(NAME, node['field']) is not None and hop_steps(node.get('steps'))
     elif op == 'aggregate':
         field = node.get('field', 0)
         ok = not scale and node.get('kind') in ('sum', 'min', 'max', 'count') and isinstance(node.get('table'), str) and 'where' in node \

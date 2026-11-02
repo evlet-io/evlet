@@ -95,11 +95,16 @@ def test_reference_app_full_public_flow(project):
     assert report[0] == 200, report
     assert report[1]['rows'][0]['total'] == '6.75'
     assert c('GET', f'/api/_services/amendment.services.integrations.warehouse.checks.balance_count?warehouse={warehouse}')[1] == {'count': 1}
-    quote = {'name': 'Q-1', 'inclusive': True, 'children': {'lines': [{'_key': 'a', 'qty': '1', 'rate': '105'},
+    c('PATCH', f'/api/company/{company}', {'payment_days': 45}, headers={b'if-match': c('GET', f'/api/company/{company}')[2][b'etag']})
+    quote = {'name': 'Q-1', 'inclusive': True, 'company': company, 'issued_on': '2026-11-01', 'discount_rate': '3.33',
+             'children': {'lines': [{'_key': 'a', 'qty': '1', 'rate': '105'},
                                                                       {'_key': 'b', 'qty': '2', 'rate': '10', 'taxable': False}]}}
     status, saved, _ = c('POST', '/api/quote', quote)
     assert status == 201, saved
     assert (saved['net_total'], saved['vat_total'], saved['taxable_net'], saved['grand_total']) == ('120.00', '5.00', '100.00', '125.00')
+    # 120.00 * 3.33% = 3.996 is rounded half up to the Currency scale; the due date follows the company Link.
+    assert (saved['discount'], saved['payable'], saved['valid_until']) == ('4.00', '121.00', '2026-12-16')
+    assert c('POST', '/api/quote', {'name': 'Q-2'})[1]['valid_until'] is None
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest

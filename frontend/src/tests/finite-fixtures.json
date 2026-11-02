@@ -452,6 +452,105 @@
     ]
    },
    "name": "deep"
+  },
+  {
+   "expression": {
+    "$expr": "hop",
+    "field": "customer",
+    "steps": [
+     [
+      "customer",
+      "region",
+      "link"
+     ],
+     [
+      "customer",
+      "region",
+      "link"
+     ],
+     [
+      "customer",
+      "region",
+      "link"
+     ],
+     [
+      "region",
+      "grace",
+      "decimal"
+     ]
+    ]
+   },
+   "name": "hop-depth"
+  },
+  {
+   "expression": {
+    "$expr": "hop",
+    "field": "customer",
+    "steps": [
+     [
+      "customer",
+      "rate",
+      "decimal"
+     ],
+     [
+      "region",
+      "grace",
+      "decimal"
+     ]
+    ]
+   },
+   "name": "hop-through-value"
+  },
+  {
+   "expression": {
+    "$expr": "hop",
+    "field": "customer",
+    "steps": [
+     [
+      "Customer.x",
+      "rate",
+      "decimal"
+     ]
+    ]
+   },
+   "name": "hop-model"
+  },
+  {
+   "expression": {
+    "$expr": "hop",
+    "field": "customer",
+    "steps": []
+   },
+   "name": "hop-empty"
+  },
+  {
+   "expression": {
+    "$expr": "when",
+    "args": [
+     {
+      "$expr": "literal",
+      "type": "boolean",
+      "value": true
+     }
+    ]
+   },
+   "name": "when-arity"
+  },
+  {
+   "expression": {
+    "$expr": "round",
+    "args": [
+     {
+      "$expr": "literal",
+      "type": "decimal",
+      "value": "1"
+     },
+     {
+      "$expr": "today"
+     }
+    ]
+   },
+   "name": "today-scale"
   }
  ],
  "numeric": [
@@ -778,9 +877,391 @@
    "b": 2,
    "expected": "0",
    "op": "round"
+  },
+  {
+   "a": "1.005",
+   "b": 2,
+   "expected": "1",
+   "op": "round_even"
+  },
+  {
+   "a": "1.015",
+   "b": 2,
+   "expected": "1.02",
+   "op": "round_even"
+  },
+  {
+   "a": "-1.005",
+   "b": 2,
+   "expected": "-1",
+   "op": "round_even"
+  },
+  {
+   "a": "-1.015",
+   "b": 2,
+   "expected": "-1.02",
+   "op": "round_even"
+  },
+  {
+   "a": "2.5",
+   "b": 0,
+   "expected": "2",
+   "op": "round_even"
+  },
+  {
+   "a": "3.5",
+   "b": 0,
+   "expected": "4",
+   "op": "round_even"
+  },
+  {
+   "a": "-2.5",
+   "b": 0,
+   "expected": "-2",
+   "op": "round_even"
+  },
+  {
+   "a": "0.5",
+   "b": 0,
+   "expected": "0",
+   "op": "round_even"
+  },
+  {
+   "a": "1.0051",
+   "b": 2,
+   "expected": "1.01",
+   "op": "round_even"
+  },
+  {
+   "a": "-0.0049",
+   "b": 2,
+   "expected": "0",
+   "op": "round_even"
+  },
+  {
+   "a": "99999999999999999999.5",
+   "b": 0,
+   "expected": "100000000000000000000",
+   "op": "round_even"
   }
  ],
  "plans": {
+  "choice": {
+   "compiler_version": "evlet-finite-1",
+   "expression_version": 1,
+   "fields": [
+    {
+     "expression": {
+      "$expr": "when",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "flag",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "a",
+        "scope": "self"
+       },
+       {
+        "$expr": "div",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "a",
+          "scope": "self"
+         },
+         {
+          "$expr": "ref",
+          "field": "zero",
+          "scope": "self"
+         }
+        ]
+       }
+      ]
+     },
+     "field": "picked",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "flag"
+      ],
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "zero"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": null,
+     "stored": false,
+     "target": "picked",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "when",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "flag",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "yes"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "no"
+       }
+      ]
+     },
+     "field": "label",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "flag"
+      ]
+     ],
+     "result_type": "text",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "label",
+     "target_type": "text"
+    },
+    {
+     "expression": {
+      "$expr": "when",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "flag",
+        "scope": "self"
+       },
+       {
+        "$expr": "today"
+       },
+       {
+        "$expr": "literal",
+        "type": "null",
+        "value": null
+       }
+      ]
+     },
+     "field": "dated",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "flag"
+      ],
+      [
+       "today",
+       null,
+       null
+      ]
+     ],
+     "result_type": "date",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "dated",
+     "target_type": "date"
+    },
+    {
+     "expression": {
+      "$expr": "when",
+      "args": [
+       {
+        "$expr": "gt",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "a",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "decimal",
+          "value": "1"
+         }
+        ]
+       },
+       {
+        "$expr": "when",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "flag",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "decimal",
+          "value": "1"
+         },
+         {
+          "$expr": "literal",
+          "type": "decimal",
+          "value": "2"
+         }
+        ]
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "3"
+       }
+      ]
+     },
+     "field": "nested",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "flag"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 4,
+     "stored": true,
+     "target": "nested",
+     "target_type": "decimal"
+    }
+   ],
+   "language": "finite-v1",
+   "limits": {
+    "collection_rows": 100,
+    "decimal_text": 128,
+    "document_rows": 1000,
+    "evaluation_steps": 1000000,
+    "expression_depth": 32,
+    "expression_nodes": 128,
+    "graph_edges": 250000,
+    "graph_nodes": 50000,
+    "table_depth": 8
+   },
+   "model_schema_hash": "sha256:9c5e2f383a443b919ef2736748acf426c337e5be35885f950c3001a832fa43be",
+   "numeric_profile": "finite40-hu18-v1",
+   "plan_version": 1,
+   "root_resource": "choice",
+   "tables": {
+    "$root": {
+     "fields": {
+      "a": {
+       "computed": false,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      },
+      "dated": {
+       "computed": true,
+       "default": null,
+       "kind": "date",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "date"
+      },
+      "flag": {
+       "computed": false,
+       "default": null,
+       "kind": "boolean",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "boolean"
+      },
+      "label": {
+       "computed": true,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "nested": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      },
+      "picked": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": false,
+       "type": "decimal"
+      },
+      "zero": {
+       "computed": false,
+       "default": {
+        "value": "0"
+       },
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      }
+     },
+     "model": "choice",
+     "path": [],
+     "tables": []
+    }
+   }
+  },
   "cost": {
    "compiler_version": "evlet-finite-1",
    "expression_version": 1,
@@ -808,6 +1289,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": 4,
      "stored": true,
      "target": "total_qty",
@@ -871,6 +1353,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "lines[*].base_amount",
@@ -899,6 +1382,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "base_total",
@@ -940,6 +1424,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": null,
      "stored": false,
      "target": "unit_cost",
@@ -988,6 +1473,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "lines[*].allocated_cost",
@@ -1016,6 +1502,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "allocated_total",
@@ -1068,6 +1555,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "large",
@@ -1106,6 +1594,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "largest",
@@ -1149,6 +1638,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": null,
      "stored": false,
      "target": "lines[*].share",
@@ -1167,7 +1657,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:7a42fa3263d05b34730f293befb795d844ae7981bcc7ed495e89aaeb7994ce0b",
+   "model_schema_hash": "sha256:0eee71156a57620783524e3efff7c0eaea38f7189280124ff01995c80ceb7178",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "costsheet",
@@ -1385,6 +1875,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": 4,
      "stored": false,
      "target": "items[*].effective_rate",
@@ -1433,6 +1924,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "items[*].entered_amount",
@@ -1511,6 +2003,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": null,
      "stored": false,
      "target": "items[*].net_raw",
@@ -1544,6 +2037,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "items[*].net",
@@ -1572,6 +2066,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "net_total",
@@ -1710,6 +2205,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "items[*].vat",
@@ -1738,6 +2234,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "vat_total",
@@ -1785,6 +2282,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "taxable_net",
@@ -1823,6 +2321,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "items[*].total",
@@ -1851,6 +2350,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "grand_total",
@@ -1874,6 +2374,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 0,
      "stored": true,
      "target": "line_count",
@@ -1892,7 +2393,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:ce066148a400f8a10ed0116e47775d0e1ae398d30c644a40ed96bd11bec58166",
+   "model_schema_hash": "sha256:fbf04e32cba1762036421bc5c9b68a1db7769b4f45fc55434bab43e1a18fbc69",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "invoice",
@@ -2103,6 +2604,198 @@
     }
    }
   },
+  "moments": {
+   "compiler_version": "evlet-finite-1",
+   "expression_version": 1,
+   "fields": [
+    {
+     "expression": {
+      "$expr": "eq",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "at",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "at2",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "same",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "at"
+      ],
+      [
+       "self",
+       null,
+       "at2"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "same",
+     "target_type": "boolean"
+    },
+    {
+     "expression": {
+      "$expr": "eq",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "at",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "null",
+        "value": null
+       }
+      ]
+     },
+     "field": "empty",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "at"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "empty",
+     "target_type": "boolean"
+    },
+    {
+     "expression": {
+      "$expr": "coalesce",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "at",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "at2",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "first",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "at"
+      ],
+      [
+       "self",
+       null,
+       "at2"
+      ]
+     ],
+     "result_type": "datetime",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "first",
+     "target_type": "datetime"
+    }
+   ],
+   "language": "finite-v1",
+   "limits": {
+    "collection_rows": 100,
+    "decimal_text": 128,
+    "document_rows": 1000,
+    "evaluation_steps": 1000000,
+    "expression_depth": 32,
+    "expression_nodes": 128,
+    "graph_edges": 250000,
+    "graph_nodes": 50000,
+    "table_depth": 8
+   },
+   "model_schema_hash": "sha256:406e8c7d61ee81676803ef533ea6e147397f848b593deba4a1de9fe523b680da",
+   "numeric_profile": "finite40-hu18-v1",
+   "plan_version": 1,
+   "root_resource": "moments",
+   "tables": {
+    "$root": {
+     "fields": {
+      "at": {
+       "computed": false,
+       "default": null,
+       "kind": "datetime",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "datetime"
+      },
+      "at2": {
+       "computed": false,
+       "default": null,
+       "kind": "datetime",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "datetime"
+      },
+      "empty": {
+       "computed": true,
+       "default": null,
+       "kind": "boolean",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "boolean"
+      },
+      "first": {
+       "computed": true,
+       "default": null,
+       "kind": "datetime",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "datetime"
+      },
+      "same": {
+       "computed": true,
+       "default": null,
+       "kind": "boolean",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "boolean"
+      }
+     },
+     "model": "moments",
+     "path": [],
+     "tables": []
+    }
+   }
+  },
   "project": {
    "compiler_version": "evlet-finite-1",
    "expression_version": 1,
@@ -2132,6 +2825,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": 4,
      "stored": true,
      "target": "phases[*].hours",
@@ -2160,6 +2854,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": 4,
      "stored": true,
      "target": "hours",
@@ -2183,6 +2878,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": false,
      "target": "phases[*].hourly_rate",
@@ -2232,6 +2928,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "phases[*].tasks[*].amount",
@@ -2262,6 +2959,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "phases[*].total",
@@ -2290,6 +2988,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "total",
@@ -2308,7 +3007,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:1d6ae39183a1a38b6c7701eb2aadea42389d5cd507f95e764c04d56717081d57",
+   "model_schema_hash": "sha256:ca01c8c6b3864d0650ee359d109a88c571e1614ee08fa68d2ed91a146c766eac",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "project",
@@ -2450,6 +3149,1532 @@
     }
    }
   },
+  "rounding": {
+   "compiler_version": "evlet-finite-1",
+   "expression_version": 1,
+   "fields": [
+    {
+     "expression": {
+      "$expr": "ref",
+      "field": "a",
+      "scope": "self"
+     },
+     "field": "up",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 2,
+     "stored": true,
+     "target": "up",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "ref",
+      "field": "a",
+      "scope": "self"
+     },
+     "field": "even",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 2,
+     "stored": true,
+     "target": "even",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "ref",
+      "field": "a",
+      "scope": "self"
+     },
+     "field": "even_currency",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 2,
+     "stored": true,
+     "target": "even_currency",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "ref",
+      "field": "a",
+      "scope": "self"
+     },
+     "field": "up_decimal",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 2,
+     "stored": true,
+     "target": "up_decimal",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "ref",
+      "field": "a",
+      "scope": "self"
+     },
+     "field": "whole",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 0,
+     "stored": true,
+     "target": "whole",
+     "target_type": "integer"
+    },
+    {
+     "expression": {
+      "$expr": "ref",
+      "field": "a",
+      "scope": "self"
+     },
+     "field": "whole_even",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 0,
+     "stored": true,
+     "target": "whole_even",
+     "target_type": "integer"
+    },
+    {
+     "expression": {
+      "$expr": "round",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "a",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "integer",
+        "value": 2
+       }
+      ]
+     },
+     "field": "explicit",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 2,
+     "stored": true,
+     "target": "explicit",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "ref",
+      "field": "a",
+      "scope": "self"
+     },
+     "field": "bounded",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 2,
+     "stored": true,
+     "target": "bounded",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "div",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "a",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "3"
+       }
+      ]
+     },
+     "field": "third",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 2,
+     "stored": true,
+     "target": "third",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "div",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "a",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "3"
+       }
+      ]
+     },
+     "field": "raw",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": null,
+     "stored": false,
+     "target": "raw",
+     "target_type": "decimal"
+    }
+   ],
+   "language": "finite-v1",
+   "limits": {
+    "collection_rows": 100,
+    "decimal_text": 128,
+    "document_rows": 1000,
+    "evaluation_steps": 1000000,
+    "expression_depth": 32,
+    "expression_nodes": 128,
+    "graph_edges": 250000,
+    "graph_nodes": 50000,
+    "table_depth": 8
+   },
+   "model_schema_hash": "sha256:5d9700d2734fdf3994d715694f65eddc352d67ada8518fe652718b64132f0a2b",
+   "numeric_profile": "finite40-hu18-v1",
+   "plan_version": 1,
+   "root_resource": "rounding",
+   "tables": {
+    "$root": {
+     "fields": {
+      "a": {
+       "computed": false,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      },
+      "bounded": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": "10",
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "even": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "even_currency": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "explicit": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "raw": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": false,
+       "type": "decimal"
+      },
+      "third": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "up": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "up_decimal": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "whole": {
+       "computed": true,
+       "default": null,
+       "kind": "integer",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "decimal"
+      },
+      "whole_even": {
+       "computed": true,
+       "default": null,
+       "kind": "integer",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "decimal"
+      }
+     },
+     "model": "rounding",
+     "path": [],
+     "tables": []
+    }
+   }
+  },
+  "sale": {
+   "compiler_version": "evlet-finite-1",
+   "expression_version": 1,
+   "fields": [
+    {
+     "expression": {
+      "$expr": "date_add",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "issued",
+        "scope": "self"
+       },
+       {
+        "$expr": "hop",
+        "field": "customer",
+        "steps": [
+         [
+          "customer",
+          "credit_days",
+          "decimal"
+         ]
+        ]
+       }
+      ]
+     },
+     "field": "due",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "issued"
+      ],
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "credit_days"
+      ]
+     ],
+     "result_type": "date",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "due",
+     "target_type": "date"
+    },
+    {
+     "expression": {
+      "$expr": "date_add",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "due",
+        "scope": "self"
+       },
+       {
+        "$expr": "hop",
+        "field": "customer",
+        "steps": [
+         [
+          "customer",
+          "region",
+          "link"
+         ],
+         [
+          "region",
+          "grace",
+          "decimal"
+         ]
+        ]
+       }
+      ]
+     },
+     "field": "grace_due",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "due"
+      ],
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "region"
+      ],
+      [
+       "lookup",
+       "region",
+       "grace"
+      ]
+     ],
+     "result_type": "date",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "grace_due",
+     "target_type": "date"
+    },
+    {
+     "expression": {
+      "$expr": "div",
+      "args": [
+       {
+        "$expr": "mul",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "amount",
+          "scope": "self"
+         },
+         {
+          "$expr": "hop",
+          "field": "customer",
+          "steps": [
+           [
+            "customer",
+            "rate",
+            "decimal"
+           ]
+          ]
+         }
+        ]
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "100"
+       }
+      ]
+     },
+     "field": "discount",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "amount"
+      ],
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "rate"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 2,
+     "stored": true,
+     "target": "discount",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "coalesce",
+      "args": [
+       {
+        "$expr": "hop",
+        "field": "customer",
+        "steps": [
+         [
+          "customer",
+          "vip",
+          "boolean"
+         ]
+        ]
+       },
+       {
+        "$expr": "literal",
+        "type": "boolean",
+        "value": false
+       }
+      ]
+     },
+     "field": "vip",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "vip"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "vip",
+     "target_type": "boolean"
+    },
+    {
+     "expression": {
+      "$expr": "when",
+      "args": [
+       {
+        "$expr": "hop",
+        "field": "customer",
+        "steps": [
+         [
+          "customer",
+          "vip",
+          "boolean"
+         ]
+        ]
+       },
+       {
+        "$expr": "sub",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "amount",
+          "scope": "self"
+         },
+         {
+          "$expr": "ref",
+          "field": "discount",
+          "scope": "self"
+         }
+        ]
+       },
+       {
+        "$expr": "ref",
+        "field": "amount",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "net",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "vip"
+      ],
+      [
+       "self",
+       null,
+       "amount"
+      ],
+      [
+       "self",
+       null,
+       "discount"
+      ],
+      [
+       "self",
+       null,
+       "amount"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 2,
+     "stored": true,
+     "target": "net",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "date_diff",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "issued",
+        "scope": "self"
+       },
+       {
+        "$expr": "hop",
+        "field": "customer",
+        "steps": [
+         [
+          "customer",
+          "since",
+          "date"
+         ]
+        ]
+       }
+      ]
+     },
+     "field": "loyal",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "issued"
+      ],
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "since"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 0,
+     "stored": true,
+     "target": "loyal",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "div",
+      "args": [
+       {
+        "$expr": "mul",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "amount",
+          "scope": "self"
+         },
+         {
+          "$expr": "hop",
+          "field": "customer",
+          "steps": [
+           [
+            "customer",
+            "rate",
+            "decimal"
+           ]
+          ]
+         }
+        ]
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "100"
+       }
+      ]
+     },
+     "field": "discount",
+     "path": [
+      "lines"
+     ],
+     "reads": [
+      [
+       "self",
+       null,
+       "amount"
+      ],
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "rate"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 2,
+     "stored": true,
+     "target": "lines[*].discount",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "aggregate",
+      "field": "discount",
+      "kind": "sum",
+      "table": "lines",
+      "where": null
+     },
+     "field": "line_discounts",
+     "path": [],
+     "reads": [
+      [
+       "membership",
+       "lines",
+       null
+      ],
+      [
+       "member",
+       "lines",
+       "discount"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 2,
+     "stored": true,
+     "target": "line_discounts",
+     "target_type": "currency"
+    }
+   ],
+   "language": "finite-v1",
+   "limits": {
+    "collection_rows": 100,
+    "decimal_text": 128,
+    "document_rows": 1000,
+    "evaluation_steps": 1000000,
+    "expression_depth": 32,
+    "expression_nodes": 128,
+    "graph_edges": 250000,
+    "graph_nodes": 50000,
+    "table_depth": 8
+   },
+   "model_schema_hash": "sha256:d34c2333aa8f0d96ded7293351dc7077fd7a669cb2058c54fb0af3afeef09d6f",
+   "numeric_profile": "finite40-hu18-v1",
+   "plan_version": 1,
+   "root_resource": "sale",
+   "tables": {
+    "$root": {
+     "fields": {
+      "amount": {
+       "computed": false,
+       "default": {
+        "value": "0"
+       },
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "customer": {
+       "computed": false,
+       "default": null,
+       "kind": "link",
+       "maximum": null,
+       "minimum": "1",
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "link"
+      },
+      "discount": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "due": {
+       "computed": true,
+       "default": null,
+       "kind": "date",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "date"
+      },
+      "grace_due": {
+       "computed": true,
+       "default": null,
+       "kind": "date",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "date"
+      },
+      "issued": {
+       "computed": false,
+       "default": null,
+       "kind": "date",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "date"
+      },
+      "line_discounts": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "loyal": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "decimal"
+      },
+      "net": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "vip": {
+       "computed": true,
+       "default": null,
+       "kind": "boolean",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "boolean"
+      }
+     },
+     "lookups": [
+      {
+       "fields": [
+        "credit_days",
+        "rate",
+        "region",
+        "since",
+        "vip"
+       ],
+       "model": "customer"
+      },
+      {
+       "fields": [
+        "grace"
+       ],
+       "model": "region"
+      }
+     ],
+     "model": "sale",
+     "path": [],
+     "tables": [
+      "lines"
+     ]
+    },
+    "lines[*]": {
+     "fields": {
+      "amount": {
+       "computed": false,
+       "default": {
+        "value": "0"
+       },
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "customer": {
+       "computed": false,
+       "default": null,
+       "kind": "link",
+       "maximum": null,
+       "minimum": "1",
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "link"
+      },
+      "discount": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      }
+     },
+     "lookups": [
+      {
+       "fields": [
+        "rate"
+       ],
+       "model": "customer"
+      }
+     ],
+     "model": "sale_lines",
+     "path": [
+      "lines"
+     ],
+     "tables": []
+    }
+   }
+  },
+  "schedule": {
+   "compiler_version": "evlet-finite-1",
+   "expression_version": 1,
+   "fields": [
+    {
+     "expression": {
+      "$expr": "date_add",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "start",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "span",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "finish",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "start"
+      ],
+      [
+       "self",
+       null,
+       "span"
+      ]
+     ],
+     "result_type": "date",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "finish",
+     "target_type": "date"
+    },
+    {
+     "expression": {
+      "$expr": "date_sub",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "end",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "span",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "begin",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "end"
+      ],
+      [
+       "self",
+       null,
+       "span"
+      ]
+     ],
+     "result_type": "date",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "begin",
+     "target_type": "date"
+    },
+    {
+     "expression": {
+      "$expr": "date_add",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "start",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "span",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "early",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "span"
+      ],
+      [
+       "self",
+       null,
+       "start"
+      ]
+     ],
+     "result_type": "date",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "early",
+     "target_type": "date"
+    },
+    {
+     "expression": {
+      "$expr": "date_diff",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "end",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "start",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "length",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "end"
+      ],
+      [
+       "self",
+       null,
+       "start"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 0,
+     "stored": true,
+     "target": "length",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "gt",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "end",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "finish",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "late",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "end"
+      ],
+      [
+       "self",
+       null,
+       "finish"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "late",
+     "target_type": "boolean"
+    },
+    {
+     "expression": {
+      "$expr": "eq",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "end",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "start",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "same",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "end"
+      ],
+      [
+       "self",
+       null,
+       "start"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "same",
+     "target_type": "boolean"
+    },
+    {
+     "expression": {
+      "$expr": "date_diff",
+      "args": [
+       {
+        "$expr": "today"
+       },
+       {
+        "$expr": "ref",
+        "field": "start",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "age",
+     "path": [],
+     "reads": [
+      [
+       "today",
+       null,
+       null
+      ],
+      [
+       "self",
+       null,
+       "start"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 0,
+     "stored": true,
+     "target": "age",
+     "target_type": "integer"
+    },
+    {
+     "expression": {
+      "$expr": "gte",
+      "args": [
+       {
+        "$expr": "today"
+       },
+       {
+        "$expr": "ref",
+        "field": "start",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "started",
+     "path": [],
+     "reads": [
+      [
+       "today",
+       null,
+       null
+      ],
+      [
+       "self",
+       null,
+       "start"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "started",
+     "target_type": "boolean"
+    },
+    {
+     "expression": {
+      "$expr": "coalesce",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "end",
+        "scope": "self"
+       },
+       {
+        "$expr": "today"
+       }
+      ]
+     },
+     "field": "until",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "end"
+      ],
+      [
+       "today",
+       null,
+       null
+      ]
+     ],
+     "result_type": "date",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "until",
+     "target_type": "date"
+    }
+   ],
+   "language": "finite-v1",
+   "limits": {
+    "collection_rows": 100,
+    "decimal_text": 128,
+    "document_rows": 1000,
+    "evaluation_steps": 1000000,
+    "expression_depth": 32,
+    "expression_nodes": 128,
+    "graph_edges": 250000,
+    "graph_nodes": 50000,
+    "table_depth": 8
+   },
+   "model_schema_hash": "sha256:6a5469b4f18b0dea4d83b0f602943f951209b419cd505283badae3c28510cf0a",
+   "numeric_profile": "finite40-hu18-v1",
+   "plan_version": 1,
+   "root_resource": "schedule",
+   "tables": {
+    "$root": {
+     "fields": {
+      "age": {
+       "computed": true,
+       "default": null,
+       "kind": "integer",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "decimal"
+      },
+      "begin": {
+       "computed": true,
+       "default": null,
+       "kind": "date",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "date"
+      },
+      "early": {
+       "computed": true,
+       "default": null,
+       "kind": "date",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "date"
+      },
+      "end": {
+       "computed": false,
+       "default": null,
+       "kind": "date",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "date"
+      },
+      "finish": {
+       "computed": true,
+       "default": null,
+       "kind": "date",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "date"
+      },
+      "late": {
+       "computed": true,
+       "default": null,
+       "kind": "boolean",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "boolean"
+      },
+      "length": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "decimal"
+      },
+      "same": {
+       "computed": true,
+       "default": null,
+       "kind": "boolean",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "boolean"
+      },
+      "span": {
+       "computed": false,
+       "default": {
+        "value": "0"
+       },
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 1,
+       "stored": true,
+       "type": "decimal"
+      },
+      "start": {
+       "computed": false,
+       "default": null,
+       "kind": "date",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "date"
+      },
+      "started": {
+       "computed": true,
+       "default": null,
+       "kind": "boolean",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "boolean"
+      },
+      "until": {
+       "computed": true,
+       "default": null,
+       "kind": "date",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "date"
+      }
+     },
+     "model": "schedule",
+     "path": [],
+     "tables": []
+    }
+   }
+  },
   "states": {
    "compiler_version": "evlet-finite-1",
    "expression_version": 1,
@@ -2485,6 +4710,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": null,
      "stored": false,
      "target": "plain",
@@ -2526,6 +4752,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": null,
      "stored": false,
      "target": "safe",
@@ -2557,6 +4784,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": null,
      "stored": false,
      "target": "fallback",
@@ -2603,6 +4831,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": null,
      "stored": false,
      "target": "error_kept",
@@ -2639,6 +4868,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": null,
      "stored": false,
      "target": "sum_null",
@@ -2670,6 +4900,7 @@
       ]
      ],
      "result_type": "boolean",
+     "rounding": null,
      "scale": null,
      "stored": true,
      "target": "ordered",
@@ -2701,6 +4932,7 @@
       ]
      ],
      "result_type": "boolean",
+     "rounding": null,
      "scale": null,
      "stored": true,
      "target": "same",
@@ -2757,6 +4989,7 @@
       ]
      ],
      "result_type": "boolean",
+     "rounding": null,
      "scale": null,
      "stored": true,
      "target": "strict_and",
@@ -2828,6 +5061,7 @@
       ]
      ],
      "result_type": "boolean",
+     "rounding": null,
      "scale": null,
      "stored": true,
      "target": "strict_or",
@@ -2854,6 +5088,7 @@
       ]
      ],
      "result_type": "boolean",
+     "rounding": null,
      "scale": null,
      "stored": true,
      "target": "negated",
@@ -2895,6 +5130,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_even",
      "scale": 4,
      "stored": true,
      "target": "product",
@@ -2926,6 +5162,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "unrounded",
@@ -2967,6 +5204,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 2,
      "stored": true,
      "target": "rounded",
@@ -2998,6 +5236,7 @@
       ]
      ],
      "result_type": "decimal",
+     "rounding": "half_up",
      "scale": 0,
      "stored": true,
      "target": "whole",
@@ -3016,7 +5255,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:0efd81aa3230339d75d502bdf3a43007a6f1e36dae5a0480666df17314505c4e",
+   "model_schema_hash": "sha256:e3bb68f4d5583f1f8c77c90ae64f8e5b7cf2b6011c9a3cf004f3ad5cb6e7208e",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "states",
@@ -3255,6 +5494,7 @@
    "name": "invoice-toggle",
    "steps": [
     {
+     "requests": [],
      "revision": 1,
      "snapshot": {
       "children": {
@@ -3326,6 +5566,7 @@
       "inclusive",
       false
      ],
+     "requests": [],
      "revision": 2,
      "snapshot": {
       "children": {
@@ -3392,6 +5633,7 @@
       "taxable",
       false
      ],
+     "requests": [],
      "revision": 3,
      "snapshot": {
       "children": {
@@ -3452,6 +5694,7 @@
       "inclusive",
       true
      ],
+     "requests": [],
      "revision": 4,
      "snapshot": {
       "children": {
@@ -3514,6 +5757,7 @@
       "qty",
       "2"
      ],
+     "requests": [],
      "revision": 5,
      "snapshot": {
       "children": {
@@ -3579,6 +5823,7 @@
        "$state": "pending"
       }
      ],
+     "requests": [],
      "revision": 6,
      "snapshot": {
       "_states": {
@@ -3711,6 +5956,7 @@
       "qty",
       "2.5"
      ],
+     "requests": [],
      "revision": 7,
      "snapshot": {
       "children": {
@@ -3779,6 +6025,7 @@
        "vat_rate": "100"
       }
      ],
+     "requests": [],
      "revision": 8,
      "snapshot": {
       "children": {
@@ -3855,6 +6102,7 @@
       "remove",
       "items.r1"
      ],
+     "requests": [],
      "revision": 9,
      "snapshot": {
       "children": {
@@ -3913,6 +6161,7 @@
       "1"
      ],
      "error": "COMPUTED_FIELD_WRITE",
+     "requests": [],
      "revision": 9,
      "snapshot": {
       "children": {
@@ -3960,6 +6209,7 @@
       "rate",
       "abc"
      ],
+     "requests": [],
      "revision": 10,
      "snapshot": {
       "_states": {
@@ -4104,6 +6354,7 @@
    "name": "invoice-structure",
    "steps": [
     {
+     "requests": [],
      "revision": 1,
      "snapshot": {
       "children": {
@@ -4167,6 +6418,7 @@
        }
       ]
      ],
+     "requests": [],
      "revision": 2,
      "snapshot": {
       "children": {
@@ -4241,6 +6493,7 @@
        "items.7"
       ]
      ],
+     "requests": [],
      "revision": 3,
      "snapshot": {
       "children": {
@@ -4300,6 +6553,7 @@
       ]
      ],
      "error": "DOCUMENT_STRUCTURE_ERROR",
+     "requests": [],
      "revision": 3,
      "snapshot": {
       "children": {
@@ -4351,6 +6605,7 @@
       }
      ],
      "error": "DOCUMENT_STRUCTURE_ERROR",
+     "requests": [],
      "revision": 3,
      "snapshot": {
       "children": {
@@ -4431,6 +6686,7 @@
    "name": "project-nested",
    "steps": [
     {
+     "requests": [],
      "revision": 1,
      "snapshot": {
       "children": {
@@ -4504,6 +6760,7 @@
       "hourly_rate",
       "120"
      ],
+     "requests": [],
      "revision": 2,
      "snapshot": {
       "children": {
@@ -4574,6 +6831,7 @@
       "hourly_rate",
       "100"
      ],
+     "requests": [],
      "revision": 3,
      "snapshot": {
       "children": {
@@ -4644,6 +6902,7 @@
       "hours",
       "5"
      ],
+     "requests": [],
      "revision": 4,
      "snapshot": {
       "children": {
@@ -4712,6 +6971,7 @@
       "tasks",
       0
      ],
+     "requests": [],
      "revision": 5,
      "snapshot": {
       "children": {
@@ -4781,6 +7041,7 @@
        "hours": "1.5"
       }
      ],
+     "requests": [],
      "revision": 6,
      "snapshot": {
       "children": {
@@ -4851,6 +7112,7 @@
       "remove",
       "phases.A"
      ],
+     "requests": [],
      "revision": 7,
      "snapshot": {
       "children": {
@@ -4906,6 +7168,7 @@
       0
      ],
      "error": "DOCUMENT_STRUCTURE_ERROR",
+     "requests": [],
      "revision": 7,
      "snapshot": {
       "children": {
@@ -4960,6 +7223,7 @@
        }
       }
      ],
+     "requests": [],
      "revision": 8,
      "snapshot": {
       "children": {
@@ -5049,6 +7313,7 @@
    "name": "cost-round-trip",
    "steps": [
     {
+     "requests": [],
      "revision": 1,
      "snapshot": {
       "allocated_total": "400.00",
@@ -5107,6 +7372,7 @@
       "exchange_rate",
       "2"
      ],
+     "requests": [],
      "revision": 2,
      "snapshot": {
       "allocated_total": "800.00",
@@ -5162,6 +7428,7 @@
       "qty",
       "0"
      ],
+     "requests": [],
      "revision": 3,
      "snapshot": {
       "allocated_total": "600.00",
@@ -5218,6 +7485,7 @@
       "qty",
       "0"
      ],
+     "requests": [],
      "revision": 4,
      "snapshot": {
       "allocated_total": "0.00",
@@ -5273,6 +7541,7 @@
       "qty",
       "7"
      ],
+     "requests": [],
      "revision": 5,
      "snapshot": {
       "allocated_total": "1400.00",
@@ -5328,6 +7597,7 @@
       "limit",
       "1000"
      ],
+     "requests": [],
      "revision": 6,
      "snapshot": {
       "allocated_total": "1400.00",
@@ -5371,6 +7641,7 @@
       "remove",
       "lines.r1"
      ],
+     "requests": [],
      "revision": 7,
      "snapshot": {
       "allocated_total": "0.00",
@@ -5413,6 +7684,7 @@
       "remove",
       "lines.r0"
      ],
+     "requests": [],
      "revision": 8,
      "snapshot": {
       "allocated_total": "0.00",
@@ -5444,6 +7716,7 @@
    "name": "states",
    "steps": [
     {
+     "requests": [],
      "revision": 1,
      "snapshot": {
       "_states": {
@@ -5550,6 +7823,7 @@
       "flag",
       true
      ],
+     "requests": [],
      "revision": 2,
      "snapshot": {
       "_states": {
@@ -5631,6 +7905,7 @@
       "b",
       "2"
      ],
+     "requests": [],
      "revision": 3,
      "snapshot": {
       "_states": {
@@ -5695,6 +7970,7 @@
       "zero",
       "4"
      ],
+     "requests": [],
      "revision": 4,
      "snapshot": {
       "a": "6",
@@ -5735,6 +8011,7 @@
       "a",
       "-1.5"
      ],
+     "requests": [],
      "revision": 5,
      "snapshot": {
       "a": "-1.5",
@@ -5780,6 +8057,7 @@
       "b",
       null
      ],
+     "requests": [],
      "revision": 6,
      "snapshot": {
       "_states": {
@@ -5844,6 +8122,7 @@
       "flag",
       null
      ],
+     "requests": [],
      "revision": 7,
      "snapshot": {
       "_states": {
@@ -5919,6 +8198,7 @@
       "a",
       "11111111111111111111"
      ],
+     "requests": [],
      "revision": 8,
      "snapshot": {
       "_states": {
@@ -5968,7 +8248,7 @@
         "causes": [
          "unrounded"
         ],
-        "code": "COMPUTE_SCALE_ERROR",
+        "code": "COMPUTE_RANGE_ERROR",
         "state": "error"
        },
        "whole": {
@@ -6020,6 +8300,7 @@
       "a",
       "0.000000000000000001"
      ],
+     "requests": [],
      "revision": 9,
      "snapshot": {
       "_states": {
@@ -6057,13 +8338,6 @@
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
-       },
-       "whole": {
-        "causes": [
-         "whole"
-        ],
-        "code": "COMPUTE_SCALE_ERROR",
-        "state": "error"
        }
       },
       "a": "0.000000000000000001",
@@ -6082,7 +8356,7 @@
       "strict_or": true,
       "sum_null": null,
       "unrounded": "0.00",
-      "whole": null,
+      "whole": "0",
       "zero": "4"
      },
      "trace": {
@@ -6097,6 +8371,3632 @@
       "evaluated": 10,
       "skipped": 4,
       "steps": 44
+     }
+    }
+   ]
+  },
+  {
+   "data": {
+    "a": "2.345"
+   },
+   "model": "rounding",
+   "name": "rounding-modes",
+   "steps": [
+    {
+     "requests": [],
+     "revision": 1,
+     "snapshot": {
+      "a": "2.345",
+      "bounded": "2.35",
+      "even": "2.34",
+      "even_currency": "2.34",
+      "explicit": "2.35",
+      "raw": "0.781666666666666667",
+      "third": "0.78",
+      "up": "2.35",
+      "up_decimal": "2.35",
+      "whole": "2",
+      "whole_even": "2"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal",
+       "whole",
+       "whole_even"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "2.355"
+     ],
+     "requests": [],
+     "revision": 2,
+     "snapshot": {
+      "a": "2.355",
+      "bounded": "2.36",
+      "even": "2.36",
+      "even_currency": "2.36",
+      "explicit": "2.36",
+      "raw": "0.785",
+      "third": "0.79",
+      "up": "2.36",
+      "up_decimal": "2.36",
+      "whole": "2",
+      "whole_even": "2"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "-2.345"
+     ],
+     "requests": [],
+     "revision": 3,
+     "snapshot": {
+      "a": "-2.345",
+      "bounded": "-2.35",
+      "even": "-2.34",
+      "even_currency": "-2.34",
+      "explicit": "-2.35",
+      "raw": "-0.781666666666666667",
+      "third": "-0.78",
+      "up": "-2.35",
+      "up_decimal": "-2.35",
+      "whole": "-2",
+      "whole_even": "-2"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal",
+       "whole",
+       "whole_even"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "-2.355"
+     ],
+     "requests": [],
+     "revision": 4,
+     "snapshot": {
+      "a": "-2.355",
+      "bounded": "-2.36",
+      "even": "-2.36",
+      "even_currency": "-2.36",
+      "explicit": "-2.36",
+      "raw": "-0.785",
+      "third": "-0.79",
+      "up": "-2.36",
+      "up_decimal": "-2.36",
+      "whole": "-2",
+      "whole_even": "-2"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "2.5"
+     ],
+     "requests": [],
+     "revision": 5,
+     "snapshot": {
+      "a": "2.5",
+      "bounded": "2.50",
+      "even": "2.50",
+      "even_currency": "2.50",
+      "explicit": "2.50",
+      "raw": "0.833333333333333333",
+      "third": "0.83",
+      "up": "2.50",
+      "up_decimal": "2.50",
+      "whole": "3",
+      "whole_even": "2"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal",
+       "whole",
+       "whole_even"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "3.5"
+     ],
+     "requests": [],
+     "revision": 6,
+     "snapshot": {
+      "a": "3.5",
+      "bounded": "3.50",
+      "even": "3.50",
+      "even_currency": "3.50",
+      "explicit": "3.50",
+      "raw": "1.166666666666666667",
+      "third": "1.17",
+      "up": "3.50",
+      "up_decimal": "3.50",
+      "whole": "4",
+      "whole_even": "4"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal",
+       "whole",
+       "whole_even"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "-2.5"
+     ],
+     "requests": [],
+     "revision": 7,
+     "snapshot": {
+      "a": "-2.5",
+      "bounded": "-2.50",
+      "even": "-2.50",
+      "even_currency": "-2.50",
+      "explicit": "-2.50",
+      "raw": "-0.833333333333333333",
+      "third": "-0.83",
+      "up": "-2.50",
+      "up_decimal": "-2.50",
+      "whole": "-3",
+      "whole_even": "-2"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal",
+       "whole",
+       "whole_even"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "-3.5"
+     ],
+     "requests": [],
+     "revision": 8,
+     "snapshot": {
+      "a": "-3.5",
+      "bounded": "-3.50",
+      "even": "-3.50",
+      "even_currency": "-3.50",
+      "explicit": "-3.50",
+      "raw": "-1.166666666666666667",
+      "third": "-1.17",
+      "up": "-3.50",
+      "up_decimal": "-3.50",
+      "whole": "-4",
+      "whole_even": "-4"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal",
+       "whole",
+       "whole_even"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "0.005"
+     ],
+     "requests": [],
+     "revision": 9,
+     "snapshot": {
+      "a": "0.005",
+      "bounded": "0.01",
+      "even": "0.00",
+      "even_currency": "0.00",
+      "explicit": "0.01",
+      "raw": "0.001666666666666667",
+      "third": "0.00",
+      "up": "0.01",
+      "up_decimal": "0.01",
+      "whole": "0",
+      "whole_even": "0"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal",
+       "whole",
+       "whole_even"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "-0.005"
+     ],
+     "requests": [],
+     "revision": 10,
+     "snapshot": {
+      "a": "-0.005",
+      "bounded": "-0.01",
+      "even": "0.00",
+      "even_currency": "0.00",
+      "explicit": "-0.01",
+      "raw": "-0.001666666666666667",
+      "third": "0.00",
+      "up": "-0.01",
+      "up_decimal": "-0.01",
+      "whole": "0",
+      "whole_even": "0"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "explicit",
+       "raw",
+       "up",
+       "up_decimal"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "9.995"
+     ],
+     "requests": [],
+     "revision": 11,
+     "snapshot": {
+      "a": "9.995",
+      "bounded": "10.00",
+      "even": "10.00",
+      "even_currency": "10.00",
+      "explicit": "10.00",
+      "raw": "3.331666666666666667",
+      "third": "3.33",
+      "up": "10.00",
+      "up_decimal": "10.00",
+      "whole": "10",
+      "whole_even": "10"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal",
+       "whole",
+       "whole_even"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "10.005"
+     ],
+     "requests": [],
+     "revision": 12,
+     "snapshot": {
+      "_states": {
+       "bounded": {
+        "causes": [
+         "bounded"
+        ],
+        "code": "COMPUTE_RANGE_ERROR",
+        "state": "error"
+       }
+      },
+      "a": "10.005",
+      "bounded": null,
+      "even": "10.00",
+      "even_currency": "10.00",
+      "explicit": "10.01",
+      "raw": "3.335",
+      "third": "3.34",
+      "up": "10.01",
+      "up_decimal": "10.01",
+      "whole": "10",
+      "whole_even": "10"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "2.3450001"
+     ],
+     "requests": [],
+     "revision": 13,
+     "snapshot": {
+      "a": "2.3450001",
+      "bounded": "2.35",
+      "even": "2.35",
+      "even_currency": "2.35",
+      "explicit": "2.35",
+      "raw": "0.7816667",
+      "third": "0.78",
+      "up": "2.35",
+      "up_decimal": "2.35",
+      "whole": "2",
+      "whole_even": "2"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal",
+       "whole",
+       "whole_even"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "1"
+     ],
+     "requests": [],
+     "revision": 14,
+     "snapshot": {
+      "a": "1",
+      "bounded": "1.00",
+      "even": "1.00",
+      "even_currency": "1.00",
+      "explicit": "1.00",
+      "raw": "0.333333333333333333",
+      "third": "0.33",
+      "up": "1.00",
+      "up_decimal": "1.00",
+      "whole": "1",
+      "whole_even": "1"
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal",
+       "whole",
+       "whole_even"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      null
+     ],
+     "requests": [],
+     "revision": 15,
+     "snapshot": {
+      "_states": {
+       "explicit": {
+        "causes": [
+         "explicit"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "raw": {
+        "causes": [
+         "raw"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "third": {
+        "causes": [
+         "third"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "a": null,
+      "bounded": null,
+      "even": null,
+      "even_currency": null,
+      "explicit": null,
+      "raw": null,
+      "third": null,
+      "up": null,
+      "up_decimal": null,
+      "whole": null,
+      "whole_even": null
+     },
+     "trace": {
+      "changed": [
+       "bounded",
+       "even",
+       "even_currency",
+       "explicit",
+       "raw",
+       "third",
+       "up",
+       "up_decimal",
+       "whole",
+       "whole_even"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 16
+     }
+    }
+   ]
+  },
+  {
+   "data": {
+    "end": "2024-03-01",
+    "span": "1",
+    "start": "2024-02-28"
+   },
+   "model": "schedule",
+   "name": "dates",
+   "steps": [
+    {
+     "requests": [],
+     "revision": 1,
+     "snapshot": {
+      "_states": {
+       "age": {
+        "causes": [
+         "@today"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "started": {
+        "causes": [
+         "@today"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "age": null,
+      "begin": "2024-02-29",
+      "early": "2024-02-29",
+      "end": "2024-03-01",
+      "finish": "2024-02-29",
+      "late": true,
+      "length": "2",
+      "same": false,
+      "span": "1",
+      "start": "2024-02-28",
+      "started": null,
+      "until": "2024-03-01"
+     },
+     "trace": {
+      "changed": [
+       "age",
+       "begin",
+       "early",
+       "finish",
+       "late",
+       "length",
+       "same",
+       "started",
+       "until"
+      ],
+      "evaluated": 9,
+      "skipped": 0,
+      "steps": 26
+     }
+    },
+    {
+     "command": [
+      "today",
+      "2024-03-02"
+     ],
+     "requests": [],
+     "revision": 2,
+     "snapshot": {
+      "age": "3",
+      "begin": "2024-02-29",
+      "early": "2024-02-29",
+      "end": "2024-03-01",
+      "finish": "2024-02-29",
+      "late": true,
+      "length": "2",
+      "same": false,
+      "span": "1",
+      "start": "2024-02-28",
+      "started": true,
+      "until": "2024-03-01"
+     },
+     "trace": {
+      "changed": [
+       "age",
+       "started"
+      ],
+      "evaluated": 3,
+      "skipped": 6,
+      "steps": 8
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "span",
+      "2"
+     ],
+     "requests": [],
+     "revision": 3,
+     "snapshot": {
+      "age": "3",
+      "begin": "2024-02-28",
+      "early": "2024-03-01",
+      "end": "2024-03-01",
+      "finish": "2024-03-01",
+      "late": false,
+      "length": "2",
+      "same": false,
+      "span": "2",
+      "start": "2024-02-28",
+      "started": true,
+      "until": "2024-03-01"
+     },
+     "trace": {
+      "changed": [
+       "begin",
+       "early",
+       "finish",
+       "late"
+      ],
+      "evaluated": 4,
+      "skipped": 5,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "span",
+      "365"
+     ],
+     "requests": [],
+     "revision": 4,
+     "snapshot": {
+      "age": "3",
+      "begin": "2023-03-02",
+      "early": "2025-02-27",
+      "end": "2024-03-01",
+      "finish": "2025-02-27",
+      "late": false,
+      "length": "2",
+      "same": false,
+      "span": "365",
+      "start": "2024-02-28",
+      "started": true,
+      "until": "2024-03-01"
+     },
+     "trace": {
+      "changed": [
+       "begin",
+       "early",
+       "finish"
+      ],
+      "evaluated": 4,
+      "skipped": 5,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "span",
+      "-1"
+     ],
+     "requests": [],
+     "revision": 5,
+     "snapshot": {
+      "age": "3",
+      "begin": "2024-03-02",
+      "early": "2024-02-27",
+      "end": "2024-03-01",
+      "finish": "2024-02-27",
+      "late": true,
+      "length": "2",
+      "same": false,
+      "span": "-1",
+      "start": "2024-02-28",
+      "started": true,
+      "until": "2024-03-01"
+     },
+     "trace": {
+      "changed": [
+       "begin",
+       "early",
+       "finish",
+       "late"
+      ],
+      "evaluated": 4,
+      "skipped": 5,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "span",
+      "1.5"
+     ],
+     "requests": [],
+     "revision": 6,
+     "snapshot": {
+      "_states": {
+       "begin": {
+        "causes": [
+         "begin"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "early": {
+        "causes": [
+         "early"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "finish": {
+        "causes": [
+         "finish"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "late": {
+        "causes": [
+         "finish"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       }
+      },
+      "age": "3",
+      "begin": null,
+      "early": null,
+      "end": "2024-03-01",
+      "finish": null,
+      "late": null,
+      "length": "2",
+      "same": false,
+      "span": "1.5",
+      "start": "2024-02-28",
+      "started": true,
+      "until": "2024-03-01"
+     },
+     "trace": {
+      "changed": [
+       "begin",
+       "early",
+       "finish",
+       "late"
+      ],
+      "evaluated": 4,
+      "skipped": 5,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "span",
+      "0"
+     ],
+     "requests": [],
+     "revision": 7,
+     "snapshot": {
+      "age": "3",
+      "begin": "2024-03-01",
+      "early": "2024-02-28",
+      "end": "2024-03-01",
+      "finish": "2024-02-28",
+      "late": true,
+      "length": "2",
+      "same": false,
+      "span": "0",
+      "start": "2024-02-28",
+      "started": true,
+      "until": "2024-03-01"
+     },
+     "trace": {
+      "changed": [
+       "begin",
+       "early",
+       "finish",
+       "late"
+      ],
+      "evaluated": 4,
+      "skipped": 5,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "end",
+      null
+     ],
+     "requests": [],
+     "revision": 8,
+     "snapshot": {
+      "_states": {
+       "begin": {
+        "causes": [
+         "begin"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "late": {
+        "causes": [
+         "late"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "length": {
+        "causes": [
+         "length"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "age": "3",
+      "begin": null,
+      "early": "2024-02-28",
+      "end": null,
+      "finish": "2024-02-28",
+      "late": null,
+      "length": null,
+      "same": false,
+      "span": "0",
+      "start": "2024-02-28",
+      "started": true,
+      "until": "2024-03-02"
+     },
+     "trace": {
+      "changed": [
+       "begin",
+       "late",
+       "length",
+       "until"
+      ],
+      "evaluated": 5,
+      "skipped": 4,
+      "steps": 15
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "end",
+      "2024-02-28"
+     ],
+     "requests": [],
+     "revision": 9,
+     "snapshot": {
+      "age": "3",
+      "begin": "2024-02-28",
+      "early": "2024-02-28",
+      "end": "2024-02-28",
+      "finish": "2024-02-28",
+      "late": false,
+      "length": "0",
+      "same": true,
+      "span": "0",
+      "start": "2024-02-28",
+      "started": true,
+      "until": "2024-02-28"
+     },
+     "trace": {
+      "changed": [
+       "begin",
+       "late",
+       "length",
+       "same",
+       "until"
+      ],
+      "evaluated": 5,
+      "skipped": 4,
+      "steps": 14
+     }
+    },
+    {
+     "command": [
+      "today",
+      "2023-12-31"
+     ],
+     "requests": [],
+     "revision": 10,
+     "snapshot": {
+      "age": "-59",
+      "begin": "2024-02-28",
+      "early": "2024-02-28",
+      "end": "2024-02-28",
+      "finish": "2024-02-28",
+      "late": false,
+      "length": "0",
+      "same": true,
+      "span": "0",
+      "start": "2024-02-28",
+      "started": false,
+      "until": "2024-02-28"
+     },
+     "trace": {
+      "changed": [
+       "age",
+       "started"
+      ],
+      "evaluated": 3,
+      "skipped": 6,
+      "steps": 8
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "start",
+      "9999-12-31"
+     ],
+     "requests": [],
+     "revision": 11,
+     "snapshot": {
+      "age": "-2913174",
+      "begin": "2024-02-28",
+      "early": "9999-12-31",
+      "end": "2024-02-28",
+      "finish": "9999-12-31",
+      "late": false,
+      "length": "-2913115",
+      "same": false,
+      "span": "0",
+      "start": "9999-12-31",
+      "started": false,
+      "until": "2024-02-28"
+     },
+     "trace": {
+      "changed": [
+       "age",
+       "early",
+       "finish",
+       "length",
+       "same"
+      ],
+      "evaluated": 7,
+      "skipped": 2,
+      "steps": 21
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "span",
+      "1"
+     ],
+     "requests": [],
+     "revision": 12,
+     "snapshot": {
+      "_states": {
+       "early": {
+        "causes": [
+         "early"
+        ],
+        "code": "COMPUTE_RANGE_ERROR",
+        "state": "error"
+       },
+       "finish": {
+        "causes": [
+         "finish"
+        ],
+        "code": "COMPUTE_RANGE_ERROR",
+        "state": "error"
+       },
+       "late": {
+        "causes": [
+         "finish"
+        ],
+        "code": "COMPUTE_RANGE_ERROR",
+        "state": "error"
+       }
+      },
+      "age": "-2913174",
+      "begin": "2024-02-27",
+      "early": null,
+      "end": "2024-02-28",
+      "finish": null,
+      "late": null,
+      "length": "-2913115",
+      "same": false,
+      "span": "1",
+      "start": "9999-12-31",
+      "started": false,
+      "until": "2024-02-28"
+     },
+     "trace": {
+      "changed": [
+       "begin",
+       "early",
+       "finish",
+       "late"
+      ],
+      "evaluated": 4,
+      "skipped": 5,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "start",
+      "0001-01-01"
+     ],
+     "requests": [],
+     "revision": 13,
+     "snapshot": {
+      "age": "738884",
+      "begin": "2024-02-27",
+      "early": "0001-01-02",
+      "end": "2024-02-28",
+      "finish": "0001-01-02",
+      "late": true,
+      "length": "738943",
+      "same": false,
+      "span": "1",
+      "start": "0001-01-01",
+      "started": true,
+      "until": "2024-02-28"
+     },
+     "trace": {
+      "changed": [
+       "age",
+       "early",
+       "finish",
+       "late",
+       "length",
+       "started"
+      ],
+      "evaluated": 7,
+      "skipped": 2,
+      "steps": 21
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "end",
+      "0001-01-01"
+     ],
+     "requests": [],
+     "revision": 14,
+     "snapshot": {
+      "_states": {
+       "begin": {
+        "causes": [
+         "begin"
+        ],
+        "code": "COMPUTE_RANGE_ERROR",
+        "state": "error"
+       }
+      },
+      "age": "738884",
+      "begin": null,
+      "early": "0001-01-02",
+      "end": "0001-01-01",
+      "finish": "0001-01-02",
+      "late": false,
+      "length": "0",
+      "same": true,
+      "span": "1",
+      "start": "0001-01-01",
+      "started": true,
+      "until": "0001-01-01"
+     },
+     "trace": {
+      "changed": [
+       "begin",
+       "late",
+       "length",
+       "same",
+       "until"
+      ],
+      "evaluated": 5,
+      "skipped": 4,
+      "steps": 14
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "start",
+      "2023-02-29"
+     ],
+     "requests": [],
+     "revision": 15,
+     "snapshot": {
+      "_states": {
+       "age": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "begin": {
+        "causes": [
+         "begin"
+        ],
+        "code": "COMPUTE_RANGE_ERROR",
+        "state": "error"
+       },
+       "early": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "finish": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "late": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "length": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "same": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "started": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       }
+      },
+      "age": null,
+      "begin": null,
+      "early": null,
+      "end": "0001-01-01",
+      "finish": null,
+      "late": null,
+      "length": null,
+      "same": null,
+      "span": "1",
+      "start": "2023-02-29",
+      "started": null,
+      "until": "0001-01-01"
+     },
+     "trace": {
+      "changed": [
+       "age",
+       "early",
+       "finish",
+       "late",
+       "length",
+       "same",
+       "started"
+      ],
+      "evaluated": 7,
+      "skipped": 2,
+      "steps": 21
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "start",
+      "2024-1-01"
+     ],
+     "requests": [],
+     "revision": 16,
+     "snapshot": {
+      "_states": {
+       "age": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "begin": {
+        "causes": [
+         "begin"
+        ],
+        "code": "COMPUTE_RANGE_ERROR",
+        "state": "error"
+       },
+       "early": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "finish": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "late": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "length": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "same": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "started": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       }
+      },
+      "age": null,
+      "begin": null,
+      "early": null,
+      "end": "0001-01-01",
+      "finish": null,
+      "late": null,
+      "length": null,
+      "same": null,
+      "span": "1",
+      "start": "2024-1-01",
+      "started": null,
+      "until": "0001-01-01"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 6,
+      "skipped": 3,
+      "steps": 18
+     }
+    },
+    {
+     "command": [
+      "today",
+      "tomorrow"
+     ],
+     "requests": [],
+     "revision": 17,
+     "snapshot": {
+      "_states": {
+       "age": {
+        "causes": [
+         "@today",
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "begin": {
+        "causes": [
+         "begin"
+        ],
+        "code": "COMPUTE_RANGE_ERROR",
+        "state": "error"
+       },
+       "early": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "finish": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "late": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "length": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "same": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "started": {
+        "causes": [
+         "@today",
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       }
+      },
+      "age": null,
+      "begin": null,
+      "early": null,
+      "end": "0001-01-01",
+      "finish": null,
+      "late": null,
+      "length": null,
+      "same": null,
+      "span": "1",
+      "start": "2024-1-01",
+      "started": null,
+      "until": "0001-01-01"
+     },
+     "trace": {
+      "changed": [
+       "age",
+       "started"
+      ],
+      "evaluated": 3,
+      "skipped": 6,
+      "steps": 8
+     }
+    },
+    {
+     "command": [
+      "today",
+      null
+     ],
+     "requests": [],
+     "revision": 18,
+     "snapshot": {
+      "_states": {
+       "age": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "begin": {
+        "causes": [
+         "begin"
+        ],
+        "code": "COMPUTE_RANGE_ERROR",
+        "state": "error"
+       },
+       "early": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "finish": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "late": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "length": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "same": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "started": {
+        "causes": [
+         "start"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       }
+      },
+      "age": null,
+      "begin": null,
+      "early": null,
+      "end": "0001-01-01",
+      "finish": null,
+      "late": null,
+      "length": null,
+      "same": null,
+      "span": "1",
+      "start": "2024-1-01",
+      "started": null,
+      "until": "0001-01-01"
+     },
+     "trace": {
+      "changed": [
+       "age",
+       "started"
+      ],
+      "evaluated": 3,
+      "skipped": 6,
+      "steps": 8
+     }
+    }
+   ]
+  },
+  {
+   "data": {
+    "amount": "100.05",
+    "children": {
+     "lines": [
+      {
+       "_key": "r0",
+       "amount": "10",
+       "customer": 7
+      },
+      {
+       "_key": "r1",
+       "amount": "20",
+       "customer": 8
+      },
+      {
+       "_key": "r2",
+       "amount": "5"
+      }
+     ]
+    },
+    "customer": 7,
+    "issued": "2026-10-28"
+   },
+   "model": "sale",
+   "name": "hops",
+   "steps": [
+    {
+     "requests": [
+      [
+       "customer",
+       7,
+       [
+        "credit_days",
+        "rate",
+        "region",
+        "since",
+        "vip"
+       ]
+      ],
+      [
+       "customer",
+       8,
+       [
+        "credit_days",
+        "rate",
+        "region",
+        "since",
+        "vip"
+       ]
+      ]
+     ],
+     "revision": 1,
+     "snapshot": {
+      "_states": {
+       "discount": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "due": {
+        "causes": [
+         "@customer.7.credit_days"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "grace_due": {
+        "causes": [
+         "@customer.7.credit_days",
+         "@customer.7.region"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "line_discounts": {
+        "causes": [
+         "@customer.7.rate",
+         "@customer.8.rate",
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "loyal": {
+        "causes": [
+         "@customer.7.since"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "net": {
+        "causes": [
+         "@customer.7.vip"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "vip": {
+        "causes": [
+         "@customer.7.vip"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.7.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "10",
+         "customer": 7,
+         "discount": null
+        },
+        {
+         "_key": "r1",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.8.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "20",
+         "customer": 8,
+         "discount": null
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": null,
+      "due": null,
+      "grace_due": null,
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": null,
+      "net": null,
+      "vip": null
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "due",
+       "grace_due",
+       "line_discounts",
+       "lines.r0.discount",
+       "lines.r1.discount",
+       "lines.r2.discount",
+       "loyal",
+       "net",
+       "vip"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 37
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      7,
+      {
+       "credit_days": 30,
+       "rate": "2.50",
+       "region": 3,
+       "since": "2026-10-01",
+       "vip": false
+      }
+     ],
+     "requests": [
+      [
+       "customer",
+       8,
+       [
+        "credit_days",
+        "rate",
+        "region",
+        "since",
+        "vip"
+       ]
+      ],
+      [
+       "region",
+       3,
+       [
+        "grace"
+       ]
+      ]
+     ],
+     "revision": 2,
+     "snapshot": {
+      "_states": {
+       "grace_due": {
+        "causes": [
+         "@region.3.grace"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "line_discounts": {
+        "causes": [
+         "@customer.8.rate",
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "10",
+         "customer": 7,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r1",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.8.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "20",
+         "customer": 8,
+         "discount": null
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "due": "2026-11-27",
+      "grace_due": null,
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": "27",
+      "net": "100.05",
+      "vip": false
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "due",
+       "grace_due",
+       "line_discounts",
+       "lines.r0.discount",
+       "loyal",
+       "net",
+       "vip"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 38
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      8,
+      {
+       "credit_days": 10,
+       "rate": "1.25",
+       "region": null,
+       "since": null,
+       "vip": true
+      }
+     ],
+     "requests": [
+      [
+       "region",
+       3,
+       [
+        "grace"
+       ]
+      ]
+     ],
+     "revision": 3,
+     "snapshot": {
+      "_states": {
+       "grace_due": {
+        "causes": [
+         "@region.3.grace"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "line_discounts": {
+        "causes": [
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "10",
+         "customer": 7,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "due": "2026-11-27",
+      "grace_due": null,
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": "27",
+      "net": "100.05",
+      "vip": false
+     },
+     "trace": {
+      "changed": [
+       "line_discounts",
+       "lines.r1.discount"
+      ],
+      "evaluated": 10,
+      "skipped": 0,
+      "steps": 38
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "region",
+      3,
+      {
+       "grace": 5
+      }
+     ],
+     "requests": [],
+     "revision": 4,
+     "snapshot": {
+      "_states": {
+       "line_discounts": {
+        "causes": [
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "10",
+         "customer": 7,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "due": "2026-11-27",
+      "grace_due": "2026-12-02",
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": "27",
+      "net": "100.05",
+      "vip": false
+     },
+     "trace": {
+      "changed": [
+       "grace_due"
+      ],
+      "evaluated": 1,
+      "skipped": 9,
+      "steps": 3
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      7,
+      {
+       "vip": true
+      }
+     ],
+     "requests": [],
+     "revision": 5,
+     "snapshot": {
+      "_states": {
+       "line_discounts": {
+        "causes": [
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "10",
+         "customer": 7,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "due": "2026-11-27",
+      "grace_due": "2026-12-02",
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": "27",
+      "net": "97.55",
+      "vip": true
+     },
+     "trace": {
+      "changed": [
+       "net",
+       "vip"
+      ],
+      "evaluated": 2,
+      "skipped": 8,
+      "steps": 7
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      8
+     ],
+     "requests": [],
+     "revision": 6,
+     "snapshot": {
+      "_states": {
+       "grace_due": {
+        "causes": [
+         "grace_due"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "line_discounts": {
+        "causes": [
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "loyal": {
+        "causes": [
+         "loyal"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "10",
+         "customer": 7,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 8,
+      "discount": "1.25",
+      "due": "2026-11-07",
+      "grace_due": null,
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": null,
+      "net": "98.80",
+      "vip": true
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "due",
+       "grace_due",
+       "loyal",
+       "net"
+      ],
+      "evaluated": 6,
+      "skipped": 4,
+      "steps": 21
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      null
+     ],
+     "requests": [],
+     "revision": 7,
+     "snapshot": {
+      "_states": {
+       "discount": {
+        "causes": [
+         "discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "due": {
+        "causes": [
+         "due"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "grace_due": {
+        "causes": [
+         "due"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "line_discounts": {
+        "causes": [
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "loyal": {
+        "causes": [
+         "loyal"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "net": {
+        "causes": [
+         "net"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "10",
+         "customer": 7,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": null,
+      "discount": null,
+      "due": null,
+      "grace_due": null,
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": null,
+      "net": null,
+      "vip": false
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "due",
+       "grace_due",
+       "net",
+       "vip"
+      ],
+      "evaluated": 6,
+      "skipped": 4,
+      "steps": 19
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      7
+     ],
+     "requests": [],
+     "revision": 8,
+     "snapshot": {
+      "_states": {
+       "line_discounts": {
+        "causes": [
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "amount": "10",
+         "customer": 7,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": "2.50",
+      "due": "2026-11-27",
+      "grace_due": "2026-12-02",
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": "27",
+      "net": "97.55",
+      "vip": true
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "due",
+       "grace_due",
+       "loyal",
+       "net",
+       "vip"
+      ],
+      "evaluated": 6,
+      "skipped": 4,
+      "steps": 21
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      7,
+      {
+       "rate": {
+        "$state": "pending"
+       }
+      }
+     ],
+     "requests": [],
+     "revision": 9,
+     "snapshot": {
+      "_states": {
+       "discount": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "line_discounts": {
+        "causes": [
+         "@customer.7.rate",
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "net": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.7.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "10",
+         "customer": 7,
+         "discount": null
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": null,
+      "due": "2026-11-27",
+      "grace_due": "2026-12-02",
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": "27",
+      "net": null,
+      "vip": true
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "line_discounts",
+       "lines.r0.discount",
+       "net"
+      ],
+      "evaluated": 6,
+      "skipped": 4,
+      "steps": 29
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "region",
+      3,
+      {
+       "grace": "x"
+      }
+     ],
+     "requests": [],
+     "revision": 10,
+     "snapshot": {
+      "_states": {
+       "discount": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "grace_due": {
+        "causes": [
+         "@region.3.grace"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "line_discounts": {
+        "causes": [
+         "@customer.7.rate",
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "net": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.7.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "10",
+         "customer": 7,
+         "discount": null
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": null,
+      "due": "2026-11-27",
+      "grace_due": null,
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": "27",
+      "net": null,
+      "vip": true
+     },
+     "trace": {
+      "changed": [
+       "grace_due"
+      ],
+      "evaluated": 1,
+      "skipped": 9,
+      "steps": 3
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      7,
+      {
+       "unknown": 1
+      }
+     ],
+     "error": "DOCUMENT_STRUCTURE_ERROR",
+     "requests": [],
+     "revision": 10,
+     "snapshot": {
+      "_states": {
+       "discount": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "grace_due": {
+        "causes": [
+         "@region.3.grace"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "line_discounts": {
+        "causes": [
+         "@customer.7.rate",
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "net": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.7.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "10",
+         "customer": 7,
+         "discount": null
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": null,
+      "due": "2026-11-27",
+      "grace_due": null,
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": "27",
+      "net": null,
+      "vip": true
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "invoice",
+      1,
+      {
+       "credit_days": 1
+      }
+     ],
+     "error": "DOCUMENT_STRUCTURE_ERROR",
+     "requests": [],
+     "revision": 10,
+     "snapshot": {
+      "_states": {
+       "discount": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "grace_due": {
+        "causes": [
+         "@region.3.grace"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "line_discounts": {
+        "causes": [
+         "@customer.7.rate",
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "net": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.7.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "10",
+         "customer": 7,
+         "discount": null
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": null,
+      "due": "2026-11-27",
+      "grace_due": null,
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": "27",
+      "net": null,
+      "vip": true
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      0,
+      {
+       "vip": true
+      }
+     ],
+     "error": "DOCUMENT_STRUCTURE_ERROR",
+     "requests": [],
+     "revision": 10,
+     "snapshot": {
+      "_states": {
+       "discount": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "grace_due": {
+        "causes": [
+         "@region.3.grace"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "line_discounts": {
+        "causes": [
+         "@customer.7.rate",
+         "lines.r2.discount"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "net": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.7.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "10",
+         "customer": 7,
+         "discount": null
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "lines.r2.discount"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": null,
+      "due": "2026-11-27",
+      "grace_due": null,
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": "27",
+      "net": null,
+      "vip": true
+     }
+    },
+    {
+     "command": [
+      "set",
+      "lines.r2",
+      "customer",
+      9
+     ],
+     "requests": [
+      [
+       "customer",
+       9,
+       [
+        "credit_days",
+        "rate",
+        "region",
+        "since",
+        "vip"
+       ]
+      ]
+     ],
+     "revision": 11,
+     "snapshot": {
+      "_states": {
+       "discount": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "grace_due": {
+        "causes": [
+         "@region.3.grace"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "line_discounts": {
+        "causes": [
+         "@customer.7.rate",
+         "@customer.9.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "net": {
+        "causes": [
+         "@customer.7.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.7.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "10",
+         "customer": 7,
+         "discount": null
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.9.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "customer": 9,
+         "discount": null
+        }
+       ]
+      },
+      "customer": 7,
+      "discount": null,
+      "due": "2026-11-27",
+      "grace_due": null,
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": "27",
+      "net": null,
+      "vip": true
+     },
+     "trace": {
+      "changed": [
+       "line_discounts",
+       "lines.r2.discount"
+      ],
+      "evaluated": 2,
+      "skipped": 8,
+      "steps": 9
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      "7"
+     ],
+     "requests": [
+      [
+       "customer",
+       9,
+       [
+        "credit_days",
+        "rate",
+        "region",
+        "since",
+        "vip"
+       ]
+      ]
+     ],
+     "revision": 12,
+     "snapshot": {
+      "_states": {
+       "discount": {
+        "causes": [
+         "discount"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "due": {
+        "causes": [
+         "due"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "grace_due": {
+        "causes": [
+         "due",
+         "grace_due"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "line_discounts": {
+        "causes": [
+         "@customer.7.rate",
+         "@customer.9.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "loyal": {
+        "causes": [
+         "loyal"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "net": {
+        "causes": [
+         "net"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       },
+       "vip": {
+        "causes": [
+         "vip"
+        ],
+        "code": "COMPUTE_TYPE_ERROR",
+        "state": "error"
+       }
+      },
+      "amount": "100.05",
+      "children": {
+       "lines": [
+        {
+         "_key": "r0",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.7.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "10",
+         "customer": 7,
+         "discount": null
+        },
+        {
+         "_key": "r1",
+         "amount": "20",
+         "customer": 8,
+         "discount": "0.25"
+        },
+        {
+         "_key": "r2",
+         "_states": {
+          "discount": {
+           "causes": [
+            "@customer.9.rate"
+           ],
+           "code": "COMPUTE_INPUT_MISSING",
+           "state": "pending"
+          }
+         },
+         "amount": "5",
+         "customer": 9,
+         "discount": null
+        }
+       ]
+      },
+      "customer": "7",
+      "discount": null,
+      "due": null,
+      "grace_due": null,
+      "issued": "2026-10-28",
+      "line_discounts": null,
+      "loyal": null,
+      "net": null,
+      "vip": null
+     },
+     "trace": {
+      "changed": [
+       "discount",
+       "due",
+       "grace_due",
+       "loyal",
+       "net",
+       "vip"
+      ],
+      "evaluated": 6,
+      "skipped": 4,
+      "steps": 18
+     }
+    }
+   ]
+  },
+  {
+   "data": {
+    "at2": "2026-11-01T08:00:00.000000Z"
+   },
+   "model": "moments",
+   "name": "datetime",
+   "steps": [
+    {
+     "requests": [],
+     "revision": 1,
+     "snapshot": {
+      "at2": "2026-11-01T08:00:00.000000Z",
+      "empty": true,
+      "first": "2026-11-01T08:00:00.000000Z",
+      "same": false
+     },
+     "trace": {
+      "changed": [
+       "empty",
+       "first",
+       "same"
+      ],
+      "evaluated": 3,
+      "skipped": 0,
+      "steps": 9
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "at",
+      "2026-11-01T08:00:00.000000Z"
+     ],
+     "requests": [],
+     "revision": 2,
+     "snapshot": {
+      "at": "2026-11-01T08:00:00.000000Z",
+      "at2": "2026-11-01T08:00:00.000000Z",
+      "empty": false,
+      "first": "2026-11-01T08:00:00.000000Z",
+      "same": true
+     },
+     "trace": {
+      "changed": [
+       "empty",
+       "same"
+      ],
+      "evaluated": 3,
+      "skipped": 0,
+      "steps": 8
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "at2",
+      null
+     ],
+     "requests": [],
+     "revision": 3,
+     "snapshot": {
+      "at": "2026-11-01T08:00:00.000000Z",
+      "at2": null,
+      "empty": false,
+      "first": "2026-11-01T08:00:00.000000Z",
+      "same": false
+     },
+     "trace": {
+      "changed": [
+       "same"
+      ],
+      "evaluated": 2,
+      "skipped": 1,
+      "steps": 5
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "at",
+      null
+     ],
+     "requests": [],
+     "revision": 4,
+     "snapshot": {
+      "at": null,
+      "at2": null,
+      "empty": true,
+      "first": null,
+      "same": true
+     },
+     "trace": {
+      "changed": [
+       "empty",
+       "first",
+       "same"
+      ],
+      "evaluated": 3,
+      "skipped": 0,
+      "steps": 9
+     }
+    }
+   ]
+  },
+  {
+   "data": {
+    "a": "6"
+   },
+   "model": "choice",
+   "name": "when",
+   "steps": [
+    {
+     "requests": [],
+     "revision": 1,
+     "snapshot": {
+      "_states": {
+       "dated": {
+        "causes": [
+         "dated"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "label": {
+        "causes": [
+         "label"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "nested": {
+        "causes": [
+         "nested"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "picked": {
+        "causes": [
+         "picked"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "a": "6",
+      "dated": null,
+      "label": null,
+      "nested": null,
+      "picked": null,
+      "zero": "0"
+     },
+     "trace": {
+      "changed": [
+       "dated",
+       "label",
+       "nested",
+       "picked"
+      ],
+      "evaluated": 4,
+      "skipped": 0,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "flag",
+      true
+     ],
+     "requests": [],
+     "revision": 2,
+     "snapshot": {
+      "_states": {
+       "dated": {
+        "causes": [
+         "@today"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "a": "6",
+      "dated": null,
+      "flag": true,
+      "label": "yes",
+      "nested": "1.0000",
+      "picked": "6",
+      "zero": "0"
+     },
+     "trace": {
+      "changed": [
+       "dated",
+       "label",
+       "nested",
+       "picked"
+      ],
+      "evaluated": 4,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      null
+     ],
+     "requests": [],
+     "revision": 3,
+     "snapshot": {
+      "_states": {
+       "dated": {
+        "causes": [
+         "@today"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "nested": {
+        "causes": [
+         "nested"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "a": null,
+      "dated": null,
+      "flag": true,
+      "label": "yes",
+      "nested": null,
+      "picked": null,
+      "zero": "0"
+     },
+     "trace": {
+      "changed": [
+       "nested",
+       "picked"
+      ],
+      "evaluated": 2,
+      "skipped": 2,
+      "steps": 7
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "flag",
+      false
+     ],
+     "requests": [],
+     "revision": 4,
+     "snapshot": {
+      "_states": {
+       "nested": {
+        "causes": [
+         "nested"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "picked": {
+        "causes": [
+         "picked"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "a": null,
+      "dated": null,
+      "flag": false,
+      "label": "no",
+      "nested": null,
+      "picked": null,
+      "zero": "0"
+     },
+     "trace": {
+      "changed": [
+       "dated",
+       "label",
+       "picked"
+      ],
+      "evaluated": 4,
+      "skipped": 0,
+      "steps": 15
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "6"
+     ],
+     "requests": [],
+     "revision": 5,
+     "snapshot": {
+      "_states": {
+       "picked": {
+        "causes": [
+         "picked"
+        ],
+        "code": "COMPUTE_DIVISION_BY_ZERO",
+        "state": "error"
+       }
+      },
+      "a": "6",
+      "dated": null,
+      "flag": false,
+      "label": "no",
+      "nested": "2.0000",
+      "picked": null,
+      "zero": "0"
+     },
+     "trace": {
+      "changed": [
+       "nested",
+       "picked"
+      ],
+      "evaluated": 2,
+      "skipped": 2,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "zero",
+      "4"
+     ],
+     "requests": [],
+     "revision": 6,
+     "snapshot": {
+      "a": "6",
+      "dated": null,
+      "flag": false,
+      "label": "no",
+      "nested": "2.0000",
+      "picked": "1.5",
+      "zero": "4"
+     },
+     "trace": {
+      "changed": [
+       "picked"
+      ],
+      "evaluated": 1,
+      "skipped": 3,
+      "steps": 5
+     }
+    },
+    {
+     "command": [
+      "today",
+      "2026-11-01"
+     ],
+     "requests": [],
+     "revision": 7,
+     "snapshot": {
+      "a": "6",
+      "dated": null,
+      "flag": false,
+      "label": "no",
+      "nested": "2.0000",
+      "picked": "1.5",
+      "zero": "4"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 1,
+      "skipped": 3,
+      "steps": 3
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "flag",
+      true
+     ],
+     "requests": [],
+     "revision": 8,
+     "snapshot": {
+      "a": "6",
+      "dated": "2026-11-01",
+      "flag": true,
+      "label": "yes",
+      "nested": "1.0000",
+      "picked": "6",
+      "zero": "4"
+     },
+     "trace": {
+      "changed": [
+       "dated",
+       "label",
+       "nested",
+       "picked"
+      ],
+      "evaluated": 4,
+      "skipped": 0,
+      "steps": 16
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "a",
+      "0.5"
+     ],
+     "requests": [],
+     "revision": 9,
+     "snapshot": {
+      "a": "0.5",
+      "dated": "2026-11-01",
+      "flag": true,
+      "label": "yes",
+      "nested": "3.0000",
+      "picked": "0.5",
+      "zero": "4"
+     },
+     "trace": {
+      "changed": [
+       "nested",
+       "picked"
+      ],
+      "evaluated": 2,
+      "skipped": 2,
+      "steps": 8
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "flag",
+      null
+     ],
+     "requests": [],
+     "revision": 10,
+     "snapshot": {
+      "_states": {
+       "dated": {
+        "causes": [
+         "dated"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "label": {
+        "causes": [
+         "label"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "picked": {
+        "causes": [
+         "picked"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "a": "0.5",
+      "dated": null,
+      "flag": null,
+      "label": null,
+      "nested": "3.0000",
+      "picked": null,
+      "zero": "4"
+     },
+     "trace": {
+      "changed": [
+       "dated",
+       "label",
+       "picked"
+      ],
+      "evaluated": 4,
+      "skipped": 0,
+      "steps": 11
      }
     }
    ]
@@ -6133,6 +12033,7 @@
    "name": "invoice-random-1",
    "steps": [
     {
+     "requests": [],
      "revision": 1,
      "snapshot": {
       "children": {
@@ -6242,6 +12143,7 @@
       "rate",
       "1.2"
      ],
+     "requests": [],
      "revision": 2,
      "snapshot": {
       "children": {
@@ -6331,6 +12233,7 @@
       "rate",
       "6.67"
      ],
+     "requests": [],
      "revision": 3,
      "snapshot": {
       "children": {
@@ -6420,6 +12323,7 @@
       "qty",
       "4.99"
      ],
+     "requests": [],
      "revision": 4,
      "snapshot": {
       "children": {
@@ -6509,6 +12413,7 @@
       "rate",
       "6.22"
      ],
+     "requests": [],
      "revision": 5,
      "snapshot": {
       "children": {
@@ -6602,6 +12507,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 6,
      "snapshot": {
       "children": {
@@ -6710,6 +12616,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 7,
      "snapshot": {
       "children": {
@@ -6831,6 +12738,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 8,
      "snapshot": {
       "children": {
@@ -6961,6 +12869,7 @@
       "inclusive",
       true
      ],
+     "requests": [],
      "revision": 9,
      "snapshot": {
       "children": {
@@ -7079,6 +12988,7 @@
       "qty",
       "6.65"
      ],
+     "requests": [],
      "revision": 10,
      "snapshot": {
       "children": {
@@ -7207,6 +13117,7 @@
       "inclusive",
       false
      ],
+     "requests": [],
      "revision": 11,
      "snapshot": {
       "children": {
@@ -7358,6 +13269,7 @@
       "rate",
       "7.43"
      ],
+     "requests": [],
      "revision": 12,
      "snapshot": {
       "children": {
@@ -7486,6 +13398,7 @@
       "rate",
       "5.07"
      ],
+     "requests": [],
      "revision": 13,
      "snapshot": {
       "children": {
@@ -7614,6 +13527,7 @@
       "inclusive",
       true
      ],
+     "requests": [],
      "revision": 14,
      "snapshot": {
       "children": {
@@ -7769,6 +13683,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 15,
      "snapshot": {
       "children": {
@@ -7910,6 +13825,7 @@
       "remove",
       "items.r0"
      ],
+     "requests": [],
      "revision": 16,
      "snapshot": {
       "children": {
@@ -8034,6 +13950,7 @@
       "vat_rate",
       "1.02"
      ],
+     "requests": [],
      "revision": 17,
      "snapshot": {
       "children": {
@@ -8160,6 +14077,7 @@
       "rate",
       "1.23"
      ],
+     "requests": [],
      "revision": 18,
      "snapshot": {
       "children": {
@@ -8292,6 +14210,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 19,
      "snapshot": {
       "children": {
@@ -8433,6 +14352,7 @@
       "remove",
       "items.x4"
      ],
+     "requests": [],
      "revision": 20,
      "snapshot": {
       "children": {
@@ -8557,6 +14477,7 @@
       "inclusive",
       false
      ],
+     "requests": [],
      "revision": 21,
      "snapshot": {
       "children": {
@@ -8706,6 +14627,7 @@
       "vat_rate",
       "5.11"
      ],
+     "requests": [],
      "revision": 22,
      "snapshot": {
       "children": {
@@ -8830,6 +14752,7 @@
       "taxable",
       true
      ],
+     "requests": [],
      "revision": 23,
      "snapshot": {
       "children": {
@@ -8948,6 +14871,7 @@
       "taxable",
       true
      ],
+     "requests": [],
      "revision": 24,
      "snapshot": {
       "children": {
@@ -9070,6 +14994,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 25,
      "snapshot": {
       "children": {
@@ -9217,6 +15142,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 26,
      "snapshot": {
       "children": {
@@ -9373,6 +15299,7 @@
       "inclusive",
       false
      ],
+     "requests": [],
      "revision": 27,
      "snapshot": {
       "children": {
@@ -9521,6 +15448,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 28,
      "snapshot": {
       "children": {
@@ -9690,6 +15618,7 @@
       "qty",
       "7.97"
      ],
+     "requests": [],
      "revision": 29,
      "snapshot": {
       "children": {
@@ -9857,6 +15786,7 @@
       "rate",
       "5.01"
      ],
+     "requests": [],
      "revision": 30,
      "snapshot": {
       "children": {
@@ -10028,6 +15958,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 31,
      "snapshot": {
       "children": {
@@ -10210,6 +16141,7 @@
       "vat_rate",
       "5.92"
      ],
+     "requests": [],
      "revision": 32,
      "snapshot": {
       "children": {
@@ -10386,6 +16318,7 @@
       "qty",
       "5.14"
      ],
+     "requests": [],
      "revision": 33,
      "snapshot": {
       "children": {
@@ -10566,6 +16499,7 @@
       "qty",
       "5.52"
      ],
+     "requests": [],
      "revision": 34,
      "snapshot": {
       "children": {
@@ -10744,6 +16678,7 @@
       "remove",
       "items.x7"
      ],
+     "requests": [],
      "revision": 35,
      "snapshot": {
       "children": {
@@ -10907,6 +16842,7 @@
       "rate",
       "8.67"
      ],
+     "requests": [],
      "revision": 36,
      "snapshot": {
       "children": {
@@ -11074,6 +17010,7 @@
       "inclusive",
       true
      ],
+     "requests": [],
      "revision": 37,
      "snapshot": {
       "children": {
@@ -11274,6 +17211,7 @@
       "vat_rate",
       "7.46"
      ],
+     "requests": [],
      "revision": 38,
      "snapshot": {
       "children": {
@@ -11439,6 +17377,7 @@
       "qty",
       "5.31"
      ],
+     "requests": [],
      "revision": 39,
      "snapshot": {
       "children": {
@@ -11610,6 +17549,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 40,
      "snapshot": {
       "children": {
@@ -11792,6 +17732,7 @@
       "rate",
       "8.9"
      ],
+     "requests": [],
      "revision": 41,
      "snapshot": {
       "children": {
@@ -11999,6 +17940,7 @@
    "name": "invoice-random-2",
    "steps": [
     {
+     "requests": [],
      "revision": 1,
      "snapshot": {
       "children": {
@@ -12106,6 +18048,7 @@
       "remove",
       "items.r0"
      ],
+     "requests": [],
      "revision": 2,
      "snapshot": {
       "children": {
@@ -12178,6 +18121,7 @@
       "qty",
       "7.53"
      ],
+     "requests": [],
      "revision": 3,
      "snapshot": {
       "children": {
@@ -12254,6 +18198,7 @@
       "taxable",
       true
      ],
+     "requests": [],
      "revision": 4,
      "snapshot": {
       "children": {
@@ -12320,6 +18265,7 @@
       "vat_rate",
       "6.97"
      ],
+     "requests": [],
      "revision": 5,
      "snapshot": {
       "children": {
@@ -12394,6 +18340,7 @@
       "vat_rate",
       "4.02"
      ],
+     "requests": [],
      "revision": 6,
      "snapshot": {
       "children": {
@@ -12468,6 +18415,7 @@
       "taxable",
       false
      ],
+     "requests": [],
      "revision": 7,
      "snapshot": {
       "children": {
@@ -12542,6 +18490,7 @@
       "inclusive",
       true
      ],
+     "requests": [],
      "revision": 8,
      "snapshot": {
       "children": {
@@ -12608,6 +18557,7 @@
       "qty",
       "3.72"
      ],
+     "requests": [],
      "revision": 9,
      "snapshot": {
       "children": {
@@ -12684,6 +18634,7 @@
       "rate",
       "4.33"
      ],
+     "requests": [],
      "revision": 10,
      "snapshot": {
       "children": {
@@ -12760,6 +18711,7 @@
       "taxable",
       true
      ],
+     "requests": [],
      "revision": 11,
      "snapshot": {
       "children": {
@@ -12834,6 +18786,7 @@
       "qty",
       "1.8"
      ],
+     "requests": [],
      "revision": 12,
      "snapshot": {
       "children": {
@@ -12910,6 +18863,7 @@
       "vat_rate",
       "5.22"
      ],
+     "requests": [],
      "revision": 13,
      "snapshot": {
       "children": {
@@ -12984,6 +18938,7 @@
       "vat_rate",
       "5.73"
      ],
+     "requests": [],
      "revision": 14,
      "snapshot": {
       "children": {
@@ -13058,6 +19013,7 @@
       "rate",
       "7.52"
      ],
+     "requests": [],
      "revision": 15,
      "snapshot": {
       "children": {
@@ -13134,6 +19090,7 @@
       "inclusive",
       false
      ],
+     "requests": [],
      "revision": 16,
      "snapshot": {
       "children": {
@@ -13216,6 +19173,7 @@
       "rate",
       "3.7"
      ],
+     "requests": [],
      "revision": 17,
      "snapshot": {
       "children": {
@@ -13290,6 +19248,7 @@
       "remove",
       "items.r2"
      ],
+     "requests": [],
      "revision": 18,
      "snapshot": {
       "children": {
@@ -13349,6 +19308,7 @@
       "vat_rate",
       "7.56"
      ],
+     "requests": [],
      "revision": 19,
      "snapshot": {
       "children": {
@@ -13408,6 +19368,7 @@
       "rate",
       "2.85"
      ],
+     "requests": [],
      "revision": 20,
      "snapshot": {
       "children": {
@@ -13469,6 +19430,7 @@
       "remove",
       "items.r3"
      ],
+     "requests": [],
      "revision": 21,
      "snapshot": {
       "children": {
@@ -13519,6 +19481,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 22,
      "snapshot": {
       "children": {
@@ -13584,6 +19547,7 @@
       "taxable",
       true
      ],
+     "requests": [],
      "revision": 23,
      "snapshot": {
       "children": {
@@ -13641,6 +19605,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 24,
      "snapshot": {
       "children": {
@@ -13723,6 +19688,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 25,
      "snapshot": {
       "children": {
@@ -13818,6 +19784,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 26,
      "snapshot": {
       "children": {
@@ -13922,6 +19889,7 @@
       "taxable",
       false
      ],
+     "requests": [],
      "revision": 27,
      "snapshot": {
       "children": {
@@ -14021,6 +19989,7 @@
       "inclusive",
       false
      ],
+     "requests": [],
      "revision": 28,
      "snapshot": {
       "children": {
@@ -14113,6 +20082,7 @@
       "vat_rate",
       "8.51"
      ],
+     "requests": [],
      "revision": 29,
      "snapshot": {
       "children": {
@@ -14211,6 +20181,7 @@
       "inclusive",
       false
      ],
+     "requests": [],
      "revision": 30,
      "snapshot": {
       "children": {
@@ -14307,6 +20278,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 31,
      "snapshot": {
       "children": {
@@ -14424,6 +20396,7 @@
       "qty",
       "5.0"
      ],
+     "requests": [],
      "revision": 32,
      "snapshot": {
       "children": {
@@ -14529,6 +20502,7 @@
       "inclusive",
       false
      ],
+     "requests": [],
      "revision": 33,
      "snapshot": {
       "children": {
@@ -14638,6 +20612,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 34,
      "snapshot": {
       "children": {
@@ -14772,6 +20747,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 35,
      "snapshot": {
       "children": {
@@ -14919,6 +20895,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 36,
      "snapshot": {
       "children": {
@@ -15073,6 +21050,7 @@
       "remove",
       "items.x1"
      ],
+     "requests": [],
      "revision": 37,
      "snapshot": {
       "children": {
@@ -15208,6 +21186,7 @@
       "rate",
       "6.05"
      ],
+     "requests": [],
      "revision": 38,
      "snapshot": {
       "children": {
@@ -15349,6 +21328,7 @@
       "vat_rate",
       "1.39"
      ],
+     "requests": [],
      "revision": 39,
      "snapshot": {
       "children": {
@@ -15486,6 +21466,7 @@
       "taxable",
       false
      ],
+     "requests": [],
      "revision": 40,
      "snapshot": {
       "children": {
@@ -15622,6 +21603,7 @@
       "remove",
       "items.r1"
      ],
+     "requests": [],
      "revision": 41,
      "snapshot": {
       "children": {
@@ -15773,6 +21755,7 @@
    "name": "invoice-random-3",
    "steps": [
     {
+     "requests": [],
      "revision": 1,
      "snapshot": {
       "children": {
@@ -15882,6 +21865,7 @@
       "rate",
       "6.18"
      ],
+     "requests": [],
      "revision": 2,
      "snapshot": {
       "children": {
@@ -15971,6 +21955,7 @@
       "vat_rate",
       "0.13"
      ],
+     "requests": [],
      "revision": 3,
      "snapshot": {
       "children": {
@@ -16056,6 +22041,7 @@
       "remove",
       "items.r3"
      ],
+     "requests": [],
      "revision": 4,
      "snapshot": {
       "children": {
@@ -16128,6 +22114,7 @@
       "qty",
       "7.34"
      ],
+     "requests": [],
      "revision": 5,
      "snapshot": {
       "children": {
@@ -16204,6 +22191,7 @@
       "rate",
       "4.06"
      ],
+     "requests": [],
      "revision": 6,
      "snapshot": {
       "children": {
@@ -16284,6 +22272,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 7,
      "snapshot": {
       "children": {
@@ -16375,6 +22364,7 @@
       "vat_rate",
       "3.99"
      ],
+     "requests": [],
      "revision": 8,
      "snapshot": {
       "children": {
@@ -16466,6 +22456,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 9,
      "snapshot": {
       "children": {
@@ -16570,6 +22561,7 @@
       "qty",
       "3.08"
      ],
+     "requests": [],
      "revision": 10,
      "snapshot": {
       "children": {
@@ -16676,6 +22668,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 11,
      "snapshot": {
       "children": {
@@ -16793,6 +22786,7 @@
       "rate",
       "7.31"
      ],
+     "requests": [],
      "revision": 12,
      "snapshot": {
       "children": {
@@ -16912,6 +22906,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 13,
      "snapshot": {
       "children": {
@@ -17042,6 +23037,7 @@
       "vat_rate",
       "4.55"
      ],
+     "requests": [],
      "revision": 14,
      "snapshot": {
       "children": {
@@ -17166,6 +23162,7 @@
       "remove",
       "items.r1"
      ],
+     "requests": [],
      "revision": 15,
      "snapshot": {
       "children": {
@@ -17277,6 +23274,7 @@
       "taxable",
       true
      ],
+     "requests": [],
      "revision": 16,
      "snapshot": {
       "children": {
@@ -17382,6 +23380,7 @@
       "vat_rate",
       "4.46"
      ],
+     "requests": [],
      "revision": 17,
      "snapshot": {
       "children": {
@@ -17499,6 +23498,7 @@
        "rate": "2.5"
       }
      ],
+     "requests": [],
      "revision": 18,
      "snapshot": {
       "children": {
@@ -17629,6 +23629,7 @@
       "rate",
       "5.87"
      ],
+     "requests": [],
      "revision": 19,
      "snapshot": {
       "children": {
@@ -17757,6 +23758,7 @@
       "rate",
       "5.98"
      ],
+     "requests": [],
      "revision": 20,
      "snapshot": {
       "children": {
@@ -17885,6 +23887,7 @@
       "vat_rate",
       "0.29"
      ],
+     "requests": [],
      "revision": 21,
      "snapshot": {
       "children": {
@@ -18011,6 +24014,7 @@
       "taxable",
       false
      ],
+     "requests": [],
      "revision": 22,
      "snapshot": {
       "children": {
@@ -18137,6 +24141,7 @@
       "rate",
       "5.54"
      ],
+     "requests": [],
      "revision": 23,
      "snapshot": {
       "children": {
@@ -18263,6 +24268,7 @@
       "remove",
       "items.x3"
      ],
+     "requests": [],
      "revision": 24,
      "snapshot": {
       "children": {
@@ -18372,6 +24378,7 @@
       "qty",
       "6.48"
      ],
+     "requests": [],
      "revision": 25,
      "snapshot": {
       "children": {
@@ -18487,6 +24494,7 @@
       "taxable",
       true
      ],
+     "requests": [],
      "revision": 26,
      "snapshot": {
       "children": {
@@ -18592,6 +24600,7 @@
       "vat_rate",
       "4.95"
      ],
+     "requests": [],
      "revision": 27,
      "snapshot": {
       "children": {
@@ -18705,6 +24714,7 @@
       "rate",
       "1.54"
      ],
+     "requests": [],
      "revision": 28,
      "snapshot": {
       "children": {
@@ -18818,6 +24828,7 @@
       "rate",
       "8.93"
      ],
+     "requests": [],
      "revision": 29,
      "snapshot": {
       "children": {
@@ -18933,6 +24944,7 @@
       "vat_rate",
       "7.79"
      ],
+     "requests": [],
      "revision": 30,
      "snapshot": {
       "children": {
@@ -19046,6 +25058,7 @@
       "vat_rate",
       "3.38"
      ],
+     "requests": [],
      "revision": 31,
      "snapshot": {
       "children": {
@@ -19159,6 +25172,7 @@
       "inclusive",
       false
      ],
+     "requests": [],
      "revision": 32,
      "snapshot": {
       "children": {
@@ -19291,6 +25305,7 @@
       "qty",
       "3.17"
      ],
+     "requests": [],
      "revision": 33,
      "snapshot": {
       "children": {
@@ -19406,6 +25421,7 @@
       "vat_rate",
       "5.48"
      ],
+     "requests": [],
      "revision": 34,
      "snapshot": {
       "children": {
@@ -19517,6 +25533,7 @@
       "rate",
       "2.98"
      ],
+     "requests": [],
      "revision": 35,
      "snapshot": {
       "children": {
@@ -19632,6 +25649,7 @@
       "inclusive",
       true
      ],
+     "requests": [],
      "revision": 36,
      "snapshot": {
       "children": {
@@ -19765,6 +25783,7 @@
       "rate",
       "3.68"
      ],
+     "requests": [],
      "revision": 37,
      "snapshot": {
       "children": {
@@ -19878,6 +25897,7 @@
       "remove",
       "items.x2"
      ],
+     "requests": [],
      "revision": 38,
      "snapshot": {
       "children": {
@@ -19976,6 +25996,7 @@
       "rate",
       "6.59"
      ],
+     "requests": [],
      "revision": 39,
      "snapshot": {
       "children": {
@@ -20078,6 +26099,7 @@
       "taxable",
       true
      ],
+     "requests": [],
      "revision": 40,
      "snapshot": {
       "children": {
@@ -20168,6 +26190,7 @@
       "remove",
       "items.x5"
      ],
+     "requests": [],
      "revision": 41,
      "snapshot": {
       "children": {

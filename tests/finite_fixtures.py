@@ -6,8 +6,8 @@ checks that the checked-in JSON still matches. Both runtimes consume the same se
 
 import random
 
-from evlet import Model, Child, Table, Decimal, Currency, Boolean, Integer, Text, Registry
-from evlet.calc import (D, F, parent, row, round, coalesce, safe_divide, Document, CalcError,
+from evlet import Model, Child, Table, Decimal, Currency, Boolean, Integer, Text, Date, DateTime, Link, Registry
+from evlet.calc import (D, F, parent, row, round, coalesce, safe_divide, when, days, today, Document, CalcError,
                         parse, text, add, sub, mul, div, quantize)
 
 
@@ -104,7 +104,94 @@ class States(Model):
     whole = Integer(compute=a * 2)
 
 
-MODELS = {'invoice': Invoice, 'project': Project, 'cost': CostSheet, 'states': States}
+class Rounding(Model):
+    Meta = FiniteMeta
+    a = Decimal()
+    up = Currency(compute=F('a'))
+    even = Decimal(scale=2, compute=F('a'))
+    even_currency = Currency(rounding='half_even', compute=F('a'))
+    up_decimal = Decimal(scale=2, rounding='half_up', compute=F('a'))
+    whole = Integer(compute=F('a'))
+    whole_even = Integer(rounding='half_even', compute=F('a'))
+    explicit = Decimal(scale=2, compute=round(F('a'), 2))
+    bounded = Currency(compute=F('a'), maximum='10')
+    third = Currency(compute=F('a') / 3)
+    raw = Decimal(scale=None, stored=False, compute=F('a') / 3)
+
+
+class Schedule(Model):
+    Meta = FiniteMeta
+    start = Date()
+    end = Date()
+    span = Decimal(scale=1, default=0)
+    finish = Date(compute=F('start') + days(F('span')))
+    begin = Date(compute=F('end') - days(F('span')))
+    early = Date(compute=days(F('span')) + F('start'))
+    length = Decimal(scale=0, compute=F('end') - F('start'))
+    late = Boolean(compute=F('end') > F('finish'))
+    same = Boolean(compute=F('end') == F('start'))
+    age = Integer(compute=today() - F('start'))
+    started = Boolean(compute=today() >= F('start'))
+    until = Date(compute=coalesce(F('end'), today()))
+
+
+class Region(Model):
+    grace = Integer(default=0)
+
+
+class Customer(Model):
+    credit_days = Integer(default=30)
+    region = Link(Region)
+    rate = Decimal(scale=2, default=0)
+    vip = Boolean(default=False)
+    since = Date()
+
+
+class SaleLine(Child):
+    customer = Link(Customer)
+    amount = Currency(default=0)
+    discount = Currency(compute=F('amount') * F('customer.rate') / 100)
+
+
+class Sale(Model):
+    Meta = FiniteMeta
+    customer = Link(Customer)
+    issued = Date()
+    amount = Currency(default=0)
+    lines = Table(SaleLine)
+    due = Date(compute=F('issued') + days(F('customer.credit_days')))
+    grace_due = Date(compute=F('due') + days(F('customer.region.grace')))
+    discount = Currency(compute=F('amount') * F('customer.rate') / 100)
+    vip = Boolean(compute=coalesce(F('customer.vip'), False))
+    net = Currency(compute=when(F('customer.vip'), F('amount') - F('discount'), F('amount')))
+    loyal = Decimal(scale=0, compute=F('issued') - F('customer.since'))
+    line_discounts = Currency(compute=lines.sum('discount'))
+
+
+class Choice(Model):
+    Meta = FiniteMeta
+    flag = Boolean()
+    a = Decimal()
+    zero = Decimal(default=0)
+    picked = Decimal(scale=None, stored=False, compute=when(F('flag'), F('a'), F('a') / F('zero')))
+    label = Text(compute=when(F('flag'), 'yes', 'no'))
+    dated = Date(compute=when(F('flag'), today(), None))
+    nested = Decimal(compute=when(F('a') > 1, when(F('flag'), 1, 2), 3))
+
+
+class Moments(Model):
+    """DateTime references keep their earlier rules: equality and coalesce only."""
+    Meta = FiniteMeta
+    at = DateTime()
+    at2 = DateTime()
+    same = Boolean(compute=F('at') == F('at2'))
+    empty = Boolean(compute=F('at') == None)  # noqa: E711
+    first = DateTime(compute=coalesce(F('at'), F('at2')))
+
+
+MODELS = {'invoice': Invoice, 'project': Project, 'cost': CostSheet, 'states': States,
+          'rounding': Rounding, 'schedule': Schedule, 'sale': Sale, 'choice': Choice, 'moments': Moments}
+LOOKUP_MODELS = (Region, Customer)
 
 
 def items(*values):
@@ -133,6 +220,29 @@ SCENARIOS = [
     ('states', 'states', {'a': '6'},
      [['set', '', 'flag', True], ['set', '', 'b', '2'], ['set', '', 'zero', '4'], ['set', '', 'a', '-1.5'],
       ['set', '', 'b', None], ['set', '', 'flag', None], ['set', '', 'a', '1' * 20], ['set', '', 'a', '0.000000000000000001']]),
+    ('rounding-modes', 'rounding', {'a': '2.345'},
+     [['set', '', 'a', value] for value in ('2.355', '-2.345', '-2.355', '2.5', '3.5', '-2.5', '-3.5', '0.005', '-0.005',
+                                            '9.995', '10.005', '2.3450001', '1', None)]),
+    ('dates', 'schedule', {'start': '2024-02-28', 'end': '2024-03-01', 'span': '1'},
+     [['today', '2024-03-02'], ['set', '', 'span', '2'], ['set', '', 'span', '365'], ['set', '', 'span', '-1'],
+      ['set', '', 'span', '1.5'], ['set', '', 'span', '0'], ['set', '', 'end', None], ['set', '', 'end', '2024-02-28'],
+      ['today', '2023-12-31'], ['set', '', 'start', '9999-12-31'], ['set', '', 'span', '1'], ['set', '', 'start', '0001-01-01'],
+      ['set', '', 'end', '0001-01-01'], ['set', '', 'start', '2023-02-29'], ['set', '', 'start', '2024-1-01'],
+      ['today', 'tomorrow'], ['today', None]]),
+    ('hops', 'sale', {'customer': 7, 'issued': '2026-10-28', 'amount': '100.05',
+                      'children': {'lines': items({'customer': 7, 'amount': '10'}, {'customer': 8, 'amount': '20'}, {'amount': '5'})}},
+     [['lookup', 'customer', 7, {'credit_days': 30, 'rate': '2.50', 'vip': False, 'region': 3, 'since': '2026-10-01'}],
+      ['lookup', 'customer', 8, {'credit_days': 10, 'rate': '1.25', 'vip': True, 'region': None, 'since': None}],
+      ['lookup', 'region', 3, {'grace': 5}], ['lookup', 'customer', 7, {'vip': True}],
+      ['set', '', 'customer', 8], ['set', '', 'customer', None], ['set', '', 'customer', 7],
+      ['lookup', 'customer', 7, {'rate': {'$state': 'pending'}}], ['lookup', 'region', 3, {'grace': 'x'}],
+      ['lookup', 'customer', 7, {'unknown': 1}], ['lookup', 'invoice', 1, {'credit_days': 1}], ['lookup', 'customer', 0, {'vip': True}],
+      ['set', 'lines.r2', 'customer', 9], ['set', '', 'customer', '7']]),
+    ('datetime', 'moments', {'at2': '2026-11-01T08:00:00.000000Z'},
+     [['set', '', 'at', '2026-11-01T08:00:00.000000Z'], ['set', '', 'at2', None], ['set', '', 'at', None]]),
+    ('when', 'choice', {'a': '6'},
+     [['set', '', 'flag', True], ['set', '', 'a', None], ['set', '', 'flag', False], ['set', '', 'a', '6'],
+      ['set', '', 'zero', '4'], ['today', '2026-11-01'], ['set', '', 'flag', True], ['set', '', 'a', '0.5'], ['set', '', 'flag', None]]),
 ]
 
 
@@ -171,6 +281,8 @@ def apply(document, command):
     elif kind == 'move': document.move_row(handle(document, args[0]), handle(document, args[1]), args[2], args[3])
     elif kind == 'reorder': document.reorder(handle(document, args[0]), args[1], [handle(document, label) for label in args[2]])
     elif kind == 'replace': document.replace_rows(handle(document, args[0]), args[1], args[2])
+    elif kind == 'today': document.set_today(args[0])
+    elif kind == 'lookup': document.set_lookups(args[0], args[1], args[2])
 
 
 def strip(snapshot):
@@ -184,14 +296,19 @@ def strip(snapshot):
 NUMERIC = [(op, a, b) for op in ('add', 'sub', 'mul', 'div') for a, b in [
     ('1', '3'), ('-1', '3'), ('2', '3'), ('0.000000000000000001', '2'), ('-0.000000000000000001', '2'), ('123456.789', '-0.001'),
     ('0', '-5'), ('99999999999999999999', '0.07'), ('5', '8'), ('1.005', '1'), ('-7.25', '0.5'), ('0.1', '0.2')]] + [
-    ('round', '1.005', 2), ('round', '-1.005', 2), ('round', '2.5', 0), ('round', '-2.5', 0), ('round', '1.004999', 2), ('round', '0.0049', 2)]
+    ('round', '1.005', 2), ('round', '-1.005', 2), ('round', '2.5', 0), ('round', '-2.5', 0), ('round', '1.004999', 2), ('round', '0.0049', 2)] + [
+    ('round_even', a, b) for a, b in [('1.005', 2), ('1.015', 2), ('-1.005', 2), ('-1.015', 2), ('2.5', 0), ('3.5', 0), ('-2.5', 0),
+                                      ('0.5', 0), ('1.0051', 2), ('-0.0049', 2), ('99999999999999999999.5', 0)]]
 
 
 def numeric_cases():
     cases = []
     for op, a, b in NUMERIC:
         try:
-            value = text(quantize(parse(a), b)) if op == 'round' else text({'add': add, 'sub': sub, 'mul': mul, 'div': div}[op](parse(a), parse(b)))
+            if op.startswith('round'):
+                value = text(quantize(parse(a), b, 'half_even' if op == 'round_even' else 'half_up'))
+            else:
+                value = text({'add': add, 'sub': sub, 'mul': mul, 'div': div}[op](parse(a), parse(b)))
             cases.append({'op': op, 'a': a, 'b': b, 'expected': value})
         except CalcError as exc:
             cases.append({'op': op, 'a': a, 'b': b, 'error': exc.code})
@@ -199,19 +316,21 @@ def numeric_cases():
 
 
 def collect():
-    registry = Registry(*MODELS.values())
+    registry = Registry(*MODELS.values(), *LOOKUP_MODELS)
     plans = {name: registry.plans[model] for name, model in MODELS.items()}
     scenarios = []
     for name, model, data, commands in SCENARIOS + [random_scenario(seed) for seed in (1, 2, 3)]:
         document = Document(plans[model], data)
-        steps = [{'snapshot': strip(document.snapshot()), 'revision': document.revision, 'trace': document.trace}]
+        steps = [{'snapshot': strip(document.snapshot()), 'revision': document.revision, 'trace': document.trace,
+                  'requests': document.lookup_requests()}]
         for command in commands:
             try:
                 apply(document, command)
                 steps.append({'command': command, 'snapshot': strip(document.snapshot()), 'revision': document.revision,
-                              'trace': document.trace})
+                              'trace': document.trace, 'requests': document.lookup_requests()})
             except CalcError as exc:
-                steps.append({'command': command, 'error': exc.code, 'snapshot': strip(document.snapshot()), 'revision': document.revision})
+                steps.append({'command': command, 'error': exc.code, 'snapshot': strip(document.snapshot()), 'revision': document.revision,
+                              'requests': document.lookup_requests()})
         scenarios.append({'name': name, 'model': model, 'data': data, 'steps': steps})
     return {'plans': plans, 'scenarios': scenarios, 'numeric': numeric_cases(),
             'invalid_plans': [{'name': 'unknown-op', 'expression': {'$expr': 'eval', 'args': []}},
@@ -219,7 +338,13 @@ def collect():
                               {'name': 'scope', 'expression': {'$expr': 'ref', 'scope': 'window', 'field': 'qty'}},
                               {'name': 'round-scale', 'expression': {'$expr': 'round', 'args': [{'$expr': 'literal', 'type': 'decimal', 'value': '1'},
                                                                                                 {'$expr': 'literal', 'type': 'integer', 'value': 50000000}]}},
-                              {'name': 'deep', 'expression': deep(40)}],
+                              {'name': 'deep', 'expression': deep(40)},
+                              {'name': 'hop-depth', 'expression': {'$expr': 'hop', 'field': 'customer', 'steps': [['customer', 'region', 'link']] * 3 + [['region', 'grace', 'decimal']]}},
+                              {'name': 'hop-through-value', 'expression': {'$expr': 'hop', 'field': 'customer', 'steps': [['customer', 'rate', 'decimal'], ['region', 'grace', 'decimal']]}},
+                              {'name': 'hop-model', 'expression': {'$expr': 'hop', 'field': 'customer', 'steps': [['Customer.x', 'rate', 'decimal']]}},
+                              {'name': 'hop-empty', 'expression': {'$expr': 'hop', 'field': 'customer', 'steps': []}},
+                              {'name': 'when-arity', 'expression': {'$expr': 'when', 'args': [{'$expr': 'literal', 'type': 'boolean', 'value': True}]}},
+                              {'name': 'today-scale', 'expression': {'$expr': 'round', 'args': [{'$expr': 'literal', 'type': 'decimal', 'value': '1'}, {'$expr': 'today'}]}}],
             'invalid_inputs': invalid_inputs(plans['states'])}
 
 

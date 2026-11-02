@@ -18,6 +18,10 @@ Select eligible rows, quantities and BOMs. Submitting creates related Work
 Orders atomically, without changing the source order. Retrying the same
 submission key does not create duplicates.
 
+A Quote is a finite-v1 document. Its `valid_until` date adds the selected
+Company's payment days to the issue date through a Link path, and its discount
+is rounded half up to cents without an explicit `round()`.
+
 Sales Register is manual. Live Sales Register runs after valid filter changes.
 The nested warehouse service demonstrates a read-only custom API and daily
 cron declaration. Installing registers the schedule but does not start a

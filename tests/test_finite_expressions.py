@@ -452,8 +452,8 @@ def test_bool_casts_and_scale_targets():
     doc = document(Casts, {'flag': True})
     snap = doc.snapshot()
     assert snap['product'] == '5.0000' and snap['rounded'] == '1.01' and snap['negative'] == '-1.01'
-    assert snap['_states']['unrounded']['code'] == 'COMPUTE_SCALE_ERROR'
-    assert snap['_states']['whole']['code'] == 'COMPUTE_SCALE_ERROR'
+    # Results are quantized to the target scale with the field's rounding (Currency and Integer: half up).
+    assert snap['unrounded'] == '1.01' and snap['whole'] == '3' and '_states' not in snap
     doc.set(doc.root.handle, 'flag', False)
     assert doc.snapshot()['product'] == '0.0000'
     doc.set(doc.root.handle, 'flag', None)
@@ -711,7 +711,7 @@ def test_browser_fixtures_match_python_plans_and_results():
     path = Path(__file__).resolve().parents[1] / 'frontend/src/tests/finite-fixtures.json'
     assert json.loads(path.read_text()) == json.loads(json.dumps(collect())), 'Run scripts/generate_finite_fixtures.py'
     for op, a, b in NUMERIC:
-        if op != 'round':
+        if not op.startswith('round'):
             assert text({'add': add, 'sub': sub, 'mul': mul, 'div': div}[op](parse(a), parse(b))) == plain(reference(op, a, b))
 
 
@@ -845,3 +845,163 @@ def test_rolled_back_commands_keep_earlier_batch_rows_and_bounds_accept_exponent
     capped = plan(Capped)
     assert capped['tables']['$root']['fields']['b']['maximum'] == '1000'
     assert Document(capped, {'a': '600'}).results[(Document(capped, {}).root.handle, 'b')].code == 'COMPUTE_RANGE_ERROR'
+
+
+# Phase 1 additions: auto-rounding, dates, Link paths and when()
+
+def test_formula_hashes_of_existing_fixture_models_are_unchanged():
+    from finite_fixtures import MODELS, LOOKUP_MODELS
+    registry = Registry(*MODELS.values(), *LOOKUP_MODELS)
+    # Recorded before rounding, dates, Link paths and when() were added: saved documents stay writable.
+    assert {name: registry.formula_hashes[MODELS[name]] for name in ('invoice', 'project', 'cost', 'states')} == {
+        'invoice': 'sha256:3e1dd4bbee2d54a3378254f56fce575409dec29671fe202af97efd08e8adaea5',
+        'project': 'sha256:39993470d571dd469180910aadd12210d59218b5e89f72c4d0b6ec5315b43351',
+        'cost': 'sha256:1af8439ec26a35bbcf48912510fed60f569aebf8c8e8e09d2de7ca6154bca7bf',
+        'states': 'sha256:55edc5618ae03cc26efcb1423bab708f87aae64a6ecd4d41fec3352226b805e0'}
+
+
+def test_rounding_defaults_options_and_hash():
+    from evlet.calc import formula_hash
+    assert (Decimal().rounding, Currency().rounding, Integer().rounding) == ('half_even', 'half_up', 'half_up')
+    assert Currency(rounding='half_even').rounding == 'half_even' and Decimal(rounding='half_up').rounding == 'half_up'
+    with pytest.raises(ValueError, match='rounding'):
+        Decimal(rounding='down')
+
+    def build(**options):
+        class Rounded(Model):
+            Meta = FiniteMeta
+            a = Decimal()
+            b = Decimal(scale=2, compute=F('a'), **options)
+        return plan(Rounded)
+    default, explicit, other = build(), build(rounding='half_even'), build(rounding='half_up')
+    assert next(field for field in default['fields'] if field['field'] == 'b')['rounding'] == 'half_even'
+    assert formula_hash(default) == formula_hash(explicit) != formula_hash(other)
+    assert Document(default, {'a': '0.125'}).snapshot()['b'] == '0.12'
+    assert Document(other, {'a': '0.125'}).snapshot()['b'] == '0.13'
+
+    class Bounded(Model):
+        Meta = FiniteMeta
+        a = Decimal()
+        capped = Currency(compute=F('a'), maximum='1')
+        exact = Decimal(scale=2, compute=round(F('a'), 2))
+        full = Decimal(scale=None, stored=False, compute=F('a') / 8)
+    snap = document(Bounded, {'a': '1.004'}).snapshot()
+    assert snap['capped'] == '1.00' and snap['exact'] == '1.00' and snap['full'] == '0.1255'
+    snap = document(Bounded, {'a': '1.005'}).snapshot()
+    # Rounding happens before the bounds check; a rounded value outside them is still a range error.
+    assert snap['_states']['capped']['code'] == 'COMPUTE_RANGE_ERROR' and snap['exact'] == '1.01'
+
+
+def test_quantize_half_even_matches_the_decimal_module():
+    from decimal import ROUND_HALF_EVEN
+    generator = random.Random(11)
+    for _ in range(500):
+        value = str(generator.randint(-10**8, 10**8)) + '.' + str(generator.randint(0, 999)).rjust(3, '0')
+        scale = generator.randint(0, 2)
+        with localcontext() as context:
+            context.prec = 60
+            expected = Reference(value).quantize(Reference(1).scaleb(-scale), rounding=ROUND_HALF_EVEN)
+        assert parse(text(quantize(parse(value), scale, 'half_even'))) == parse(str(expected)), (value, scale)
+
+
+def test_date_expressions_reject_mixed_types_at_registry_build():
+    from evlet import Date, DateTime
+    from evlet.calc import days, today, when
+
+    def build(**fields):
+        return Registry(type('Dated', (Model,), {'__module__': __name__, 'Meta': FiniteMeta, 'start': Date(), 'end': Date(),
+                                                 'n': Decimal(), 'flag': Boolean(), 'at': DateTime(), **fields}))
+    for compute, target in [(F('start') + 1, Date), (F('start') * 2, Decimal), (F('start') + F('end'), Date), (days(1), Date),
+                            (days(1) - F('start'), Date), (F('start') < 1, Boolean), (days(1) == days(2), Boolean),
+                            (-F('start'), Date), (round(F('start'), 0), Decimal), (F('start') - F('end'), Date),
+                            (F('start') + days(F('start')), Date), (coalesce(F('start'), 1), Date), (F('n') + days(1), Decimal),
+                            (when(F('n'), 1, 2), Decimal), (when(F('flag'), F('start'), 1), Date), (when(F('flag'), days(1), days(2)), Date),
+                            (today() + days(1), Decimal), (F('start') + days(True), Date), (F('start') + days(F('flag')), Date),
+                            (today(), DateTime), (F('at') + days(1), DateTime), (F('at') < F('at'), Boolean)]:
+        with pytest.raises(CalcError, match='COMPUTE_TYPE_ERROR'):
+            build(result=target(compute=compute))
+    registry = build(result=Date(compute=F('start') - days(F('n'))), gap=Decimal(compute=F('end') - F('start')),
+                     later=Boolean(compute=(F('end') >= F('start')) & (today() < F('end'))), pick=Date(compute=when(F('flag'), F('start'), None)))
+    expressions = {field['field']: field['expression']['$expr'] for field in next(iter(registry.plans.values()))['fields']}
+    assert expressions == {'result': 'date_sub', 'gap': 'date_diff', 'later': 'and', 'pick': 'when'}
+
+
+def test_link_paths_are_validated_at_registry_build():
+    from evlet import Link, Date
+    from evlet.calc import days
+
+    class Country(Model):
+        offset = Integer(default=0)
+        virtual = Decimal(compute=F('offset') * 1, stored=False, scale=None)
+
+    class Area(Model):
+        country = Link(Country)
+        label = Text(default='')
+
+    class Party(Model):
+        area = Link(Area)
+        days_due = Integer(default=30)
+        when_seen = Date()
+
+    def build(compute, target=Decimal):
+        namespace = {'__module__': __name__, 'Meta': FiniteMeta, 'party': Link(Party), 'note': Text(default=''), 'result': target(compute=compute)}
+        return Registry(Country, Area, Party, type('Doc', (Model,), namespace))
+    for path, code in [('party.missing', 'UNSUPPORTED_EXPRESSION'), ('missing.days_due', 'UNSUPPORTED_EXPRESSION'),
+                       ('party.days_due.extra', 'COMPUTE_TYPE_ERROR'), ('note.length', 'COMPUTE_TYPE_ERROR'),
+                       ('party.area.country.offset.more', 'CALCULATION_LIMIT_EXCEEDED'),
+                       ('party.area.country.virtual', 'UNSUPPORTED_EXPRESSION'), ('party.id', 'UNSUPPORTED_EXPRESSION')]:
+        with pytest.raises(CalcError, match=code):
+            build(F(path))
+    with pytest.raises(CalcError, match='COMPUTE_TYPE_ERROR'):
+        build(F('party.area.label'))
+    for bad in ('party..x', 'party.', '.x', 'party.1x', 'a.b c'):
+        with pytest.raises(CalcError, match='UNSUPPORTED_EXPRESSION'):
+            F(bad)
+    with pytest.raises(CalcError, match='UNSUPPORTED_EXPRESSION'):
+        parent.party.days_due
+    registry = build(F('party.area.country.offset') + F('party.days_due'))
+    doc_plan = registry.plans[registry.models['doc']]
+    field = doc_plan['fields'][0]
+    assert field['expression']['args'][0] == {'$expr': 'hop', 'field': 'party', 'steps': [['party', 'area', 'link'], ['area', 'country', 'link'], ['country', 'offset', 'decimal']]}
+    assert doc_plan['tables']['$root']['lookups'] == [{'model': 'area', 'fields': ['country']}, {'model': 'country', 'fields': ['offset']},
+                                                      {'model': 'party', 'fields': ['area', 'days_due']}]
+    dated = build(F('party.when_seen') + days(F('party.days_due')), Date)
+    assert dated.plans[dated.models['doc']]['fields'][0]['expression']['$expr'] == 'date_add'
+
+    doc = Document(doc_plan, {'party': 4})
+    assert doc.lookup_requests() == [['party', 4, ['area', 'days_due']]]
+    doc.set_lookups('party', 4, {'area': 2, 'days_due': 10})
+    assert doc.lookup_requests() == [['area', 2, ['country']]]
+    doc.set_lookups('area', 2, {'country': 1})
+    doc.set_lookups('country', 1, {'offset': '5'})
+    assert doc.snapshot()['result'] == '15.0000' and doc.lookup_requests() == []
+    assert '@country.offset' in doc.explain(doc.root.handle, 'result')['inputs']
+    # A failed command inside a batch leaves the lookups as they were.
+    doc.batch(lambda session: pytest.raises(CalcError, session.set_lookups, 'country', 1, {'nope': 1}))
+    with pytest.raises(RuntimeError):
+        doc.batch(lambda session: (session.set_lookups('country', 1, {'offset': '6'}), (_ for _ in ()).throw(RuntimeError())))
+    assert doc.lookups['country'][1] == {'offset': '5'} and doc.snapshot()['result'] == '15.0000'
+    doc.set_lookups('area', 2, {'country': None})
+    assert doc.snapshot()['_states']['result']['code'] == 'COMPUTE_INPUT_MISSING' and doc.lookup_requests() == []
+    doc.set(doc.root.handle, 'party', True)
+    assert doc.snapshot()['_states']['result']['code'] == 'COMPUTE_TYPE_ERROR'
+
+
+def test_datetime_references_keep_their_previous_behaviour():
+    from evlet import DateTime
+    from evlet.calc import days
+
+    class Moments(Model):
+        Meta = FiniteMeta
+        at = DateTime()
+        at2 = DateTime()
+        same = Boolean(compute=F('at') == F('at2'))
+        empty = Boolean(compute=F('at') == None)  # noqa: E711
+        first = DateTime(compute=coalesce(F('at'), F('at2')))
+    first = '2026-11-01T08:00:00.000000Z'
+    snap = document(Moments, {'at': None, 'at2': first}).snapshot()
+    assert (snap['same'], snap['empty'], snap['first']) == (False, True, first)
+    assert document(Moments, {'at': first, 'at2': first}).snapshot()['same'] is True
+    for compute, target in [(F('at') < F('at2'), Boolean), (F('at') + days(1), DateTime), (F('at') - F('at2'), Decimal)]:
+        with pytest.raises(CalcError, match='COMPUTE_TYPE_ERROR'):
+            plan(type('Bad', (Model,), {'__module__': __name__, 'Meta': FiniteMeta, 'at': DateTime(), 'at2': DateTime(), 'result': target(compute=compute)}))

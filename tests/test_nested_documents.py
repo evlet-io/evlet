@@ -491,3 +491,146 @@ def test_draft_previews_report_invalid_dates_without_failing(tmp_path):
     for values in ({'due': 'not-a-date'}, {'at': 'nope'}, {'due': 5}):
         status, result, _ = c('POST', '/api/_draft/visit', {'values': values})
         assert status == 200 and set(values) <= set(result['errors']) and all(result['values'][name] is None for name in values)
+
+
+def test_link_paths_and_today_settle_on_the_server_and_withhold_unreadable_paths(tmp_path):
+    from datetime import date
+    from evlet import Date, Link, Boolean
+    from evlet.calc import F, days, today, when
+    from evlet.documents import host_today
+    full = Rule(('read', 'create', 'update', 'delete'))
+
+    class Region(Model):
+        permissions = {'admin': full, 'editor': Rule(('read',)), 'viewer': Rule(('read',))}
+        grace = Integer(default=0)
+
+    class Account(Model):
+        # Editors cannot read rates; viewers see only accounts in their own scope.
+        permissions = {'admin': full, 'editor': Rule(('read',), read_fields=('name', 'credit_days', 'region')),
+                       'viewer': Rule(('read',), scope=lambda user: {'name': 'mine'})}
+        name = Text(default='')
+        credit_days = Integer(default=30)
+        rate = Decimal(scale=2, default=0)
+        vip = Boolean(default=False)
+        region = Link(Region)
+
+    class Bill(Model):
+        Meta = FiniteMeta
+        permissions = {'admin': full, 'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
+        account = Link(Account)
+        issued = Date()
+        amount = Currency(default=0)
+        due = Date(compute=F('issued') + days(F('account.credit_days')))
+        grace_due = Date(compute=F('due') + days(F('account.region.grace')))
+        age = Integer(compute=today() - F('issued'))
+        discount = Currency(compute=F('amount') * F('account.rate') / 100)
+        net = Currency(compute=when(F('account.vip'), F('amount') - F('discount'), F('amount')))
+
+    app = application(tmp_path, Region, Account, Bill)
+    admin, editor = users(app)
+    viewer = client(app, 'viewer')
+    _, region, _ = admin('POST', '/api/region', {'grace': 5})
+    _, account, _ = admin('POST', '/api/account', {'name': 'acme', 'credit_days': 30, 'rate': '2.50', 'region': region['id']})
+    before = date.fromisoformat(host_today(app.business))
+    status, bill, _ = admin('POST', '/api/bill', {'account': account['id'], 'issued': '2026-10-01', 'amount': '100.05'})
+    after = date.fromisoformat(host_today(app.business))
+    assert status == 201, bill
+    # Two hops resolve on the server; 100.05 * 2.5% = 2.50125 is quantized half up to the Currency scale.
+    assert (bill['due'], bill['grace_due'], bill['discount'], bill['net']) == ('2026-10-31', '2026-11-05', '2.50', '100.05')
+    assert int(bill['age']) in {(day - date(2026, 10, 1)).days for day in (before, after)}
+
+    # The editor cannot read Account.rate, so results over that path are withheld; the rest stay visible.
+    status, seen, _ = editor('GET', f"/api/bill/{bill['id']}")
+    assert seen['due'] == '2026-10-31' and seen['grace_due'] == '2026-11-05' and 'age' in seen
+    assert 'discount' not in seen and 'net' not in seen
+    status, created, _ = editor('POST', '/api/bill', {'account': account['id'], 'issued': '2026-02-28', 'amount': '10'})
+    assert status == 201 and created['due'] == '2026-03-30' and 'discount' not in created
+    assert admin('GET', f"/api/bill/{created['id']}")[1]['discount'] == '0.25'
+    _, preview, _ = editor('POST', '/api/_draft/bill', {'values': {'account': account['id'], 'issued': '2024-02-28', 'amount': '1'}})
+    assert preview['values']['due'] == '2024-03-29' and 'discount' not in preview['values']
+    # A row-scoped looked-up model withholds every result that follows a path through it.
+    status, scoped, _ = viewer('GET', f"/api/bill/{bill['id']}")
+    assert status == 200 and not {'due', 'grace_due', 'discount', 'net'} & set(scoped) and 'age' in scoped
+
+    schemas = {role: next(model for model in call('GET', '/api/schema')[1]['models'] if model['name'] == 'bill')['calculation']
+               for role, call in (('admin', admin), ('editor', editor))}
+    assert set(schemas['admin']['capabilities'].values()) == {'local_universal'}
+    assert schemas['admin']['plan']['tables']['$root']['lookups'] == [{'model': 'account', 'fields': ['credit_days', 'rate', 'region', 'vip']},
+                                                                     {'model': 'region', 'fields': ['grace']}]
+    assert schemas['editor']['capabilities']['due'] == 'local_universal' and schemas['editor']['capabilities']['discount'] == 'unavailable'
+    assert 'plan' not in schemas['editor']
+
+    # A changed link value is looked up again; the server never keeps stale path values.
+    _, other, _ = admin('POST', '/api/account', {'name': 'other', 'credit_days': 7, 'vip': True, 'rate': '10', 'region': region['id']})
+    _, loaded, headers = admin('GET', f"/api/bill/{bill['id']}")
+    status, moved, _ = admin('PATCH', f"/api/bill/{bill['id']}", {'account': other['id']}, headers={b'if-match': headers[b'etag']})
+    assert status == 200 and (moved['due'], moved['discount'], moved['net']) == ('2026-10-08', '10.01', '90.04')
+    # Without a region the second hop is a ready null; date arithmetic with it stays pending, so the stored result blocks the save.
+    _, plain, _ = admin('POST', '/api/account', {'name': 'plain'})
+    status, result, _ = admin('POST', '/api/bill', {'account': plain['id'], 'issued': '2026-10-01'})
+    assert status == 422 and result['fields']['grace_due'].startswith('COMPUTE_INPUT_MISSING')
+    status, result, _ = admin('POST', '/api/bill', {'issued': '2026-10-01'})
+    assert status == 422 and result['fields']['due'].startswith('COMPUTE_INPUT_MISSING')
+
+
+def test_today_uses_the_instance_timezone(tmp_path):
+    from datetime import datetime, timedelta, timezone
+    from evlet import Date
+    from evlet.calc import today
+    from evlet.documents import host_today
+
+    class Stamp(Model):
+        Meta = FiniteMeta
+        permissions = ALL
+        on = Date(compute=today())
+
+    app = application(tmp_path, Stamp)
+    admin = client(app)
+    for zone, offset in (('Pacific/Kiritimati', 14), ('Etc/GMT+12', -12)):
+        app.business.timezone = zone
+        expected = {(datetime.now(timezone.utc) + timedelta(hours=offset, seconds=delta)).date().isoformat() for delta in (-5, 0, 5)}
+        assert host_today(app.business) in expected
+        status, stamp, _ = admin('POST', '/api/stamp', {})
+        assert status == 201 and stamp['on'] in expected
+
+
+def test_link_lookups_query_each_record_once_per_settle(tmp_path):
+    from evlet import Link
+    from evlet.calc import F, Document
+    from evlet.documents import resolve_lookups
+
+    class Region(Model):
+        permissions = ALL
+        grace = Integer(default=0)
+
+    class Account(Model):
+        permissions = ALL
+        region = Link(Region)
+
+    class Ticket(Model):
+        Meta = FiniteMeta
+        permissions = ALL
+        account = Link(Account)
+        other = Link(Account)
+        grace = Decimal(compute=F('account.region.grace'), stored=False, scale=None)
+        other_grace = Decimal(compute=F('other.region.grace'), stored=False, scale=None)
+
+    app = application(tmp_path, Region, Account, Ticket)
+    # The server reads lookups with full access, so no user is involved.
+    with app.business.context(None) as context:
+        statements = []
+        context._tx.connection.set_trace_callback(lambda sql: statements.append(sql) if sql.lstrip().upper().startswith('SELECT') else None)
+        region = context._tx.create(Region, grace=4)
+        account = context._tx.create(Account, region=region.id)
+        statements.clear()
+        found = Document(app.registry.plans[Ticket], {'account': account.id}, checked=True)
+        resolve_lookups(context, found)
+        assert found.snapshot()['grace'] == '4' and len(statements) == 2
+        statements.clear()
+        # A record that does not exist stays pending and is not queried again in the next round.
+        mixed = Document(app.registry.plans[Ticket], {'account': account.id, 'other': 999}, checked=True)
+        resolve_lookups(context, mixed)
+        snap = mixed.snapshot()
+        assert snap['grace'] == '4' and snap['_states']['other_grace']['code'] == 'COMPUTE_INPUT_MISSING'
+        assert len(statements) == 2 and '999' not in str(statements[1:])
+        context._tx.connection.set_trace_callback(None)

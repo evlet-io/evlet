@@ -490,7 +490,9 @@ class Business:
         capabilities, local = {}, True
         for field in plan['fields']:
             target = models.get(tuple(field['path']))
-            if field['field'] in readable(target):
+            # Link lookups are local only when the browser can read their records through the record routes.
+            fetchable = all(self.registry.models[name] not in self.child_models for scope, name, _ in field['reads'] if scope == 'lookup')
+            if field['field'] in readable(target) and fetchable:
                 capabilities[field['target']] = 'local_universal'
                 continue
             local = False
