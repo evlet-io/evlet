@@ -10,6 +10,7 @@ import type { AppClient } from './client';
 import { readConfig } from './config';
 import type { Prefs } from './prefs';
 import type { Me } from './settings';
+import type { EvaStatus } from '../eva/client';
 
 /** The route table. These are the paths the Python server serves the app for (evlet/ui/routes.py).
  * The model screens live under the frontend's base from the config block (/app for the desk).
@@ -25,6 +26,10 @@ const FIXED = {
   report: '/reports/:report',
   settings: '/settings/:page',
   appSettings: '/settings/app/:app',
+  // Eva, when the server has it for this person (GET /api/_eva). Tasks come before a chat id.
+  eva: '/eva',
+  evaTasks: '/eva/tasks',
+  evaChat: '/eva/:conversation',
 } as const;
 const MODELS = {
   create: '/:model/new',
@@ -63,6 +68,8 @@ export interface AppContext {
   me: Cell<Me | null>;
   /** Bumped when the photo changes, so its address changes. */
   photo: Cell<number>;
+  /** Eva for this person, or null: off in config.py or Controls, or no Allow Eva. Then nothing of Eva shows. */
+  eva: Cell<EvaStatus | null>;
   links: LinkSource;
   /** Development build: shows the Library link. */
   dev: boolean;

@@ -176,7 +176,7 @@ describe('connections', () => {
     expect(text(host)).toContain('Add custom connector');
     expect(text(host)).toContain('evlet mcp --session ~/.evlet/session.json');
     expect(text(host)).toContain('evlet login --url');
-    expect(text(host.querySelector('.crumbs .cur'))).toBe('AI assistants');
+    expect(text(host.querySelector('.crumbs .cur'))).toBe('AI');
   });
 
   it('shows the personal mailbox page in the Settings shell', async () => {

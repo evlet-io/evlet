@@ -22,10 +22,10 @@ Three switches, all needed:
    `models` maps the names people see to the provider's model ids. Without `ai`, or with
    `enabled=False`, Eva does not exist: no routes (they answer 404), no tables, no provider
    requests, no threads and no Eva entries in the interface. Controls cannot override it.
-2. **Controls.** Turn Eva on for the instance (`eva.enabled`, off by default) and
+2. **Controls → AI → Eva.** Turn Eva on for the instance (`eva.enabled`, off by default) and
    choose the default model. Add the OpenAI key under **Connectors → OpenAI**. It is stored
    encrypted with the other connector secrets and never sent to the browser.
-3. **Users.** Turn on **Allow Eva** for each person who may use it. It is off for
+3. **Controls → Users.** Turn on **Allow Eva** for each person who may use it. It is off for
    everyone by default and grants no access to records.
 
 The Playground turns Eva on when `EVLET_EVA_MODEL` names an OpenAI model.
@@ -37,15 +37,32 @@ library (`urllib`) and Chat Completions with streaming. It adds no dependency.
 
 ## What people see
 
-The chat, the record panel and the Settings and Controls pages arrive with Eva's screens, the
-next change. This release has the complete API below: conversations with their activity rows,
-streaming, approvals, files, allowances and scheduled tasks. Everything is stored, so the
-screens rebuild a chat from what Evlet kept, and a dropped connection never runs anything twice.
+- **Eva** in the sidebar, at `/eva`. Conversations sit in their own column: search, rename,
+  archive and delete. Each answer streams in. Each tool call shows as a grey line while it
+  runs, then folds into a row that opens for its tool, status, time, inputs (redacted),
+  records and errors. A refused call says so, and Eva carries on.
+- **Approvals.** Some changes wait for a click (see below). The card names the change and the
+  record, and the run waits. The approval covers that one call with those arguments on that
+  revision of the record. If the record changes first, Eva asks again.
+- **Files.** Upload PDF, CSV, Excel, Word, text or image files (1 MB each, 5 per message), or
+  choose a file attached to a record the person can open. PDFs and images go to the model as
+  they are; Excel and Word are read as text with the standard library. Eva makes files with
+  `create_file` (CSV, text, Markdown, JSON, HTML, or an Excel workbook from rows). Files belong
+  to the person and the chat.
+- **Ask Eva** on a record opens a side panel with the record as the chat's context.
+- **Scheduled tasks** at `/eva/tasks` (see below).
+- **Settings → AI** shows the person's allowance, their tasks and the changes waiting for their
+  approval from outside assistants.
+- When an allowance is used up, the message box says so and when it resets. Chats, files and
+  results stay readable.
+
+Everything shown is rebuilt from what Evlet stored, so reopening a chat shows the same rows.
+A dropped connection never runs anything twice.
 
 ## Who can see what
 
-Conversations belong to their owner. Nobody else can open them, admins included. The usage report
-(`/api/_controls/eva/usage`) shows owners, counts and cost per conversation, never titles or messages. The Tool log
+Conversations belong to their owner. Nobody else can open them, admins included. Controls →
+Usage shows owners, counts and cost per conversation, never titles or messages. The Tool log
 shows tool calls with redacted inputs: identifiers as they are, and only the names of the
 fields sent in values and filters.
 

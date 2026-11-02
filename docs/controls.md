@@ -613,8 +613,10 @@ The personal page is `/settings/keys` in the Settings shell (the `MyKeysPage` co
 
 ## MCP and AI
 
-The AI group has two pages: **MCP** and **Tool log**. Each person needs **Allow MCP**, set in
-Users, to connect an assistant; it is off for new people and grants no record access. On
+The AI group has four pages: **Eva**, **MCP**, **Usage** and **Tool log**. Each person needs
+**Allow Eva** to use Eva and **Allow MCP**, set in Users, to connect an assistant; both are off
+for new people and grant no record access. **Usage** shows tokens, requests, estimated cost in
+AED, cost by day and by person, and the largest conversations by owner and number only. On
 upgrade, people who had a connected assistant keep it. Turning it off signs out the person's
 assistants at once. Changes are audited under Users. **Tool log** lists every tool call from
 MCP clients and the API, with redacted inputs, for 90 days ([tools.md](tools.md)).

@@ -82,6 +82,9 @@ def _serves(application, frontend, base, rest):
     from .registry import route_pattern
     path = base.rstrip('/') + rest
     if frontend == 'evlet.desk':
+        # Eva's screens (/eva, /eva/tasks), only where config.py turned Eva on; the page asks /api/_eva who may use it.
+        if base == '/' and (path == '/eva' or path.startswith('/eva/')) and application.business and application.business.eva is not None:
+            return re.fullmatch(r'/eva(/tasks|/[1-9][0-9]{0,15})?', path) is not None
         if base == '/app':
             match = GENERATED.fullmatch(path)
             return bool(match) and match[1] in application.registry.models

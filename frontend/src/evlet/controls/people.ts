@@ -68,7 +68,8 @@ export function UsersPage(ctx: ControlsContext): HTMLElement {
         <td>${RoleChip(user.role)}</td>
         <td>${required().includes(user.role) ? StatusPill({ label: 'Off · required', tint: 'rose' }) : html`<span class="muted">Off</span>`}</td>
         <td class="muted num">${sessionText(user) || 'None'}</td>
-        <td>${user.allow_mcp ? StatusPill({ label: 'MCP', tint: 'blue' }) : html`<span class="muted">No</span>`}</td>
+        <td>${user.allow_eva || user.allow_mcp ? [user.allow_eva ? StatusPill({ label: 'Eva', tint: 'violet' }) : null, ' ', user.allow_mcp ? StatusPill({ label: 'MCP', tint: 'blue' }) : null]
+          : html`<span class="muted">No</span>`}</td>
         <td>${user.active ? StatusPill({ label: 'Active', tint: 'green' }) : StatusPill({ label: 'Inactive', tint: 'slate' })}</td>
         <td class="r">${Icon('chevron-right', { size: 'sm' })}</td></tr>`)
         : html`<tr><td colspan="7"><div class="ctl-empty">${() => loaded.get() ? 'No users match.' : 'Loading users…'}</div></td></tr>`}</tbody></table>
@@ -119,13 +120,13 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
         } catch (failure) { error.set(message(failure)); }
       } } }) });
   };
-  // Allow MCP saves at once, apart from the form: it lets the person connect assistants and grants no record access.
-  const mcp = cell(Boolean(user.allow_mcp));
-  const allow = async (key: 'allow_mcp', next: boolean, target: typeof mcp) => {
+  // Allow Eva and Allow MCP save at once, apart from the form: they open Eva or MCP and grant no record access.
+  const eva = cell(Boolean(user.allow_eva)), mcp = cell(Boolean(user.allow_mcp));
+  const allow = async (key: 'allow_eva' | 'allow_mcp', next: boolean, target: typeof eva) => {
     target.set(next);
     try {
       await ctx.api.changeUser(user.id, { [key]: next });
-      toast(`MCP ${next ? 'allowed' : 'turned off'} for ${user.username}`);
+      toast(`${key === 'allow_eva' ? 'Eva' : 'MCP'} ${next ? 'allowed' : 'turned off'} for ${user.username}`);
       await refresh();
     } catch (failure) { target.set(!next); error.set(message(failure)); }
   };
@@ -143,6 +144,8 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
         : [required.includes(user.role) ? StatusPill({ label: 'Required, not set up', tint: 'rose' }) : StatusPill({ label: 'Not set up', tint: 'slate' }),
           html`<span class="muted ctl-small">${required.includes(user.role) ? 'They set it up at their next sign-in.' : 'People set it up in Settings, under Sign-in & security.'}</span>`]}</div></section>
       <section class="ctl-section"><h3>AI access</h3>
+        <div class="ctl-field">${Switch({ on: eva, disabled: locked, label: 'Allow Eva', onChange: next => void allow('allow_eva', next, eva) })}
+          <span class="muted ctl-small">Chat with Eva and create scheduled tasks. Eva uses their own permissions, never more.</span></div>
         <div class="ctl-field">${Switch({ on: mcp, disabled: locked, label: 'Allow MCP', onChange: next => void allow('allow_mcp', next, mcp) })}
           <span class="muted ctl-small">${user.assistants ? `Connect outside assistants. Turning it off signs out their ${user.assistants} connected assistant${user.assistants === 1 ? '' : 's'}.` : 'Connect outside assistants such as Claude.'}</span></div></section>
       <section class="ctl-section"><h3>Sessions</h3><div class="ctl-line"><span class="grow">${sessionText(user) || 'No active sessions.'}</span>

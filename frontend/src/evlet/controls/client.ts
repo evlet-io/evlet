@@ -18,8 +18,8 @@ export interface RoleRow {
   description: string; users: number; app: string | null; declared: boolean;
 }
 export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; assistants?: number; keys?: number; two_step?: { since: number | null; agent: string } | null;
-  /** Allow MCP: the person may connect AI assistants. It grants no record access. */
-  allow_mcp?: boolean }
+  /** Allow Eva and Allow MCP: they open Eva or MCP to the person and grant no record access. */
+  allow_eva?: boolean; allow_mcp?: boolean }
 /** A field as models.py declares it: the props Controls can override. */
 export interface FieldProps {
   label: string; help_text: string; tooltip: string; placeholder: string; hidden: boolean; required: boolean; read_only: boolean;
@@ -123,6 +123,19 @@ export interface KeysApi {
 /** A connected AI assistant, as Controls lists it. Per-request detail stays on each person's own page. */
 export interface AssistantRow { id: number; client_name: string; username: string; role: string; created_at: number; last_used: number | null; calls: number }
 export interface McpOverview { address: string; clients: AssistantRow[]; totals: { reads: number; writes: number; denied: number } }
+/** Controls → AI → Eva: whether config.py turned AI on, and what Controls may set. Never the provider key. */
+export interface EvaConfig {
+  configured: boolean; active_users: number; allowed_users: number; jobs: boolean; settings: Record<string, unknown>;
+  provider?: string; models?: string[]; connector?: { saved: boolean; status: string | null } | null; tools?: Array<{ name: string; kind: string }>;
+}
+export interface EvaUsage {
+  period: string; from: string; to: string; note: string; limit: { amount: string | number | null; unit: string; period: string };
+  totals: { cost: string; input_tokens: number; cached_tokens: number; output_tokens: number; reasoning_tokens: number; tokens: number; requests: number; runs: number; tool_calls: number; denied: number };
+  days: Array<{ day: string; chats: string; tasks: string }>;
+  people: Array<{ user_id: number; username: string | null; requests: number; input_tokens: number; output_tokens: number; cost: string;
+    allowance: { limit: string | number | null; unit: string; period: string; used: string | number; exhausted: boolean } }>;
+  conversations: Array<{ id: number; task: boolean; username: string; messages: number; tokens: number; cost: string }>;
+}
 export interface ToolCall {
   id: number; at: number; username: string | null; origin: 'eva' | 'schedule' | 'mcp' | 'api'; client: string | null; run_id: number | null; tool: string;
   model: string | null; record_id: number | null; kind: 'read' | 'write'; outcome: 'ok' | 'denied' | 'failed' | 'approval'; duration_ms: number | null; error: string | null; inputs: unknown;
@@ -218,6 +231,8 @@ export class ControlsClient extends ApiClient implements KeysApi {
   async createKey(body: { name: string; scope: KeyScope; user?: string }) { return (await this.request<CreatedKey>('POST', '/api/_controls/keys', { body })).data; }
   async revokeKey(id: number) { return (await this.request<{ items: ApiKeyRow[] }>('DELETE', `/api/_controls/keys/${id}`)).data; }
   async mcp() { return (await this.request<McpOverview>('GET', '/api/_controls/mcp')).data; }
+  async evaConfig() { return (await this.request<EvaConfig>('GET', '/api/_controls/eva')).data; }
+  async evaUsage(period: string) { return (await this.request<EvaUsage>('GET', '/api/_controls/eva/usage', { query: { period } })).data; }
   async toolCalls(query: { origin?: string; outcome?: string; q?: string; before?: number }) {
     return (await this.request<{ items: ToolCall[]; next: number | null }>('GET', '/api/_controls/tools', { query })).data;
   }
