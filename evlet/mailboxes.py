@@ -4,7 +4,9 @@ replies on the records they can read.
 Microsoft 365 and Google sign in with OAuth (authorization code with PKCE); any other mailbox uses
 IMAP and SMTP with an app password. Tokens and passwords are sealed with the instance secret key.
 A sync job copies in only messages whose addresses match records the person can read, in the
-models apps opt in with Meta.mail; nothing else is stored, not even headers. No route lets an
+models apps opt in with Meta.mail, as `message` entries in each record's Journal (the person is the
+actor); nothing else is stored, not even headers. evlet_mail_links(model, record_id, message_key,
+entry_id) keeps a message once per record and finds the records of a thread. No route lets an
 admin read a mailbox or its credentials.
 """
 
@@ -30,6 +32,7 @@ import time
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from .auth import AccessError, User
+from . import secrets as vault
 from .connectors import (ADDRESS, NOT_ALLOWED, REJECTED, TIMEOUT, UNREACHABLE, ConnectionFailed, Connector, ConnectorField,
                          Connectors, SecretKeyError, _loopback, check_imap, check_smtp, mailbox_context, open_imap, run_with_timeout,
                          safe_address, scrub, state_context)
@@ -126,27 +129,38 @@ def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-# ---------- seams for the restack ----------
-# evlet/secrets.py (Settings) seals secrets with the same key format; the Journal stores messages.
+# ---------- sealed secrets and Journal messages ----------
 
-def seal(business, data, context):
-    return business.connectors.key.encrypt(json.dumps(data, sort_keys=True).encode(), context)
+def seal(business, connection, data, context):
+    """Seal with the instance key (evlet.secrets). The key file is created only while nothing is sealed yet."""
+    return business.connectors.key.encrypt(json.dumps(data, sort_keys=True).encode(), context, create=not vault.sealed_exists(connection))
 
 
 def unseal(business, blob, context):
     return json.loads(business.connectors.key.decrypt(blob, context))
 
 
-def link_message(tx, user, model_name, record_id, key, data, field=None):
-    """Store one copied message on a record (a Journal `message` entry after the restack).
+def link_message(business, tx, user, model, record_id, key, data, field=None):
+    """Store one copied message on a record as a Journal `message` entry, with the person as the actor.
 
     The same message is stored once per record; a different message reusing its Message-ID is kept too.
-    `field` names the Email field of the record that matched, so readers who can't read it don't see the address.
+    `field` names the Email field of the record that matched; the Journal hides `party` from readers who
+    can't read that field. Returns the entry id, or None when the record already has the message.
     """
-    encoded = json.dumps(data, sort_keys=True)
-    tx.connection.execute('INSERT INTO evlet_mail_links(model,record_id,message_key,content,field,user_id,at,data) VALUES (?,?,?,?,?,?,?,?) '
-                          'ON CONFLICT(model,record_id,message_key,content) DO NOTHING',
-                          (model_name, record_id, key, digest(encoded), field, user.id, int(time.time()), encoded))
+    from . import journal
+    if model not in business.journals:
+        return None
+    entry = {**data, 'source': 'mailbox', **({'field': field} if field else {})}
+    same = journal.canonical({name: value for name, value in entry.items() if name != 'field'})
+    for row in tx.connection.execute('SELECT j.data FROM evlet_mail_links l JOIN evlet_journal j ON j.id=l.entry_id '
+                                     'WHERE l.model=? AND l.record_id=? AND l.message_key=?', (business.registry.name_for(model), record_id, key)):
+        if journal.canonical({name: value for name, value in json.loads(row[0]).items() if name not in ('field', 'via')}) == same:
+            return None
+    entry_id = journal.append(business, tx, user, model, record_id, 'message', entry)
+    tx.connection.execute('INSERT INTO evlet_mail_links(model,record_id,message_key,entry_id) VALUES (?,?,?,?)',
+                          (business.registry.name_for(model), record_id, key, entry_id))
+    business.changed(tx, model, record_id, journal=True)
+    return entry_id
 
 
 # ---------- reading messages ----------
@@ -287,6 +301,8 @@ class Mailboxes:
             for name in mail.match:
                 if not isinstance(model.__declared_fields__.get(name), Email) or not getattr(model.__declared_fields__[name], 'stored', True):
                     raise ValueError(f'{model.__name__}: Meta.mail matches stored Email fields; {name} is not one')
+            if model not in business.journals:
+                raise ValueError(f'{model.__name__}: Meta.mail keeps messages in the record journal. Add Meta.journal = Journal().')
             self.declared[model] = mail
 
     def initialize(self):
@@ -297,9 +313,9 @@ class Mailboxes:
                 'linking INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, attempted_at INTEGER, synced_at INTEGER)',
                 'CREATE TABLE IF NOT EXISTS evlet_mail_states (hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
                 'provider TEXT NOT NULL, secrets BLOB NOT NULL, expires INTEGER NOT NULL)',
-                'CREATE TABLE IF NOT EXISTS evlet_mail_links (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, record_id INTEGER NOT NULL, '
-                'message_key TEXT NOT NULL, content TEXT NOT NULL, field TEXT, user_id INTEGER, at INTEGER NOT NULL, data TEXT NOT NULL, '
-                'UNIQUE (model, record_id, message_key, content))',
+                # Messages themselves are Journal entries; this index keeps one per record and finds a thread's records.
+                'CREATE TABLE IF NOT EXISTS evlet_mail_links (model TEXT NOT NULL, record_id INTEGER NOT NULL, message_key TEXT NOT NULL, '
+                'entry_id INTEGER NOT NULL, PRIMARY KEY (model, record_id, message_key, entry_id))',
                 'CREATE INDEX IF NOT EXISTS evlet_mail_links_key ON evlet_mail_links(message_key)',
             ):
                 tx.connection.execute(statement)
@@ -388,7 +404,7 @@ class Mailboxes:
                 settings.update({name: json.loads(old['settings'])[name] for name in OPTIONS})
             tx.connection.execute('DELETE FROM evlet_mailboxes WHERE user_id=?', (user.id,))
             tx.connection.execute('INSERT INTO evlet_mailboxes(user_id,provider,address,settings,secrets,status,linking,created_at) VALUES (?,?,?,?,?,?,?,?)',
-                                  (user.id, provider, address, json.dumps(settings, sort_keys=True), seal(self.business, secret, mailbox_context(user.id)),
+                                  (user.id, provider, address, json.dumps(settings, sort_keys=True), seal(self.business, tx.connection, secret, mailbox_context(user.id)),
                                    'connected', int(settings['link_replies']), int(time.time())))
             audit(tx.connection, user.username, AREA, f'{user.username} · own mailbox', f'Connected ({TITLES[provider]})')
             mailbox_id = self.row(tx.connection, user.id)['id']
@@ -482,7 +498,7 @@ class Mailboxes:
             tx.connection.execute('DELETE FROM evlet_mail_states WHERE expires<=? OR user_id=?', (now, user.id))
             hashed = digest(state)
             tx.connection.execute('INSERT INTO evlet_mail_states(hash,user_id,provider,secrets,expires) VALUES (?,?,?,?,?)',
-                                  (hashed, user.id, body['provider'], seal(self.business, {'verifier': verifier, 'redirect': redirect}, state_context(hashed)),
+                                  (hashed, user.id, body['provider'], seal(self.business, tx.connection, {'verifier': verifier, 'redirect': redirect}, state_context(hashed)),
                                    now + STATE_SECONDS))
         params = {'client_id': config['client_id'], 'response_type': 'code', 'redirect_uri': redirect, 'scope': config['scope'],
                   'state': state, 'code_challenge': challenge, 'code_challenge_method': 'S256',
@@ -600,7 +616,7 @@ class Mailboxes:
             with self.database.transaction() as tx:
                 # Disconnected meanwhile: the row is gone, so nothing is written back.
                 tx.connection.execute('UPDATE evlet_mailboxes SET secrets=? WHERE id=? AND secrets IS NOT NULL',
-                                      (seal(self.business, fresh, mailbox_context(row['user_id'])), mailbox_id))
+                                      (seal(self.business, tx.connection, fresh, mailbox_context(row['user_id'])), mailbox_id))
             return fresh['access_token']
 
     def values(self, row, kind):
@@ -655,7 +671,7 @@ class Mailboxes:
             message_id = self.business.connectors.send_mail(recipients, subject, text, html=html)
         if record is not None:
             with self.database.transaction() as tx:
-                link_message(tx, user, self.business.registry.name_for(record[0]), record[1], key_of(message_id),
+                link_message(self.business, tx, user, record[0], record[1], key_of(message_id),
                              {'text': text[:10000] or subject[:200], 'subject': subject[:200], 'party': ', '.join(recipients)[:200], 'direction': 'out'})
         return message_id
 
@@ -730,7 +746,7 @@ class Mailboxes:
                 return 0
             for key, data, targets in copied:
                 for model, record_id, field in targets:
-                    link_message(tx, user, self.business.registry.name_for(model), record_id, key, data, field)
+                    link_message(self.business, tx, user, model, record_id, key, data, field)
             tx.connection.execute("UPDATE evlet_mailboxes SET cursor=?, synced_at=?, status='connected', error=NULL WHERE id=?",
                                   (json.dumps(cursor), int(time.time()), row['id']))
             if more:
@@ -852,14 +868,15 @@ class Mailboxes:
         return {address: list(dict.fromkeys(targets))[:10] for address, targets in found.items()}
 
     def threads(self, user, references):
-        """{message key: [(Model, id, None)]}: records this person linked an earlier message of the thread to, and can still read."""
+        """{message key: [(Model, id, None)]}: records this person put an earlier message of the thread on, and can still read.
+        Who put it there is the actor of its Journal entry, so someone else's links never pull a message along."""
         if not references:
             return {}
         keys = [key_of(item) for item in references]
         found = {}
         with self.database.transaction() as tx:
-            rows = tx.connection.execute(f'SELECT message_key, model, record_id FROM evlet_mail_links WHERE user_id=? AND message_key IN ({", ".join("?" for _ in keys)})',
-                                         [user.id, *keys]).fetchall()
+            rows = tx.connection.execute('SELECT DISTINCT l.message_key, l.model, l.record_id FROM evlet_mail_links l JOIN evlet_journal j ON j.id=l.entry_id '
+                                         f'WHERE j.actor=? AND l.message_key IN ({", ".join("?" for _ in keys)})', [str(user.id), *keys]).fetchall()
             by_model = {}
             for row in rows:
                 model = self.business.registry.models.get(row['model'])
@@ -872,40 +889,13 @@ class Mailboxes:
                         found.setdefault(key, []).append((model, record_id, None))
         return found
 
-    # ---------- linked messages on a record ----------
-
-    def messages(self, scope, user, model, record_id):
-        """GET /api/{model}/{id}/messages: messages linked to a record, for people who can read it."""
-        try:
-            query = parse_qs(scope.get('query_string', b'').decode('ascii'), keep_blank_values=True, max_num_fields=2)
-            if set(query) - {'limit', 'offset'} or any(len(values) != 1 for values in query.values()):
-                raise ValueError()
-            limit, offset = int(query.get('limit', ['50'])[0]), int(query.get('offset', ['0'])[0])
-            if not 1 <= limit <= 100 or not 0 <= offset <= 2**63 - 1:
-                raise ValueError()
-        except (ValueError, UnicodeError):
-            raise ValidationError({'query': 'Use a limit of 1 to 100 and a nonnegative offset'}) from None
-        name = self.business.registry.name_for(model)
-        readable = self.business.policy.fields(user, model)
-        with self.database.transaction() as tx:
-            self.business.policy.record(tx, user, model, record_id)
-            connection = tx.connection
-            rows = connection.execute('SELECT l.id, l.at, l.data, l.field, u.username FROM evlet_mail_links l LEFT JOIN evlet_users u ON u.id=l.user_id '
-                                      'WHERE l.model=? AND l.record_id=? ORDER BY l.id DESC LIMIT ? OFFSET ?', (name, record_id, limit, offset)).fetchall()
-            total = connection.execute('SELECT count(*) FROM evlet_mail_links WHERE model=? AND record_id=?', (name, record_id)).fetchone()[0]
-        items = []
-        for row in rows:
-            data = json.loads(row['data'])
-            if row['field'] is not None and row['field'] not in readable:
-                data['party'] = None  # The address is the record's own field, which this reader can't read.
-            items.append({'id': row['id'], 'at': row['at'], 'by': row['username'], **data})
-        return 200, {'items': items, 'total': total, 'limit': limit, 'offset': offset}, []
-
     # ---------- HTTP ----------
 
     def api(self, scope, body, user):
         """/api/_settings/me/mailbox: a person's own mailbox. Signed-in sessions only."""
         path, method = scope['path'].removeprefix('/api/_settings/me/mailbox'), scope['method']
+        if self.business.settings.portal(scope, user):
+            raise AccessError(404, NOT_FOUND)  # Personal mailboxes are for desk users.
         try:
             if path == '' and method == 'GET':
                 return 200, self.state(user), []

@@ -255,4 +255,17 @@ describe('transaction document (recorded fixtures)', () => {
     const items = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));
     expect(items).toEqual(['sara attached signed-copy.pdf', 'sara changed it via Claude', 'sara created this record']);
   });
+
+  it('shows emails from a personal mailbox, without an address the reader may not see', async () => {
+    const journal = copy(invoice.invoice_draft_journal);
+    const first = journal.body.items[0];
+    journal.body.items = [{ ...first, id: 900, kind: 'message', data: { text: 'Can you ship Monday?', subject: 'Order', party: 'buyer@acme.test', direction: 'in', source: 'mailbox' } },
+      { ...first, id: 901, kind: 'message', partial: true, data: { text: 'Thanks', subject: 'Re: Order', party: null, direction: 'out', source: 'mailbox' } }];
+    journal.body.total = 2;
+    const { host } = start(routes(invoice.invoice_draft, journal), `/app/invoice/${draft}`);
+    await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(2));
+    const items = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));
+    expect(items).toEqual(['sara received an email from buyer@acme.test', 'sara sent an email to a contact']);
+    expect(text(host.querySelector('.tl-item .note .subj'))).toBe('Order');
+  });
 });

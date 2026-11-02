@@ -380,19 +380,23 @@ A stored value that no longer validates turns it off. Changes are audited under 
 **Which records mail matches.** Apps opt models in, naming the `Email` fields to match:
 
 ```python
-from evlet import Email, Mail, Model, Text
+from evlet import Email, Journal, Mail, Model, Text
 
 class Contact(Model):
     name = Text()
     email = Email()
 
     class Meta:
+        journal = Journal()
         mail = Mail(match=("email",), kind="contact")
 ```
 
 `kind` is `customer`, `contact`, `lead` or `other` (the default). A model without `Meta.mail` is
 never matched, whatever fields it has. The fields must be stored `Email` fields; the model can't
-be a table row. A CRM app would declare its organizations or customers, contacts and leads.
+be a table row, and it must keep a journal (a model with a State does; others add
+`journal = Journal()`), since messages are Journal entries. A CRM app would declare its
+organizations or customers, contacts and leads; testCRM declares Contact and Lead (its
+Organization has no email field).
 
 **Connecting.**
 
@@ -472,12 +476,17 @@ mailbox id and the type of a failure, never addresses, subjects or text. Disconn
 the saved sign-in and any pending sign-in, and stops syncing at once. Messages already linked to
 records stay there.
 
-**Privacy.** No Controls route reads a personal mailbox, its messages or its credentials. Linked
-messages are shown with the record (`GET /api/{model}/{id}/messages`, newest first, `limit` 1 to
-100), only to people who can read that record; API keys and AI assistants only within their
-scope. The matching address is left out (`party` is `null`) for readers who can't read the
-record's field it matched. Until the Journal is on this branch they are stored in
-`evlet_mail_links`; they become Journal `message` entries when it arrives.
+**Privacy.** No Controls route reads a personal mailbox, its messages or its credentials. A
+linked message is a Journal `message` entry on the record ([journal.md](journal.md)), with the
+mailbox owner as the actor and `{"text", "subject", "party", "direction", "source": "mailbox"}`.
+It shows in the record's Activity tab and through `GET /api/{model}/{id}/journal` (add
+`?kind=message` for messages only), only to people who can read that record; API keys and AI
+assistants only within their scope. The entry also keeps the `Email` field that matched; the
+Journal read path leaves the address out (`party` is `null`, the entry `partial`) for readers who
+can't read that field, and never returns the field's name. `evlet_mail_links(model, record_id,
+message_key, entry_id)` is only an index: it keeps a message once per record (a different message
+reusing a Message-ID is kept too) and finds the records a reply belongs to, among the entries the
+same person added. The older `GET /api/{model}/{id}/messages` route is removed.
 
 **Sending.** Trusted code sends as a person with
 `business.mailboxes.send_mail(user, to, subject, text, html=None, record=None)`: from their own
@@ -485,8 +494,9 @@ mailbox when it is connected, the workspace allows it and they chose `mine`, oth
 default outgoing account. With `record=(Model, id)` the person must be able to update the
 record, and the email is linked to it, so replies to it are linked there too.
 
-The personal page is the `MyEmailPage` component (`frontend/src/evlet/settings/email.ts`), ready
-for the Settings shell.
+The personal page is `/settings/email` in the Settings shell (the `MyEmailPage` component,
+`frontend/src/evlet/settings/email.ts`). Its routes are under `/api/_settings/me/mailbox`, so they
+don't clash with `/api/_settings/me/email`, which changes the person's sign-in address.
 
 ## API keys
 
@@ -612,4 +622,3 @@ newest first, 50 rows at a time.
 | `GET/POST/PATCH/DELETE /api/_settings/me/mailbox` | The person's own mailbox: read, connect with a password, change options, disconnect. Sessions only |
 | `POST /api/_settings/me/mailbox/oauth`, `POST .../sync` | Start a Microsoft 365 or Google sign-in (`{"provider"}`, answers `{"url"}`); sync now |
 | `GET/POST /_/mail/callback`, `GET /_/mail/continue.js` | Where the provider sends the person back; the page posts the code from this origin |
-| `GET /api/{model}/{id}/messages` | Emails linked to a record, for people who can read it |

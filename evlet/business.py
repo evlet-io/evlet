@@ -590,11 +590,6 @@ class Business:
 
     def model_dispatch(self, scope, body, user, model, parts):
         path, method = scope['path'], scope['method']
-        if len(parts) == 5 and parts[4] == 'messages':
-            if method != 'GET':
-                raise AccessError(405, 'Method not allowed')
-            if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
-            return self.mailboxes.messages(scope, user, model, int(parts[3]))
         if len(parts) == 5 and parts[4] in ('void', 'revise'):
             if method != 'POST':
                 raise AccessError(405, 'Method not allowed')

@@ -9,8 +9,8 @@ the deals they own and never see a deal's internal notes. Viewers read, without 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Effect, Email, Integer, Link,
-                   LongText, Model, Move, Negate, Percent, Phone, Reference, Related, Rule, Select, Sequence, State, Sum,
+from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Effect, Email, Integer, Journal, Link,
+                   LongText, Mail, Model, Move, Negate, Percent, Phone, Reference, Related, Rule, Select, Sequence, State, Sum,
                    Table, Tags, Text, Time, URL, action)
 from evlet.calc import D, F, coalesce, days, month_start, parent, round, row, today, when
 
@@ -70,6 +70,9 @@ class Contact(Model):
         list_fields = ('name', 'job_title', 'organization', 'email', 'phone')
         search_fields = ('name', 'email')
         key_fields = ('organization', 'job_title', 'email', 'phone')
+        # Emails with this person, from a salesperson's own mailbox, land in the Activity tab.
+        journal = Journal()
+        mail = Mail(match=('email',), kind='contact')
 
 
 class Product(Model):
@@ -282,6 +285,7 @@ class Lead(Model):
         list_fields = ('name', 'company', 'lead_source', 'score', 'owner', 'status')
         search_fields = ('name', 'company', 'email')
         key_fields = ('company', 'score', 'owner', 'lead_source')
+        mail = Mail(match=('email',), kind='lead')
 
     @action('Convert to deal', inputs={'title': Text(required=True, max_length=160), 'expected_close': Date()},
             available_when=(F('status') == 'qualified') & (F('deal') == None))  # noqa: E711

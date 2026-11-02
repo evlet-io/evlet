@@ -11,6 +11,7 @@ import { Avatar, Button, Icon, Switch } from '../ui/base';
 import { DialogFooter, copyText, openModal, toast } from '../ui/layers';
 import { humanize, InputError, kindOf } from '../ui/kinds';
 import { MyAIPage } from '../settings/ai';
+import { MyEmailPage } from '../settings/email';
 import { MyKeysPage } from '../settings/keys';
 import './settings.css';
 
@@ -506,9 +507,9 @@ function NotificationsPage(ctx: SettingsContext): Node {
 
 // ---------- connections ----------
 
-function EmailPage(): Node {
-  return html`${head('Your email', 'Send emails from records as yourself, and see replies on the record.')}
-    ${callout('info', 'mail', 'Connecting your own mailbox comes in a later release. Until then, emails from records go from the workspace address.')}`;
+/** /settings/email: the person's own mailbox (MyEmailPage). */
+function EmailPage(ctx: SettingsContext): Node {
+  return MyEmailPage({ api: ctx.api });
 }
 
 /** /settings/ai: remote assistants (MyAIPage) with the local `evlet mcp` steps and its signed-in command line sessions. */

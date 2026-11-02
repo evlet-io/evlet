@@ -152,6 +152,14 @@ describe('connections', () => {
     expect(text(host)).toContain('evlet login --url');
     expect(text(host.querySelector('.crumbs .cur'))).toBe('AI assistants');
   });
+
+  it('shows the personal mailbox page in the Settings shell', async () => {
+    const email = { allowed: true, providers: { microsoft: true, google: false }, shared: 'noreply@acme.test', mailbox: null };
+    const { host, sent } = start(routes([['GET', /\/api\/_settings\/me\/mailbox$/, { status: 200, etag: null, body: email }]]), '/settings/email');
+    await until(() => expect(text(host)).toContain('Microsoft 365'));
+    expect(text(host.querySelector('.crumbs .cur'))).toBe('Your email');
+    expect(requests(sent, 'GET', /\/api\/_settings\/me\/mailbox$/)).toHaveLength(1);
+  });
 });
 
 describe('app settings', () => {

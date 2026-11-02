@@ -214,6 +214,10 @@ permissions = {
   the page.
 * `via` names the AI assistant a write came through, when it did (see
   [Controls](controls.md#mcp-and-ai)). It is taken out of `data`.
+* `?kind=message` (any entry kind) keeps one kind, such as the emails on a record.
+* A `message` copied from a personal mailbox ([Controls](controls.md#personal-mailboxes)) has
+  `"source": "mailbox"`, and its `party` is `null` (the entry `partial`) for a reader who can't
+  read the record's `Email` field that matched.
 * A follow up has `done`: the id of the entry that completed it, or `null`.
 
 Every entry is listed, so `total` matches what the caller can page through. What the caller

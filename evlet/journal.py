@@ -543,6 +543,12 @@ def present(business, user, model, row, visibility, done):
         shown = data if data['field'] in readable else {}
         if data['field'] not in readable:
             kind, partial = 'changed', True
+    elif kind == 'message' and 'field' in data:
+        # A message a personal mailbox matched by one of the record's Email fields: the address is that
+        # field's value, so a reader who can't read the field doesn't see it.
+        shown = {key: value for key, value in data.items() if key != 'field'}
+        if data['field'] not in readable:
+            shown['party'], partial = None, True
     else:
         shown = data
     actor = row['actor']
@@ -566,8 +572,9 @@ def shown(business, tx, user, model, record_id, rows):
     return items
 
 
-def entries(context, model, record_id, *, limit=PAGE, offset=0):
-    """One page of a record's journal, newest first, as GET /api/{model}/{id}/journal returns it."""
+def entries(context, model, record_id, *, limit=PAGE, offset=0, kind=None):
+    """One page of a record's journal, newest first, as GET /api/{model}/{id}/journal returns it.
+    kind keeps entries of one stored kind, such as message."""
     business, tx, user = context._business, context._tx, context.user
     model = context._model(model)
     if model not in business.journals:
@@ -576,9 +583,10 @@ def entries(context, model, record_id, *, limit=PAGE, offset=0):
     if type(limit) is not int or not 1 <= limit <= MAX_PAGE or type(offset) is not int or not 0 <= offset <= 2**63 - 1:
         raise ValidationError({'query': f'Use a limit of 1 to {MAX_PAGE} entries and a nonnegative offset'})
     name = business.registry.name_for(model)
-    rows = tx.connection.execute('SELECT id, kind, actor, at, data FROM evlet_journal WHERE model=? AND record_id=? '
-                                 'ORDER BY id DESC LIMIT ? OFFSET ?', (name, record_id, limit, offset)).fetchall()
-    total = tx.connection.execute('SELECT count(*) FROM evlet_journal WHERE model=? AND record_id=?', (name, record_id)).fetchone()[0]
+    only, values = ('', ()) if kind is None else (' AND kind=?', (kind,))
+    rows = tx.connection.execute(f'SELECT id, kind, actor, at, data FROM evlet_journal WHERE model=? AND record_id=?{only} '
+                                 'ORDER BY id DESC LIMIT ? OFFSET ?', (name, record_id, *values, limit, offset)).fetchall()
+    total = tx.connection.execute(f'SELECT count(*) FROM evlet_journal WHERE model=? AND record_id=?{only}', (name, record_id, *values)).fetchone()[0]
     items = shown(business, tx, user, model, record_id, rows)
     ids = {item['actor'] for item in items if item['actor'] is not None}
     ids |= {item['data']['assignee'] for item in items if item['kind'] == 'follow_up' and item['data'].get('assignee')}
@@ -610,7 +618,7 @@ def schema(business, user, model):
 
 
 def route(business, scope, body, user, model, record_id):
-    """GET (?limit=&offset=) and POST /api/{model}/{id}/journal."""
+    """GET (?limit=&offset=&kind=) and POST /api/{model}/{id}/journal."""
     from .database import Session
     method = scope['method']
     if method == 'POST':
@@ -624,20 +632,21 @@ def route(business, scope, body, user, model, record_id):
         raise AccessError(405, 'Method not allowed')
     try:
         raw = scope.get('query_string', b'')
-        query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=2) if len(raw) <= 256 else None
-        if query is None or set(query) - {'limit', 'offset'} or any(len(values) != 1 for values in query.values()):
+        query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=3) if len(raw) <= 256 else None
+        if query is None or set(query) - {'limit', 'offset', 'kind'} or any(len(values) != 1 for values in query.values()):
             raise ValueError()
         limit, offset = query.get('limit', [str(PAGE)])[0], query.get('offset', ['0'])[0]
-        if not re.fullmatch('[0-9]{1,19}', limit) or not re.fullmatch('[0-9]{1,19}', offset):
+        kind = query.get('kind', [None])[0]
+        if not re.fullmatch('[0-9]{1,19}', limit) or not re.fullmatch('[0-9]{1,19}', offset) or kind not in (None, *ENGINE_KINDS, *USER_KINDS):
             raise ValueError()
     except (ValueError, UnicodeError):
-        raise ValidationError({'query': f'Use a limit of 1 to {MAX_PAGE} entries and a nonnegative offset'})
+        raise ValidationError({'query': f'Use a limit of 1 to {MAX_PAGE} entries, a nonnegative offset and a known kind'})
     from .documents import Context
     with business.database._connection() as connection:
         # One read snapshot (PostgreSQL: repeatable read, read only).
         connection.execute('BEGIN')
         context = Context(business, Session(connection, business.registry), user, readonly=True)
-        return 200, entries(context, model, record_id, limit=int(limit), offset=int(offset)), []
+        return 200, entries(context, model, record_id, limit=int(limit), offset=int(offset), kind=kind), []
 
 
 # Verification

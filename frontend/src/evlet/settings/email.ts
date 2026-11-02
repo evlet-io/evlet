@@ -1,7 +1,7 @@
-// /settings/email: a person's own mailbox, mounted by the Settings shell. Admins can't read it; only
-// emails linked to a record can be seen, by people who can see that record.
+// /settings/email: a person's own mailbox. Admins can't read it; only emails linked to a record can
+// be seen, in the record's Activity, by people who can see that record. The Settings shell passes its client:
 //
-//   mount(element, () => MyEmailPage({}));
+//   MyEmailPage({ api: ctx.api });
 
 import { html } from '../dom';
 import { ApiClient, ValidationError, type ClientOptions } from '../api';
@@ -53,8 +53,18 @@ export function server(value: string): [string, number] | null {
   return match && Number(match[2]) <= 65535 ? [match[1].replace(/^\[|\]$/g, ''), Number(match[2])] : null;
 }
 
-export function MyEmailPage(options: { api?: MyEmailClient; go?: (url: string) => void }): HTMLElement {
-  const api = options.api ?? new MyEmailClient();
+/** The mailbox routes over any client, such as the Settings shell's. */
+const emailApi = (client: ApiClient) => client instanceof MyEmailClient ? client : {
+  load: async () => (await client.request<MyEmail>('GET', '/api/_settings/me/mailbox')).data,
+  connect: async (body: MailboxDetails) => (await client.request<MyEmail>('POST', '/api/_settings/me/mailbox', { body })).data,
+  signIn: async (provider: 'microsoft' | 'google') => (await client.request<{ url: string }>('POST', '/api/_settings/me/mailbox/oauth', { body: { provider } })).data,
+  change: async (body: Partial<Pick<MyMailbox, 'send_from' | 'link_replies' | 'only_crm'>>) => (await client.request<MyEmail>('PATCH', '/api/_settings/me/mailbox', { body })).data,
+  sync: async () => (await client.request<MyEmail>('POST', '/api/_settings/me/mailbox/sync')).data,
+  disconnect: async () => (await client.request<MyEmail>('DELETE', '/api/_settings/me/mailbox')).data,
+};
+
+export function MyEmailPage(options: { api?: ApiClient; go?: (url: string) => void }): HTMLElement {
+  const api = emailApi(options.api ?? new MyEmailClient());
   const go = options.go ?? ((url: string) => window.location.assign(url));
   const data = cell<MyEmail | null>(null), form = cell(false), busy = cell(false), error = cell('');
   const draft = { address: cell(''), imap: cell(''), smtp: cell(''), password: cell('') };

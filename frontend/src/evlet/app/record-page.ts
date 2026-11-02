@@ -649,7 +649,9 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
       case 'effects': return (data.targets ?? []).map((posted: any) =>
         `${posted.reversal ? 'reversed' : 'posted'} ${posted.rows} ${posted.rows === 1 ? 'row' : 'rows'} ${posted.reversal ? 'in' : 'to'} ${target(posted.target)}`).join(' and ');
       case 'call': return `logged ${data.direction === 'in' ? 'an incoming' : 'an outgoing'} call${data.party ? ` with ${data.party}` : ''}${data.minutes ? ` (${data.minutes} min)` : ''}`;
-      case 'message': return `logged ${data.direction === 'in' ? 'a message from' : 'a message to'} ${data.party ?? 'the customer'}`;
+      case 'message': return data.source === 'mailbox'
+        ? (data.direction === 'in' ? `received an email from ${data.party ?? 'a contact'}` : `sent an email to ${data.party ?? 'a contact'}`)
+        : `logged ${data.direction === 'in' ? 'a message from' : 'a message to'} ${data.party ?? 'the customer'}`;
       default: return (KINDS[item.kind] ?? ['', '', humanize(item.kind).toLowerCase()])[2];
     }
   };

@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 
-from evlet import Application, Database, Email, Integer, JobQueue, LocalAuth, Mail, Model, PostgreSQLDatabase, Registry, Rule, Text
+from evlet import Application, Database, Email, Integer, JobQueue, Journal, LocalAuth, Mail, Model, PostgreSQLDatabase, Registry, Rule, Text
 from evlet import connectors as connectors_module
 from evlet import secrets as vault
 from evlet.auth import AccessError, User
@@ -38,6 +38,7 @@ class Customer(Model):
     email = Email()
 
     class Meta:
+        journal = Journal()
         mail = Mail(match=('email',), kind='customer')
 
 
@@ -48,6 +49,7 @@ class Contact(Model):
     owner = Integer(default=0)
 
     class Meta:
+        journal = Journal()
         mail = Mail(match=('email',), kind='contact')
 
 
@@ -57,6 +59,7 @@ class Lead(Model):
     email = Email()
 
     class Meta:
+        journal = Journal()
         mail = Mail(match='email', kind='lead')
 
 
@@ -66,6 +69,7 @@ class Supplier(Model):
     email = Email()
 
     class Meta:
+        journal = Journal()
         mail = Mail(match=('email',))
 
 
@@ -78,6 +82,9 @@ class Partner(Model):
 class Deal(Model):
     permissions = {'admin': ALL, 'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
     title = Text(default='')
+
+    class Meta:
+        journal = Journal()  # Emails sent from a deal are kept in its Activity.
 
 
 MODELS = (Customer, Contact, Lead, Supplier, Partner, Deal)
@@ -306,8 +313,16 @@ def drain(app):
 
 
 def links(app):
+    """Messages copied from mailboxes: Journal `message` entries, without their mailbox bookkeeping."""
     with app.database._connection() as connection:
-        return [(row['model'], row['record_id'], json.loads(row['data'])) for row in connection.execute('SELECT * FROM evlet_mail_links ORDER BY id')]
+        rows = connection.execute("SELECT model, record_id, data FROM evlet_journal WHERE kind='message' ORDER BY id").fetchall()
+    return [(row['model'], row['record_id'], {key: value for key, value in json.loads(row['data']).items() if key not in ('source', 'field')})
+            for row in rows]
+
+
+def messages(c, model, record_id, **kwargs):
+    """The message entries of a record's Activity, as a reader sees them."""
+    return c('GET', f'/api/{model}/{record_id}/journal?kind=message', **kwargs)
 
 
 def stored(app):
@@ -315,7 +330,7 @@ def stored(app):
     with app.database._connection() as connection:
         return json.dumps([[{key: (bytes(value).hex() if isinstance(value, (bytes, memoryview)) else value) for key, value in dict(row).items()}
                             for row in connection.execute(f'SELECT * FROM {table}')]
-                           for table in ('evlet_mailboxes', 'evlet_mail_states', 'evlet_mail_links', 'evlet_jobs', 'evlet_audit', 'evlet_connectors')])
+                           for table in ('evlet_mailboxes', 'evlet_mail_states', 'evlet_mail_links', 'evlet_journal', 'evlet_jobs', 'evlet_audit', 'evlet_connectors')])
 
 
 # ---------- the switch ----------
@@ -377,11 +392,15 @@ def test_app_password_connect_sync_matching_and_privacy(app, mail):
 
     # Linked messages follow the record: the owner's contact is hidden from the viewer, the admin reads every record.
     viewer, admin = client(app, 'viewer'), client(app)
-    assert editor('GET', f"/api/contact/{records['mine']}/messages")[1]['items'][0]['subject'] == 'From my contact'
-    assert viewer('GET', f"/api/contact/{records['mine']}/messages")[0] == 404
-    assert admin('GET', f"/api/contact/{records['mine']}/messages")[1]['total'] == 1
-    assert viewer('GET', f"/api/customer/{records['customer']}/messages")[1]['items'][0]['by'] == 'editor'
-    assert editor('POST', f"/api/customer/{records['customer']}/messages", {})[0] == 405
+    assert messages(editor, 'contact', records['mine'])[1]['items'][0]['data']['subject'] == 'From my contact'
+    assert messages(viewer, 'contact', records['mine'])[0] == 404
+    assert messages(admin, 'contact', records['mine'])[1]['total'] == 1
+    # Messages are the person's Journal entries: the mailbox owner is the actor.
+    page = messages(viewer, 'customer', records['customer'])[1]
+    assert page['users'][str(page['items'][0]['actor'])] == 'editor' and page['items'][0]['data']['source'] == 'mailbox'
+    assert 'field' not in page['items'][0]['data']
+    # The old messages route is gone; the Activity tab (the journal) shows them.
+    assert editor('GET', f"/api/customer/{records['customer']}/messages")[0] in (404, 405)
 
     # Admins can't read a personal mailbox: no Controls route shows it, and their own page shows only theirs.
     assert admin('GET', '/api/_settings/me/mailbox')[1]['mailbox'] is None
@@ -728,10 +747,9 @@ def test_a_hidden_email_field_is_not_shown_as_the_party(app, mail):
     imap.mail.append(message(1, 'lina@lead.test', 'Lead mail'))
     client(app, 'editor')('POST', '/api/_settings/me/mailbox', mailbox(imap, smtp))
     drain(app)
-    path = f"/api/lead/{app.records['lead']}/messages"
-    assert client(app, 'editor')('GET', path)[1]['items'][0]['party'] == 'lina@lead.test'
-    item = client(app, 'viewer')('GET', path)[1]['items'][0]
-    assert item['party'] is None and item['subject'] == 'Lead mail'
+    assert messages(client(app, 'editor'), 'lead', app.records['lead'])[1]['items'][0]['data']['party'] == 'lina@lead.test'
+    item = messages(client(app, 'viewer'), 'lead', app.records['lead'])[1]['items'][0]
+    assert item['data']['party'] is None and item['data']['subject'] == 'Lead mail' and item['partial']
 
 
 def test_send_only_and_failing_mailboxes_do_not_hold_up_the_others(app, mail):
@@ -750,7 +768,7 @@ def test_send_only_and_failing_mailboxes_do_not_hold_up_the_others(app, mail):
             sending_only = index < 25
             settings = {**base, 'link_replies': not sending_only, 'imap': {**base['imap'], 'port': port}}
             tx.connection.execute("INSERT INTO evlet_mailboxes(user_id,provider,address,settings,secrets,status,linking,created_at) VALUES (?,'imap',?,?,?,'connected',?,0)",
-                                  (user_id, f'u{index}@x.test', json.dumps(settings), module.seal(app.business, {'password': 'x'}, connectors_module.mailbox_context(user_id)),
+                                  (user_id, f'u{index}@x.test', json.dumps(settings), module.seal(app.business, tx.connection, {'password': 'x'}, connectors_module.mailbox_context(user_id)),
                                    int(not sending_only)))
     imap.mail.append(message(1, 'buyer@acme.test', 'Should sync'))
     for _ in range(2):
@@ -799,7 +817,7 @@ def test_replies_link_to_the_record_they_answer_and_reused_ids_keep_both(app, ma
     imap.mail.append(message(1, 'new.person@nowhere.test', 'Re: Quote', reply_to=sent))
     # A message linked by someone else to another record doesn't pull this one there.
     with app.database.transaction() as tx:
-        module.link_message(tx, User(app.ids['admin'], 'admin', 'admin'), 'supplier', app.records['supplier'], module.key_of('<admin@acme.test>'),
+        module.link_message(app.business, tx, User(app.ids['admin'], 'admin', 'admin'), Supplier, app.records['supplier'], module.key_of('<admin@acme.test>'),
                             {'text': 'x', 'subject': 'x', 'party': 'x', 'direction': 'out'})
     imap.mail.append(message(2, 'buyer@acme.test', 'Hi', reply_to='<admin@acme.test>'))
     first, second = message(3, 'buyer@acme.test', 'First'), message(4, 'buyer@acme.test', 'Second, same id')
@@ -834,10 +852,10 @@ def test_linking_needs_update_and_keys_follow_their_scope(app, mail):
     admin = client(app)
     token = admin('POST', '/api/_controls/keys', {'name': 'Deals only', 'user': 'editor', 'scope': {'access': 'read', 'models': ['Deal']}})[1]['token']
     headers = {b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b''}
-    assert http(app, 'GET', f"/api/customer/{app.records['customer']}/messages", headers=headers)[0] in (403, 404)
+    assert http(app, 'GET', f"/api/customer/{app.records['customer']}/journal?kind=message", headers=headers)[0] in (403, 404)
     token = admin('POST', '/api/_controls/keys', {'name': 'All', 'user': 'editor', 'scope': {'access': 'read', 'models': None}})[1]['token']
     headers = {b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b''}
-    assert http(app, 'GET', f"/api/customer/{app.records['customer']}/messages", headers=headers)[1]['total'] == 1
+    assert http(app, 'GET', f"/api/customer/{app.records['customer']}/journal?kind=message", headers=headers)[1]['total'] == 1
 
 
 def test_matching_splits_long_address_lists(app):
@@ -878,6 +896,38 @@ def test_postgres_mailboxes(pg_dsn, mail, monkeypatch):  # noqa: F811
     editor('POST', '/api/_settings/me/mailbox/sync')
     drain(app)
     assert [data['subject'] for _, _, data in links(app)] == ['Over PostgreSQL']
-    assert editor('GET', f"/api/customer/{app.records['customer']}/messages")[1]['total'] == 1
+    assert messages(editor, 'customer', app.records['customer'])[1]['total'] == 1
     assert editor('PATCH', '/api/_settings/me/mailbox', {'send_from': 'shared'})[1]['mailbox']['send_from'] == 'shared'
     assert editor('DELETE', '/api/_settings/me/mailbox')[1]['mailbox'] is None
+
+
+def test_mail_needs_the_record_journal(tmp_path):
+    class Unjournaled(Model):
+        permissions = {'admin': ALL}
+        email = Email()
+
+        class Meta:
+            mail = Mail(match=('email',), kind='contact')
+
+    database = Database(tmp_path / 'plain.sqlite3', Registry(Unjournaled))
+    with pytest.raises(ValueError, match='Add Meta.journal = Journal()'):
+        Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+
+
+def test_a_message_is_kept_once_per_record_and_threads_through_the_index(app, mail):
+    imap, smtp, _ = mail
+    switch(app, True)
+    imap.mail.append(message(1, 'buyer@acme.test', 'First'))
+    client(app, 'editor')('POST', '/api/_settings/me/mailbox', mailbox(imap, smtp))
+    drain(app)
+    with app.database._connection() as connection:
+        index = [dict(row) for row in connection.execute('SELECT * FROM evlet_mail_links')]
+        entry = connection.execute("SELECT id FROM evlet_journal WHERE kind='message'").fetchone()[0]
+    assert len(index) == 1 and set(index[0]) == {'model', 'record_id', 'message_key', 'entry_id'} and index[0]['entry_id'] == entry
+    (_, _, data), = links(app)
+    editor = User(app.ids['editor'], 'editor', 'editor')
+    with app.database.transaction() as tx:
+        # The same message again is not stored twice; another message reusing its Message-ID is.
+        assert module.link_message(app.business, tx, editor, Customer, app.records['customer'], index[0]['message_key'], data, 'email') is None
+        assert module.link_message(app.business, tx, editor, Customer, app.records['customer'], index[0]['message_key'], {**data, 'text': 'Other'}, 'email')
+    assert [item['text'] for _, _, item in links(app)] == [data['text'], 'Other']

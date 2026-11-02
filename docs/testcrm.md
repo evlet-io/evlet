@@ -46,13 +46,13 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 | Model | Engine features |
 |---|---|
 | Organization | `Select`, `URL`, `Phone`, `Tags`, bounds, `Meta.layout`, `key_fields`, `relations` with order and labels, per-record measures over deals (`Count`, `Sum` with `where`), a model measure, `Attachments` |
-| Contact | `Link` with an index, `Email`, a stored calculation through a Link path (`F("organization.emirate")`) |
+| Contact | `Link` with an index, `Email`, a stored calculation through a Link path (`F("organization.emirate")`), `Meta.journal = Journal()` and `Meta.mail = Mail(match=("email",), kind="contact")`, so emails with the person from a salesperson's own mailbox show in its Activity |
 | Product | `unique` field, `Boolean`, read only for sales |
 | Booking | Effect target (`source = Reference()`, `reversal`), read only for every role, a measure |
 | Deal | `Sequence` (`DL-{year}-{n:04}`), `State` with guarded moves (`when=`), a role-limited move, locked, final and voidable states, `Meta.revisable`, `run=` on a move, `@action` with `inputs` and `available_when`, `applies_when` and `editable_when_locked`, `initial=` through a Link, a calculated `Percent` through nested `when()`, `round()`, `days()`, `coalesce()`, `today()` in a virtual result, a `Table` of up to 1,000 lines, `sum`, `count` and `where(row.recurring == True)` aggregates, an `Effect` with `Negate`, model and per-record measures (won this month through `month_start()`), `key_fields`, `relations`, `Attachments`, a row scope with `default=CurrentUser` on the owner, and field lists per role |
 | Deal line | `initial=` from the product (description, rate, taxable), a discount `Percent`, an auto-rounded amount, VAT through `when()` and `parent.vat_rate` |
 | Task | `Time`, `Duration` with `applies_when`, a virtual `Boolean` from `today()`, Links to Deal and Contact |
-| Lead | `State` with a guard on the score, `applies_when` with `required_when` on a reason that Mark lost asks for, an action that creates other records |
+| Lead | `State` with a guard on the score, `applies_when` with `required_when` on a reason that Mark lost asks for, an action that creates other records, `Meta.mail = Mail(match=("email",), kind="lead")` |
 
 ### Permissions
 
