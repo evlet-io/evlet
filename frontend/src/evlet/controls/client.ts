@@ -1,7 +1,7 @@
 // The Controls routes (/api/_controls/*) on top of the framework client. Every route checks access
 // on the server; anyone without it gets 404.
 
-import { ApiClient, type ClientOptions } from '../api';
+import { ApiClient, ApiError, type ApiResponse, type ClientOptions, type RequestOptions } from '../api';
 
 export const OPS = ['read', 'create', 'update', 'delete'] as const;
 
@@ -17,7 +17,7 @@ export interface RoleRow {
   id: string; kind: 'framework' | 'custom'; base: string | null; realm: 'desk' | 'portal'; opens_controls: boolean;
   description: string; users: number; app: string | null; declared: boolean;
 }
-export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; assistants?: number; two_step?: { since: number | null; agent: string } | null }
+export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; assistants?: number; keys?: number; two_step?: { since: number | null; agent: string } | null }
 /** A field as models.py declares it: the props Controls can override. */
 export interface FieldProps {
   label: string; help_text: string; placeholder: string; hidden: boolean; required: boolean; read_only: boolean;
@@ -122,8 +122,35 @@ export interface KeysApi {
 export interface AssistantRow { id: number; client_name: string; username: string; role: string; created_at: number; last_used: number | null; calls: number }
 export interface McpOverview { address: string; clients: AssistantRow[]; totals: { reads: number; writes: number; denied: number } }
 
+/** The server's answer when a change in Controls needs a fresh two-step code. */
+export const VERIFY = 'VERIFY_TWO_STEP';
+
 export class ControlsClient extends ApiClient implements KeysApi {
+  /**
+   * Asks the person for a two-step code and resolves once the server accepted it, or rejects when they
+   * cancel. Controls sets it to its code dialog; without it a change that needs a code fails as usual.
+   */
+  verify: (() => Promise<void>) | null = null;
+  private verifying: Promise<void> | null = null;
+
   constructor(options: ClientOptions = {}) { super(options); }
+
+  /** Changes in Controls ask for a recent two-step code. Ask once, however many changes are waiting, then send them again. */
+  override async request<T>(method: string, path: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
+    try {
+      return await super.request<T>(method, path, options);
+    } catch (failure) {
+      if (!(failure instanceof ApiError) || failure.code !== VERIFY || !this.verify) throw failure;
+      this.verifying ??= this.verify().finally(() => { this.verifying = null; });
+      await this.verifying;
+      return super.request<T>(method, path, options);
+    }
+  }
+
+  /** Check a code for this session: changes in Controls then need none for 10 minutes. */
+  async verifyCode(code: string) {
+    return (await super.request<{ verified: number; until: number }>('POST', '/api/_settings/me/two-step/verify', { body: { code } })).data;
+  }
 
   async state() { return (await this.request<ControlsState>('GET', '/api/_controls/state')).data; }
   async overrides() { return (await this.request<Overrides>('GET', '/api/_controls/overrides')).data; }

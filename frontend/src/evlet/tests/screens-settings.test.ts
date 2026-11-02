@@ -102,17 +102,40 @@ describe('personal pages', () => {
     expect(requests(sent, 'POST', /confirm$/)[0].body).toEqual({ code: '123456' });
   });
 
-  it('asks for the password and a code before making new backup codes', async () => {
+  it('asks only for a code before making new backup codes when two-step sign-in is on', async () => {
     const { host, sent } = start(routes([['POST', /\/api\/_settings\/me\/two-step\/codes$/, { status: 200, etag: null, body: { codes: ['abcd-efgh'] } }]],
       me(body => { body.security.two_step = { on: true, since: 1793534400, agent: 'a browser', codes: 3, required: false, available: true, verified: true }; })), '/settings/security');
     await until(() => expect(byText(host, 'button', 'Make new codes')).not.toBeNull());
     expect(text(host.querySelector('.set-sec:nth-of-type(2) .set-row p'))).toContain('from a browser. 3 backup codes left.');
     click(byText(host, 'button', 'Make new codes'));
-    typeInto(document.querySelector<HTMLInputElement>('#ra-password')!, 'my password');
+    expect(document.querySelector('#ra-password')).toBeNull();
+    click(byText(document.body, '.modal button', 'Make new codes'));
+    expect(text(document.querySelector('.modal .err'))).toBe('Enter a code from your app, or a backup code.');
     typeInto(document.querySelector<HTMLInputElement>('#ra-code')!, '123456');
     click(byText(document.body, '.modal button', 'Make new codes'));
     await until(() => expect(text(document.querySelector('.modal h2'))).toBe('Backup codes'));
-    expect(requests(sent, 'POST', /codes$/)[0].body).toEqual({ password: 'my password', code: '123456' });
+    expect(requests(sent, 'POST', /codes$/)[0].body).toEqual({ code: '123456' });
+  });
+
+  it('asks for a code with a new password when two-step sign-in is on, and offers to revoke API keys', async () => {
+    const { host, sent } = start(routes([['POST', /\/api\/_settings\/me\/password$/, { status: 200, etag: null, body: { changed: true, revoked_keys: 2 } }]],
+      me(body => { body.security.two_step = { on: true, since: 1793534400, agent: 'a browser', codes: 3, required: false, available: true, verified: true }; body.security.api_keys = 2; })),
+      '/settings/security');
+    await until(() => expect(byText(host, 'button', 'Change password')).not.toBeNull());
+    click(byText(host, 'button', 'Change password'));
+    const box = byText(host, '[role="checkbox"]', 'Also revoke API keys (2 active)')!;
+    expect(box.getAttribute('aria-checked')).toBe('false');
+    typeInto(host.querySelector<HTMLInputElement>('#pw-cur')!, 'old password here');
+    typeInto(host.querySelector<HTMLInputElement>('#pw-new')!, 'a brand new long password');
+    typeInto(host.querySelector<HTMLInputElement>('#pw-again')!, 'a brand new long password');
+    click(byText(host, 'button', 'Update password'));
+    await until(() => expect(text(host)).toContain('Enter a code from your app, or a backup code.'));
+    typeInto(host.querySelector<HTMLInputElement>('#pw-code')!, '123456');
+    click(box);
+    click(byText(host, 'button', 'Update password'));
+    await until(() => expect(requests(sent, 'POST', /password$/)).toHaveLength(1));
+    expect(requests(sent, 'POST', /password$/)[0].body).toEqual({ current: 'old password here', new: 'a brand new long password', code: '123456', revoke_keys: true });
+    await until(() => expect(lastToast()).toBe('Password updated. Other devices were signed out and your API keys revoked.'));
   });
 
   it('cannot turn two-step sign-in off when the role requires it', async () => {

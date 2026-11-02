@@ -151,7 +151,7 @@ describe('Controls system pages', () => {
   it('links the overview tiles and attention items to the new pages', async () => {
     const { host } = open('/controls');
     await until(() => expect(text(host)).toContain('Notes 0.2.0 is waiting to be migrated'));
-    expect(text(byText(host, '.ctl-row-btn', /trusted proxy/).querySelector('code'))).toBe('trusted_proxies=("127.0.0.1",)');
+    expect(text(byText(host, '.ctl-row-btn', /trusted proxy/)!.querySelector('code'))).toBe('trusted_proxies=("127.0.0.1",)');
     expect(text(byText(host, '.ctl-nav-item', /^Jobs/))).toBe('Jobs 1');
     expect(text(byText(host, '.ctl-nav-item', /^Overrides/))).toBe('Overrides 2');
     click(byText(host, '.ctl-tile', /Overrides on this instance/));

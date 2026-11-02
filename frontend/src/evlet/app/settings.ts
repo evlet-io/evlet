@@ -7,7 +7,7 @@ import { ApiError, ValidationError, type ApiClient, type User } from '../api';
 import { cell, derive, untrack, type Cell } from '../reactive';
 import { formatDate, formatDateTime, setRegion, type DateFormat, type NumberFormat } from '../model/format';
 import type { FieldSchema } from '../model/schema';
-import { Avatar, Button, Icon, Switch } from '../ui/base';
+import { Avatar, Button, Checkbox, Icon, Switch } from '../ui/base';
 import { DialogFooter, copyText, openModal, toast } from '../ui/layers';
 import { humanize, InputError, kindOf } from '../ui/kinds';
 import './settings.css';
@@ -27,6 +27,8 @@ export interface Me {
     password_min: number;
     two_step: { on: boolean; since: number | null; agent: string; codes: number; required: boolean; available: boolean; verified: boolean };
     sessions: Array<{ id: string; current: boolean; started: number | null; expires: number; agent: string; realm: string }>;
+    /** Active API keys, for the choice to revoke them with a password change. */
+    api_keys?: number;
   };
 }
 
@@ -276,27 +278,29 @@ function changeEmail(ctx: SettingsContext) {
 }
 
 /**
- * Sensitive changes ask for the password again and, with two-step sign-in on, a code from the app
- * or a backup code. body() adds the change's own values, or returns a message to show.
+ * Sensitive changes ask who you are again: with two-step sign-in on, only a code from the app or a
+ * backup code; without it, the password. body() adds the change's own values, or returns a message to show.
  */
 function confirmIdentity<T>(ctx: SettingsContext, options: { title: string; icon: string; yes: string; path: string; danger?: boolean; text?: string;
   before?: (error: Cell<string>) => Child; body?: () => Record<string, unknown> | string; done: (data: T) => void }) {
-  const password = cell(''), code = cell(''), error = cell(''), busy = cell(false);
+  const secret = cell(''), error = cell(''), busy = cell(false);
   const enrolled = ctx.me.peek().security.two_step.on;
+  const input = (event: Event) => { secret.set((event.target as HTMLInputElement).value); error.set(''); };
   openModal({ title: options.title, narrow: true, icon: options.icon,
     body: () => html`${options.text ? html`<p class="set-p">${options.text}</p>` : null}${options.before?.(error) ?? null}
-      <div class="set-field"><label for="ra-password">Your password</label><input class="input" id="ra-password" type="password" autocomplete="current-password"
-        prop:value=${password} on:input=${(event: Event) => { password.set((event.target as HTMLInputElement).value); error.set(''); }}></div>
-      ${enrolled ? html`<div class="set-field"><label for="ra-code">Code from your app, or a backup code</label><input class="input" id="ra-code" autocomplete="one-time-code" maxlength="9"
-        prop:value=${code} on:input=${(event: Event) => { code.set((event.target as HTMLInputElement).value); error.set(''); }}></div>` : null}
+      ${enrolled
+        ? html`<div class="set-field"><label for="ra-code">Code from your app, or a backup code</label><input class="input" id="ra-code" autocomplete="one-time-code" maxlength="9"
+          prop:value=${secret} on:input=${input}></div>`
+        : html`<div class="set-field"><label for="ra-password">Your password</label><input class="input" id="ra-password" type="password" autocomplete="current-password"
+          prop:value=${secret} on:input=${input}></div>`}
       ${() => error.get() ? html`<span class="err" role="alert">${error.get()}</span>` : null}`,
     footer: close => DialogFooter({ cancel: close, submit: { label: options.yes, variant: options.danger ? 'danger' : 'primary', disabled: busy, onClick: async () => {
       const extra = options.body?.() ?? {};
       if (typeof extra === 'string') { error.set(extra); return; }
-      if (!password.peek()) { error.set('Enter your password.'); return; }
+      if (!secret.peek().trim()) { error.set(enrolled ? 'Enter a code from your app, or a backup code.' : 'Enter your password.'); return; }
       busy.set(true);
       try {
-        const { data } = await ctx.api.request<T>('POST', options.path, { body: { ...extra, password: password.peek(), ...(enrolled ? { code: code.peek() } : {}) } });
+        const { data } = await ctx.api.request<T>('POST', options.path, { body: { ...extra, ...(enrolled ? { code: secret.peek().trim() } : { password: secret.peek() }) } });
         close();
         options.done(data);
       } catch (failure) {
@@ -388,7 +392,8 @@ function SecurityPage(ctx: SettingsContext): Node {
 
 function PasswordForm(ctx: SettingsContext, close: () => void, reload: () => Promise<void>): Node {
   const minimum = ctx.me.peek().security.password_min;
-  const current = cell(''), next = cell(''), again = cell(''), error = cell(''), busy = cell(false);
+  const enrolled = ctx.me.peek().security.two_step.on, keys = ctx.me.peek().security.api_keys ?? 0;
+  const current = cell(''), next = cell(''), again = cell(''), code = cell(''), revoke = cell(false), error = cell(''), busy = cell(false);
   const score = derive(() => { const value = next.get(); return Math.min(4, Number(value.length >= minimum) + Number(value.length >= 20) + Number(/[A-Z]/.test(value) && /[a-z]/.test(value)) + Number(/[0-9\W]/.test(value))); });
   const field = (id: string, label: string, value: Cell<string>, auto: string) => html`<input class="input" id=${id} type="password" autocomplete=${auto} aria-label=${label} prop:value=${value}
     on:input=${(event: Event) => { value.set((event.target as HTMLInputElement).value); error.set(''); }}>`;
@@ -396,10 +401,13 @@ function PasswordForm(ctx: SettingsContext, close: () => void, reload: () => Pro
     if (!current.peek()) { error.set('Enter your current password.'); return; }
     if (next.peek().length < minimum) { error.set(`Your workspace needs at least ${minimum} characters.`); return; }
     if (next.peek() !== again.peek()) { error.set("The two new passwords don't match."); return; }
+    if (enrolled && !code.peek().trim()) { error.set('Enter a code from your app, or a backup code.'); return; }
     busy.set(true);
     try {
-      await ctx.api.request('POST', '/api/_settings/me/password', { body: { current: current.peek(), new: next.peek() } });
-      toast(ctx.me.peek().portal ? 'Password updated.' : 'Password updated. Other devices were signed out.');
+      await ctx.api.request('POST', '/api/_settings/me/password', { body: { current: current.peek(), new: next.peek(),
+        ...(enrolled ? { code: code.peek().trim() } : {}), ...(keys ? { revoke_keys: revoke.peek() } : {}) } });
+      toast(ctx.me.peek().portal ? 'Password updated.' : revoke.peek() ? 'Password updated. Other devices were signed out and your API keys revoked.'
+        : 'Password updated. Other devices were signed out.');
       close();
       await reload();
     } catch (failure) {
@@ -412,7 +420,11 @@ function PasswordForm(ctx: SettingsContext, close: () => void, reload: () => Pro
       <div class="set-meter"><i style:width=${() => next.get() ? `${(score.get() + 1) * 20}%` : '0'} class=${() => `s${score.get()}`}></i></div>
       <span class="hint">${() => next.get().length < minimum ? `At least ${minimum} characters.${next.get().length ? ` ${minimum - next.get().length} more to go.` : ''}` : 'Long enough. A short sentence is easy to remember.'}</span></div>
     <div class="set-field"><label for="pw-again">Type it again</label>${field('pw-again', 'Type it again', again, 'new-password')}
-      ${() => again.get() && again.get() !== next.get() ? html`<span class="err">The two passwords don't match.</span>` : null}</div></div>
+      ${() => again.get() && again.get() !== next.get() ? html`<span class="err">The two passwords don't match.</span>` : null}</div>
+    ${enrolled ? html`<div class="set-field"><label for="pw-code">Code from your app, or a backup code</label><input class="input" id="pw-code" autocomplete="one-time-code" maxlength="9"
+      prop:value=${code} on:input=${(event: Event) => { code.set((event.target as HTMLInputElement).value); error.set(''); }}></div>` : null}
+    ${keys ? html`<div class="set-field full">${Checkbox({ checked: revoke, label: `Also revoke API keys (${keys} active)` })}
+      <span class="hint">Scripts and tools that use them stop working. Leave it unticked to keep them.</span></div>` : null}</div>
     ${() => error.get() ? callout('warn', 'info', error.get()) : null}
     <div class="set-actions"><span class="hint grow">Other devices are signed out after the change.</span>${Button({ label: 'Cancel', variant: 'ghost', onClick: close })}
       ${Button({ label: 'Update password', variant: 'primary', disabled: busy, onClick: () => void submit() })}</div></div>`;

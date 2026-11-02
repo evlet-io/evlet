@@ -2758,6 +2758,7 @@
     "title": "Managing Director"
    },
    "security": {
+    "api_keys": 0,
     "password_min": 15,
     "sessions": [
      {

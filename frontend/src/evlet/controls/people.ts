@@ -3,7 +3,7 @@
 import { html, when, type Child } from '../dom';
 import { ApiError, ValidationError } from '../api';
 import { cell, derive } from '../reactive';
-import { Avatar, Button, Icon, StatusPill, Switch } from '../ui/base';
+import { Avatar, Button, Checkbox, Icon, StatusPill, Switch } from '../ui/base';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
 import type { RoleRow, UserRow } from './client';
@@ -104,12 +104,19 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
       await refresh();
     } catch (failure) { error.set(message(failure)); }
   };
-  const signOut = async () => {
-    try {
-      await ctx.api.changeUser(user.id, { sessions: 'end' });
-      toast(`${user.username} is signed out everywhere`);
-      await refresh();
-    } catch (failure) { error.set(message(failure)); }
+  const signOut = () => {
+    const keys = user.keys ?? 0, revoke = cell(false);
+    openModal({ title: `Sign ${user.username} out everywhere?`, narrow: true, icon: 'log-out', tint: 'rose',
+      body: () => html`<p class="muted ctl-small">Their browser and command line sessions and their AI assistants end. They can sign in again.</p>
+        ${keys ? Checkbox({ checked: revoke, label: `Also revoke API keys (${keys} active)` }) : null}`,
+      footer: close => DialogFooter({ cancel: close, submit: { label: 'Sign out everywhere', variant: 'danger', onClick: async () => {
+        close();
+        try {
+          await ctx.api.changeUser(user.id, { sessions: 'end', revoke_keys: revoke.peek() });
+          toast(revoke.peek() ? `${user.username} is signed out everywhere and their API keys are revoked` : `${user.username} is signed out everywhere`);
+          await refresh();
+        } catch (failure) { error.set(message(failure)); }
+      } } }) });
   };
   openDrawer({ title: user.username, icon: 'user', tint: 'blue', className: 'ctl-drawer',
     body: () => html`<div class="ctl-form">
@@ -125,7 +132,7 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
         : [required.includes(user.role) ? StatusPill({ label: 'Required, not set up', tint: 'rose' }) : StatusPill({ label: 'Not set up', tint: 'slate' }),
           html`<span class="muted ctl-small">${required.includes(user.role) ? 'They set it up at their next sign-in.' : 'People set it up in Settings, under Sign-in & security.'}</span>`]}</div></section>
       <section class="ctl-section"><h3>Sessions</h3><div class="ctl-line"><span class="grow">${sessionText(user) || 'No active sessions.'}</span>
-        ${(user.sessions || user.assistants) && !locked ? Button({ label: 'Sign out everywhere', size: 'small', icon: 'log-out', onClick: () => void signOut() }) : null}</div></section>
+        ${(user.sessions || user.assistants || user.keys) && !locked ? Button({ label: 'Sign out everywhere', size: 'small', icon: 'log-out', onClick: signOut }) : null}</div></section>
       ${locked ? null : html`<section class="ctl-section"><h3>Password</h3>
         ${field('New password', 'ctl-u-pass', html`<input class="input" id="ctl-u-pass" type="password" autocomplete="new-password"
           placeholder=${`At least ${ctx.state.peek().settings['security.password_min'].value} characters`} prop:value=${password}
