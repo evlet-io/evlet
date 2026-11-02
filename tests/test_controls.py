@@ -189,6 +189,49 @@ def test_controls_reads_the_client_address_through_trusted_proxies_only(tmp_path
     assert direct('GET', '/api/_controls/state', client='10.1.1.1')[0] == 200
 
 
+def test_forwarded_headers_from_an_untrusted_proxy_are_ignored_and_shown_under_needs_attention(tmp_path, hashed, monkeypatch):
+    import evlet.auth as auth_module
+    database = Database(tmp_path / 'proxy.sqlite3', registry)
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+    app.initialize()
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    assert admin('GET', '/api/_controls/state')[1]['attention'] == []
+    writes = []
+    note = LocalAuth.note_forwarded
+    monkeypatch.setattr(LocalAuth, 'note_forwarded', lambda self, scope: (writes.append(scope['client'][0]), note(self, scope))[1])
+    # Normal use: the header is ignored, so the proxy's own address is the client.
+    state = admin('GET', '/api/_controls/state', headers={b'x-forwarded-for': b'203.0.113.5'})[1]
+    assert state['client'] == '127.0.0.1'
+    item = next(item for item in state['attention'] if item['icon'] == 'globe')
+    assert item['page'] == 'security' and '127.0.0.1' in item['title'] and item['line'] == 'trusted_proxies=("127.0.0.1",)'
+    assert 'add trusted_proxies=("127.0.0.1",) to LocalAuth(...)' in item['text']
+    # Further requests are noted in memory only: no write until ten minutes have passed.
+    with database._connection() as db:
+        before = db.execute('SELECT last_seen FROM evlet_forwarded_peers').fetchall()
+    for _ in range(5):
+        admin('GET', '/api/schema', headers={b'forwarded': b'for=203.0.113.5'})
+    with database._connection() as db:
+        assert db.execute('SELECT last_seen FROM evlet_forwarded_peers').fetchall() == before
+    monkeypatch.setattr(auth_module.time, 'time', lambda: before[0][0] + 601)
+    admin('GET', '/api/schema', headers={b'x-forwarded-for': b'203.0.113.5'})
+    monkeypatch.undo()
+    with database._connection() as db:
+        assert db.execute('SELECT last_seen FROM evlet_forwarded_peers').fetchone()[0] == before[0][0] + 601
+    # Public peers are people behind their own proxies, and trusted peers are working as configured.
+    admin('GET', '/api/schema', client='93.184.216.34', headers={b'x-forwarded-for': b'10.0.0.1'})
+    with database._connection() as db:
+        assert [row[0] for row in db.execute('SELECT peer FROM evlet_forwarded_peers')] == ['127.0.0.1']
+    # Once the proxy is listed the item goes away, without waiting for the note to expire.
+    database.close()
+    database = Database(tmp_path / 'proxy.sqlite3', registry)
+    trusted = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, trusted_proxies=('127.0.0.1',)))
+    trusted.initialize()
+    state = client(trusted)('GET', '/api/_controls/state', headers={b'x-forwarded-for': b'10.9.9.9'})[1]
+    assert state['client'] == '10.9.9.9' and not any(item['icon'] == 'globe' for item in state['attention'])
+    database.close()
+
+
 def test_allowed_networks_and_two_step_requirement(secured, tmp_path):
     admin = client(secured)
     assert save(admin, ('setting', 'security.controls_ips', ['10.0.0.0/8', '192.168.1.5']))[0] == 200

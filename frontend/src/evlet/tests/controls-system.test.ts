@@ -15,7 +15,8 @@ const state = () => ({
   me: { id: 1, username: 'owner', role: 'admin' }, apps: [notes], jobs: { failed: 1 },
   roles: [{ id: 'admin', kind: 'framework', base: null, realm: 'desk', opens_controls: true, description: '', users: 1, app: null, declared: true }],
   models: [], scopes: { '': 'All records' }, settings, controls: { allow_ips: [], require_two_step: false },
-  attention: [{ tone: 'amber', icon: 'package', page: 'apps', title: 'Notes 0.2.0 is waiting to be migrated', text: 'Stop the server, then run evlet migrate acme on the server. It takes a backup first.' }],
+  attention: [{ tone: 'amber', icon: 'package', page: 'apps', title: 'Notes 0.2.0 is waiting to be migrated', text: 'Stop the server, then run evlet migrate acme on the server. It takes a backup first.' },
+    { tone: 'amber', icon: 'globe', page: 'security', title: 'Requests through 127.0.0.1 are not from a trusted proxy', text: 'Add the line below.', line: 'trusted_proxies=("127.0.0.1",)' }],
   overrides: 2, users: { active: 1, total: 1 }, audit: [], two_step: false, links: false, client: '127.0.0.1', remove_fields: null, instance_fields: true,
 });
 const overrides = { version: 2, problems: [], items: [
@@ -119,7 +120,7 @@ describe('Controls system pages', () => {
     const { host, sent } = open('/controls/overrides');
     await until(() => expect(byText(host, 'tr', /Failed sign-ins/)).toBeTruthy());
     expect(host.querySelectorAll('tbody tr')).toHaveLength(2);
-    expect(text(byText(host, 'tr', /Failed sign-ins/))).toContain('10 attempts');
+    expect(text(byText(host, 'tr', /Failed sign-ins/))).toContain('5 attempts');
     expect(text(byText(host, 'tr', /nightly schedule/))).toMatch(/Running ?Paused/);
     click(byText(host, 'tr', /nightly schedule/)!.querySelector('button[aria-label="Show code"]'));
     await until(() => expect(text(document.querySelector('.modal'))).toContain('apps/notes/notes/hooks.py'));
@@ -150,6 +151,7 @@ describe('Controls system pages', () => {
   it('links the overview tiles and attention items to the new pages', async () => {
     const { host } = open('/controls');
     await until(() => expect(text(host)).toContain('Notes 0.2.0 is waiting to be migrated'));
+    expect(text(byText(host, '.ctl-row-btn', /trusted proxy/).querySelector('code'))).toBe('trusted_proxies=("127.0.0.1",)');
     expect(text(byText(host, '.ctl-nav-item', /^Jobs/))).toBe('Jobs 1');
     expect(text(byText(host, '.ctl-nav-item', /^Overrides/))).toBe('Overrides 2');
     click(byText(host, '.ctl-tile', /Overrides on this instance/));

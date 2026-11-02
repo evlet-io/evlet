@@ -46,7 +46,8 @@ export interface TryResult {
   match: string | null; label?: string; name: string | null; errors?: Record<string, string>; error: string | null;
 }
 export interface AuditRow { id: number; at: number; actor: string; area: string; target: string; detail: string }
-export interface Attention { tone: string; icon: string; page: string; title: string; text: string }
+/** A Needs attention item. line is a config line to copy, such as trusted_proxies=("127.0.0.1",). */
+export interface Attention { tone: string; icon: string; page: string; title: string; text: string; line?: string }
 export interface AppInfo {
   id: string; title: string; version: string; source: string; models: string[]; connectors: string[]; permissions: number; schedules: string[];
   frontends: Array<{ name: string; path: string; host: string; realm: string }>;

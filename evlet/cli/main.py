@@ -208,9 +208,13 @@ def main(argv=None):
             from . import proxy
             app = load_runtime(root, args.instance, port=args.port)
             app.database.close()
-            text = (proxy.caddy if args.caddy else proxy.nginx)(app.routes, args.port, args.instance)
+            trusted = app.business.auth.trusted_proxies
+            text = (proxy.caddy if args.caddy else proxy.nginx)(app.routes, args.port, args.instance, trusted)
             if args.write:
                 print(f'Wrote {proxy.write(args.write, text)}. Reload the proxy yourself after reviewing it.')
+                line = proxy.trust_line(trusted)
+                if line:
+                    print(f'Add this line to Instance(...) in instances/{args.instance}/config.py, then restart Evlet:\n    {line},')
             else:
                 print(text, end='')
             if args.check:

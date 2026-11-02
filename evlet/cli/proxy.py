@@ -16,12 +16,28 @@ def _hosts(routes):
     return routes.hosts()
 
 
-def _note(instance):
-    return (f'# Set Instance(trusted_proxies=("127.0.0.1", "::1")) in instances/{instance}/config.py '
-            'so Evlet reads client addresses from X-Forwarded-For.\n\n')
+# The proxy runs on this server and connects to Evlet on the loopback address.
+LOCAL = ('127.0.0.1', '::1')
 
 
-def caddy(routes, port=8000, instance='<name>'):
+def trust_line(trusted=()):
+    """The trusted_proxies argument to add to Instance(...), or None when the local proxy is already trusted."""
+    from ..auth import _trusted, trusted_proxies_line
+    networks = [ipaddress.ip_network(value, strict=False) for value in trusted]
+    if all(_trusted(networks, address) for address in LOCAL):
+        return None
+    return trusted_proxies_line(trusted, LOCAL)
+
+
+def _note(instance, trusted=()):
+    line = trust_line(trusted)
+    if line is None:
+        return '# Instance(trusted_proxies=...) already trusts this proxy, so Evlet reads client addresses from X-Forwarded-For.\n\n'
+    return (f'# Evlet reads client addresses from X-Forwarded-For only from trusted proxies. Add this line to Instance(...)\n'
+            f'# in instances/{instance}/config.py, then restart Evlet:\n#     {line},\n\n')
+
+
+def caddy(routes, port=8000, instance='<name>', trusted=()):
     sites = []
     for host in _hosts(routes):
         # /_/ holds framework internals, such as the on-demand TLS check, for local callers only.
@@ -30,10 +46,10 @@ def caddy(routes, port=8000, instance='<name>'):
             lines += [f'\t@primary_only path_regexp (?i)^/({"|".join(PRIMARY_ONLY)})(/|$)', '\trespond @primary_only 404']
         lines += [f'\treverse_proxy 127.0.0.1:{port}', '}']
         sites.append('\n'.join(lines))
-    return _note(instance) + '\n\n'.join(sites) + '\n'
+    return _note(instance, trusted) + '\n\n'.join(sites) + '\n'
 
 
-def nginx(routes, port=8000, instance='<name>'):
+def nginx(routes, port=8000, instance='<name>', trusted=()):
     hosts = _hosts(routes)
     blocks = [f'''server {{
     listen 80;
@@ -65,7 +81,7 @@ def nginx(routes, port=8000, instance='<name>'):
     }}
 }}'''
         blocks.append(block)
-    return _note(instance) + '\n\n'.join(blocks) + '\n'
+    return _note(instance, trusted) + '\n\n'.join(blocks) + '\n'
 
 
 def server_addresses():

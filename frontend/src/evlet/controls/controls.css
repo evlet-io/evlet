@@ -86,6 +86,7 @@
 .ctl-ic{width:28px;height:28px;border-radius:8px}
 .ctl-lr{flex:1;display:flex;flex-direction:column;min-width:0}
 .ctl-lr span{color:var(--fg-3);font-size:12.5px}
+.ctl-lr .ctl-attn-line{margin-top:4px;font-size:12px;color:var(--fg-2);overflow-wrap:anywhere}
 .ctl-empty{padding:22px 18px;color:var(--fg-3);text-align:center}
 .ctl-audit{display:flex;gap:14px;padding:10px 18px;border-bottom:1px solid var(--divider);font-size:13px}
 .ctl-audit .when{color:var(--fg-3);white-space:nowrap;font-variant-numeric:tabular-nums;width:128px;flex:none}

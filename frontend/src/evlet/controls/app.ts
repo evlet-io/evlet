@@ -253,7 +253,7 @@ function Overview(ctx: ControlsContext): HTMLElement {
       <div class="ctl-stack">
         <section class="ctl-card"><div class="ctl-card-head"><div><h2>Needs attention</h2><p>${() => s().attention.length ? plural(s().attention.length, 'thing') + ' to look at' : 'Nothing right now'}</p></div></div>
           ${() => s().attention.length ? s().attention.map(item => html`<button type="button" class="ctl-row-btn" on:click=${() => go(item.page as keyof typeof ROUTES)}>
-            <span class="ph-icon b-amber ctl-ic">${Icon(item.icon, { size: 'sm' })}</span><span class="ctl-lr"><strong>${item.title}</strong><span>${item.text}</span></span>${Icon('chevron-right', { size: 'sm' })}</button>`)
+            <span class="ph-icon b-amber ctl-ic">${Icon(item.icon, { size: 'sm' })}</span><span class="ctl-lr"><strong>${item.title}</strong><span>${item.text}</span>${item.line ? html`<code class="ctl-attn-line">${item.line}</code>` : null}</span>${Icon('chevron-right', { size: 'sm' })}</button>`)
             : html`<div class="ctl-empty">Everything is working.</div>`}
         </section>
         <section class="ctl-card"><div class="ctl-card-head"><div><h2>Recent changes</h2><p>Every change made in Controls is logged</p></div>

@@ -132,7 +132,7 @@ def test_routing_lists_the_route_table_and_needs_a_primary_host_for_the_proxy(se
 def test_routing_uses_evlet_proxy_when_it_is_installed(secured, monkeypatch):
     import evlet.cli
     import evlet.controls_system as system
-    fake = types.SimpleNamespace(caddy=lambda routes, port, name: f'caddy {port} {name}', nginx=lambda routes, port, name: 'nginx',
+    fake = types.SimpleNamespace(caddy=lambda routes, port, name, trusted: f'caddy {port} {name} {trusted}', nginx=lambda routes, port, name, trusted: 'nginx',
                                  check=lambda routes: ('This server has a private address. Pass --ip with its public address.\n'
                                                        '127.0.0.1   127.0.0.1                       points here\n'
                                                        'localhost   -                               no A or AAAA record\n'
@@ -141,7 +141,7 @@ def test_routing_uses_evlet_proxy_when_it_is_installed(secured, monkeypatch):
     monkeypatch.setattr(evlet.cli, 'proxy', fake, raising=False)
     monkeypatch.setattr(system, 'certificate', lambda host: {'certificate': 'valid', 'expires': 1800000000})
     admin = client(secured)
-    assert admin('GET', '/api/_controls/routing')[1]['proxy'] == {'caddy': 'caddy 8000 <name>', 'nginx': 'nginx'}
+    assert admin('GET', '/api/_controls/routing')[1]['proxy'] == {'caddy': 'caddy 8000 <name> ()', 'nginx': 'nginx'}
     checked = admin('POST', '/api/_controls/routing/check', {})[1]
     assert admin('POST', '/api/_controls/routing/check', {})[:2] == (429, {'error': 'Hosts were just checked. Try again in a few seconds.'})
     assert checked == {'ok': False, 'notes': ['This server has a private address. Pass --ip with its public address.'], 'hosts': [

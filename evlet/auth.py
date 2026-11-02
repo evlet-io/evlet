@@ -7,6 +7,7 @@ import hmac
 from http.cookies import SimpleCookie, CookieError
 import ipaddress
 import json
+import logging
 import re
 import secrets
 import sqlite3
@@ -30,6 +31,9 @@ _HASH_SLOTS = BoundedSemaphore(2)
 # API keys: evk_<8-character prefix>_<secret>. Only the SHA-256 of the whole key is stored.
 API_KEY = re.compile(r'(evk_[a-z0-9]{8})_[A-Za-z0-9_-]{43}')
 KEY_RATE, KEY_FAILURES = 300, 20  # requests per key and failed keys per network, each per minute and process
+# A peer that sends forwarded headers without being a trusted proxy is written at most this often per process.
+FORWARDED_NOTE_SECONDS = 600
+logger = logging.getLogger(__name__)
 
 
 class AccessError(Exception):
@@ -108,17 +112,33 @@ def proxy_networks(values):
         raise ValueError('trusted_proxies takes IP addresses or CIDR ranges, such as "127.0.0.1"') from None
 
 
+def trusted_proxies_line(*groups):
+    """The Instance(...) argument that trusts every address or range in groups, such as trusted_proxies=("127.0.0.1", "::1")."""
+    values = []
+    for value in (item for group in groups for item in group):
+        network = ipaddress.ip_network(value, strict=False)
+        text = str(network.network_address) if network.num_addresses == 1 else str(network)
+        if text not in values:
+            values.append(text)
+    return 'trusted_proxies=(' + ', '.join(f'"{value}"' for value in values) + (',)' if len(values) == 1 else ')')
+
+
+def _trusted(networks, address):
+    """Whether address is in one of networks; None when it is not an IP address."""
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return None
+    ip = ip.ipv4_mapped or ip if ip.version == 6 else ip
+    return any(ip in network for network in networks if network.version == ip.version)
+
+
 def client_address(scope, trusted_proxies=()):
     """The client's IP address. X-Forwarded-For is read only when the peer is a trusted proxy: the rightmost
     entry that is not itself a trusted proxy is the client. Without trusted proxies the peer is the client."""
     networks = [ipaddress.ip_network(value, strict=False) for value in trusted_proxies]
     def trusted(address):
-        try:
-            ip = ipaddress.ip_address(address)
-        except ValueError:
-            return None
-        ip = ip.ipv4_mapped or ip if ip.version == 6 else ip
-        return any(ip in network for network in networks if network.version == ip.version)
+        return _trusted(networks, address)
     current = (scope.get('client') or ('unknown',))[0]
     if not networks or not trusted(current):
         return current
@@ -156,6 +176,9 @@ def client_network(address):
 class LocalAuth:
     def __init__(self, database, *, origins, secure_cookies=True, allow_setup=False, cookie_name='evlet_session', realms=None, trusted_proxies=()):
         self.trusted_proxies = proxy_networks(trusted_proxies)
+        self._proxy_networks = [ipaddress.ip_network(value) for value in self.trusted_proxies]
+        # Peers whose forwarded headers were ignored, with when this process last wrote them down.
+        self._forwarded = {}
         if cookie_name not in ('evlet_session', '__Host-evlet_session') or (cookie_name.startswith('__Host-') and not secure_cookies):
             raise ValueError('Invalid session cookie configuration')
         self.cookie_name = cookie_name
@@ -201,6 +224,7 @@ class LocalAuth:
                 if name not in columns:
                     tx.connection.execute(f'ALTER TABLE evlet_sessions ADD COLUMN {name} {kind}')
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_login_limits (client TEXT PRIMARY KEY, attempts INTEGER NOT NULL, resets INTEGER NOT NULL)')
+            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_forwarded_peers (peer TEXT PRIMARY KEY, last_seen INTEGER NOT NULL)')
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_user_links (user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, model TEXT NOT NULL, record_id INTEGER NOT NULL, PRIMARY KEY (user_id, model, record_id))')
 
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_session_user ON evlet_sessions(user_id)')
@@ -251,6 +275,8 @@ class LocalAuth:
             if key in protected and key in seen:
                 raise AccessError(403, 'Repeated security header')
             seen.add(key)
+        if b'x-forwarded-for' in seen or b'forwarded' in seen:
+            self.note_forwarded(scope)
         headers = dict(scope.get('headers', []))
         if headers.get(b'host') not in self.hosts:
             raise AccessError(403, 'Unrecognized host')
@@ -262,6 +288,40 @@ class LocalAuth:
         # A key in the Authorization header is never sent by a browser on its own, so it needs no CSRF header.
         if scope['method'] not in ('GET', 'HEAD') and headers.get(b'x-evlet-request') != b'1' and not API_KEY.fullmatch(self.bearer(scope) or ''):
             raise AccessError(403, 'Missing request protection header')
+
+    def note_forwarded(self, scope):
+        """A request names a forwarded client. The header counts only from a trusted proxy; from any other
+        peer it is ignored, and a peer on this machine or a private network is noted for Controls, where it
+        shows under Needs attention. Public peers are clients behind their own proxies and are not noted."""
+        peer = (scope.get('client') or (None,))[0]
+        try:
+            ip = ipaddress.ip_address(peer)
+        except (TypeError, ValueError):
+            return
+        ip = (ip.ipv4_mapped or ip) if ip.version == 6 else ip
+        if ip.is_global or _trusted(self._proxy_networks, str(ip)):
+            return
+        address, now = str(ip), int(time.time())
+        with self._key_lock:
+            if now - self._forwarded.get(address, 0) < FORWARDED_NOTE_SECONDS:
+                return
+            if len(self._forwarded) >= 64:
+                self._forwarded.clear()
+            self._forwarded[address] = now
+        try:
+            with self.database.transaction() as tx:
+                tx.connection.execute('INSERT INTO evlet_forwarded_peers(peer,last_seen) VALUES (?,?) ON CONFLICT(peer) DO UPDATE SET last_seen=excluded.last_seen',
+                                      (address, now))
+                tx.connection.execute('DELETE FROM evlet_forwarded_peers WHERE last_seen<?', (now - 7 * 86400,))
+        except Exception:
+            logger.warning('Could not note that %s sends forwarded headers without being a trusted proxy.', address, exc_info=True)
+
+    def forwarded_peers(self):
+        """Peers seen in the last day sending forwarded headers that are still not trusted proxies, newest first."""
+        with self.database._connection() as connection:
+            rows = connection.execute('SELECT peer FROM evlet_forwarded_peers WHERE last_seen>? ORDER BY last_seen DESC, peer LIMIT 20',
+                                      (int(time.time()) - 86400,)).fetchall()
+        return [row['peer'] for row in rows if not _trusted(self._proxy_networks, row['peer'])]
 
     def cookie_for(self, realm):
         """Host-only cookies, one name per realm, so a portal and a desk session never mix. Public hosts have none."""

@@ -30,7 +30,9 @@ has no two-step sign-in, and nothing is listed for it.
   both narrow it; a request must match both lists when both are set. The address checked is
   `LocalAuth.client_address(scope)`: `X-Forwarded-For` counts only when the connection
   comes from one of the instance's `trusted_proxies` ([routing.md](routing.md)). Sign-in
-  throttling and the public endpoint limit read the same address.
+  throttling and the public endpoint limit read the same address. A local or private proxy that
+  sends forwarded headers without being trusted is listed under Needs attention with the
+  `trusted_proxies=(...)` line to add to `Instance(...)`; the header stays ignored until then.
 - `ControlsAccess(require_two_step=True)` opens Controls only to sessions that finished two-step
   sign-in; others get a message that sends them to Settings and back through sign-in. Roles in
   `security.two_step_roles` need such a session too, when the instance can keep secrets.

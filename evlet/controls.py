@@ -910,6 +910,7 @@ class Controls:
                 title = item['account'] or connectors.declared[item['connector']].title
                 attention.append({'tone': 'red', 'icon': 'link', 'page': 'email' if item['account'] else 'connectors',
                                   'title': f"{title} isn't connected", 'text': 'The last test failed. Check the details and test again.'})
+        attention += self.proxy_attention()
         controls = self.routes.controls
         return {
             'instance': {'name': self.business.application.get('name', 'Evlet') if self.business.application else 'Evlet',
@@ -924,6 +925,22 @@ class Controls:
             'audit': recent, 'two_step': self.business.settings.possible(), 'client': str(client_ip(scope, self.business.auth) or ''),
             'remove_fields': self.custom.drop, 'instance_fields': True,
         }
+
+    def proxy_attention(self):
+        """A Needs attention item when a proxy on this machine or network forwards requests but is not trusted."""
+        from .auth import trusted_proxies_line
+        auth = self.business.auth
+        peers = auth.forwarded_peers()
+        if not peers:
+            return []
+        name = self.system.instance_name()
+        where = f'Instance(...) in instances/{name}/config.py' if name else 'LocalAuth(...) where the application is built'
+        line = trusted_proxies_line(auth.trusted_proxies, peers)
+        listed = ', '.join(peers[:3]) + (f' and {len(peers) - 3} more' if len(peers) > 3 else '')
+        return [{'tone': 'amber', 'icon': 'globe', 'page': 'security', 'title': f'Requests through {listed} are not from a trusted proxy',
+                 'text': f'These requests name a forwarded client address, which Evlet ignores, so sign-in limits and allowed networks see '
+                         f'the proxy instead of each person. If Evlet runs behind a proxy at this address, add {line} to {where} and restart.',
+                 'line': line}]
 
     # ---------- HTTP ----------
 
