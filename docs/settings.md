@@ -102,7 +102,8 @@ their next sign-in (a required role) or in Settings.
 ### The secret key
 
 `evlet.secrets` is the one place secrets are kept: connector secrets, two-step secrets, two-step
-set-ups and sign-ins in progress, and backup codes all use the same key and file, and
+set-ups and sign-ins in progress, backup codes, personal mailbox secrets and mailbox sign-ins in
+progress all use the same key and file, and
 `evlet secrets rotate <instance>` re-encrypts all of them ([controls.md](controls.md#connectors-and-secrets)).
 
 ```python

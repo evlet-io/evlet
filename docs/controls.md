@@ -156,11 +156,17 @@ instance. These are overrides too, saved with the change bar.
 |---|---|
 | `label`, `help_text`, `placeholder` | Text. A label can't be empty. |
 | `hidden` | Left out of forms and lists. The API still returns the field. A required field can't be hidden. |
-| `required` | Can be turned on, not off. Rows saved before stay empty until someone edits them; an API create or update must fill the field. |
+| `required` | Can be turned on, not off. Rows saved before stay empty until someone edits them; an API create or update must fill the field (see below). |
 | `read_only` | Can be turned on, not off. No role can write it through the API; actions and server code still can. |
 | `default` | Must pass the field's own check. New records only. Links take no default. |
 | `options_add` | Choice fields: new options in lowercase letters, digits and underscores. |
 | `options_hidden` | Choice fields: options from the app hidden from new values. A record that holds one keeps it, and saving it unchanged is allowed. One option stays shown, and the default from models.py can't be hidden until another default is set. |
+
+**Turning on required affects existing records.** Records saved before keep an empty value.
+The next time anyone changes such a record through the API, the PATCH must also fill the
+field, even when it only changes something else; otherwise it is refused with "This field is
+required" (422). Actions, jobs and other app code are not checked. Fill old records first, or expect
+people to be asked for the value the next time they save one.
 
 A field can't be made both required and read only without a default, since no one could then
 create a record.
@@ -339,7 +345,8 @@ Trusted server code reads a saved connector with `business.connectors.values("wh
   can be read by anyone but its owner.
 - **Rotation.** `evlet secrets rotate <instance>` writes a new key and re-encrypts every
   sealed value listed in `evlet.secrets.SEALED`: connector secrets, two-step secrets, two-step
-  set-ups and sign-ins in progress, and backup codes. API keys are stored as SHA-256 hashes, not
+  set-ups and sign-ins in progress, backup codes, personal mailbox secrets (passwords and
+  Microsoft or Google tokens) and mailbox sign-ins in progress. API keys are stored as SHA-256 hashes, not
   sealed, so rotation leaves them alone. The old key stays in the file until all rows are done, so an interruption
   loses nothing. A row that can't be read is reported and left as it is, the others are
   re-encrypted, and the old key stays in the file until that row is entered again and rotation
