@@ -132,8 +132,13 @@ database file), then `ALTER TABLE` in a transaction with the definition in `evle
 audit row and a new config version. Model classes from app code are never changed: each database
 keeps its own set of instance fields (with the options Controls added and its naming series) and
 makes it active for each request, job and transaction, so applications that share model classes
-stay apart. A change waits for the requests in flight in its process to finish, and requests that
-start after it see the new set; other processes pick it up when they see the new version. A
+stay apart. A change waits for every request, job and event page in flight in its process and holds
+new ones until it is done, so one slow request delays it; add and remove fields at a quiet time.
+Requests that start after it see the new set; other processes pick it up when they see the new version. A record keeps the instance fields
+it was built with, so reading them works after its transaction ends; instance fields are read only on
+a record, like other fields (use `Database.update`). Code outside a request, job or transaction, such
+as a thread started inside a request or a record built before it is written, runs inside
+`with database.activated():` to see the instance fields. A
 required field needs a default when the table has rows; the default fills them. Required is asked
 for on people's API writes only, so app code that does not know the field keeps working. Removing drops the column and takes the field out of every override that names it:
 its own field override, list columns and sort, layout, permission field lists (a role left with no

@@ -64,6 +64,11 @@ class Database:
         finally:
             connection.close()
 
+    def activated(self):
+        """Make this database's instance fields and added options active for code outside a transaction,
+        such as a thread started inside a request or records built before writing them."""
+        return using(self)
+
     def owns(self, session):
         """Check the physical database before accepting a bound feature write."""
         if not isinstance(session.connection, sqlite3.Connection):

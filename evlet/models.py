@@ -3,7 +3,7 @@
 import re
 from types import MappingProxyType
 
-from .fields import Field, Link, MISSING, RULES, Reference, State, active_layer
+from .fields import ACTIVE, Field, Link, MISSING, RULES, Reference, State, active_layer
 from .declarations import Table, ReactiveQuery, DEFAULT_TABLE_ROWS
 
 
@@ -144,22 +144,33 @@ class Model(metaclass=ModelType):
     class Meta:
         pass
 
+    # A record keeps the Layer it was built with, so its instance fields read the same after the
+    # transaction or request that made it has ended.
     @property
     def __declared_fields__(self):
-        return type(self).__declared_fields__
+        layer = self.__dict__.get('_layer')
+        return type(self).__declared_fields__ if layer is None else layer.declared.get(type(self), type(self).__app_fields__)
 
     @property
     def __fields__(self):
-        return type(self).__fields__
+        layer = self.__dict__.get('_layer')
+        return type(self).__fields__ if layer is None else layer.stored.get(type(self), type(self).__app_stored__)
 
     def __getattr__(self, name):
         # Instance fields have no descriptor on the shared class.
-        if name.startswith('x_') and name in type(self).__declared_fields__:
+        if name.startswith('x_') and name in self.__declared_fields__:
             return self._values.get(name)
         raise AttributeError(name)
 
+    def __setattr__(self, name, value):
+        if name.startswith('x_'):
+            raise AttributeError("Records are snapshots; use Database.update() to save changes")
+        object.__setattr__(self, name, value)
+
     def __init__(self, /, **values):
-        errors = {key: "Unknown field" for key in values if key not in self.__fields__}
+        self._layer = active_layer()
+        errors = {key: f"{key} is an instance field. Build the record inside database.transaction() or database.activated()"
+                  if key.startswith('x_') and ACTIVE.get() is None else "Unknown field" for key in values if key not in self.__fields__}
         cleaned = {}
         for name, field in self.__fields__.items():
             try:
@@ -189,6 +200,7 @@ class Model(metaclass=ModelType):
     def _from_row(cls, row):
         # Stored snapshots must remain readable after business rules change.
         instance = cls.__new__(cls)
+        instance._layer = active_layer()
         instance._values = MappingProxyType({
             name: field.from_columns(row, name) for name, field in cls.__fields__.items()
             # A column another process just dropped reads as empty.

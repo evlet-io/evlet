@@ -196,6 +196,15 @@ class JobQueue:
             return row['id'], token
 
     def execute(self, claim, *, active=lambda: True, now=None):
+        """Run a claimed job. A job passes the business's gate like a request, so adding or removing an
+        instance field waits for it."""
+        from contextlib import nullcontext
+        from .database import using
+        business = getattr(self, 'business', None)
+        with business.gate.shared() if business is not None else nullcontext(), using(self.database):
+            return self._execute(claim, active=active, now=now)
+
+    def _execute(self, claim, *, active=lambda: True, now=None):
         job_id, token = claim
         now = int(time.time()) if now is None else timestamp(now)
         task = None
