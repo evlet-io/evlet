@@ -25,7 +25,7 @@ class HTTPError(Exception):
 
 
 class Application:
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=()):
         from .ui import ViewRegistry
         from .routing import RouteTable, resolve_routes
         if routes is not None and not isinstance(routes, RouteTable):
@@ -55,6 +55,8 @@ class Application:
             self.business.application = {"name": name, "playground": bool(playground), "docs": self.routes.docs_path if self.routes.docs else None}
             from .forms import Forms
             self.business.forms = Forms(self.business, reports)
+            from .slips import Slips
+            self.business.slips = Slips(self.business, slips)
             self.business.apis = tuple(apis)
             self.business.ui = self.ui
             self.business.controls.routes = self.routes
@@ -66,8 +68,8 @@ class Application:
                 self.business.secret_key = secret_key
             path = getattr(database, 'path', None)
             self.business.connectors.fallback = path.parent / 'secret.key' if path is not None else None
-        elif reports or apis or connectors:
-            raise ValueError('Reports, APIs and connectors require authentication')
+        elif reports or apis or connectors or slips:
+            raise ValueError('Reports, slips, APIs and connectors require authentication')
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":

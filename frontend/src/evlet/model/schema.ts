@@ -74,9 +74,14 @@ export interface ModelSchema {
   child_only?: boolean;
   calculation?: CalculationSchema;
   state?: StateSchema;
+  /** Slips the role may present from a record of this model. */
+  slips?: SlipSchema[];
 }
 
-export interface AppSchema { version: number; ui_version: number; models: ModelSchema[] }
+/** A slip (evlet.Slip) the role may present; its fields come from the slip's own routes. */
+export interface SlipSchema { name: string; label: string; hand_in_label: string }
+
+export interface AppSchema { version: number; ui_version: number; models: ModelSchema[]; /** Slips for the New menu. */ slips?: SlipSchema[] }
 
 /** Look up models and fields by name. */
 export class SchemaIndex {

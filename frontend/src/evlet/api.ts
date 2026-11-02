@@ -243,6 +243,15 @@ export class ApiClient {
     return (await this.request<DraftResult>('POST', `/api/_draft/${model}`, { body })).data;
   }
 
+  /**
+   * A step of a slip (POST /api/_slips/{name}/{step}): present and check answer its surface, hand-in its
+   * outcome. A slip presented from a record hands in with that record's revision as If-Match.
+   */
+  async slip<T>(name: string, step: 'present' | 'check' | 'hand-in', body: Record<string, unknown>, ifMatch: string | null = null): Promise<T> {
+    if (!NAME.test(name)) throw new ApiError(`Unknown slip ${name}`, 0, 'response');
+    return (await this.request<T>('POST', `/api/_slips/${name}/${step}`, { body, ifMatch })).data;
+  }
+
   /** Run a model action. A long action answers 202 with {job, record}. */
   async action(model: string, id: number, name: string, args: Record<string, unknown> = {}, etag: string | null = null) {
     if (!NAME.test(name)) throw new ApiError(`Unknown action ${name}`, 0, 'response');
