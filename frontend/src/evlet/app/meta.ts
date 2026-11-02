@@ -57,6 +57,8 @@ export interface DetailExtras {
   _unpost?: Availability;
   /** Listed only for roles that may repost, on a record that was unposted. */
   _repost?: Availability;
+  /** false for a record that ever posted: it is kept, so delete is refused. */
+  _deletable?: false;
   _effects?: Array<{ target: string; rows: number; reversals: number; balanced?: boolean }>;
   revised_by?: number | null;
   _original?: number;

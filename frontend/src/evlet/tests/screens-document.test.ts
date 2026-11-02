@@ -163,7 +163,14 @@ describe('transaction document (recorded fixtures)', () => {
     const request = requests(sent, 'POST', /unpost$/)[0];
     expect(request.body).toEqual({ reason: 'Wrong customer' });
     expect(request.headers['if-match']).toBe(before.etag);
-    expect(lastToast()).toBe('Unposted. You can edit it, then repost it.');
+    expect(lastToast()).toBe('Unposted. What it posted was reversed.');
+    // It posted before, so it is kept: the More menu offers no Delete.
+    expect(unposted.body._deletable).toBe(false);
+    click(host.querySelector('.doc-head button[aria-label="More actions"]'));
+    const menu = [...document.querySelectorAll('[role="menuitem"]')].map(text);
+    expect(menu).toContain('Repost invoice');
+    expect(menu).not.toContain('Delete');
+    (document.activeElement as HTMLElement | null)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     // The number stays; the reversal rows show beside the posted ones.
     expect(unposted.body.number).toBe(before.body.number);
     click(byText(host, '.doc-tabs [role="tab"]', /^Postings/));

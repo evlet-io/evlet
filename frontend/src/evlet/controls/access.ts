@@ -18,6 +18,7 @@ export function normalize(value: PermValue, file: PermValue): PermValue {
   let ops = ORDER.filter(op => value.ops.includes(op));
   if (ops.length && !ops.includes('read')) ops = ['read', ...ops];
   if (!ops.includes('create')) ops = ops.filter(op => op !== 'revise');
+  if (!ops.includes('update')) ops = ops.filter(op => op !== 'repost');
   if (!ops.length) return { ops: [], read: null, write: null, scope: null };
   return { ops, read: value.read, write: ops.some(op => op !== 'read') ? value.write : null, scope: file.scope ?? value.scope };
 }

@@ -241,7 +241,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       revise: { title: `Revise ${titleText.peek()}`, icon: 'copy', tint: 'blue' as const, variant: 'primary' as const, submit: `Revise ${noun}`,
         note: 'Revising voids this record and opens an editable copy. The copy gets its own number when it is issued.' },
       unpost: { title: `Unpost ${titleText.peek()}`, icon: 'rotate-ccw', tint: 'amber' as const, variant: 'danger' as const, submit: `Unpost ${noun}`,
-        note: `Unposting reverses what this ${noun} posted and makes it editable again. It keeps its number. Repost it when it is right.` },
+        note: `Unposting reverses what this ${noun} posted and returns it to the state it was posted from. It keeps its number. Repost it when it is right.` },
       repost: { title: `Repost ${titleText.peek()}`, icon: 'repeat', tint: 'blue' as const, variant: 'primary' as const, submit: `Repost ${noun}`,
         note: `Reposting checks this ${noun} again and posts it with fresh entries. It keeps its number.` },
     }[kind];
@@ -266,7 +266,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         } else {
           store.applyServer(response.data, response.etag);
           await store.loadAll().catch(() => {});
-          toast(kind === 'void' ? 'Voided. The number stays used.' : kind === 'unpost' ? 'Unposted. You can edit it, then repost it.' : 'Reposted.',
+          toast(kind === 'void' ? 'Voided. The number stays used.' : kind === 'unpost' ? 'Unposted. What it posted was reversed.' : 'Reposted.',
             { icon: copy.icon });
         }
       } catch (error) {
@@ -301,7 +301,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     if (now._void) items.push({ label: `Void ${model.label.toLowerCase()}`, icon: 'circle-x', danger: true, disabled: !now._void.allowed, onSelect: () => correct('void') });
     if (now._repost) items.push({ label: `Repost ${model.label.toLowerCase()}`, icon: 'repeat', disabled: !now._repost.allowed, onSelect: () => correct('repost') });
     if (now._unpost) items.push({ label: `Unpost ${model.label.toLowerCase()}`, icon: 'rotate-ccw', danger: true, disabled: !now._unpost.allowed, onSelect: () => correct('unpost') });
-    if (!isNew && model.permissions?.delete && !locked.peek()) items.push('separator', { label: 'Delete', icon: 'trash-2', danger: true, onSelect: remove });
+    // A record that ever posted is kept (its entries name it), so the server refuses its delete.
+    if (!isNew && model.permissions?.delete && !locked.peek() && now._deletable !== false) items.push('separator', { label: 'Delete', icon: 'trash-2', danger: true, onSelect: remove });
     return items;
   };
 
@@ -347,7 +348,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     if (now._locked) {
       const buttons = [now._revise?.allowed ? Button({ label: 'Revise', icon: 'copy', size: 'small', onClick: () => correct('revise') }) : null,
         now._void?.allowed ? Button({ label: 'Void', icon: 'circle-x', size: 'small', variant: 'soft-danger', onClick: () => correct('void') }) : null,
-        now._unpost?.allowed ? Button({ label: 'Unpost', icon: 'rotate-ccw', size: 'small', variant: 'soft-danger', onClick: () => correct('unpost') }) : null].filter(Boolean) as Node[];
+        now._unpost?.allowed ? Button({ label: 'Unpost', icon: 'rotate-ccw', size: 'small', variant: 'soft-danger', onClick: () => correct('unpost') }) : null,
+        // Unposted into a locked state (it posted from one): it stays locked and posts again by Repost.
+        now._repost?.allowed ? Button({ label: 'Repost', icon: 'repeat', size: 'small', onClick: () => correct('repost') }) : null].filter(Boolean) as Node[];
       const editable = model.fields.filter(field => (field as any).editable_when_locked).map(field => field.label.toLowerCase());
       // Only the corrections this user can make now (the state allows them and so does the role).
       const ways = [now._void?.allowed ? 'void' : null, now._revise?.allowed ? 'revise' : null].filter(Boolean);

@@ -4744,6 +4744,7 @@
     "language": "finite-v1",
     "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
    },
+   "_deletable": false,
    "_effects": [
     {
      "balanced": true,
@@ -5019,7 +5020,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.680Z",
+     "at": "2026-11-02T06:49:13.836Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5031,7 +5032,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.664Z",
+     "at": "2026-11-02T06:49:13.821Z",
      "data": {
       "fields": {
        "total": {
@@ -5093,7 +5094,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.651Z",
+     "at": "2026-11-02T06:49:13.809Z",
      "data": {
       "fields": {
        "customer": {
@@ -5153,6 +5154,7 @@
     "language": "finite-v1",
     "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
    },
+   "_deletable": false,
    "_effects": [
     {
      "balanced": true,
@@ -5222,6 +5224,7 @@
      "name": "record_payment"
     }
    ],
+   "_deletable": false,
    "_effects": [
     {
      "balanced": true,
@@ -5287,7 +5290,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-02T06:25:40.725Z",
+     "at": "2026-11-02T06:49:13.877Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5299,7 +5302,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.724Z",
+     "at": "2026-11-02T06:49:13.876Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5311,7 +5314,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.721Z",
+     "at": "2026-11-02T06:49:13.874Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -5321,7 +5324,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.719Z",
+     "at": "2026-11-02T06:49:13.872Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -5333,7 +5336,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.716Z",
+     "at": "2026-11-02T06:49:13.870Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5342,7 +5345,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.699Z",
+     "at": "2026-11-02T06:49:13.853Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5357,7 +5360,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.690Z",
+     "at": "2026-11-02T06:49:13.845Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5367,7 +5370,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.690Z",
+     "at": "2026-11-02T06:49:13.845Z",
      "data": {
       "targets": [
        {
@@ -5383,7 +5386,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.690Z",
+     "at": "2026-11-02T06:49:13.845Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5400,7 +5403,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.680Z",
+     "at": "2026-11-02T06:49:13.836Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5412,7 +5415,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.664Z",
+     "at": "2026-11-02T06:49:13.821Z",
      "data": {
       "fields": {
        "total": {
@@ -5474,7 +5477,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.651Z",
+     "at": "2026-11-02T06:49:13.809Z",
      "data": {
       "fields": {
        "customer": {
@@ -5524,7 +5527,7 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-02T06:25:40.719Z",
+   "at": "2026-11-02T06:49:13.872Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5540,7 +5543,7 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-02T06:25:40.721Z",
+   "at": "2026-11-02T06:49:13.874Z",
    "data": {
     "follow_up": 19,
     "text": "Balance due by the end of the month"
@@ -5554,7 +5557,7 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-02T06:25:40.716Z",
+   "at": "2026-11-02T06:49:13.870Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -5669,6 +5672,7 @@
     "language": "finite-v1",
     "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
    },
+   "_deletable": false,
    "_effects": [
     {
      "balanced": true,
@@ -5740,6 +5744,7 @@
      "name": "record_payment"
     }
    ],
+   "_deletable": false,
    "_effects": [
     {
      "balanced": true,
@@ -5810,6 +5815,7 @@
      "reason": "The condition for this action is not met"
     }
    ],
+   "_deletable": false,
    "_effects": [
     {
      "balanced": true,
@@ -7423,6 +7429,7 @@
     "language": "finite-v1",
     "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
    },
+   "_deletable": false,
    "_effects": [
     {
      "balanced": true,
@@ -7496,6 +7503,7 @@
      "name": "record_payment"
     }
    ],
+   "_deletable": false,
    "_effects": [
     {
      "balanced": true,
@@ -7567,6 +7575,7 @@
      "name": "record_payment"
     }
    ],
+   "_deletable": false,
    "_effects": [
     {
      "balanced": true,
@@ -7640,6 +7649,7 @@
  "invoice_viewer_detail": {
   "body": {
    "_actions": [],
+   "_deletable": false,
    "_journal": {
     "count": 12,
     "open_follow_ups": 1
@@ -7699,7 +7709,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-02T06:25:40.725Z",
+     "at": "2026-11-02T06:49:13.877Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -7711,7 +7721,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.724Z",
+     "at": "2026-11-02T06:49:13.876Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -7723,7 +7733,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.721Z",
+     "at": "2026-11-02T06:49:13.874Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -7733,7 +7743,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.719Z",
+     "at": "2026-11-02T06:49:13.872Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -7745,7 +7755,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.716Z",
+     "at": "2026-11-02T06:49:13.870Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -7754,7 +7764,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.699Z",
+     "at": "2026-11-02T06:49:13.853Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -7769,7 +7779,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.690Z",
+     "at": "2026-11-02T06:49:13.845Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -7779,7 +7789,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.690Z",
+     "at": "2026-11-02T06:49:13.845Z",
      "data": {},
      "id": 15,
      "kind": "changed",
@@ -7787,7 +7797,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.690Z",
+     "at": "2026-11-02T06:49:13.845Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -7804,7 +7814,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.680Z",
+     "at": "2026-11-02T06:49:13.836Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -7816,7 +7826,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.664Z",
+     "at": "2026-11-02T06:49:13.821Z",
      "data": {
       "fields": {
        "total": {
@@ -7878,7 +7888,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:25:40.651Z",
+     "at": "2026-11-02T06:49:13.809Z",
      "data": {
       "fields": {
        "customer": {
@@ -9125,6 +9135,7 @@
     "language": "finite-v1",
     "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
    },
+   "_deletable": false,
    "_effects": [
     {
      "balanced": true,
@@ -9188,6 +9199,7 @@
      "name": "record_payment"
     }
    ],
+   "_deletable": false,
    "_effects": [
     {
      "balanced": true,
