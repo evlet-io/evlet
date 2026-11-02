@@ -3,7 +3,7 @@
 .me .me-chev{margin-left:auto;color:var(--fg-3)}
 .app.collapsed .me .me-chev{display:none}
 .me-head{display:flex;align-items:center;gap:10px;padding:8px 10px 10px;border-bottom:1px solid var(--divider);margin-bottom:4px;min-width:220px}
-.me-head span{display:flex;flex-direction:column;min-width:0}
+.me-head .me-who{display:flex;flex-direction:column;min-width:0}
 .me-head small{color:var(--fg-3);font-size:12px;overflow:hidden;text-overflow:ellipsis}
 img.set-photo{object-fit:cover;padding:0}
 .set-photo-row .avatar.xl{width:76px;height:76px;font-size:22px}

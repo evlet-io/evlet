@@ -16,6 +16,9 @@ describe('the account area', () => {
     expect(text(host.querySelector('.me .e'))).toBe('Managing Director');
     click(host.querySelector('.me'));
     expect(text(document.querySelector('.me-head strong'))).toBe('Owner Admin');
+    // The name block is styled apart from the avatar, so the avatar keeps its centred letter.
+    expect(document.querySelector('.me-head .me-who strong')).not.toBeNull();
+    expect(document.querySelector('.me-head .me-who .avatar')).toBeNull();
     expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['Your profile', 'Appearance', 'Sign-in & security', 'All settings', 'Controls↗', 'Sign out']);
     click(byText(document.body, '.pop [role="menuitem"]', 'All settings'));
     await until(() => expect(location.pathname).toBe('/settings/profile'));
