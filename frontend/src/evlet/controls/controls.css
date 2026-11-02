@@ -17,6 +17,7 @@
 .ctl-nav-item.on{background:var(--surface);color:var(--fg);box-shadow:var(--shadow-sm),0 0 0 1px var(--border)}
 .ctl-nav-item span:first-of-type{flex:1}
 .ctl-count{font-size:11.5px;color:var(--fg-3);font-weight:550}
+.ctl-count.warn{color:var(--t-amber)}
 .ctl-side-foot{display:flex;align-items:center;gap:8px;padding:10px 6px 2px;border-top:1px solid var(--divider)}
 .ctl-side-foot>span:not(.avatar){flex:1;display:flex;flex-direction:column;min-width:0}
 .ctl-side-foot strong{font-size:13px}
@@ -196,6 +197,12 @@
 .ctl-code{background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;font-family:var(--mono);font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre}
 .ctl-code-ov{display:block;background:var(--t-amber-bg)}
 .ctl-code-add{display:block;background:var(--t-teal-bg)}
+/* apps, routing, jobs, overrides */
+.ctl-app{display:flex;flex-direction:column;gap:12px;padding:18px;text-align:left;overflow:visible}
+.ctl-app:hover{border-color:var(--border-strong)}
+.ctl-app .ctl-line{flex-wrap:wrap}
+.ctl-gap{margin-bottom:16px}
+.ctl-codefile .ctl-line{margin-bottom:6px}
 /* naming */
 .ctl-ser{display:flex;gap:12px;align-items:flex-start;padding:12px 18px;border-bottom:1px solid var(--divider)}
 .ctl-ser.hit{background:var(--t-green-bg)}
