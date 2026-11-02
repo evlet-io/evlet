@@ -313,11 +313,20 @@ def test_controls_changes_ask_for_a_code_at_most_every_ten_minutes(settled):
     assert admin('PATCH', f'/api/_controls/users/{editor}', {'password': PASSWORD + ' reset'})[:2] == (403, {'error': VERIFY})
     assert admin('PATCH', f'/api/_controls/users/{editor}', {'sessions': 'end'})[:2] == (403, {'error': VERIFY})
     assert admin('POST', '/api/_controls/roles', {'id': 'ops', 'base': 'editor'})[:2] == (403, {'error': VERIFY})
+    # The older account routes are Controls changes too.
+    assert admin('GET', '/api/auth/users')[0] == 200
+    for method, path, body in (('PATCH', f'/api/auth/users/{editor}', {'role': 'admin'}), ('PATCH', f'/api/auth/users/{editor}', {'password': PASSWORD + ' reset'}),
+                               ('PATCH', f'/api/auth/users/{editor}', {'two_step': 'reset'}), ('POST', '/api/auth/users', {'username': 'newbie', 'password': PASSWORD, 'role': 'viewer'})):
+        assert admin(method, path, body)[:2] == (403, {'error': VERIFY}), (method, path, body)
+    with app.database._connection() as db:
+        assert db.execute("SELECT role FROM evlet_users WHERE username='editor'").fetchone()[0] == 'editor'
+        assert db.execute("SELECT count(*) FROM evlet_users WHERE username='newbie'").fetchone()[0] == 0
     assert admin('POST', '/api/_settings/me/two-step/verify', {'code': '00000000'})[1]['fields'] == {'code': 'Enter a current code from your app, or a backup code.'}
     status, body, _ = admin('POST', '/api/_settings/me/two-step/verify', {'code': codes.pop()})
     assert status == 200 and body['until'] - body['verified'] == 600
     assert change(21)[0] == 200
     assert admin('PATCH', f'/api/_controls/users/{editor}', {'password': PASSWORD + ' reset'})[0] == 204
+    assert admin('POST', '/api/auth/users', {'username': 'newbie', 'password': PASSWORD, 'role': 'viewer'})[0] == 201
     with app.database._connection() as db:
         assert db.execute("SELECT password FROM evlet_users WHERE username='editor'").fetchone()[0] != db.execute(
             "SELECT password FROM evlet_users WHERE username='viewer'").fetchone()[0]

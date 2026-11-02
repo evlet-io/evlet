@@ -39,7 +39,8 @@ has no two-step sign-in, and nothing is listed for it.
   can't use anything until two-step sign-in is set up (see [settings.md](settings.md#when-the-code-is-asked)).
 - **Changes ask for a fresh code.** For a person with two-step sign-in on, every request that
   changes something in Controls (any `POST`, `PUT`, `PATCH` or `DELETE` under `/api/_controls/`,
-  except trying a naming series) needs a code from the last 10 minutes on this session. Signing
+  except trying a naming series, and under the older account routes `/api/auth/users`) needs a
+  code from the last 10 minutes on this session. Signing
   in with a code counts. Otherwise the answer is 403 `VERIFY_TWO_STEP: ...`; the page shows a code
   dialog, sends the code to `POST /api/_settings/me/two-step/verify` and sends the change again.
   Reading Controls never asks. An admin setting someone else's password is a Controls change.
@@ -653,7 +654,7 @@ newest first, 50 rows at a time.
 | `GET /api/_controls/state` | Instance, apps, models, roles, routes, settings, attention list, recent audit rows |
 | `GET/POST /api/_controls/overrides` | File value, override, who and when; save changes |
 | `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end", "revoke_keys": false}`. Each user row counts active `keys` |
-| `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules and audit rows; refused access is a 403 there |
+| `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules, fresh two-step code and audit rows; refused access is a 403 there |
 | `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls" and descriptions |
 | `POST /api/_controls/fields/<Model>`, `DELETE /api/_controls/fields/<Model>/<x_name>` | Add or remove an instance field: `{name, type, label, help_text, required, default, options, target}` |
 | `GET/POST /api/_controls/naming/<Model>/counters` | Counters; set one with `{prefix, value, note}` |
