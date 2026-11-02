@@ -36,7 +36,8 @@ has no two-step sign-in, and nothing is listed for it.
   `security.two_step_roles` need such a session too, when the instance can keep secrets.
 - Admins can **Reset two-step** for a user (`PATCH /api/_controls/users/<id>`
   `{"two_step": "reset"}`), and `evlet users reset-two-step <instance> <username>` does the same
-  from the server shell. Both are audited and end the user's sessions; see
+  from the server shell. Both are audited and revoke all the user's access, API keys included
+  (see [Ending access](#ending-access)); see
   [settings.md](settings.md#set-up-at-sign-in-trust-on-first-use) for why it exists.
 - Break glass from the server shell:
 
@@ -44,10 +45,29 @@ has no two-step sign-in, and nothing is listed for it.
   evlet controls grant <instance> <username>
   ```
 
-  It makes the user an active admin, ends their sessions, clears the `security.controls_ips`
+  It makes the user an active admin, revokes all their access including API keys, clears the `security.controls_ips`
   setting and writes audit rows by `cli`. It can't change `routes.py`: when `ControlsAccess`
   there limits the networks, the command says so and you edit `routes.py`.
 - Saving allowed networks that leave out your own address asks first.
+
+### Ending access
+
+Every revocation goes through one function, `LocalAuth.end_sessions(connection, user_id, *,
+keep=None, keys=False)`. It always ends the person's browser sessions, their connected AI
+assistants (access and refresh tokens) and their unused authorization codes. `keys=True` also
+revokes their API keys.
+
+| What happened | Browser sessions | AI assistants and codes | API keys |
+|---|---|---|---|
+| Password changed in Settings | Others end, this one stays | End | Kept |
+| Controls: Sign out everywhere, password set, role change | End | End | Kept |
+| Controls: Reset two-step, `evlet users reset-two-step` | End | End | Revoked |
+| Controls: Deactivate | End | End | Revoked, and stay revoked if the person is activated again |
+| `evlet controls grant` (break glass) | End | End | Revoked |
+
+A password change keeps keys because scripts usually belong to the person who changed it on
+purpose. A two-step reset, deactivation and the break-glass grant are how an account is taken
+back, so whatever the other party could have created goes too.
 
 ## Roles
 
@@ -566,7 +586,8 @@ The page also lists connected clients (who, last call, number of calls) and tota
 last 24 hours: reads, writes and calls denied by permissions or by these settings. Admins can sign a client out at
 once; only admins sign out an admin's client. Per-request detail is only on each person's own
 AI page. Clients also count in the Users page sessions, and "Sign out everywhere", a password
-or role change and deactivation sign them out too.
+or role change, a two-step reset, deactivation and the break-glass grant sign them out too
+([Ending access](#ending-access)).
 
 **Desk only.** `/_/mcp`, the OAuth endpoints and the consent page answer only on the primary
 host, so portal and other sub-hosts get 404. Consent needs a desk session, and a token or
