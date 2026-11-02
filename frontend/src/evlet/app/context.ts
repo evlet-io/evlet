@@ -9,18 +9,22 @@ import type { LinkSource } from '../ui/fields';
 import type { AppClient } from './client';
 import { readConfig } from './config';
 import type { Prefs } from './prefs';
+import type { Me } from './settings';
 
 /** The route table. These are the paths the Python server serves the app for (evlet/ui/routes.py).
  * The model screens live under the frontend's base from the config block (/app for the desk).
  * <base>/:model/new comes before <base>/:model/:id so "new" is never taken for an id. <base>/:model/:id/view
  * is an older link to a record and opens the record. Reports are not part of this UI; their
- * addresses still open and say so. Accounts moved to Controls (/controls/users), a separate page. */
+ * addresses still open and say so. Accounts moved to Controls (/controls/users), a separate page.
+ * Settings are /settings/<page> and /settings/app/<app>. */
 const FIXED = {
   home: '/',
   login: '/login',
   docs: '/docs',
   topic: '/docs/:topic',
   report: '/reports/:report',
+  settings: '/settings/:page',
+  appSettings: '/settings/app/:app',
 } as const;
 const MODELS = {
   create: '/:model/new',
@@ -55,6 +59,10 @@ export interface AppContext {
   session: Session;
   user: User;
   prefs: Prefs;
+  /** The person's settings from /api/_settings/me; null on a server without them. */
+  me: Cell<Me | null>;
+  /** Bumped when the photo changes, so its address changes. */
+  photo: Cell<number>;
   links: LinkSource;
   /** Development build: shows the Library link. */
   dev: boolean;
@@ -70,6 +78,12 @@ export interface AppContext {
   toggleSidebar(): void;
   signOut(): Promise<void>;
 }
+
+/** The address of a settings page: 'profile' or 'app/<app>'. */
+export const settingsHref = (router: AppRouter, page: string) =>
+  page.startsWith('app/') ? router.href('appSettings', { app: page.slice(4) }) : router.href('settings', { page });
+export const goSettings = (router: AppRouter, page: string) =>
+  page.startsWith('app/') ? router.go('appSettings', { app: page.slice(4) }) : router.go('settings', { page });
 
 /** Docs are on unless the server's session says they are off (application.docs is null). */
 export const docsOn = (session: Session | null | undefined) => session?.application?.docs !== null;

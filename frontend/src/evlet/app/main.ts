@@ -10,6 +10,7 @@ import { App } from './app';
 import { AppClient } from './client';
 import { readConfig } from './config';
 import { appRouter } from './context';
+import { PortalSettings } from './settings';
 
 const root = document.getElementById('evlet-app')!;
 if (/^\/controls(\/|$)/.test(window.location.pathname)) {
@@ -18,6 +19,8 @@ if (/^\/controls(\/|$)/.test(window.location.pathname)) {
     router.start();
     mount(root, () => Controls({ router }));
   });
+} else if (readConfig().frontend === 'evlet.settings' && readConfig().realm === 'portal') {
+  mount(root, () => PortalSettings(new AppClient({ api: readConfig().api })));
 } else {
   const config = readConfig();
   const router = appRouter({ base: config.base, docs: config.docs ?? undefined });

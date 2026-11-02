@@ -28,6 +28,12 @@ Users: `admin` (admin), `sara`, `omar` and `rahul` (sales people, the editor rol
 (viewer). The seed has 10 organizations, 12 contacts, 8 products, 17 deals in every stage
 (three won, one lost, one with 150 lines), 8 leads and tasks.
 
+testCRM runs as an instance with a secret key, so the admin role needs two-step sign-in
+(`security.two_step_roles`, see [Settings](settings.md)) when the `cryptography` package is
+installed: admin's first sign-in sets it up with an authenticator app. The HTTP tests and the
+fixture recorder finish it with the set-up secret, then one backup code per sign-in
+(`scripts.testcrm.finish_sign_in`).
+
 To build a project without serving it: `.venv/bin/python -m scripts.testcrm build DIRECTORY`.
 
 ## The app package

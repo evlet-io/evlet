@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
-                   Move, Reference, Related, Sequence, State, Sum, Swap)
+                   Move, MultiSelect, Reference, Related, Sequence, State, Sum, Swap, AppSettings, UserPreferences)
 from evlet.calc import D, F, round, days
 
 PASSWORD = 'a sufficiently long fixture password'
@@ -348,12 +348,33 @@ def documents(out, folder):
     database.close()
 
 
+class SalesSettings(AppSettings):
+    editors = ('editor',)
+    sections = {'Orders': ('terms', 'vat', 'lock'), 'Work week': ('days',)}
+    terms = Integer(default=30, minimum=0, label='Default payment terms', suffix='days')
+    vat = Decimal(scale=2, default='5', label='Default VAT rate', suffix='%')
+    lock = Boolean(default=True, label='Lock orders once they are sent')
+    days = MultiSelect(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'], default=['mon', 'tue', 'wed', 'thu', 'fri'], label='Working days')
+
+
+class SalesPreferences(UserPreferences):
+    print_format = Select(['standard', 'tax', 'simple'], default='standard', label='My default print format')
+    cc_me = Boolean(default=False, label='Copy me on orders I send')
+
+
+def settings_shape(payload):
+    """Sessions carry random ids and times; the fixture keeps one fixed session."""
+    payload['security']['sessions'] = [{'id': '0' * 16, 'current': True, 'started': 1793534400, 'expires': 1793563200, 'agent': 'Browser', 'realm': 'desk'}]
+    return payload
+
+
 def record_screens(folder):
     """Responses the generated screens consume: first-run setup, list paging, search, sorting and
     filters, field permissions per role, and attachments."""
     database = Database(folder / 'screens.sqlite3', Registry(Customer, Product, Order, Contact))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
     app = Application(database, auth=auth, attachments=(Contact,))
+    app.business.settings.register('sales', SalesSettings, SalesPreferences, (Order,))
     app.initialize()
     out = {}
 
@@ -400,8 +421,14 @@ def record_screens(folder):
     # One byte over the framework maximum of 1 MiB: the record view shows why it was refused.
     keep('attachment_refused', admin('POST', f'{url}/attachments', {'name': 'scan.pdf', 'content': base64.b64encode(bytes(2**20 + 1)).decode()}))
     keep('contacts', admin('GET', '/api/contact?limit=20&offset=0'))
+    assert admin('PATCH', '/api/_settings/me/profile', {'full_name': 'Owner Admin', 'short_name': 'Owner', 'title': 'Managing Director'})[0] == 200
+    out['settings_me'] = {'status': 200, 'body': settings_shape(admin('GET', '/api/_settings/me')[1]), 'etag': None}
+    keep('settings_prefs', admin('PATCH', '/api/_settings/me/prefs', {'date': 'd MMM yyyy'}))
+    keep('settings_app', admin('GET', '/api/_settings/app/sales'))
+    keep('settings_app_saved', admin('PATCH', '/api/_settings/app/sales', {'values': {'terms': 45, 'days': ['mon', 'tue', 'wed', 'thu']}}))
     auth.create_user(username='viewer', password=PASSWORD, role='viewer')
     viewer = login('viewer')
+    keep('viewer_settings_app', viewer('GET', '/api/_settings/app/sales'))
     keep('viewer_session', viewer('GET', '/api/auth/session'))
     keep('viewer_schema', viewer('GET', '/api/schema'))
     keep('viewer_contact_detail', viewer('GET', url))

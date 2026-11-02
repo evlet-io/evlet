@@ -5,7 +5,7 @@ import { ApiError, ValidationError } from '../api';
 import { cell, derive } from '../reactive';
 import { Avatar, Button, Icon, StatusPill, Switch } from '../ui/base';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
-import { Callout, Head, plural, type ControlsContext } from './app';
+import { Callout, Head, plural, stamp, type ControlsContext } from './app';
 import type { RoleRow, UserRow } from './client';
 
 const ROLE_ID = /^[a-z][a-z0-9_]{1,30}$/;
@@ -94,6 +94,13 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
       else error.set(message(failure));
     } finally { busy.set(false); }
   };
+  const resetTwoStep = async () => {
+    try {
+      await ctx.api.changeUser(user.id, { two_step: 'reset' });
+      toast(`Two-step sign-in is reset for ${user.username}`);
+      await refresh();
+    } catch (failure) { error.set(message(failure)); }
+  };
   const signOut = async () => {
     try {
       await ctx.api.changeUser(user.id, { sessions: 'end' });
@@ -109,9 +116,11 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
       <div class="ctl-field"><span class="lbl">Status</span>${Switch({ on: active, disabled: locked, onChange: next => { active.set(next); error.set(''); },
         label: () => active.get() ? 'Active, can sign in' : "Inactive, can't sign in" })}</div>
       ${when(error, () => Callout('err', 'info', error))}
-      <section class="ctl-section"><h3>Two-step sign-in</h3><div class="ctl-line">${required.includes(user.role)
-        ? StatusPill({ label: 'Required, not set up', tint: 'rose' }) : StatusPill({ label: 'Not set up', tint: 'slate' })}
-        <span class="muted ctl-small">People set it up in their own settings, which arrive later.</span></div></section>
+      <section class="ctl-section"><h3>Two-step sign-in</h3><div class="ctl-line">${user.two_step
+        ? [StatusPill({ label: 'On', tint: 'green' }), html`<span class="muted ctl-small grow">Set up ${stamp(user.two_step.since)} from ${user.two_step.agent || 'a browser'}.</span>`,
+          ctx.state.peek().me.role === 'admin' ? Button({ label: 'Reset two-step', size: 'small', onClick: () => void resetTwoStep() }) : null]
+        : [required.includes(user.role) ? StatusPill({ label: 'Required, not set up', tint: 'rose' }) : StatusPill({ label: 'Not set up', tint: 'slate' }),
+          html`<span class="muted ctl-small">${required.includes(user.role) ? 'They set it up at their next sign-in.' : 'People set it up in Settings, under Sign-in & security.'}</span>`]}</div></section>
       <section class="ctl-section"><h3>Sessions</h3><div class="ctl-line"><span class="grow">${user.sessions ? `${plural(user.sessions, 'active session')}` : 'No active sessions.'}</span>
         ${user.sessions && !locked ? Button({ label: 'Sign out everywhere', size: 'small', icon: 'log-out', onClick: () => void signOut() }) : null}</div></section>
       ${locked ? null : html`<section class="ctl-section"><h3>Password</h3>

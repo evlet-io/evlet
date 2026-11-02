@@ -2342,6 +2342,460 @@
   "etag": null,
   "status": 200
  },
+ "settings_app": {
+  "body": {
+   "can_edit": true,
+   "editors": [
+    "editor"
+   ],
+   "id": "sales",
+   "preferences": [
+    {
+     "choices": [
+      "standard",
+      "tax",
+      "simple"
+     ],
+     "default": "standard",
+     "default_kind": "static",
+     "help_text": "",
+     "hidden": false,
+     "index": false,
+     "label": "My default print format",
+     "max_length": 255,
+     "name": "print_format",
+     "placeholder": "",
+     "read_only": false,
+     "required": false,
+     "type": "select",
+     "unique": false,
+     "value": "standard"
+    },
+    {
+     "default": false,
+     "default_kind": "static",
+     "help_text": "",
+     "hidden": false,
+     "index": false,
+     "label": "Copy me on orders I send",
+     "name": "cc_me",
+     "placeholder": "",
+     "read_only": false,
+     "required": false,
+     "type": "boolean",
+     "unique": false,
+     "value": false
+    }
+   ],
+   "sections": [
+    {
+     "fields": [
+      {
+       "default": 30,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Default payment terms",
+       "maximum": null,
+       "minimum": 0,
+       "name": "terms",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "suffix": "days",
+       "type": "integer",
+       "unique": false,
+       "value": 30
+      },
+      {
+       "default": "5.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Default VAT rate",
+       "maximum": null,
+       "minimum": null,
+       "name": "vat",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "scale": 2,
+       "suffix": "%",
+       "type": "decimal",
+       "unique": false,
+       "value": "5.00"
+      },
+      {
+       "default": true,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Lock orders once they are sent",
+       "name": "lock",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "boolean",
+       "unique": false,
+       "value": true
+      }
+     ],
+     "title": "Orders"
+    },
+    {
+     "fields": [
+      {
+       "choices": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri",
+        "sat",
+        "sun"
+       ],
+       "default": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
+       ],
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Working days",
+       "name": "days",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "multiselect",
+       "unique": false,
+       "value": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
+       ]
+      }
+     ],
+     "title": "Work week"
+    }
+   ],
+   "title": "Sales"
+  },
+  "etag": null,
+  "status": 200
+ },
+ "settings_app_saved": {
+  "body": {
+   "can_edit": true,
+   "editors": [
+    "editor"
+   ],
+   "id": "sales",
+   "preferences": [
+    {
+     "choices": [
+      "standard",
+      "tax",
+      "simple"
+     ],
+     "default": "standard",
+     "default_kind": "static",
+     "help_text": "",
+     "hidden": false,
+     "index": false,
+     "label": "My default print format",
+     "max_length": 255,
+     "name": "print_format",
+     "placeholder": "",
+     "read_only": false,
+     "required": false,
+     "type": "select",
+     "unique": false,
+     "value": "standard"
+    },
+    {
+     "default": false,
+     "default_kind": "static",
+     "help_text": "",
+     "hidden": false,
+     "index": false,
+     "label": "Copy me on orders I send",
+     "name": "cc_me",
+     "placeholder": "",
+     "read_only": false,
+     "required": false,
+     "type": "boolean",
+     "unique": false,
+     "value": false
+    }
+   ],
+   "saved": 2,
+   "sections": [
+    {
+     "fields": [
+      {
+       "default": 30,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Default payment terms",
+       "maximum": null,
+       "minimum": 0,
+       "name": "terms",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "suffix": "days",
+       "type": "integer",
+       "unique": false,
+       "value": 45
+      },
+      {
+       "default": "5.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Default VAT rate",
+       "maximum": null,
+       "minimum": null,
+       "name": "vat",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "scale": 2,
+       "suffix": "%",
+       "type": "decimal",
+       "unique": false,
+       "value": "5.00"
+      },
+      {
+       "default": true,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Lock orders once they are sent",
+       "name": "lock",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "boolean",
+       "unique": false,
+       "value": true
+      }
+     ],
+     "title": "Orders"
+    },
+    {
+     "fields": [
+      {
+       "choices": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri",
+        "sat",
+        "sun"
+       ],
+       "default": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
+       ],
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Working days",
+       "name": "days",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "multiselect",
+       "unique": false,
+       "value": [
+        "mon",
+        "tue",
+        "wed",
+        "thu"
+       ]
+      }
+     ],
+     "title": "Work week"
+    }
+   ],
+   "title": "Sales"
+  },
+  "etag": null,
+  "status": 200
+ },
+ "settings_me": {
+  "body": {
+   "apps": [
+    {
+     "can_edit": true,
+     "id": "sales",
+     "labels": [
+      "Default payment terms",
+      "Default VAT rate",
+      "Lock orders once they are sent",
+      "Working days",
+      "My default print format",
+      "Copy me on orders I send"
+     ],
+     "title": "Sales"
+    }
+   ],
+   "controls": true,
+   "development": true,
+   "last_page": "profile",
+   "notifications": {
+    "events": [
+     {
+      "group": "Records",
+      "items": [
+       {
+        "channels": [
+         true,
+         true
+        ],
+        "key": "assigned",
+        "label": "A record is assigned to me",
+        "locked": false
+       },
+       {
+        "channels": [
+         true,
+         true
+        ],
+        "key": "mention",
+        "label": "Someone mentions me",
+        "locked": false
+       },
+       {
+        "channels": [
+         true,
+         true
+        ],
+        "key": "job_failed",
+        "label": "A job I started fails",
+        "locked": false
+       }
+      ]
+     },
+     {
+      "group": "Account",
+      "items": [
+       {
+        "channels": [
+         true,
+         true
+        ],
+        "key": "new_device",
+        "label": "Sign-in from a new device",
+        "locked": true
+       },
+       {
+        "channels": [
+         true,
+         true
+        ],
+        "key": "password",
+        "label": "My password is changed",
+        "locked": true
+       }
+      ]
+     }
+    ],
+    "quiet": {
+     "from": "20:00",
+     "on": false,
+     "to": "07:00"
+    }
+   },
+   "pages": [
+    "profile",
+    "appearance",
+    "security",
+    "notifications",
+    "email",
+    "ai"
+   ],
+   "portal": false,
+   "prefs": {
+    "counts": false,
+    "date": "dd-MM-yyyy",
+    "density": "comfortable",
+    "lang": "en",
+    "num": "1,234.56",
+    "start": "",
+    "text": "default",
+    "theme": "light",
+    "tz": "Asia/Dubai",
+    "week": "mon"
+   },
+   "profile": {
+    "email": "",
+    "full_name": "Owner Admin",
+    "phone": "",
+    "photo": false,
+    "short_name": "Owner",
+    "signature": "",
+    "title": "Managing Director"
+   },
+   "security": {
+    "password_min": 15,
+    "sessions": [
+     {
+      "agent": "Browser",
+      "current": true,
+      "expires": 1793563200,
+      "id": "0000000000000000",
+      "realm": "desk",
+      "started": 1793534400
+     }
+    ],
+    "two_step": {
+     "agent": "",
+     "available": false,
+     "codes": 0,
+     "on": false,
+     "required": false,
+     "since": null,
+     "verified": false
+    }
+   },
+   "user": {
+    "id": 1,
+    "role": "admin",
+    "username": "owner"
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
+ "settings_prefs": {
+  "body": {
+   "saved": [
+    "date"
+   ]
+  },
+  "etag": null,
+  "status": 200
+ },
  "setup": {
   "body": {
    "created": true
@@ -3829,6 +4283,155 @@
     "role": "viewer",
     "username": "viewer"
    }
+  },
+  "etag": null,
+  "status": 200
+ },
+ "viewer_settings_app": {
+  "body": {
+   "can_edit": false,
+   "editors": [
+    "editor"
+   ],
+   "id": "sales",
+   "preferences": [
+    {
+     "choices": [
+      "standard",
+      "tax",
+      "simple"
+     ],
+     "default": "standard",
+     "default_kind": "static",
+     "help_text": "",
+     "hidden": false,
+     "index": false,
+     "label": "My default print format",
+     "max_length": 255,
+     "name": "print_format",
+     "placeholder": "",
+     "read_only": false,
+     "required": false,
+     "type": "select",
+     "unique": false,
+     "value": "standard"
+    },
+    {
+     "default": false,
+     "default_kind": "static",
+     "help_text": "",
+     "hidden": false,
+     "index": false,
+     "label": "Copy me on orders I send",
+     "name": "cc_me",
+     "placeholder": "",
+     "read_only": false,
+     "required": false,
+     "type": "boolean",
+     "unique": false,
+     "value": false
+    }
+   ],
+   "sections": [
+    {
+     "fields": [
+      {
+       "default": 30,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Default payment terms",
+       "maximum": null,
+       "minimum": 0,
+       "name": "terms",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "suffix": "days",
+       "type": "integer",
+       "unique": false,
+       "value": 45
+      },
+      {
+       "default": "5.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Default VAT rate",
+       "maximum": null,
+       "minimum": null,
+       "name": "vat",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "scale": 2,
+       "suffix": "%",
+       "type": "decimal",
+       "unique": false,
+       "value": "5.00"
+      },
+      {
+       "default": true,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Lock orders once they are sent",
+       "name": "lock",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "boolean",
+       "unique": false,
+       "value": true
+      }
+     ],
+     "title": "Orders"
+    },
+    {
+     "fields": [
+      {
+       "choices": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri",
+        "sat",
+        "sun"
+       ],
+       "default": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
+       ],
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Working days",
+       "name": "days",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "multiselect",
+       "unique": false,
+       "value": [
+        "mon",
+        "tue",
+        "wed",
+        "thu"
+       ]
+      }
+     ],
+     "title": "Work week"
+    }
+   ],
+   "title": "Sales"
   },
   "etag": null,
   "status": 200

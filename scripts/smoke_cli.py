@@ -54,6 +54,19 @@ def server(*args):
                 process.kill(); process.wait()
 
 
+def enrol(url, username, password):
+    """Instances require two-step sign-in for admins: set it up once as the browser does and keep the backup codes."""
+    import base64
+    from evlet.settings import totp
+    client = HTTPClient(url)
+    data, _ = client.request('POST', '/api/auth/login', {'username': username, 'password': password})
+    if data.get('two_step') != 'setup':
+        return []
+    raw = base64.b32decode(data['secret'] + '=' * (-len(data['secret']) % 8))
+    data, _ = client.request('POST', '/api/auth/login', {'ticket': data['ticket'], 'code': totp(raw, int(time.time() // 30))})
+    return list(data['backup_codes'])
+
+
 def main():
     password = 'temporary-package-check-password'
     with tempfile.TemporaryDirectory(prefix='evlet-cli-smoke-') as directory:
@@ -67,7 +80,8 @@ def main():
                 assert b'<div id="evlet-app">' in response.read()
             client = HTTPClient(url)
             client.request('POST', '/api/auth/setup', {'username': 'owner', 'password': password})
-            client = client.login('owner', password)
+            codes = enrol(url, 'owner', password)
+            client = client.login('owner', password, code=codes.pop)
             client.request('POST', '/api/notesitem', {'title': 'Survives restart'})
             assert client.get('/api/notesitem')['items'][0]['title'] == 'Survives restart'
             busy = command('migrate', 'acme', '--trust', '--project', root, check=False)
@@ -78,7 +92,7 @@ def main():
         assert time.monotonic() - shutdown_started < 5, 'Open event stream delayed shutdown'
         stream.close()
         with server('dev', '--instance', 'acme', '--project', root) as url:
-            client = HTTPClient(url).login('owner', password)
+            client = HTTPClient(url).login('owner', password, code=codes.pop)
             assert client.get('/api/notesitem')['items'][0]['title'] == 'Survives restart'
             stream = urlopen(Request(url + '/api/_events/stream', headers={'Cookie':client.cookie}), timeout=10)
             assert stream.readline().startswith(b'id:')
@@ -98,7 +112,7 @@ def main():
             stream.close()
         command('migrate', 'acme', '--trust', '--project', root)
         with server('serve', 'acme', '--project', root) as url:
-            client = HTTPClient(url).login('owner', password)
+            client = HTTPClient(url).login('owner', password, code=codes.pop)
             assert client.get('/api/notesitem')['items'][0]['title'] == 'Survives restart'
         before = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
         with server('playground') as url:

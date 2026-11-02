@@ -7,6 +7,10 @@ import secrets
 import stat
 
 
+# The largest private file read back: a profile photo of 2 MB. Attachments have their own lower limits.
+MAX_FILE = 2 * 1024 * 1024
+
+
 class StorageError(RuntimeError):
     pass
 
@@ -112,9 +116,20 @@ class LocalFileStorage(SQLiteStorage):
             fd = os.open(self._path(row['storage_key']), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
             with os.fdopen(fd, 'rb') as stream:
                 info = os.fstat(stream.fileno())
-                if not stat.S_ISREG(info.st_mode) or info.st_size != row['file_size'] or not 1 <= info.st_size <= 1024 * 1024:
+                if not stat.S_ISREG(info.st_mode) or info.st_size != row['file_size'] or not 1 <= info.st_size <= MAX_FILE:
                     raise StorageError('Private file is damaged')
                 return stream.read()
+        except (OSError, UnicodeError) as exc:
+            raise StorageError('Private file storage is unavailable') from exc
+
+    def remove(self, key):
+        """Delete one file whose metadata row is already gone, such as a replaced photo."""
+        try:
+            self._check_binding()
+            with self.database._connection() as connection:
+                if connection.execute('SELECT 1 FROM evlet_attachments WHERE storage_key=?', (key,)).fetchone():
+                    return
+            self._path(key).unlink(missing_ok=True)
         except (OSError, UnicodeError) as exc:
             raise StorageError('Private file storage is unavailable') from exc
 

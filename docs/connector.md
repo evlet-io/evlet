@@ -1,8 +1,11 @@
 # Discovery and local connectors
 
 Milestone 7 adds a compact discovery contract, a local MCP stdio connector, and
-commands for starting a small application. The core still needs only Python's
-standard library. The connector calls the same authenticated HTTP routes used by
+commands for starting a small application. The MCP connector needs only Python's
+standard library. The core has one third-party library besides Uvicorn and packaging:
+`cryptography`, for AES-GCM encryption of secrets at rest such as two-step sign-in
+secrets (see [Settings](settings.md#the-secret-key)). The standard library has no AES, and
+writing our own cipher is not an option. The connector calls the same authenticated HTTP routes used by
 the browser, so tenant, account, model, row, field, and action checks stay on the
 server. It has no database handle, arbitrary SQL, Python execution, or file tool.
 
@@ -56,7 +59,8 @@ python -m evlet describe --session ~/.evlet/playground.session.json
 python -m evlet describe --session ~/.evlet/playground.session.json --model project
 ```
 
-For the starter, describe `item` instead of `project`. For a tenant, supply its
+An account with two-step sign-in ([settings.md](settings.md#two-step-sign-in)) is asked for
+its code after the password. For the starter, describe `item` instead of `project`. For a tenant, supply its
 exact configured origin, such as `http://alpha.localhost:8000` or its HTTPS origin.
 The CLI prompts for the password and saves only the session cookie, CSRF token,
 and origin. The file is created once with mode 0600 and never overwritten. Loading

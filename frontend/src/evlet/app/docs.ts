@@ -98,7 +98,7 @@ const TOPICS: Topic[] = [
   </article>` },
   { id: 'screens', title: 'Screens and routes', render: () => html`<article class="ev-doc-article">
     ${section('The application shell', p('The sidebar lists your models, grouped into documents and records, with your recent records. The top bar shows where you are, search (Ctrl K or Cmd K) and the New menu. Only the view scrolls.'),
-      table([['Sidebar', 'Workspace, app bar, models, recent records, account, theme.'], ['Top bar', 'Sidebar toggle, breadcrumbs, search, shortcuts, New.'],
+      table([['Sidebar', 'Workspace, app bar, models, recent records, and your account at the bottom.'], ['Top bar', 'Sidebar toggle, breadcrumbs, search, shortcuts, New.'],
         ['View', 'The page: a list, a board, a record or these docs.'], ['Layers', 'Menus, dialogs, drawers, toasts and the search palette.']]))}
     ${section('From a model to its screens', p('Lists show Meta.list_fields (up to eight), with the title pinned. A model with a State also gets a board and saved views per state. A record shows the title, the State as steps with its moves, a summary strip, a Details tab built from Meta.layout, one tab per Table and the side panel.'), code(screensCode))}
     ${section('Routes', p('Every model has /app/model, /app/model/new and /app/model/123. Lists keep their search, sort, page and view in the address, so a link opens the same list. A record keeps its tab: /app/invoice/42?tab=lines.'),
@@ -113,7 +113,7 @@ const TOPICS: Topic[] = [
     ${section('Change a screen through the model', table([['Meta.list_fields', 'List columns, up to eight.'], ['Meta.layout', 'Sections of the Details tab.'],
       ['Meta.title_field', 'The record title and the pinned list column.'], ['Meta.search_fields', 'What search looks at.'],
       ['Meta.key_fields', 'The Key fields block and the summary strip.'], ['Meta.relations', 'The Related tab.'], ['Meta.measures', 'Totals in lists, boards and records.']]))}
-    ${section('Per user', p('Column widths and order, density, the sidebar, the theme and quick access are saved for each user. Recent records and searches last until you sign out.'))}
+    ${section('Per user', p('Column widths and order, the sidebar and quick access are saved for each user; appearance and region are in Settings. Recent records and searches last until you sign out.'))}
   </article>` },
   { id: 'reference', title: 'API reference', render: () => html`<article class="ev-doc-article">
     ${section('The public surface', table([['evlet', 'App, Application, Model, Registry, Database, fields, migrations, LocalAuth, Policy, Rule, Action and ChildTable.'],

@@ -81,7 +81,8 @@ Docs off it starts on the first list the role can open and hides the Docs links.
 | `/app/<model>/new` | New record. Query values fill writable fields: `?customer=4` |
 | `/app/<model>/<id>` | Record view. `?tab=` keeps the tab |
 | `/app/<model>/<id>/view` | Older record link; opens the record view |
-| `/settings/accounts` | Notice: accounts are not managed in this interface |
+| `/settings/<page>`, `/settings/app/<app>` | Settings ([settings.md](settings.md)); `/settings` opens the last page |
+| `/settings/accounts` | Redirects to `/controls/users` |
 | `/reports/<name>` | Notice: reports are not shown in this interface |
 | Registered Python page routes | Served, then open Docs |
 

@@ -106,7 +106,7 @@ describe('app shell', () => {
     expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['New customer', 'New product', 'New order', 'New contact']);
   });
 
-  it('toggles the sidebar with [, switches the theme and density, and signs out', async () => {
+  it('toggles the sidebar with [, keeps the light theme, and signs out from the account menu', async () => {
     let signedOut = false;
     const { host, sent } = start([
       ['GET', /\/api\/auth\/session$/, () => signedOut ? recorded.session_anonymous : recorded.session],
@@ -119,12 +119,10 @@ describe('app shell', () => {
     expect(app.classList.contains('collapsed')).toBe(true);
     press(document.body, '[');
     expect(app.classList.contains('collapsed')).toBe(false);
-
-    click(host.querySelector('.side-foot .icon-btn'));
-    expect(document.documentElement.dataset.theme).toBe('dark');
-    click(host.querySelector('.me'));
-    click(byText(document.body, '.pop [role="menuitem"]', 'Compact density'));
-    expect(app.classList.contains('compact')).toBe(true);
+    // Light only for now; the top bar has no avatar or gear and the account area has no theme button.
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(host.querySelector('.side-foot .icon-btn')).toBeNull();
+    expect(host.querySelector('.topbar .avatar')).toBeNull();
 
     click(host.querySelector('.me'));
     click(byText(document.body, '.pop [role="menuitem"]', 'Sign out'));

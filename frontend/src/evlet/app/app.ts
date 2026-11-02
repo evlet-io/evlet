@@ -14,14 +14,15 @@ import { Button, EmptyState } from '../ui/base';
 import { apiLinks, setLinkSource } from '../ui/fields';
 import { closeDialogs, closePopover, DialogFooter, openModal } from '../ui/layers';
 import { AppClient } from './client';
-import { docsOn, newPageState, type AppContext, type AppRouter } from './context';
+import { docsOn, goSettings, newPageState, settingsHref, type AppContext, type AppRouter } from './context';
 import { DocsPage } from './docs';
 import { ListPage } from './list-page';
-import { Connecting, LoginScreen } from './login';
+import { Connecting, LoginScreen, TwoStepScreen, type Challenge } from './login';
 import { rootModels } from './meta';
 import { openPalette } from './palette';
 import { applyTheme, Prefs } from './prefs';
 import { RecordPage } from './record-page';
+import { applyMe, loadMe, SettingsView, showCodes, type Me } from './settings';
 import { Shell } from './shell';
 
 export interface AppOptions {
@@ -34,7 +35,7 @@ export interface AppOptions {
   storage?: Storage | null;
 }
 
-type Phase = 'connecting' | 'signin' | 'ready';
+type Phase = 'connecting' | 'signin' | 'twostep' | 'ready';
 
 export function App(options: AppOptions): Node {
   const { router } = options;
@@ -43,19 +44,23 @@ export function App(options: AppOptions): Node {
   const session = cell<Session | null>(null, { name: 'app.session' });
   const context = cell<AppContext | null>(null, { name: 'app.context' });
   const error = cell(''), busy = cell(false);
+  const challenge = cell<Challenge | null>(null, { name: 'app.challenge' });
   let alive = true;
   onCleanup(() => { alive = false; context.peek()?.prefs.dispose(); });
 
   const enter = async (current: Session) => {
-    const schema = new SchemaIndex(await api.schema<AppSchema>());
+    const [schemaData, settings] = await Promise.all([api.schema<AppSchema>(), loadMe(api)]);
+    const schema = new SchemaIndex(schemaData);
     if (!alive) return;
     context.peek()?.prefs.dispose();
     const prefs = options.storage === undefined ? new Prefs(current.user!.username) : new Prefs(current.user!.username, options.storage);
-    applyTheme(prefs.theme.peek());
+    applyTheme('light');
+    applyMe(settings);
     const links = apiLinks(api, schema);
     setLinkSource(links);
     const ctx: AppContext = {
       api, router, schema, session: current, user: current.user!, prefs, links, dev: Boolean(options.dev), libraryHref: options.libraryHref ?? '/evlet.html',
+      me: cell<Me | null>(settings, { name: 'app.me' }), photo: cell(0),
       ...newPageState(),
       openPalette: () => openPalette(ctx),
       toggleSidebar: () => prefs.collapsed.set(!prefs.collapsed.peek()),
@@ -89,14 +94,21 @@ export function App(options: AppOptions): Node {
     }
   };
 
+  const signedIn = async (current: Session & { backup_codes?: string[] }) => {
+    challenge.set(null);
+    // The login answer carries the user; the session adds the application details.
+    await enter({ ...(session.peek() ?? {}), ...current, setup: false });
+    if (current.backup_codes?.length) showCodes(current.backup_codes);
+  };
+
   const signIn = async (username: string, password: string, setup: boolean) => {
     busy.set(true);
     error.set('');
     try {
       if (setup) await api.setup(username, password);
-      const current = await api.login(username, password);
-      // The login answer carries the user; the session adds the application details.
-      await enter({ ...(session.peek() ?? {}), ...current, setup: false });
+      const current = await api.login(username, password) as Session & Partial<Challenge>;
+      if (current.two_step && current.ticket) { challenge.set(current as Challenge); phase.set('twostep'); return; }
+      await signedIn(current);
     } catch (failure) {
       error.set(failure instanceof ApiError ? failure.message : 'Unable to sign in.');
       // A finished setup should not be offered again.
@@ -104,6 +116,20 @@ export function App(options: AppOptions): Node {
     } finally {
       busy.set(false);
     }
+  };
+
+  /** The second step: a code from the authenticator app or a backup code, or the set-up when the role requires it. */
+  const sendCode = async (code: string) => {
+    const pending = challenge.peek();
+    if (!pending) return;
+    busy.set(true);
+    error.set('');
+    try { await signedIn(await api.secondStep(pending.ticket, code)); }
+    catch (failure) {
+      const message = failure instanceof ApiError ? failure.message : 'Unable to sign in.';
+      if (/Sign in again/.test(message)) { challenge.set(null); phase.set('signin'); }
+      error.set(message);
+    } finally { busy.set(false); }
   };
 
   async function signOut() {
@@ -138,8 +164,9 @@ export function App(options: AppOptions): Node {
     context.peek()?.prefs.dispose();
     context.set(null);
     api.forget();
-    // The sign-in screen does not keep the last user's theme.
+    // The sign-in screen does not keep the last user's region or language.
     applyTheme('system');
+    applyMe(null);
     error.set(message);
     session.set({ ...(session.peek() ?? { user: null }), user: null, setup: false });
     phase.set('signin');
@@ -152,6 +179,8 @@ export function App(options: AppOptions): Node {
 
   return match(phase, {
     connecting: () => Connecting(),
+    twostep: () => TwoStepScreen({ session: session.peek(), challenge: challenge.peek()!, error, busy, onSubmit: code => void sendCode(code),
+      onCancel: () => { challenge.set(null); error.set(''); phase.set('signin'); } }),
     signin: () => LoginScreen({ session: session.peek(), error, busy, onSubmit: (username, password, setup) => void signIn(username, password, setup), onRetry: () => void connect() }),
     ready: () => Shell(context.peek()!, () => Routes(context.peek()!)),
   });
@@ -184,6 +213,17 @@ function page(ctx: AppContext): Child {
       const model = known(route.params.model);
       return model && model.permissions?.create !== false ? RecordPage(ctx, model.name, 'new') : unavailable(ctx);
     }
+    case 'settings': case 'appSettings': {
+      const me = ctx.me.peek();
+      const target = route.name === 'settings' ? route.params.page : `app/${route.params.app}`;
+      if (!me || !(me.pages.includes(target) || me.apps.some(app => `app/${app.id}` === target))) return unavailable(ctx);
+      ctx.crumbs.set([{ label: 'Settings', href: settingsHref(ctx.router, me.last_page || 'profile') }, { label: route.name === 'settings' ? ({ profile: 'Profile', appearance: 'Appearance & region',
+        security: 'Sign-in & security', notifications: 'Notifications', email: 'Your email', ai: 'AI assistants' } as Record<string, string>)[target] : `${me.apps.find(app => `app/${app.id}` === target)!.title} settings` }]);
+      const models = rootModels(ctx.schema);
+      return html`<div class="page wide">${SettingsView({ api: ctx.api, me: ctx.me as any, photo: ctx.photo, href: page => settingsHref(ctx.router, page), go: page => void goSettings(ctx.router, page),
+        starts: [...(docsOn(ctx.session) ? [['docs', 'Docs'] as [string, string]] : []), ...models.map(model => [model.name, model.plural] as [string, string])],
+        changed: () => { const next = ctx.me.peek(); if (next) ctx.prefs.density.set(next.prefs.density); } }, target)}</div>`;
+    }
     case 'report': return notHere(ctx, 'Reports', 'Reports are not shown in this interface',
       'Python reports keep their API and permissions. Model lists, boards and measures cover the data in this interface.');
     default: return unavailable(ctx);
@@ -211,6 +251,9 @@ function nothingToOpen(ctx: AppContext): HTMLElement {
 
 /** Where a signed-in user starts: Docs, or the first list they can open when Docs are off. */
 function goStart(ctx: AppContext, replace = false) {
+  const start = ctx.me.peek()?.prefs.start;
+  if (start === 'docs' && docsOn(ctx.session)) return ctx.router.go('docs', {}, {}, { replace });
+  if (start && rootModels(ctx.schema).some(model => model.name === start)) return ctx.router.go('list', { model: start }, {}, { replace });
   if (docsOn(ctx.session)) return ctx.router.go('docs', {}, {}, { replace });
   const first = rootModels(ctx.schema)[0];
   return first ? ctx.router.go('list', { model: first.name }, {}, { replace }) : ctx.router.go('home', {}, {}, { replace });

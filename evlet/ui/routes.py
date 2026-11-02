@@ -53,19 +53,19 @@ def dispatch(application, scope):
             return 302, Download(b''), [(b'location', target.encode())]
         found = application.routes.match(host, path)
         if found is None: raise HTTPError(404, 'Route not found')
-        if path == '/settings/accounts':
+        if path == '/settings/accounts' and application.routes.scopes(host) is None:
             return 301, Download(b''), [(b'location', b'/controls/users')]
         if not found[0].startswith('evlet.'):
             return _frontend(application, scope, host, *found)
-        if found[0] == 'evlet.controls' and application.business:
-            served = application.business.controls.page(scope, path)
+        if found[0] in ('evlet.controls', 'evlet.settings') and application.business:
+            served = (application.business.controls if found[0] == 'evlet.controls' else application.business.settings).page(scope, path)
             if not isinstance(served, bool): return served
         else:
             served = _serves(application, *found)
         if not served and path.startswith('/assets/'): raise HTTPError(404, 'Route not found')
         if served and found[0] == 'evlet.docs' and application.routes.docs_roles:
             _docs_access(application, scope)
-        response = static_response(path if served else '/', _config(application, scope, host, 'evlet.desk', '/app'))
+        response = static_response(path if served else '/', _config(application, scope, host, 'evlet.settings' if found[0] == 'evlet.settings' else 'evlet.desk', '/app'))
         # Unknown browser paths get the app's own not-found page, with a 404 status.
         if response is not None: return response if served else (404, *response[1:])
         if not served: raise HTTPError(404, 'Route not found')
@@ -147,6 +147,9 @@ def _frontend(application, scope, host, identity, base, rest):
         response = static_response('/', config)
     elif definition.kind == 'static':
         response = frontend_response(application.routes.dist(identity), rest, config, base, definition.csp.get('connect-src', ()))
+        if response is None and rest.startswith('/assets/') and application.routes.realm(host) == 'portal':
+            # The settings pages on a portal host load the framework's own assets.
+            response = static_response(rest)
     else:
         return _server(application, scope, host, definition, rest, config, user)
     if response is None:

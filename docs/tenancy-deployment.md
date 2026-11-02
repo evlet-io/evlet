@@ -124,8 +124,9 @@ The generated files use these fixed locations:
 - `/etc/caddy/Caddyfile` and `/etc/systemd/system/evlet.service`: reviewed service
   configuration owned by the operator.
 
-Prepare a release in the checkout. The runtime lock contains only Uvicorn and its
-runtime dependencies, using the same pins as the tested development lock:
+Prepare a release in the checkout. The runtime lock contains Uvicorn, packaging,
+`cryptography` (secrets at rest) and their runtime dependencies, using the same pins
+as the tested development lock:
 
 ```bash
 python3.12 -m venv .venv

@@ -29,7 +29,8 @@ AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layou
 # A paused schedule is a setting override: schedule.<name>.active = false.
 SCHEDULE = re.compile(r'schedule\.([a-z][a-z0-9_]{0,63})\.active')
 ADMIN_ONLY = 'Only an admin can do this: change admin accounts, give the admin role, manage roles or decide who opens Controls.'
-TWO_STEP = 'Controls needs two-step sign-in, which this instance does not have yet. Remove require_two_step from routes.py for now.'
+TWO_STEP = ('Controls needs a sign-in with two-step sign-in. Turn it on in Settings, under Sign-in & security, if you have not, '
+            'then sign out and sign in again with a code.')
 LABELS = {None: 'All records', 'created_by': 'Records they created', 'owner': 'Records they own',
           'account_manager': 'Customers they manage', 'assignee': 'Tasks assigned to them', 'own_customer': 'Their own customer only'}
 
@@ -98,6 +99,32 @@ def grant(database_path, username):
             connection.execute("DELETE FROM evlet_overrides WHERE kind='setting' AND key='security.controls_ips'")
             audit(connection, 'cli', 'Security', 'security.controls_ips', 'Allowed networks cleared from the server shell', json.loads(ips[0]), None)
         bump(connection)
+        connection.execute('COMMIT')
+    except BaseException:
+        if connection.in_transaction:
+            connection.execute('ROLLBACK')
+        raise
+    finally:
+        connection.close()
+
+
+def reset_two_step_from_shell(database_path, username):
+    """Clear a user's two-step sign-in from the server shell and end their sessions, audited as cli."""
+    from .settings import reset_two_step
+    if not database_path.is_file():
+        raise ValueError('This instance has no database yet. Start it once first.')
+    connection = sqlite3.connect(database_path, isolation_level=None)
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        ensure_schema(connection)
+        row = connection.execute('SELECT id, username FROM evlet_users WHERE username=?', (username.lower(),)).fetchone() \
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone() else None
+        if row is None:
+            raise ValueError(f'No user is named {username}.')
+        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_user_profile'").fetchone():
+            raise ValueError(f'{username} has no two-step sign-in to reset.')
+        reset_two_step(connection, 'cli', row['id'], row['username'])
         connection.execute('COMMIT')
     except BaseException:
         if connection.in_transaction:
@@ -293,7 +320,9 @@ class Controls:
     def check(self, scope, user):
         if not self.allows(scope, user):
             raise AccessError(404, NOT_FOUND)
-        if self.routes.controls.require_two_step:
+        # The session must have finished two-step sign-in, not only the account have it on.
+        required = self.routes.controls.require_two_step or user.role in self.settings['security.two_step_roles'] and self.business.settings.possible()
+        if required and not user.two_step:
             raise AccessError(403, TWO_STEP)
 
     def page(self, scope, path):
@@ -584,8 +613,11 @@ class Controls:
         page = self.business.auth.user_page(offset)
         with self.database._connection() as connection:
             sessions = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_sessions WHERE expires>? GROUP BY user_id', (int(time.time()),))}
+            two_step = {row['user_id']: {'since': row['two_step_since'], 'agent': row['two_step_agent']} for row in connection.execute(
+                'SELECT user_id, two_step_since, two_step_agent FROM evlet_user_profile WHERE two_step_secret IS NOT NULL')}
         for item in page['items']:
             item['active'], item['sessions'] = bool(item['active']), sessions.get(item['id'], 0)
+            item['two_step'] = two_step.get(item['id'])
         return page
 
     def add_user(self, actor, body):
@@ -597,10 +629,22 @@ class Controls:
             connection, actor.username, 'Users', user.username, f'Added as {user.role}', None, {'role': user.role}))
 
     def change_user(self, actor, user_id, body):
-        if not isinstance(body, dict) or not body or set(body) - {'role', 'active', 'password', 'sessions'}:
-            raise ValidationError({'_form': 'Use role, active, password or sessions'})
+        if not isinstance(body, dict) or not body or set(body) - {'role', 'active', 'password', 'sessions', 'two_step'}:
+            raise ValidationError({'_form': 'Use role, active, password, sessions or two_step'})
         if 'sessions' in body and body['sessions'] != 'end':
             raise ValidationError({'sessions': 'Use "end" to sign out every session'})
+        if 'two_step' in body:
+            if body != {'two_step': 'reset'}:
+                raise ValidationError({'two_step': 'Send only {"two_step": "reset"}'})
+            if actor.role != 'admin':
+                raise AccessError(403, ADMIN_ONLY)
+            from .settings import reset_two_step
+            with self.database.transaction() as tx:
+                row = tx.connection.execute('SELECT id, username FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+                if row is None:
+                    raise AccessError(404, 'Account not found')
+                reset_two_step(tx.connection, actor.username, row['id'], row['username'])
+            return
         changes = {key: value for key, value in body.items() if key != 'sessions'}
 
         def check(connection, row, values):
@@ -752,8 +796,8 @@ class Controls:
             'scopes': {key or '': label for key, label in LABELS.items()} | {key: key.replace('_', ' ').capitalize() for key in self.scopes},
             'settings': {key: {'file': SETTINGS[key], 'value': self.settings[key]} for key in SETTINGS},
             'controls': {'allow_ips': list(controls.allow_ips), 'require_two_step': controls.require_two_step},
-            'attention': attention, 'overrides': overrides, 'users': {'active': active or 0, 'total': total},
-            'audit': recent, 'two_step': False, 'client': str(client_ip(scope, self.business.auth) or ''),
+            'attention': attention, 'overrides': overrides, 'users': {'active': int(active or 0), 'total': total},
+            'audit': recent, 'two_step': self.business.settings.possible(), 'client': str(client_ip(scope, self.business.auth) or ''),
             'remove_fields': self.custom.drop, 'instance_fields': True,
         }
 

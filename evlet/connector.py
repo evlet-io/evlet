@@ -78,7 +78,7 @@ class HTTPClient:
         encoded = None if body is None else json.dumps(body, allow_nan=False, separators=(',', ':')).encode()
         if encoded is not None and len(encoded) > 65536:
             raise ConnectorError(413, 'Request exceeds 64 KiB')
-        headers = {'Host': self.authority, 'Origin': self.url, 'Accept': 'application/json'}
+        headers = {'Host': self.authority, 'Origin': self.url, 'Accept': 'application/json', 'User-Agent': 'evlet-connector'}
         if self.cookie:
             headers['Cookie'] = self.cookie
         if method != 'GET':
@@ -117,8 +117,15 @@ class HTTPClient:
     def get(self, path):
         return self.request('GET', path)[0]
 
-    def login(self, username, password):
+    def login(self, username, password, code=None):
+        """Sign in; code() supplies the authenticator or backup code when the account uses two-step sign-in."""
         data, headers = self.request('POST', '/api/auth/login', {'username': username, 'password': password})
+        if data.get('two_step') == 'setup':
+            raise ConnectorError(403, 'Set up two-step sign-in in the browser first, then sign in here again.')
+        if data.get('two_step') == 'code':
+            if code is None:
+                raise ConnectorError(403, 'This account uses two-step sign-in. Sign in from a terminal to enter the code.')
+            data, headers = self.request('POST', '/api/auth/login', {'ticket': data['ticket'], 'code': code()})
         cookies = SimpleCookie()
         try:
             for value in headers.get_all('Set-Cookie', []):

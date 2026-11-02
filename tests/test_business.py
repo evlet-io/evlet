@@ -54,6 +54,21 @@ def secured(tmp_path, monkeypatch, hashed):
 def client(app, role='admin'):
     status, data, headers = http(app, 'POST', '/api/auth/login', {'username': role, 'password': PASSWORD})
     assert status == 200, data
+    if 'two_step' in data:
+        # Instances require two-step sign-in for admin: set it up with the given key, then use backup codes.
+        import base64
+        from evlet.settings import check_totp, totp
+        import time
+        codes = app.__dict__.setdefault('_test_codes', {})
+        if data['two_step'] == 'setup':
+            raw = base64.b32decode(data['secret'] + '=' * (-len(data['secret']) % 8))
+            code = totp(raw, int(time.time() // 30))
+            assert check_totp(raw, code) is not None
+        else:
+            code = codes[role].pop()
+        status, data, headers = http(app, 'POST', '/api/auth/login', {'ticket': data['ticket'], 'code': code})
+        assert status == 200, data
+        codes.setdefault(role, data.get('backup_codes', []))
     cookie = headers[b'set-cookie'].decode().split(';')[0]
     def call(method, path, data=None, **kwargs):
         return http(app, method, path, data, cookie=cookie, csrf=data_csrf, **kwargs)

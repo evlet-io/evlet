@@ -3,7 +3,7 @@
 from .app import Application
 from .database import ConflictError, Database, NotFoundError
 from .fields import (Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Duration, Email, Integer,
-                     Link, LongText, Percent, Phone, Reference, Select, State, Tags, Text, Time, URL)
+                     Link, LongText, MultiSelect, Percent, Phone, Reference, Select, State, Tags, Text, Time, URL)
 from .migrations import AddField, AddIndex, CreateModel, Migration, Recompute, RenameField, SchemaError
 from .models import Model, Registry, ValidationError, Child
 from .declarations import Move, Ref, Table, Query, action, depends
@@ -12,7 +12,7 @@ from .sequences import Naming, Sequence, Series
 __all__ = [
     "AddField", "AddIndex", "Application", "Boolean", "ConflictError", "CreateModel",
     "Currency", "CurrentUser", "Database", "Date", "DateTime", "Decimal", "Email", "Integer", "Link",
-    "LongText", "Migration", "Model", "NotFoundError", "Registry", "RenameField",
+    "LongText", "Migration", "Model", "MultiSelect", "NotFoundError", "Registry", "RenameField",
     "SchemaError", "Select", "Text", "URL", "ValidationError",
     "Duration", "Naming", "Percent", "Phone", "Recompute", "Reference", "Sequence", "Series", "State", "Tags", "Time",
 ]
@@ -75,3 +75,6 @@ __all__ += ["Journal"]
 from .controls import SCOPES
 
 __all__ += ["SCOPES"]
+from .settings import AppSettings, UserPreferences
+
+__all__ += ["AppSettings", "UserPreferences"]

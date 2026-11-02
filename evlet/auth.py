@@ -39,6 +39,8 @@ class User:
     role: str
     # (model, record id) pairs from evlet_user_links, read by row scopes such as own_customer.
     links: tuple = ()
+    # The session finished two-step sign-in (a code, or set-up while signing in).
+    two_step: bool = False
 
     def public(self):
         return {'id': self.id, 'username': self.username, 'role': self.role}
@@ -160,6 +162,8 @@ class LocalAuth:
         self.allow_setup = allow_setup
         # Security settings; Controls overrides can only make them stricter.
         self.password_min, self.session_hours, self.lockout = 15, 8, 10
+        # Two-step sign-in (evlet.settings): challenge(tx, account, realm) and finish(scope, body).
+        self.second_step = None
 
     def client_address(self, scope):
         """The request's client address, through the configured trusted proxies only."""
@@ -169,8 +173,12 @@ class LocalAuth:
         with self.database.transaction() as tx:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)')
             tx.connection.execute("CREATE TABLE IF NOT EXISTS evlet_sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, csrf TEXT NOT NULL, expires INTEGER NOT NULL, realm TEXT NOT NULL DEFAULT 'desk')")
-            if 'realm' not in self.database.columns(tx.connection, 'evlet_sessions'):
+            columns = self.database.columns(tx.connection, 'evlet_sessions')
+            if 'realm' not in columns:
                 tx.connection.execute("ALTER TABLE evlet_sessions ADD COLUMN realm TEXT NOT NULL DEFAULT 'desk'")
+            for name, kind in (('started', 'INTEGER'), ('agent', "TEXT NOT NULL DEFAULT ''"), ('two_step', 'INTEGER')):
+                if name not in columns:
+                    tx.connection.execute(f'ALTER TABLE evlet_sessions ADD COLUMN {name} {kind}')
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_login_limits (client TEXT PRIMARY KEY, attempts INTEGER NOT NULL, resets INTEGER NOT NULL)')
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_user_links (user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, model TEXT NOT NULL, record_id INTEGER NOT NULL, PRIMARY KEY (user_id, model, record_id))')
 
@@ -236,7 +244,7 @@ class LocalAuth:
         realm = self.realm(scope)
         with self.database._connection() as connection:
             # One statement: the session, its user and the user's record links, while the role's realm is the host's.
-            rows = connection.execute('SELECT u.id, u.username, u.role, s.csrf, l.model, l.record_id FROM evlet_sessions s JOIN evlet_users u ON u.id=s.user_id '
+            rows = connection.execute('SELECT u.id, u.username, u.role, s.csrf, s.two_step, l.model, l.record_id FROM evlet_sessions s JOIN evlet_users u ON u.id=s.user_id '
                                       'JOIN evlet_roles r ON r.id=u.role AND r.realm=s.realm LEFT JOIN evlet_user_links l ON l.user_id=u.id WHERE s.token=? AND s.realm=? AND s.expires>? AND u.active=1 ORDER BY l.model, l.record_id',
                                       (self.token(scope), realm, int(time.time()))).fetchall()
         row = rows[0] if rows else None
@@ -247,7 +255,7 @@ class LocalAuth:
             supplied = dict(scope.get('headers', [])).get(b'x-csrf-token', b'')
             if not hmac.compare_digest(supplied, row['csrf'].encode('ascii')):
                 raise AccessError(403, 'Invalid request token')
-        return User(row['id'], row['username'], row['role'], links), row['csrf']
+        return User(row['id'], row['username'], row['role'], links, row['two_step'] is not None), row['csrf']
 
     def account_values(self, body):
         if set(body) - {'username', 'password', 'role'}:
@@ -293,6 +301,8 @@ class LocalAuth:
             tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (name, password, 'admin'))
 
     def login(self, scope, body):
+        if self.second_step is not None and set(body) == {'ticket', 'code'}:
+            return self.second_step.finish(scope, body)
         if set(body) != {'username', 'password'} or not all(isinstance(body[k], str) for k in body):
             raise AccessError(401, 'Invalid username or password')
         now = int(time.time())
@@ -323,15 +333,28 @@ class LocalAuth:
         realm = self.realm(scope)
         if not hmac.compare_digest(candidate, stored) or not account or not account['active'] or account['role_realm'] != realm:
             raise AccessError(401, 'Invalid username or password')
-        token, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
         with self.database.transaction() as tx:
             # A password/role change during hashing must not revive an old login.
             current = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (account['id'],)).fetchone()
             if not current or not current['active'] or current['password'] != stored or current['role'] != account['role']:
                 raise AccessError(401, 'Invalid username or password')
+            # With two-step sign-in the failed-attempt count stays until the code is right too.
+            challenge = self.second_step.challenge(tx, current, realm) if self.second_step is not None else None
+            if challenge is not None:
+                return challenge, []
             tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (pair,))
-            tx.connection.execute('DELETE FROM evlet_sessions WHERE token=?', (self.token(scope),))
-            tx.connection.execute('INSERT INTO evlet_sessions(token,user_id,csrf,expires,realm) VALUES (?,?,?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), account['id'], csrf, now + self.session_hours * 3600, realm))
+            return self.start_session(tx, scope, current, realm)
+
+    def start_session(self, tx, scope, account, realm, verified=False):
+        """Create a session for a checked account in an open transaction; verified marks a finished two-step sign-in.
+        Returns the login answer and cookie."""
+        token, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
+        agent = dict(scope.get('headers', [])).get(b'user-agent', b'').decode('latin1')[:200]
+        now = int(time.time())
+        tx.connection.execute('DELETE FROM evlet_sessions WHERE token=?', (self.token(scope),))
+        tx.connection.execute('INSERT INTO evlet_sessions(token,user_id,csrf,expires,realm,started,agent,two_step) VALUES (?,?,?,?,?,?,?,?)',
+                              (hashlib.sha256(token.encode()).hexdigest(), account['id'], csrf, now + self.session_hours * 3600, realm, now, agent,
+                               now if verified else None))
         return {'user': User(account['id'], account['username'], account['role']).public(), 'csrf': csrf}, [self.cookie(token, realm)]
 
     def cookie(self, token, realm='desk'):

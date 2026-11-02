@@ -22,6 +22,8 @@ def value_schema(field, *, read=False):
         value = {'type': 'boolean'}
     elif kind == 'tags':
         value = {'type': 'array', 'items': {'type': 'string', 'minLength': 1, 'maxLength': 40}, 'maxItems': 20, 'uniqueItems': True}
+    elif kind == 'multiselect':
+        value = {'type': 'array', 'items': {'type': 'string', 'enum': field['choices']}, 'uniqueItems': True}
     elif kind == 'reference':
         value = {'type': 'object', 'properties': {'model': {'type': 'string'}, 'id': ID}, 'required': ['model', 'id'], 'additionalProperties': False}
     elif kind == 'duration':
