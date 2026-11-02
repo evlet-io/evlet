@@ -276,7 +276,7 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     status, payload, _ = save(admin, ('perm', 'editor|Lead', perm), ('perm', 'viewer|Customer', {'ops': [], 'read': None, 'write': None, 'scope': None}),
                               ('field', 'Lead.value', {'required': True, 'label': 'Expected value'}),
                               ('field', 'Lead.source', {'options_add': ['exhibition'], 'default': 'web'}),
-                              ('field', 'Lead.x_lpo', {'help_text': 'From the purchase order'}),
+                              ('field', 'Lead.x_lpo', {'help_text': 'From the purchase order', 'tooltip': 'Ask the customer if it is missing'}),
                               ('layout', 'Lead', sections), ('list', 'Lead', {'columns': ['title', 'value'], 'page_size': 25, 'sort': 'title'}),
                               ('naming', 'Invoice', series), ('setting', 'security.controls_ips', ['127.0.0.0/8']), ('setting', 'security.lockout', 4))
     assert status == 200, payload
@@ -302,6 +302,7 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     assert (lead['value'].label, lead['value'].required, lead['value'].scale) == ('Expected value', True, 2)
     assert lead['source'].choices == ('web', 'walk_in', 'referral', 'exhibition') and lead['source'].default == 'web'
     assert (type(lead['lpo']).__name__, lead['lpo'].label, lead['lpo'].help_text) == ('Text', 'LPO number', 'From the purchase order')
+    assert lead['lpo'].tooltip == 'Ask the customer if it is missing'
     assert list(invoice.Meta.naming.series) == series and invoice.Meta.naming.date_field == 'posting_date'
 
     views = {}

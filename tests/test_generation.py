@@ -124,11 +124,41 @@ def test_relationship_search_reaches_records_beyond_first_hundred(database, appl
     assert request(application, 'GET', f'/api/invoice/{invoice.id}')[1]['customer'] == first.id
 
 
+def milestone_registry(projects):
+    """The Playground models as migrations 0001 (and 0002 with projects) left them, before 0004_currencies."""
+    class Customer(Model):
+        name = Text(required=True, max_length=120)
+        email = Text(max_length=254)
+        active = Boolean(required=True, default=True)
+        notes = LongText()
+    class Invoice(Model):
+        customer = Link(Customer, required=True)
+        reference = Text(required=True, unique=True, max_length=40)
+        total = Currency(required=True, minimum='0.01')
+        posting_date = Date()
+        status = Select(['draft', 'sent'], required=True, default='draft')
+        tax_rate = Decimal(scale=4, minimum='0', maximum='100', default='0.0000')
+    class Payment(Model):
+        invoice = Link(Invoice, required=True)
+        reference = Text(required=True, unique=True, max_length=40)
+        amount = Currency(required=True, minimum='0.01')
+        received_at = DateTime()
+    class Project(Model):
+        name = Text(required=True, max_length=120)
+        customer = Link(Customer)
+        status = Select(['planned', 'active', 'done'], required=True, default='planned')
+        budget = Currency(minimum='0', default='0.00')
+        progress = Integer(minimum=0, maximum=100, default=0)
+        starts_on = Date()
+        notes = LongText()
+    return Registry(Customer, Invoice, Payment, *([Project] if projects else []))
+
+
 @pytest.mark.parametrize('installation', ['legacy', 'milestone2', 'milestone3', 'fresh'])
 def test_project_migration_preserves_existing_records(tmp_path, installation):
     path = tmp_path / 'playground.sqlite3'
     if installation != 'fresh':
-        old_registry = legacy_registry() if installation == 'legacy' else Registry(Customer, Invoice, Payment, *([Project] if installation == 'milestone3' else []))
+        old_registry = legacy_registry() if installation == 'legacy' else milestone_registry(installation == 'milestone3')
         db = Database(path, old_registry, migrations=None if installation == 'legacy' else migrations[:2 if installation == 'milestone3' else 1])
         db.initialize()
         customer = db.create(old_registry.models['customer'], name='Keep')

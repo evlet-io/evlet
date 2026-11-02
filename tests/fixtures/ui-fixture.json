@@ -63,6 +63,17 @@
                     {
                       "bindings": {},
                       "events": {},
+                      "id": "currency",
+                      "props": {
+                        "field": "currency"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
                       "id": "notes",
                       "props": {
                         "field": "notes"
@@ -151,6 +162,17 @@
                     {
                       "bindings": {},
                       "events": {},
+                      "id": "currency",
+                      "props": {
+                        "field": "currency"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
                       "id": "notes",
                       "props": {
                         "field": "notes"
@@ -231,6 +253,17 @@
                       "id": "active",
                       "props": {
                         "field": "active"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "currency",
+                      "props": {
+                        "field": "currency"
                       },
                       "slots": {},
                       "type": "Field",
@@ -647,6 +680,17 @@
                     {
                       "bindings": {},
                       "events": {},
+                      "id": "currency",
+                      "props": {
+                        "field": "currency"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
                       "id": "amount",
                       "props": {
                         "field": "amount"
@@ -727,6 +771,17 @@
                       "id": "reference",
                       "props": {
                         "field": "reference"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "currency",
+                      "props": {
+                        "field": "currency"
                       },
                       "slots": {},
                       "type": "Field",
@@ -816,6 +871,17 @@
                       "id": "reference",
                       "props": {
                         "field": "reference"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "currency",
+                      "props": {
+                        "field": "currency"
                       },
                       "slots": {},
                       "type": "Field",
@@ -3431,6 +3497,7 @@
             "name",
             "email",
             "active",
+            "currency",
             "notes"
           ]
         }
@@ -3503,6 +3570,34 @@
           "read_only": false,
           "default_kind": "static",
           "default": true,
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "currency",
+          "type": "select",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "AED",
+            "SAR",
+            "USD",
+            "EUR",
+            "INR"
+          ],
+          "label": "Currency",
+          "help_text": "Invoices for this customer show amounts in it.",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "AED",
           "stored": true,
           "compute": null,
           "initial": null,
@@ -3632,7 +3727,8 @@
           "index": false,
           "max_length": 40,
           "label": "Reference",
-          "help_text": "",
+          "help_text": "The number printed on the invoice.",
+          "tooltip": "Use the customer's purchase order number if they ask for one.",
           "placeholder": "",
           "hidden": false,
           "read_only": false,
@@ -3664,7 +3760,12 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "currency_source": {
+            "link": "customer",
+            "field": "currency",
+            "model": "customer"
+          }
         },
         {
           "name": "posting_date",
@@ -3719,9 +3820,10 @@
           "scale": 4,
           "minimum": "0",
           "maximum": "100",
-          "label": "Tax rate (%)",
+          "label": "Tax rate",
           "help_text": "Recorded separately; this does not calculate the total.",
           "placeholder": "",
+          "suffix": "%",
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
@@ -3764,6 +3866,7 @@
           "fields": [
             "invoice",
             "reference",
+            "currency",
             "amount",
             "received_at"
           ]
@@ -3777,11 +3880,12 @@
         "id",
         "invoice",
         "reference",
-        "amount",
-        "received_at"
+        "currency",
+        "amount"
       ],
       "search_fields": [
-        "reference"
+        "reference",
+        "currency"
       ],
       "fields": [
         {
@@ -3827,6 +3931,34 @@
           "locked_when": null
         },
         {
+          "name": "currency",
+          "type": "select",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "AED",
+            "SAR",
+            "USD",
+            "EUR",
+            "INR"
+          ],
+          "label": "Currency",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "AED",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
           "name": "amount",
           "type": "currency",
           "required": true,
@@ -3846,7 +3978,10 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "currency_source": {
+            "field": "currency"
+          }
         },
         {
           "name": "received_at",
@@ -4009,7 +4144,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "currency": "AED"
         },
         {
           "name": "progress",
@@ -4019,9 +4155,10 @@
           "index": false,
           "minimum": 0,
           "maximum": 100,
-          "label": "Progress (%)",
+          "label": "Progress",
           "help_text": "",
           "placeholder": "",
+          "suffix": "%",
           "hidden": false,
           "read_only": false,
           "default_kind": "static",

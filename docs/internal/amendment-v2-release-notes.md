@@ -49,7 +49,7 @@ to the existing framework. It is based on
 - App-owned native modules add panels, actions and neutral layouts to the
   existing renderer. They do not replace backend validation.
 
-The working reference is [examples/amendment](../examples/amendment/README.md).
+The working reference is [examples/amendment](../../examples/amendment/README.md).
 Its Sales Order includes owned items, totals, stock lookup, Work Order planning,
 manual/automatic reports, a nested service/cron and an additive native panel.
 
@@ -57,7 +57,7 @@ manual/automatic reports, a nested service/cron and an additive native panel.
 
 | Phase | Owning implementation and evidence |
 | --- | --- |
-| P0 | Audited baseline above; existing tests and distribution checks ran before changes. Compatibility decisions are in [the authoring guide](amendment-v2.md). |
+| P0 | Audited baseline above; existing tests and distribution checks ran before changes. Compatibility decisions are in [the authoring guide](../amendment-v2.md). |
 | P1 | `packages.py`, `cli/setup.py`, `cli/app.py`, flat templates; lifecycle and outside-checkout package checks. |
 | P2 | `builds.py`, `instances.py`, CLI build/watch integration; atomic build, reuse, pinning and late-import tests. |
 | P3 | `declarations.py`, `models.py`, `fields.py`, `documents.py`, `permissions.py`; authenticated document and permission tests. |
@@ -95,8 +95,8 @@ numbered acceptance item in the amendment plan.
    Test authorization, preview/save, actions and restore on a disposable copy
    before using the change with business data.
 
-See [the CLI guide](cli.md) for command options and
-[the declarative guide](amendment-v2.md) for public contracts and recovery.
+See [the CLI guide](../cli.md) for command options and
+[the declarative guide](../amendment-v2.md) for public contracts and recovery.
 
 ## Limits and deferred work
 

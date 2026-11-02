@@ -5,7 +5,7 @@ import { apiLinks, BaseField, ComputedField, CurrencyField, fieldFor, localField
 import { durationText, InputError, KINDS, parseDateTime, parseDuration, parseTime } from '../ui/kinds';
 import { SchemaIndex } from '../model/schema';
 import { tipText } from '../ui/tooltip';
-import { backend, bigOrder, change, cleanup, key, render, schema, watch } from './ui-helpers';
+import { backend, bigOrder, change, cleanup, key, pick, render, schema, watch } from './ui-helpers';
 
 afterEach(() => { setLinkSource(null); cleanup(); });
 const meta = (type: string, extra: Partial<FieldSchema> = {}): FieldSchema => ({ name: type, type, label: type, required: false, read_only: false, ...extra });
@@ -43,7 +43,7 @@ describe('field types: parsing and display', () => {
     expect(parse('duration', '2d 4h')).toBe('P2DT4H');
     expect(KINDS.duration.format('PT1H30M', meta('duration'))).toBe('1h 30m');
     expect(durationText(0)).toBe('0m');
-    expect(fails('duration', 'soon')).toBe('Type a length of time such as 1h 30m');
+    expect(fails('duration', 'soon')).toBe('Type a length of time such as 1h 30m, 1:30, 1.30 or 90m');
   });
 
   it('checks email, URL and phone like the server', () => {
@@ -123,7 +123,8 @@ describe('BaseField', () => {
     expect(host.querySelector('img')).toBeNull();
     expect(host.textContent).toContain(XSS);
     expect(host.querySelector('[data-field="boolean"] [role="switch"]')).not.toBeNull();
-    expect(host.querySelector('[data-field="select"] select')).not.toBeNull();
+    expect(host.querySelector('[data-field="select"] button.in-select[aria-haspopup="listbox"]')).not.toBeNull();
+    expect(host.querySelector('select')).toBeNull();
     expect(host.querySelector('[data-field="state"]')!.textContent).toContain('changes through moves');
   });
 
@@ -152,7 +153,7 @@ describe('fields bound to the record store', () => {
     const host = render(() => ['stage', 'reason', 'remark'].map(name => BaseField({ field: store.field(name) })));
     const reason = host.querySelector<HTMLElement>('[data-field="reason"]')!, remark = host.querySelector<HTMLElement>('[data-field="remark"]')!;
     expect(reason.hidden).toBe(true);
-    change(host.querySelector<HTMLSelectElement>('[data-field="stage"] select')!, 'lost');
+    pick(host.querySelector<HTMLElement>('[data-field="stage"] .in-select')!, 'Lost');
     expect(store.field('stage').value.peek()).toBe('lost');
     expect(reason.hidden).toBe(false);
     expect(reason.querySelector('.req')).not.toBeNull();
@@ -232,3 +233,42 @@ describe('fields bound to the record store', () => {
     expect(host.querySelector('input')!.value).toBe('42');
   });
 });
+
+describe('hint and tooltip', () => {
+  it('shows help text under the input, linked to it, and the error in its place', () => {
+    const field = localField({ name: 'reference', type: 'text', label: 'Reference', help_text: 'The number on the customer’s order', required: true });
+    const host = render(() => BaseField({ field }));
+    const input = host.querySelector('input')!, help = host.querySelector<HTMLElement>('.fld-help')!;
+    expect(help.textContent).toBe('The number on the customer’s order');
+    expect(input.getAttribute('aria-describedby')!.split(' ')).toContain(help.id);
+    expect(help.hidden).toBe(false);
+    change(input, '');
+    expect(field.error.peek()).toBe('Reference is required');
+    expect(help.hidden).toBe(true);
+    expect(host.querySelector('.err')!.textContent).toBe('Reference is required');
+    change(input, 'PO-7');
+    expect(help.hidden).toBe(false);
+    expect(render(() => BaseField({ field: localField({ name: 'x', type: 'text', label: 'X' }) })).querySelector('.fld-help')).toBeNull();
+  });
+
+  it('puts a ? icon with the tooltip inside the input, and only when one is set', () => {
+    const tip = 'Leave empty to use the customer’s rate';
+    const host = render(() => [
+      BaseField({ field: localField({ name: 'note', type: 'text', label: 'Note', tooltip: tip }) }),
+      BaseField({ field: localField({ name: 'rate', type: 'percent', label: 'Rate', scale: 2, tooltip: tip }) }),
+      BaseField({ field: localField({ name: 'kind', type: 'select', label: 'Kind', choices: ['a', 'b'], tooltip: tip }) }),
+      BaseField({ field: localField({ name: 'plain', type: 'text', label: 'Plain' }) }),
+    ]);
+    const icon = (name: string) => host.querySelector<HTMLElement>(`[data-field="${name}"] .fld-tip`);
+    expect(icon('note')!.closest('.fld-ctl')!.classList.contains('tip-in')).toBe(true);
+    expect(icon('note')!.getAttribute('aria-label')).toBe('About note');
+    // Inside a unit box it sits between the input and the % box.
+    expect(icon('rate')!.previousElementSibling!.tagName).toBe('INPUT');
+    expect(icon('rate')!.nextElementSibling!.textContent).toBe('%');
+    expect(icon('kind')!.closest('.fld-ctl')!.classList.contains('tip-chev')).toBe(true);
+    expect(icon('plain')).toBeNull();
+    icon('note')!.dispatchEvent(new FocusEvent('focus'));
+    expect(tipText()).toBe(tip);
+  });
+});
+

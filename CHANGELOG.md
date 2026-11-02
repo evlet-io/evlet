@@ -3,6 +3,39 @@
 Evlet is pre-1.0. A minor version (0.2, 0.3) may change public APIs; the notes below
 say what to change. Evlet is not production ready.
 
+## Unreleased
+
+- **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
+  lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
+  duration fields keep their typed input and add a calendar or steppers. List pages filter
+  date fields by range, with presets.
+- **Where a Currency field's code comes from.** `Currency(currency=...)` also takes
+  `"link.field"` (a field of a linked record) and `"settings.app.key"` (an app setting). In
+  `/api/schema`, `currency` now only ever holds a code; a field on the record (`"code_field"`)
+  is sent as `currency_source: {"field": "code_field"}` instead of `currency: "code_field"`.
+  A client that read the field name from `currency` should read `currency_source`.
+- **Typed dates and times** are read the forgiving way: `120627`, `1/6/27`, `1206`, `today`,
+  `+3`, `935`, `12.35pm`, `9am`, `120627 1235`, `90m`, in the day, month and year order of the
+  person's date format. Impossible dates are refused, never guessed ([docs/ui-framework.md](docs/ui-framework.md#typing-dates-and-times)).
+- **Durations** also take `1.30` and `1:30:20` (hours, minutes, seconds), decimal units such as
+  `1.5h` or `1.5m`, and words such as `1 hr 30 mins`. A dot without a unit needs two minute digits,
+  so `1.5` is refused.
+- **Unreadable dates, times and durations keep the field's value** on blur or Enter and say what
+  was typed ("Couldn't read 1.62 as a duration"). The API keeps accepting only the stored forms.
+- Integer and Decimal fields show their `suffix` after the value at rest too (`5.00%`).
+- The Link field's record mark no longer stretches across the input.
+- **Form fields** are 40 px tall with a soft focus ring, a 14 px label and a blue required
+  mark. `help_text` now shows under the input (an error takes its place). The new
+  `tooltip=` field option puts its text behind a ? icon at the end of the input; Controls can
+  change it and exports it.
+- **Offline docs show user guides only.** Handoff plans, the model engine ledger,
+  milestone notes, the specification and the testCRM notes moved to `docs/internal/`.
+  They are no longer in the wheel or shown by `evlet docs`. The contributor guide moved
+  to `CONTRIBUTING.md`.
+- **Smaller source distribution.** The sdist no longer carries tests, scripts, lock
+  files, internal docs or the browser test fixtures. It keeps what building and
+  installing Evlet needs, including the browser interface source.
+
 ## 0.2.0 (02-11-2026)
 
 This release replaces the browser interface with Evlet's own UI framework, adds the

@@ -106,6 +106,35 @@ describe('app shell', () => {
     expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['New customer', 'New product', 'New order', 'New contact']);
   });
 
+  it('shows the Evlet brand, an app switcher with its workspace, and collapses from the edge button', async () => {
+    const { host } = start([...adminRoutes()]);
+    await until(() => expect(host.querySelector('.app')).not.toBeNull());
+    const app = host.querySelector('.app')!;
+    expect(text(host.querySelector('.sidebar .brand'))).toBe('evlet');
+    expect(host.querySelector('.sidebar .brand .ev-logo')).not.toBeNull();
+    const appSwitch = host.querySelector<HTMLElement>('.sidebar .app-switch')!;
+    const appName = text(appSwitch.querySelector('.as-text b'));
+    expect(appName).not.toBe('');
+    expect(appSwitch.querySelector('.as-text small')!.textContent).not.toBe('');
+    // The old app bar and repeated app title are gone.
+    expect(host.querySelector('.appbar, .side-app, .sidebar .ws')).toBeNull();
+    click(appSwitch);
+    const pop = document.querySelector('.pop.app-pop')!;
+    expect(pop.getAttribute('role')).toBe('dialog');
+    expect([...pop.querySelectorAll('.app-tile')].map(text)).toEqual([appName]);
+    expect(pop.querySelector('.app-tile.on')!.getAttribute('aria-current')).toBe('true');
+    closeDialogs();
+    // The edge button collapses and expands; the top bar's toggle is only for the phone drawer.
+    const edge = host.querySelector<HTMLButtonElement>('.side-edge')!;
+    expect(edge.getAttribute('aria-expanded')).toBe('true');
+    click(edge);
+    expect(app.classList.contains('collapsed')).toBe(true);
+    expect(edge.getAttribute('aria-label')).toBe('Expand sidebar');
+    click(edge);
+    expect(app.classList.contains('collapsed')).toBe(false);
+    expect(host.querySelector('.topbar > .mobile-only .icon-btn, .topbar > .mobile-only button')).not.toBeNull();
+  });
+
   it('toggles the sidebar with [, keeps the light theme, and signs out from the account menu', async () => {
     let signedOut = false;
     const { host, sent } = start([

@@ -5,6 +5,7 @@ import { html, when, type Child } from '../dom';
 import { cell, derive } from '../reactive';
 import { Button, Checkbox, Icon, IconButton } from '../ui/base';
 import { openDrawer, toast } from '../ui/layers';
+import { Dropdown } from '../ui/pickers';
 import { Callout, Head, type ControlsContext } from './app';
 import { OPS, type ModelInfo, type PermValue } from './client';
 import { idOf, SETTING_LABELS } from './drafts';
@@ -161,9 +162,11 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
   const desk = () => state.get().roles.filter(role => role.realm === 'desk');
   const row = (key: string, title: string, text: Child, control: Child) => html`<div class="ctl-setrow"><div class="grow"><strong>${title} ${mark(key)}</strong><p>${text}</p>
     ${when(() => drafts.errors.get().has(id(key)), () => html`<span class="ctl-err">${() => drafts.errors.get().get(id(key))}</span>`)}</div><div class="ctl-setctl">${control}</div></div>`;
-  const choose = (key: string, unit: string, options: number[]) => html`<select class="input ctl-select" aria-label=${SETTING_LABELS[key]}
-    on:change=${(event: Event) => drafts.set(id(key), Number((event.target as HTMLSelectElement).value))}>
-    ${[...new Set([...options, file<number>(key)])].filter(option => option <= file<number>(key)).sort((a, b) => a - b).map(option => html`<option value=${String(option)} selected=${() => get<number>(key) === option}>${option} ${unit}</option>`)}</select>`;
+  // Only values up to the file's: Controls can make these stricter, never looser.
+  const choose = (key: string, unit: string, options: number[]) => Dropdown({ label: SETTING_LABELS[key], ariaLabel: SETTING_LABELS[key], className: 'ctl-select',
+    value: () => String(get<number>(key)), onChange: value => { if (value !== null) drafts.set(id(key), Number(value)); },
+    choices: () => [...new Set([...options, file<number>(key)])].filter(option => option <= file<number>(key)).sort((a, b) => a - b)
+      .map(option => ({ value: String(option), label: `${option} ${unit}` })) });
   const minimum = (event: Event) => {
     const input = event.target as HTMLInputElement, low = file<number>('security.password_min');
     let value = Number.parseInt(input.value, 10);

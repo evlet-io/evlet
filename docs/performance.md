@@ -233,7 +233,7 @@ npm packages fell from 193 to 73, and its direct dependencies from 14 to 4.
 
 `cd frontend && npm run bench:ui` runs `frontend/scripts/bench-ui.mjs`: the framework's
 TypeScript sources in Node with jsdom, no extra dependencies, production checks off. Budgets
-come from [handoff-plan.md](handoff-plan.md).
+come from [handoff-plan.md](internal/handoff-plan.md).
 
 ### Local results, 1 November 2026
 
@@ -294,7 +294,7 @@ timings (first screen, 60 fps scrolling) are measured against testCRM in phase
 
 ### testCRM, 2 November 2026
 
-testCRM ([testcrm.md](testcrm.md)) in two settings on the same machine.
+testCRM ([testcrm.md](internal/testcrm.md)) in two settings on the same machine.
 
 In jsdom, `npm run bench:ui` (section 8), over responses recorded from testCRM as the sales
 user `sara`. The 1,000-line deal repeats the recorded lines of the 150-line deal: each line has a

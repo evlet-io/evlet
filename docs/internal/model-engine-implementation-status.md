@@ -1,7 +1,7 @@
 # Model engine implementation status
 
 Ledger for the finite-v1 model engine handoff (2026-11-01). Contract:
-[finite-calculations.md](finite-calculations.md).
+[finite-calculations.md](../finite-calculations.md).
 
 ## Baseline
 
@@ -143,7 +143,7 @@ limits, which plans refuse by design; it was not run.
   is reported only as a generic form error.
 * Rounded allocations are not reconciled; expose a named residual field (documented).
 * Nested documents load one table level at a time: a 100 x 9 tree costs about 8 SQL
-  statements per GET and about 30 per title-only PATCH (see [performance.md](performance.md)).
+  statements per GET and about 30 per title-only PATCH (see [performance.md](../performance.md)).
 * Acceptance items still missing or only partial: T21 handled by documentation, T26/A58
   (UI), A37/A51/A52 (browser save-mapping and async-reply flows), and partial T10, T24,
   T27, T28, A03, A06, A13, A30, A55, A56, A60.
@@ -196,8 +196,8 @@ Known limitations of this phase:
 ## Phase 2: initial suggestions, field rules, Recompute and new types (01-11-2026)
 
 Branch `model/02-rules`, stacked on `model/01-expressions`. Contract:
-[finite-calculations.md](finite-calculations.md#initial-suggestions) and
-[model-engine.md](model-engine.md#more-field-types).
+[finite-calculations.md](../finite-calculations.md#initial-suggestions) and
+[model-engine.md](../model-engine.md#more-field-types).
 
 * **`initial=`.** A finite expression that suggests a value on create and when a document
   input it reads changes, unless the caller supplied the field in the same write. Lookups and
@@ -223,7 +223,7 @@ Branch `model/02-rules`, stacked on `model/01-expressions`. Contract:
   can read its inputs.
 * **Schema.** Every field in `/api/schema` gains `stored` and `compute`, `initial`,
   `applies_when`, `required_when`, `locked_when` (finite IR or null). The registry's neutral
-  schema (`ui_schema`) is unchanged except `currency` on Currency fields that declare it.
+  schema (`ui_schema`) is unchanged except `currency` (a fixed code) or `currency_source` (a field or linked field) on Currency fields that declare one.
 * **`Recompute(model, fields)`.** Runs after the batch's structural changes inside the
   migration transaction; failures roll back the batch. Updates recorded formula versions
   when a batch recalculates every stored result of a document.
@@ -338,7 +338,7 @@ Known limitations:
 
 ## Phase 4: states, moves and model actions (01-11-2026)
 
-Branch `model/04-state`, stacked on `model/03-lines`. Guide: [states-actions.md](states-actions.md).
+Branch `model/04-state`, stacked on `model/03-lines`. Guide: [states-actions.md](../states-actions.md).
 
 * **State and Move.** `State(choices, default=..., moves=..., locked=..., final=...,
   voidable=...)` is a read-only `Select` (at most one per root document, never on Table
@@ -430,7 +430,7 @@ Lock and leak fixes (01-11-2026):
 ## Phase 5: void and revise (01-11-2026)
 
 Branch `model/05-void-revise`, stacked on `model/04-state`. Guide: the "Void and revise"
-section of [states-actions.md](states-actions.md).
+section of [states-actions.md](../states-actions.md).
 
 * **Declarations.** A State with `voidable` states must have a `void` state that is locked
   and final, and no declared Move may go to `void`. `Meta.revisable = True` needs such a
@@ -491,7 +491,7 @@ Known limitations:
 ## Phase 7: document numbers (01-11-2026)
 
 Branch `model/07-sequences`, stacked on `model/04-state`; restacked on `model/05-void-revise`
-as `model/07-stacked`. Guide: [sequences.md](sequences.md).
+as `model/07-stacked`. Guide: [sequences.md](../sequences.md).
 
 * **Sequence.** `Sequence(format, scope=(), assign_on="create", date=None)` in
   `evlet/sequences.py`, exported from `evlet`. A read-only, nullable short text field with
@@ -578,7 +578,7 @@ Connection with void and revise (01-11-2026):
 ## Phase 9: measures and the aggregate API (01-11-2026)
 
 Branch `model/09-measures`, stacked on `model/04-state` (built alongside Phases 5 and
-7); restacked on `model/07-stacked` as `model/09-stacked`. Guide: [measures.md](measures.md).
+7); restacked on `model/07-stacked` as `model/09-stacked`. Guide: [measures.md](../measures.md).
 
 * **Engine.** `evlet/measures.py`. `Count`, `CountDistinct`, `Sum`, `Min`, `Max`, and
   `Day`, `Month`, `Year` for grouping, are top-level exports. One SQL statement per call.
@@ -636,7 +636,7 @@ Review fixes (01-11-2026):
 ## Phase 10: model meaning metadata (01-11-2026)
 
 Branch `model/10-meaning`, stacked on `model/05-void-revise`; restacked on
-`model/09-stacked` as `model/10-stacked`. Public API in [meaning.md](meaning.md).
+`model/09-stacked` as `model/10-stacked`. Public API in [meaning.md](../meaning.md).
 
 * **Key fields.** `Meta.key_fields`: up to eight distinct visible fields, checked when the
   registry is built. Schema entries carry `key_fields` (readable fields only) when declared.
@@ -699,7 +699,7 @@ Restacked on Phase 9 (01-11-2026):
 ## Phase 6: effects (01-11-2026)
 
 Branch `model/06-effects`, stacked on `model/05-void-revise`; restacked on
-`model/10-stacked` as `model/06-stacked`. Guide: [effects.md](effects.md).
+`model/10-stacked` as `model/06-stacked`. Guide: [effects.md](../effects.md).
 
 * **Declaration.** `Meta.effects = (Effect(Target, rows="method", on="state", reverse=Swap(a, b) or
   Negate(*fields), balanced=(a, b)), ...)`, exported from `evlet` with `Swap` and `Negate`. The
@@ -791,7 +791,7 @@ Restacked on `model/10-stacked` as `model/06-stacked` (02-11-2026):
 ## Phase 8: the Journal (02-11-2026)
 
 Branch `model/08-journal`, stacked on `model/10-stacked`; restacked on `model/06-stacked` as
-`model/08-stacked`. Guide: [journal.md](journal.md).
+`model/08-stacked`. Guide: [journal.md](../journal.md).
 
 * **Declaration.** `Meta.journal = Journal(tamper_evident=False)`, exported from `evlet`.
   Left out, it is on for models with a State and off otherwise; `journal = None` is the one

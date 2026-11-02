@@ -2,7 +2,7 @@
 
 Status: every phase is done (PRs #35 to #50, then the cross-phase fixes), and PRs 1 to 3
 of the second handoff sit on top (below); each waits for the owner to merge. This plan adapts [handoff-model.md](handoff-model.md) and
-[ui-design/README.md](ui-design/README.md) to the engine as it stands on `main`
+[ui-design/README.md](../ui-design/README.md) to the engine as it stands on `main`
 (tag `rollback/pre-native-ui`). Where this plan and the handoff differ, this plan
 records the owner's decision and wins.
 
@@ -104,17 +104,17 @@ open as draft PRs #52 to #60, and a tenth PR closes the findings of a review acr
 
 | PR | # | Branch | Scope | Docs |
 |---|---|---|---|---|
-| 1 | #52 | `h2/01-route-table` | `Frontend`, `Host`, `routes.py`, reserved paths, `resolve_routes`, `evlet routes`; dispatch through the table with no behavior change | [routing.md](routing.md) |
-| 2 | #53 | `h2/02-hosts-realms` | Sub-hosts, sign-in realms and cookies, API scopes, `static` and `server` frontends, user links and `own_customer`, the page config block, `evlet proxy`, `evlet link-user`, the Playground customer portal | [routing.md](routing.md) |
-| 3 | #54 | `h2/03-controls` | Roles, overrides, audit log and config version; Controls access, Users, Roles, Permissions and Security pages; `evlet controls grant`; `/settings/accounts` redirect | [controls.md](controls.md) |
-| 4 | #55 | `h2/04-models` | Field overrides, instance fields and naming series | [controls.md](controls.md#models) |
-| 5 | #56 | `h2/05-pages` | Apps, Routing, Jobs, Overrides with export as code, and Audit | [controls.md](controls.md) |
-| 6 | #57 | `h2/06-settings` | Account menu, personal settings, two-step sign-in and app settings | [settings.md](settings.md) |
-| 7 | #58 | `h2/07-connectors` | Connectors, encrypted secrets, email accounts and API keys | [controls.md](controls.md#connectors-and-secrets) |
-| 8 | #59 | `h2/08-remote-mcp` | Remote MCP for AI assistants with OAuth | [connector.md](connector.md#remote-mcp-with-oauth) |
-| 9 | #60 | `h2/09-mailboxes` | Personal mailboxes | [controls.md](controls.md#personal-mailboxes) |
+| 1 | #52 | `h2/01-route-table` | `Frontend`, `Host`, `routes.py`, reserved paths, `resolve_routes`, `evlet routes`; dispatch through the table with no behavior change | [routing.md](../routing.md) |
+| 2 | #53 | `h2/02-hosts-realms` | Sub-hosts, sign-in realms and cookies, API scopes, `static` and `server` frontends, user links and `own_customer`, the page config block, `evlet proxy`, `evlet link-user`, the Playground customer portal | [routing.md](../routing.md) |
+| 3 | #54 | `h2/03-controls` | Roles, overrides, audit log and config version; Controls access, Users, Roles, Permissions and Security pages; `evlet controls grant`; `/settings/accounts` redirect | [controls.md](../controls.md) |
+| 4 | #55 | `h2/04-models` | Field overrides, instance fields and naming series | [controls.md](../controls.md#models) |
+| 5 | #56 | `h2/05-pages` | Apps, Routing, Jobs, Overrides with export as code, and Audit | [controls.md](../controls.md) |
+| 6 | #57 | `h2/06-settings` | Account menu, personal settings, two-step sign-in and app settings | [settings.md](../settings.md) |
+| 7 | #58 | `h2/07-connectors` | Connectors, encrypted secrets, email accounts and API keys | [controls.md](../controls.md#connectors-and-secrets) |
+| 8 | #59 | `h2/08-remote-mcp` | Remote MCP for AI assistants with OAuth | [connector.md](../connector.md#remote-mcp-with-oauth) |
+| 9 | #60 | `h2/09-mailboxes` | Personal mailboxes | [controls.md](../controls.md#personal-mailboxes) |
 | 10 | #61 | `h2/10-cross-review-fixes` | One revocation function, export grouped by setting prefix, instance fields grantable, every PostgreSQL variant in CI, the mailbox page with the switch off, a dropped IMAP connection during sign-in kept apart from a rejected password | this section |
-| 11 | #62 | `h2/11-unpost-repost` | Unpost and Repost of posted documents, `--recompute-posted` for Recompute, `unposted` and `reposted` journal entries and audit rows, record screen actions | [states-actions.md](states-actions.md#unpost-and-repost) |
+| 11 | #62 | `h2/11-unpost-repost` | Unpost and Repost of posted documents, `--recompute-posted` for Recompute, `unposted` and `reposted` journal entries and audit rows, record screen actions | [states-actions.md](../states-actions.md#unpost-and-repost) |
 | 12 | #63 | `h2/12-security-review` | The owner's security decisions of 02-11-2026: untrusted proxy warning, 12-hour sessions and 5 failed sign-ins, when the two-step code is asked, code-only sensitive settings, the choice to revoke API keys, instance fields for every role | this section |
 
 Decisions taken while building them (the owner's where marked):
@@ -165,7 +165,7 @@ Decisions taken while building them (the owner's where marked):
   authorization codes. They ask about API keys with "Also revoke API keys (N active)", unticked
   by default, and send an explicit `revoke_keys` boolean (owner's decision, 02-11-2026). A
   two-step reset (Controls or the shell), deactivation and the break-glass grant always revoke
-  API keys ([controls.md](controls.md#ending-access)).
+  API keys ([controls.md](../controls.md#ending-access)).
 - **Posted records (owner's decision).** Posted records are never recalculated by
   `Recompute` unless an admin asks, for one migration run, with `evlet migrate <instance>
   --recompute-posted` (or `migrate(..., recompute_posted=True)`). Each posted record that
@@ -205,7 +205,7 @@ Fitting them onto the first program:
   or custom role may name it, Controls keeps it on save and can take it away, and a custom
   role based on the editor posts like the editor.
 - The PostgreSQL CI job runs every test file that uses the `pg_dsn` fixture, so the variants
-  added by PRs 4 to 9 run there too ([postgresql.md](postgresql.md#verification)).
+  added by PRs 4 to 9 run there too ([postgresql.md](../postgresql.md#verification)).
 
 ## Quality gates for every phase
 
