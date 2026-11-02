@@ -133,13 +133,13 @@ export class ControlsClient extends ApiClient {
   async audit(query: { area?: string; q?: string; before?: number }) {
     return (await this.request<{ items: AuditRow[]; next: number | null; areas: string[] }>('GET', '/api/_controls/audit', { query })).data;
   }
-  async migrate() { return (await this.request<{ migrations: string[]; backup: string | null }>('POST', '/api/_controls/apps/migrate')).data; }
   async routing() { return (await this.request<Routing>('GET', '/api/_controls/routing')).data; }
-  async checkHosts() { return (await this.request<{ hosts: HostCheck[]; notes: string[]; ok: boolean }>('POST', '/api/_controls/routing/check')).data; }
+  // The server takes JSON bodies only: actions without data send {}.
+  async checkHosts() { return (await this.request<{ hosts: HostCheck[]; notes: string[]; ok: boolean }>('POST', '/api/_controls/routing/check', { body: {} })).data; }
   async jobs() { return (await this.request<Jobs>('GET', '/api/_controls/jobs')).data; }
   async setSchedule(name: string, active: boolean) { return (await this.request<Jobs>('POST', `/api/_controls/jobs/schedules/${name}`, { body: { active } })).data; }
-  async runSchedule(name: string) { return (await this.request<Jobs & { job: number }>('POST', `/api/_controls/jobs/schedules/${name}/run`)).data; }
-  async retryJob(id: number) { return (await this.request<Jobs>('POST', `/api/_controls/jobs/${id}/retry`)).data; }
+  async runSchedule(name: string) { return (await this.request<Jobs & { job: number }>('POST', `/api/_controls/jobs/schedules/${name}/run`, { body: {} })).data; }
+  async retryJob(id: number) { return (await this.request<Jobs>('POST', `/api/_controls/jobs/${id}/retry`, { body: {} })).data; }
   async deleteRole(id: string) {
     return (await this.request<{ items: RoleRow[] }>('DELETE', `/api/_controls/roles/${encodeURIComponent(id)}`)).data.items;
   }

@@ -1,6 +1,5 @@
 """Controls Apps, Routing, Jobs, Overrides with export as code, Audit log and the Overview attention list."""
 
-import sqlite3
 import types
 
 import pytest
@@ -8,8 +7,6 @@ import pytest
 import evlet
 import evlet.ui
 from evlet.cli.install import install
-from evlet.cli.project import instance_guard
-from evlet.controls_system import IN_USE
 from evlet.ui import ViewRegistry
 from test_business import client, hashed, secured  # noqa: F401
 from test_cli_lifecycle import change_model, environment_stub, project, runtime  # noqa: F401
@@ -18,7 +15,7 @@ from test_customization import build, models
 
 UNBUILT = {'error': 'UI assets are not built. Run the frontend production build.'}
 PAGES = ('apps', 'routing', 'jobs', 'overrides', 'audit')
-ENDPOINTS = (('GET', '/api/_controls/overrides/export'), ('GET', '/api/_controls/audit'), ('POST', '/api/_controls/apps/migrate'),
+ENDPOINTS = (('GET', '/api/_controls/overrides/export'), ('GET', '/api/_controls/audit'),
              ('GET', '/api/_controls/routing'), ('POST', '/api/_controls/routing/check'), ('GET', '/api/_controls/jobs'),
              ('POST', '/api/_controls/jobs/schedules/nightly'), ('POST', '/api/_controls/jobs/schedules/nightly/run'),
              ('POST', '/api/_controls/jobs/1/retry'))
@@ -55,6 +52,8 @@ def test_the_audit_log_pages_newest_first_with_search_and_area(secured):
     assert admin('GET', '/api/_controls/audit?q=100%25')[1]['items'] == []
     assert admin('GET', '/api/_controls/audit?area=Security')[1]['items'][0]['target'] == 'security.lockout'
     assert admin('GET', '/api/_controls/audit?before=x')[0] == 422
+    assert admin('GET', f'/api/_controls/audit?before={2**63}')[0] == 422
+    assert admin('GET', '/api/_controls/audit?area=' + 'a' * 41)[1]['fields'] == {'area': 'Choose an area from the list.'}
     assert admin('GET', '/api/_controls/audit?page=2')[0] == 422
 
 
@@ -73,15 +72,16 @@ def test_jobs_pause_run_now_and_retry_failed_jobs_only(secured):
     item = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['key'] == 'schedule.nightly.active')
     assert (item['kind'], item['file'], item['value'], item['changed_by']) == ('setting', True, False, 'admin')
     assert jobs.tick(now=2**40) == 0
+    assert admin('POST', '/api/_controls/jobs/schedules/nightly/run', {})[:2] == (409, {'error': 'nightly is paused. Resume it first.'})
     resumed = admin('POST', '/api/_controls/jobs/schedules/nightly', {'active': True})[1]['schedules'][0]
     assert resumed['active'] and not resumed['paused']
     assert admin('POST', '/api/_controls/jobs/schedules/missing', {'active': False})[0] == 404
     assert admin('POST', '/api/_controls/jobs/schedules/nightly', {'active': 'no'})[0] == 422
 
-    ran = admin('POST', '/api/_controls/jobs/schedules/nightly/run')[1]
+    ran = admin('POST', '/api/_controls/jobs/schedules/nightly/run', {})[1]
     job = ran['jobs'][0]
     assert job['id'] == ran['job'] and job['state'] == 'queued' and job['task'] == 'project_progress'
-    assert admin('POST', f"/api/_controls/jobs/{job['id']}/retry")[:2] == (409, {'error': 'Only failed jobs can be retried.'})
+    assert admin('POST', f"/api/_controls/jobs/{job['id']}/retry", {})[:2] == (409, {'error': 'Only failed jobs can be retried.'})
     with secured.database.transaction() as tx:
         tx.connection.execute("UPDATE evlet_jobs SET dedupe='kept-key' WHERE id=?", (job['id'],))
     assert jobs.run_one()
@@ -89,11 +89,18 @@ def test_jobs_pause_run_now_and_retry_failed_jobs_only(secured):
     assert failed['state'] == 'failed' and failed['error'] == 'NotFoundError'
     state = admin('GET', '/api/_controls/state')[1]
     assert state['jobs'] == {'failed': 1} and any(item['title'] == '1 job failed' for item in state['attention'])
-    assert admin('POST', f"/api/_controls/jobs/{job['id']}/retry")[1]['jobs'][0]['state'] == 'queued'
+    assert admin('POST', f"/api/_controls/jobs/{job['id']}/retry", {})[1]['jobs'][0]['state'] == 'queued'
     with secured.database._connection() as db:
         assert tuple(db.execute('SELECT dedupe, attempts FROM evlet_jobs WHERE id=?', (job['id'],)).fetchone()) == ('kept-key', 0)
         audit = [tuple(row) for row in db.execute("SELECT target, detail FROM evlet_audit WHERE area='Jobs' ORDER BY id")]
     assert audit == [('nightly', 'Paused'), ('nightly', 'Resumed'), ('nightly', f"Run now · job #{job['id']}"), (f"Job #{job['id']}", 'Retried')]
+
+
+def test_failed_jobs_are_counted_beyond_the_recent_list(secured):
+    with secured.database.transaction() as tx:
+        for state in ['failed'] + ['succeeded'] * 120:
+            tx.connection.execute("INSERT INTO evlet_jobs(task,payload,state,max_attempts,run_at,created_at) VALUES ('project_progress','{}',?,3,0,0)", (state,))
+    assert client(secured)('GET', '/api/_controls/state')[1]['jobs'] == {'failed': 1}
 
 
 def test_a_pause_of_a_schedule_that_is_gone_is_listed_and_can_be_reset(secured):
@@ -119,7 +126,7 @@ def test_routing_lists_the_route_table_and_needs_a_primary_host_for_the_proxy(se
     assert routing['planned'] == ['/report', '/dashboard', '/search', '/print']
     message = 'Set a primary host in routes.py or Instance.domain before writing a proxy configuration'
     assert routing['proxy'] is None and routing['proxy_error'] == message
-    assert admin('POST', '/api/_controls/routing/check')[:2] == (409, {'error': message})
+    assert admin('POST', '/api/_controls/routing/check', {})[:2] == (409, {'error': message})
 
 
 def test_routing_uses_evlet_proxy_when_it_is_installed(secured, monkeypatch):
@@ -135,7 +142,8 @@ def test_routing_uses_evlet_proxy_when_it_is_installed(secured, monkeypatch):
     monkeypatch.setattr(system, 'certificate', lambda host: {'certificate': 'valid', 'expires': 1800000000})
     admin = client(secured)
     assert admin('GET', '/api/_controls/routing')[1]['proxy'] == {'caddy': 'caddy 8000 <name>', 'nginx': 'nginx'}
-    checked = admin('POST', '/api/_controls/routing/check')[1]
+    checked = admin('POST', '/api/_controls/routing/check', {})[1]
+    assert admin('POST', '/api/_controls/routing/check', {})[:2] == (429, {'error': 'Hosts were just checked. Try again in a few seconds.'})
     assert checked == {'ok': False, 'notes': ['This server has a private address. Pass --ip with its public address.'], 'hosts': [
         {'host': '127.0.0.1', 'records': '127.0.0.1', 'dns': 'points here', 'certificate': 'valid', 'expires': 1800000000},
         {'host': 'localhost', 'records': '', 'dns': 'no A or AAAA record', 'certificate': None, 'expires': None},
@@ -144,38 +152,27 @@ def test_routing_uses_evlet_proxy_when_it_is_installed(secured, monkeypatch):
 
 # ---------- apps ----------
 
-def test_apps_show_a_waiting_migration_and_migrate_with_a_backup(project, hashed):
+def test_apps_show_a_waiting_migration_and_the_shell_command(project, hashed):
     install(project, 'acme', app_name='notes', trust=True)
     app = runtime(project)
     try:
         add_user(app, 'admin', 'admin')
-        add_user(app, 'clerk', 'editor')
-        with app.database.transaction() as tx:
-            tx.connection.execute("INSERT INTO evlet_roles(id,kind,base,realm,opens_controls,description) VALUES ('ops','custom','editor','desk',1,'')")
-            tx.connection.execute("UPDATE evlet_users SET role='ops' WHERE username='clerk'")
-            tx.connection.execute('UPDATE evlet_config SET version=version+1')
         admin = client(app)
         notes = admin('GET', '/api/_controls/state')[1]['apps'][0]
         assert notes['id'] == 'notes' and notes['source'] == 'apps/notes' and notes['update'] is None and not notes['restart']
-        assert admin('POST', '/api/_controls/apps/migrate')[:2] == (409, {'error': 'No app is waiting for a migration.'})
 
         change_model(project)
         state = admin('GET', '/api/_controls/state')[1]
         assert state['apps'][0]['update'] == {'from': '0.1.0', 'to': '0.1.0', 'error': None}
         assert state['instance']['slug'] == 'acme' and state['instance']['managed']
-        assert any(item['page'] == 'apps' and 'waiting to be migrated' in item['title'] for item in state['attention'])
-        assert client(app, 'clerk')('POST', '/api/_controls/apps/migrate')[0] == 403
-        with instance_guard(project / 'instances/acme', serving=True):
-            assert admin('POST', '/api/_controls/apps/migrate')[:2] == (409, {'error': IN_USE.format(name='acme')})
+        waiting = next(item for item in state['attention'] if item['page'] == 'apps')
+        assert 'waiting to be migrated' in waiting['title'] and 'evlet migrate acme' in waiting['text'] and 'Stop the server' in waiting['text']
+        # The browser never migrates: there is no route for it.
+        assert admin('POST', '/api/_controls/apps/migrate', {})[:2] == (404, {'error': 'Route not found'})
 
-        status, result, _ = admin('POST', '/api/_controls/apps/migrate')
-        assert status == 200 and result['migrations'] == ['app5_notes__0002_done'] and result['backup'].endswith('.sqlite3')
-        assert (project / 'instances/acme/data/backups' / result['backup']).is_file()
+        install(project, 'acme', trust=True)
         notes = admin('GET', '/api/_controls/state')[1]['apps'][0]
         assert notes['update'] is None and notes['restart']
-        with sqlite3.connect(project / 'instances/acme/data/database.sqlite3') as db:
-            assert 'done' in [row[1] for row in db.execute('PRAGMA table_info(notesitem)')]
-            assert db.execute("SELECT actor, target FROM evlet_audit WHERE area='Apps'").fetchall() == [('admin', 'notes 0.1.0')]
     finally:
         app.database.close()
 
@@ -218,7 +215,7 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     assert status == 200, payload
     exported = {item['file']: item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1]}
     folder = 'test_customization'
-    assert sorted(exported) == ['instances/<name>/config.py', 'instances/<name>/routes.py', f'{folder}/models.py',
+    assert sorted(exported) == ['instances/<name>/config.py', 'instances/<name>/routes.py', f'{folder}.py',
                                 f'{folder}/permissions.py', f'{folder}/views/__init__.py']
     for file, code in exported.items():
         compile(code, file, 'exec')
@@ -233,7 +230,7 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
 
     fields = {}
     # Apps can't declare x_ names: the code says to rename the field while moving it.
-    exec(exported[f'{folder}/models.py'].replace('x_lpo', 'lpo'), names, fields)
+    exec(exported[f'{folder}.py'].replace('x_lpo', 'lpo'), names, fields)
     lead, invoice = vars(fields['Lead']), fields['Invoice']
     assert (lead['value'].label, lead['value'].required, lead['value'].scale) == ('Expected value', True, 2)
     assert lead['source'].choices == ('web', 'walk_in', 'referral', 'exhibition') and lead['source'].default == 'web'
@@ -259,3 +256,40 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     assert custom['key'] == 'Lead' and custom['value'][0]['name'] == 'x_lpo' and custom['changed_by'] == 'admin'
     assert admin('GET', '/api/_controls/overrides/export?kind=perm')[0] == 200
     assert admin('GET', '/api/_controls/overrides/export?other=1')[0] == 422
+
+
+def test_dns_lookups_in_the_host_check_time_out(monkeypatch):
+    import threading
+    import evlet.controls_system as system
+    monkeypatch.setattr(system, 'LOOKUP_SECONDS', 0.05)
+    release = threading.Event()
+    slow = system.bounded(lambda host, port, **options: release.wait(5))
+    with pytest.raises(OSError):
+        slow('example.com', None)
+    release.set()
+
+
+def test_export_writes_callables_as_set_in_code_and_names_the_real_file(tmp_path, hashed):
+    from evlet import Decimal, Model, Text
+    from evlet.controls_export import Exporter, literal
+
+    class Gadget(Model):
+        name = Text(default=lambda: 'x', validator=lambda value: None)
+        weight = Decimal(scale=2)
+
+    app = build(tmp_path, Gadget)
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    assert save(admin, ('field', 'Gadget.name', {'label': 'Title'}))[0] == 200
+    code = next(item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1] if item['file'].endswith('test_controls_pages.py'))
+    compile(code, 'models.py', 'exec')
+    assert "name = Text(default=..., validator=..., label='Title')  # ... is set in code in models.py: copy it from there" in code
+    # A calculated field's expression has no Python form here either.
+    assert literal(object()) == '...' and literal((len, lambda: 1)) == '(..., ...)'
+    exporter = Exporter(app.business.controls)
+    for layout, module, init, expected in (('flat', 'notes.models.item', False, 'apps/notes/models/item.py'),
+                                           ('legacy', 'notes.models', True, 'apps/notes/notes/models/__init__.py')):
+        app.business.controls.apps = [{'id': 'notes', 'layout': layout}]
+        app.business.controls.app_of['Gadget'] = 'notes'
+        assert exporter.models_file(Gadget, module, init) == expected
+    assert exporter.folder(Gadget) == 'apps/notes/test_controls_pages'

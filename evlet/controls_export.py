@@ -6,6 +6,7 @@ Python form here (a callable from models.py, say) are written as ... and must be
 
 from decimal import Decimal
 import inspect
+from pathlib import Path
 
 from .controls import SCHEDULE, SCOPES, SETTINGS
 
@@ -19,7 +20,7 @@ def literal(value):
         return repr(value)
     if isinstance(value, type):
         return value.__name__
-    if inspect.isfunction(value):
+    if inspect.isfunction(value) and value.__name__.isidentifier():
         return value.__qualname__ if '<' not in value.__qualname__ else value.__name__
     if isinstance(value, tuple):
         return '(' + ', '.join(map(literal, value)) + (',)' if len(value) == 1 else ')')
@@ -44,6 +45,8 @@ def field_line(name, kind, args, kwargs, props):
         elif args:
             args[0] = (*args[0], *props['options_add'])
     line = f'    {name} = {call(kind, args, kwargs)}'
+    if UNKNOWN in line:
+        line += '  # ... is set in code in models.py: copy it from there'
     if props.get('options_hidden'):
         line += f"  # hidden from new values on this instance: {', '.join(props['options_hidden'])}"
     return line
@@ -70,16 +73,30 @@ class Exporter:
         self.controls, self.registry = controls, controls.registry
         self.models = controls.models()
 
-    def folder(self, model):
-        """apps/<app>/<package> for a model, or its module's folder outside a project."""
-        module = model.__module__.split('.')
-        parts = module[:module.index('models')] if 'models' in module else module[:-1]
-        folder = '/'.join(parts or module[:1])
+    def app(self, model):
+        """The app a model comes from and whether it uses the flat layout (the package is the app folder)."""
         app = self.controls.app_of.get(model.__name__)
+        return app, any(item['id'] == app and item.get('layout') == 'flat' for item in self.controls.apps)
+
+    def folder(self, model):
+        """The package folder for permissions.py and views: apps/<app>[/<package>], or the module's package."""
+        package = model.__module__.split('.')[0]
+        app, flat = self.app(model)
+        return package if app is None else f'apps/{app}' if flat else f'apps/{app}/{package}'
+
+    def models_file(self, model, module=None, init=None):
+        """The file that declares the model, such as apps/notes/models/item.py."""
+        module = (module or model.__module__).split('.')
+        if init is None:
+            try:
+                init = Path(inspect.getsourcefile(model)).name == '__init__.py'
+            except TypeError:
+                init = False
+        tail = '/__init__.py' if init else '.py'
+        app, flat = self.app(model)
         if app is None:
-            return folder
-        flat = any(item['id'] == app and item.get('layout') == 'flat' for item in self.controls.apps)
-        return f'apps/{app}' if flat else f'apps/{app}/{folder}'
+            return '/'.join(module) + tail
+        return f'apps/{app}/' + '/'.join(module[1:] if flat else module) + tail
 
     def scope(self, role, model, value):
         if value is None:
@@ -184,7 +201,7 @@ class Exporter:
         for file, lines in perms.items():
             files.setdefault(file, []).insert(0, 'rules = {\n' + '\n'.join(lines) + '\n}')
         for name, (fields, naming) in classes.items():
-            files.setdefault(f'{self.folder(self.models[name])}/models.py', []).append(self.model_class(name, fields, naming))
+            files.setdefault(self.models_file(self.models[name]), []).append(self.model_class(name, fields, naming))
         for file, code in self.settings(settings):
             files.setdefault(file, []).append(code)
         return [{'file': file, 'code': '\n\n'.join(blocks) + '\n'} for file, blocks in sorted(files.items())]
