@@ -85,6 +85,7 @@ export const SETTING_LABELS: Record<string, string> = {
   'security.controls_ips': 'Controls allowed from',
   'mcp.enabled': 'MCP server', 'mcp.allow_writes': 'Allow writes', 'mcp.rate': 'Tool calls per minute',
   'mcp.disabled_tools': 'Disabled tools', 'mcp.hidden_models': 'Hidden models',
+  'mail.personal': 'People connect their own mailbox',
 };
 
 export function permSummary(value: PermValue | null | undefined, scopes: Record<string, string>) {
@@ -114,7 +115,7 @@ export function describe(change: Change, scopes: Record<string, string>) {
       from: permSummary((shown(change.from) ?? item.file) as PermValue, scopes) + (shown(change.from) === null ? ' (file)' : ''),
       to: permSummary((shown(change.to) ?? item.file) as PermValue, scopes) + (shown(change.to) === null ? ' (file)' : '') };
   }
-  return { area: item.key.startsWith('mcp.') ? 'MCP & AI' : 'Security', target: SETTING_LABELS[item.key] ?? item.key,
+  return { area: item.key.startsWith('mcp.') ? 'MCP & AI' : item.key.startsWith('mail.') ? 'Email' : 'Security', target: SETTING_LABELS[item.key] ?? item.key,
     from: settingText(item.key, shown(change.from) ?? item.file) + (shown(change.from) === null ? ' (file)' : ''),
     to: settingText(item.key, shown(change.to) ?? item.file) + (shown(change.to) === null ? ' (file)' : '') };
 }
