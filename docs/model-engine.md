@@ -262,7 +262,8 @@ Posted records are recalculated only when an admin asks for it, for one migratio
 `evlet migrate <instance> --recompute-posted`, or `database.migrate(migrations,
 recompute_posted=True)` from Python. The default stays off. Every Recompute operation of that
 run then includes posted records; each one that changes gets a `recomputed` entry with
-`"posted": true`, the run writes one Controls audit row (actor `cli`, area `Records`) and logs
+`"posted": true` (void records are still skipped, so their rows and reversals keep matching
+them), the run writes one Controls audit row (actor `cli`, area `Records`) and logs
 a warning with the count, and `posted` on the returned list counts them. Their effect rows are
 not rewritten, so `evlet effects check` reports them as `changed` until each is unposted and
 reposted. Browser requests never run migrations, so Controls has no such switch.

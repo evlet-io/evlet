@@ -216,7 +216,10 @@ originals (issue) | mirrors (unpost) | originals (repost) | mirrors (void)
 * Unpost needs a `reverse` on every effect of the model (`Rule` operations `unpost` and
   `repost` fail at startup otherwise).
 * Unpost is refused while a live record depends on this one, for example a confirmed payment
-  that links to the invoice, or a record whose effect rows link to it.
+  that links to the invoice, an allocation that links to one of the ledger entries it posted,
+  or a record whose effect rows link to it.
+* A record that ever posted is never deleted, even after an unpost: its rows still name it as
+  their source. Delete answers 409.
 
 ## Details and schema
 

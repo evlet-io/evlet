@@ -411,8 +411,16 @@ record_id, reason)` from Python.
   is deleted. A failure anywhere rolls all of it back.
 * The record is not recalculated: every value stays as saved. Its Sequence numbers stay, so no
   number is taken or given back, and a number's scope fields and date period stay fixed.
-* Afterwards the record is an ordinary record in that state. It can be edited, recalculated
-  and moved like any other, and `Recompute` recalculates it.
+* Afterwards the record is an ordinary record in that state, with that state's rules. When it
+  posted from an unlocked state (draft), it can be edited, recalculated and moved like any
+  other, and `Recompute` recalculates it. When it posted from a locked state (for example
+  draft, then issued and locked, then paid, with the effect posting on paid), it goes back to
+  that locked state: that is the real state it was in before it posted, so it stays locked,
+  only its `editable_when_locked` fields change, and it posts again by Repost.
+* It is never deleted, even when its state would allow it: its reversed rows still name it as
+  their source and its number stays used. Delete answers 409 `This record has posted before,
+  so it cannot be deleted. Void it instead.` (or `Repost it and void it instead.` from a state
+  that cannot be voided), and details carry `_deletable: false` so screens do not offer it.
 * The response is the permission-filtered detail with a new ETag.
 
 **The state it returns to** is the state the posting move started from. The engine takes
@@ -423,11 +431,14 @@ negotiation), the record's Journal names the one it took last, in its latest `mo
 into a posting state. A model without a journal and with several such states cannot unpost.
 
 **Dependent records.** A record depends on this one when it, or one of its Table rows, links
-to it with a `Link` or a `Reference`, or when it posted effect rows that do. It blocks the
-unpost while it is live: it has a State, is not void, and is in a locked state or has live
-postings itself. A draft payment does not block; a confirmed one does until it is voided or
-unposted. The record's own Table rows and effect rows are not dependents. Each linking field
-costs one statement.
+with a `Link` or a `Reference` to the record, to one of its Table rows at any depth, or to one
+of the effect rows it posted (an allocation matching one of its ledger entries, say), or when
+it posted effect rows that do. It blocks the unpost while it is live: it has a State, is not
+void, and is in a locked state or has live postings itself. A draft payment does not block; a
+confirmed one does until it is voided or unposted. The record's own Table rows and effect rows
+are not dependents. Only Link fields whose target is the model, one of its Table row models
+or one of its effect targets are read, plus every `Reference` field (a Reference may name any
+model); see [performance.md](performance.md#unpost-dependents) for the cost.
 
 ### Repost
 
@@ -438,6 +449,9 @@ record_id)`.
   void. Otherwise 409 `This record is posted already`, `This record was never posted. Use its
   moves to post it` or `This record is void, so it cannot be reposted`.
 * The reason is optional; when given it is checked like an unpost reason and recorded.
+* The move that posts from the current state must ask for no value it may require (a
+  `required` or `required_when` field it asks for); otherwise 409 `Send asks for values, so
+  post the record with Send itself`, since a repost sends no values.
 * The engine runs the move that posts from the record's current state, through the normal
   move pipeline: the move's roles and guard, recalculation, validation and the version check
   (a stale record answers 409 `SCHEMA_VERSION_MISMATCH` and is recalculated first), then the
@@ -450,7 +464,8 @@ record_id)`.
 ### Permissions for unpost and repost
 
 * `Rule.operations` accepts `"unpost"` and `"repost"` on models whose effects all declare a
-  `reverse`; naming them on another model fails at startup.
+  `reverse`; naming them on another model fails at startup. A Rule naming `repost` must also
+  name `update` (a Controls override likewise), since a repost runs the posting move.
 * Admin always has both while its Rule on the model allows `read` and `update`, like void.
   A Rule naming one adds that role and never removes admin. A Controls override can keep or
   take away a role's grant, like `void`.
@@ -468,7 +483,9 @@ record and `_repost` on an unposted one, outside the ETag:
 {"_unpost": {"allowed": true}}
 ```
 
-They are left out for other roles and when they do not apply. Dependent records are checked
+They are left out for other roles and when they do not apply. `_repost` is also left out
+when the caller could not run the posting move: its role is not among the move's roles, it
+cannot update the record (permission or row scope), or the move asks for a required value. Dependent records are checked
 when the unpost is sent, not in details, so `_unpost` can be allowed and the unpost still be
 refused with the names of the records that depend on it.
 

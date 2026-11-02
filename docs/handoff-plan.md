@@ -145,7 +145,7 @@ Decisions taken while building them (the owner's where marked):
   authorization codes, and keep API keys. A two-step reset (Controls or the shell),
   deactivation and the break-glass grant also revoke API keys
   ([controls.md](controls.md#ending-access)).
-- **Posted records (owner's decision).** Posted and locked records are never recalculated by
+- **Posted records (owner's decision).** Posted records are never recalculated by
   `Recompute` unless an admin asks, for one migration run, with `evlet migrate <instance>
   --recompute-posted` (or `migrate(..., recompute_posted=True)`). Each posted record that
   changes gets a `recomputed` journal entry with `"posted": true`, and the run writes one audit
@@ -158,6 +158,9 @@ Decisions taken while building them (the owner's where marked):
   posting move again through the normal move path, which re-validates and posts fresh rows.
   Both write `unposted` / `reposted` journal entries and a Controls audit row (area
   `Records`), through `corrections.unposted` and `corrections.reposted`.
+- **A record that ever posted is never deleted.** Its effect rows, reversed or not, name it as
+  their source and its number stays used, so delete answers 409 and details carry
+  `_deletable: false`. Void records are skipped by Recompute even with `--recompute-posted`.
 - **Unpost and repost are Rule operations.** Admin keeps them while its Rule reads and updates
   the model, like void; a Rule naming `unpost` or `repost` adds a role, and Controls keeps or
   takes away that grant. Every HTTP surface (sessions, API keys, assistants, `ApiScope`) and
