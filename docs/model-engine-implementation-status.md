@@ -25,7 +25,7 @@ Nothing was merged, reset, deployed or published. No customer database was touch
 | Field equality | Field-to-field `==` stays identity based (dictionary safety); field-to-literal builds an expression; compare two fields with `F()`. |
 | Virtual precision | Only `Decimal(scale=None, stored=False, compute=...)`. |
 | Module layout | One public module `evlet/calc.py` (authoring, compiler, numbers, evaluator, session) and `frontend/src/evlet/model/finite.ts` (first `frontend/src/runtime/FiniteEngine.ts`). Integration lives in existing `models`, `documents`, `business`, `permissions`, `database`. |
-| Numeric kernel in the browser | A HALF_UP kernel in `FiniteEngine.ts` beside the legacy HALF_EVEN `DecimalValue.ts`, which is unchanged so legacy previews keep their behaviour. `DecimalValue.ts` was removed with SolidJS in `ui/05`. |
+| Numeric kernel in the browser | A HALF_UP kernel in `FiniteEngine.ts` (now `frontend/src/evlet/model/finite.ts`) beside the legacy HALF_EVEN `DecimalValue.ts`, which is unchanged so legacy previews keep their behaviour. `DecimalValue.ts` was removed with SolidJS in `ui-final/05`. |
 | Nesting | Allowed only under finite-v1 roots, depth 8. Legacy roots keep one level. |
 | Wire metadata | `_calculation` in POST/PATCH bodies, `calculation` in `/api/_draft`; mismatch is 409. |
 | `_key` scope | Unique across the whole document so the flat `_row_ids` map cannot collide. |
@@ -39,11 +39,11 @@ Nothing was merged, reset, deployed or published. No customer database was touch
 | W0 baseline | Done | This ledger. |
 | W1 contracts | Done | `evlet/calc.py`, this ADR, `docs/finite-calculations.md`. |
 | W2 Python compiler/numbers | Done | `tests/test_finite_expressions.py` (independent `decimal` reference, cycles, scopes, types, states). |
-| W3 browser evaluator | Done | `FiniteEngine.ts`, `frontend/src/evlet/tests/finite-engine.test.ts` replaying Python fixtures; fingerprint parity. |
+| W3 browser evaluator | Done | `frontend/src/evlet/model/finite.ts` (first `FiniteEngine.ts`), `frontend/src/evlet/tests/finite-engine.test.ts` replaying Python fixtures; fingerprint parity. |
 | W4 graph and batches | Done | Row handles, membership/filter edges, incremental settle with equality pruning, nested batches, rollback, one publication, reentrancy guard, explain, disposal; randomized incremental-vs-full checks. |
 | W5 nested storage | Done (SQLite) | `tests/test_nested_documents.py`: create/reload/update/delete, owner links, rollback, hidden rows, subtree permissions, formula-upgrade guard. **PostgreSQL is not covered**: `tests/test_postgres.py` has no finite or nested cases yet. |
-| W6 security/versions | Done, with limits | Computed-write guards, legacy action refusal, raw-write guard, per-record plan versions (409 + explicit `recalculate`), derivation permissions, field-filtered plan projection. Client plan pinning is optional and the SolidJS client does not send it. External `Query` sources in finite roots are deferred. |
-| W7 UI bridge | Minimal | Deferred by the user: Evlet UI becomes its own framework next. The SolidJS form copies finite results from `/api/_draft` previews (two-line change, covered only by existing form tests, not browser-verified); nested tables below the first level are not editable there. `FiniteEngine.ts` is not wired into screens. Superseded: the Evlet UI framework's record view runs the engine, and SolidJS was removed in `ui/05`. |
+| W6 security/versions | Done, with limits | Computed-write guards, legacy action refusal, raw-write guard, per-record plan versions (409 + explicit `recalculate`), derivation permissions, field-filtered plan projection. Client plan pinning is optional; the Evlet UI sends the plan hash it calculated with. External `Query` sources in finite roots are deferred. |
+| W7 UI bridge | Done | The Evlet UI framework's record view runs the finite engine in the browser (phases 11 to 15). The first bridge, a SolidJS form copying `/api/_draft` previews, was removed with SolidJS in `ui-final/05`. |
 | W8 native controls | Not started | Same as W7. |
 | W9 native parity | Not started | Same as W7. |
 | W10 package/perf | Done for the engine | Wheel built locally and installed in a clean venv outside the checkout; with Node off PATH, `scripts/smoke_finite.py` saved a nested document over real HTTP via uvicorn and loaded local assets. `check_package.py`, `smoke_cli.py` and `check_flat_package.py` also passed locally. The smoke step was added to CI (not yet run there). |
@@ -142,12 +142,12 @@ limits, which plans refuse by design; it was not run.
 * Hidden rows that fail calculation block saves for users who cannot see them; the error
   is reported only as a generic form error.
 * Rounded allocations are not reconciled; expose a named residual field (documented).
-* Nested documents load one query batch per row: a 100 x 9 tree costs about 2,200 SQL
-  statements per GET and 8,600 per title-only PATCH (bounded by the 1,000-row cap).
+* Nested documents load one table level at a time: a 100 x 9 tree costs about 8 SQL
+  statements per GET and about 30 per title-only PATCH (see [performance.md](performance.md)).
 * Acceptance items still missing or only partial: T21 handled by documentation, T26/A58
   (UI), A37/A51/A52 (browser save-mapping and async-reply flows), and partial T10, T24,
   T27, T28, A03, A06, A13, A30, A55, A56, A60.
-* No native UI integration (W7-W9).
+* Native UI integration (W7-W9) is done in the Evlet UI framework (phases 11 to 15).
 
 ## Phase 1: expression extensions (01-11-2026)
 
@@ -261,8 +261,8 @@ Known limitations of this phase:
   `coalesce` when that is not wanted.
 * A saved value is cleared when `applies_when` turns false, so toggling a condition back does
   not restore it.
-* The SolidJS form does not call `ruleStates` and does not refresh suggested values from the
-  preview; the new UI will.
+* The Evlet UI runs the rules and suggested values in the browser through `ruleStates` and
+  the finite session; the server stays authoritative.
 * Recompute uses the UTC date for `today()` and is not replayed on baseline adoption.
 * Reference fields are not validated against a list of allowed models.
 
@@ -334,7 +334,7 @@ Known limitations:
 * Creating a document still inserts one row per statement (about 1,000 statements for 1,000
   rows), and the 64 KiB request body limit allows only short rows in one request.
 * The paging route reads one collection; it has no filters or sorting other than position.
-* The SolidJS form does not use change sets, paging or `children_pages`; the new UI will.
+* The Evlet UI sends row change sets and reads `children_pages` and the paging route.
 
 ## Phase 4: states, moves and model actions (01-11-2026)
 
@@ -384,8 +384,8 @@ Known limitations:
 * A guard that reads owned rows or virtual results loads the whole saved document for a
   detail response when the caller cannot read every row (hidden collections or a row
   scope); otherwise it reuses the rows the detail read. Other guards read only the root.
-* Draft previews do not report the State lock. The connector, the MCP server and the
-  SolidJS form do not offer moves.
+* Draft previews do not report the State lock. The connector and the MCP server do not
+  offer moves; the Evlet UI does.
 * Void and revise were added in Phase 5 (below).
 
 Review fixes (01-11-2026):
@@ -486,7 +486,7 @@ Known limitations:
 * Other reasons a copy can fail (a row scope on the root that the copy's values leave, a
   fetched field the caller cannot read) are not predicted; they roll back with 403, 404 or 422.
 * Revising a document copies its rows one statement per row, like creating one.
-* The connector, the MCP server and the SolidJS form do not offer void or revise.
+* The connector and the MCP server do not offer void or revise; the Evlet UI does.
 
 ## Phase 7: document numbers (01-11-2026)
 
@@ -517,9 +517,8 @@ as `model/07-stacked`. Guide: [sequences.md](sequences.md).
   `sequences.backfill()` numbers existing rows from the same counters. The stored model
   definition records the scope only, so the format, `assign_on` and `date` can change
   without a migration.
-* **Schema.** Field entries gain `sequence: {format, scope, assign_on, date}`. The SolidJS
-  schema check accepts the `sequence` type (`frontend/src/schema.js`), so generated screens
-  load models that declare one.
+* **Schema.** Field entries gain `sequence: {format, scope, assign_on, date}`. The Evlet UI
+  reads it to show the number read only and when it will be assigned.
 * **Hooks for later phases.** `sequences.clear_for_copy(model, values)` for revise
   (Phase 5); `sequences.assigned(...)`, an empty hook called after the write, for the
   Journal (Phase 8). Void keeps the number with no extra code.
@@ -539,8 +538,8 @@ Known limitations:
   assigned on a state. Records store no creation timestamp.
 * `RenameField` of a Sequence does not rename its counter rows (documented).
 * `{yy}` repeats every century and the unique index would then refuse a repeated number.
-* The connector, the MCP server and the SolidJS form show the number but do not explain
-  when it will be assigned.
+* The connector and the MCP server show the number but do not explain when it will be
+  assigned; the Evlet UI does.
 
 Review fixes (01-11-2026):
 
@@ -618,7 +617,7 @@ Known limitations:
 * Per-record measures run one statement per related model and link, for one record at a
   time; there is no batched list form yet (Phase 10 relation counts may need one).
 * Text minimums and maximums and grouping `DateTime` fields by part are not offered.
-* The connector, the MCP server and the SolidJS screens do not use measures yet.
+* The connector and the MCP server do not use measures yet; the Evlet UI shows them on lists and records.
 
 Review fixes (01-11-2026):
 
@@ -669,7 +668,7 @@ Known limitations:
   caller, and a per-record measure on the same Link (`Count(Payment, link="invoice")`)
   gives the count through `GET /api/{model}/{id}/measures`.
 * Related rows are listed without their owned Table rows, like the list route.
-* The connector, the MCP server and the SolidJS UI do not use these keys yet.
+* The connector and the MCP server do not use these keys yet; the Evlet UI does.
 
 Review fixes (01-11-2026):
 
@@ -748,7 +747,7 @@ Known limitations:
 * Reference fields cannot be indexed, so finding a record's rows scans the target table.
 * The check holds one write transaction for the whole run.
 * Effects post only on a move; raw writes inside `tx.maintenance()` post nothing.
-* The SolidJS form, the connector and the MCP server do not show `_effects`.
+* The connector and the MCP server do not show `_effects`; the Evlet UI does.
 
 ### Phase 6 review findings (01-11-2026)
 
@@ -809,7 +808,7 @@ Branch `model/08-journal`, stacked on `model/10-stacked`; restacked on `model/06
   copy's id, through `corrections.revised()`; the copy starts with `created`), `number` (its own
   kind, through `sequences.assigned()`; numbers are left out of field diffs), `file`
   (attachment added or removed through the HTTP routes) and `deleted`. `journal.effects_posted()`
-  is the hook for Effects (Phase 6) and has no caller yet. The actor is the user id, or
+  writes the `effects` entry; `documents.operate()` and void call it (see below). The actor is the user id, or
   `engine` without a signed in user.
 * **User entries.** `POST /api/{model}/{id}/journal` and `journal.post()`: `note`, `message`
   (logged, nothing is sent), `call`, `follow_up` (text, due date, assignee who can read the
@@ -846,7 +845,7 @@ Known limitations:
 * Rename migrations do not rewrite stored entries.
 * The hash chain does not detect a deliberate rewrite of every hash or the removal of a
   record's latest entries.
-* The connector, the MCP server and the SolidJS screens do not show the journal yet.
+* The connector and the MCP server do not show the journal yet; the Evlet UI does.
 
 Review fixes (02-11-2026):
 

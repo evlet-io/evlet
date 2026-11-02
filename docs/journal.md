@@ -102,6 +102,11 @@ commits, no entry is left behind.
 A removed row lists its last values and its own removed rows. `reordered` is set when rows
 that stayed changed their order. A create lists every value that is not empty.
 
+A `created` entry lists every value of every row, so an entry for a large document is large:
+creating a document with 1,000 lines stores an entry of about 400 KB, and a page of 50
+entries can carry several such entries. Read the journal in pages (`limit` and `offset`)
+and keep the page small for documents with many rows.
+
 `Recompute` never changes a locked record or one with postings (see
 [finite-calculations.md](finite-calculations.md)), so `recomputed` entries appear only on
 records still open for editing.

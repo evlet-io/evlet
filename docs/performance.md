@@ -319,7 +319,7 @@ Only the active tab's panel is rendered, so the Details tab costs nothing while 
 open. The rest of the first screen is the engine's first settle of every line and the 21 grid
 rows in view.
 
-In a real browser (Chromium in the Claude desktop Browser pane, 1280 x 800, development build
+In a real browser (Chromium in an embedded browser pane, 1280 x 800, development build
 served by Vite through its proxy to the testCRM backend on loopback, SQLite). The pane was not in
 the foreground, so the browser may have throttled timers; these are upper bounds.
 
