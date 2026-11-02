@@ -192,3 +192,76 @@ Known limitations of this phase:
   on the next write of the document when the linked record changes.
 * Child rows load with about one SELECT per row (about 1,000 statements for 90 linked
   rows); batched loading is planned for Phase 3.
+
+## Phase 2: initial suggestions, field rules, Recompute and new types (01-11-2026)
+
+Branch `model/02-rules`, stacked on `model/01-expressions`. Contract:
+[finite-calculations.md](finite-calculations.md#initial-suggestions) and
+[model-engine.md](model-engine.md#more-field-types).
+
+* **`initial=`.** A finite expression that suggests a value on create and when a document
+  input it reads changes, unless the caller supplied the field in the same write. Lookups and
+  `today()` do not trigger it. Pending suggestions wait for their value; locked fields are
+  not overwritten. On an update the server builds the session from the saved document and
+  applies the write as one batch, so it decides like a browser session.
+* **Rules.** `applies_when`, `required_when` and `locked_when` on editable fields, enforced
+  on create and update through HTTP, `Context` and actions. `applies_when` false clears the
+  value inside the session, so dependent calculations see null. Undecided rules fail closed:
+  the field applies, is required and is locked. Locks compare the caller's values (after
+  input validation, before engine writes) with the saved row.
+* **Plans.** Initial suggestions and rules are plan entries with a `kind` key, named
+  `field:kind` in the graph and ordered with the calculations. Plans and formula hashes of
+  documents without them are unchanged. Formula hashes include `applies_when` (it can clear a
+  value calculations read) but not `initial`, `required_when` or `locked_when`, so changing
+  those does not ask saved documents to recalculate. `ruleStates`/`rule_states` and
+  `observeRules`/`observe_rules` expose rule states per row.
+* **Permissions.** `Policy.expression_allowed` checks a role against every input of a
+  calculation, initial or rule. An initial over unreadable inputs withholds its field, like a
+  calculation. A rule over unreadable inputs is enforced but not shown in `/api/schema` and
+  not shipped in the browser plan; leaving out a suggestion or `applies_when` on a readable
+  field stops the plan from shipping. Lock messages explain a pending rule only to roles that
+  can read its inputs.
+* **Schema.** Every field in `/api/schema` gains `stored` and `compute`, `initial`,
+  `applies_when`, `required_when`, `locked_when` (finite IR or null). The registry's neutral
+  schema (`ui_schema`) is unchanged except `currency` on Currency fields that declare it.
+* **`Recompute(model, fields)`.** Runs after the batch's structural changes inside the
+  migration transaction; failures roll back the batch. Updates recorded formula versions
+  when a batch recalculates every stored result of a document.
+* **Types.** `Phone`, `Percent`, `Time`, `Duration`, `Tags` and `Reference` (two
+  columns and no SQL foreign key; wire type `reference`). Fields can now occupy more than one column
+  (`Field.columns`, `to_columns`, `from_columns`); SQLite and PostgreSQL schemas, checks,
+  `AddField`, writes and filters use them. `Currency(currency=...)` is metadata only.
+* **Fixtures.** Shared scenarios `initial-and-rules` and `loaded-offer` record rule states at
+  every step; the TypeScript engine matches them and rebuilds to the same snapshots.
+  Generated fixtures for `/api/schema` (`test-business-schema.json`, `ui-fixture.json`,
+  `document-contract.json`) gained the additive field keys.
+* **Changed tests.** `tests/test_builds.py` adds assertions for the amendment Quote's new
+  fields; no existing assertion changed.
+
+Review fixes (01-11-2026):
+
+* Locks on an update are decided on the document as saved, in the server and in sessions
+  (`locks`, `rebase()`); a write that unlocks and changes a field is refused. On create a locked
+  field accepts its default or its initial suggestion.
+* Setting a source to its current value is not a change, so resending an input does not
+  suggest again (HTTP, `Context` and sessions).
+* A `ChildTable` whose rows have a finite plan is refused at registration.
+* Shipped plans name only lookup fields and owned tables the role can read; the schema `order`
+  is filtered the same way.
+* A change that would clear a locked field through `applies_when` is refused, and sessions keep
+  the saved value.
+* Recompute stores not-applicable values as null; `RenameField` renames both columns of a
+  `Reference`; the `Ref()` field shortcut was removed and the wire type is `reference`.
+* HTTP filters `about` and `about__eq` on a reference check the named model; other forms need
+  every model.
+
+Known limitations of this phase:
+
+* `required_when` over an empty number is required until the number is filled in; use
+  `coalesce` when that is not wanted.
+* A saved value is cleared when `applies_when` turns false, so toggling a condition back does
+  not restore it.
+* The SolidJS form does not call `ruleStates` and does not refresh suggested values from the
+  preview; the new UI will.
+* Recompute uses the UTC date for `today()` and is not replayed on baseline adoption.
+* Reference fields are not validated against a list of allowed models.

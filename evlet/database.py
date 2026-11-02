@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 
-from .fields import Link
+from .fields import Link, Reference
 from .models import ValidationError, identifier
 from .query import SqlQuery
 
@@ -121,6 +121,17 @@ class Database:
             connection.execute("SELECT 1").fetchone()
 
 
+def storage_columns(model, values, names):
+    """Column names and storage values for the named fields; a Reference field fills two columns."""
+    columns, stored = [], []
+    for name in names:
+        field = model.__fields__[name]
+        for (column, _), value in zip(field.columns(name), field.to_columns(values.get(name))):
+            columns.append(column)
+            stored.append(value)
+    return columns, stored
+
+
 class Session:
     """Available inside Database.transaction(); do not retain it afterwards."""
 
@@ -149,14 +160,13 @@ class Session:
         self._guard(model)
         table = identifier(self.registry.name_for(model))
         record = model(**values)
-        names = list(model.__fields__)
+        self.check_references(model, record._values)
+        names, stored = storage_columns(model, record._values, model.__fields__)
         if names:
             columns = ", ".join(identifier(name) for name in names)
             placeholders = ", ".join("?" for _ in names)
             cursor = self.connection.execute(
-                f"INSERT INTO {table} ({columns}) VALUES ({placeholders})",
-                [model.__fields__[name].to_storage(record._values[name]) for name in names],
-            )
+                f"INSERT INTO {table} ({columns}) VALUES ({placeholders})", stored)
         else:
             cursor = self.connection.execute(f"INSERT INTO {table} DEFAULT VALUES")
         return self.get(model, cursor.lastrowid)
@@ -192,13 +202,22 @@ class Session:
         current = self.get(model, record_id)
         record = model(**{**current._values, **changes})
         if changes:
+            self.check_references(model, {name: record._values[name] for name in changes})
             table = identifier(self.registry.name_for(model))
-            assignments = ', '.join(f'{identifier(name)} = ?' for name in changes)
-            self.connection.execute(
-                f'UPDATE {table} SET {assignments} WHERE "id" = ?',
-                [model.__fields__[name].to_storage(record._values[name]) for name in changes] + [record_id],
-            )
+            names, stored = storage_columns(model, record._values, changes)
+            assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
+            self.connection.execute(f'UPDATE {table} SET {assignments} WHERE "id" = ?', stored + [record_id])
         return self.get(model, record_id)
+
+    def check_references(self, model, values):
+        """Reference fields have no SQL foreign key, so each write checks that the record exists."""
+        for name, value in values.items():
+            if isinstance(model.__declared_fields__.get(name), Reference) and value is not None:
+                target = self.registry.models.get(value[0])
+                if target is None:
+                    raise ValidationError({name: 'Use a registered model name'})
+                if self.connection.execute(f'SELECT 1 FROM {identifier(value[0])} WHERE "id" = ?', (value[1],)).fetchone() is None:
+                    raise ValidationError({name: 'The referenced record does not exist'})
 
     def delete(self, model, record_id):
         self._guard(model)

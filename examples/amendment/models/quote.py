@@ -1,5 +1,5 @@
 """A finite-v1 document: one formula definition for browser previews and server saves."""
-from evlet import Model, Child, Table, Decimal, Currency, Boolean, Text, Rule, Link, Date
+from evlet import Model, Child, Table, Decimal, Currency, Boolean, Text, Rule, Link, Date, Integer, Percent, Select, Tags
 from evlet.calc import F, days, parent, round, when
 from amendment.models.masters import Company
 
@@ -12,14 +12,20 @@ class Quote(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
     name = Text(required=True)
+    stage = Select(('draft', 'sent', 'won', 'lost'), default='draft')
     inclusive = Boolean(default=False)
     company = Link(Company)
     issued_on = Date()
-    # A Link path to the company's payment terms. when() leaves it empty until both inputs are set,
-    # because date arithmetic with an empty value stays pending and would block the save.
-    valid_until = Date(compute=when((F('company') == None) | (F('issued_on') == None), None,  # noqa: E711
-                                    F('issued_on') + days(F('company.payment_days'))))
-    discount_rate = Decimal(scale=2, default='0', minimum='0', maximum='100')
+    # Suggested from the company's payment terms whenever the company changes; the user may edit it.
+    payment_days = Integer(initial=F('company.payment_days'), minimum=0)
+    # when() leaves the date empty until both inputs are set, because date arithmetic with an empty
+    # value stays pending and would block the save.
+    valid_until = Date(compute=when((F('payment_days') == None) | (F('issued_on') == None), None,  # noqa: E711
+                                    F('issued_on') + days(F('payment_days'))))
+    # Percent is a two-place decimal from 0 to 100. A won quote keeps the discount it was won with.
+    discount_rate = Percent(default='0', locked_when=F('stage') == 'won')
+    lost_reason = Text(applies_when=F('stage') == 'lost', required_when=F('stage') == 'lost')
+    labels = Tags()
 
     class Line(Child):
         description = Text(default='')

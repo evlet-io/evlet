@@ -39,7 +39,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "status",
@@ -54,7 +60,13 @@
           "hidden": false,
           "read_only": true,
           "default_kind": "static",
-          "default": "Draft"
+          "default": "Draft",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "total",
@@ -71,7 +83,12 @@
           "hidden": false,
           "read_only": true,
           "stored": true,
-          "default_kind": "none"
+          "default_kind": "none",
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "document_version": 1,
@@ -100,9 +117,7 @@
         "total",
         "items.qty",
         "items.rate",
-        "items.stock",
-        "items.evlet_owner",
-        "items.evlet_position"
+        "items.stock"
       ],
       "sources": {},
       "permissions": {
@@ -176,7 +191,13 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
-          "default": "1.0000"
+          "default": "1.0000",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "rate",
@@ -193,7 +214,13 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
-          "default": "0.00"
+          "default": "0.00",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "amount",
@@ -210,7 +237,12 @@
           "hidden": false,
           "read_only": true,
           "stored": true,
-          "default_kind": "none"
+          "default_kind": "none",
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "stock",
@@ -227,7 +259,12 @@
           "hidden": false,
           "read_only": true,
           "stored": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "document_version": 1,

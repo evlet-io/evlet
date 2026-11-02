@@ -105,6 +105,12 @@ def test_reference_app_full_public_flow(project):
     # 120.00 * 3.33% = 3.996 is rounded half up to the Currency scale; the due date follows the company Link.
     assert (saved['discount'], saved['payable'], saved['valid_until']) == ('4.00', '121.00', '2026-12-16')
     assert c('POST', '/api/quote', {'name': 'Q-2'})[1]['valid_until'] is None
+    url = f"/api/quote/{saved['id']}"
+    edit = lambda body: c('PATCH', url, body, headers={b'if-match': c('GET', url)[2][b'etag']})
+    assert saved['payment_days'] == 45 and edit({'payment_days': 10})[1]['valid_until'] == '2026-11-11'
+    assert edit({'stage': 'lost'})[1]['fields'] == {'lost_reason': 'This field is required'}
+    assert edit({'stage': 'won', 'lost_reason': 'Ignored', 'labels': ['gold']})[1]['lost_reason'] is None
+    assert edit({'discount_rate': '5'})[1]['fields'] == {'discount_rate': 'This field is locked and cannot be changed now'}
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest

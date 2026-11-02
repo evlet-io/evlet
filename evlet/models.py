@@ -3,7 +3,7 @@
 import re
 from types import MappingProxyType
 
-from .fields import Field, Link, MISSING
+from .fields import Field, Link, MISSING, RULES
 from .declarations import Table, ReactiveQuery
 
 
@@ -60,12 +60,16 @@ class ModelType(type):
                 raise ValueError(f"Inherited field {key!r} must remain a field")
         if len({key.lower() for key in fields}) != len(fields):
             raise ValueError("Field names must be distinct ignoring case")
+        columns = [column.lower() for key, value in fields.items() if value.stored for column, _ in value.columns(key)]
+        if len(set(columns)) != len(columns) or 'id' in columns:
+            raise ValueError("Reference columns (<name>_model, <name>_id) must not collide with other fields")
         cls = super().__new__(mcls, name, bases, namespace)
         cls.__declared_fields__ = MappingProxyType(fields)
         cls.__fields__ = MappingProxyType({key: value for key, value in fields.items() if value.stored})
         cls.__tables__ = MappingProxyType(tables)
         cls.__sources__ = MappingProxyType(sources)
-        if sources or tables or 'permissions' in namespace or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored for field in fields.values()):
+        if sources or tables or 'permissions' in namespace or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
+                or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
         if getattr(cls, '__declaration_mode__', False) and (set(fields) | set(tables) | set(sources)) & {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}:
             raise ValueError('A document field conflicts with its draft interface')
@@ -108,7 +112,7 @@ class Model(metaclass=ModelType):
         # Stored snapshots must remain readable after business rules change.
         instance = cls.__new__(cls)
         instance._values = MappingProxyType({
-            name: field.from_storage(row[name]) for name, field in cls.__fields__.items()
+            name: field.from_columns(row, name) for name, field in cls.__fields__.items()
         })
         instance._id = row["id"]
         return instance
@@ -118,7 +122,7 @@ class Registry:
     def __init__(self, *models):
         from .fields import Integer
         from .business import ChildTable
-        from .calc import CalcError, LIMITS, is_finite, root_language
+        from .calc import CalcError, LIMITS, uses_finite, root_language
         self.children = []
         expanded = list(models)
 
@@ -126,7 +130,7 @@ class Registry:
             # Finite-v1 roots own nested tables; legacy roots keep one level.
             if model in seen:
                 raise CalcError('MODEL_CONTAINMENT_CYCLE', ' -> '.join(item.__name__ for item in seen + (model,)))
-            return any(is_finite(field) for field in model.__declared_fields__.values()) or any(
+            return any(uses_finite(field) for field in model.__declared_fields__.values()) or any(
                 isinstance(table.child, type) and issubclass(table.child, Child) and finite(table.child, seen + (model,))
                 for table in model.__tables__.values())
 
@@ -192,6 +196,11 @@ class Registry:
                     field.target = target
                 if isinstance(field, Link) and field.target not in models:
                     raise ValueError(f"Link target for {model.__name__}.{field.name} is not registered")
+                code = getattr(field, 'currency', None)
+                if code is not None and not re.fullmatch('[A-Z]{3}', code):
+                    holder = model.__declared_fields__.get(code)
+                    if holder is None or holder.kind not in ('text', 'select'):
+                        raise ValueError(f'{model.__name__}.{field.name}: currency must be an ISO 4217 code or a text field on the same model')
         from .ui.metadata import view_for
         for model in models:
             view_for(model)
@@ -219,14 +228,14 @@ class Registry:
             model = owners[model]
         return model
 
-    def finite_reads(self, model, name):
-        """(scope, model, field) inputs of a finite computed field, resolved to models."""
+    def finite_reads(self, model, name, kind=None):
+        """(scope, model, field) inputs of a finite computed field (or its initial/rule), resolved to models."""
         plan, path, owners = self.plan_for(model), [], {child.model: child for child in self.children}
         item = model
         while item in owners:
             path.insert(0, owners[item].name)
             item = owners[item].parent
-        field = next(entry for entry in plan['fields'] if entry['path'] == path and entry['field'] == name)
+        field = next(entry for entry in plan['fields'] if entry['path'] == path and entry['field'] == name and entry.get('kind') == kind)
         tables = {child.name: child.model for child in self.children if child.parent is model}
         result = []
         for scope, table, read in field['reads']:

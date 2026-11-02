@@ -38,7 +38,9 @@ class Invoice(Model):
 ```
 
 A root selects finite-v1 with `Meta.calculation_language`, or by using expression
-computes anywhere in its tree. Its owned tables inherit the plan. Legacy string formulas
+computes, `initial=` or a field rule (`applies_when`, `required_when`, `locked_when`)
+anywhere in its tree. Such a model is written through `Context` and the HTTP routes, like any
+finite-v1 document. Its owned tables inherit the plan. Legacy string formulas
 (`compute="qty * rate"`) keep the legacy compiler and HALF_EVEN profile. One root cannot
 mix the two. Finite-v1 roots do not support `Query` sources yet.
 
@@ -136,9 +138,128 @@ record changes, the stored value is updated on the next write of the document, n
 The formula hash does not track linked values, so such documents are not reported as
 needing recalculation.
 
+## Initial suggestions
+
+`initial=` suggests a value for an editable field. It uses the same language as `compute=`:
+
+```python
+class InvoiceLine(Child):
+    item = Link(Item)
+    qty = Decimal(default=1)
+    rate = Currency(initial=F("item.selling_rate"))
+    amount = Currency(compute=F("qty") * F("rate"))
+
+class Invoice(Model):
+    customer = Link(Customer)
+    terms_days = Integer(initial=F("customer.credit_days"))
+    warehouse = Link(Warehouse)
+    lines = Table(InvoiceLine)
+```
+
+* On create, and whenever an input the expression reads changes in a write, the engine sets
+  the field from the expression, unless the caller supplied that field in the same write.
+  Sending an input with the value it already has is not a change.
+* A later edit by the user is kept until an input changes again. The field stays editable;
+  the suggestion is not a binding.
+* Inputs are the document's own fields, `parent.x`, collections and calculated fields. A
+  linked record that changes on its own, or a new day for `today()`, does not trigger a
+  suggestion: those values are read when a suggestion fires.
+* A suggestion is written when its result is ready, including a ready null (an empty Link
+  clears `rate`). While it is pending, for example waiting for a Link lookup, it waits and is
+  written when the value arrives, unless the field is set first. An error leaves the field
+  unchanged. A locked field is never overwritten by its suggestion: a suggestion that meets a
+  lock is dropped, not kept for later, and fires again only when an input changes again.
+* `initial` cannot be combined with `compute`, `default`, `fetch` or `query` on the same
+  field. `fetch="link.field"` and `default=Ref("parent.x")` keep working as before.
+* A suggestion is quantized like a calculation, but the field's bounds and validator apply
+  to the value as a normal edit.
+
+On an update the server starts from the saved document and applies the write's changes as
+one batch, exactly as a browser session does, so both decide the same way.
+
+## Field rules
+
+Three Boolean expressions describe when an editable field applies, is required, or is
+locked. They are the way forward; the legacy strings `visible_if`, `required_if` and
+`read_only_if` keep working for legacy documents.
+
+```python
+class Deal(Model):
+    stage = Select(("open", "won", "lost"), default="open")
+    lost_reason = Text(applies_when=F("stage") == "lost", required_when=F("stage") == "lost")
+    discount = Percent(locked_when=F("stage") == "won")
+```
+
+The server enforces them on every create and update, including `Context` writes and model
+actions. Legacy `ChildTable` rows do not run finite rules or calculations, so registering a
+`ChildTable` whose rows declare any is refused; declare such rows with `Table(Child)`.
+
+* **applies_when** false: the field is not required, its validator does not run, and its
+  value is stored as null. The engine clears it as soon as the rule turns false, so
+  calculations that read it see null in the browser and on the server.
+* **required_when** true: an empty value is the field error `This field is required`.
+* **locked_when** true: a changed value is the field error `This field is locked and cannot be
+  changed now`. Only the caller's changes count (request body, `Context` values, action
+  handlers); values the engine writes do not, with one exception: a write whose change makes a
+  locked field stop applying would clear it, so it is refused with `This field is locked, so a
+  change that would clear it is not allowed`, and a session keeps the saved value. On an update the lock is decided on the document
+  as saved, before this write's changes, so one write cannot unlock a field and change it, and a
+  lock that reads its own field (`locked_when=F("price") > 100`) keeps a saved 500. On create
+  the current rule applies, and a locked field may only be empty or equal to its default or its
+  initial suggestion. Saving the unchanged value is allowed.
+
+A rule with no ready true or false value (pending, an error, or null) is undecided.
+Undecided rules fail closed:
+
+| Rule | Undecided means |
+| --- | --- |
+| `applies_when` | the field applies; nothing is cleared |
+| `required_when` | the field is required |
+| `locked_when` | the field is locked |
+
+So `required_when=F("amount") > 1000` makes the field required while `amount` is empty.
+Use `coalesce(F("amount"), 0) > 1000` when an empty value should not require it. A pending
+lock explains itself (`This field is locked until the values its lock rule reads are filled
+in`) only to a role that can read every input of the rule.
+
+Rules cannot be declared on calculated fields. `applies_when` cannot be combined with
+`required=True` (use `required_when`), `required_when` with `required_if`, or `locked_when`
+with `read_only_if`. A rule must be Boolean (`COMPUTE_TYPE_ERROR` otherwise).
+
+### Order and cycles
+
+Initial suggestions and rules join the template graph. A field's value is written by its
+calculation, or by its `initial` and then its `applies_when`; readers follow the last writer.
+An `initial` waits for its own field's `locked_when`. So these fail at registration with
+`MODEL_DEPENDENCY_CYCLE`: a calculation and an initial that read each other, an initial that
+reads its own field, and an `applies_when` that reads its own field.
+
+### Permissions
+
+Rules may read fields or Link paths the user cannot read; the server enforces them anyway.
+
+* `/api/schema` lists a rule's expression only when the role can read every input. The
+  shipped browser plan leaves such a rule out, together with lookup fields and owned tables the
+  role cannot read, and the schema `order` names only readable fields and tables.
+* An initial suggestion over inputs a role cannot read makes its field unreadable for that
+  role, exactly like a calculated result, because the value would reveal them. The server
+  still applies it on save.
+* Error text never names a hidden input or value. The residual signal is the save outcome:
+  a writer learns that a hidden rule is true (or undecided) when a change is rejected as
+  locked or required, and that `applies_when` is false when a saved value comes back empty.
+  Avoid rules over inputs a writer must not learn about.
+
+## Field types in expressions
+
+`Percent` and `Duration` are numbers: a percentage is its value (`5` for 5%), so divide by
+100 yourself; a duration is whole seconds (`PT1H30M` is 5400), in a browser session too.
+`Phone` is text. `Time`, `Tags` and `Reference` fields cannot be read by, or be the
+target of, a calculation or an initial (`UNSUPPORTED_EXPRESSION`), and a Link path cannot end
+at one. Rules can be declared on them; the rule reads other fields.
+
 ## Writers, scales and rounding
 
-* A computed field has one writer: it cannot also have a default, fetch or query.
+* A computed field has one writer: it cannot also have a default, fetch, query or initial.
 * A result is quantized to the target field's scale with the field's `rounding`:
   `"half_up"` (ties away from zero) or `"half_even"` (ties to the even digit). The default
   is `"half_up"` for `Currency` and `Integer` and `"half_even"` for `Decimal`. So
@@ -205,12 +326,16 @@ Reading a saved record never recalculates or rewrites it. Each saved finite-v1 d
 records the formula version it was calculated with (`evlet_calculation_versions`, created at
 startup for apps with finite plans; a document with no recorded version adopts the active one
 on its next write). The formula version covers only the formulas and the fields they read or
-write (type, scale, bounds). Adding an unrelated field or changing a default, label or text
+write (type, scale, bounds). It also covers `applies_when`, which can clear a value
+calculations read, but not `initial`, `required_when` or `locked_when`, which never change
+a saved result. Adding an unrelated field or changing a default, label or text
 limit does not change it. Writing a document saved under other formulas is a 409
 `SCHEMA_VERSION_MISMATCH` until the client resubmits with
 `"_calculation": {"model_schema_hash": <active>, "recalculate": true}`. Actions, dialogs
 and services that write such a document get the same 409; recalculate it through the
-route first. Formula changes never backfill stored totals on their own.
+route first. Formula changes never backfill stored totals on their own; use the `Recompute`
+migration operation ([model-engine.md](model-engine.md#recalculating-stored-values)) to
+recalculate them explicitly.
 
 ## Permissions and the browser plan
 
@@ -226,7 +351,9 @@ requirements on results over linked fields a writer cannot read. `/api/schema` r
 capability per calculated field the user can see (`local_universal` or `unavailable`). The plan is included only when every
 calculated field is local for that user. A shipped plan lists only fields that user can
 read (no hidden names, bounds or defaults); it carries its own hash and
-`source_plan_hash`, the active plan's hash. The existing SolidJS form previews finite
+`source_plan_hash`, the active plan's hash. Plan entries without `kind` are calculations;
+entries with `kind` (`initial`, `applies_when`, `required_when`, `locked_when`) are a field's
+suggestion and rules, named `field:kind` in the graph. The existing SolidJS form previews finite
 results through `/api/_draft`; it does not edit nested tables below the first level.
 
 ## Browser engine
@@ -234,7 +361,15 @@ results through `/api/_draft`; it does not edit nested tables below the first le
 `frontend/src/runtime/FiniteEngine.ts` evaluates the same plan with no SolidJS or DOM
 imports. A `FiniteDocument` session offers `set`, `addRow`, `removeRow`, `replaceRows`,
 `reorder`, `moveRow`, nested `batch`, `observe`, `observeTable`, `explain`, `snapshot`
-and `dispose`, plus the host inputs `setToday`, `setLookups` and `lookupRequests`. A batch publishes once; observers cannot mutate during publication
+and `dispose`, plus the host inputs `setToday`, `setLookups` and `lookupRequests`.
+`ruleStates(handle)` returns `{field: {applies, required, locked}}` for a row's fields that
+declare rules, already resolved with the undecided rules above, and `observeRules(handle,
+listener)` calls the listener after each batch that changes one of them. A field the host sets
+in a batch, or supplies with a new row, is touched for that batch: its suggestion does not
+replace it. Values supplied when a session is created count as touched for new rows only.
+Setting a field to the value it already has changes nothing. `ruleStates` reports a saved row's
+lock as decided when the session was loaded (refined by lookups and `setToday` until the first
+edit), like the server; after a successful save call `rebase()` so the saved state moves on. A batch publishes once; observers cannot mutate during publication
 (`REACTIVE_REENTRANCY`); an async batch callback is rejected. Python's
 `evlet.calc.Document` has the same interface in snake_case.
 

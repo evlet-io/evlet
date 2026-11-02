@@ -1,4 +1,5 @@
-export const fieldTypes = new Set(['text', 'longtext', 'email', 'url', 'integer', 'decimal', 'currency', 'boolean', 'date', 'datetime', 'select', 'link'])
+export const fieldTypes = new Set(['text', 'longtext', 'email', 'url', 'integer', 'decimal', 'currency', 'boolean', 'date', 'datetime', 'select', 'link',
+  'phone', 'percent', 'time', 'duration', 'tags', 'reference'])
 const identifier = /^[A-Za-z][A-Za-z0-9_]*$/
 
 export function validateSchema(schema) {

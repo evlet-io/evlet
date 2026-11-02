@@ -125,7 +125,7 @@ class PostgreSQLDatabase(Database):
         if type(max_connections) is not int or not 1 <= max_connections <= 100:
             raise ValueError('Use between 1 and 100 pooled connections')
         for table, model in registry.models.items():
-            for name in (table, *model.__fields__):
+            for name in (table, *(column for key, field in model.__fields__.items() for column, _ in field.columns(key))):
                 if len(name.encode()) > 63:
                     raise ValueError('PostgreSQL identifiers cannot exceed 63 bytes')
         from .postgres_schema import validate_indexes

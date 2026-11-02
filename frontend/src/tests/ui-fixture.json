@@ -3462,7 +3462,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "email",
@@ -3476,7 +3482,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "active",
@@ -3490,7 +3502,13 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
-          "default": true
+          "default": true,
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "notes",
@@ -3504,7 +3522,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "permissions": {
@@ -3563,7 +3587,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "reference",
@@ -3577,7 +3607,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "total",
@@ -3593,7 +3629,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "posting_date",
@@ -3606,7 +3648,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "status",
@@ -3625,7 +3673,13 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
-          "default": "draft"
+          "default": "draft",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "tax_rate",
@@ -3642,7 +3696,13 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
-          "default": "0.0000"
+          "default": "0.0000",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "permissions": {
@@ -3697,7 +3757,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "reference",
@@ -3711,7 +3777,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "amount",
@@ -3727,7 +3799,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "received_at",
@@ -3740,7 +3818,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "permissions": {
@@ -3807,7 +3891,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "customer",
@@ -3823,7 +3913,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "status",
@@ -3843,7 +3939,13 @@
           "hidden": false,
           "read_only": true,
           "default_kind": "static",
-          "default": "planned"
+          "default": "planned",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "budget",
@@ -3860,7 +3962,13 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
-          "default": "0.00"
+          "default": "0.00",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "progress",
@@ -3876,7 +3984,13 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
-          "default": 0
+          "default": 0,
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "starts_on",
@@ -3889,7 +4003,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "notes",
@@ -3903,7 +4023,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "permissions": {
@@ -3975,7 +4101,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "title",
@@ -3989,7 +4121,13 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
-          "default_kind": "none"
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         },
         {
           "name": "done",
@@ -4003,7 +4141,13 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
-          "default": false
+          "default": false,
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "permissions": {

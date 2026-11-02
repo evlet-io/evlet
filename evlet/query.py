@@ -2,7 +2,7 @@
 
 from copy import copy
 
-from .fields import Integer, Link, Text
+from .fields import Integer, Link, Reference, Tags, Text
 from .models import ValidationError, identifier
 
 OPERATORS = {'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'isnull', 'contains', 'icontains', 'startswith'}
@@ -26,6 +26,11 @@ class SqlQuery:
         field = Integer(minimum=1) if name == 'id' else model.__fields__.get(name)
         if field is None:
             raise ValueError(f'Unknown field: {name}')
+        if isinstance(field, Reference):
+            if len(parts) > 1:
+                raise ValueError(f'{name} is a Reference; filter it by value instead of following it')
+            # A reference has two columns: the model name and the record ID.
+            return tuple(f'{identifier(alias)}.{identifier(column)}' for column, _ in field.columns(name)), field
         column = f'{identifier(alias)}.{identifier(name)}'
         if len(parts) == 1:
             return column, field
@@ -63,6 +68,14 @@ class SqlQuery:
                 parts = key.split('__')
                 operator = parts.pop() if len(parts) > 1 and parts[-1] in OPERATORS else 'eq'
                 column, field = self.reference('__'.join(parts))
+                if isinstance(column, tuple):
+                    clauses.append(self.reference_filter(column, field, operator, value, values))
+                    continue
+                if operator == 'contains' and isinstance(field, Tags):
+                    # Tags are a JSON array of quoted tags without quotes inside, so a quoted tag matches one whole tag.
+                    clauses.append(f'instr({column}, ?) > 0')
+                    values.append(Tags.encode(Tags.tag(value)))
+                    continue
                 if operator == 'isnull':
                     if type(value) is not bool:
                         raise ValueError('isnull expects true or false')
@@ -116,6 +129,20 @@ class SqlQuery:
             raise ValidationError({'q': str(exc)}) from exc
         return (' WHERE ' + ' AND '.join(clauses)) if clauses else '', values
 
+    @staticmethod
+    def reference_filter(columns, field, operator, value, values):
+        model_column, id_column = columns
+        if operator == 'isnull' or operator in ('eq', 'ne') and value is None:
+            if operator == 'isnull' and type(value) is not bool:
+                raise ValueError('isnull expects true or false')
+            empty = value if operator == 'isnull' else operator == 'eq'
+            return f'{id_column} IS {"" if empty else "NOT "}NULL'
+        if operator != 'eq':
+            raise ValueError('Reference fields support equality and isnull filters')
+        target, record_id = field.validate(value)
+        values.extend([target, record_id])
+        return f'({model_column} = ? AND {id_column} = ?)'
+
     def ordering(self, order_by):
         if order_by is None:
             order_by = ('-id',)
@@ -130,6 +157,8 @@ class SqlQuery:
                     raise ValueError('Order fields must be strings')
                 descending = key.startswith('-')
                 column, _ = self.reference(key[1:] if descending else key)
+                if isinstance(column, tuple):
+                    raise ValueError('Reference fields cannot be used for ordering')
                 clauses.append(column + (' DESC NULLS LAST' if descending else ' ASC NULLS FIRST'))
             if not any(key.lstrip('-') == 'id' for key in order_by):
                 clauses.append('"record"."id" ASC')

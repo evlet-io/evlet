@@ -15,7 +15,7 @@ from .fields import MISSING, Link
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
-from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal
+from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal, wire
 
 
 class Snapshot:
@@ -49,6 +49,9 @@ class Draft:
         object.__setattr__(self, 'key', str(record_id) if record_id else uuid4().hex)
         object.__setattr__(self, '_readonly', False)
         object.__setattr__(self, '_submitted', frozenset())
+        # Field rule states from the last settlement, and source values as the caller left them (lock checks).
+        object.__setattr__(self, '_rules', {})
+        object.__setattr__(self, '_caller', {})
 
     def __getattr__(self, name):
         if name in self._definition.__declared_fields__:
@@ -377,10 +380,11 @@ def settle(context, draft, *, complete, previous=None):
         return names | {owner_links[item._definition]} if item is not draft and item._definition in owner_links else names
     for prefix, item in all_drafts:
         apply_inputs(item, prefix, internal(item), errors)
+        object.__setattr__(item, '_caller', dict(item._values))
         apply_fetches(context, item, prefix, prior(item), errors)
     plan = registry.plan_for(draft._definition)
     if plan is not None:
-        finite_settle(context, plan, draft, errors, states, complete)
+        finite_settle(context, plan, draft, errors, states, complete, previous)
     else:
         compute_legacy(context, draft, all_drafts, errors, states, complete)
     if complete:
@@ -508,7 +512,8 @@ def check_preview(context, all_drafts, internal, errors, states):
             if name in internal(item): continue
             try:
                 required = field.required or field.required_if is not None and evaluate(plans(item._definition)[name]['required_if'], item.read)
-                if required and item._values.get(name) in (None, ''): states[prefix + name] = 'required-input'
+                required = required or item._rules.get(name, {}).get('required', False)
+                if required and item._values.get(name) in EMPTY: states[prefix + name] = 'required-input'
                 if isinstance(field, Link) and item._values.get(name) is not None and field.filters:
                     if not link_matches(context, item, field, item._values[name]):
                         errors[prefix + name] = 'The selected record does not match the current filters'
@@ -522,9 +527,20 @@ def validate_tree(context, all_drafts, internal, prior, errors):
         for name, field in item._definition.__declared_fields__.items():
             if name in internal(item): continue
             try:
+                rules = item._rules.get(name)
+                if rules and rules['locked'] and locked_change(item, old, name):
+                    raise ValueError(rules.get('message') or LOCKED)
                 if name in item._submitted and field.read_only_if is not None and evaluate(plans(item._definition)[name]['read_only_if'], item.read):
                     if old is None or old._values.get(name) != item._values.get(name):
                         raise ValueError('This field is read only in the current state')
+                if rules and not rules['applies'] and rules['locked'] and old is not None and old._values.get(name) not in EMPTY:
+                    raise ValueError(LOCKED_CLEAR)
+                if rules and not rules['applies']:
+                    # A field that does not apply is not required, skips its validator and is stored empty.
+                    item._values[name] = None
+                    continue
+                if rules and rules['required'] and item._values.get(name) in EMPTY:
+                    raise ValueError('This field is required')
                 if field.required_if is not None and evaluate(plans(item._definition)[name]['required_if'], item.read) and item._values.get(name) in (None, ''):
                     raise ValueError('This field is required')
                 item._values[name] = field.clean(item._values.get(name))
@@ -539,6 +555,47 @@ def validate_tree(context, all_drafts, internal, prior, errors):
             try: item.validate()
             except ValidationError as exc: errors.update({prefix + key: value for key, value in exc.errors.items()})
     if errors: raise ValidationError(errors)
+
+
+EMPTY = (None, '', ())
+LOCKED = 'This field is locked and cannot be changed now'
+LOCKED_CLEAR = 'This field is locked, so a change that would clear it is not allowed'
+LOCKED_PENDING = 'This field is locked until the values its lock rule reads are filled in'
+
+
+def locked_change(item, old, name):
+    """Whether the caller (request body, Context values or an action) changed a locked field.
+
+    Values the engine writes (initial suggestions, cleared fields) are not caller changes. On a new
+    row, a nonempty value the caller supplied counts as a change unless it equals the field's default
+    or its initial suggestion.
+    """
+    value = item._caller.get(name, item._values.get(name))
+    if old is None:
+        return name in item._submitted and value not in EMPTY and value not in item._rules[name].get('allowed', ())
+    return value != old._values.get(name)
+
+
+def allowed_on_create(field, document, row, name):
+    """Values a locked field may take on create: its static default and its initial suggestion."""
+    allowed = []
+    if field.default is not MISSING and field.default is not None and not callable(field.default) and not isinstance(field.default, Ref):
+        allowed.append(field.validate(field.default))
+    result = document.results.get((row.handle, name + ':initial'))
+    if result is not None and result.state == 'ready' and result.value is not None:
+        try:
+            allowed.append(from_wire(field, wire(result.value, document.entries[row.path, name + ':initial']['scale'])))
+        except ValueError:
+            pass
+    return tuple(allowed)
+
+
+def from_wire(field, value):
+    """A value the finite engine wrote (initial or cleared), as the field's Python value."""
+    from .fields import Integer
+    if isinstance(field, Integer) and not isinstance(field, Link) and isinstance(value, str) and re.fullmatch(r'-?[0-9]+', value):
+        value = int(value)
+    return None if value is None else field.validate(value)
 
 
 MESSAGES = {'COMPUTE_INPUT_MISSING': 'A required calculation input is missing',
@@ -562,8 +619,12 @@ def resolve_lookups(context, document):
     depend on who saves. Readability is enforced on output: derivation_allowed withholds any result
     whose path the user cannot read.
     """
+    fill_lookups(context._business.registry, context._tx, document)
+
+
+def fill_lookups(registry, tx, document):
+    """Supply a document's Link path values from this transaction (see resolve_lookups)."""
     from .database import ROW_LIMIT
-    registry, tx = context._business.registry, context._tx
     asked = set()  # Each record is queried at most once per settle, found or not.
     for _ in range(MAX_HOPS):
         wanted = {}
@@ -584,34 +645,98 @@ def resolve_lookups(context, document):
         document.batch(lambda session: [session.set_lookups(*item) for item in found])
 
 
-def finite_settle(context, plan, draft, errors, states, complete):
-    """Authoritative finite-v1 evaluation over the whole draft tree in this transaction."""
-    def data(item):
+def finite_settle(context, plan, draft, errors, states, complete, previous=None):
+    """Authoritative finite-v1 evaluation over the whole draft tree in this transaction.
+
+    With initial suggestions on an update, the session starts from the saved document and receives
+    this write's changes as one batch, exactly as a browser session would, so an initial fires only
+    when its inputs change and never over a value the caller supplied.
+    """
+    initials = {(tuple(field['path']), field['field']) for field in plan['fields'] if field.get('kind') == 'initial'}
+    # Locks are decided on the saved document, so an update starts from it whenever the plan has locks.
+    from_saved = any(field.get('kind') in ('initial', 'locked_when') for field in plan['fields'])
+
+    def data(item, path=()):
+        # A new row leaves out initial fields the caller did not supply, so their suggestions apply.
         values = {name: item._values.get(name) for name, field in item._definition.__declared_fields__.items()
-                  if not is_finite(field) and name not in getattr(item._definition, '__internal_fields__', ())}
+                  if not is_finite(field) and name not in getattr(item._definition, '__internal_fields__', ())
+                  and not (item.id is None and (path, name) in initials and name not in item._submitted)}
         values['_key'], values['id'] = item.key, item.id
         if item._rows:
-            values['children'] = {name: [data(row) for row in rows] for name, rows in item._rows.items()}
+            values['children'] = {name: [data(row, path + (name,)) for row in rows] for name, rows in item._rows.items()}
         return values
-    try:
-        document = Document(plan, data(draft), checked=True)
+
+    def sync(session, row, item, old, path):
+        """This write's changes to one saved row, then its collections, as session commands."""
+        for name, field in item._definition.__declared_fields__.items():
+            if is_finite(field) or name in getattr(item._definition, '__internal_fields__', ()):
+                continue
+            value, before = item._values.get(name), old._values.get(name)
+            if name in item._submitted or value != before or type(value) is not type(before):
+                session.set(row.handle, name, value)
+        for table, rows in item._rows.items():
+            saved = old._rows.get(table, [])
+            if [child.id for child in rows] != [child.id for child in saved]:
+                session.replace_rows(row.handle, table, [{'id': child.id} if child.id else data(child, path + (table,)) for child in rows])
+            current, olds = {child.id: child for child in row.children[table] if child.id}, {child.id: child for child in saved}
+            for child in rows:
+                if child.id:
+                    sync(session, current[child.id], child, olds[child.id], path + (table,))
+
+    def host_inputs(document):
         if any(read[0] == 'today' for field in plan['fields'] for read in field['reads']):
             document.set_today(host_today(context._business))
         resolve_lookups(context, document)
+    try:
+        if from_saved and previous is not None:
+            document = Document(plan, data(previous), checked=True)
+            host_inputs(document)
+            document.batch(lambda session: sync(session, document.root, draft, previous, ()))
+            resolve_lookups(context, document)
+        else:
+            document = Document(plan, data(draft), checked=True)
+            host_inputs(document)
     except CalcError as exc:
         raise ValidationError({'_form': f'{exc.code}: {exc.message}'}) from None
     fields = {}
     for field in plan['fields']:
         fields.setdefault(tuple(field['path']), []).append(field)
+    policy, user = context._business.policy, context.user
 
     def apply(item, row, prefix):
+        rules = document.rule_states(row.handle)
+        saved = document.locks.get(row.handle, {})
+        for name, state in rules.items():
+            if not state['locked']:
+                continue
+            decided = saved[name] if name in saved else document.decided(row, name, 'locked_when', None)
+            if decided is None and policy.expression_allowed(user, item._definition, name, 'locked_when'):
+                state['message'] = LOCKED_PENDING
+            if item.id is None:
+                state['allowed'] = allowed_on_create(item._definition.__declared_fields__[name], document, row, name)
+        object.__setattr__(item, '_rules', rules)
         for field in fields.get(row.path, ()):
             name = field['field']
+            if field.get('kind') in ('initial', 'applies_when'):
+                # Engine-written values: an initial suggestion or a field cleared because it does not apply.
+                value, current = row.values.get(name), item._values.get(name)
+                if value != current or type(value) is not type(current):
+                    try:
+                        item._values[name] = from_wire(item._definition.__declared_fields__[name], value)
+                    except ValueError as exc:
+                        errors[prefix + name] = str(exc)
+                continue
+            if field.get('kind'):
+                continue
             result = document.results[row.handle, name]
             definition = item._definition.__declared_fields__[name]
             value = None
             if result.state == 'ready' and result.value is not None:
-                value = int(to_decimal(result.value)) if field['target_type'] == 'integer' else to_decimal(result.value) if field['result_type'] == 'decimal' else result.value
+                if field['result_type'] == 'decimal':
+                    from .fields import Integer
+                    value = int(to_decimal(result.value)) if isinstance(definition, Integer) else to_decimal(result.value)
+                else:
+                    value = result.value
                 try:
                     value = definition.validate(value)
                 except ValueError as exc:
@@ -679,10 +804,13 @@ def source_values(draft, allowed=None, behaviors=('compute',)):
             for name, source in sources.items() if name in used}
 
 
-def write_snapshot(tx, draft):
+def write_snapshot(tx, draft, before=None):
+    from .database import storage_columns
     model = draft._definition
-    names = list(model.__fields__)
-    values = [model.__fields__[name].to_storage(draft._values.get(name)) for name in names]
+    # References are checked when they change; a saved one is not rechecked on every write.
+    tx.check_references(model, {name: draft._values.get(name) for name in model.__fields__
+                                 if before is None or before._values.get(name) != draft._values.get(name)})
+    names, values = storage_columns(model, draft._values, model.__fields__)
     table = identifier(tx.registry.name_for(model))
     if draft.id is None:
         sql = f'INSERT INTO {table} ({", ".join(identifier(name) for name in names)}) VALUES ({", ".join("?" for _ in names)})' if names else f'INSERT INTO {table} DEFAULT VALUES'
@@ -721,7 +849,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None):
         result = business.detail(tx, user, tx.get(model, record_id))
         if outcome is not None: result['_outcome'] = outcome
         return result
-    record = write_snapshot(tx, draft)
+    record = write_snapshot(tx, draft, before)
     if plan is not None:
         record_plan(tx, business.registry.name_for(model), record.id, version)
     context._active[-1] = (model, record.id)
@@ -771,7 +899,7 @@ def persist_rows(context, model, draft, before, owner_id, keys):
                 keys[row.key] = row.id
             elif row.stored_values() != old_by_id[row.id].stored_values():
                 business.policy.record(tx, user, child.model, row.id, 'update')
-                write_snapshot(tx, row)
+                write_snapshot(tx, row, old_by_id[row.id])
                 # The written row must stay inside this user's row scope.
                 business.policy.record(tx, user, child.model, row.id, 'update')
                 updated.append(row.id)
