@@ -20,11 +20,13 @@ import { RolesPage, UsersPage } from './people';
 import { PermissionsPage, SecurityPage } from './access';
 import { ModelsPage } from './models';
 import { NamingPage } from './naming';
+import { AppsPage, AuditPage, AuditRows, JobsPage, OverridesPage, RoutingPage } from './system';
 
 export const ROUTES = {
   overview: '/controls', users: '/controls/users', roles: '/controls/roles',
   permissions: '/controls/permissions', security: '/controls/security',
-  models: '/controls/models', naming: '/controls/naming',
+  models: '/controls/models', naming: '/controls/naming', apps: '/controls/apps', routing: '/controls/routing',
+  jobs: '/controls/jobs', overrides: '/controls/overrides', audit: '/controls/audit',
 } as const;
 export type ControlsRouter = Router<typeof ROUTES>;
 export const controlsRouter = (options: { window?: Window } = {}): ControlsRouter => createRouter(ROUTES, options);
@@ -42,8 +44,9 @@ export interface ControlsContext {
 const NAV: Array<[string, Array<[keyof typeof ROUTES, string, string]>]> = [
   ['', [['overview', 'Overview', 'layout-grid']]],
   ['People', [['users', 'Users', 'users'], ['roles', 'Roles', 'user-cog']]],
-  ['Build', [['models', 'Models', 'layers'], ['naming', 'Naming', 'hash']]],
   ['Access', [['permissions', 'Permissions', 'list-checks'], ['security', 'Security', 'lock']]],
+  ['Build', [['apps', 'Apps', 'package'], ['models', 'Models', 'layers'], ['naming', 'Naming', 'hash'], ['routing', 'Routing', 'globe']]],
+  ['System', [['jobs', 'Jobs', 'clock'], ['overrides', 'Overrides', 'file-text'], ['audit', 'Audit log', 'activity']]],
 ];
 const TITLES = Object.fromEntries(NAV.flatMap(([group, items]) => items.map(([id, label]) => [id, [group, label]])));
 
@@ -144,7 +147,11 @@ function Shell(ctx: ControlsContext): HTMLElement {
   const { router, state } = ctx;
   const route = derive(() => router.route.get()?.name ?? 'overview');
   const open = cell(false);
-  const navCount = (id: string) => id === 'users' ? state.get().users.active : null;
+  const navCount = (id: string): [number, boolean] | null => {
+    const s = state.get(), count = id === 'users' ? [s.users.active, false] : id === 'overrides' ? [s.overrides, false]
+      : id === 'jobs' ? [s.jobs.failed, true] : id === 'apps' ? [s.apps.filter(app => app.update).length, true] : null;
+    return count && (count[0] || id === 'users') ? count as [number, boolean] : null;
+  };
   const s = state.peek();
   const side = html`<aside class="ctl-side" class:open=${open} aria-label="Controls navigation">
     <div class="ctl-brand"><span class="ev-logo">${Icon('lock', { size: 'sm' })}</span>evlet<small>Controls</small></div>
@@ -153,7 +160,7 @@ function Shell(ctx: ControlsContext): HTMLElement {
     <nav class="ctl-nav">${NAV.map(([group, items]) => [group ? html`<div class="ctl-nav-label">${group}</div>` : null,
       items.map(([id, label, icon]) => html`<a class="ctl-nav-item" class:on=${() => route.get() === id} aria-current=${() => route.get() === id ? 'page' : null}
         href=${router.href(id, {})} on:click=${() => open.set(false)}>${Icon(icon, { size: 'sm' })}<span>${label}</span>
-        ${() => navCount(id) === null ? null : html`<span class="ctl-count">${navCount(id)}</span>`}</a>`)])}</nav>
+        ${() => { const count = navCount(id); return count === null ? null : html`<span class="ctl-count" class:warn=${count[1]}>${count[0]}</span>`; }}</a>`)])}</nav>
     <div class="ctl-side-foot">${Avatar({ name: s.me.username, size: 'sm' })}<span><strong>${s.me.username}</strong><small>${s.me.role}</small></span>
       <a class="icon-btn" href="/" rel="external" aria-label="Back to the workspace" title="Back to the workspace">${Icon('log-out', { size: 'sm' })}</a></div>
   </aside>` as HTMLElement;
@@ -173,6 +180,11 @@ function Shell(ctx: ControlsContext): HTMLElement {
       case 'security': return SecurityPage(ctx);
       case 'models': return ModelsPage(ctx);
       case 'naming': return NamingPage(ctx);
+      case 'apps': return AppsPage(ctx);
+      case 'routing': return RoutingPage(ctx);
+      case 'jobs': return JobsPage(ctx);
+      case 'overrides': return OverridesPage(ctx);
+      case 'audit': return AuditPage(ctx);
       default: return Overview(ctx);
     }
   };
@@ -220,12 +232,12 @@ function Overview(ctx: ControlsContext): HTMLElement {
     html`<button type="button" class="ctl-tile" class:hero=${hero} on:click=${() => go(page)}><span class="t-label">${label}${Icon(icon, { size: 'sm' })}</span>
       <span class="t-val">${value}<small>${note}</small></span></button>`;
   return html`<div>
-    ${Head('Controls', 'Users, access, models and security for this instance. Defaults come from the installed apps. What you change here is saved to this instance only.', null,
+    ${Head('Controls', 'Users, access, apps and models for this instance. Defaults come from the installed apps. What you change here is saved to this instance only.', null,
       html` <span class="ctl-badge violet">Admin only</span>`)}
     <div class="ctl-grid g4">
-      ${tile('Overrides on this instance', 'list-checks', () => s().overrides, () => 'changed from app files', 'permissions', true)}
+      ${tile('Overrides on this instance', 'file-text', () => s().overrides, () => 'changed from app files', 'overrides', true)}
       ${tile('Active users', 'users', () => s().users.active, () => `of ${s().users.total}`, 'users')}
-      ${tile('Installed apps', 'package', () => s().apps.length, () => plural(s().models.length, 'model'), 'models')}
+      ${tile('Installed apps', 'package', () => s().apps.length, () => plural(s().models.length, 'model'), 'apps')}
       ${tile('Roles', 'user-cog', () => s().roles.length, () => `${s().roles.filter(role => role.kind === 'custom').length} custom`, 'roles')}
     </div>
     <div class="ctl-grid main">
@@ -235,10 +247,9 @@ function Overview(ctx: ControlsContext): HTMLElement {
             <span class="ph-icon b-amber ctl-ic">${Icon(item.icon, { size: 'sm' })}</span><span class="ctl-lr"><strong>${item.title}</strong><span>${item.text}</span></span>${Icon('chevron-right', { size: 'sm' })}</button>`)
             : html`<div class="ctl-empty">Everything is working.</div>`}
         </section>
-        <section class="ctl-card"><div class="ctl-card-head"><div><h2>Recent changes</h2><p>Every change made in Controls is logged</p></div></div>
-          ${() => s().audit.length ? s().audit.map(row => html`<div class="ctl-audit"><span class="when">${stamp(row.at)}</span>
-            <span><strong>${row.target}</strong> <span class="ctl-badge">${row.area}</span><span class="detail">${row.detail} · by ${row.actor}</span></span></div>`)
-            : html`<div class="ctl-empty">No changes yet.</div>`}
+        <section class="ctl-card"><div class="ctl-card-head"><div><h2>Recent changes</h2><p>Every change made in Controls is logged</p></div>
+          <a class="ctl-link" href=${ctx.router.href('audit', {})}>Audit log ${Icon('arrow-right', { size: 'xs' })}</a></div>
+          ${() => s().audit.length ? AuditRows(s().audit) : html`<div class="ctl-empty">No changes yet.</div>`}
         </section>
       </div>
       <div class="ctl-stack">
@@ -247,7 +258,7 @@ function Overview(ctx: ControlsContext): HTMLElement {
             <dt>Evlet</dt><dd>${() => s().instance.evlet || 'Development'}</dd><dt>Config version</dt><dd class="num">${() => s().instance.version}</dd></dl></section>
         <section class="ctl-card pad"><h2>How Controls works</h2>
           <p class="muted ctl-small">Apps, models and permissions are read from the installed apps each time the instance starts. A change made here is stored in this instance's database as an override. App files are never edited.</p>
-          <p class="muted ctl-small">Reset an override to go back to the file value.</p>
+          <p class="muted ctl-small">Reset an override to go back to the file value, or export it as code to move it into the app.</p>
           <div class="ctl-legend"><span class="ctl-src s-file"><i></i>Framework default</span><span class="ctl-src s-app"><i></i>App rule</span><span class="ctl-src s-ov"><i></i>Override</span></div></section>
       </div>
     </div></div>` as HTMLElement;

@@ -6,7 +6,7 @@ import { ApiClient, type ClientOptions } from '../api';
 export const OPS = ['read', 'create', 'update', 'delete'] as const;
 
 export interface PermValue { ops: string[]; read: string[] | null; write: string[] | null; scope: string | null }
-export type Kind = 'perm' | 'setting' | 'field' | 'layout' | 'list' | 'naming';
+export type Kind = 'perm' | 'setting' | 'field' | 'custom' | 'layout' | 'list' | 'naming';
 export interface OverrideItem {
   kind: Kind; key: string; file: any; value: any;
   changed_by: string | null; changed_at: number | null; source?: 'app' | 'framework';
@@ -47,10 +47,32 @@ export interface TryResult {
 }
 export interface AuditRow { id: number; at: number; actor: string; area: string; target: string; detail: string }
 export interface Attention { tone: string; icon: string; page: string; title: string; text: string }
+export interface AppInfo {
+  id: string; title: string; version: string; source: string; models: string[]; connectors: string[]; permissions: number; schedules: string[];
+  frontends: Array<{ name: string; path: string; host: string; realm: string }>;
+  /** A newer source waiting to be migrated, or null. */
+  update: { from: string; to: string | null; error: string | null } | null;
+  /** The database is migrated but this server still runs the version it started with. */
+  restart: boolean;
+}
+export interface RouteRow { host: string; path: string; serves: string; realm: string; source: string; locked: boolean }
+export interface Routing {
+  rows: RouteRow[]; planned: string[]; hosts: Array<{ host: string; primary: boolean; sub: boolean; realm: string }>; primary: string | null;
+  proxy: { caddy: string; nginx: string } | null; proxy_error: string | null;
+}
+export interface HostCheck { host: string; records: string; dns: string | null; certificate: 'valid' | 'missing' | null; expires: number | null }
+export interface Schedule {
+  name: string; task: string; every: number | null; expression: string | null; timezone: string | null; next_run: number;
+  active: boolean; paused: boolean; app: string | null;
+}
+export interface JobRow { id: number; task: string; actor: number | null; model: string | null; record_id: number | null; state: string; attempts: number; run_at: number; error: string | null }
+export interface Jobs { available: boolean; schedules: Schedule[]; jobs: JobRow[] }
+export interface CodeFile { file: string; code: string }
 export interface ControlsState {
-  instance: { name: string; host: string; evlet: string; version: number };
+  instance: { name: string; host: string; evlet: string; version: number; slug: string | null; managed: boolean };
   me: { id: number; username: string; role: string };
-  apps: Array<{ id: string; version: string; models: string[] }>;
+  apps: AppInfo[];
+  jobs: { failed: number };
   models: ModelInfo[];
   roles: RoleRow[];
   scopes: Record<string, string>;
@@ -105,6 +127,19 @@ export class ControlsClient extends ApiClient {
   async tryName(model: string, body: { values: Record<string, unknown>; series?: SeriesValue[] }) {
     return (await this.request<TryResult>('POST', `/api/_controls/naming/${model}/try`, { body })).data;
   }
+  async exportCode(only?: { kind: string; key: string }) {
+    return (await this.request<CodeFile[]>('GET', '/api/_controls/overrides/export', { query: only ?? {} })).data;
+  }
+  async audit(query: { area?: string; q?: string; before?: number }) {
+    return (await this.request<{ items: AuditRow[]; next: number | null; areas: string[] }>('GET', '/api/_controls/audit', { query })).data;
+  }
+  async routing() { return (await this.request<Routing>('GET', '/api/_controls/routing')).data; }
+  // The server takes JSON bodies only: actions without data send {}.
+  async checkHosts() { return (await this.request<{ hosts: HostCheck[]; notes: string[]; ok: boolean }>('POST', '/api/_controls/routing/check', { body: {} })).data; }
+  async jobs() { return (await this.request<Jobs>('GET', '/api/_controls/jobs')).data; }
+  async setSchedule(name: string, active: boolean) { return (await this.request<Jobs>('POST', `/api/_controls/jobs/schedules/${name}`, { body: { active } })).data; }
+  async runSchedule(name: string) { return (await this.request<Jobs & { job: number }>('POST', `/api/_controls/jobs/schedules/${name}/run`, { body: {} })).data; }
+  async retryJob(id: number) { return (await this.request<Jobs>('POST', `/api/_controls/jobs/${id}/retry`, { body: {} })).data; }
   async deleteRole(id: string) {
     return (await this.request<{ items: RoleRow[] }>('DELETE', `/api/_controls/roles/${encodeURIComponent(id)}`)).data.items;
   }

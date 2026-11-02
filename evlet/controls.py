@@ -10,6 +10,7 @@ from types import MappingProxyType
 from urllib.parse import parse_qs, quote
 
 from .auth import PORTAL, RESERVED_ROLES, ROLE_ID, ROLES, AccessError
+from .controls_system import System
 from .customization import Customization, activated, instance_fields
 from .fields import Layer
 from .fields import Link
@@ -18,13 +19,15 @@ from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
-PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'models', 'naming')
+PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'models', 'naming', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
     'security.password_min': 15, 'security.session_hours': 8, 'security.lockout': 10,
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
 })
 NOT_FOUND = 'Route not found'
 AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming'}
+# A paused schedule is a setting override: schedule.<name>.active = false.
+SCHEDULE = re.compile(r'schedule\.([a-z][a-z0-9_]{0,63})\.active')
 ADMIN_ONLY = 'Only an admin can do this: change admin accounts, give the admin role, manage roles or decide who opens Controls.'
 TWO_STEP = 'Controls needs two-step sign-in, which this instance does not have yet. Remove require_two_step from routes.py for now.'
 LABELS = {None: 'All records', 'created_by': 'Records they created', 'owner': 'Records they own',
@@ -148,14 +151,20 @@ class Controls:
         self.apps, self.app_of, self.app_roles, self.scopes = [], {}, {}, {}
         self.roles, self.settings, self.problems = {}, dict(SETTINGS), []
         self.custom = Customization(self)
+        self.system = System(self)
 
     # ---------- set-up ----------
 
-    def load(self, definitions, packages=()):
+    def load(self, definitions, packages=(), path=None):
         """App metadata from build_instance: names, versions, models, declared roles and scopes."""
-        versions = {package.name: getattr(package, 'version', '') for package in packages}
+        packages = {package.name: package for package in packages}
+        self.system.load(path)
         for name, definition in definitions:
-            self.apps.append({'id': name, 'version': versions.get(name, ''), 'models': [model.__name__ for model in definition.models]})
+            package = packages.get(name)
+            self.apps.append({'id': name, 'title': getattr(package, 'title', '') or name, 'version': getattr(package, 'version', ''),
+                              'layout': getattr(package, 'layout', 'legacy'), 'models': [model.__name__ for model in definition.models],
+                              'connectors': [getattr(item, 'name', str(item)) for item in getattr(definition, 'connectors', ())],
+                              'permissions': len(definition.permissions), 'schedules': [schedule.name for schedule in definition.schedules]})
             for model in definition.models:
                 self.app_of[model.__name__] = name
             for role in getattr(definition, 'roles', {}):
@@ -420,6 +429,13 @@ class Controls:
     # ---------- settings ----------
 
     def check_setting(self, key, value):
+        match = SCHEDULE.fullmatch(key)
+        if match:
+            if match[1] not in self.system.schedule_names():
+                raise ValueError(f'No installed app declares the schedule {match[1]} any more.')
+            if type(value) is not bool:
+                raise ValueError('Use true to run the schedule or false to pause it.')
+            return value
         if key not in SETTINGS:
             raise ValueError('Choose a known setting.')
         file = SETTINGS[key]
@@ -462,12 +478,12 @@ class Controls:
             value = self.check_perm(key, value)
             return None if value == self.file_value(role, model) else value
         if kind == 'setting':
-            if key not in SETTINGS:
+            if key not in SETTINGS and not SCHEDULE.fullmatch(key):
                 raise ValueError('Choose a known setting.')
             if value is None:
                 return None
             value = self.check_setting(key, value)
-            return None if value == SETTINGS[key] else value
+            return None if value == SETTINGS.get(key, True) else value
         if kind == 'custom':
             raise ValueError('Add and remove instance fields with Add field and Remove field.')
         return self.custom.check(kind, key, value)
@@ -488,8 +504,22 @@ class Controls:
                               'source': 'app' if declared else 'framework', **meta('perm', key)})
         for key, file in SETTINGS.items():
             items.append({'kind': 'setting', 'key': key, 'file': file, 'value': value('setting', key), **meta('setting', key)})
+        for name in self.system.schedule_names():
+            key = f'schedule.{name}.active'
+            items.append({'kind': 'setting', 'key': key, 'file': True, 'value': value('setting', key), **meta('setting', key)})
         for kind, key, file in self.custom.items():
             items.append({'kind': kind, 'key': key, 'file': file, 'value': value(kind, key), **meta(kind, key)})
+        # Instance fields are listed for export; they are added and removed on the Models page.
+        with self.database._connection() as connection:
+            rows = connection.execute('SELECT model, name, definition, created_by, created_at FROM evlet_custom_fields ORDER BY created_at, name').fetchall()
+        tables = {self.registry.name_for(model): name for name, model in self.models().items()}
+        for table in dict.fromkeys(row['model'] for row in rows if row['model'] in tables):
+            mine = [row for row in rows if row['model'] == table]
+            items.append({'kind': 'custom', 'key': tables[table], 'file': None, 'value': [{'name': row['name'], **json.loads(row['definition'])} for row in mine],
+                          'changed_by': mine[-1]['created_by'], 'changed_at': mine[-1]['created_at']})
+        # Saved overrides whose target is gone stay listed, so they can be reset.
+        listed = {(item['kind'], item['key']) for item in items}
+        items += [{'kind': kind, 'key': key, 'file': None, 'value': value(kind, key), **meta(kind, key)} for kind, key in stored if (kind, key) not in listed]
         return {'items': items, 'problems': self.problems, 'version': self.version}
 
     def save(self, user, body):
@@ -522,8 +552,11 @@ class Controls:
                 else:
                     connection.execute('INSERT INTO evlet_overrides(kind,key,value,changed_by,changed_at) VALUES (?,?,?,?,?) ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value, changed_by=excluded.changed_by, changed_at=excluded.changed_at',
                                        (kind, key, json.dumps(value, sort_keys=True), user.id, now))
-                area, target = AREAS[kind], key.replace('|', ' · ')
-                audit(connection, user.username, area, target, 'Reset to the file value' if value is None else 'Changed', before, value)
+                schedule = SCHEDULE.fullmatch(key)
+                if schedule:
+                    audit(connection, user.username, 'Jobs', schedule[1], 'Resumed' if value is None else 'Paused', before, value)
+                else:
+                    audit(connection, user.username, AREAS[kind], key.replace('|', ' · '), 'Reset to the file value' if value is None else 'Changed', before, value)
                 if key == 'security.session_hours':
                     # Sessions keep their start: a shorter length ends the ones already older than it.
                     shorter = self.settings[key] - (SETTINGS[key] if value is None else value)
@@ -531,6 +564,9 @@ class Controls:
                         connection.execute('UPDATE evlet_sessions SET expires=expires-? WHERE expires>?', (shorter * 3600, now))
             version = self.publish(tx)
         self.refresh()
+        for kind, key, value in checked:
+            if kind == 'setting' and SCHEDULE.fullmatch(key):
+                self.system.apply_schedule(SCHEDULE.fullmatch(key)[1], value is None)
         return {'version': version, 'saved': len(checked)}
 
     def audit(self, *row):
@@ -703,14 +739,15 @@ class Controls:
                            'fields': [{'name': key, 'label': field.label or key.replace('_', ' ').capitalize(), 'read_only': bool(field.read_only)}
                                       for key, field in fields.items() if not key.startswith('evlet_')],
                            'scopes': self.presets(model), **self.custom.model_state(model)})
-        pages = {'perm': 'permissions', 'setting': 'security', 'naming': 'naming'}
-        attention = [{'tone': 'amber', 'icon': 'alert', 'page': pages.get(item['kind'], 'models'),
-                      'title': f"An override no longer applies: {item['key'].replace('|', ' · ')}", 'text': item['error']} for item in self.problems]
+        apps = self.system.apps()
+        failed = self.system.failed_jobs()
+        attention = self.system.attention(apps, failed)
         controls = self.routes.controls
         return {
             'instance': {'name': self.business.application.get('name', 'Evlet') if self.business.application else 'Evlet',
-                         'host': self.routes.primary or host_name(dict(scope.get('headers', [])).get(b'host', b'')) or 'localhost', 'evlet': version, 'version': self.version},
-            'me': user.public(), 'apps': self.apps, 'models': models, 'roles': self.role_list(),
+                         'host': self.routes.primary or host_name(dict(scope.get('headers', [])).get(b'host', b'')) or 'localhost', 'evlet': version, 'version': self.version,
+                         'slug': self.system.instance_name(), 'managed': self.system.path is not None},
+            'me': user.public(), 'apps': apps, 'models': models, 'roles': self.role_list(), 'jobs': {'failed': failed},
             'routes': [{'host': row.host, 'path': row.path, 'serves': row.serves, 'realm': row.realm, 'source': row.source, 'locked': row.locked} for row in self.routes.rows()],
             'scopes': {key or '': label for key, label in LABELS.items()} | {key: key.replace('_', ' ').capitalize() for key in self.scopes},
             'settings': {key: {'file': SETTINGS[key], 'value': self.settings[key]} for key in SETTINGS},
@@ -766,6 +803,23 @@ class Controls:
             return 200, self.custom.set_counter(user, match[1], body), []
         if match and match[2] == 'try' and method == 'POST':
             return 200, self.custom.try_name(match[1], body), []
+        if path == '/overrides/export' and method == 'GET':
+            from .controls_export import export
+            return 200, export(self, params(scope, 'kind', 'key')), []
+        if path == '/audit' and method == 'GET':
+            return 200, self.system.audit(params(scope, 'area', 'q', 'before')), []
+        if path == '/routing' and method == 'GET':
+            return 200, self.system.routing(), []
+        if path == '/routing/check' and method == 'POST':
+            return 200, self.system.check_hosts(user), []
+        if path == '/jobs' and method == 'GET':
+            return 200, self.system.jobs(), []
+        match = re.fullmatch(r'/jobs/schedules/([a-z][a-z0-9_]{0,63})(/run)?', path)
+        if match and method == 'POST':
+            return 200, self.system.run_schedule(user, match[1]) if match[2] else self.system.set_schedule(user, match[1], body), []
+        match = re.fullmatch(r'/jobs/([1-9][0-9]{0,18})/retry', path)
+        if match and method == 'POST' and int(match[1]) <= 2**63 - 1:
+            return 200, self.system.retry(user, int(match[1])), []
         match = re.fullmatch(r'/roles/([a-z][a-z0-9_]{1,30})', path)
         if match and method == 'PATCH':
             self.change_role(user, match[1], body)
@@ -774,6 +828,17 @@ class Controls:
             self.delete_role(user, match[1])
             return 200, {'items': self.role_list()}, []
         raise AccessError(404, NOT_FOUND)
+
+
+def params(scope, *names):
+    """The named query parameters of a request, each once; anything else is refused."""
+    try:
+        found = parse_qs(scope.get('query_string', b'').decode('ascii'), keep_blank_values=True, max_num_fields=len(names))
+    except (ValueError, UnicodeError):
+        raise ValidationError({'_query': 'Use valid query parameters'}) from None
+    if set(found) - set(names) or any(len(values) > 1 for values in found.values()):
+        raise ValidationError({'_query': 'Use only ' + ', '.join(names)})
+    return {key: values[0] for key, values in found.items()}
 
 
 class _Probe:

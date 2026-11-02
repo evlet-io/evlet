@@ -2,7 +2,11 @@
 
 `/controls` is the locked admin page of an instance. It is the framework frontend
 `evlet.controls`, not a generated model. This release has Overview, Users, Roles,
-Models, Naming, Permissions and Security.
+Permissions, Security, Apps, Models, Naming, Routing, Jobs, Overrides and the Audit log.
+
+The Overview lists what needs attention: an app waiting to be migrated or a server that still
+runs the old version, overrides that no longer apply (and what fails closed meanwhile), skipped
+naming series, screen extensions that no longer fit a form layout, and failed jobs.
 
 ## Access
 
@@ -199,10 +203,60 @@ last change: the last name issued and who issued it, or "Set by hand" with its r
 counter needs a reason, writes an audit row and can't go below the number in the last issued
 name. Try it shows which series a record would use and its name; it never changes a counter.
 
+## Apps
+
+Read only. Each app shows its version, source, models, frontends,
+connectors, schedules and number of permission rules. Apps are installed from the server shell
+(`evlet install <app> --instance <name>`), never from the browser.
+
+When an app's source no longer matches `apps.lock`, it is waiting to be migrated. The page and
+Needs attention show the command; migrations never run from the browser. Stop the server first,
+since Evlet never changes the database under a running server, then run `evlet migrate <name>`
+on the server. It takes a backup into `data/backups/` before the migrations. If a server still
+runs the version it started with, the page says to restart it.
+
+## Routing
+
+Read only. The route table (`RouteTable.rows()`) with each row's sign-in realm, source and
+locked state, and the hosts: the primary host, each sub-host and the sign-in realm it serves
+(`RouteTable.realm`). Proxy config and the host check (DNS, the same report as
+`evlet proxy --check`, and the certificate of each host that points here) use `evlet proxy`.
+Both need a primary host (`routes.py` or `Instance.domain`); without one the page shows why.
+Each person can check hosts once every 10 seconds, and each DNS lookup gives up after 5 seconds.
+Change routes in the instance's `routes.py`.
+
+## Jobs
+
+Schedules from the apps, and the last 50 jobs. Pausing a schedule saves at once as the setting
+override `schedule.<name>.active = false` and is applied with `set_schedule_active`; resuming
+resets it. A pause for a schedule no app declares any more is listed under Needs attention.
+Run now enqueues one job like the schedule would; a paused schedule must be resumed first.
+The failed count in the menu and Needs attention covers every failed job. Retry works on failed jobs only, and the job
+keeps its idempotency key.
+
+## Overrides
+
+Every saved override with the app file value next to this instance's value, who changed it and
+when. Reset goes through the change bar like any other change. Instance fields are listed too;
+they are removed on the Models page.
+
+**Export as code** (`GET /api/_controls/overrides/export`, or `?kind=&key=` for one) returns
+`[{file, code}]` grouped by the file each change belongs in:
+
+| Kind | File | Code |
+|---|---|---|
+| `perm` | `apps/<app>/<package>/permissions.py` | `rules = {("editor", Lead): Rule(operations=..., read_fields=..., write_fields=..., scope=...)}`. The `own_customer` preset is written as the public `own_customer()`, or `own_customer(field='id')` on the customer model |
+| `field`, `custom`, `naming` | The file that declares the model, such as `apps/notes/models/item.py` | The field lines as models.py writes them, with the changes merged in, and `Meta.naming = Naming(...)`. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. Arguments set in code, such as a callable default or validator, are written as `...` with a comment to copy them from models.py, so the code always compiles. |
+| `layout`, `list` | `apps/<app>/<package>/views/__init__.py` | `FormView(model=..., layout=Column(children=[FormLayout(...)]))`, `ListView(model=..., columns=..., page_size=..., order_by=...)` |
+| `setting` | `instances/<name>/routes.py` or `config.py` | `ControlsAccess(allow_ips=...)`; `Security(...)`, which config.py does not read yet; a comment for a paused schedule |
+
+Paste the code, deploy, then reset the overrides. Overrides that no longer apply are left out.
+
 ## Audit log
 
-`evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles and
-overrides all write to it.
+`evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles,
+overrides, migrations and jobs all write to it. The Audit log page searches who, what and the
+detail, filters by area and pages newest first, 50 rows at a time.
 
 ## API
 
@@ -216,3 +270,9 @@ overrides all write to it.
 | `POST /api/_controls/fields/<Model>`, `DELETE /api/_controls/fields/<Model>/<x_name>` | Add or remove an instance field: `{name, type, label, help_text, required, default, options, target}` |
 | `GET/POST /api/_controls/naming/<Model>/counters` | Counters; set one with `{prefix, value, note}` |
 | `POST /api/_controls/naming/<Model>/try` | `{values, series?}`: the matching series and name, and a check of each draft series. No counter changes |
+| `GET /api/_controls/overrides/export?kind=&key=` | Export as code: `[{file, code}]` |
+| `GET /api/_controls/routing`, `POST /api/_controls/routing/check` | Route table, hosts and proxy config; DNS and certificate check |
+| `GET /api/_controls/jobs` | Schedules and recent jobs |
+| `POST /api/_controls/jobs/schedules/<name>` | `{active}`: pause or resume |
+| `POST /api/_controls/jobs/schedules/<name>/run`, `POST /api/_controls/jobs/<id>/retry` | Run now; retry a failed job |
+| `GET /api/_controls/audit?area=&q=&before=` | `{items, next, areas}`, newest first |
