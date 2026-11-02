@@ -19,7 +19,7 @@ from .models import ValidationError
 
 logger = logging.getLogger(__name__)
 
-PAGES = ('profile', 'appearance', 'security', 'notifications', 'email', 'ai')
+PAGES = ('profile', 'appearance', 'security', 'notifications', 'email', 'ai', 'keys')
 PORTAL_PAGES = ('profile', 'security', 'notifications')
 APPEARANCE = {
     'theme': 'light', 'density': 'comfortable', 'text': 'default', 'start': '', 'counts': False, 'lang': 'en',
@@ -196,8 +196,7 @@ class Settings:
 
     def sealed_exists(self, connection):
         """Whether anything is sealed with the secret key; then a missing key is an error, never a new key."""
-        return connection.execute('SELECT 1 FROM evlet_user_profile WHERE two_step_secret IS NOT NULL OR backup_codes IS NOT NULL '
-                                  'OR two_step_pending IS NOT NULL UNION ALL SELECT 1 FROM evlet_two_step_tickets WHERE secret IS NOT NULL LIMIT 1').fetchone() is not None
+        return vault.sealed_exists(connection)
 
     def seal(self, connection, value, purpose):
         return vault.seal(self.key, value, purpose, create=not self.sealed_exists(connection))

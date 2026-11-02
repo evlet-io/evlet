@@ -3,8 +3,8 @@
 Milestone 7 adds a compact discovery contract, a local MCP stdio connector, and
 commands for starting a small application. The MCP connector needs only Python's
 standard library. The core has one third-party library besides Uvicorn and packaging:
-`cryptography`, for AES-GCM encryption of secrets at rest such as two-step sign-in
-secrets (see [Settings](settings.md#the-secret-key)). The standard library has no AES, and
+`cryptography`, for AES-GCM encryption of secrets at rest: two-step sign-in
+secrets and connector secrets (see [Controls](controls.md#connectors-and-secrets)). The standard library has no AES, and
 writing our own cipher is not an option. The connector calls the same authenticated HTTP routes used by
 the browser, so tenant, account, model, row, field, and action checks stay on the
 server. It has no database handle, arbitrary SQL, Python execution, or file tool.

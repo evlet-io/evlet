@@ -24,7 +24,7 @@ class HTTPError(Exception):
 
 
 class Application:
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None):
         from .ui import ViewRegistry
         from .routing import RouteTable, resolve_routes
         if routes is not None and not isinstance(routes, RouteTable):
@@ -57,8 +57,16 @@ class Application:
             self.business.apis = tuple(apis)
             self.business.ui = self.ui
             self.business.controls.routes = self.routes
-        elif reports or apis:
-            raise ValueError('Reports and APIs require authentication')
+            for connector in connectors:
+                self.business.connectors.register('app', connector)
+            # Secrets are sealed with a key outside the database: EVLET_SECRET_KEY or secret_key, shared with
+            # two-step sign-in. Without either, connector secrets use a key file next to a SQLite file.
+            if secret_key is not None:
+                self.business.secret_key = secret_key
+            path = getattr(database, 'path', None)
+            self.business.connectors.fallback = path.parent / 'secret.key' if path is not None else None
+        elif reports or apis or connectors:
+            raise ValueError('Reports, APIs and connectors require authentication')
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -78,7 +86,8 @@ class Application:
                 await self._event_stream(scope, receive, send)
                 return
             body = None
-            if scope["method"] in ("POST", "PATCH"):
+            # PUT carries a body only on the Controls routes (connectors); elsewhere it stays a 405.
+            if scope["method"] in ("POST", "PATCH") or scope["method"] == "PUT" and scope["path"].startswith("/api/_controls/"):
                 content_type = dict(scope.get("headers", [])).get(b"content-type", b"")
                 if content_type.split(b";", 1)[0].strip().lower() != b"application/json":
                     raise HTTPError(415, "Send application/json")

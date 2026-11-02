@@ -2,11 +2,11 @@
 
 `/controls` is the locked admin page of an instance. It is the framework frontend
 `evlet.controls`, not a generated model. This release has Overview, Users, Roles,
-Permissions, Security, Apps, Models, Naming, Routing, Jobs, Overrides and the Audit log.
+Permissions, Security, Connectors, Email, API keys, Apps, Models, Naming, Routing, Jobs, Overrides and the Audit log.
 
 The Overview lists what needs attention: an app waiting to be migrated or a server that still
 runs the old version, overrides that no longer apply (and what fails closed meanwhile), skipped
-naming series, screen extensions that no longer fit a form layout, failed jobs, and roles in
+naming series, connectors and email accounts whose last test failed, screen extensions that no longer fit a form layout, failed jobs, and roles in
 `security.two_step_roles` that can't use two-step sign-in because the `cryptography` package is
 missing or the secret key file is refused. An application without a secret key (not an instance)
 has no two-step sign-in, and nothing is listed for it.
@@ -260,10 +260,158 @@ they are removed on the Models page.
 
 Paste the code, deploy, then reset the overrides. Overrides that no longer apply are left out.
 
+## Connectors and secrets
+
+Connectors are connections to other services. Apps declare them; the framework declares
+SMTP (email sending) and IMAP (email receiving). Settings and secrets are instance data:
+they save at once, with an audit row, and are stored in
+`evlet_connectors(id, app, status, settings, secrets, changed_by, changed_at)`.
+
+```python
+from evlet import AppDefinition, ConnectionFailed, Connector, ConnectorField
+
+def check(values):
+    if not gateway_accepts(values["gateway"], values["api_key"]):
+        raise ConnectionFailed("The gateway rejected the API key.")
+
+app = AppDefinition(models=(Lead,), connectors=(
+    Connector("whatsapp", title="WhatsApp", category="Messaging", test=check, fields=(
+        ConnectorField("gateway", "Gateway URL"),
+        ConnectorField("api_key", "API key", "secret"),
+        ConnectorField("mode", "Mode", "select", options=("live", "test"), default="live"),
+        ConnectorField("lead", "Create a Lead for new numbers", "toggle", default=True, required=False),
+    )),
+))
+```
+
+Field types are `text`, `number`, `select`, `toggle`, `role` (a desk role other than admin)
+and `secret`. `Application(connectors=...)` registers them for an application built in code.
+Trusted server code reads a saved connector with `business.connectors.values("whatsapp")`
+(settings and decrypted secrets, or `None` when it isn't set up).
+
+- **Secrets are write only.** No API returns one, not even to admins: a secret field reads
+  `{"saved": true}`. Leaving a secret out keeps the saved value; replacing it needs the new
+  value, and an empty one is refused. Secrets never go into audit rows or log lines.
+- **A saved secret stays with its server.** A field that says where secrets go is
+  *identifying*: by default any field whose name contains url, host, server, port, user,
+  address, account, endpoint, gateway, issuer, domain, tenant, region, bucket or security;
+  set `ConnectorField(..., identifies=True)` or `False` to say so explicitly. When a test or
+  a save changes an identifying setting, the saved secrets are not used: the form asks for
+  them again ("Enter the password again. The server details changed..."). So a saved password
+  is never sent to a different server, by a test or by a save.
+- **Encryption.** Secrets are sealed with `evlet.secrets` (AES-GCM, the `cryptography`
+  package), bound to their connector id (purpose `evlet-connector:<id>`), so a changed or moved
+  value is detected and refused. It is the same key as two-step secrets and backup codes
+  ([settings.md](settings.md#the-secret-key)): `instances/<name>/secret.key`, created with mode
+  0600 the first time anything is sealed, or `EVLET_SECRET_KEY` (32 bytes, URL-safe base64) for
+  containers. Once anything is sealed, a missing key file is an error and never replaced.
+  An application built in code uses `Application(secret_key=path)` for both; without it,
+  connector secrets use a key file next to its SQLite file and two-step sign-in stays off.
+  A PostgreSQL application needs `EVLET_SECRET_KEY` or `secret_key`.
+  The instance refuses to start when the key file is a link, belongs to another user, or
+  can be read by anyone but its owner.
+- **Rotation.** `evlet secrets rotate <instance>` writes a new key and re-encrypts every
+  sealed value listed in `evlet.secrets.SEALED`: connector secrets, two-step secrets, two-step
+  set-ups and sign-ins in progress, and backup codes. API keys are stored as SHA-256 hashes, not
+  sealed, so rotation leaves them alone. The old key stays in the file until all rows are done, so an interruption
+  loses nothing. A row that can't be read is reported and left as it is, the others are
+  re-encrypted, and the old key stays in the file until that row is entered again and rotation
+  runs once more. The command refuses an instance without a database. The key file is read on
+  each use, so running processes pick up the new key straight away. With
+  `EVLET_SECRET_KEY`, rotate the key outside Evlet: the variable can hold several keys
+  separated by commas; the first one encrypts and any of them decrypts.
+- **Testing.** `POST /api/_controls/connectors/<id>/test` runs the connector's `test` on the
+  saved values, or on draft values sent in the body, and answers within 10 seconds with
+  `{"ok": true, "message": ...}` or `{"ok": false, "error": ...}` in plain words. A test of
+  exactly the saved values sets the status Controls shows. Tests run on two threads per
+  process at most; a third gets 429 until one ends, and each person can run 10 tests a minute.
+  A test still running at 10 seconds is abandoned but keeps its thread until it ends, so
+  abandoned tests can't pile up. A server that refuses, stays silent or answers something
+  else gets the same message, "Couldn't connect to the service...", so tests can't be used to
+  map ports.
+- **Addresses.** Mail connections resolve the server once, refuse link-local addresses
+  (including 169.254.169.254), other cloud metadata addresses, unspecified, multicast and
+  reserved addresses, and then connect to the address they checked. Loopback is allowed only
+  with security None, and None only reaches loopback. Mail ports are 25, 465 and 587 for SMTP
+  and 143 and 993 for IMAP unless security is None (`Connector(ports=...)` sets this for app
+  connectors with a `port` field). App connectors that open connections should call
+  `evlet.connectors.safe_address(host, port)` before connecting.
+- **Error messages.** Messages from a test are scrubbed of secrets, including quoted,
+  escaped, URL-encoded and partial copies, but an app's `ConnectionFailed` messages must
+  still never include a secret or a full server reply.
+- **Not yet.** The handoff also lists local disk, S3, single sign-on (OIDC), webhooks and an
+  AI model provider as framework connectors. They are not declared yet: each needs code
+  that uses its settings, which arrives with the feature that needs it.
+
+## Email
+
+Email accounts are SMTP (outgoing) and IMAP (incoming) connectors with several named
+accounts each: ids `smtp:<name>` and `imap:<name>`, where the name is lowercase letters,
+digits, `-` or `_`. Each has an address, server, port, security (STARTTLS, SSL/TLS, or none
+for a server on this machine only), an optional username and a password. The first outgoing
+account becomes the default; Make default moves it. The default can't be removed while other
+outgoing accounts exist. Apps send through an account by name and fall back to the default:
+
+```python
+services.connectors.send_mail("customer@example.com", "Invoice INV-0142", text, account="accounts")
+```
+
+`send_mail(to, subject, text, *, account=None, html=None, reply_to=None)` takes one address
+or up to 50, returns the Message-ID and raises `ConnectionFailed` with a plain message when
+the server refuses. `services` is the namespace an app's `actions(services)` receives; in code,
+use `app.business.connectors`. Sending a test from the Email page posts `{"to": address}` to
+the account's test route. Reading mail from IMAP accounts arrives later; today the IMAP test
+signs in and opens the inbox read only.
+
+## API keys
+
+Keys let scripts call the API as a user: `Authorization: Bearer evk_...`. A key is shown
+once when it is created; only its prefix (`evk_` and 8 characters) and the SHA-256 of the
+whole key are stored in `evlet_api_keys`.
+
+- **Never more than the user.** A key acts as its user with that user's current role, row
+  scopes and field rules, narrowed by its scope:
+  `{"access": "read" | "write", "models": null | ["Customer", ...]}`. A read key refuses
+  every request that isn't GET, including reports and draft evaluation, which are POST. A key
+  with models sees only those models and their child rows. A key with `models: null` covers
+  whatever its user's role can read today, so it grows and shrinks with the role. When the
+  user loses access or is deactivated, so does the key. Creating a key for a model the user
+  can't read, or a write key for a user who can only read, is refused.
+- **Jobs.** A job queued by a key request runs with the key's scope. If the key is revoked
+  before the job runs, the job fails with "The API key that queued this job was revoked."
+- **Where keys work.** Every `/api` route that a session can use. Only a well-formed key
+  (`evk_` + 8 characters + `_` + 43 characters) skips the request protection header; other
+  Authorization values don't. `GET /api/auth/session` answers with the key's user. Keys never
+  open Controls (404) and can't use the other `/api/auth/*` routes or `/api/_settings/*` (403).
+- **Desk only.** Keys belong to the desk realm. A portal or public host refuses every key
+  (403 "API keys work on desk hosts only."), a key can't be created for a user whose role is a
+  portal role (422), a key stops working (401) when its user moves to a portal role, and
+  `/api/_settings/me/keys` is 404 for portal sessions. Portal users have no API keys; portal
+  API access goes through the portal's own sessions and API scopes.
+- **Controls and custom roles.** A key is checked against its user's role through the same
+  policy as a session, so Controls permission and field overrides and custom roles (with their
+  base) apply to it at once, without changing the key. A key scope only narrows: creating a key
+  for models the role no longer reads is refused.
+- **Limits.** 300 requests a minute per key, per process; then 429. Invalid keys are counted
+  per network and prefix (20 a minute) and per network (100 a minute) after the key is
+  looked up, so a valid key is never slowed by someone else's failures. The network is the
+  one the trusted proxy settings report, when they are configured. At most 20 active keys
+  per user. `last_used` is updated at most once a minute.
+- **No expiry.** Keys don't expire. Revoke a key that is no longer used; Controls marks keys
+  unused for 30 days.
+- **Controls** lists every key and creates keys that act as any active user; only admins
+  create or revoke keys that act as admins. **Personal keys** use
+  `GET/POST /api/_settings/me/keys` and `DELETE /api/_settings/me/keys/<id>`, for the person
+  signed in. Revoking is immediate: the key gets 401 from then on. Creating and revoking
+  write audit rows, without the key.
+
+The personal page is `/settings/keys` in the Settings shell (the `MyKeysPage` component,
+`frontend/src/evlet/settings/keys.ts`), for desk users.
+
 ## Audit log
 
 `evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles,
-overrides, migrations and jobs all write to it. The Audit log page searches who, what and the
+overrides, connectors, email accounts, API keys, migrations and jobs all write to it. The Audit log page searches who, what and the
 detail, filters by area and pages newest first, 50 rows at a time.
 
 ## API
@@ -284,3 +432,7 @@ detail, filters by area and pages newest first, 50 rows at a time.
 | `POST /api/_controls/jobs/schedules/<name>` | `{active}`: pause or resume |
 | `POST /api/_controls/jobs/schedules/<name>/run`, `POST /api/_controls/jobs/<id>/retry` | Run now; retry a failed job |
 | `GET /api/_controls/audit?area=&q=&before=` | `{items, next, areas}`, newest first |
+| `GET /api/_controls/connectors` | Declared connectors with their fields, and every saved connector and email account |
+| `GET/PUT/DELETE /api/_controls/connectors/<id>` | One connector (`whatsapp`) or account (`smtp:accounts`): read, save `{"settings", "secrets"}`, disconnect |
+| `POST /api/_controls/connectors/<id>/test`, `POST .../default` | Test within 10 seconds; make an outgoing account the default |
+| `GET/POST /api/_controls/keys`, `DELETE /api/_controls/keys/<id>` | API keys: list, create `{"name", "user", "scope"}` (the key is in this reply only), revoke |

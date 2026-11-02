@@ -2732,7 +2732,8 @@
     "security",
     "notifications",
     "email",
-    "ai"
+    "ai",
+    "keys"
    ],
    "portal": false,
    "prefs": {

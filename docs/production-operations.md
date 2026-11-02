@@ -93,6 +93,16 @@ Protect logs and avoid request bodies, cookies, authorization headers, passwords
 and connection strings. `/health` is a database probe, not a full business or
 recovery check. Add external authenticated checks for critical workflows.
 
+Some limits are counted per process, not per instance: API key requests (300 a minute per
+key), invalid API keys (20 a minute per network and prefix, 100 per network), connection
+tests (two at a time, 10 a minute per person) and the MCP connector's tool calls. With several
+worker processes behind a proxy, each process has its own count, so the effective limits
+are that many times higher. Put a rate limit in the proxy when that matters.
+
+Keep `instances/<name>/secret.key` out of version control and out of copies of the database.
+A backup needs both: the database for the encrypted connector secrets and the key to read
+them. Store the key backup separately from the database backup.
+
 Reproduce the [benchmark](performance.md) on deployment hardware before sizing it.
 Use indexes justified by actual queries and inspect plans after realistic data
 loading. Test the sustained concurrent request mix and reports together with

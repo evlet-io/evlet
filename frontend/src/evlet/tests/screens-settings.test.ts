@@ -134,6 +134,16 @@ describe('personal pages', () => {
   });
 });
 
+describe('connections', () => {
+  it('shows the personal API keys page in the Settings shell', async () => {
+    const { host, sent } = start(routes([['GET', /\/api\/_settings\/me\/keys$/, { status: 200, etag: null, body: { items: [], models: [{ name: 'Customer', label: 'Customer' }] } }]]), '/settings/keys');
+    await until(() => expect(text(host)).toContain("No keys. Most people don't need one."));
+    expect(text(host.querySelector('.set-nav-item.on'))).toBe('API keys');
+    expect(text(host.querySelector('.crumbs .cur'))).toBe('API keys');
+    expect(requests(sent, 'GET', /\/api\/_settings\/me\/keys$/)).toHaveLength(1);
+  });
+});
+
 describe('app settings', () => {
   it('saves shared settings through the save bar and shows the default with a reset', async () => {
     const { host, sent } = start(routes([['GET', /\/api\/_settings\/app\/sales$/, screen.settings_app],

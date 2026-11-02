@@ -80,6 +80,11 @@ def parser():
     reset_two_step.add_argument('instance')
     reset_two_step.add_argument('username')
     reset_two_step.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
+    keys = commands.add_parser('secrets', help='Manage the key that seals connector secrets, two-step secrets and backup codes')
+    keys_commands = keys.add_subparsers(dest='secrets_command', required=True)
+    keys_rotate = keys_commands.add_parser('rotate', help='Re-encrypt saved secrets under a new secret.key')
+    keys_rotate.add_argument('instance')
+    keys_rotate.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     effects = commands.add_parser('effects', help='Check the rows records post to other models')
     effects_commands = effects.add_subparsers(dest='effects_command', required=True)
     effects_check = effects_commands.add_parser('check', help='Recompute effect rows and report differences without writing')
@@ -246,6 +251,18 @@ def main(argv=None):
             read_instance(path)
             reset_two_step_from_shell(path / 'data/database.sqlite3', args.username)
             print(f'Two-step sign-in is reset for {args.username}. They set it up again at their next sign-in.')
+        elif args.command == 'secrets':
+            from .project import child
+            from ..instances import read_instance
+            from ..secrets import SecretKey, rotate
+            path = child(root, 'instances', args.instance)
+            read_instance(path)
+            count, failed = rotate(path / 'data/database.sqlite3', SecretKey(path / 'secret.key'))
+            print(f'New secret key written to instances/{args.instance}/secret.key. Re-encrypted {count} saved secret' + ('' if count == 1 else 's') + '.')
+            if failed:
+                print(f"Could not read {', '.join(failed)}. They were left as they are and the old key was kept. Enter connector secrets again in Controls, "
+                      'reset two-step sign-in with evlet users reset-two-step, then rotate again.')
+            print('Running instances use the new key straight away.')
         elif args.command == 'effects':
             from .effects import check_instance
             from ..effects import describe

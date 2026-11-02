@@ -290,7 +290,7 @@ class Guards:
 def readable(policy, user, guard):
     """Whether this role may read every input of a guard; cached per role like rule expressions."""
     cache = policy.__dict__.setdefault('_guards', {})
-    key = (user.role, id(guard))
+    key = (user.role, getattr(user, 'access', None), id(guard))
     if key not in cache:
         cache[key] = policy.reads_allowed(user, guard.reads)
     return cache[key]

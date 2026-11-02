@@ -1,14 +1,18 @@
-"""The instance's secret key and sealed secrets (AES-GCM).
+"""The instance's secret key and sealed secrets (AES-GCM): one key for connector secrets,
+two-step secrets, backup codes and sign-ins in progress.
 
 Keys come from EVLET_SECRET_KEY (comma-separated) or from instances/<name>/secret.key: one
 32-byte key per line in URL-safe base64, mode 0600, owned by the server's user, never a link.
 The first key seals; any listed key opens, so a rotation can keep the old key after the new one.
 Each sealed value is bound to a purpose string (such as "two_step:42") that must match to open it.
-AES-GCM comes from the `cryptography` package, a core dependency.
+AES-GCM comes from the `cryptography` package, a core dependency. SEALED lists every column that
+holds sealed values, so `evlet secrets rotate` re-encrypts them all under a new key.
 
     seal(key, b"value", "two_step:42") -> bytes
     open(key, sealed, "two_step:42")   -> b"value"
     available(key)                      -> whether secrets can be sealed and opened now
+    sealed_exists(connection)           -> whether anything is sealed (a missing key is then an error)
+    rotate(database_path, key)          -> (re-encrypted count, unreadable rows), for a SQLite instance
 
 key is a SecretKey or a key file path. A missing key file is created only when seal is asked to
 create it; callers that already hold sealed data never ask, so a lost key is an error, not a new key.
@@ -180,3 +184,68 @@ def open(key, sealed, purpose):
     if not cryptography_installed():
         raise SecretKeyError('Install the cryptography package on the server to keep secrets.')
     return secret_key(key).decrypt(sealed, purpose.encode())
+
+
+# Every column holding sealed values: (table, sealed column, row id column, purpose column,
+# purpose prefix, stored as base64 text, how a row that can't be read is named).
+SEALED = (
+    ('evlet_connectors', 'secrets', 'id', 'id', 'evlet-connector:', False, '{}'),
+    ('evlet_user_profile', 'two_step_secret', 'user_id', 'user_id', 'two_step:', False, 'two-step sign-in of user {}'),
+    ('evlet_user_profile', 'two_step_pending', 'user_id', 'user_id', 'two_step_pending:', False, 'two-step set-up of user {}'),
+    ('evlet_user_profile', 'backup_codes', 'user_id', 'user_id', 'backup_codes:', True, 'backup codes of user {}'),
+    ('evlet_two_step_tickets', 'secret', 'token_hash', 'user_id', 'two_step_ticket:', False, 'a sign-in in progress of user {}'),
+)
+
+
+def sealed_exists(connection):
+    """Whether any SEALED column holds a value; then a missing key is an error, never a new key."""
+    query = ' UNION ALL '.join(f'SELECT 1 FROM {table} WHERE {column} IS NOT NULL' for table, column, *_ in SEALED)
+    return connection.execute(f'SELECT 1 FROM ({query}) AS sealed LIMIT 1').fetchone() is not None
+
+
+def rotate(database_path, key):
+    """Re-encrypt every sealed value of a SQLite instance under a new key file.
+
+    The old key stays in the file, after the new one, until every row is re-encrypted, so a crash at
+    any point leaves every secret readable. A row that can't be read is skipped and reported, and the
+    old key is then kept for it. Returns (re-encrypted count, names of unreadable rows).
+    """
+    import sqlite3
+    key = secret_key(key)
+    if key.from_environment:
+        raise SecretKeyError(f'{KEY_ENV} is set, so the key is kept outside Evlet. Rotation works on a secret.key file.')
+    if not Path(database_path).is_file():
+        raise ValueError('This instance has no database yet, so there is nothing to rotate.')
+    old = key.keys()
+    if not old:
+        return 0, []
+    key.write([secrets.token_bytes(32), *old])
+    connection = sqlite3.connect(Path(database_path).as_uri() + '?mode=rw', uri=True, isolation_level=None)
+    done, failed = 0, []
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        for table, column, id_column, purpose_column, prefix, text, name in SEALED:
+            if table not in tables:
+                continue
+            rows = connection.execute(f'SELECT {id_column}, {purpose_column}, {column} FROM {table} WHERE {column} IS NOT NULL').fetchall()
+            for row_id, owner, value in rows:
+                purpose = (prefix + str(owner)).encode()
+                try:
+                    plain = key.decrypt(base64.b64decode(value) if text else value, purpose)
+                except (SecretKeyError, ValueError):
+                    failed.append(name.format(owner))
+                    continue
+                sealed = key.encrypt(plain, purpose, create=False)
+                connection.execute(f'UPDATE {table} SET {column}=? WHERE {id_column}=?', (base64.b64encode(sealed).decode() if text else sealed, row_id))
+                done += 1
+        connection.execute('COMMIT')
+    except BaseException:
+        if connection.in_transaction:
+            connection.execute('ROLLBACK')
+        raise
+    finally:
+        connection.close()
+    if not failed:
+        key.write(key.keys()[:1])
+    return done, failed

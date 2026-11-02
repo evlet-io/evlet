@@ -114,9 +114,11 @@ class Business:
         if self.policy.registry is not self.registry:
             raise ValueError('Policy must use the application registry')
         from .controls import Controls
+        from .connectors import Connectors
         from .settings import Settings
         self.controls = Controls(self)
         self.settings = Settings(self)
+        self.connectors = Connectors(self)
         # instances/<name>/secret.key for evlet.secrets; None keeps two-step sign-in off.
         self.secret_key = None
         self.actions, self.children, self.child_models = {}, {}, set()
@@ -165,6 +167,7 @@ class Business:
             if self.registry.plan_for(action.model) is not None and not hasattr(getattr(action.model, action.name, None), '__action__'):
                 raise ValueError(f'Legacy Action {action.name!r} would bypass finite-v1 settlement on '
                                  f'{action.model.__name__}; declare it with @action on the model instead')
+        auth.owners = {**{child.model: child.parent for child in self.registry.children}, **{child.model: child.parent for child in self.children.values()}}
         # Rows of a ChildTable are listed as children of their parent, not as related records.
         self.relations = {}
         for model, meaning in self.registry.meaning.items():
@@ -183,6 +186,7 @@ class Business:
     def initialize(self):
         self.auth.initialize()
         self.controls.initialize()
+        self.connectors.initialize()
         self.storage.initialize(self.database)
         self.settings.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
@@ -434,6 +438,13 @@ class Business:
             if endpoint is not None and endpoint.public:
                 return dispatch(self, scope, body, None)
         user, csrf = self.auth.session(scope)
+        if user.access is not None:
+            if path.startswith(('/api/auth/', '/api/_settings/')):
+                raise AccessError(403, 'API keys cannot be used here. Sign in instead.')
+            if method not in ('GET', 'HEAD') and not user.access.write:
+                raise AccessError(403, 'This key can only read.')
+        if path == '/api/_settings/me/keys' or path.startswith('/api/_settings/me/keys/'):
+            return self.controls.my_keys(scope, body, user)
         if path == '/api/_controls' or path.startswith('/api/_controls/'):
             return self.controls.dispatch(scope, body, user)
         if path.startswith('/api/_settings/'):

@@ -239,3 +239,22 @@ def test_controls_lists_required_roles_that_cannot_use_two_step(secured, tmp_pat
     os.chmod(tmp_path / 'secret.key', 0o600)
     assert listed() == []
     assert admin('GET', '/api/_controls/state')[:2] == (403, {'error': TWO_STEP})
+
+
+def test_one_key_and_one_rotation_cover_connectors_two_step_and_backup_codes(settled, tmp_path, monkeypatch):
+    from evlet.auth import User
+    from evlet.secrets import SecretKey, rotate
+    monkeypatch.delenv(vault.KEY_ENV, raising=False)
+    app = settled
+    _, raw, codes = enrol(app, 'editor')
+    body = {'settings': {'address': 'help@example.test', 'host': 'imap.example.test', 'port': 993, 'security': 'ssl'}, 'secrets': {'password': 'mail secret'}}
+    app.business.connectors.save(User(1, 'admin', 'admin'), 'imap:support', body)
+    # Connectors seal with the same key file as two-step sign-in.
+    assert app.business.connectors.key.path == tmp_path / 'secret.key' and len((tmp_path / 'secret.key').read_text().split()) == 1
+    before = (tmp_path / 'secret.key').read_text()
+    assert rotate(app.database.path, SecretKey(tmp_path / 'secret.key')) == (3, [])
+    assert (tmp_path / 'secret.key').read_text() != before and len((tmp_path / 'secret.key').read_text().split()) == 1
+    assert app.business.connectors.values('imap:support')['password'] == 'mail secret'
+    assert sign_in(app, 'editor', codes[0])[0] == 200
+    # The enrolment used the current code; the next one opens the rotated secret.
+    assert sign_in(app, 'editor', totp(raw, int(time.time() // 30) + 1))[0] == 200

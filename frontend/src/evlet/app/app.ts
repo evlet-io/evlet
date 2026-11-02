@@ -22,7 +22,7 @@ import { rootModels } from './meta';
 import { openPalette } from './palette';
 import { applyTheme, Prefs } from './prefs';
 import { RecordPage } from './record-page';
-import { applyMe, loadMe, SettingsView, showCodes, type Me } from './settings';
+import { applyMe, loadMe, PAGES as SETTINGS_PAGES, SettingsView, showCodes, type Me } from './settings';
 import { Shell } from './shell';
 
 export interface AppOptions {
@@ -217,8 +217,7 @@ function page(ctx: AppContext): Child {
       const me = ctx.me.peek();
       const target = route.name === 'settings' ? route.params.page : `app/${route.params.app}`;
       if (!me || !(me.pages.includes(target) || me.apps.some(app => `app/${app.id}` === target))) return unavailable(ctx);
-      ctx.crumbs.set([{ label: 'Settings', href: settingsHref(ctx.router, me.last_page || 'profile') }, { label: route.name === 'settings' ? ({ profile: 'Profile', appearance: 'Appearance & region',
-        security: 'Sign-in & security', notifications: 'Notifications', email: 'Your email', ai: 'AI assistants' } as Record<string, string>)[target] : `${me.apps.find(app => `app/${app.id}` === target)!.title} settings` }]);
+      ctx.crumbs.set([{ label: 'Settings', href: settingsHref(ctx.router, me.last_page || 'profile') }, { label: route.name === 'settings' ? SETTINGS_PAGES[target][0] : `${me.apps.find(app => `app/${app.id}` === target)!.title} settings` }]);
       const models = rootModels(ctx.schema);
       return html`<div class="page wide">${SettingsView({ api: ctx.api, me: ctx.me as any, photo: ctx.photo, href: page => settingsHref(ctx.router, page), go: page => void goSettings(ctx.router, page),
         starts: [...(docsOn(ctx.session) ? [['docs', 'Docs'] as [string, string]] : []), ...models.map(model => [model.name, model.plural] as [string, string])],

@@ -28,7 +28,7 @@ def settled(secured, tmp_path):
 def test_personal_pages_save_and_the_last_page_is_remembered(secured):
     c = client(secured, 'editor')
     me = c('GET', '/api/_settings/me')[1]
-    assert me['pages'] == ['profile', 'appearance', 'security', 'notifications', 'email', 'ai'] and not me['portal'] and not me['controls']
+    assert me['pages'] == ['profile', 'appearance', 'security', 'notifications', 'email', 'ai', 'keys'] and not me['portal'] and not me['controls']
     assert me['prefs'] == {'theme': 'light', 'density': 'comfortable', 'text': 'default', 'start': '', 'counts': False, 'lang': 'en',
                            'tz': 'Asia/Dubai', 'date': 'dd-MM-yyyy', 'num': '1,234.56', 'week': 'mon'}
     assert c('PATCH', '/api/_settings/me/profile', {'full_name': 'Sara Khan', 'short_name': 'Sara', 'title': 'Sales', 'phone': '+971 50 123 4567', 'signature': 'Sara\nAcme'})[0] == 200
@@ -38,7 +38,7 @@ def test_personal_pages_save_and_the_last_page_is_remembered(secured):
                'num': '1.234,56', 'week': 'sun', 'notify.assigned': [False, True], 'notify.new_device': [False, False],
                'quiet': {'on': True, 'from': '21:00', 'to': '08:00'}, 'last_page': 'notifications'}
     assert c('PATCH', '/api/_settings/me/prefs', changes)[0] == 200
-    status, payload, _ = c('PATCH', '/api/_settings/me/prefs', {'theme': 'dark', 'tz': 'Mars/Base', 'date': 'yy', 'last_page': 'keys', 'other': 1})
+    status, payload, _ = c('PATCH', '/api/_settings/me/prefs', {'theme': 'dark', 'tz': 'Mars/Base', 'date': 'yy', 'last_page': 'billing', 'other': 1})
     assert status == 422 and payload['fields'] == {'theme': 'Dark theme is coming in a later release.', 'tz': 'Choose a time zone.',
                                                    'date': 'Choose one of the options.', 'last_page': 'Choose a settings page.', 'other': 'Choose a known preference.'}
     me = c('GET', '/api/_settings/me')[1]
@@ -51,7 +51,7 @@ def test_personal_pages_save_and_the_last_page_is_remembered(secured):
     assert me['notifications']['quiet'] == {'on': True, 'from': '21:00', 'to': '08:00'}
     status, _, headers = c('GET', '/settings')
     assert status == 302 and headers[b'location'] == b'/settings/notifications'
-    assert c('GET', '/settings/appearance')[0] in (200, 404) and c('GET', '/settings/keys')[0] == 404
+    assert c('GET', '/settings/appearance')[0] in (200, 404) and c('GET', '/settings/keys')[0] in (200, 404) and c('GET', '/settings/billing')[0] == 404
     status, _, headers = http(secured, 'GET', '/settings/profile')
     assert status == 302 and headers[b'location'] == b'/login?next=/settings/profile'
     # Other people never see someone else's settings.

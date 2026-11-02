@@ -198,7 +198,7 @@ export function RolesPage(ctx: ControlsContext): HTMLElement {
   </div>` as HTMLElement;
 }
 
-function ask(title: string, body: Child, yes: string, run: (() => unknown) | null, danger = false) {
+export function ask(title: string, body: Child, yes: string, run: (() => unknown) | null, danger = false) {
   openModal({ title, narrow: true, icon: danger ? 'trash-2' : 'info', tint: danger ? 'rose' : 'blue',
     body: () => html`<p class="ctl-confirm">${body}</p>`,
     footer: close => run ? DialogFooter({ cancel: close, submit: { label: yes, variant: danger ? 'danger' : 'primary', onClick: () => { close(); void run(); } } })
