@@ -9,8 +9,30 @@ import re
 from urllib.parse import urlsplit
 
 MISSING = object()
-# Options Controls adds to Select fields on this instance, {field: (option, ...)}, set for each request and job.
-ADDED_CHOICES = ContextVar("evlet_added_choices", default={})
+
+
+class Layer:
+    """What one database adds to the shared model classes: instance fields ({model: {name: Field}}) and
+    options Controls added to choice fields ({field: (option, ...)}) and naming series overridden in Controls
+    ({model: NamingRules}). Classes and the registry from app code are never
+    changed; each Database holds its own Layer and makes it active while it is in use."""
+
+    def __init__(self, fields=None, choices=None, naming=None):
+        from types import MappingProxyType
+        self.fields, self.choices, self.naming = dict(fields or {}), dict(choices or {}), dict(naming or {})
+        self.declared = {model: MappingProxyType({**model.__app_fields__, **extra}) for model, extra in self.fields.items()}
+        self.stored = {model: MappingProxyType({name: field for name, field in declared.items() if field.stored})
+                       for model, declared in self.declared.items()}
+
+
+EMPTY_LAYER = Layer()
+# (database, Layer) in use for this request, job or transaction; None outside them.
+ACTIVE = ContextVar("evlet_layer", default=None)
+
+
+def active_layer():
+    current = ACTIVE.get()
+    return EMPTY_LAYER if current is None else current[1]
 
 
 class _CurrentUser:
@@ -447,8 +469,9 @@ class Select(Text):
 
     def validate(self, value):
         value = super().validate(value)
-        if value not in self.choices and value not in ADDED_CHOICES.get().get(self, ()):
-            raise ValueError("Choose one of: " + ", ".join((*self.choices, *ADDED_CHOICES.get().get(self, ()))))
+        added = active_layer().choices.get(self, ())
+        if value not in self.choices and value not in added:
+            raise ValueError("Choose one of: " + ", ".join((*self.choices, *added)))
         return value
 
     def metadata(self):

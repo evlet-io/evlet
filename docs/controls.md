@@ -123,38 +123,49 @@ instance. These are overrides too, saved with the change bar.
 | `read_only` | Can be turned on, not off. No role can write it through the API; actions and server code still can. |
 | `default` | Must pass the field's own check. New records only. Links take no default. |
 | `options_add` | Choice fields: new options in lowercase letters, digits and underscores. |
-| `options_hidden` | Choice fields: options from the app hidden from new values. A record that holds one keeps it, and saving it unchanged is allowed. One option stays shown. |
+| `options_hidden` | Choice fields: options from the app hidden from new values. A record that holds one keeps it, and saving it unchanged is allowed. One option stays shown, and the default from models.py can't be hidden until another default is set. |
+
+A field can't be made both required and read only without a default, since no one could then
+create a record.
 
 Fields the app or the server fills (calculated fields, State, Sequence and naming fields) take
-only the label, help text, placeholder and hidden. The rules are checked by the API on every
-create and update, legacy and document models alike; `/api/schema` and `/api/ui` show the merged
-values (`choices` lists the shown options and `retired_choices` the hidden ones).
+only the label, help text, placeholder and hidden. Required and hidden options apply to what people
+send through the API (create and update, legacy and document models alike); actions, services, jobs
+and other app code may still leave a field empty or set a hidden option. Read only applies to every
+role in the API. Added options and defaults apply on every write path. `/api/schema` and `/api/ui`
+show the merged values (`choices` lists the shown options and `retired_choices` the hidden ones);
+sections and labels of fields a role can't read are left out.
 
 **Form layout** (kind `layout`, key `Model`): `[{"title": ..., "fields": [{"name": ..., "width": 6 | 12}]}]`,
-1 to 12 sections, each with a title, each field placed once. Fields placed nowhere, such as a field an
+1 to 12 sections, each with a title and at least one field, each field placed once. Fields placed nowhere, such as a field an
 app adds later, go to the last section. Section ids stay positional (`main_details`, `section_2`, ...).
 The browser renders forms from this layout; `width: 12` makes a field full width.
 
 **List view** (kind `list`, key `Model`): `{"columns": [...], "page_size": 25 | 50 | 100, "sort": "field" | "-field"}`,
 1 to 8 columns. `/api/schema` drops the columns a role can't read and gives `page_size` and `order_by`.
+The sort is also the server's order for a list request that names none, when the role can read it.
 
 ### Instance fields
 
 Add field creates a column on this instance only, named `x_` plus a slug, 40 characters at most.
 App models can't declare `x_` names, so an app never clashes with one, and app migrations and
-schema checks leave `x_` columns alone. Types: Text, LongText, Integer, Decimal, Currency, Date,
-Boolean, Select and Link.
+schema checks leave the columns listed in `evlet_custom_fields` alone. A name may not match an
+existing column ignoring case, a Reference's `<name>_model` and `<name>_id` included. Types: Text,
+LongText, Integer, Decimal, Currency, Date, Boolean, Select and Link.
 
 Adding and removing save at once, one at a time: a SQLite backup into `data/backups/` (next to the
 database file), then `ALTER TABLE` in a transaction with the definition in `evlet_custom_fields`, an
-audit row and a new config version. Every process attaches the field to the model class when it
-sees the new version. A required field needs a default when the table has rows; the default fills
-them. Required is asked for on API writes only, so app code that does not know the field keeps
-working. Removing drops the column and takes the field out of every override that names it:
+audit row and a new config version. Model classes from app code are never changed: each database
+keeps its own set of instance fields (with the options Controls added and its naming series) and
+makes it active for each request, job and transaction, so applications that share model classes
+stay apart. A change waits for the requests in flight in its process to finish, and requests that
+start after it see the new set; other processes pick it up when they see the new version. A
+required field needs a default when the table has rows; the default fills them. Required is asked
+for on people's API writes only, so app code that does not know the field keeps working. Removing drops the column and takes the field out of every override that names it:
 its own field override, list columns and sort, layout, permission field lists (a role left with no
 readable field loses access) and naming series that use it. Removal needs SQLite 3.35 or later; on
 an older SQLite the page says so and only adding works. On PostgreSQL the change runs in one
-transaction and backups are the operator's job. Tenant instances don't have instance fields yet.
+transaction and backups are the operator's job. Each tenant has its own instance fields.
 
 ### When an override no longer applies
 

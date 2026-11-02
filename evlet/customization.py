@@ -2,10 +2,11 @@
 
 Overrides are checked here when saved and again on every rebuild. One that no longer validates fails
 closed: a field becomes read only for everyone, a layout, list or naming override falls back to the app
-file. Instance fields (x_) are columns this instance adds; they are attached to the model classes in place
-and their definitions live in evlet_custom_fields.
+file. Instance fields (x_) are columns this instance adds. Their definitions live in evlet_custom_fields and
+their Fields in the database's Layer (see fields.Layer); model classes from app code are never changed.
 """
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 import re
@@ -16,8 +17,9 @@ from types import MappingProxyType
 
 from .auth import AccessError
 from .declarations import Ref
-from .fields import (ADDED_CHOICES, MISSING, Boolean, Currency, Date, Decimal, Integer, Link, LongText, Select,
-                     State, Text)
+from .fields import (ACTIVE, MISSING, Boolean, Currency, Date, Decimal, Integer, Layer, Link, LongText, Select,
+                     State, Text, active_layer)
+from .database import ConflictError
 from .models import ValidationError, identifier
 from .ui.metadata import label_for, view_for
 
@@ -72,42 +74,32 @@ def build_field(definition, registry):
     return field
 
 
-def attach(registry, rows):
-    """Give each root model exactly the instance fields in rows [(model name, field name, definition)].
-
-    The class's field maps are replaced in one assignment each, so a request in flight sees the old or
-    the new set. Calculation caches keyed by model are cleared. Returns True when anything changed.
-    """
-    from . import reactivity
-    wanted = {}
-    for model_name, name, definition in rows:
-        model = registry.models.get(model_name)
-        if model is not None and name.startswith('x_'):
-            wanted.setdefault(model, {})[name] = definition
-    changed = False
-    for model in registry.models.values():
-        current = {name: field for name, field in model.__declared_fields__.items() if name.startswith('x_')}
-        target = wanted.get(model, {})
-        if {name: field.instance for name, field in current.items()} == target:
+def instance_fields(registry, rows, previous=None):
+    """{model: {name: Field}} for rows [(table, field name, definition)]. Fields whose definition did not
+    change are reused from `previous`. Nothing is set on the model classes."""
+    result = {}
+    for table, name, definition in rows:
+        model = registry.models.get(table)
+        if model is None or not FIELD_NAME.fullmatch(name):
             continue
-        changed = True
-        declared = {name: field for name, field in model.__declared_fields__.items() if not name.startswith('x_')}
-        for name in current:
-            if name not in target or current[name].instance != target[name]:
-                delattr(model, name)
-        for name, definition in target.items():
-            field = current[name] if name in current and current[name].instance == definition else build_field(definition, registry)
-            if field is not current.get(name):
-                field.__set_name__(model, name)
-                setattr(model, name, field)
-            declared[name] = field
-        model.__declared_fields__ = MappingProxyType(declared)
-        model.__fields__ = MappingProxyType({name: field for name, field in declared.items() if field.stored})
-    if changed:
-        reactivity.plans.cache_clear()
-        reactivity.template.cache_clear()
-        registry.__dict__.pop('_ui_schema', None)
-    return changed
+        old = (previous or {}).get(model, {}).get(name)
+        if old is not None and old.instance == definition:
+            field = old
+        else:
+            field = build_field(definition, registry)
+            field.name = name
+        result.setdefault(model, {})[name] = field
+    return result
+
+
+@contextmanager
+def activated(database, layer):
+    """Make a layer active for the code inside, whatever was active before."""
+    token = ACTIVE.set((database, layer))
+    try:
+        yield
+    finally:
+        ACTIVE.reset(token)
 
 
 def add_column(connection, table, name, field):
@@ -133,7 +125,7 @@ def shown_default(field):
 
 def file_field(field, name):
     return {'label': field.label or label_for(name), 'help_text': field.help_text, 'placeholder': field.placeholder,
-            'hidden': field.hidden, 'required': field.required, 'read_only': field.read_only,
+            'hidden': field.hidden, 'required': field.required or bool(getattr(field, 'instance', {}).get('required')), 'read_only': field.read_only,
             'default': shown_default(field), 'options': list(field.choices) if isinstance(field, Select) else None}
 
 
@@ -150,6 +142,7 @@ class Customization:
         self.effective, self.defaults, self.choices = {}, {}, {}
         self.layouts, self.lists, self.read_only = {}, {}, {}
         self.file_naming = dict(self.registry.naming)
+        self.naming = MappingProxyType(self.file_naming)
         self.drop = None
         # Instance field changes run one at a time: backup, DDL, definition, version.
         self.engine = Lock()
@@ -250,8 +243,10 @@ class Customization:
                 if type(value[prop]) is not bool:
                     raise ValueError(f'Use true or false for {prop.replace("_", " ")}.')
                 out[prop] = value[prop]
+        added = getattr(field, 'instance', None)
         if file['required'] and out.get('required') is False:
-            raise ValueError(f'{name} is required in models.py and stays required.')
+            raise ValueError(f'{name} is required on this instance. Remove the field and add it again to make it optional.' if added
+                             else f'{name} is required in models.py and stays required.')
         if file['read_only'] and out.get('read_only') is False:
             raise ValueError(f'{name} is read only in models.py and stays read only.')
         if (file['required'] or out.get('required')) and out.get('hidden'):
@@ -279,18 +274,23 @@ class Customization:
         visible = [item for item in options or () if item not in out.get('options_hidden', ())] + out.get('options_add', [])
         if options is not None and not visible:
             raise ValueError('Keep at least one option shown.')
+        if file['default'] in out.get('options_hidden', ()) and value.get('default') in (None, file['default']):
+            raise ValueError(f"{file['default']} is the default in models.py, so it can't be hidden. Choose another default first.")
         if value.get('default') is not None:
             if isinstance(field, Link):
                 raise ValueError("Links don't take a default.")
             if options is not None and value['default'] not in visible:
                 raise ValueError('Choose a default from the options shown.')
-            token = ADDED_CHOICES.set({**ADDED_CHOICES.get(), field: tuple(out.get('options_add', ()))})
-            try:
-                out['default'] = field.serialize(field.validate(value['default']))
-            except (ValueError, TypeError) as exc:
-                raise ValueError(f'The default is not a valid value: {exc}') from None
-            finally:
-                ADDED_CHOICES.reset(token)
+            current = active_layer()
+            with activated(self.business.database, Layer(current.fields, {**current.choices, field: tuple(out.get('options_add', ()))})):
+                try:
+                    out['default'] = field.serialize(field.validate(value['default']))
+                except (ValueError, TypeError) as exc:
+                    raise ValueError(f'The default is not a valid value: {exc}') from None
+        required = file['required'] or out.get('required', False)
+        read_only = file['read_only'] or out.get('read_only', False)
+        if required and read_only and (out.get('required') or out.get('read_only')) and out.get('default', file['default']) is None:
+            raise ValueError('A field that is required and read only needs a default, or no one could create a record.')
         return {prop: item for prop, item in out.items() if item != file.get(prop, False if prop in ('hidden', 'required', 'read_only') else [])
                 and not (prop in ('options_add', 'options_hidden') and not item)}
 
@@ -314,6 +314,8 @@ class Customization:
                     raise ValueError(f'{item["name"]} is placed twice. Put each field in one place.')
                 seen.add(item['name'])
                 items.append({'name': item['name'], 'width': item['width']})
+            if not items:
+                raise ValueError('Every section needs at least one field, so section ids stay in place.')
             out.append({'title': title.strip(), 'fields': items})
         return out
 
@@ -408,15 +410,11 @@ class Customization:
                 for skipped in rules.skipped:
                     problems.append({'kind': 'naming', 'key': key, 'error': f'Series {skipped["id"]} is skipped: {skipped["error"]}'})
                 naming[model] = rules
-        for model, values in defaults.items():
-            token = ADDED_CHOICES.set(choices)
-            try:
+        with activated(self.business.database, Layer(active_layer().fields, choices)):
+            for model, values in defaults.items():
                 defaults[model] = {name: model.__declared_fields__[name].validate(value) for name, value in values.items()}
-            finally:
-                ADDED_CHOICES.reset(token)
         self.effective, self.defaults, self.choices, self.read_only = effective, defaults, MappingProxyType(choices), read_only
-        self.layouts, self.lists = layouts, lists
-        self.registry.naming = MappingProxyType(naming)
+        self.layouts, self.lists, self.naming = layouts, lists, MappingProxyType(naming)
 
     def layout(self, model):
         """The effective layout: the override with fields placed nowhere added to the last section."""
@@ -428,8 +426,13 @@ class Customization:
         result[-1]['fields'] += [{'name': name, 'width': width(fields[name])} for name in placeable if name not in placed]
         return result
 
-    def merge(self, entry, model, readable):
+    def merge(self, entry, model, readable, writable):
         """Merged field, layout and list values for one model entry of /api/schema."""
+        from .ui.metadata import field_schema
+        for name, field in model.__declared_fields__.items():
+            if getattr(field, 'instance', None) and name in readable:
+                entry['fields'].append({**field_schema(field), 'read_only': name not in writable, 'stored': True, 'compute': None,
+                                        'initial': None, 'applies_when': None, 'required_when': None, 'locked_when': None})
         props = self.effective.get(model, {})
         for field in entry['fields']:
             changed = props.get(field['name'])
@@ -444,10 +447,11 @@ class Customization:
                 retired = changed.get('options_hidden', [])
                 field['choices'] = [item for item in field['choices'] if item not in retired] + changed.get('options_add', [])
                 field['retired_choices'] = list(retired)
-        if model in self.layouts or any(name.startswith('x_') for name in model.__declared_fields__):
+        if model in self.layouts or any(getattr(field, 'instance', None) for field in model.__declared_fields__.values()):
+            # Sections with nothing this role can read are left out, titles included.
             entry['layout'] = [{'label': section['title'], 'fields': [item['name'] for item in section['fields'] if item['name'] in readable],
                                 'wide': [item['name'] for item in section['fields'] if item['width'] == 12 and item['name'] in readable]}
-                               for section in self.layout(model)]
+                               for section in self.layout(model) if any(item['name'] in readable for item in section['fields'])]
             wide = {name for section in entry['layout'] for name in section['wide']}
             for field in entry['fields']:
                 field['wide'] = field['name'] in wide
@@ -457,6 +461,11 @@ class Customization:
             entry['page_size'] = value['page_size']
             if value['sort'].removeprefix('-') in readable or value['sort'] in ('id', '-id'):
                 entry['order_by'] = value['sort']
+
+    def default_order(self, policy, user, model):
+        """The list's order when the client sends none: the list view's sort when this role can read it."""
+        sort = self.lists.get(model, {}).get('sort', '-id')
+        return sort if sort.removeprefix('-') in {'id', *policy.fields(user, model)} else '-id'
 
     def prepare(self, model, values):
         """Values for a new record: defaults set on this instance for fields the caller left out."""
@@ -481,16 +490,11 @@ class Customization:
         database = self.business.database
         if getattr(database, 'path', None) is None or not hasattr(database, 'must_exist'):
             return None
+        from .cli.install import snapshot
         folder = database.path.parent / 'backups'
         folder.mkdir(mode=0o700, exist_ok=True)
         target = folder / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.sqlite3')
-        with database._connection() as source:
-            copy = sqlite3.connect(target)
-            try:
-                source.backup(copy)
-            finally:
-                copy.close()
-        target.chmod(0o600)
+        snapshot(database.path, target)
         return target.name
 
     def check_new(self, model, body):
@@ -501,8 +505,12 @@ class Customization:
         name = raw if isinstance(raw, str) and raw.startswith('x_') else 'x_' + raw if isinstance(raw, str) else ''
         if not FIELD_NAME.fullmatch(name):
             errors['name'] = 'Use lowercase letters, digits and underscores, 40 characters at most with x_.'
-        elif name in model.__declared_fields__ or name in FRAMEWORK_COLUMNS:
-            errors['name'] = f'{model.__name__} already has a field called {name}.'
+        else:
+            with self.business.database._connection() as connection:
+                taken = {column.lower() for column in self.business.database.columns(connection, self.registry.name_for(model))}
+            # Names compare ignoring case, and against every column, a Reference's <name>_model and <name>_id included.
+            if name in taken | {key.lower() for key in model.__declared_fields__} | set(FRAMEWORK_COLUMNS):
+                errors['name'] = f'{model.__name__} already has a field called {name}.'
         kind = body.get('type')
         if kind not in TYPES:
             errors['type'] = 'Choose ' + ', '.join(TYPES[:-1]) + ' or Link.'
@@ -543,26 +551,41 @@ class Customization:
         model = self.instance_model(model_name)
         name, definition, field = self.check_new(model, body)
         table = self.registry.name_for(model)
+        taken = ValidationError({'name': f'{model.__name__} already has a field called {name}.'})
         with self.engine:
-            backup = self.backup()
-            with self.business.database.transaction() as tx:
-                connection = tx.connection
-                if connection.execute('SELECT 1 FROM evlet_custom_fields WHERE model=? AND name=?', (table, name)).fetchone():
-                    raise ValidationError({'name': f'{model.__name__} already has a field called {name}.'})
+            with self.business.database._connection() as connection:
                 rows = connection.execute(f'SELECT count(*) FROM {identifier(table)}').fetchone()[0]
-                if definition['required'] and definition['default'] is None and rows:
-                    raise ValidationError({'default': f'{rows} records already exist. Give a default for them, or leave the field optional.'})
-                field.__set_name__(model, name)
-                add_column(connection, table, name, field)
-                if definition['required'] and definition['default'] is not None and rows:
-                    connection.execute(f'UPDATE {identifier(table)} SET {identifier(name)}=?', (field.to_storage(field.default),))
-                connection.execute('INSERT INTO evlet_custom_fields(model,name,definition,created_by,created_at) VALUES (?,?,?,?,?)',
-                                   (table, name, json.dumps(definition, sort_keys=True), actor.username, int(time.time())))
-                self.controls.audit(connection, actor.username, 'Models', f'{model.__name__}.{name}',
-                                    f'Field added ({definition["type"]})' + (f' · backup {backup}' if backup else ''), None, definition)
-                version = self.controls.publish(tx)
+            if definition['required'] and definition['default'] is None and rows:
+                raise ValidationError({'default': f'{rows} records already exist. Give a default for them, or leave the field optional.'})
+            backup = self.backup()
+            try:
+                version = self.insert_field(actor, model, table, name, definition, field, backup)
+            except (sqlite3.Error, ConflictError):
+                # Another process added the same field first.
+                with self.business.database._connection() as connection:
+                    if name in self.business.database.columns(connection, table):
+                        raise taken from None
+                raise
         self.controls.refresh()
         return {'name': name, 'backup': backup, 'version': version}
+
+    def insert_field(self, actor, model, table, name, definition, field, backup):
+        with self.business.database.transaction() as tx:
+            connection = tx.connection
+            if connection.execute('SELECT 1 FROM evlet_custom_fields WHERE model=? AND name=?', (table, name)).fetchone():
+                raise ValidationError({'name': f'{model.__name__} already has a field called {name}.'})
+            rows = connection.execute(f'SELECT count(*) FROM {identifier(table)}').fetchone()[0]
+            if definition['required'] and definition['default'] is None and rows:
+                raise ValidationError({'default': f'{rows} records already exist. Give a default for them, or leave the field optional.'})
+            field.name = name
+            add_column(connection, table, name, field)
+            if definition['required'] and definition['default'] is not None and rows:
+                connection.execute(f'UPDATE {identifier(table)} SET {identifier(name)}=?', (field.to_storage(field.default),))
+            connection.execute('INSERT INTO evlet_custom_fields(model,name,definition,created_by,created_at) VALUES (?,?,?,?,?)',
+                               (table, name, json.dumps(definition, sort_keys=True), actor.username, int(time.time())))
+            self.controls.audit(connection, actor.username, 'Models', f'{model.__name__}.{name}',
+                                f'Field added ({definition["type"]})' + (f' · backup {backup}' if backup else ''), None, definition)
+            return self.controls.publish(tx)
 
     def remove_field(self, actor, model_name, name):
         model = self.instance_model(model_name)
@@ -588,8 +611,6 @@ class Customization:
         return {'name': name, 'backup': backup, 'version': version}
 
     def instance_model(self, model_name):
-        if self.business.tenant:
-            raise AccessError(409, 'Instance fields are not available on tenant instances yet.')
         model = self.controls.models().get(model_name)
         if model is None:
             raise AccessError(404, 'Model not found')
@@ -609,15 +630,19 @@ class Customization:
             else:
                 connection.execute('UPDATE evlet_overrides SET value=? WHERE kind=? AND key=?', (json.dumps(value, sort_keys=True), kind, key))
 
-        rows = connection.execute("SELECT kind, key, value FROM evlet_overrides WHERE (kind='field' AND key=?) OR (kind IN ('layout','list','naming') AND key=?) OR (kind='perm' AND key LIKE ?)",
-                                  (f'{model_name}.{name}', model_name, f'%|{model_name}')).fetchall()
+        escaped = model_name.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        rows = connection.execute("SELECT kind, key, value FROM evlet_overrides WHERE (kind='field' AND key=?) OR (kind IN ('layout','list','naming') AND key=?) "
+                                  "OR (kind='perm' AND key LIKE ? ESCAPE '\\')", (f'{model_name}.{name}', model_name, f'%|{escaped}')).fetchall()
         fields = {key: field for key, field in model.__declared_fields__.items() if key != name}
         for kind, key, raw in ((row[0], row[1], row[2]) for row in rows):
             value = json.loads(raw)
             if kind == 'field':
                 write(kind, key, None)
             elif kind == 'layout' and any(item['name'] == name for section in value for item in section['fields']):
-                write(kind, key, [{**section, 'fields': [item for item in section['fields'] if item['name'] != name]} for section in value])
+                # Sections left empty go, so the rest keep their places; with none left the layout goes back to the file.
+                kept = [{**section, 'fields': [item for item in section['fields'] if item['name'] != name]} for section in value]
+                kept = [section for section in kept if section['fields']]
+                write(kind, key, kept or None)
             elif kind == 'list' and (name in value['columns'] or value['sort'].removeprefix('-') == name):
                 columns = [item for item in value['columns'] if item != name]
                 write(kind, key, {**value, 'columns': columns, 'sort': '-id' if value['sort'].removeprefix('-') == name else value['sort']} if columns else None)
@@ -643,9 +668,9 @@ class Customization:
 
     def naming_model(self, model_name):
         model = self.controls.models().get(model_name)
-        if model is None or model not in self.registry.naming:
+        if model is None or model not in self.naming:
             raise AccessError(404, 'Model not found')
-        return model, self.registry.naming[model]
+        return model, self.naming[model]
 
     def counters(self, model_name):
         from .sequences import split
@@ -723,6 +748,7 @@ class Customization:
             series = body['series']
             if not isinstance(series, list) or not series or any(not isinstance(item, dict) or not isinstance(item.get('format'), str) or not isinstance(item.get('when'), str) for item in series):
                 raise ValidationError({'series': 'Send each series with its format and condition.'})
+            series = [{**item, 'id': str(item.get('id') or f'series_{index + 1}')} for index, item in enumerate(series)]
             for item in series:
                 problem = {}
                 try:
@@ -738,7 +764,7 @@ class Customization:
                     except ConditionError as exc:
                         problem['when'] = str(exc)
                 checks.append({'id': item.get('id'), **problem})
-            usable = [{'id': str(item.get('id') or index), 'label': str(item.get('label') or ''), 'format': item['format'], 'when': item['when'].strip()}
+            usable = [{'id': item['id'], 'label': str(item.get('label') or ''), 'format': item['format'], 'when': item['when'].strip()}
                       for index, (item, check) in enumerate(zip(series, checks)) if len(check) == 1]
             try:
                 check_order(usable)
@@ -748,18 +774,14 @@ class Customization:
             except ValueError as exc:
                 return {'checks': checks, 'match': None, 'name': None, 'error': str(exc)}
         values, errors = {}, {}
-        token = ADDED_CHOICES.set(self.choices)
-        try:
-            for name, value in body.get('values', {}).items():
-                field = fields.get(name)
-                if field is None or value in (None, ''):
-                    continue
-                try:
-                    values[name] = field.validate(value)
-                except (ValueError, TypeError) as exc:
-                    errors[name] = str(exc)
-        finally:
-            ADDED_CHOICES.reset(token)
+        for name, value in body.get('values', {}).items():
+            field = fields.get(name)
+            if field is None or value in (None, ''):
+                continue
+            try:
+                values[name] = field.validate(value)
+            except (ValueError, TypeError) as exc:
+                errors[name] = str(exc)
         resource, today = self.registry.name_for(model), host_today(self.business)
         with self.business.database._connection() as connection:
             reader = connection if self.counter_table(connection) else None
@@ -782,7 +804,7 @@ class Customization:
         table = self.registry.name_for(model)
         with self.business.database._connection() as connection:
             count = connection.execute(f'SELECT count(*) FROM {identifier(table)}').fetchone()[0]
-        rules = self.registry.naming.get(model)
+        rules = self.naming.get(model)
         return {'table': table, 'records': count, 'fields_detail': fields,
                 'naming': None if rules is None else {'field': rules.field, 'date_field': rules.date_field}}
 

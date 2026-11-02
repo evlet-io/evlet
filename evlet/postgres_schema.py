@@ -7,7 +7,7 @@ from .fields import Link, Reference, Text
 from .models import identifier, storage_name
 from .migrations import (Applied, SchemaError, AddField, AddIndex, CreateModel, RenameField, Recompute,
                          _metadata, _definition, _migration_plan, _history,
-                         _normalized, _planned_definition, _recompute, recomputes, index_columns, stored_columns, app_fields)
+                         _normalized, _planned_definition, _recompute, recomputes, index_columns, stored_columns, app_fields, instance_columns)
 
 
 def validate_indexes(registry):
@@ -82,9 +82,11 @@ def tables(db):
 
 
 def check(db, registry, rows=False):
+    added = instance_columns(db, postgres=True)
     for table, model in registry.models.items():
+        skip = added.get(table, set())
         columns = db.execute("SELECT column_name,data_type,is_nullable,is_identity FROM information_schema.columns WHERE table_schema='public' AND table_name=?", (table,))
-        actual = {r[0]: (r[1], r[2] == 'NO', r[3] == 'YES') for r in columns if not r[0].startswith('x_')}
+        actual = {r[0]: (r[1], r[2] == 'NO', r[3] == 'YES') for r in columns if r[0] not in skip}
         expected = {'id': ('bigint', True, True), **{
             name: ('bigint' if sql_type == 'INTEGER' else 'text', field.required, False)
             for key, field in app_fields(model).items() for name, sql_type in field.columns(key)}}
@@ -97,7 +99,7 @@ def check(db, registry, rows=False):
             JOIN pg_attribute a ON a.attrelid=t.oid AND a.attnum=c.conkey[1]
             JOIN pg_attribute ta ON ta.attrelid=target.oid AND ta.attnum=c.confkey[1]
             WHERE n.nspname='public' AND t.relname=? AND c.contype='f' ''', (table,))
-        if {tuple(r.values()) for r in foreign if not r[0].startswith('x_')} != {(name, storage_name(field.target), 'id', 'a', 'public', 1, 1, True) for name, field in app_fields(model).items() if isinstance(field, Link)}:
+        if {tuple(r.values()) for r in foreign if r[0] not in skip} != {(name, storage_name(field.target), 'id', 'a', 'public', 1, 1, True) for name, field in app_fields(model).items() if isinstance(field, Link)}:
             raise SchemaError(f'{table}: foreign keys differ from models')
         indexes = db.execute('''SELECT i.indisunique,i.indisprimary,array_agg(a.attname ORDER BY k.ordinality) AS fields
             FROM pg_index i JOIN pg_class t ON t.oid=i.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace

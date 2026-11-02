@@ -123,10 +123,17 @@ def evaluate(value, read):
     return {'lt': lambda: a < b, 'lte': lambda: a <= b, 'gt': lambda: a > b, 'gte': lambda: a >= b}[op]()
 
 
+class Plans(dict):
+    """Per-field plans of a model's app fields. An instance field (x_) has no rules, so it has an empty plan."""
+
+    def __missing__(self, name):
+        return {}
+
+
 @lru_cache(maxsize=512)
 def plans(model, parent=None):
-    result = {}
-    fields = model.__declared_fields__
+    result = Plans()
+    fields = model.__app_fields__
     for name, field in fields.items():
         entry = {}
         for key in ('compute', 'visible_if', 'required_if', 'read_only_if'):
@@ -170,7 +177,7 @@ def template(registry, model):
             dependencies[prefix + name] = {path[7:] if path.startswith('parent.') and parent else prefix + path.replace('.*.', '.') for path in paths}
             inputs[prefix + name] = dependencies[prefix + name]
             owners[prefix + name] = definition
-        for name, field in definition.__declared_fields__.items():
+        for name, field in definition.__app_fields__.items():
             owners[prefix + name] = definition
             entry = plans(definition, parent)[name]
             nodes[prefix + name] = entry

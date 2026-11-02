@@ -6,7 +6,7 @@ import os
 import threading
 import sqlite3
 
-from .database import Database, Session, ConflictError
+from .database import Database, Session, ConflictError, using
 from .models import identifier, ValidationError
 
 # Tokenize quoted text before adapting framework SQL. Values remain parameters.
@@ -175,7 +175,8 @@ class PostgreSQLDatabase(Database):
         try:
             with self._connections().connection() as raw:
                 try:
-                    yield Connection(raw, self)
+                    with using(self):
+                        yield Connection(raw, self)
                 finally:
                     raw.rollback()
         except self.driver.DataError:
@@ -196,7 +197,7 @@ class PostgreSQLDatabase(Database):
                 if timeout is not None:
                     connection.execute("SELECT set_config('statement_timeout', ?, true), set_config('lock_timeout', ?, true), set_config('idle_in_transaction_session_timeout', ?, true)", (str(timeout * 1000),) * 3)
                 connection.execute('SELECT pg_advisory_xact_lock(1163283540)')
-                yield Session(connection, self.registry)
+                yield Session(connection, self.registry, self.timezone)
                 connection.commit()
             except BaseException:
                 connection.rollback()

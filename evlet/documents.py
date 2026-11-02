@@ -135,6 +135,7 @@ class Context:
         self.readonly = readonly
         self._active = [] if active is None else active
         self._recalculate = None  # (model, record_id) explicitly allowed to recalculate under the active plan.
+        self._person = None  # (model, record_id) of the write a person sent over HTTP; Controls rules apply to it.
 
     def read_context(self):
         return Context(self._business, self._tx, self.user, readonly=True, active=self._active)
@@ -329,6 +330,8 @@ def load_draft(context, model, record_id, values, *, preview=False):
     business.policy.require(user, model, 'read' if preview and record_id else operation)
     current = business.policy.record(tx, user, model, record_id, 'read' if preview else operation) if record_id else None
     scalars, collections = business.split_body(values)
+    if current is None:
+        drop_empty_name(business.registry, model, scalars)
     from .states import state_write
     from .sequences import sequence_write
     state_write(model, scalars, current)
@@ -349,6 +352,13 @@ def load_draft(context, model, record_id, values, *, preview=False):
     if business.registry.plan_for(model) is not None and sum(1 for _ in walk(draft)) - 1 > LIMITS['document_rows']:
         raise ValidationError({'children': 'This document exceeds the owned row limit'})
     return draft, old
+
+
+def drop_empty_name(registry, model, values):
+    """A null naming field on create is no value: the server names the record."""
+    rules = registry.naming.get(model)
+    if rules is not None and rules.field in values and values[rules.field] is None:
+        del values[rules.field]
 
 
 def computed_write(business, model, values, prefix):
@@ -1259,6 +1269,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     """
     from . import states
     business, tx, user = context._business, context._tx, context.user
+    # Required fields and retired options set in Controls apply to what people send, not to app code.
+    person, context._person = context._person == (model, record_id) and action is None and move is None, None
     if (action is not None or move is not None) and not record_id:
         raise AccessError(404, 'Record not found')
     declared_move = None
@@ -1312,8 +1324,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         states.check_posted(context, draft, before)
     if locked_write:
         states.keep_saved(draft, before)
-    if action is None and move is None:
-        # Required fields and retired options set in Controls apply to ordinary writes.
+    if person:
         business.controls.custom.enforce(model, draft._values, before._values if before else None)
     # Document numbers and names are assigned on the settled draft, in this transaction.
     from . import sequences
