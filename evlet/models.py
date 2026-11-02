@@ -22,6 +22,30 @@ def storage_name(model):
     return model.__name__.lower()
 
 
+def revises_field():
+    """The field the engine adds to a revisable model: an indexed Link to the same model, read only, set
+    only when a revise creates the copy. The model class sets its target once it exists.
+
+    An existing table needs a migration to gain it, like any field:
+    AddField('<model>', 'revises', Link('<model>', index=True)).
+    """
+    field = Link(None, label='Revises', read_only=True, index=True)
+    field.engine_revises = True
+    return field
+
+
+def unique_and_required(name, fields, tables):
+    """A revision clears unique values, so a revisable document (rows included) cannot require one."""
+    for key, field in fields.items():
+        if field.unique and field.required:
+            raise ValueError(f'{name}.{key} is unique and required, but a revision clears unique values; '
+                             'make it optional or not unique')
+    for table in tables.values():
+        child = table.child
+        if isinstance(child, type):
+            unique_and_required(child.__name__, child.__declared_fields__, child.__tables__)
+
+
 class ValidationError(ValueError):
     def __init__(self, errors):
         self.errors = errors
@@ -37,6 +61,19 @@ class ModelType(type):
             fields.update(getattr(base, "__declared_fields__", getattr(base, '__fields__', {})))
             tables.update(getattr(base, '__tables__', {}))
             sources.update(getattr(base, '__sources__', {}))
+        # Meta.revisable = True: the engine adds `revises`, a Reference to the record a revision replaced.
+        meta = namespace['Meta'] if 'Meta' in namespace else next((base.Meta for base in bases if hasattr(base, 'Meta')), None)
+        revisable = getattr(meta, 'revisable', False)
+        if revisable not in (True, False):
+            raise ValueError(f'{name}: Meta.revisable is True or False')
+        for reserved in (('revises', 'revised_by') if revisable else ()):
+            inherited = fields.get(reserved)
+            if reserved in namespace or inherited is not None and not getattr(inherited, 'engine_revises', False):
+                raise ValueError(f'{name}.{reserved} is reserved: a revisable model gets revises from the engine '
+                                 'and shows revised_by in its details')
+        if revisable:
+            # Each revisable class gets its own field, so a subclass's revisions link to its own table.
+            namespace = {**namespace, 'revises': revises_field()}
         for key, value in namespace.items():
             if isinstance(value, Field):
                 identifier(key)
@@ -73,6 +110,12 @@ class ModelType(type):
             raise ValueError(f"{name} declares more than one State: " + ", ".join(states))
         # The State field's name; its value changes only through moves, so the model is a document.
         cls.__state__ = states[0] if states else None
+        if revisable and (not states or not fields[states[0]].voidable):
+            raise ValueError(f'{name}: Meta.revisable needs a State with voidable states, because a revise voids the original')
+        cls.__revisable__ = revisable
+        if revisable:
+            fields['revises'].target = cls
+            unique_and_required(name, fields, tables)
         if states or sources or tables or 'permissions' in namespace or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True

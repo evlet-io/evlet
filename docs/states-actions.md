@@ -5,8 +5,8 @@ paid. Its value changes only through declared moves. Some states lock the docume
 against ordinary edits. Model actions are declared methods that may take validated
 inputs and may be available only in some states.
 
-This guide covers Phase 4 of the model handoff. Void and revise (Phase 5) and the
-Journal (Phase 8) are not implemented yet; see "Not yet" below.
+This guide covers Phases 4 and 5 of the model handoff: states, moves, actions, and the
+void and revise corrections. The Journal (Phase 8) is not implemented yet; see "Not yet" below.
 
 ## Declaring a State
 
@@ -31,7 +31,6 @@ class Invoice(Model):
         moves=(
             Move("draft", "issued", "Issue", when=F("total") > 0, run="on_issue"),
             Move("issued", "paid", "Mark paid", roles=("admin",)),
-            Move(("draft", "issued"), "void", "Void", roles=("admin",)),
         ),
         locked=("issued", "paid", "void"),
         final=("paid", "void"),
@@ -55,7 +54,10 @@ class Invoice(Model):
 * A model has at most one State, and only root documents have one (not `Table` rows).
 * Every state named in a move, `locked`, `final` or `voidable` must be one of the
   choices. A final state has no moves out. Voidable states must be locked and not final.
-  `voidable` is stored for Phase 5 and has no effect yet.
+* A State with `voidable` states must also have a state named `void` that is locked and
+  final. Void and revise (below) start only from a voidable state and end in `void`. No
+  declared Move may then go to `void`: a record is voided only through void, with a reason,
+  so later phases can always reverse its effects and record it.
 * State also takes `label`, `help_text`, `placeholder`, `hidden`, `index` and
   `max_length`. It takes no rules, calculations or validators.
 
@@ -109,8 +111,8 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
   or action on such a record recalculates, so it answers 409 `SCHEMA_VERSION_MISMATCH`;
   send `{"_calculation": {"model_schema_hash": "<active hash>", "recalculate": true}}` as
   the body of the move (or with the action) to recalculate with the active formulas.
-* Deleting a record in a locked state is refused with 409. Corrections will come from
-  void and revise (Phase 5).
+* Deleting a record in a locked state is refused with 409. Corrections use void and revise
+  (below).
 * Uploading or removing an attachment is an ordinary write: on a locked record it is
   refused with 409. Downloads still work.
 * A role that cannot read the State field gets `This record is locked` (and `This record is
@@ -188,7 +190,7 @@ Detail responses of a model with a State, or with an action that declares
   "_moves": [
     {"to": "issued", "label": "Issue", "allowed": false,
      "reason": "The condition for this move needs values that are not filled in yet"},
-    {"to": "void", "label": "Void", "allowed": false, "reason": "Your role cannot use this move"}
+    {"to": "paid", "label": "Mark paid", "allowed": false, "reason": "Your role cannot use this move"}
   ],
   "_actions": [
     {"name": "record_payment", "label": "Record payment", "allowed": false,
@@ -212,10 +214,129 @@ Detail responses of a model with a State, or with an action that declares
   detail response already read when the caller can read every row; otherwise they load the
   saved document once per request.
 
+## Void and revise
+
+A locked record is never edited to correct it. It is voided, or revised, which voids it and
+starts a new draft copy.
+
+```python
+class Invoice(Model):
+    class Meta:
+        calculation_language = "finite-v1"
+        numeric_profile = "finite40-hu18-v1"
+        revisable = True
+
+    status = State(("draft", "issued", "paid", "void"), moves=(Move("draft", "issued", "Issue"),),
+                   locked=("issued", "paid", "void"), final=("paid", "void"), voidable=("issued",))
+```
+
+### Void
+
+`POST /api/{model}/{id}/void` with `{"reason": "..."}`, or `context.void(Invoice, record_id,
+reason)` from Python.
+
+* The model must have voidable states, otherwise 404 `This record cannot be voided`.
+* Then the checks run in this order: the `void` permission and the row scope, as for any
+  record (403 or 404); `If-Match` over HTTP (428 without it, 409 when stale); the body and
+  the reason; the saved state. A missing record answers 404 whatever the body holds.
+* The reason is required. It is trimmed and may have up to 1,000 characters. The body takes
+  no other keys (`Send only a reason`). Errors are field errors (422).
+* Voiding starts only from a state in `voidable`; otherwise 409 `This record is draft, which
+  cannot be voided`. A role that cannot read the State gets `This record cannot be voided now`.
+* The engine writes the `void` state and nothing else. A void is not an ordinary write and not
+  a declared Move: no State lock, move roles or guards apply, and the document is not
+  recalculated. Every other value, at every depth, stays as it was saved, saved results
+  included.
+* The model's `changed()` hook receives the operation `"void"`.
+* The response is the permission-filtered detail with a new ETag.
+
+### Revise
+
+`POST /api/{model}/{id}/revise` with `{"reason": "..."}`, or `context.revise(Invoice,
+record_id, reason)`. Only models with `Meta.revisable = True`; others answer 404 `This record
+cannot be revised`.
+
+* `Meta.revisable = True` needs a State with voidable states. The engine adds a read-only,
+  indexed field `revises = Link(<the model>, index=True, label="Revises")`, so a revision
+  always points at a record of the same model. A model may not declare its own `revises` or
+  `revised_by`. Ordinary writes cannot set `revises` (403).
+* A field that is both `unique` and `required` is not allowed on a revisable model or its
+  Table rows, because a revision clears unique values (below).
+* The checks are those of void, with the `revise` permission, and the role also needs create
+  permission on the model. A reason is required, because the original is voided.
+* Revise starts from a voidable state, or from `void` when the record has no revision yet,
+  for example because its revision draft was deleted. A void record stays void and gets a new
+  copy (no second void, so the void hooks do not run again). A record that has a revision
+  answers 409 `This record already has a revision`.
+* Before anything changes, the engine checks that the caller's copy could be created, and
+  answers 403 with a plain reason otherwise: `You cannot see every row of this record, so you
+  cannot revise it`, `Your role cannot add the rows of this record, so you cannot revise it`
+  or `This record links to a record you cannot read, so you cannot revise it`.
+* In one transaction the engine voids the original exactly as above, then creates a new
+  draft. It is an exact copy of the stored source values of the record and of its Table rows
+  at every depth, including fields the caller cannot read or write. Rows get new ids and keep
+  their order and positions, the State starts at its default, `revises` points at the
+  original, and unique fields are cleared. Calculated values are recalculated by the normal
+  pipeline, so a stored result over a linked record takes the linked value of today. A field
+  with an `initial` suggestion keeps the copied value. Fetched values are fetched again.
+  Attachments are not copied.
+* The copy is then checked like any new draft: rules, validation, the caller's row scope (the
+  copy must be inside it, 404 otherwise) and create permission for each row collection. Any
+  failure rolls back the void too.
+* The model's `changed()` hook receives `"void"` for the original and `"revise"` for the copy.
+* The HTTP response is 201 with the copy's detail, its ETag, a `Location` header and
+  `_original`, the id of the voided record.
+* The original's detail shows `revised_by`, the id of its revision, found through the index on
+  `revises` (there is no column for it). It is `null` until a revision exists, after the
+  revision is deleted, or when the caller cannot read the revision, and it is left out for
+  roles that cannot read `revises`.
+
+Adding `Meta.revisable = True` to a model that already has a table adds a column, so it
+needs a migration like any new field. Pass the model class as the Link target:
+
+```python
+Migration("0005_quote_revises", AddField("quote", "revises", Link(Quote, index=True)))
+```
+
+Without it, startup reports that the database columns differ from the models.
+
+### Permissions
+
+`Rule.operations` accepts `"void"` and `"revise"`, on models that support them (a Rule naming
+one on another model fails at startup).
+
+* Admin always has `void` while its Rule on the model allows `read` and `update`, and
+  `revise` while it also allows `create`. This holds for governed and ungoverned models.
+* A Rule naming `void` or `revise` adds that role. It never removes admin. So
+  `{"admin": Rule(("read", "create", "update", "delete")), "editor": Rule(("read", "update",
+  "void"))}` lets both the admin and the editor void.
+* A Rule naming `revise` must also name `create`; otherwise startup fails.
+* Void and revise are separate operations: revise does not need `void`. Neither changes what
+  `read`, `create`, `update` or `delete` allow, and neither is passed on to Table rows.
+* The row scope of the role's Rule applies, as for any record.
+
+### Availability in details
+
+Details of a voidable model add `_void`, and of a revisable model `_revise`, outside the
+ETag, for roles that can read the State:
+
+```json
+{"_void": {"allowed": false, "reason": "This record cannot be voided in its current state"},
+ "_revise": {"allowed": true}}
+```
+
+Reasons are `Your role cannot void this record` (no permission, or for revise no create
+permission), `You cannot void this record` (outside the row scope), the state reason, which
+never names the state, `This record already has a revision`, and for revise the three copy
+reasons above. They never include counts or names.
+
 ## Schema metadata
 
 `/api/schema` model entries gain, additively:
 
+* Entries of voidable models gain `voidable: true` and `revisable`, and their `permissions`
+  gain `void` (and `revise` when revisable), for roles that can read the State. Other entries
+  are unchanged. The `revises` field is listed with the other fields (type `link`, read only).
 * `state`: `field`, `states`, `default`, `locked`, `final`, `voidable` and `moves`, each
   with `from`, `to`, `label`, `roles`, `guarded` and `when`. `when` is the serialized
   finite-v1 expression when the role can read every value it reads, otherwise `null`.
@@ -227,11 +348,14 @@ Detail responses of a model with a State, or with an action that declares
 
 ## Not yet
 
-* Void and revise (Phase 5) will use `voidable`. Until then a locked record cannot be
-  corrected except by a move, an action or trusted Python code.
-* The Journal (Phase 8) will record each move. The single place that writes it is
-  `evlet.states.moved()`, called in the move's transaction.
+* The Journal (Phase 8) will record each move, void and revise. The places that write it are
+  `evlet.states.moved()`, `evlet.corrections.voided()` and `evlet.corrections.revised()`,
+  each called in the operation's transaction.
+* Effects (Phase 6) will be reversed in `evlet.corrections.reverse_effects()` and Sequence
+  numbers (Phase 7) cleared on a revision in `evlet.corrections.prepare_copy()`. Both are
+  empty today.
+* The void reason is not stored until the Journal exists.
 * Draft previews (`/api/_draft`) do not report the State lock; the save does.
-* The connector and the MCP server do not offer moves yet.
+* The connector and the MCP server do not offer moves, void or revise yet.
 * The current SolidJS form shows the State as a read-only select and does not show
-  `_moves`; the new UI will.
+  `_moves`, `_void` or `_revise`; the new UI will.

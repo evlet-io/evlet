@@ -135,7 +135,21 @@ def test_reference_app_full_public_flow(project):
     assert reason['lost_reason'] == 'Price'
     assert move(lost_url, 'draft')[1]['lost_reason'] is None
     quote_schema = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')
-    assert quote_schema['state']['final'] == ['won'] and quote_schema['actions'][0]['inputs'][0]['name'] == 'extra_days'
+    assert quote_schema['state']['final'] == ['won', 'void'] and quote_schema['actions'][0]['inputs'][0]['name'] == 'extra_days'
+    # A sent quote is revised: it becomes void and a new draft copy with the same lines links back to it.
+    assert quote_schema['revisable'] and quote_schema['permissions']['revise']
+    sent_quote = c('POST', '/api/quote', {'name': 'Q-4', 'children': {'lines': [{'qty': '2', 'rate': '10'}, {'qty': '1', 'rate': '4'}]}})[1]
+    sent_url = f"/api/quote/{sent_quote['id']}"
+    assert move(sent_url, 'sent')[1]['_revise'] == {'allowed': True}
+    revise = lambda body: c('POST', sent_url + '/revise', body, headers={b'if-match': c('GET', sent_url)[2][b'etag']})
+    assert revise({})[1]['fields'] == {'reason': 'Give a reason'}
+    status, copy, _ = revise({'reason': 'New prices'})
+    assert status == 201 and copy['stage'] == 'draft' and copy['revises'] == sent_quote['id']
+    assert [row['amount'] for row in copy['children']['lines']] == ['20.00', '4.00'] and copy['grand_total'] == sent_quote['grand_total']
+    original = c('GET', sent_url)[1]
+    assert original['stage'] == 'void' and original['revised_by'] == copy['id']
+    copy_url = f"/api/quote/{copy['id']}"
+    assert c('PATCH', copy_url, {'name': 'Q-4 rev'}, headers={b'if-match': c('GET', copy_url)[2][b'etag']})[1]['name'] == 'Q-4 rev'
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest

@@ -176,6 +176,30 @@ class Context:
         """Move a record's State to `to` with the same checks as POST /api/{model}/{id}/moves/{to}."""
         return self._write(model, record_id, {}, move=to)
 
+    def void(self, model, record_id, reason):
+        """Void a record with a reason; the same checks as POST /api/{model}/{id}/void."""
+        return self._correct(model, record_id, reason, 'void')
+
+    def revise(self, model, record_id, reason):
+        """Void a record and create its draft copy; returns the copy. The same checks as POST .../revise."""
+        return self._correct(model, record_id, reason, 'revise')
+
+    def _correct(self, model, record_id, reason, operation):
+        from . import corrections
+        if self.readonly:
+            raise AccessError(403, 'This context is read only')
+        model = self._model(model)
+        key = (model, record_id)
+        if key in self._active or len(self._active) >= 16:
+            raise ValidationError({'_form': 'Recursive document change detected'})
+        self._active.append(key)
+        try:
+            return getattr(corrections, operation)(self, model, record_id, reason)
+        except ValidationError as exc:
+            raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
+        finally:
+            self._active.pop()
+
     def delete(self, model, record_id):
         if self.readonly: raise AccessError(403, 'This context is read only')
         model = self._model(model)

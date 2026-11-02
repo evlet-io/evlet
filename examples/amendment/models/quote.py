@@ -8,18 +8,21 @@ class Quote(Model):
     class Meta:
         calculation_language = 'finite-v1'
         numeric_profile = 'finite40-hu18-v1'
+        # A sent quote is corrected by revising it: it is voided and a new draft copy links back to it.
+        revisable = True
 
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
     name = Text(required=True)
     # The stage changes only through its moves. Sent, won and lost quotes are locked against ordinary
-    # edits; a won quote is final. Only an administrator can reopen a sent or lost quote.
-    stage = State(('draft', 'sent', 'won', 'lost'), moves=(
+    # edits; a won quote is final. Only an administrator can reopen a sent or lost quote, or void or
+    # revise a sent one (POST /api/quote/{id}/void or /revise with a reason).
+    stage = State(('draft', 'sent', 'won', 'lost', 'void'), moves=(
         Move('draft', 'sent', 'Send', when=F('grand_total') > 0),
         Move('sent', 'won', 'Mark won'),
         Move('sent', 'lost', 'Mark lost'),
         Move(('sent', 'lost'), 'draft', 'Reopen', roles=('admin',)),
-    ), locked=('sent', 'won', 'lost'), final=('won',))
+    ), locked=('sent', 'won', 'lost', 'void'), final=('won', 'void'), voidable=('sent',))
     inclusive = Boolean(default=False)
     company = Link(Company)
     issued_on = Date()

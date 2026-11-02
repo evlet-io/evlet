@@ -459,3 +459,35 @@ def test_postgres_states_moves_locks_and_actions_over_http(pg_dsn):
     states.check_a_failing_run_rolls_the_move_back(app)
     states.check_locked_records_refuse_ordinary_writes_at_every_depth(app)
     states.check_actions_validate_inputs_and_availability(app)
+
+
+def test_postgres_void_revise_permissions_and_rollback(pg_dsn, monkeypatch):
+    from tests import test_corrections as corrections
+    from tests.test_rules_types import start
+    app = corrections.seed(start(PostgreSQLDatabase(pg_dsn, Registry(*corrections.MODELS))))
+    corrections.check_void(app)
+    corrections.check_revise(app)
+    corrections.check_rollback(app, monkeypatch)
+    corrections.check_permissions(app)
+    with app[0].database.transaction() as tx:
+        tx.connection.execute('SET LOCAL enable_seqscan = off')
+        plan = ' '.join(row[0] for row in tx.connection.execute(
+            'EXPLAIN SELECT id FROM "quote" WHERE "revises"=? ORDER BY id LIMIT 1', (1,)).fetchall())
+    assert 'Index' in plan and 'revises' in plan, plan
+
+
+def test_postgres_revise_is_refused_up_front_outside_the_callers_scope(pg_dsn):
+    from tests import test_corrections as corrections
+    from tests.test_rules_types import start
+    app = start(PostgreSQLDatabase(pg_dsn, Registry(corrections.Vendor, corrections.Bill)))
+    corrections.check_revise_is_predicted((app, client(app)))
+
+
+def test_postgres_revisable_needs_an_add_field_migration(pg_dsn):
+    from tests.test_corrections import check_revises_migration
+
+    def make(registry, migrations, migrate=False):
+        database = PostgreSQLDatabase(pg_dsn, registry, migrations=migrations)
+        database.migrate(migrations) if migrate else database.initialize()
+        return database
+    check_revises_migration(make)
