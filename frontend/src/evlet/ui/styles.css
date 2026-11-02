@@ -1104,3 +1104,40 @@ th:hover>.rz::after{background:var(--border-strong)}
 .fld-ctl.tip-area .input{padding-right:40px}
 .fld-ctl.tip-end>.fld-tip{right:10px}
 .fld .in-affix>.fld-tip{align-self:center;margin:0 10px 0 2px}
+/* filter builder (app/filters.ts): a panel under the list toolbar with rows of field, condition,
+   value and remove; child table rows sit in a group with its Any / No row choice. */
+.ph-actions .badge{font-size:11px;font-weight:600;background:var(--accent);color:var(--accent-fg);border-radius:10px;padding:0 6px;line-height:17px;margin-left:2px}
+.ph-actions button:not(.has-filters)>.badge{display:none}
+.fb{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--bg-subtle);padding:12px;margin:-6px 0 16px;display:flex;flex-direction:column;gap:8px}
+.fb-rows,.fb-group{display:flex;flex-direction:column;gap:8px}
+.fb-rows:empty{display:none}
+.fb-group{border:1px dashed var(--border-strong);border-radius:var(--r);padding:8px;background:var(--surface)}
+.fb-gh{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.fb-gh .in-select{width:auto;min-width:170px;height:30px}
+.fb-row{display:grid;grid-template-columns:minmax(180px,240px) minmax(110px,150px) minmax(0,1fr) 28px;gap:8px;align-items:start}
+.fb-row .input,.fb-row .in-select,.fb-row .in-link,.fb-row .in-affix{height:32px;font-size:13px;background:var(--surface)}
+.fb-row .in-affix .input{height:30px}
+.fb-row .in-select .tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fb-value{min-width:0;display:flex;flex-direction:column;gap:6px}
+.fb-value .chips{display:flex;flex-wrap:wrap;gap:4px}
+.fb-two{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:6px}
+.fb-list{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.fb-list>.in-link{flex:1;min-width:160px}
+.fb-row>.icon-btn{margin-top:2px}
+.fb-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fb-foot .grow{flex:1}
+.fb-empty{margin:0;font-size:13px}
+.pop.field-pop{width:340px;max-width:calc(100vw - 24px)}
+.choice-list.grouped{max-height:340px}
+.choice-list.grouped .mh{position:sticky;top:0;background:var(--surface);z-index:1}
+.choice-list.grouped .hint{font-size:11.5px}
+@media (max-width:760px){
+  .fb{padding:10px;margin-top:-8px}
+  .fb-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 28px;border-bottom:1px solid var(--divider);padding-bottom:8px}
+  .fb-row>.fb-value{grid-column:1/3;grid-row:2}
+  .fb-row>.icon-btn{grid-column:3;grid-row:1}
+  .fb-two{grid-template-columns:minmax(0,1fr)}
+  .fb-two>span{display:none}
+  .fb-gh{flex-wrap:wrap}
+  .fb-gh .in-select{min-width:0}
+}

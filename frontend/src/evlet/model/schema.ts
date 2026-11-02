@@ -38,10 +38,14 @@ export interface FieldSchema {
   applies_when?: Expression;
   required_when?: Expression;
   locked_when?: Expression;
+  /** What a list filter may use on the field (evlet/query.py); empty when it cannot be filtered. */
+  operators?: string[];
 }
 
 /** row_changes false: the parent's save takes only full row lists without _key (a ChildTable on a plain model). */
-export interface ChildSchema { name: string; model: string; label: string; link: string; min_rows?: number; max_rows?: number; row_changes?: boolean }
+export interface ChildSchema { name: string; model: string; label: string; link: string; min_rows?: number; max_rows?: number; row_changes?: boolean
+  /** Whether list filters may match the parent on these rows. */
+  filterable?: boolean }
 export interface ActionSchema { name: string; label: string; arguments?: Array<{ name: string; type: string; required: boolean; default?: unknown }>; dialog?: boolean }
 
 /** Phase 4 state metadata (field, states, moves with labels and roles, locked, final). Optional until the backend sends it. */
