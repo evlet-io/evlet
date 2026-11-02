@@ -60,7 +60,8 @@ For virtual environment setup and each step explained, read
 - [Routing](docs/routing.md): frontends, reserved paths, `routes.py` and `evlet routes`.
 - [UI framework](docs/ui-framework.md): Evlet's own browser framework and components.
 
-`evlet dev --instance acme` reloads Python changes while you work. Stop the server
+`evlet dev --instance acme` reloads Python changes while you work. At startup it
+prints a one-time sign-in link, so you can skip the sign-in form. Stop the server
 and run `evlet migrate acme` when a model change needs a migration.
 
 ## Explore without a project
@@ -72,6 +73,20 @@ evlet docs
 
 The Playground uses temporary demo data. Use an instance for records you want to keep. Offline documentation
 opens at **http://127.0.0.1:8001**.
+
+`evlet playground` prints a sign-in link when it starts:
+
+```text
+Sign in as demo-admin (works once, for 10 minutes):
+  http://127.0.0.1:8000/_dev/signin?token=...
+```
+
+Open it to sign straight in. On an empty Playground it first creates the
+administrator `demo-admin` with a random password that is never shown. Run
+`evlet dev-link` in another terminal for a fresh link once the first one is used or
+expired. Use `--user NAME` to sign in as someone else, or `--no-link` to skip the
+link. Links exist only under `evlet playground` and `evlet dev`, never under
+`evlet serve`; see [development sign-in links](docs/cli.md#development-sign-in-links).
 
 ## Optional capabilities
 

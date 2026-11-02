@@ -214,7 +214,9 @@ segment starting with `_` is locked for framework internals, such as `/_/mcp`.
 
 The framework serves `/_/mcp`, `/_/oauth/*` and `/.well-known/oauth-*` for AI assistants
 ([connector.md](connector.md#remote-mcp-with-oauth)), on the primary host only. Other paths
-under `/_/` and `/.well-known/` are 404.
+under `/_/` and `/.well-known/` are 404. `evlet dev` and `evlet playground` also serve
+`/_dev/signin` for one-time sign-in links, to loopback clients only
+([cli.md](cli.md#development-sign-in-links)); every other server answers 404 there.
 
 No app frontend, `PageView` route or `routes.py` entry may use one. Python page
 routes must also start with a fixed segment, not a parameter. Boot fails with a
