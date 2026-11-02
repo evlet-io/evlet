@@ -191,6 +191,8 @@ permissions = {
   read, may not.
 * A Rule naming `journal` adds that role, like `void` and `revise`; naming a role never
   removes admin or the editor. So the Rule above lets the viewer post as well.
+* A custom role (Controls, `docs/controls.md`) based on the editor posts like the editor.
+  A Controls override can take `journal` away from a role whose file Rule names it.
 * A Rule naming `journal` on a model without a journal fails at startup.
 
 ## Reading the history

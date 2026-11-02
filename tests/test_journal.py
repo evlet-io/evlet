@@ -175,6 +175,19 @@ def test_journal_declarations_defaults_and_rules():
     assert roles(Plain) == roles(Silent) == set()
 
 
+def test_custom_roles_and_overrides_decide_who_may_journal():
+    """A role based on the editor journals like the editor; Controls overrides can take 'journal' away."""
+    registry = Registry(*MODELS)
+    roles = {'admin': 'admin', 'editor': 'editor', 'viewer': 'viewer', 'portal': 'portal', 'sales': 'editor', 'clerk': 'viewer'}
+    policy = Policy(registry, roles=roles)
+    journalers = lambda policy, model: {role for role in roles if policy.allows(User(1, role, role), model, 'journal')}
+    assert journalers(policy, Memo) == {'admin', 'editor', 'sales'}
+    assert journalers(policy, Ticket) == {'admin', 'editor', 'viewer', 'sales', 'clerk'}
+    stricter = Policy(registry, roles=roles, overrides={('viewer', Ticket): Rule(('read',)), ('sales', Memo): Rule(('read',))})
+    assert journalers(stricter, Ticket) == {'admin', 'editor', 'sales', 'clerk'}
+    assert journalers(stricter, Memo) == {'admin', 'editor'}
+
+
 # Engine entries
 
 def check_engine(app):

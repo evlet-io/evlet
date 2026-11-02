@@ -85,8 +85,11 @@ job and rebuilds its `Policy` and settings when it moved. Open pages get a
 
 **Permissions** (kind `perm`, key `role|Model`, value
 `{"ops": [...], "read": [...] | null, "write": [...] | null, "scope": id | null}`):
-operations, readable and writable fields must stay within the file rule. Write needs read,
-no access clears fields and rows, revise needs create. Admin rules can't be overridden.
+operations (`read`, `create`, `update`, `delete`, `journal`, `void`, `revise`), readable and
+writable fields must stay within the file rule. Write needs read, no access clears fields and
+rows, revise needs create. Admin rules can't be overridden. The page shows the first four;
+`journal`, `void` and `revise` named in the file rule are kept on save. A role based on the
+editor journals like the editor when its rule reads and updates the model (`docs/journal.md`).
 Row scopes are named presets: `created_by`, `owner`, `account_manager` and `assignee` (for
 models with that field), `own_customer` and the app's own (`AppDefinition(scopes={...})`).
 A row scope set in the app file can't be changed. The `own_customer` preset is
