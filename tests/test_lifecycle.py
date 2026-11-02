@@ -576,3 +576,13 @@ def test_recompute_audit_applies_tracking_policies_before_storage(tmp_path):
         assert 'excluded' not in event['fields']
         assert event['source'] == 'System' and event['revision'] == 0
     assert upgraded.get(New, 1).masked == 68
+
+
+def test_journal_can_filter_native_lifecycle_events(app):
+    c = client(app)
+    _, record, headers = c('POST', '/api/invoice', {'number': 'INV-001', 'customer': 'A'})
+    assert c('POST', '/api/invoice/1/confirm', {}, headers={b'if-match': headers[b'etag']})[0] == 200
+    status, page, _ = c('GET', '/api/invoice/1/journal?kind=confirmed')
+    assert status == 200, page
+    assert page['total'] == 1 and page['items'][0]['kind'] == 'confirmed'
+    assert c('GET', '/api/invoice/1/journal?kind=unknown')[0] == 422

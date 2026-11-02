@@ -36,7 +36,8 @@ APPEND_ONLY = 'The journal is append only'
 # Kinds the engine writes; `effects` is written by effects_posted() after a move posts or a void or unpost reverses
 # effect rows, and `recomputed` by a Recompute migration that changed a record's stored results.
 ENGINE_KINDS = ('created', 'changed', 'moved', 'voided', 'revised', 'unposted', 'reposted', 'number', 'file', 'deleted',
-                'effects', 'recomputed')
+                'effects', 'recomputed', 'confirmed', 'reconfirmed', 'cancelled', 'reopened', 'approved', 'rejected',
+                'post_confirmation_edit')
 # Kinds about the State: shown as `changed` to a reader who cannot read it.
 STATE_KINDS = ('voided', 'revised', 'unposted', 'reposted', 'effects')
 # Kinds people write through HTTP (or journal.post), and the values each takes.
