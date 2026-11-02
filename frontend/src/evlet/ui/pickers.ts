@@ -461,8 +461,9 @@ export function DateRangePanel(props: DateRangePanelProps): HTMLElement {
     on:change=${(event: Event) => {
       const input = event.target as HTMLInputElement, text = input.value.trim();
       const day = text ? parseDay(text) : null;
-      // Text that can't be read empties that end and says what was typed.
+      // Text that can't be read keeps that end as it was and says what was typed.
       typedError.set(text && !day ? `Couldn't read ${text} as a date` : null);
+      if (text && !day) { const kept = (end === 'from' ? from : to).peek(); input.value = kept ? formatDate(kept) : ''; return; }
       (end === 'from' ? from : to).set(day);
       const first = from.peek(), last = to.peek();
       if (first && last && last < first) { from.set(last); to.set(first); }

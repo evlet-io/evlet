@@ -392,12 +392,11 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
     if (ok) done();
     return ok;
   };
-  // A date, time or duration that can't be read empties the field (never the old value, never the
-  // bad text) and says what was typed; the message goes with the next edit.
+  // A date, time or duration that can't be read keeps the field's value and shows it again, and
+  // says what was typed; the message goes with the next edit.
   const unreadable = (): boolean => {
     const typed = input.value.trim();
-    input.value = '';
-    try { if (!isEmpty(untrack(() => field.value.get()))) { field.set(null); edited(field).set(true); } } catch { /* a locked field keeps its value */ }
+    input.value = untrack(shown);
     field.error.set(`Couldn't read ${typed} as ${PICKED[kind.picker!]}`);
     return false;
   };

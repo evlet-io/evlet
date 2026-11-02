@@ -286,10 +286,9 @@ records, such as action dialogs.
 Date, date-time, time and duration inputs read typed text the forgiving way Frappe does, through
 one pure module, `ui/dateparse.ts` (`parseDay`, `parseClock`, `parseDayTime`, `parseLength`). The
 text is read on blur and on Enter, and the input then shows the value in the person's format at
-once. Text that can't be read, or names a day that doesn't exist (31-02), empties the field: the
-value becomes empty (not the previous value) and the input is cleared. The field's error says what
-was typed, "Couldn't read 1.62 as a duration", and goes with the next edit; a required field then
-gets its usual required error. Nothing is guessed.
+once. Text that can't be read, or names a day that doesn't exist (31-02), changes nothing: the
+field keeps its value and the input shows it again. The field's error says what was typed,
+"Couldn't read 1.62 as a duration", and goes with the next edit. Nothing is guessed.
 
 These forms are a browser convenience only. The API takes the stored forms and nothing else:
 `YYYY-MM-DD` dates, ISO date-times with a time zone, `HH:MM` or `HH:MM:SS` times, and ISO 8601

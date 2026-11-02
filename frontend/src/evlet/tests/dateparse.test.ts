@@ -118,31 +118,32 @@ describe('date fields read typed text when they commit', () => {
   });
 
   it.each([
-    ['date', '31-02-2027', '2027-06-01', "Couldn't read 31-02-2027 as a date"],
-    ['date', 'abc', '2027-06-01', "Couldn't read abc as a date"],
-    ['datetime', '12/06/2027 25:00', '2027-06-12T05:00:00Z', "Couldn't read 12/06/2027 25:00 as a date and time"],
-    ['time', '9.5', '09:00:00', "Couldn't read 9.5 as a time"],
-    ['duration', '1.62', 'PT1H', "Couldn't read 1.62 as a duration"],
-  ])('empties a %s it cannot read (%s), says why, and clears the message on the next edit', (type, typed, before, message) => {
+    ['date', '31-02-2027', '2027-06-01', '01-06-2027', "Couldn't read 31-02-2027 as a date"],
+    ['date', 'abc', '2027-06-01', '01-06-2027', "Couldn't read abc as a date"],
+    ['datetime', '12/06/2027 25:00', '2027-06-12T05:00:00Z', '12-06-2027 09:00', "Couldn't read 12/06/2027 25:00 as a date and time"],
+    ['time', '9.5', '09:00:00', '09:00', "Couldn't read 9.5 as a time"],
+    ['duration', '1.62', 'PT1H', '1h', "Couldn't read 1.62 as a duration"],
+    ['date', 'abc', null, '', "Couldn't read abc as a date"],
+  ])('keeps a %s it cannot read (%s) as it was, says why, and clears the message on the next edit', (type, typed, before, shown, message) => {
     const field = localField({ name: 'value', type, label: 'Value' }, before);
     const host = render(() => BaseField({ field }));
     const input = host.querySelector('input')!;
     input.value = typed;
     key(input, 'Enter');
-    expect([input.value, field.value.peek(), field.error.peek()]).toEqual(['', null, message]);
+    expect([input.value, field.value.peek(), field.error.peek()]).toEqual([shown, before, message]);
     expect(host.querySelector('.err')!.textContent).toBe(message);
     change(input, typed);
-    expect([input.value, field.value.peek(), field.error.peek()]).toEqual(['', null, message]);
+    expect([input.value, field.value.peek(), field.error.peek()]).toEqual([shown, before, message]);
     input.value = '1';
     input.dispatchEvent(new Event('input'));
     expect(field.error.peek()).toBeNull();
   });
 
-  it('leaves a required field empty with the message, and the required rule applies on the next commit', () => {
+  it('keeps a required field\'s value too, and the required rule still applies when it is emptied', () => {
     const field = localField({ name: 'due', type: 'date', label: 'Due', required: true }, '2027-06-01');
     const input = render(() => BaseField({ field })).querySelector('input')!;
     change(input, 'abc');
-    expect([field.value.peek(), field.error.peek()]).toEqual([null, "Couldn't read abc as a date"]);
+    expect([input.value, field.value.peek(), field.error.peek()]).toEqual(['01-06-2027', '2027-06-01', "Couldn't read abc as a date"]);
     change(input, '');
     expect(field.error.peek()).toBe('Due is required');
   });
@@ -162,7 +163,7 @@ describe('date fields read typed text when they commit', () => {
 });
 
 describe('typed range ends', () => {
-  it('reads both ends, swaps them when needed and empties an end it cannot read', () => {
+  it('reads both ends, swaps them when needed and keeps an end it cannot read', () => {
     const applied: unknown[] = [];
     render(() => DateRangePanel({ value: () => null, onApply: range => applied.push(range) }));
     const [first, last] = document.querySelectorAll<HTMLInputElement>('.range-typed input');
@@ -170,7 +171,7 @@ describe('typed range ends', () => {
     change(last, '120627');
     expect([first.value, last.value]).toEqual(['01-06-2027', '12-06-2027']);
     change(last, '31/02/2027');
-    expect(last.value).toBe('');
+    expect(last.value).toBe('12-06-2027');
     expect(document.querySelector('.range-note')!.textContent).toBe("Couldn't read 31/02/2027 as a date");
     change(last, '20/05/27');
     expect([first.value, last.value]).toEqual(['20-05-2027', '01-06-2027']);
