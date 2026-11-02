@@ -104,7 +104,8 @@ that users still have can't be deleted; deleting one removes its permission over
 ## Overrides
 
 Overrides are stored in `evlet_overrides(kind, key, value)` and never change app files.
-They can only make a rule stricter. Saving sends every change at once
+They can only make a rule stricter than the app files. Instance fields are the exception, since
+Controls owns them: see [Permissions](#overrides) below. Saving sends every change at once
 (`POST /api/_controls/overrides`, `{"changes": [{kind, key, value}]}`, `null` resets); one
 invalid change saves none, and the reply names each invalid item as `changes.<index>`.
 A value equal to the file value is removed instead of stored. A stored override that no
@@ -118,7 +119,11 @@ job and rebuilds its `Policy` and settings when it moved. Open pages get a
 **Permissions** (kind `perm`, key `role|Model`, value
 `{"ops": [...], "read": [...] | null, "write": [...] | null, "scope": id | null}`):
 operations (`read`, `create`, `update`, `delete`, `journal`, `void`, `revise`), readable and
-writable fields must stay within the file rule. Write needs read, no access clears fields and
+writable fields must stay within the file rule. Stricter only applies to the fields declared in
+app files: an instance field (`x_`, added by Controls) may be made readable or writable for a
+role even when the app rule lists `read_fields` or `write_fields`, as long as the role has read
+(and create or update, to write). Without such an override, a role whose app rule lists fields
+does not see instance fields. Write needs read, no access clears fields and
 rows, revise needs create. Admin rules can't be overridden. The page shows the first four;
 `journal`, `void` and `revise` named in the file rule are kept on save. A role based on the
 editor journals like the editor when its rule reads and updates the model (`docs/journal.md`).
