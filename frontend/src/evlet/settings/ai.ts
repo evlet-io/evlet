@@ -44,7 +44,7 @@ export function MyAIPage(options: { api?: MyAIClient }): HTMLElement {
   const pick = (app: string) => {
     const next = d().apps.filter(item => item === app ? !chosen(app) : chosen(item));
     if (!next.length) return toast('Leave at least one app on, or disconnect the assistant instead', { icon: 'info' });
-    void run(() => api.apps(next.length === d().apps.length ? null : next), 'Saved');
+    void run(() => api.apps(next), 'Saved');
   };
   const disconnect = (client: MyAssistant) => ask(`Disconnect ${client.client_name}?`, 'It loses access straight away. You can connect it again any time.', 'Disconnect',
     () => run(() => api.disconnect(client.id), `${client.client_name} disconnected`), true);
@@ -67,7 +67,7 @@ export function MyAIPage(options: { api?: MyAIClient }): HTMLElement {
           ${Button({ label: 'Disconnect', size: 'small', variant: 'soft-danger', onClick: () => disconnect(client) })}</div></div>`)
           : html`<div class="ctl-empty">Follow the steps above to connect one.</div>`}</section>
       ${when(() => d().apps.length > 0, () => html`<section class="ctl-card"><div class="ctl-card-head"><div><h2>What assistants can use</h2>
-        <p>You can narrow this. You can't give an assistant more than your own access.</p></div></div>
+        <p>You can narrow this. You can't give an assistant more than your own access. Apps installed later stay off once you choose.</p></div></div>
         ${d().apps.map(app => html`<div class="ctl-setrow"><div class="grow"><strong>${app}</strong></div><div class="ctl-setctl">
           ${Switch({ on: chosen(app), ariaLabel: app, disabled: !d().clients.length, onChange: () => pick(app) })}</div></div>`)}
         ${d().clients.length ? null : html`<p class="muted ctl-small ctl-pad">Connect an assistant first.</p>`}</section>`)}

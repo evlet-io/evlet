@@ -189,6 +189,7 @@ class Business:
         self.auth.initialize()
         self.controls.initialize()
         self.connectors.initialize()
+        self.assistants.initialize()
         self.storage.initialize(self.database)
         self.settings.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
