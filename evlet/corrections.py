@@ -334,12 +334,8 @@ def repost_move(context, model, record):
 
 def was_posted(context, model, record_id):
     """Whether the record ever posted rows of an effect (they may all be reversed since)."""
-    from .effects import SOURCE
-    business = context._business
-    name = business.registry.name_for(model)
-    return any(context._tx.connection.execute(f'SELECT 1 FROM {identifier(business.registry.name_for(bound.target))} '
-                                              f'WHERE "{SOURCE}_model"=? AND "{SOURCE}_id"=? LIMIT 1', (name, record_id)).fetchone()
-               for bound in business.registry.effects.get(model, ()))
+    from .effects import ever_posted
+    return ever_posted(context._tx.connection, context._business.registry, model, record_id)
 
 
 def roots(business, tx, model, ids):
@@ -378,30 +374,68 @@ def live_record(context, model, record_id):
     return current in model.__declared_fields__[state].locked or has_postings(tx.connection, business.registry, model, record)
 
 
-def dependents(context, model, record_id):
-    """Live records that depend on this one: they (or their Table rows) link to it with a Link or a Reference,
-    or they posted effect rows that do. Returns [(model, id)] in a stable order.
+def owned(business, tx, model, record_id):
+    """{model: [ids]}: the record itself, its Table rows at every depth and the effect rows it posted.
+    One statement per table level and chunk, and one per effect."""
+    from .effects import posted
+    result = {model: [record_id]}
+    level = {model: [record_id]}
+    while level:
+        following = {}
+        for child in business.children.values():
+            parents = level.get(child.parent)
+            if not parents:
+                continue
+            table, link = identifier(business.registry.name_for(child.model)), identifier(child.link)
+            for start in range(0, len(parents), CHUNK):
+                part = parents[start:start + CHUNK]
+                ids = [row[0] for row in tx.connection.execute(
+                    f'SELECT id FROM {table} WHERE {link} IN ({", ".join("?" for _ in part)})', part).fetchall()]
+                following.setdefault(child.model, []).extend(ids)
+        level = {key: ids for key, ids in following.items() if ids}
+        for key, ids in level.items():
+            result.setdefault(key, []).extend(ids)
+    for bound in business.registry.effects.get(model, ()):
+        rows = posted(tx, business.registry, bound, [record_id]).get(record_id, [])
+        if rows:
+            result.setdefault(bound.target, []).extend(row.id for row in rows)
+    return result
 
-    One statement per linking field, and one per level and chunk to find the documents of Table rows."""
+
+def dependents(context, model, record_id):
+    """Live records that depend on this one: they (or their Table rows) link with a Link or a Reference to the
+    record, to one of its Table rows or to one of the effect rows it posted, or they posted effect rows that do.
+    Returns [(model, id)] in a stable order.
+
+    Only Link fields whose target is one of those models are read, and every Reference field (it may name any
+    model): one statement per field and chunk of ids, and one per level and chunk to find the documents of
+    Table rows. These columns are often not indexed, so each is a scan of its table."""
     from .effects import SOURCE, targets_of
     business, tx = context._business, context._tx
     registry = business.registry
-    name = registry.name_for(model)
     targets = targets_of(registry)
+    mine = owned(business, tx, model, record_id)
+    names = {registry.name_for(item): ids for item, ids in mine.items()}
     found = {}
     for other in registry.models.values():
         table = identifier(registry.name_for(other))
         for field_name, field in other.__declared_fields__.items():
             if not field.stored:
                 continue
-            if isinstance(field, Link) and field.target is model:
-                sql, values = f'SELECT id FROM {table} WHERE {identifier(field_name)}=?', (record_id,)
+            if isinstance(field, Link) and field.target in mine:
+                queries = [(f'SELECT id FROM {table} WHERE {identifier(field_name)} IN ', (), mine[field.target])]
             elif isinstance(field, Reference) and not (other in targets and field_name == SOURCE):
-                sql, values = (f'SELECT id FROM {table} WHERE {identifier(field_name + "_model")}=? AND {identifier(field_name + "_id")}=?',
-                               (name, record_id))
+                queries = [(f'SELECT id FROM {table} WHERE {identifier(field_name + "_model")}=? AND {identifier(field_name + "_id")} IN ',
+                            (name,), ids) for name, ids in names.items()]
             else:
                 continue
-            ids = [row[0] for row in tx.connection.execute(sql, values).fetchall()]
+            ids = []
+            for sql, first, values in queries:
+                for start in range(0, len(values), CHUNK):
+                    part = values[start:start + CHUNK]
+                    ids += [row[0] for row in tx.connection.execute(sql + f'({", ".join("?" for _ in part)})', (*first, *part)).fetchall()]
+            # Rows of this record linking to its own rows are not dependents.
+            ids = [item for item in dict.fromkeys(ids) if item not in set(mine.get(other, ()))]
             if not ids:
                 continue
             if other in targets:
@@ -463,11 +497,21 @@ def posting_problem(context, model, record, operation, *, with_dependents=True):
         return 409, 'This record is posted already'
     if not was_posted(context, model, record.id):
         return 409, 'This record was never posted. Use its moves to post it'
-    if repost_move(context, model, record) is None:
+    move = repost_move(context, model, record)
+    if move is None:
         if state_shown(context, model):
             return 409, f'This record is {current}, and no single move posts it from there'
         return 409, 'This record cannot be reposted now'
+    if asks_values(business, model, move):
+        return 409, f'{move.label} asks for values, so post the record with {move.label} itself'
     return None
+
+
+def asks_values(business, model, move):
+    """Whether the posting move asks for a value it may require; a repost sends none, so the move is the way."""
+    from .states import move_asks
+    fields = model.__declared_fields__
+    return any(fields[name].required or fields[name].required_when is not None for name in move_asks(business, model, move))
 
 
 def check_posting(context, model, record_id, operation, reason):
@@ -565,6 +609,13 @@ def availability(business, context, model, record):
     for operation, applied in applies.items():
         if not applied or not policy.allows(user, model, operation):
             continue
+        if operation == 'repost':
+            # A repost runs the posting move: it is offered only when this caller could run that move without values.
+            move = repost_move(context, model, record)
+            if move is None or user.role not in move.roles or asks_values(business, model, move) \
+                    or not policy.allows(user, model, 'update') \
+                    or policy.rule(user, model).scope is not None and not policy.visible(tx, user, model, [record.id], 'update'):
+                continue
         problem = posting_problem(context, model, record, operation, with_dependents=False)
         reason = problem[1] if problem is not None else None
         if reason is None and policy.rule(user, model).scope is not None and not policy.visible(tx, user, model, [record.id], operation):

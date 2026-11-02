@@ -2,7 +2,7 @@
 
 import pytest
 
-from evlet import (Application, Boolean, Child, Currency, Database, Decimal, Effect, Journal, Link, LocalAuth, Model, Move, Policy, Reference,
+from evlet import (Application, Boolean, Child, Currency, Database, Decimal, Effect, Journal, Link, LocalAuth, Model, Move, Negate, Policy, Reference,
                    Registry, Rule, Sequence, State, Swap, Table, Text, effects, journal)
 from evlet.auth import AccessError, User
 from evlet.calc import F
@@ -68,7 +68,44 @@ class Payment(Model):
                    voidable=('done',))
 
 
-MODELS = (Account, Ledger, Invoice, Payment)
+class Allocation(Model):
+    """Matches a ledger entry an invoice posted, or (through a Reference) any record."""
+    permissions = ALL
+    entry = Link(Ledger)
+    about = Reference()
+    status = State(('draft', 'done', 'void'), moves=(Move('draft', 'done', 'Confirm'),), locked=('done', 'void'), final=('void',),
+                   voidable=('done',))
+
+
+class Tally(Model):
+    permissions = {'admin': Rule(('read',)), 'editor': Rule(('read',))}
+    amount = Currency(default=0)
+    source = Reference()
+    reversal = Boolean(default=False)
+
+
+class Memo(Model):
+    """Posted by a move only admin may use."""
+    Meta = type('Meta', (), {'effects': (Effect(Tally, rows='rows', on='sent', reverse=Negate('amount')),)})
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'unpost', 'repost'))}
+    status = State(('draft', 'sent'), moves=(Move('draft', 'sent', 'Send', roles=('admin',)),), locked=('sent',))
+
+    def rows(self):
+        return [{'amount': '1'}]
+
+
+class Order(Model):
+    """Its posting move asks for a value it requires."""
+    Meta = type('Meta', (), {'effects': (Effect(Tally, rows='rows', on='sent', reverse=Negate('amount')),)})
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+    ref = Text(required_when=F('status') == 'sent')
+    status = State(('draft', 'sent'), moves=(Move('draft', 'sent', 'Send'),), locked=('sent',))
+
+    def rows(self):
+        return [{'amount': '2'}]
+
+
+MODELS = (Account, Ledger, Invoice, Payment, Allocation, Tally, Memo, Order)
 
 
 @pytest.fixture(params=['sqlite', 'postgresql'])
@@ -350,16 +387,17 @@ def test_recompute_includes_posted_records_only_when_asked(tmp_path, caplog):
     app = start(Database(path, Registry(*posting_models(1)), migrations=[base]))
     c = client(app)
     customer = c('POST', '/api/customer', {})[1]['id']
-    issued, unposted = new_bill(c, customer), new_bill(c, customer)
-    for url in (issued, unposted):
+    issued, unposted, voided = new_bill(c, customer), new_bill(c, customer), new_bill(c, customer)
+    for url in (issued, unposted, voided):
         assert move(c, url, 'issued')[0] == 200
     assert correct(c, unposted, 'unpost')[0] == 200
+    assert correct(c, voided, 'void')[0] == 200
     app.database.close()
     first = Migration('0001_recompute', Recompute('bill_lines', ('amount',)), Recompute('bill', ('total',)))
     # Off by default: the posted bill keeps its results; the unposted one has nothing live and is recalculated.
     db = Database(path, Registry(*posting_models(2)), migrations=[base, first])
     applied = db.migrate(db.migrations)
-    assert (applied.skipped, applied.posted) == (1, 0)
+    assert (applied.skipped, applied.posted) == (2, 0)
     db.close()
     app, c = open_bills(path, 2)
     assert [c('GET', url)[1]['total'] for url in (issued, unposted)] == ['3.00', '6.00']
@@ -370,11 +408,13 @@ def test_recompute_includes_posted_records_only_when_asked(tmp_path, caplog):
     db = Database(path, Registry(*posting_models(3)), migrations=[base, first, second])
     with caplog.at_level('WARNING', logger='evlet.migrations'):
         applied = db.migrate(db.migrations, recompute_posted=True)
-    assert (applied.skipped, applied.posted) == (0, 1)
+    # A void record keeps its results even then: its rows and their reversal must keep matching it.
+    assert (applied.skipped, applied.posted) == (1, 1)
     assert 'changed the saved results of 1 posted records' in caplog.text
     db.close()
     app, c = open_bills(path, 3)
-    assert [c('GET', url)[1]['total'] for url in (issued, unposted)] == ['9.00', '9.00']
+    assert [c('GET', url)[1]['total'] for url in (issued, unposted, voided)] == ['9.00', '9.00', '3.00']
+    assert 'recomputed' not in kinds(c, voided)
     entry = c('GET', f'{issued}/journal')[1]['items'][0]
     assert entry['kind'] == 'recomputed' and entry['actor'] is None and entry['data']['posted'] is True
     assert entry['data']['fields'] == {'total': {'old': '3.00', 'new': '9.00'}}
@@ -430,3 +470,74 @@ def test_migrate_command_takes_the_recompute_posted_flag(monkeypatch, capsys, tm
     cli.main(['migrate', 'acme', '--trust', '--recompute-posted'])
     assert 'Posted records recalculated: 3' in capsys.readouterr().out
     assert seen == [('acme', False), ('acme', True)]
+
+
+# Review findings
+
+def test_a_record_that_ever_posted_is_never_deleted(books):
+    from test_api_keys import create
+    app, c, account = books
+    draft = new_invoice(c, account)
+    assert '_deletable' not in c('GET', draft)[1]
+    url = issued_invoice(c, account)
+    assert c('GET', url)[1]['_deletable'] is False
+    assert correct(c, url, 'unpost')[1]['_deletable'] is False
+    before = ledger(app)
+    status, body, _ = c('DELETE', url, headers=etag(c, url))
+    assert (status, body) == (409, {'error': 'This record has posted before, so it cannot be deleted. Repost it and void it instead.'})
+    # An API key and trusted Python code are refused the same way.
+    write = create(c, 'Write', {'access': 'write', 'models': None})[1]['token']
+    keyed = http(app, 'DELETE', url, None, headers={b'authorization': f'Bearer {write}'.encode(), b'x-evlet-request': b'',
+                                                     b'if-match': c('GET', url)[2][b'etag']})
+    assert keyed[0] == 409
+    from evlet.documents import Context
+    with app.database.transaction() as tx:
+        with pytest.raises(AccessError) as caught:
+            Context(app.business, tx, User(1, 'admin', 'admin')).delete(Invoice, int(url.rsplit('/', 1)[1]))
+    assert caught.value.status == 409
+    detail = c('GET', url)[1]
+    assert (detail['status'], detail['number'], ledger(app)) == ('draft', 'INV-0001', before)
+    # A record that never posted is deleted as before.
+    assert c('DELETE', draft, headers=etag(c, draft))[0] == 204
+
+
+def test_records_linking_to_posted_entries_or_rows_block_an_unpost(books):
+    app, c, account = books
+    url = issued_invoice(c, account)
+    invoice = c('GET', url)[1]
+    with app.database.transaction() as tx:
+        entry = tx.connection.execute('SELECT id FROM ledger WHERE source_id=? ORDER BY id LIMIT 1', (invoice['id'],)).fetchone()[0]
+    allocation = c('POST', '/api/allocation', {'entry': entry})[1]['id']
+    assert move(c, f'/api/allocation/{allocation}', 'done')[0] == 200
+    message = f'This record cannot be unposted while Allocation {allocation} depends on it. Void or unpost it first.'
+    assert correct(c, url, 'unpost')[1] == {'error': message}
+    assert correct(c, f'/api/allocation/{allocation}', 'void')[0] == 200
+    # A Reference to one of its Table rows holds on to it too.
+    line = invoice['children']['lines'][0]['id']
+    row_model = app.business.registry.name_for(next(child.model for child in app.business.registry.children if child.parent is Invoice))
+    other = c('POST', '/api/allocation', {'about': {'model': row_model, 'id': line}})[1]['id']
+    assert move(c, f'/api/allocation/{other}', 'done')[0] == 200
+    assert correct(c, url, 'unpost')[1]['error'].startswith(f'This record cannot be unposted while Allocation {other} depends')
+    assert correct(c, f'/api/allocation/{other}', 'void')[0] == 200
+    assert correct(c, url, 'unpost')[0] == 200
+
+
+def test_repost_is_offered_only_when_the_caller_could_run_the_posting_move(sqlite_books):
+    app, c, _ = sqlite_books
+    editor = add_user(app, 'editor')
+    memo = f"/api/memo/{c('POST', '/api/memo', {})[1]['id']}"
+    assert move(c, memo, 'sent')[0] == 200
+    # The editor may unpost (a Rule names it), but Send is admin's, so it is not offered repost.
+    assert correct(editor, memo, 'unpost')[0] == 200
+    assert '_repost' not in editor('GET', memo)[1] and c('GET', memo)[1]['_repost'] == {'allowed': True}
+    assert correct(editor, memo, 'repost', {})[0] == 403
+    assert correct(c, memo, 'repost', {})[0] == 200
+    # A posting move that asks for a required value is the way to post again; repost refuses and is not offered.
+    order = f"/api/order/{c('POST', '/api/order', {})[1]['id']}"
+    assert c('POST', f'{order}/moves/sent', {'ref': 'PO-1'}, headers=etag(c, order))[0] == 200
+    assert correct(c, order, 'unpost')[0] == 200
+    assert '_repost' not in c('GET', order)[1]
+    assert correct(c, order, 'repost', {})[1] == {'error': 'Send asks for values, so post the record with Send itself'}
+    # A Rule may not give repost without update.
+    with pytest.raises(ValueError, match="'repost' without 'update'"):
+        Policy(app.business.registry, rules={('editor', Memo): Rule(('read', 'repost'))})

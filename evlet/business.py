@@ -742,6 +742,11 @@ class Business:
         """
         from .journal import summary as journal_summary
         result = journal_summary(self, context._tx, model, record.id)
+        if model in self.registry.effects:
+            from .effects import ever_posted
+            if ever_posted(context._tx.connection, self.registry, model, record.id):
+                # A record that ever posted is kept: delete answers 409, so screens do not offer it.
+                result['_deletable'] = False
         if model.__state__ is None and model not in self.registry.guards:
             return result
         from .states import availability

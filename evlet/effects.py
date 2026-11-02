@@ -606,6 +606,15 @@ def has_postings(connection, registry, model, record, *, voided=False):
     return False
 
 
+def ever_posted(connection, registry, model, record_id):
+    """Whether a record ever posted rows of an effect, live or reversed since. Such a record is never deleted:
+    its rows name it as their source."""
+    name = registry.name_for(model)
+    return any(connection.execute(f'SELECT 1 FROM {identifier(registry.name_for(bound.target))} '
+                                  f'WHERE "{SOURCE}_model"=? AND "{SOURCE}_id"=? LIMIT 1', (name, record_id)).fetchone()
+               for bound in registry.effects.get(model, ()))
+
+
 def live(rows):
     """The original rows not cancelled yet, from one effect's rows of a record in id order.
 

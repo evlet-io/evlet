@@ -123,6 +123,8 @@ class Policy:
                                  '(declare Meta.journal = Journal() or a State)')
             if 'revise' in rule.operations and 'create' not in rule.operations:
                 raise ValueError(f'{model.__name__}: Rule names \'revise\' without \'create\'; a revise creates a draft copy')
+            if 'repost' in rule.operations and 'update' not in rule.operations:
+                raise ValueError(f'{model.__name__}: Rule names \'repost\' without \'update\'; a repost runs the posting move')
             for operation in CORRECTIONS:
                 if operation in rule.operations and not corrects(model, operation):
                     raise ValueError(f'{model.__name__}: Rule names {operation!r}, but the model cannot be '

@@ -400,7 +400,8 @@ def _skip(session, model, record, skipped, posted):
     if posted is not None and key in posted:
         return False
     if _kept(session, model, record):
-        if posted is None:
+        # A void record keeps its results even on request: its rows and their reversal must keep matching it.
+        if posted is None or model.__state__ is not None and record._values.get(model.__state__) == 'void':
             skipped.add(key)
             return True
         posted.add(key)
