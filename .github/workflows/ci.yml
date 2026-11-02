@@ -104,7 +104,9 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install --require-hashes -r requirements-dev.lock -r requirements-postgres.lock
       - run: python -m pip install --no-build-isolation --no-deps -e .
-      - run: python -m pytest tests/test_postgres.py tests/test_hardening.py
+      # Every file that uses the pg_dsn fixture has PostgreSQL variants; list them so a new one is never skipped here.
+      - name: PostgreSQL variants
+        run: python -m pytest tests/test_hardening.py $(grep -l pg_dsn tests/test_*.py)
 
   windows-locks:
     runs-on: windows-latest
