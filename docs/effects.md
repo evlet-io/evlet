@@ -162,10 +162,15 @@ calculated values are frozen for every writer, so the rows it posted keep matchi
 * Moves and actions on it keep the saved calculated values at every depth, like ordinary
   writes on a locked record, even when a linked record or a formula changed since. They need
   no recalculation request after a deploy that changes formulas.
+* Its actions, move `run` methods and move values may not change a source field or the
+  Table rows its stored results read; the change is refused with 409, for example
+  `Quantity feeds posted totals. To change it, void or revise the record.` Fields no stored
+  result reads still change. See [states-actions.md](states-actions.md#ordinary-writes-and-locks).
 * `"_calculation": {"recalculate": true}` on it is refused with 409: `This record has
   postings. To change its totals, void or revise it.`
-* The `Recompute` migration operation skips it (and every locked record) and reports how
-  many records it kept.
+* A draft preview (`/api/_draft`) of it shows the saved values, as the save would keep them.
+* The `Recompute` migration operation skips it, voided or not, and reports how many records
+  it kept. Locked records that never posted are recalculated.
 
 To correct the totals of a posted record, void it or revise it.
 

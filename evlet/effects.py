@@ -586,12 +586,12 @@ def posted(tx, registry, bound, record_ids):
     return found
 
 
-def has_postings(connection, registry, model, record):
-    """Whether a record has posted effects: rows with it as source, and it is not void.
+def has_postings(connection, registry, model, record, *, voided=False):
+    """Whether a record has posted effects: rows with it as source, and it is not void (unless `voided`).
 
     Its stored calculated values are then frozen: corrections go through void or revise."""
     bounds = registry.effects.get(model, ())
-    if not bounds or model.__state__ is not None and record._values.get(model.__state__) == 'void':
+    if not bounds or not voided and model.__state__ is not None and record._values.get(model.__state__) == 'void':
         return False
     name = registry.name_for(model)
     return any(connection.execute(f'SELECT 1 FROM {identifier(registry.name_for(bound.target))} '

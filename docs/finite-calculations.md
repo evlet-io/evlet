@@ -454,8 +454,10 @@ Locked records and records with posted [effects](effects.md) are the exception. 
 record keeps its saved results on ordinary writes. A record with postings keeps them on
 every write, moves and actions included, and needs no recalculation request; asking for
 one is refused with 409 (`This record has postings. To change its totals, void or revise
-it.`). `Recompute` skips both kinds of record and reports how many it kept, so the effect
-rows a record posted always match its saved totals.
+it.`). Its actions and moves may not change what those results read (409, naming the
+field). `Recompute` skips posted records only and reports how many it kept, so the effect
+rows a record posted always match its saved totals; a locked record that never posted is
+recalculated. Draft previews of a locked or posted record show the values a save keeps.
 
 ## Permissions and the browser plan
 

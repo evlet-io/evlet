@@ -44,7 +44,7 @@ records the owner's decision and wins.
 | Savepoints | none | Each document operation runs in a savepoint, so a failure caught by trusted code leaves no partial writes |
 | `ChildTable` on finite models | legacy child rows skip finite rules | A `ChildTable` whose child uses finite features is rejected; use `Table(Child)` |
 | Void, revise, Effects, Sequence, Journal, Measures, meaning metadata | none | New |
-| Posted records | none | Frozen calculated values; corrections only by void or revise; Recompute skips locked and posted records |
+| Posted records | none | Frozen calculated values; actions and moves may not change what they read (409); corrections only by void or revise; Recompute skips posted records only; previews show kept values |
 
 ## Phases and branches
 

@@ -107,9 +107,9 @@ creating a document with 1,000 lines stores an entry of about 400 KB, and a page
 entries can carry several such entries. Read the journal in pages (`limit` and `offset`)
 and keep the page small for documents with many rows.
 
-`Recompute` never changes a locked record or one with postings (see
+`Recompute` never changes a record with postings (see
 [finite-calculations.md](finite-calculations.md)), so `recomputed` entries appear only on
-records still open for editing.
+records that never posted, locked or not.
 
 An `effects` entry follows the `moved` or `voided` entry of the same operation and lists
 each target model that received rows:

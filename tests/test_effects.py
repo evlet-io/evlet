@@ -1013,9 +1013,10 @@ def posting_models(factor):
 
     class BillLine(Child):
         __resource__ = 'bill_lines'
-        qty = Decimal(default=1)
+        qty = Decimal(default=1, label='Quantity')
         rate = Currency(default=0)
         amount = Currency(compute=F('qty') * F('rate') * factor)
+        note = Text(default='')
 
     class BillMeta(FiniteMeta):
         effects = (Effect('posting', rows='posting_rows', on='issued', reverse=Negate('amount')),)
@@ -1029,8 +1030,11 @@ def posting_models(factor):
         fee = Currency(compute=F('customer.fee'))
         total = Currency(compute=lines.sum('amount') + F('fee'))
         memo = Text(default='', editable_when_locked=True, index=True)
-        status = State(('draft', 'issued', 'paid', 'void'), moves=(Move('draft', 'issued', 'Issue'), Move('issued', 'paid', 'Pay')),
-                       locked=('issued', 'paid', 'void'), final=('paid', 'void'), voidable=('issued',))
+        charge = Currency(applies_when=F('status') == 'paid')
+        charged = Currency(compute=F('charge'))
+        status = State(('draft', 'approved', 'issued', 'paid', 'void'),
+                       moves=(Move('draft', 'approved', 'Approve'), Move(('draft', 'approved'), 'issued', 'Issue'), Move('issued', 'paid', 'Pay')),
+                       locked=('approved', 'issued', 'paid', 'void'), final=('paid', 'void'), voidable=('issued',))
 
         def posting_rows(self):
             return [{'amount': self.total}]
@@ -1038,6 +1042,18 @@ def posting_models(factor):
         @action('Note', inputs={'memo': Text(required=True)})
         def note(self, memo):
             self.memo = memo
+
+        @action('Bump')
+        def bump(self):
+            self.lines[0].qty = self.lines[0].qty + 10
+
+        @action('Label line')
+        def label_line(self):
+            self.lines[0].note = 'checked'
+
+        @action('Add line')
+        def add_line(self):
+            self.lines = [*self.lines, {'qty': '1', 'rate': '2'}]
 
     return Customer, Posting, Bill
 
@@ -1080,33 +1096,82 @@ def test_posted_records_keep_their_calculated_values_on_moves_and_actions(tmp_pa
     assert effects.check(app) == []
 
 
-def test_recompute_skips_locked_and_posted_records_and_journals_the_rest(tmp_path, caplog):
+def test_recompute_skips_posted_records_and_journals_the_rest(tmp_path, caplog):
     from evlet import AddIndex, Migration, Recompute
     path, base = tmp_path / 'db.sqlite3', Migration('0000_base', AddIndex('bill', 'memo'))
     app = start(Database(path, Registry(*posting_models(1)), migrations=[base]))
     c = client(app)
     customer = c('POST', '/api/customer', {})[1]['id']
-    draft, issued, voided = new_bill(c, customer), new_bill(c, customer), new_bill(c, customer)
+    draft, approved, issued, voided = (new_bill(c, customer) for _ in range(4))
+    assert move(c, approved, 'approved')[0] == 200
     for url in (issued, voided):
         assert move(c, url, 'issued')[0] == 200
     assert c('POST', voided + '/void', {'reason': 'wrong'}, headers=etag(c, voided))[0] == 200
     app.database.close()
-    steps = (base, Migration('0001_recompute', Recompute('bill_lines', ('amount',)), Recompute('bill', ('fee', 'total'))),)
+    steps = (base, Migration('0001_recompute', Recompute('bill_lines', ('amount',)), Recompute('bill', ('fee', 'total', 'charged'))),)
     with caplog.at_level('INFO', logger='evlet.migrations'):
         db = Database(path, Registry(*posting_models(2)), migrations=list(steps))
         applied = db.migrate(db.migrations)
     assert applied == ['0001_recompute'] and applied.skipped == 2
-    assert 'kept the saved results of 2 locked or posted records' in caplog.text
+    assert 'kept the saved results of 2 posted records' in caplog.text
     app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False))
     app.initialize()
     c = client(app)
-    assert [c('GET', url)[1]['total'] for url in (draft, issued, voided)] == ['6.00', '3.00', '3.00']
+    # A locked record that never posted is recalculated; posted ones, voided or not, keep their results.
+    assert [c('GET', url)[1]['total'] for url in (draft, approved, issued, voided)] == ['6.00', '6.00', '3.00', '3.00']
     assert effects.check(app) == []
-    latest = c('GET', draft + '/journal')[1]['items'][0]
-    assert latest['kind'] == 'recomputed' and latest['actor'] is None
-    assert latest['data'] == {'fields': {'total': {'old': '3.00', 'new': '6.00'}},
-                              'rows': {'lines': {'updated': [{'id': 1, 'fields': {'amount': {'old': '3.00', 'new': '6.00'}}}]}}}
+    for url in (draft, approved):
+        latest = c('GET', url + '/journal')[1]['items'][0]
+        assert latest['kind'] == 'recomputed' and latest['actor'] is None
+        assert latest['data'] == {'fields': {'total': {'old': '3.00', 'new': '6.00'}},
+                                  'rows': {'lines': {'updated': [{'id': latest['data']['rows']['lines']['updated'][0]['id'],
+                                                                  'fields': {'amount': {'old': '3.00', 'new': '6.00'}}}]}}}
     assert [item['kind'] for item in c('GET', issued + '/journal')[1]['items']].count('recomputed') == 0
-    # Kept records stay on their old formula version; the draft moves to the active one.
-    status, body, _ = move(c, draft, 'issued')
-    assert status == 200 and body['total'] == '6.00', body
+    # Posted records stay on their old formula version; recalculated ones move to the active one.
+    for url in (draft, approved):
+        status, body, _ = move(c, url, 'issued')
+        assert status == 200 and body['total'] == '6.00', body
+    assert effects.check(app) == []
+
+
+def test_posted_records_refuse_changes_to_what_their_results_read(tmp_path):
+    app = start(Database(tmp_path / 'db.sqlite3', Registry(*posting_models(1))))
+    c = client(app)
+    customer = c('POST', '/api/customer', {})[1]['id']
+    url = new_bill(c, customer)
+    # Before posting, actions may change inputs and add rows; results follow.
+    status, body, _ = c('POST', url + '/actions/add_line', {}, headers=etag(c, url))
+    assert status == 200 and body['total'] == '5.00' and len(body['children']['lines']) == 2, body
+    status, body, _ = c('POST', url + '/actions/bump', {}, headers=etag(c, url))
+    assert status == 200 and body['total'] == '20.00', body
+    assert move(c, url, 'issued')[0] == 200
+    refused = {'bump': 'Quantity feeds posted totals. To change it, void or revise the record.',
+               'add_line': 'Lines feed posted totals. To change them, void or revise the record.'}
+    for name, message in refused.items():
+        status, body, _ = c('POST', f'{url}/actions/{name}', {}, headers=etag(c, url))
+        assert (status, body['error']) == (409, message), body
+    # Fields no stored result reads may still change.
+    status, body, _ = c('POST', url + '/actions/label_line', {}, headers=etag(c, url))
+    assert status == 200 and body['children']['lines'][0]['note'] == 'checked', body
+    status, body, _ = c('POST', f'{url}/moves/paid', {'charge': '5'}, headers=etag(c, url))
+    assert (status, body['error']) == (409, 'Charge feeds posted totals. To change it, void or revise the record.'), body
+    status, body, _ = move(c, url, 'paid')
+    assert status == 200 and (body['status'], body['total']) == ('paid', '20.00'), body
+    assert effects.check(app) == []
+
+
+def test_draft_preview_of_a_locked_or_posted_record_shows_the_kept_results(tmp_path):
+    app = start(Database(tmp_path / 'db.sqlite3', Registry(*posting_models(1))))
+    c = client(app)
+    customer = c('POST', '/api/customer', {'fee': '1'})[1]['id']
+    approved, issued, draft = new_bill(c, customer), new_bill(c, customer), new_bill(c, customer)
+    assert move(c, approved, 'approved')[0] == 200 and move(c, issued, 'issued')[0] == 200
+    assert c('PATCH', f'/api/customer/{customer}', {'fee': '10'}, headers=etag(c, f'/api/customer/{customer}'))[0] == 200
+    previews = {}
+    for url in (approved, issued, draft):
+        status, body, _ = c('POST', '/api/_draft/bill', {'id': int(url.rsplit('/', 1)[1]), 'values': {'memo': 'x'}})
+        assert status == 200, body
+        previews[url] = (body['values']['fee'], body['values']['total'])
+    assert previews == {approved: ('1.00', '4.00'), issued: ('1.00', '4.00'), draft: ('10.00', '13.00')}
+    status, body, _ = c('PATCH', approved, {'memo': 'x'}, headers=etag(c, approved))
+    assert status == 200 and (body['fee'], body['total']) == previews[approved], body

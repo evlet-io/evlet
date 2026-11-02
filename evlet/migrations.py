@@ -313,7 +313,7 @@ class Applied(list):
 def _recompute(connection, registry, operations, versions, *, postgres=False):
     """Run Recompute operations in order. versions(connection) tells whether formula versions are recorded.
 
-    A locked or posted record keeps its saved results, so it is skipped. Records whose results change get
+    A record that posted effects (voided or not) keeps its saved results, so it is skipped. Records whose results change get
     a `recomputed` Journal entry. Returns the number of records skipped."""
     from .database import Session
     from .calc import CalcError
@@ -352,15 +352,14 @@ def _recompute(connection, registry, operations, versions, *, postgres=False):
                                    (registry.formula_hashes[root], registry.name_for(root), *part))
     recomputed(connection, registry, changes, postgres=postgres)
     if skipped:
-        logger.info('Recompute kept the saved results of %d locked or posted records', len(skipped))
+        logger.info('Recompute kept the saved results of %d posted records', len(skipped))
     return len(skipped)
 
 
 def _kept(session, model, record):
-    """Whether Recompute leaves a root record alone: it is locked or has posted effects."""
+    """Whether Recompute leaves a root record alone: it has posted effects, voided or not."""
     from .effects import has_postings
-    from .states import locked_state
-    return locked_state(model, record._values) is not None or has_postings(session.connection, session.registry, model, record)
+    return has_postings(session.connection, session.registry, model, record, voided=True)
 
 
 def _changed(changes, item, record, values):

@@ -120,8 +120,15 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
   record or a formula changed; they need no recalculation request. `"recalculate": true`
   on such a record is refused with 409 `This record has postings. To change its totals,
   void or revise it.` Corrections go through void or revise only.
-* The `Recompute` migration operation skips locked records and records with postings; a
-  locked record keeps its saved results.
+* Actions, move `run` methods and move values on a posted record may not change anything a
+  stored result reads: a source field (directly or through virtual results, fetched copies
+  and Link paths, where the Link field counts) or the rows of a Table that holds or feeds a
+  stored result (adding, removing or reordering them). Such a change is refused with 409
+  naming it, for example `Quantity feeds posted totals. To change it, void or revise the
+  record.` or `Lines feed posted totals. To change them, void or revise the record.` Fields
+  no stored result reads, such as notes and `editable_when_locked` fields, still change.
+* The `Recompute` migration operation skips only records with postings. A locked record
+  that never posted is recalculated like any other and gets a `recomputed` Journal entry.
 * Deleting a record in a locked state is refused with 409. Corrections use void and revise
   (below).
 * Uploading or removing an attachment is an ordinary write: on a locked record it is
@@ -211,6 +218,10 @@ def record_payment(self, amount): ...
 * Actions registered with `Action(...)` on `Application` keep working unchanged. They run
   as trusted code with the transaction and are not limited by a State lock, but they cannot
   change the State itself outside `tx.maintenance()`.
+* An action changes Table rows through the draft: `self.lines[0].qty = 3` edits a row, and
+  assigning a list replaces the rows, so `self.lines = [*self.lines, {"qty": "1", "rate": "2"}]`
+  adds one. Rows already in the list keep their IDs; a dict is a new row, cleaned and
+  calculated like submitted rows; rows left out are deleted.
 * A `run` method or action that raises something other than a validation error rolls
   everything back and answers 500 `Internal server error`, without its message.
 
@@ -393,7 +404,8 @@ reasons above. They never include counts or names.
 * Document numbers are described in [sequences.md](sequences.md). A void record keeps its
   number; `evlet.corrections.prepare_copy()` clears the numbers on a revision's copy, which
   is numbered again when it reaches `assign_on`.
-* Draft previews (`/api/_draft`) do not report the State lock; the save does.
+* Draft previews (`/api/_draft`) do not report the State lock; the save does. A preview
+  of a locked or posted record shows the calculated values it keeps, like the save.
 * The connector and the MCP server do not offer moves, void or revise yet.
 * The record view shows the State as steps with its moves, and offers void and revise
   from `_moves`, `_void` and `_revise`.

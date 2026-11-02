@@ -105,10 +105,21 @@ def kept_plan(plan):
 
 
 def check_kept_results(registry, model, plan):
-    """A locked record keeps its saved results, so no stored result may read an editable_when_locked field.
+    """A locked record keeps its saved results, so no stored result may read an editable_when_locked field."""
+    for (member, name), (fields, _) in stored_reads(registry, model, plan).items():
+        if not member.__declared_fields__[name].editable_when_locked and \
+                any(target.__declared_fields__[read].editable_when_locked for target, read in fields):
+            raise ValueError(f'{member.__name__}.{name} is a stored result that reads a field editable while locked; '
+                             'a locked record keeps its saved results, so make the field it reads not editable_when_locked '
+                             'or the result virtual (stored=False)')
+
+
+def stored_reads(registry, model, plan):
+    """What each stored result of a root document reads: {(model, result): ({(model, field)}, {row model})}.
 
     Reads are followed through virtual results and fetched copies: finite results by their plan reads,
     legacy string formulas, Query fields and fetches by the value inputs of the legacy template graph.
+    A Link path reads the Link field. Row models are the tables a finite aggregate reads as a set.
     Creation defaults and conditions are not results, so what they read does not matter here.
     """
     from .calc import is_finite
@@ -122,33 +133,81 @@ def check_kept_results(registry, model, plan):
     def derived(field):
         return field.compute is not None or field.query is not None or bool(field.fetch)
 
-    def editable(target, name, seen):
+    def visit(target, name, fields, tables, seen):
         field = target.__declared_fields__.get(name)
-        if field is None or (target, name) in seen:
-            return False
-        if field.editable_when_locked:
-            return True
-        seen = seen | {(target, name)}
+        if field is None or (target, name) in fields:
+            return
+        fields.add((target, name))
         if field.fetch:
-            return editable(target, field.fetch.split('.')[0], seen)
-        if is_finite(field):
-            return plan is not None and any(read is not None and scope != 'lookup' and editable(source, read, seen)
-                                            for scope, source, read in registry.finite_reads(target, name))
-        if derived(field):
-            key = keys.get((target, name))
-            return key is not None and any(node(dependency, seen) for dependency in inputs[key])
-        return False
+            visit(target, field.fetch.split('.')[0], fields, tables, seen)
+        elif is_finite(field):
+            for scope, source, read in registry.finite_reads(target, name) if plan is not None else ():
+                if scope in ('membership', 'member'):
+                    tables.add(source)
+                if read is not None and scope != 'lookup':
+                    visit(source, read, fields, tables, seen)
+        elif derived(field) and (target, name) in keys:
+            for dependency in inputs[keys[target, name]]:
+                node(dependency, fields, tables, seen)
 
-    def node(key, seen):
+    def node(key, fields, tables, seen):
+        if key in seen:
+            return
+        seen.add(key)
         if nodes[key].get('source'):
-            return any(node(dependency, seen) for dependency in inputs[key])
-        return editable(owners[key], key.rpartition('.')[2], seen)
+            for dependency in inputs[key]:
+                node(dependency, fields, tables, seen)
+        else:
+            visit(owners[key], key.rpartition('.')[2], fields, tables, seen)
+    result = {}
     for member in members:
         for name, field in member.__declared_fields__.items():
-            if field.stored and derived(field) and not field.editable_when_locked and editable(member, name, frozenset()):
-                raise ValueError(f'{member.__name__}.{name} is a stored result that reads a field editable while locked; '
-                                 'a locked record keeps its saved results, so make the field it reads not editable_when_locked '
-                                 'or the result virtual (stored=False)')
+            if field.stored and derived(field):
+                fields, tables = set(), set()
+                visit(member, name, fields, tables, set())
+                result[member, name] = (fields, tables)
+    return result
+
+
+def posted_reads(registry, model, plan):
+    """({(model, field)}, {(owner model, table name)}) a posted record may not change: the source fields
+    its stored results read, and the tables whose rows hold or feed a stored result."""
+    fields, read = set(), set()
+    for (member, _), (inputs, tables) in stored_reads(registry, model, plan).items():
+        fields |= inputs
+        read |= tables | {member} | {target for target, _ in inputs}
+    sources = {(target, name) for target, name in fields if target.__declared_fields__[name].stored
+               and target.__declared_fields__[name].compute is None and target.__declared_fields__[name].query is None
+               and not target.__declared_fields__[name].fetch and name != target.__state__}
+    # A table is frozen when its rows, or rows nested in them, are read or hold results.
+    frozen, changed = set(), True
+    while changed:
+        changed = False
+        for child in registry.children:
+            if (child.parent, child.name) not in frozen and (child.model in read or any(child.model is owner for owner, _ in frozen)):
+                frozen.add((child.parent, child.name))
+                changed = True
+    return sources, frozen
+
+
+def check_posted(context, draft, before):
+    """Refuse a change by an action or move to anything a posted record's stored results read."""
+    from .documents import prior_versions, walk
+    registry = context._business.registry
+    fields, tables = registry.posted_reads[draft._definition]
+    labels = {(child.parent, child.name): child.label for child in registry.children}
+    prior = prior_versions(before, draft)
+    for _, item in walk(draft):
+        old, definition = prior(item), item._definition
+        if old is None:
+            continue
+        for name, field in definition.__declared_fields__.items():
+            if (definition, name) in fields and item._values.get(name) != old._values.get(name):
+                label = field.label or name.replace('_', ' ').capitalize()
+                raise AccessError(409, f'{label} feeds posted totals. To change it, void or revise the record.')
+        for name in definition.__tables__:
+            if (definition, name) in tables and [row.id for row in item._rows.get(name, [])] != [row.id for row in old._rows.get(name, [])]:
+                raise AccessError(409, f'{labels[definition, name]} feed posted totals. To change them, void or revise the record.')
 
 
 # Guard evaluation

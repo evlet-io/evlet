@@ -304,6 +304,9 @@ class Registry:
         # Rows documents post to other models (Meta.effects); the targets' rows are read only.
         from .effects import compile_effects
         self.effects, self.effect_targets = compile_effects(self, models, child_models)
+        # What a posted record's stored results read, which its actions and moves may no longer change.
+        from .states import posted_reads
+        self.posted_reads = MappingProxyType({model: posted_reads(self, model, plans.get(model)) for model in self.effects})
         # Record histories: {model: Journal} (evlet/journal.py).
         from .journal import compile_journals
         self.journals = compile_journals(models, child_models, self.effects)
