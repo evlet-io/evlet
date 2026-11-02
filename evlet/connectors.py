@@ -40,6 +40,7 @@ UNREADABLE = 'Saved secrets could not be read. The secret key changed or the sto
 # One message for unreachable, silent and confused servers, so a test can't map ports.
 UNREACHABLE = "Couldn't connect to the service. Check the server, port and security, and try again."
 NOT_ALLOWED = "This server address is not allowed. Use the service's public address, or None with a mail server on this machine."
+REJECTED = 'The server rejected the username or password.'
 BUSY = 'Two connection tests are already running. Try again in a moment.'
 AGAIN = 'Enter the {label} again. The server details changed, so the saved one is not used.'
 TEST_RATE = 10  # connection tests per person per minute
@@ -233,17 +234,18 @@ def rotate(database_path, key):
     done, failed = 0, []
     try:
         connection.execute('BEGIN IMMEDIATE')
-        exists = connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_connectors'").fetchone()
-        rows = connection.execute('SELECT id, secrets FROM evlet_connectors WHERE secrets IS NOT NULL').fetchall() if exists else []
-        for row_id, blob in rows:
-            context = row_context(row_id)
-            try:
-                plain = key.decrypt(blob, context)
-            except SecretKeyError:
-                failed.append(row_id)
+        for table, column, context_of in SEALED:
+            if not connection.execute('SELECT 1 FROM sqlite_master WHERE name=?', (table,)).fetchone():
                 continue
-            connection.execute('UPDATE evlet_connectors SET secrets=? WHERE id=?', (key.encrypt(plain, context), row_id))
-            done += 1
+            for row_id, blob in connection.execute(f'SELECT {column}, secrets FROM {table} WHERE secrets IS NOT NULL').fetchall():
+                context = context_of(row_id)
+                try:
+                    plain = key.decrypt(blob, context)
+                except SecretKeyError:
+                    failed.append(row_id if table == 'evlet_connectors' else f'{table}:{row_id}')
+                    continue
+                connection.execute(f'UPDATE {table} SET secrets=? WHERE {column}=?', (key.encrypt(plain, context), row_id))
+                done += 1
         connection.execute('COMMIT')
     except BaseException:
         if connection.in_transaction:
@@ -258,6 +260,19 @@ def rotate(database_path, key):
 
 def row_context(row_id):
     return b'evlet-connector:' + row_id.encode()
+
+
+def mailbox_context(user_id):
+    return b'evlet-mailbox:%d' % user_id
+
+
+def state_context(digest):
+    return b'evlet-mail-state:' + digest.encode()
+
+
+# Every table with sealed secrets: (table, key column, the context a row's secrets are bound to).
+SEALED = (('evlet_connectors', 'id', row_context), ('evlet_mailboxes', 'user_id', mailbox_context),
+          ('evlet_mail_states', 'hash', state_context))
 
 
 # ---------- framework connectors: email ----------
@@ -342,7 +357,7 @@ def _mail_fields(port):
 def _plain(exc, values):
     """A plain message for a mail failure, never including a secret."""
     if isinstance(exc, smtplib.SMTPAuthenticationError):
-        return 'The server rejected the username or password.'
+        return REJECTED
     if isinstance(exc, smtplib.SMTPNotSupportedError) or 'STARTTLS' in str(exc).upper() and isinstance(exc, (smtplib.SMTPException, imaplib.IMAP4.error)):
         return "The server doesn't offer STARTTLS. Choose SSL/TLS, or check the port."
     if isinstance(exc, ssl.SSLError):
@@ -365,7 +380,9 @@ def _smtp(values):
         if security == 'starttls':
             client.starttls(context=context)
             client.ehlo()
-        if values.get('username') or values.get('password'):
+        if values.get('token'):
+            client.auth('XOAUTH2', lambda challenge=None: xoauth2(values['address'], values['token']), initial_response_ok=True)
+        elif values.get('username') or values.get('password'):
             client.login(values.get('username') or values['address'], values['password'])
     except BaseException:
         client.close()
@@ -380,7 +397,12 @@ def check_smtp(values):
         raise ConnectionFailed(_plain(exc, values)) from None
 
 
-def check_imap(values):
+def xoauth2(address, token):
+    return f'user={address}\x01auth=Bearer {token}\x01\x01'
+
+
+def open_imap(values):
+    """Sign in to an IMAP server with a password, or with an OAuth token (XOAUTH2). Raises ConnectionFailed."""
     host, port, security = values['host'], int(values['port']), values['security']
     address = safe_address(host, port, local=security == 'none')
     try:
@@ -394,9 +416,24 @@ def check_imap(values):
         if security == 'starttls':
             client.starttls(ssl_context=ssl.create_default_context())
         try:
-            client.login(values.get('username') or values['address'], values['password'])
+            if values.get('token'):
+                client.authenticate('XOAUTH2', lambda challenge: xoauth2(values['address'], values['token']).encode())
+            else:
+                client.login(values.get('username') or values['address'], values['password'])
         except imaplib.IMAP4.error:
-            raise ConnectionFailed('The server rejected the username or password.') from None
+            raise ConnectionFailed(REJECTED) from None
+    except (OSError, imaplib.IMAP4.error) as exc:
+        client.shutdown()
+        raise ConnectionFailed(_plain(exc, values)) from None
+    except ConnectionFailed:
+        client.shutdown()
+        raise
+    return client
+
+
+def check_imap(values):
+    client = open_imap(values)
+    try:
         if client.select('INBOX', readonly=True)[0] != 'OK':
             raise ConnectionFailed('Signed in, but the inbox could not be opened.')
         client.logout()
@@ -667,11 +704,8 @@ class Connectors:
 
     # ---------- testing ----------
 
-    def test(self, actor, row_id, body):
-        """Run the connector's test on saved values, or on draft values over them, within TIMEOUT seconds."""
-        connector, account = self.resolve(row_id)
-        if connector.test is None:
-            raise AccessError(404, 'This connector has no test')
+    def throttle(self, actor):
+        """At most TEST_RATE connection tests a minute per person."""
         with self.recent_lock:
             now = time.monotonic()
             times = self.recent.setdefault(actor.id, deque())
@@ -680,6 +714,13 @@ class Connectors:
             if len(times) >= TEST_RATE:
                 raise AccessError(429, 'Too many connection tests. Try again in a minute.')
             times.append(now)
+
+    def test(self, actor, row_id, body):
+        """Run the connector's test on saved values, or on draft values over them, within TIMEOUT seconds."""
+        connector, account = self.resolve(row_id)
+        if connector.test is None:
+            raise AccessError(404, 'This connector has no test')
+        self.throttle(actor)
         body = dict(body or {})
         to = body.pop('to', None)
         if to is not None and (connector is not SMTP or not isinstance(to, str) or not ADDRESS.fullmatch(to)):
