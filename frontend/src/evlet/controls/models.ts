@@ -449,5 +449,5 @@ function SourceTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
       <button type="button" class:on=${() => !merged.get()} on:click=${() => merged.set(false)}>models.py only</button></div><span class="grow"></span>
       <span class="muted ctl-small mono">${model.app ? `${model.app}/models.py` : 'models.py'}</span></div>
     <pre class="ctl-code">${code}</pre>
-    <p class="muted ctl-small">A preview of the field lines with this instance's changes. Export as code arrives with the Overrides page.</p></div>` as HTMLElement;
+    <p class="muted ctl-small">A preview of the field lines with this instance's changes. Export as code on the Overrides page gives the lines to paste into the app.</p></div>` as HTMLElement;
 }
