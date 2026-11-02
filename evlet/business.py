@@ -117,12 +117,14 @@ class Business:
         from .connectors import Connectors
         from .settings import Settings
         from .assistants import Assistants
+        from .mailboxes import Mailboxes
         self.controls = Controls(self)
         self.settings = Settings(self)
         self.connectors = Connectors(self)
         # instances/<name>/secret.key for evlet.secrets; None keeps two-step sign-in off.
         self.secret_key = None
         self.assistants = Assistants(self)
+        self.mailboxes = Mailboxes(self)
         self.actions, self.children, self.child_models = {}, {}, set()
         self.attachments = set(attachments)
         self.storage = storage if storage is not None else SQLiteStorage()
@@ -190,6 +192,7 @@ class Business:
         self.controls.initialize()
         self.connectors.initialize()
         self.assistants.initialize()
+        self.mailboxes.initialize()
         self.storage.initialize(self.database)
         self.settings.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
@@ -454,6 +457,9 @@ class Business:
             return self.assistants.api(scope, body, user)
         if path == '/api/_settings/me/keys' or path.startswith('/api/_settings/me/keys/'):
             return self.controls.my_keys(scope, body, user)
+        # /api/_settings/me/email is the sign-in address change (Settings); the mailbox has its own routes.
+        if path == '/api/_settings/me/mailbox' or path.startswith('/api/_settings/me/mailbox/'):
+            return self.mailboxes.api(scope, body, user)
         if path == '/api/_controls' or path.startswith('/api/_controls/'):
             return self.controls.dispatch(scope, body, user)
         if path.startswith('/api/_settings/'):
@@ -584,6 +590,11 @@ class Business:
 
     def model_dispatch(self, scope, body, user, model, parts):
         path, method = scope['path'], scope['method']
+        if len(parts) == 5 and parts[4] == 'messages':
+            if method != 'GET':
+                raise AccessError(405, 'Method not allowed')
+            if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
+            return self.mailboxes.messages(scope, user, model, int(parts[3]))
         if len(parts) == 5 and parts[4] in ('void', 'revise'):
             if method != 'POST':
                 raise AccessError(405, 'Method not allowed')

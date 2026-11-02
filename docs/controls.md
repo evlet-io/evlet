@@ -365,6 +365,90 @@ use `app.business.connectors`. Sending a test from the Email page posts `{"to": 
 the account's test route. Reading mail from IMAP accounts arrives later; today the IMAP test
 signs in and opens the inbox read only.
 
+## Personal mailboxes
+
+People can connect their own mailbox to send from records as themselves and see emails with
+the people on their records. It is off until an admin turns on "Let people connect their own
+mailbox" on the Email page:
+
+| Key | File value | Rule |
+|---|---|---|
+| `mail.personal` | false | Off refuses new connections and pauses every personal mailbox: nothing is read and emails go from the shared account. People can still change options and disconnect. |
+
+A stored value that no longer validates turns it off. Changes are audited under `Email`.
+
+**Connecting.**
+
+- *Microsoft 365 and Google* sign in with OAuth: the authorization code flow with PKCE (S256)
+  and a single-use state that expires after 10 minutes and belongs to the person who started
+  it. Each provider is a connector in Controls (`mail_microsoft`, `mail_google`) holding the
+  client ID and secret of the workspace's own app registration. The sign-in, token, IMAP and
+  SMTP addresses default to the provider's and can be replaced, which is how tests use a fake
+  provider. The provider sends the person back to `/_/mail/callback`, which exchanges the code,
+  reads the address from the ID token, checks that IMAP accepts the token and returns to
+  `/settings/email?mail=connected` (or `denied`, `expired`, `failed`, `mailbox`, `off`, `signin`).
+  Mail uses XOAUTH2 on IMAP and SMTP. Tokens are refreshed shortly before they expire.
+- *Any other mailbox* uses IMAP and SMTP with a password or app password. Both servers must
+  accept it before it is saved.
+- Tokens and passwords are sealed with the instance secret key, bound to the person, and never
+  returned. Rotation (`evlet secrets rotate`) covers them.
+- The servers and token address are fixed when the person connects. A later change to the
+  connector can't send someone's tokens to another server; it applies when they connect again.
+- Personal servers follow the connector address rules: link-local, metadata, multicast,
+  unspecified and reserved addresses are refused, loopback only with security None, and mail
+  ports 143/993 and 25/465/587. Token addresses must be https, or http on this machine. Every
+  connection has the 10-second time limit, and connecting counts toward the connection test rate.
+
+**Options per person**, saved at once and audited:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `send_from` | `mine` | `mine` sends from the person's mailbox, `shared` from the default outgoing account. |
+| `link_replies` | on | Copy matching emails onto records. Off: nothing is read from the mailbox; it is used only to send. |
+| `only_crm` | on | "Only read emails with customers and leads". See below. |
+
+**What is copied.** A sync job (`evlet_mail_sync`, on the jobs queue) reads the inbox read only.
+A new mailbox starts with the last 30 days. Each run reads at most 50 messages per mailbox and
+20 mailboxes; a mailbox with more queues its next batch at once, and every connected mailbox is
+synced every five minutes. A per-mailbox cursor (UIDVALIDITY and the last UID) and a key per
+message (its Message-ID) make syncing idempotent: reading the same messages again links nothing
+twice. Without a jobs queue, Sync now runs the sync in the request.
+
+For each message, the From, To and Cc addresses other than the person's own are matched,
+without regard to case, against `Email` fields **as the person**: with their row scopes and only
+fields they can read.
+
+- With "Only read emails with customers and leads" on, only models named `Customer`, `Contact`
+  or `Lead` are searched.
+- With it off, every model the person can read is searched, through each of its `Email` fields
+  the person can read.
+
+A message that matches no record is skipped: its text is never fetched, and nothing of it is
+stored, not even its headers or Message-ID. A matching message is linked to each matching record
+(10 at most) with its subject, plain text (10,000 characters at most; messages over 1 MB are
+linked without text), the matching address and the direction. A reply to a message already
+linked to a record is also linked to that record when the person can read it. Changing an option
+applies to messages read after the change.
+
+A sign-in that stops working (a revoked refresh token, a rejected password) is deleted and
+syncing stops; the page asks the person to connect again. Other failures are shown and retried.
+Disconnecting deletes the saved sign-in and any pending sign-in, and stops syncing at once.
+Messages already linked to records stay there.
+
+**Privacy.** No Controls route reads a personal mailbox, its messages or its credentials. Linked
+messages are shown with the record (`GET /api/{model}/{id}/messages`, newest first, `limit` 1 to
+100), only to people who can read that record. Until the Journal is on this branch they are
+stored in `evlet_mail_links`; they become Journal `message` entries when it arrives.
+
+**Sending.** Trusted code sends as a person with
+`business.mailboxes.send_mail(user, to, subject, text, html=None, record=None)`: from their own
+mailbox when it is connected, the workspace allows it and they chose `mine`, otherwise from the
+default outgoing account. With `record=(Model, id)` the person must be able to read the record,
+and the email is linked to it, so replies to it are linked there too.
+
+The personal page is the `MyEmailPage` component (`frontend/src/evlet/settings/email.ts`), ready
+for the Settings shell.
+
 ## API keys
 
 Keys let scripts call the API as a user: `Authorization: Bearer evk_...`. A key is shown
@@ -458,9 +542,10 @@ local `evlet mcp` steps. "Can make changes" has effect only while
 ## Audit log
 
 `evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles,
-overrides, connectors, email accounts, API keys, AI assistants (consent, sign-out, "Can make changes",
-MCP settings), migrations and jobs all write to it. The Audit log page searches who, what and the
-detail, filters by area and pages newest first, 50 rows at a time.
+overrides, connectors, email accounts, personal mailboxes (connect, disconnect, options), API
+keys, AI assistants (consent, sign-out, "Can make changes", MCP settings), migrations and jobs all
+write to it. The Audit log page searches who, what and the detail, filters by area and pages
+newest first, 50 rows at a time.
 
 ## API
 
@@ -485,3 +570,7 @@ detail, filters by area and pages newest first, 50 rows at a time.
 | `POST /api/_controls/connectors/<id>/test`, `POST .../default` | Test within 10 seconds; make an outgoing account the default |
 | `GET /api/_controls/mcp`, `DELETE /api/_controls/mcp/<id>` | MCP address, connected clients, 24-hour totals; sign a client out |
 | `GET/POST /api/_controls/keys`, `DELETE /api/_controls/keys/<id>` | API keys: list, create `{"name", "user", "scope"}` (the key is in this reply only), revoke |
+| `GET/POST/PATCH/DELETE /api/_settings/me/mailbox` | The person's own mailbox: read, connect with a password, change options, disconnect. Sessions only |
+| `POST /api/_settings/me/mailbox/oauth`, `POST .../sync` | Start a Microsoft 365 or Google sign-in (`{"provider"}`, answers `{"url"}`); sync now |
+| `GET /_/mail/callback` | Where the provider sends the person back |
+| `GET /api/{model}/{id}/messages` | Emails linked to a record, for people who can read it |
