@@ -84,8 +84,14 @@ class Draft:
             limit = self._definition.__tables__[name].max_rows
             if not isinstance(value, (list, tuple)) or len(value) > limit:
                 raise ValidationError({name: f'Use at most {limit} rows'})
-            child = self._definition.__tables__[name].child
-            self._rows[name] = [row if isinstance(row, Draft) else Draft(child, row, context=self.context, parent=self, source=self.source) for row in value]
+            # The registry's row model (declared Child classes are copied with an owner link and position).
+            owned = self.context._business.children.get((self._definition, name)) if self.context is not None else None
+            child = owned.model if owned is not None else self._definition.__tables__[name].child
+            rows = [row if isinstance(row, Draft) else Draft(child, row, context=self.context, parent=self, source=self.source) for row in value]
+            if 'evlet_position' in child.__fields__:
+                for row, position in zip(rows, positions(rows, set())):
+                    row._values['evlet_position'] = position
+            self._rows[name] = rows
         else:
             raise AttributeError('Unknown draft field: ' + name)
 
@@ -755,7 +761,7 @@ def settle(context, draft, *, complete, previous=None, kept=False):
 
     A preview (complete=False) returns errors and field states; a save (complete=True) also runs
     the full validation and raises ValidationError on any error. With `kept` (an ordinary write on a
-    locked record) stored results and fetched copies keep their saved values, and rules, virtual
+    locked record, any write on a posted one, and previews of both) stored results and fetched copies keep their saved values, and rules, virtual
     results and validation read those saved values.
     """
     registry = context._business.registry
@@ -1244,6 +1250,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
 
     Ordinary writes respect a locked State. Actions and moves are declared, role-checked code: they may
     change a record in a locked state but still obey each field's locked_when and every other rule.
+    A record with posted effects keeps its stored calculated values on every write, and its actions and
+    moves may not change what those values read.
     """
     from . import states
     business, tx, user = context._business, context._tx, context.user
@@ -1262,12 +1270,19 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         draft, before = load_draft(context, model, record_id, values)
     # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
     locked_write = action is None and move is None and before is not None and states.locked_state(model, before._values) is not None
-    if locked_write and context._recalculate == (model, record_id):
-        states.check_recalculate(context, model, before)
+    # A record with postings keeps its stored calculated values for every writer.
+    from .effects import has_postings
+    posted = before is not None and has_postings(tx.connection, business.registry, model, before)
+    if context._recalculate == (model, record_id) and before is not None:
+        if posted:
+            raise AccessError(409, 'This record has postings. To change its totals, void or revise it.')
+        if locked_write:
+            states.check_recalculate(context, model, before)
+    kept = locked_write or posted
     plan = business.registry.plan_for(model)
     version = business.registry.formula_hashes.get(business.registry.root_of(model))
-    # A locked write does not recalculate, so it neither checks nor updates the recorded formula version.
-    if locked_write:
+    # A write that keeps saved results does not recalculate, so it neither checks nor updates the recorded formula version.
+    if kept:
         plan = None
     if plan is not None and record_id:
         row = tx.connection.execute('SELECT plan_hash FROM evlet_calculation_versions WHERE resource=? AND record_id=?',
@@ -1288,7 +1303,9 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         outcome = method(draft, **states.action_arguments(context, model, method, declaration, arguments, before))
     elif before is not None:
         states.check_state_lock(context, draft, before)
-    settle(context, draft, complete=True, previous=before, kept=locked_write)
+    settle(context, draft, complete=True, previous=before, kept=kept)
+    if posted and not locked_write:
+        states.check_posted(context, draft, before)
     if locked_write:
         states.keep_saved(draft, before)
     # Document numbers are assigned on the settled draft, in this transaction.

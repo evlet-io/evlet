@@ -96,7 +96,8 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
 * A locked record keeps its saved results. An ordinary write changes only the
   `editable_when_locked` fields; every calculated value, at every depth, keeps the value it
   had when the record was locked, even if a linked record or today's date changed since.
-  Moves and actions settle normally and recalculate. So that this stays consistent, a
+  Moves and actions settle normally and recalculate, unless the record has postings (below).
+  So that this stays consistent, a
   stored result (at any depth of the document) may not read an `editable_when_locked`
   field; registration fails with a message naming the field. This covers finite formulas,
   legacy string formulas (`compute="sum(lines.extra)"`), reads through virtual results,
@@ -113,6 +114,21 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
   or action on such a record recalculates, so it answers 409 `SCHEMA_VERSION_MISMATCH`;
   send `{"_calculation": {"model_schema_hash": "<active hash>", "recalculate": true}}` as
   the body of the move (or with the action) to recalculate with the active formulas.
+* A record with posted [effects](effects.md) (it is the source of effect rows and is not
+  void) keeps its stored calculated values for every writer. Moves and actions on it keep
+  the saved values, at every depth, like ordinary locked writes do, even after a linked
+  record or a formula changed; they need no recalculation request. `"recalculate": true`
+  on such a record is refused with 409 `This record has postings. To change its totals,
+  void or revise it.` Corrections go through void or revise only.
+* Actions, move `run` methods and move values on a posted record may not change anything a
+  stored result reads: a source field (directly or through virtual results, fetched copies
+  and Link paths, where the Link field counts) or the rows of a Table that holds or feeds a
+  stored result (adding, removing or reordering them). Such a change is refused with 409
+  naming it, for example `Quantity feeds posted totals. To change it, void or revise the
+  record.` or `Lines feed posted totals. To change them, void or revise the record.` Fields
+  no stored result reads, such as notes and `editable_when_locked` fields, still change.
+* The `Recompute` migration operation skips only records with postings. A locked record
+  that never posted is recalculated like any other and gets a `recomputed` Journal entry.
 * Deleting a record in a locked state is refused with 409. Corrections use void and revise
   (below).
 * Uploading or removing an attachment is an ordinary write: on a locked record it is
@@ -202,6 +218,10 @@ def record_payment(self, amount): ...
 * Actions registered with `Action(...)` on `Application` keep working unchanged. They run
   as trusted code with the transaction and are not limited by a State lock, but they cannot
   change the State itself outside `tx.maintenance()`.
+* An action changes Table rows through the draft: `self.lines[0].qty = 3` edits a row, and
+  assigning a list replaces the rows, so `self.lines = [*self.lines, {"qty": "1", "rate": "2"}]`
+  adds one. Rows already in the list keep their IDs; a dict is a new row, cleaned and
+  calculated like submitted rows; rows left out are deleted.
 * A `run` method or action that raises something other than a validation error rolls
   everything back and answers 500 `Internal server error`, without its message.
 
@@ -384,7 +404,8 @@ reasons above. They never include counts or names.
 * Document numbers are described in [sequences.md](sequences.md). A void record keeps its
   number; `evlet.corrections.prepare_copy()` clears the numbers on a revision's copy, which
   is numbered again when it reaches `assign_on`.
-* Draft previews (`/api/_draft`) do not report the State lock; the save does.
+* Draft previews (`/api/_draft`) do not report the State lock; the save does. A preview
+  of a locked or posted record shows the calculated values it keeps, like the save.
 * The connector and the MCP server do not offer moves, void or revise yet.
 * The record view shows the State as steps with its moves, and offers void and revise
   from `_moves`, `_void` and `_revise`.

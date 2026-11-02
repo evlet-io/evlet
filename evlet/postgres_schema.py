@@ -5,7 +5,7 @@ import sqlite3
 
 from .fields import Link, Reference, Text
 from .models import identifier, storage_name
-from .migrations import (SchemaError, AddField, AddIndex, CreateModel, RenameField, Recompute,
+from .migrations import (Applied, SchemaError, AddField, AddIndex, CreateModel, RenameField, Recompute,
                          _metadata, _definition, _migration_plan, _history,
                          _normalized, _planned_definition, _recompute, recomputes, index_columns, stored_columns)
 
@@ -218,12 +218,14 @@ def migrate(database, migrations):
                 if not fresh and not baseline:
                     for operation in migration.operations: apply(db, operation)
                 db.execute('INSERT INTO evlet_migrations(position,name,checksum) VALUES(?,?,?)', (position, migration.name, checksums[position-1]))
+            applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
-                _recompute(db, database.registry, recomputes(pending), lambda connection: connection.execute(
-                    "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_calculation_versions'").fetchone() is not None)
+                applied.skipped = _recompute(db, database.registry, recomputes(pending), lambda connection: connection.execute(
+                    "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_calculation_versions'").fetchone() is not None,
+                    postgres=True)
             check(db, database.registry, rows=True)
             save(db, database.registry)
-            return [item.name for item in pending]
+            return applied
     except (sqlite3.Error, ValueError, TypeError) as exc:
         if isinstance(exc, SchemaError): raise
         raise SchemaError('Migration rolled back') from exc

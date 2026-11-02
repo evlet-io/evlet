@@ -596,7 +596,7 @@ function Postings(ctx: AppContext, effects: Readable<DetailExtras['_effects'] | 
 const KINDS: Record<string, [string, any, string]> = {
   created: ['plus', 'green', 'created this record'], changed: ['pencil', 'blue', 'changed it'], moved: ['arrow-right', 'violet', 'moved it'],
   voided: ['circle-x', 'rose', 'voided it'], revised: ['copy', 'blue', 'revised it'], number: ['hash', 'slate', 'assigned the number'],
-  effects: ['layers', 'teal', 'posted rows'], file: ['paperclip', 'slate', 'attached a file'], deleted: ['trash-2', 'rose', 'deleted it'],
+  effects: ['layers', 'teal', 'posted rows'], recomputed: ['rotate-ccw', 'slate', 'recalculated it after an upgrade'], file: ['paperclip', 'slate', 'attached a file'], deleted: ['trash-2', 'rose', 'deleted it'],
   note: ['sticky-note', 'amber', 'added a note'], message: ['mail', 'blue', 'logged a message'], call: ['phone', 'green', 'logged a call'],
   follow_up: ['clock', 'amber', 'planned a follow-up'], follow_up_done: ['circle-check', 'green', 'completed a follow-up'],
 };
@@ -657,7 +657,7 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
     const data = item.data ?? {};
     switch (item.kind) {
       case 'created': return null;
-      case 'changed': case 'moved': { const list = changes(data); return list.length ? html`<div class="note">${list}</div>` : null; }
+      case 'changed': case 'moved': case 'recomputed': { const list = changes(data); return list.length ? html`<div class="note">${list}</div>` : null; }
       case 'effects': return (data.targets ?? []).some((posted: any) => posted.balanced !== undefined)
         ? html`<div class="note">${(data.targets ?? []).filter((posted: any) => posted.balanced !== undefined).map((posted: any) =>
           Chip({ label: `${target(posted.target)} ${posted.balanced ? 'balanced' : 'not balanced'}`, tone: posted.balanced ? 'green' : 'rose', icon: posted.balanced ? 'check' : 'info' }))}</div>` : null;

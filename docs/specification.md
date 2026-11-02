@@ -7,7 +7,7 @@
 
 **Repository:** https://github.com/evlet-io/evlet
 
-**Development environment:** Codex Cloud
+**Development environment:** isolated cloud tasks, with local development supported
 
 **Project status:** Initial framework development
 
@@ -145,7 +145,7 @@ Avoid introducing abstractions solely for architectural elegance.
 | Backend tests | pytest | Automated verification |
 | Frontend tests | Vitest | Component and logic tests |
 | Version control | GitHub | Permanent source of truth |
-| Development | Codex Cloud | Primary environment |
+| Development | Isolated cloud task | Primary environment |
 | Deployment | VPS and serverless adapters | Both supported |
 | Default cache | In-process / none | No mandatory Redis |
 | Realtime | SSE | WebSockets optional |
@@ -824,7 +824,7 @@ All benchmark results should include hardware, database configuration, dataset c
 
 ## Primary environment
 
-Use Codex Cloud.
+Use an isolated cloud task.
 
 Local development should remain supported but must not be required.
 
@@ -865,7 +865,7 @@ Maintain an `AGENTS.md` file containing:
 - Coding conventions.
 - Definition of done.
 
-Codex should read these instructions before making changes.
+Contributors should read these instructions before making changes.
 
 ## Definition of done
 
@@ -926,7 +926,7 @@ Only introduce directories when they have actual responsibilities.
 
 ## Milestone 1: Executable foundation
 
-Goal: A minimal, working framework that can be installed and tested in Codex Cloud.
+Goal: A minimal, working framework that can be installed and tested in an isolated cloud task.
 
 Deliverables:
 
@@ -1041,7 +1041,7 @@ Milestones may overlap where necessary, but foundational correctness takes prior
 
 ---
 
-# 20. What Codex Must Not Do
+# 20. What Contributors Must Not Do
 
 Do not:
 
@@ -1062,7 +1062,7 @@ Do not:
 
 ---
 
-# 21. Immediate Codex Instructions
+# 21. Immediate Instructions
 
 The repository has been created privately at:
 

@@ -1,6 +1,7 @@
 # Handoff plan: model amendments and the Evlet UI framework
 
-Status: in progress. This plan adapts [handoff-model.md](handoff-model.md) and
+Status: every phase is done (PRs #35 to #50, then the cross-phase fixes); each waits
+for the owner to merge. This plan adapts [handoff-model.md](handoff-model.md) and
 [ui-design/README.md](ui-design/README.md) to the engine as it stands on `main`
 (tag `rollback/pre-native-ui`). Where this plan and the handoff differ, this plan
 records the owner's decision and wins.
@@ -43,30 +44,33 @@ records the owner's decision and wins.
 | Savepoints | none | Each document operation runs in a savepoint, so a failure caught by trusted code leaves no partial writes |
 | `ChildTable` on finite models | legacy child rows skip finite rules | A `ChildTable` whose child uses finite features is rejected; use `Table(Child)` |
 | Void, revise, Effects, Sequence, Journal, Measures, meaning metadata | none | New |
+| Posted records | none | Frozen calculated values; actions and moves may not change what they read (409); corrections only by void or revise; Recompute skips posted records only; previews show kept values |
 
 ## Phases and branches
 
 Each phase is a branch stacked on the previous one and a draft PR against it.
 
-| # | Branch | Scope |
-|---|---|---|
-| 1 | `model/01-expressions` | Auto-rounding, dates (`today()`, `days()`, date arithmetic), Link hops (up to three), `when(cond, a, b)`, TypeScript mirror and fixtures |
-| 2 | `model/02-rules` | `initial`, `applies_when`, `required_when`, `locked_when`, `Recompute` migration, new types (Phone, Percent, Time, Duration, Tags, Ref), schema metadata |
-| 3 | `model/03-lines` | `Table` row limits, row-change protocol, paging endpoint, batched child loading, `ChildTable` kept working |
-| 4 | `model/04-state` | `State`, `Move`, locked and final states, move endpoint, `editable_when_locked`, action inputs and `available_when` |
-| 5 | `model/05-void-revise` | `void`, `revise`, operations in `Rule` |
-| 6 | `model/06-effects` | `Effect`, `Swap`, `Negate`, balance check, read-only effect rows, check command |
-| 7 | `model/07-sequences` | `Sequence` field, counter table, period reset, scopes |
-| 8 | `model/08-journal` | Journal table, engine and user entries, permissions, hash chain, verify command |
-| 9 | `model/09-measures` | Aggregate API, `Meta.measures`, HTTP endpoints |
-| 10 | `model/10-meaning` | `key_fields`, `relations`, `Meta.attachments`, `view_for` keys |
-| 11 | `ui/01-core` | Reactive core, DOM and templates, router, API client, model runtime over the finite engine |
-| 12 | `ui/02-components` | Component library in the README build order, Library page |
-| 13 | `ui/03-screens` | Shell, login, Docs, lists and boards, doc view, child table, command palette, actions, journal |
-| 14 | `ui/04-testcrm` | `examples/testcrm/models.py`, launcher, browser end-to-end tests, performance budgets |
-| 15 | `ui/05-remove-solid` | Remove SolidJS, the Vue harness, the Projects demo and the page renderer; docs |
+| # | Branch | Scope | Status |
+|---|---|---|---|
+| 1 | `model/01-expressions` | Auto-rounding, dates (`today()`, `days()`, date arithmetic), Link hops (up to three), `when(cond, a, b)`, TypeScript mirror and fixtures | Done, #35 |
+| 2 | `model/02-rules` | `initial`, `applies_when`, `required_when`, `locked_when`, `Recompute` migration, new types (Phone, Percent, Time, Duration, Tags, Ref), schema metadata | Done, #36 |
+| 3 | `model/03-lines` | `Table` row limits, row-change protocol, paging endpoint, batched child loading, `ChildTable` kept working | Done, #37 |
+| 4 | `model/04-state` | `State`, `Move`, locked and final states, move endpoint, `editable_when_locked`, action inputs and `available_when` | Done, #38 |
+| 5 | `model/05-void-revise` | `void`, `revise`, operations in `Rule` | Done, #39 |
+| 6 | `model/06-effects` | `Effect`, `Swap`, `Negate`, balance check, read-only effect rows, check command | Done, #43 |
+| 7 | `model/07-sequences` | `Sequence` field, counter table, period reset, scopes | Done, #40 |
+| 8 | `model/08-journal` | Journal table, engine and user entries, permissions, hash chain, verify command | Done, #44 |
+| 9 | `model/09-measures` | Aggregate API, `Meta.measures`, HTTP endpoints | Done, #41 |
+| 10 | `model/10-meaning` | `key_fields`, `relations`, `Meta.attachments`, `view_for` keys | Done, #42 |
+| 11 | `ui-final/01-core` | Reactive core, DOM and templates, router, API client, model runtime over the finite engine | Done, #45 |
+| 12 | `ui-final/02-components` | Component library in the README build order, Library page | Done, #46 |
+| 13 | `ui-final/03-screens` | Shell, login, Docs, lists and boards, doc view, child table, command palette, actions, journal | Done, #47 |
+| 14 | `ui-final/04-testcrm` | `examples/testcrm/models.py`, launcher, browser end-to-end tests, performance budgets | Done, #48 |
+| 15 | `ui-final/05-remove-solid` | Remove SolidJS, the Vue harness, the Projects demo and the page renderer; docs | Done, #49 |
+| 16 | `ui-final/06-testcrm-findings` | Fixes from the testCRM findings review | Done, #50 |
+| 17 | `stack/07-cross-phase-fixes` | Fixes from the cross-phase review: posted records keep their totals, docs brought in line | Done on this branch |
 
-## Phase 15 scope (`ui/05-remove-solid`)
+## Phase 15 scope (`ui-final/05-remove-solid`)
 
 Done on this branch:
 

@@ -79,6 +79,7 @@ commits, no entry is left behind.
 | `file` | an attachment is added or removed | `action` (`added` or `removed`), `id`, `name`, and `size` when added |
 | `deleted` | the record is deleted | `{}` |
 | `effects` | a move posted [effect](effects.md) rows, or a void wrote their mirror rows | `targets` |
+| `recomputed` | a `Recompute` migration changed stored results (actor: the engine) | `fields` and `rows` (`updated` only) |
 
 `fields` maps each changed stored field to its old and new values in their HTTP form:
 
@@ -100,6 +101,15 @@ commits, no entry is left behind.
 
 A removed row lists its last values and its own removed rows. `reordered` is set when rows
 that stayed changed their order. A create lists every value that is not empty.
+
+A `created` entry lists every value of every row, so an entry for a large document is large:
+creating a document with 1,000 lines stores an entry of about 400 KB, and a page of 50
+entries can carry several such entries. Read the journal in pages (`limit` and `offset`)
+and keep the page small for documents with many rows.
+
+`Recompute` never changes a record with postings (see
+[finite-calculations.md](finite-calculations.md)), so `recomputed` entries appear only on
+records that never posted, locked or not.
 
 An `effects` entry follows the `moved` or `voided` entry of the same operation and lists
 each target model that received rows:

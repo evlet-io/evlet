@@ -586,6 +586,19 @@ def posted(tx, registry, bound, record_ids):
     return found
 
 
+def has_postings(connection, registry, model, record, *, voided=False):
+    """Whether a record has posted effects: rows with it as source, and it is not void (unless `voided`).
+
+    Its stored calculated values are then frozen: corrections go through void or revise."""
+    bounds = registry.effects.get(model, ())
+    if not bounds or not voided and model.__state__ is not None and record._values.get(model.__state__) == 'void':
+        return False
+    name = registry.name_for(model)
+    return any(connection.execute(f'SELECT 1 FROM {identifier(registry.name_for(bound.target))} '
+                                  f'WHERE "{SOURCE}_model"=? AND "{SOURCE}_id"=? LIMIT 1', (name, record.id)).fetchone()
+               for bound in bounds)
+
+
 def mirror_values(bound, values):
     """The source values of a reversal row: the original's, with `reverse` applied."""
     fields = bound.target.__declared_fields__

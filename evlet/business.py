@@ -355,7 +355,12 @@ class Business:
                 self.check_calculation(model, body['calculation'])
             with self.context(user, readonly=True) as context:
                 draft, previous = load_draft(context, model, body.get('id'), body.get('values', {}), preview=True)
-                errors, states = settle(context, draft, complete=False, previous=previous)
+                # A locked or posted record keeps its saved results on a save, so the preview shows those.
+                from .effects import has_postings
+                from .states import locked_state
+                kept = previous is not None and (locked_state(model, previous._values) is not None
+                                                 or has_postings(context._tx.connection, self.registry, model, previous))
+                errors, states = settle(context, draft, complete=False, previous=previous, kept=kept)
                 def values(item):
                     allowed = self.policy.fields(user, item._definition)
                     def shown(field, value):

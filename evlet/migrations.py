@@ -4,11 +4,14 @@ from dataclasses import dataclass
 import copy
 import hashlib
 import json
+import logging
 import re
 import sqlite3
 
 from .fields import Field, Link, MISSING, Reference
 from .models import identifier, storage_name
+
+logger = logging.getLogger(__name__)
 
 
 class SchemaError(ValueError):
@@ -302,12 +305,21 @@ class Recompute:
         """No structural change; migrate() recalculates after the batch's other operations."""
 
 
-def _recompute(connection, registry, operations, versions):
-    """Run Recompute operations in order. versions(connection) tells whether formula versions are recorded."""
+class Applied(list):
+    """The names of the migrations a migrate() call applied; `skipped` counts the records Recompute kept."""
+    skipped = 0
+
+
+def _recompute(connection, registry, operations, versions, *, postgres=False):
+    """Run Recompute operations in order. versions(connection) tells whether formula versions are recorded.
+
+    A record that posted effects (voided or not) keeps its saved results, so it is skipped. Records whose results change get
+    a `recomputed` Journal entry. Returns the number of records skipped."""
     from .database import Session
     from .calc import CalcError
+    from .journal import recomputed
     session = Session(connection, registry)
-    covered = {}
+    covered, skipped, changes = {}, set(), {}
     for operation in operations:
         model = registry.models.get(operation.table)
         if model is None:
@@ -319,9 +331,9 @@ def _recompute(connection, registry, operations, versions):
         plan = registry.plan_for(model)
         try:
             if plan is None:
-                _recompute_legacy(session, model, operation)
+                _recompute_legacy(session, model, operation, skipped, changes)
             else:
-                path = _recompute_finite(session, registry, plan, model, operation)
+                path = _recompute_finite(session, registry, plan, model, operation, skipped, changes)
                 covered.setdefault(registry.root_of(model), set()).update((path, name) for name in operation.fields)
         except (CalcError, ArithmeticError) as exc:
             raise SchemaError(f'Recompute {operation.table} failed: {exc}') from exc
@@ -329,9 +341,37 @@ def _recompute(connection, registry, operations, versions):
         plan = registry.plans[root]
         stored = {(tuple(field['path']), field['field']) for field in plan['fields'] if field.get('kind') is None and field['stored']}
         if stored <= done and versions(connection):
-            # Every stored result was recalculated, so the documents now match the active formulas.
-            connection.execute('UPDATE evlet_calculation_versions SET plan_hash=? WHERE resource=?',
-                               (registry.formula_hashes[root], registry.name_for(root)))
+            # Every stored result was recalculated, so the documents now match the active formulas; kept ones do not.
+            kept = {record_id for model, record_id in skipped if model is root}
+            table = identifier(registry.name_for(root))
+            ids = [record_id for (record_id,) in connection.execute(f'SELECT "id" FROM {table} ORDER BY "id"').fetchall()
+                   if record_id not in kept]
+            for start in range(0, len(ids), 500):
+                part = ids[start:start + 500]
+                connection.execute(f'UPDATE evlet_calculation_versions SET plan_hash=? WHERE resource=? AND record_id IN ({", ".join("?" for _ in part)})',
+                                   (registry.formula_hashes[root], registry.name_for(root), *part))
+    recomputed(connection, registry, changes, postgres=postgres)
+    if skipped:
+        logger.info('Recompute kept the saved results of %d posted records', len(skipped))
+    return len(skipped)
+
+
+def _kept(session, model, record):
+    """Whether Recompute leaves a root record alone: it has posted effects, voided or not."""
+    from .effects import has_postings
+    return has_postings(session.connection, session.registry, model, record, voided=True)
+
+
+def _changed(changes, item, record, values):
+    """Record old and new values in a `changed`-shaped entry; `item` is the root key, then (table, id) steps."""
+    key, steps = item
+    entry = changes.setdefault(key, {})
+    for table, row_id in steps:
+        updated = entry.setdefault('rows', {}).setdefault(table, {}).setdefault('updated', [])
+        entry = next((row for row in updated if row['id'] == row_id), None) or updated.append({'id': row_id}) or updated[-1]
+    fields = type(record).__declared_fields__
+    entry.setdefault('fields', {}).update({name: {'old': fields[name].serialize(record._values.get(name)), 'new': fields[name].serialize(value)}
+                                           for name, value in values.items()})
 
 
 def _rows(session, model, record_id, child):
@@ -340,7 +380,7 @@ def _rows(session, model, record_id, child):
     return owned_rows(session, child, [record_id]).get(record_id, ([], 0))[0]
 
 
-def _recompute_finite(session, registry, plan, model, operation):
+def _recompute_finite(session, registry, plan, model, operation, skipped, changes):
     from datetime import datetime, timezone
     from .calc import Document, Num, is_finite, to_decimal
     from .documents import fill_lookups, MESSAGES
@@ -355,6 +395,7 @@ def _recompute_finite(session, registry, plan, model, operation):
 
     def data(record):
         definition = type(record)
+        saved[definition, record.id] = record
         values = {name: record._values.get(name) for name, field in definition.__declared_fields__.items()
                   if field.stored and not is_finite(field) and name not in getattr(definition, '__internal_fields__', ())}
         values['id'], values['_key'] = record.id, str(record.id)
@@ -366,7 +407,11 @@ def _recompute_finite(session, registry, plan, model, operation):
     today = datetime.now(timezone.utc).date().isoformat()
     table = identifier(registry.name_for(root))
     for (record_id,) in session.connection.execute(f'SELECT "id" FROM {table} ORDER BY "id"').fetchall():
-        document = Document(plan, data(session.get(root, record_id)), checked=True)
+        record, saved = session.get(root, record_id), {}
+        if (root, record_id) in skipped or _kept(session, root, record):
+            skipped.add((root, record_id))
+            continue
+        document = Document(plan, data(record), checked=True)
         if any(read[0] == 'today' for field in plan['fields'] for read in field['reads']):
             document.set_today(today)
         fill_lookups(registry, session, document)
@@ -387,11 +432,19 @@ def _recompute_finite(session, registry, plan, model, operation):
                     raise SchemaError(f'{operation.table} #{row.id}.{name}: {exc}') from exc
             # The results above read null for fields that do not apply; store them that way too.
             values.update({name: None for name, state in document.rule_states(row.handle).items() if not state['applies']})
-            _write(session, model, row.id, values)
+            old = saved[model, row.id]
+            values = {name: value for name, value in values.items() if old._values.get(name) != value}
+            if values:
+                _write(session, model, row.id, values)
+                steps, parent = [], row
+                while parent.parent is not None:
+                    steps.insert(0, (parent.path[-1], parent.id))
+                    parent = parent.parent
+                _changed(changes, ((root, record_id), steps), old, values)
     return path
 
 
-def _recompute_legacy(session, model, operation):
+def _recompute_legacy(session, model, operation, skipped, changes):
     from .documents import Draft
     from .reactivity import evaluate, graph, round_field
     if model.__tables__ or model.__sources__ or any(field.query is not None for field in model.__declared_fields__.values()) \
@@ -400,7 +453,11 @@ def _recompute_legacy(session, model, operation):
     nodes, order = graph(session.registry, model)
     table = identifier(session.registry.name_for(model))
     for (record_id,) in session.connection.execute(f'SELECT "id" FROM {table} ORDER BY "id"').fetchall():
-        draft = Draft(model, dict(session.get(model, record_id)._values), record_id=record_id)
+        record = session.get(model, record_id)
+        if (model, record_id) in skipped or _kept(session, model, record):
+            skipped.add((model, record_id))
+            continue
+        draft = Draft(model, dict(record._values), record_id=record_id)
         for key in order:
             field = model.__declared_fields__.get(key)
             if field is not None and field.compute is not None:
@@ -409,7 +466,10 @@ def _recompute_legacy(session, model, operation):
                     draft._values[key] = None if value is None else field.validate(value)
                 except (ValueError, ArithmeticError, TypeError) as exc:
                     raise SchemaError(f'{operation.table} #{record_id}.{key}: {exc}') from exc
-        _write(session, model, record_id, {name: draft._values[name] for name in operation.fields})
+        values = {name: draft._values[name] for name in operation.fields if draft._values[name] != record._values.get(name)}
+        if values:
+            _write(session, model, record_id, values)
+            _changed(changes, ((model, record_id), []), record, values)
 
 
 def _write(session, model, record_id, values):
@@ -518,13 +578,14 @@ def migrate(database, migrations):
                         operation.apply(connection)
                 connection.execute('INSERT INTO evlet_migrations (position, name, checksum) VALUES (?, ?, ?)',
                                    (position, migration.name, checksums[position - 1]))
+            applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
-                _recompute(connection, database.registry, recomputes(pending), lambda db: db.execute(
+                applied.skipped = _recompute(connection, database.registry, recomputes(pending), lambda db: db.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='evlet_calculation_versions'").fetchone() is not None)
             _check(connection, database.registry, rows=True)
             _save_definition(connection, database.registry)
             connection.commit()
-            return [item.name for item in pending]
+            return applied
         except (sqlite3.Error, ValueError, TypeError) as exc:
             connection.rollback()
             if isinstance(exc, SchemaError):
