@@ -128,9 +128,20 @@ class Change:
 
 class Context:
     """Permission-aware reads and document writes in one unit of work."""
-    def __init__(self, business, tx, user, *, readonly=False, active=None):
+    def __init__(self, business, tx, user, *, readonly=False, active=None, source=None, correlation_id=None):
         if not business.database.owns(tx):
             raise ValueError('Document context belongs to another database')
+        from .lifecycle import SOURCES
+        source = getattr(tx, '_change_source', 'API' if user is not None and user.access is not None else 'User') if source is None else source
+        correlation_id = getattr(tx, '_change_correlation', None) if correlation_id is None else correlation_id
+        if source not in SOURCES:
+            raise ValueError('Unknown change source')
+        if correlation_id is not None and (not isinstance(correlation_id, str) or len(correlation_id) > 200):
+            raise ValueError('correlation_id must be text of at most 200 characters')
+        if not readonly:
+            tx._change_source, tx._change_correlation = source, correlation_id
+        self.source, self.correlation_id = source, correlation_id
+        self._lifecycle_execution = None
         self._business, self._tx, self.user = business, tx, user
         self.readonly = readonly
         self._active = [] if active is None else active
@@ -138,7 +149,9 @@ class Context:
         self._person = None  # (model, record_id) of the write a person sent over HTTP; Controls rules apply to it.
 
     def read_context(self):
-        return Context(self._business, self._tx, self.user, readonly=True, active=self._active)
+        result = Context(self._business, self._tx, self.user, readonly=True, active=self._active, source=self.source, correlation_id=self.correlation_id)
+        result._lifecycle_execution = self._lifecycle_execution
+        return result
 
     def _model(self, value):
         if self.user is None:
@@ -188,6 +201,47 @@ class Context:
         """Declared measures this user may read, with row scopes applied."""
         from .measures import scoped_measures
         return scoped_measures(self._business, self._tx, self.user, self._model(model), record_id, filters)
+
+    @property
+    def lifecycle_execution(self):
+        return self._lifecycle_execution
+
+    def document(self, model, record_id=None, **values):
+        from .lifecycle import BoundDocument
+        return BoundDocument(self, self._model(model), record_id, values)
+
+    def confirm(self, model, record_id):
+        return self._write(model, record_id, {}, lifecycle='confirm')
+
+    def cancel(self, model, record_id, *, reason):
+        return self._write(model, record_id, {}, lifecycle='cancel', reason=reason)
+
+    def reopen(self, model, record_id):
+        return self._write(model, record_id, {}, lifecycle='reopen')
+
+    def history(self, model, record_id, **page):
+        from .journal import entries
+        return entries(self, model, record_id, **page)
+
+    def revisions(self, model, record_id, **page):
+        from .lifecycle import revisions
+        return revisions(self, self._model(model), record_id, **page)
+
+    def snapshot(self, model, record_id, *, revision):
+        from .lifecycle import snapshot
+        return snapshot(self, self._model(model), record_id, revision)
+
+    def diff(self, model, record_id, first, second):
+        from .lifecycle import diff
+        return diff(self, self._model(model), record_id, first, second)
+
+    def record_approval(self, model, record_id, *, approved, reason=None):
+        from .lifecycle import record_approval
+        return record_approval(self, self._model(model), record_id, approved, reason)
+
+    def reference_effect(self, model, record_id):
+        from .lifecycle import reference_effect
+        return reference_effect(self, model, record_id)
 
     def create(self, model, **values):
         return self._write(model, None, values)
@@ -253,6 +307,8 @@ class Context:
     def _delete(self, model, record_id):
         business, tx, user = self._business, self._tx, self.user
         record = business.policy.record(tx, user, model, record_id, 'delete')
+        from .lifecycle import check_delete as lifecycle_delete
+        lifecycle_delete(self, model, record_id)
         from .states import check_delete
         check_delete(self, model, record)
         before, _ = load_draft(self, model, record_id, {}, preview=True)
@@ -283,7 +339,7 @@ class Context:
         journal.deleted(self, model, record.id)
         business.changed(tx, model, record_id, deleted=True)
 
-    def _write(self, model, record_id, values, *, action=None, arguments=None, move=None):
+    def _write(self, model, record_id, values, *, action=None, arguments=None, move=None, lifecycle=None, reason=None):
         if self.readonly:
             raise AccessError(403, 'This context is read only')
         model = self._model(model)
@@ -295,7 +351,11 @@ class Context:
         self._active.append(key)
         try:
             with self._savepoint():
-                return operate(self, model, record_id, values, action=action, arguments=arguments, move=move)
+                previous_execution = self._lifecycle_execution
+                try:
+                    return operate(self, model, record_id, values, action=action, arguments=arguments, move=move, lifecycle=lifecycle, reason=reason)
+                finally:
+                    self._lifecycle_execution = previous_execution
         except ValidationError as exc:
             raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
         finally:
@@ -1268,7 +1328,7 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     return tx.get(model, draft.id) if reload else None
 
 
-def operate(context, model, record_id, values, *, action=None, arguments=None, move=None):
+def operate(context, model, record_id, values, *, action=None, arguments=None, move=None, lifecycle=None, reason=None):
     """Create, update, run an action or perform a move through the document pipeline, in one transaction.
 
     Ordinary writes respect a locked State. Actions and moves are declared, role-checked code: they may
@@ -1293,8 +1353,14 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
             draft._values[model.__state__] = move
     else:
         draft, before = load_draft(context, model, record_id, values)
+    from . import lifecycle as lifecycle_engine
+    if lifecycle is not None:
+        lifecycle_engine.begin(context, model, draft, lifecycle, reason)
+    else:
+        lifecycle_engine.check_write(context, model, draft, before)
     # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
-    locked_write = action is None and move is None and before is not None and states.locked_state(model, before._values) is not None
+    lifecycle_locked = before is not None and getattr(model, 'confirmable', False) and lifecycle_engine.metadata(context, model, record_id)['state'] != 'draft'
+    locked_write = action is None and move is None and before is not None and (states.locked_state(model, before._values) is not None or lifecycle_locked)
     # A record with postings keeps its stored calculated values for every writer.
     from .effects import has_postings
     posted = before is not None and has_postings(tx.connection, business.registry, model, before)
@@ -1329,6 +1395,14 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     elif before is not None:
         states.check_state_lock(context, draft, before)
     settle(context, draft, complete=True, previous=before, kept=kept)
+    if lifecycle is not None:
+        lifecycle_engine.run(context, model, draft, lifecycle)
+        settle(context, draft, complete=True, previous=before, kept=kept)
+        if lifecycle != 'confirm' or lifecycle_engine.metadata(context, model, record_id)['revision']:
+            lifecycle_engine.check_write(context, model, draft, before)
+    else:
+        # Actions and settlement may also change protected fields.
+        lifecycle_engine.check_write(context, model, draft, before)
     if posted and not locked_write:
         states.check_posted(context, draft, before)
     if locked_write:
@@ -1344,7 +1418,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
             draft._values[business.registry.naming[model].field] = name
     prior = before.stored_values() if before else None
     after = draft.stored_values()
-    if prior == after:
+    if prior == after and lifecycle is None:
         if plan is not None:
             record_plan(tx, business.registry.name_for(model), record_id, version)
         # Every readable row: the HTTP route derives its ETag from this and embeds the first page.
@@ -1374,6 +1448,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         posted = post(context, model, record.id, declared_move.to)
         states.moved(context, model, record.id, before._values.get(model.__state__), declared_move, before, draft)
         journal.effects_posted(context, model, record.id, posted)
+    elif lifecycle is not None:
+        lifecycle_engine.finish(context, model, record.id, before, draft, lifecycle, reason)
     else:
         from . import journal
         journal.written(context, model, record.id, before, draft, action=action)

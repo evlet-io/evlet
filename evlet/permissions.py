@@ -12,12 +12,14 @@ from .query import SqlQuery, OPERATORS
 # IDs per batched permission or row statement; well under SQLite's bound-parameter limit.
 CHUNK = 500
 # Engine corrections: admin has them by default and a Rule may grant them to other roles too.
-CORRECTIONS = ('void', 'revise', 'unpost', 'repost')
+CORRECTIONS = ('void', 'revise', 'unpost', 'repost', 'confirm', 'cancel', 'reopen')
 
 
 def corrects(model, operation):
     """Whether a model supports a correction: void needs voidable states, revise also Meta.revisable, and
     unpost and repost need effects (Meta.effects), each with a `reverse`, so cancelling them is possible."""
+    if operation in ('confirm', 'cancel', 'reopen'):
+        return getattr(model, 'confirmable', False)
     state = getattr(model, '__state__', None)
     if operation in ('unpost', 'repost'):
         declared = getattr(getattr(model, 'Meta', None), 'effects', ()) or ()

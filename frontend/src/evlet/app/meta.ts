@@ -43,11 +43,14 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   effect_target?: boolean;
   /** The record has a journal (Phase 8): whether entries are hash chained and the kinds this role may post. */
   journal?: { tamper_evident: boolean; kinds: string[] };
+  lifecycle?: { confirmable: true; labels: Record<string, string>; permissions: Record<string, boolean> };
 }
 
 /** Availability keys a detail may carry (outside the ETag). */
 export interface Availability { allowed: boolean; reason?: string }
 export interface DetailExtras {
+  _lifecycle?: { state: 'draft' | 'confirmed' | 'cancelled'; revision: number; confirmation_id: string | null };
+  _lifecycle_actions?: Array<'confirm' | 'cancel' | 'reopen'>;
   _locked?: boolean;
   _moves?: Array<{ to: string; label: string; allowed: boolean; reason?: string; asks?: string[] }>;
   _actions?: Array<{ name: string; label: string; allowed: boolean; reason?: string }>;

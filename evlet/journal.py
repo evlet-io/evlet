@@ -78,7 +78,9 @@ def compile_journals(models, child_models, effects=()):
             if declared and value is not None and 'journal' in vars(meta):
                 raise ValueError(f'{model.__name__}: Meta.journal is for root documents; Table rows are journaled with their document')
             continue
-        if not declared:
+        if getattr(model, 'confirmable', False) or getattr(model, 'track_changes', False):
+            value = value or Journal(tamper_evident=True)
+        elif not declared:
             value = Journal() if model.__state__ is not None or model in effects else None
         if value is not None:
             result[model] = value
@@ -148,6 +150,10 @@ def via(tx, user):
 def append(business, tx, user, model, record_id, kind, data):
     """Write one entry in this transaction and return its id. Callers have checked permissions.
     An AI assistant's write keeps the person as the actor and names the assistant in data["via"]."""
+    if (getattr(model, 'confirmable', False) or getattr(model, 'track_changes', False)) and 'event_id' not in data:
+        from .lifecycle import event_data
+        from .documents import Context
+        data = event_data(Context(business, tx, user), model, record_id, data)
     through = via(tx, user)
     if through is not None:
         data = {**data, 'via': through}
@@ -201,7 +207,11 @@ def tree_changes(business, model, before, after, skip=()):
     old, new = (before._values if before is not None else {}), (after._values if after is not None else {})
     names = skipped(business, model) | set(skip)
     fields = {name: {'old': field.serialize(old.get(name)), 'new': field.serialize(new.get(name))}
-              for name, field in model.__fields__.items() if name not in names and old.get(name) != new.get(name)}
+              for name, field in model.__fields__.items() if name not in names and old.get(name) != new.get(name)
+              and field.tracking != 'exclude'}
+    for name, change in fields.items():
+        if model.__fields__[name].tracking == 'mask':
+            fields[name] = {key: None if value is None else '[masked]' for key, value in change.items()}
     rows = {}
     for child in business.children.values():
         if child.parent is not model:
@@ -218,6 +228,11 @@ def tree_changes(business, model, before, after, skip=()):
         collection = {key: value for key, value in collection.items() if value}
         if [row.id for row in old_rows if row.id in new_ids] != [row.id for row in new_rows if row.id in old_by_id]:
             collection['reordered'] = True
+            root = business.registry.root_of(model)
+            if getattr(root, 'confirmable', False) or getattr(root, 'track_changes', False):
+                collection['positions'] = [{'id': row.id, 'old': index, 'new': next(i for i, item in enumerate(new_rows) if item.id == row.id)}
+                                           for index, row in enumerate(old_rows) if row.id in new_ids
+                                           and index != next(i for i, item in enumerate(new_rows) if item.id == row.id)]
         if collection:
             rows[child.name] = collection
     return {**({'fields': fields} if fields else {}), **({'rows': rows} if rows else {})}
@@ -234,8 +249,15 @@ def written(context, model, record_id, before, after, *, action=None):
     data = tree_changes(context._business, model, before, after)
     if action is not None:
         data['action'] = action
-    if before is None or data:
-        append(context._business, context._tx, context.user, model, record_id, 'created' if before is None else 'changed', data)
+    if before is None or data or getattr(model, 'confirmable', False) or getattr(model, 'track_changes', False):
+        from .lifecycle import event_data
+        data = event_data(context, model, record_id, data)
+        kind = 'created' if before is None else 'changed'
+        if before is not None and getattr(model, 'confirmable', False):
+            from .lifecycle import metadata
+            if metadata(context, model, record_id)['state'] != 'draft':
+                kind = 'post_confirmation_edit'
+        append(context._business, context._tx, context.user, model, record_id, kind, data)
 
 
 def moved(context, model, record_id, previous, move, before, after):
@@ -280,7 +302,8 @@ def number(context, model, record_id, name, value):
 def deleted(context, model, record_id):
     """`deleted`: the record is gone, its history stays (ids are never reused)."""
     if journals(context, model):
-        append(context._business, context._tx, context.user, model, record_id, 'deleted', {})
+        from .lifecycle import event_data
+        append(context._business, context._tx, context.user, model, record_id, 'deleted', event_data(context, model, record_id, {}))
 
 
 def file(business, tx, user, model, record_id, action, attachment):
@@ -466,12 +489,15 @@ def shown_changes(business, user, model, data, visibility):
     fields = {}
     for name, change in data.get('fields', {}).items():
         field = model.__fields__.get(name)
-        if field is None or name not in readable:
+        if field is None or name not in readable or field.tracking == 'exclude':
             partial = True
             continue
         shown = {}
         for key, value in change.items():
-            shown[key], hidden = shown_value(business, user, field, value, visibility)
+            if field.tracking == 'mask':
+                shown[key], hidden = (None if value is None else '[masked]'), False
+            else:
+                shown[key], hidden = shown_value(business, user, field, value, visibility)
             partial |= hidden
         fields[name] = shown
     if fields:
@@ -499,6 +525,8 @@ def shown_changes(business, user, model, data, visibility):
                 shown[part] = items
         if collection.get('reordered'):
             shown['reordered'] = True
+            if not scoped and 'positions' in collection:
+                shown['positions'] = collection['positions']
         if shown:
             rows[name] = shown
     if rows:
@@ -536,7 +564,7 @@ def present(business, user, model, row, visibility, done):
     readable = policy.fields(user, model)
     state_shown = model.__state__ is not None and model.__state__ in readable
     partial = False
-    if kind in ('created', 'changed', 'moved', 'recomputed'):
+    if kind in ('created', 'changed', 'moved', 'recomputed', 'confirmed', 'reconfirmed', 'cancelled', 'reopened', 'approved', 'rejected', 'post_confirmation_edit'):
         shown, partial = shown_changes(business, user, model, data, visibility)
         # Which action ran says something about the state it was available in.
         if 'action' in data and (model.__state__ is None or state_shown):
@@ -571,8 +599,27 @@ def present(business, user, model, row, visibility, done):
             shown['party'], partial = None, True
     else:
         shown = data
+    if data.get('event_id'):
+        shown.update({key: data[key] for key in ('event_id', 'source', 'revision', 'correlation_id', 'execution_id', 'confirmation_id', 'reason', 'from', 'to') if key in data})
+        # Application effect/approval references can reveal other protected records; only unrestricted
+        # readers of the complete document receive those application-owned details.
+        if not partial and policy.rule(user, model).scope is None and set(model.__fields__) <= readable:
+            if 'approval' in data:
+                shown['approval'] = data['approval']
+            if 'effects' in data:
+                effects = []
+                for effect in data['effects']:
+                    target = business.registry.models.get(effect.get('model'))
+                    if target is not None and policy.allows(user, target, 'read') and (policy.rule(user, target).scope is None or visibility(target, effect.get('id'))):
+                        effects.append(effect)
+                shown['effects'] = effects
     actor = row['actor']
     item = {'id': row['id'], 'kind': kind, 'actor': None if actor == ENGINE else int(actor), 'at': row['at'], 'data': shown}
+    if data.get('event_id'):
+        item.update(event_id=data['event_id'], document_id=data.get('document_id'), model=data.get('model'),
+                    operation=kind, timestamp=row['at'], source=data.get('source'), revision=data.get('revision'),
+                    changes={key: shown[key] for key in ('fields', 'rows') if key in shown}, reason=shown.get('reason'),
+                    correlation_id=data.get('correlation_id'))
     if kind == 'follow_up':
         item['done'] = done.get(row['id'])
     if through is not None:

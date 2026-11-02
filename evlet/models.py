@@ -118,12 +118,14 @@ class ModelType(type):
         if revisable:
             fields['revises'].target = cls
             unique_and_required(name, fields, tables)
+        from .lifecycle import configure_model
+        configure_model(cls)
         # Meta.journal = Journal(...) makes a document, so every write goes through the journaled pipeline.
         journaled = False
         if hasattr(meta, 'journal'):
             from .journal import Journal
             journaled = isinstance(meta.journal, Journal)
-        if journaled or states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
+        if getattr(cls, "confirmable", False) or getattr(cls, "track_changes", False) or journaled or states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
         reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}
@@ -335,7 +337,7 @@ class Registry:
         from .states import compile_guards, kept_plan
         self.guards, self.guard_plans, self.guard_root_plans = compile_guards(self, models, plans, child_models)
         # Ordinary writes on a locked record evaluate rules over the results it keeps.
-        self.kept_plans = MappingProxyType({root: kept_plan(plan) for root, plan in plans.items() if root.__state__ is not None})
+        self.kept_plans = MappingProxyType({root: kept_plan(plan) for root, plan in plans.items() if root.__state__ is not None or getattr(root, 'confirmable', False)})
         # Document numbers: {model: {field name: Sequence}}.
         from .sequences import compile_sequences
         self.sequences = compile_sequences(self, models, plans, child_models)

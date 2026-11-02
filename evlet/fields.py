@@ -99,7 +99,10 @@ class Field:
                  label=None, help_text="", placeholder="", suffix="", hidden=False, read_only=False,
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
-                 initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False):
+                 initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False, tracking="value"):
+        if tracking not in ("value", "mask", "exclude"):
+            raise ValueError("tracking is value, mask or exclude")
+        self.tracking = tracking
         self.required = required
         self.default = default
         if default is CurrentUser and self.kind not in ('text', 'integer'):

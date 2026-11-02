@@ -212,6 +212,10 @@ class Business:
             with self.database.transaction() as tx:
                 # Document number and naming counters, updated in each assigning write transaction.
                 upgrade_counters(tx.connection)
+        if any(getattr(model, 'confirmable', False) for model in self.registry.models.values()):
+            from .lifecycle import ensure_tables
+            with self.database.transaction() as tx:
+                ensure_tables(tx.connection, postgres=getattr(self.database, 'driver', None) is not None)
         if self.journals:
             from .journal import ensure_table
             with self.database.transaction() as tx:
@@ -249,10 +253,10 @@ class Business:
         self.database.timezone = value
 
     @contextmanager
-    def context(self, user, *, readonly=False):
+    def context(self, user, *, readonly=False, source=None, correlation_id=None):
         from .documents import Context
         with self.gate.shared(), self.database.transaction() as tx:
-            yield Context(self, tx, user, readonly=readonly)
+            yield Context(self, tx, user, readonly=readonly, source=source, correlation_id=correlation_id)
 
     def event_page(self, scope):
         with self.gate.shared(), using(self.database):
@@ -378,6 +382,10 @@ class Business:
                 entry['attachment_limits'] = self.attachment_limits[model].public()
             from .journal import schema as journal_schema
             entry.update(journal_schema(self, user, model))
+            if getattr(model, 'confirmable', False):
+                from .lifecycle import labels
+                entry['lifecycle'] = {'confirmable': True, 'labels': labels(model),
+                                      'permissions': {op: self.policy.allows(user, model, op) and self.policy.allows(user, model, 'update') for op in ('confirm', 'cancel', 'reopen')}}
             meaning = self.registry.meaning[model]
             if meaning.key_fields:
                 entry['key_fields'] = [name for name in meaning.key_fields if name in readable]
@@ -590,6 +598,9 @@ class Business:
 
     def model_dispatch(self, scope, body, user, model, parts):
         path, method = scope['path'], scope['method']
+        if len(parts) >= 5 and parts[4] in ('confirm', 'cancel', 'reopen', 'history', 'revisions', 'snapshot', 'diff'):
+            from .lifecycle import route
+            return route(self, scope, body, user, model, parts)
         if len(parts) == 5 and parts[4] in CORRECTIONS:
             if method != 'POST':
                 raise AccessError(405, 'Method not allowed')
@@ -742,6 +753,13 @@ class Business:
         """
         from .journal import summary as journal_summary
         result = journal_summary(self, context._tx, model, record.id)
+        if getattr(model, 'confirmable', False):
+            from .lifecycle import metadata
+            lifecycle = metadata(context, model, record.id)
+            result['_locked'] = lifecycle['state'] != 'draft'
+            result['_deletable'] = lifecycle['state'] == 'draft' and lifecycle['revision'] == 0
+            result['_lifecycle_actions'] = [op for op, state in (('confirm', 'draft'), ('cancel', 'confirmed'), ('reopen', 'cancelled'))
+                                            if lifecycle['state'] == state and self.policy.allows(context.user, model, op) and self.policy.allows(context.user, model, 'update')]
         if model in self.registry.effects:
             from .effects import ever_posted
             if ever_posted(context._tx.connection, self.registry, model, record.id):
@@ -989,6 +1007,10 @@ class Business:
         """
         result = self.policy.serialize(tx, user, record)
         self.embed(tx, user, type(record), {record.id: result}, row_limit, loaded)
+        if getattr(type(record), 'confirmable', False):
+            from .lifecycle import metadata
+            from .documents import Context
+            result['_lifecycle'] = metadata(Context(self, tx, user, readonly=True), type(record), record.id)
         if getattr(type(record), '__revisable__', False) and 'revises' in self.policy.fields(user, type(record)):
             # The other direction of `revises`, found by a lookup; there is no column for it.
             from .corrections import revised_by

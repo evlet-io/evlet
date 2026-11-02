@@ -21,7 +21,7 @@ PATH = re.compile(r'/[a-z0-9][a-z0-9_-]*')
 HOSTNAME = re.compile(r'[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?')
 LOCAL = 'localhost'
 # Record routes an ApiScope opens only when it lists them in extras.
-SCOPE_EXTRAS = ('measures', 'related', 'lines', 'attachments', 'drafts')
+SCOPE_EXTRAS = ('measures', 'related', 'lines', 'attachments', 'drafts', 'history', 'revisions')
 
 
 def reserved(path):
