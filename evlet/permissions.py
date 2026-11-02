@@ -12,12 +12,16 @@ from .query import SqlQuery, OPERATORS
 # IDs per batched permission or row statement; well under SQLite's bound-parameter limit.
 CHUNK = 500
 # Engine corrections: admin has them by default and a Rule may grant them to other roles too.
-CORRECTIONS = ('void', 'revise')
+CORRECTIONS = ('void', 'revise', 'unpost', 'repost')
 
 
 def corrects(model, operation):
-    """Whether a model supports a correction: void needs voidable states, revise also Meta.revisable."""
+    """Whether a model supports a correction: void needs voidable states, revise also Meta.revisable, and
+    unpost and repost need effects (Meta.effects), each with a `reverse`, so cancelling them is possible."""
     state = getattr(model, '__state__', None)
+    if operation in ('unpost', 'repost'):
+        declared = getattr(getattr(model, 'Meta', None), 'effects', ()) or ()
+        return state is not None and bool(declared) and all(getattr(effect, 'reverse', None) is not None for effect in declared)
     voidable = state is not None and bool(model.__declared_fields__[state].voidable)
     return voidable and (operation == 'void' or getattr(model, '__revisable__', False))
 
@@ -122,7 +126,8 @@ class Policy:
             for operation in CORRECTIONS:
                 if operation in rule.operations and not corrects(model, operation):
                     raise ValueError(f'{model.__name__}: Rule names {operation!r}, but the model cannot be '
-                                     + ('voided (declare voidable states on its State)' if operation == 'void' else 'revised (set Meta.revisable = True)'))
+                                     + {'void': 'voided (declare voidable states on its State)', 'revise': 'revised (set Meta.revisable = True)'}.get(
+                                         operation, f'{operation}ed (declare Meta.effects, each with reverse=)'))
             if rule.operations and 'read' not in rule.operations:
                 raise ValueError('Write permissions require read access')
             for fields in (rule.read_fields, rule.write_fields):
@@ -130,8 +135,8 @@ class Policy:
                     raise ValueError('Permission fields must name model fields')
             if rule.scope is not None and not callable(rule.scope):
                 raise ValueError('Row scope must be a callable returning query filters')
-        # Void and revise: admin, when its Rule allows reading and updating the model (and creating, for
-        # revise), plus every role whose Rule names the operation. The rules table itself is not changed.
+        # Void, revise, unpost and repost: admin, when its Rule allows reading and updating the model (and
+        # creating, for revise), plus every role whose Rule names the operation. The rules table is not changed.
         corrections = {}
         for model in registry.models.values():
             for operation in CORRECTIONS:

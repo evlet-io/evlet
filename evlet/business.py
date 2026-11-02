@@ -15,7 +15,7 @@ from .database import ROW_LIMIT, Session, using
 from .fields import Link
 from .ui.metadata import view_for
 from .models import ValidationError, identifier
-from .permissions import Policy
+from .permissions import CORRECTIONS, Policy
 from .query import SqlQuery
 from .storage import SQLiteStorage
 from .jobs import JobReceipt
@@ -590,7 +590,7 @@ class Business:
 
     def model_dispatch(self, scope, body, user, model, parts):
         path, method = scope['path'], scope['method']
-        if len(parts) == 5 and parts[4] in ('void', 'revise'):
+        if len(parts) == 5 and parts[4] in CORRECTIONS:
             if method != 'POST':
                 raise AccessError(405, 'Method not allowed')
             if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')

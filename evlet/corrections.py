@@ -1,20 +1,31 @@
-"""Void and revise: engine corrections of locked documents, each in one transaction.
+"""Void, revise, unpost and repost: engine corrections of locked and posted documents, each in one transaction.
 
 A void moves a record from one of its State's `voidable` states to "void" and records a reason. It is
 neither an ordinary write nor a declared Move: every other value, saved results included, stays as it
 is. A revise voids the record and creates a new draft copy whose `revises` Link points at the original.
 
+An unpost takes a posted record (one with live effect rows) back to the state it posted from, keeping its
+id and Sequence numbers, and cancels its effect rows with reversal rows. A repost posts it again through
+its normal posting move, which re-validates it and writes fresh rows.
+
 Later phases plug in here: Effects reversal (`reverse_effects`), Sequence numbers on the copy
-(`prepare_copy`, which clears them) and the Journal (`voided`, `revised`). Each hook runs in the
-operation's transaction and savepoint, so a failure in any of them rolls the whole operation back.
+(`prepare_copy`, which clears them) and the Journal (`voided`, `revised`, `unposted`, `reposted`). Each
+hook runs in the operation's transaction and savepoint, so a failure in any of them rolls the whole
+operation back.
 """
 
+import json
+
 from .auth import AccessError
+from .fields import Link, Reference
 from .models import ValidationError, identifier
-from .permissions import corrects
+from .permissions import CHUNK, corrects
 
 VOID = 'void'
 REASON_LENGTH = 1000
+# Dependent records an unpost refusal names before it counts the rest.
+NAMED = 5
+VERBS = {'void': 'voided', 'revise': 'revised', 'unpost': 'unposted', 'repost': 'reposted'}
 
 
 # Hooks for later phases. Each is called once per operation, inside its transaction.
@@ -44,6 +55,29 @@ def revised(context, model, original_id, copy_id, reason):
     Writes the Journal's `revised` entry on the original, naming the copy."""
     from . import journal
     journal.revised(context, model, original_id, copy_id, reason)
+
+
+def unposted(context, model, record_id, previous, to, reason):
+    """Called once an unpost is saved, before the `effects` entry of its reversal rows. Writes the Journal's
+    `unposted` entry and a Controls audit row."""
+    from . import journal
+    journal.unposted(context, model, record_id, previous, to, reason)
+    audit(context, model, record_id, f'Unposted from {previous} to {to} · {reason}')
+
+
+def reposted(context, model, record_id, move, reason):
+    """Called once a repost is saved, after the move's `moved` and `effects` entries. Writes the Journal's
+    `reposted` entry and a Controls audit row."""
+    from . import journal
+    journal.reposted(context, model, record_id, move, reason)
+    audit(context, model, record_id, f'Reposted by {move.label}' + (f' · {reason}' if reason else ''))
+
+
+def audit(context, model, record_id, detail):
+    """One row in the Controls audit log, in the operation's transaction (area "Records")."""
+    business = context._business
+    actor = getattr(context.user, 'username', None) or 'engine'
+    business.controls.audit(context._tx.connection, actor, 'Records', f'{business.registry.name_for(model)} {record_id}', detail)
 
 
 # Checks
@@ -120,7 +154,7 @@ def check(context, model, record_id, operation, reason):
     revise, whether the caller's copy could be created (403)."""
     business, tx, user = context._business, context._tx, context.user
     if not corrects(model, operation):
-        raise AccessError(404, f'This record cannot be {"voided" if operation == "void" else "revised"}')
+        raise AccessError(404, f'This record cannot be {VERBS[operation]}')
     record = business.policy.record(tx, user, model, record_id, operation)
     if operation == 'revise':
         # The copy is a new draft of this caller's; its rows are created with the usual checks too.
@@ -249,6 +283,242 @@ def copy_draft(context, model, record):
     return root
 
 
+# Unpost and repost
+
+def posting_states(business, model):
+    """The states a move posts effects on."""
+    return {bound.on for bound in business.registry.effects.get(model, ())}
+
+
+def before_posting(field, posting):
+    """States a record can be in before it posts anything: reachable from the default without entering a posting state."""
+    found, queue = [field.default], [field.default]
+    while queue:
+        state = queue.pop(0)
+        for move in field.moves:
+            if state in move.sources and move.to not in posting and move.to not in found:
+                found.append(move.to)
+                queue.append(move.to)
+    return found
+
+
+def unpost_state(context, model, record_id):
+    """The state an unpost returns a record to: the state its posting move started from, or None when it cannot
+    be told. When moves from several states post, the record's Journal names the one it took last."""
+    business = context._business
+    field = model.__declared_fields__[model.__state__]
+    posting = posting_states(business, model)
+    starts = [state for state in before_posting(field, posting)
+              if any(move.to in posting and state in move.sources for move in field.moves)]
+    if len(starts) == 1:
+        return starts[0]
+    if model not in business.journals:
+        return None
+    rows = context._tx.connection.execute("SELECT data FROM evlet_journal WHERE model=? AND record_id=? AND kind='moved' ORDER BY id DESC",
+                                          (business.registry.name_for(model), record_id)).fetchall()
+    for (data,) in rows:
+        data = json.loads(data)
+        if data.get('to') in posting and data.get('from') in starts:
+            return data['from']
+    return None
+
+
+def repost_move(context, model, record):
+    """The move that posts the record again from its current state, or None when there is none or several."""
+    field = model.__declared_fields__[model.__state__]
+    posting = posting_states(context._business, model)
+    current = record._values.get(model.__state__)
+    moves = [move for move in field.moves if current in move.sources and move.to in posting]
+    return moves[0] if len(moves) == 1 else None
+
+
+def was_posted(context, model, record_id):
+    """Whether the record ever posted rows of an effect (they may all be reversed since)."""
+    from .effects import SOURCE
+    business = context._business
+    name = business.registry.name_for(model)
+    return any(context._tx.connection.execute(f'SELECT 1 FROM {identifier(business.registry.name_for(bound.target))} '
+                                              f'WHERE "{SOURCE}_model"=? AND "{SOURCE}_id"=? LIMIT 1', (name, record_id)).fetchone()
+               for bound in business.registry.effects.get(model, ()))
+
+
+def roots(business, tx, model, ids):
+    """{row id: (root model, root id)} for records or Table rows of `model`, one statement per level and chunk."""
+    owners = {child.model: child for child in business.children.values()}
+    result = {record_id: (model, record_id) for record_id in ids}
+    current = model
+    while current in owners and result:
+        child = owners[current]
+        table, link = identifier(business.registry.name_for(current)), identifier(child.link)
+        wanted = list({item[1] for item in result.values()})
+        parents = {}
+        for start in range(0, len(wanted), CHUNK):
+            part = wanted[start:start + CHUNK]
+            parents.update((row[0], row[1]) for row in tx.connection.execute(
+                f'SELECT id, {link} FROM {table} WHERE id IN ({", ".join("?" for _ in part)})', part).fetchall())
+        result = {key: (child.parent, parents[item[1]]) for key, item in result.items() if parents.get(item[1]) is not None}
+        current = child.parent
+    return result
+
+
+def live_record(context, model, record_id):
+    """Whether a record holds on to what it links to: it has a State, is not void, and is locked or has live postings."""
+    from .effects import has_postings
+    business, tx = context._business, context._tx
+    state = model.__state__
+    if state is None:
+        return False
+    row = tx.connection.execute(f'SELECT * FROM {identifier(business.registry.name_for(model))} WHERE id=?', (record_id,)).fetchone()
+    if row is None:
+        return False
+    record = model._from_row(row)
+    current = record._values.get(state)
+    if current == VOID:
+        return False
+    return current in model.__declared_fields__[state].locked or has_postings(tx.connection, business.registry, model, record)
+
+
+def dependents(context, model, record_id):
+    """Live records that depend on this one: they (or their Table rows) link to it with a Link or a Reference,
+    or they posted effect rows that do. Returns [(model, id)] in a stable order.
+
+    One statement per linking field, and one per level and chunk to find the documents of Table rows."""
+    from .effects import SOURCE, targets_of
+    business, tx = context._business, context._tx
+    registry = business.registry
+    name = registry.name_for(model)
+    targets = targets_of(registry)
+    found = {}
+    for other in registry.models.values():
+        table = identifier(registry.name_for(other))
+        for field_name, field in other.__declared_fields__.items():
+            if not field.stored:
+                continue
+            if isinstance(field, Link) and field.target is model:
+                sql, values = f'SELECT id FROM {table} WHERE {identifier(field_name)}=?', (record_id,)
+            elif isinstance(field, Reference) and not (other in targets and field_name == SOURCE):
+                sql, values = (f'SELECT id FROM {table} WHERE {identifier(field_name + "_model")}=? AND {identifier(field_name + "_id")}=?',
+                               (name, record_id))
+            else:
+                continue
+            ids = [row[0] for row in tx.connection.execute(sql, values).fetchall()]
+            if not ids:
+                continue
+            if other in targets:
+                # An effect row: the record that posted it depends on this one.
+                for start in range(0, len(ids), CHUNK):
+                    part = ids[start:start + CHUNK]
+                    for row in tx.connection.execute(f'SELECT "{SOURCE}_model", "{SOURCE}_id" FROM {table} '
+                                                     f'WHERE id IN ({", ".join("?" for _ in part)})', part).fetchall():
+                        source = registry.models.get(row[0])
+                        if source is not None and row[1] is not None:
+                            found[source, row[1]] = None
+                continue
+            for root in roots(business, tx, other, ids).values():
+                found[root] = None
+    found.pop((model, record_id), None)
+    return [item for item in found if live_record(context, *item)]
+
+
+def dependents_message(context, items):
+    """A plain refusal naming the dependent records the caller can open; the others are only counted."""
+    business, user, tx = context._business, context.user, context._tx
+    shown, hidden = [], 0
+    for item_model, item_id in items:
+        if business.policy.allows(user, item_model, 'read') and business.policy.visible(tx, user, item_model, [item_id]):
+            shown.append(f'{item_model.__name__} {item_id}')
+        else:
+            hidden += 1
+    names = shown[:NAMED]
+    more = len(shown) - len(names) + hidden
+    if more:
+        names.append(f'{more} other record{"s" if more != 1 else ""}' if names else
+                     f'{more} record{"s" if more != 1 else ""} you cannot open')
+    listed = names[0] if len(names) == 1 else ', '.join(names[:-1]) + ' and ' + names[-1]
+    one = len(items) == 1
+    return (f'This record cannot be unposted while {listed} {"depends" if one else "depend"} on it. '
+            f'Void or unpost {"it" if one else "them"} first.')
+
+
+def posting_problem(context, model, record, operation, *, with_dependents=True):
+    """None when the saved record allows an unpost or a repost now, otherwise (status, message)."""
+    from .effects import has_postings
+    from .states import state_shown
+    business = context._business
+    current = record._values.get(model.__state__)
+    if current == VOID:
+        return 409, f'This record is void, so it cannot be {VERBS[operation]}'
+    posted = has_postings(context._tx.connection, business.registry, model, record)
+    if operation == 'unpost':
+        if not posted:
+            return 409, 'This record has nothing posted to cancel'
+        if unpost_state(context, model, record.id) is None:
+            return 409, 'The state this record posted from is not known, so it cannot be unposted'
+        if with_dependents:
+            items = dependents(context, model, record.id)
+            if items:
+                return 409, dependents_message(context, items)
+        return None
+    if posted:
+        return 409, 'This record is posted already'
+    if not was_posted(context, model, record.id):
+        return 409, 'This record was never posted. Use its moves to post it'
+    if repost_move(context, model, record) is None:
+        if state_shown(context, model):
+            return 409, f'This record is {current}, and no single move posts it from there'
+        return 409, 'This record cannot be reposted now'
+    return None
+
+
+def check_posting(context, model, record_id, operation, reason):
+    """The checks of unpost and repost, in order: the model supports it (404), the role and row scope (403 or
+    404), the reason (422; optional for a repost) and the saved record (409)."""
+    business, tx, user = context._business, context._tx, context.user
+    if not corrects(model, operation):
+        raise AccessError(404, f'This record cannot be {VERBS[operation]}')
+    record = business.policy.record(tx, user, model, record_id, operation)
+    reason = clean_reason(reason) if operation == 'unpost' or reason not in (None, '') else None
+    problem = posting_problem(context, model, record, operation)
+    if problem is not None:
+        raise AccessError(*problem)
+    return record, reason
+
+
+def unpost(context, model, record_id, reason):
+    """Take a posted record back to the state it posted from and cancel its effect rows; returns its detail.
+
+    The record keeps its id and Sequence numbers; nothing is deleted. Every live effect row it posted gets a
+    reversal row, as for a void."""
+    from .documents import Change, freeze, freeze_draft, load_draft
+    business, tx, user = context._business, context._tx, context.user
+    record, reason = check_posting(context, model, record_id, 'unpost', reason)
+    name, previous = model.__state__, record._values.get(model.__state__)
+    to = unpost_state(context, model, record.id)
+    tx.connection.execute(f'UPDATE {identifier(business.registry.name_for(model))} SET {identifier(name)}=? WHERE id=?', (to, record.id))
+    reversed_rows = reverse_effects(context, model, record.id, previous)
+    reaction = getattr(model, 'changed', None)
+    if reaction is not None:
+        after, _ = load_draft(context, model, record.id, {}, preview=True)
+        values = after.stored_values()
+        freeze_draft(after)
+        reaction(after, Change('unpost', user, freeze({**values, name: previous}), freeze(values), (name,), freeze({})))
+    unposted(context, model, record.id, previous, to, reason)
+    from . import journal
+    journal.effects_posted(context, model, record.id, reversed_rows)
+    business.changed(tx, model, record.id)
+    return business.detail(tx, user, tx.get(model, record.id), row_limit=None)
+
+
+def repost(context, model, record_id, reason=None):
+    """Post an unposted record again through its posting move, with every check of that move; returns its detail."""
+    from .documents import operate
+    record, reason = check_posting(context, model, record_id, 'repost', reason)
+    move = repost_move(context, model, record)
+    result = operate(context, model, record.id, {}, move=move.to)
+    reposted(context, model, record.id, move, reason)
+    return result
+
+
 # Details and schema
 
 def revised_by(business, tx, user, model, record_id):
@@ -260,12 +530,15 @@ def revised_by(business, tx, user, model, record_id):
 
 
 def availability(business, context, model, record):
-    """`_void` and `_revise` for a detail response: whether this caller may use them now, and why not.
+    """`_void`, `_revise`, `_unpost` and `_repost` for a detail response: whether this caller may use them now,
+    and why not.
 
-    Listed only for roles that can read the State, like `_moves`; the reasons never name a state.
+    Listed only for roles that can read the State, like `_moves`; the reasons never name a state. Unpost and
+    repost are listed only for roles that have them, and only when they apply: `_unpost` on a posted record,
+    `_repost` on an unposted one. Records that depend on a posted one are checked when it is unposted, not here.
     """
     from .states import state_shown
-    if not corrects(model, 'void') or not state_shown(context, model):
+    if not state_shown(context, model):
         return {}
     policy, tx, user = business.policy, context._tx, context.user
     result = {}
@@ -279,44 +552,64 @@ def availability(business, context, model, record):
             reason = f'You cannot {operation} this record'
         elif state_problem(context, model, record, operation) is not None:
             reason = 'This record already has a revision' if operation == 'revise' and record._values.get(model.__state__) == VOID \
-                else f'This record cannot be {"voided" if operation == "void" else "revised"} in its current state'
+                else f'This record cannot be {VERBS[operation]} in its current state'
         elif operation == 'revise':
             reason = copy_problem(context, model, record)
+        result['_' + operation] = {'allowed': reason is None, **({'reason': reason} if reason else {})}
+    if corrects(model, 'unpost') and record._values.get(model.__state__) != VOID:
+        from .effects import has_postings
+        posted = has_postings(tx.connection, business.registry, model, record)
+        applies = {'unpost': posted, 'repost': not posted and was_posted(context, model, record.id)}
+    else:
+        applies = {}
+    for operation, applied in applies.items():
+        if not applied or not policy.allows(user, model, operation):
+            continue
+        problem = posting_problem(context, model, record, operation, with_dependents=False)
+        reason = problem[1] if problem is not None else None
+        if reason is None and policy.rule(user, model).scope is not None and not policy.visible(tx, user, model, [record.id], operation):
+            reason = f'You cannot {operation} this record'
         result['_' + operation] = {'allowed': reason is None, **({'reason': reason} if reason else {})}
     return result
 
 
 def model_schema(business, user, model):
-    """Additive schema keys of a voidable model: `voidable`, `revisable` and this role's `void` and
-    `revise` permissions, for roles that can read the State. Other entries are unchanged."""
-    if not corrects(model, 'void') or model.__state__ not in business.policy.fields(user, model):
+    """Additive schema keys, for roles that can read the State: `voidable` and `revisable` on a voidable model,
+    `unpostable` on a model whose effects can be cancelled, and this role's `void`, `revise`, `unpost` and
+    `repost` permissions where the model supports them. Other entries are unchanged."""
+    if model.__state__ is None or model.__state__ not in business.policy.fields(user, model):
         return {}, {}
-    permissions = {operation: business.policy.allows(user, model, operation) for operation in ('void', 'revise') if corrects(model, operation)}
-    return {'voidable': True, 'revisable': corrects(model, 'revise')}, permissions
+    flags = {}
+    if corrects(model, 'void'):
+        flags.update({'voidable': True, 'revisable': corrects(model, 'revise')})
+    if corrects(model, 'unpost'):
+        flags['unpostable'] = True
+    permissions = {operation: business.policy.allows(user, model, operation) for operation in VERBS if corrects(model, operation)}
+    return flags, permissions
 
 
 # HTTP
 
 def dispatch(business, scope, body, user, model, record_id, operation):
-    """POST /api/{model}/{id}/void and /revise with {"reason": "..."}; If-Match is required."""
+    """POST /api/{model}/{id}/void, /revise, /unpost and /repost with {"reason": "..."}; If-Match is required.
+    A repost's reason is optional."""
     with business.context(user) as context:
         if not corrects(model, operation):
-            raise AccessError(404, f'This record cannot be {"voided" if operation == "void" else "revised"}')
+            raise AccessError(404, f'This record cannot be {VERBS[operation]}')
         record = business.policy.record(context._tx, user, model, record_id, operation)
         if b'if-match' not in dict(scope.get('headers', [])):
             raise AccessError(428, 'A current If-Match revision is required')
         business.check_revision(scope, context._tx, user, record)
         if not isinstance(body, dict) or set(body) - {'reason'}:
             raise ValidationError({'_form': 'Send only a reason'})
-        method = context.void if operation == 'void' else context.revise
-        result = method(model, record_id, body.get('reason'))
+        result = getattr(context, operation)(model, record_id, body.get('reason'))
         extra = business.availability(context, model, context._tx.get(model, result['id']))
     etag = business.revision(result)
     result = {**business.embedded(result), **extra}
     plan = business.registry.plan_for(model)
     if plan is not None:
         result['_calculation'] = {'language': plan['language'], 'model_schema_hash': plan['model_schema_hash']}
-    if operation == 'void':
+    if operation != 'revise':
         return 200, result, [(b'etag', etag)]
     result['_original'] = record_id
     return 201, result, [(b'etag', etag), (b'location', f'/api/{business.registry.name_for(model)}/{result["id"]}'.encode())]

@@ -38,7 +38,7 @@ def recover(path):
     sync_directory(path)
 
 
-def install(root, name, *, app_name=None, trust=False, confirm=None):
+def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_posted=False):
     path = child(root, 'instances', name)
     if not path.is_dir():
         raise ValueError(f'Instance does not exist: {name}')
@@ -82,7 +82,7 @@ def install(root, name, *, app_name=None, trust=False, confirm=None):
                 snapshot(database, backup)
                 snapshot(backup, stage)
             app, schedules = build_instance(config, path, packages, database_path=stage, storage_path=Path(directory) / 'private')
-            applied = app.database.migrate(app.database.migrations)
+            applied = app.database.migrate(app.database.migrations, recompute_posted=recompute_posted)
             app.initialize()
             register_schedules(app, schedules)
             with app.database.transaction() as tx:
@@ -110,4 +110,5 @@ def install(root, name, *, app_name=None, trust=False, confirm=None):
             atomic_json(path / 'apps.lock', after)
             (path / '.install-journal.json').unlink()
             sync_directory(path)
-        return {'apps': [package.name for package in packages], 'migrations': applied, 'backup': str(backup) if backup else None}
+        return {'apps': [package.name for package in packages], 'migrations': applied, 'backup': str(backup) if backup else None,
+                'posted': getattr(applied, 'posted', 0)}

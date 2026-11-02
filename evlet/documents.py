@@ -211,6 +211,15 @@ class Context:
         """Void a record and create its draft copy; returns the copy. The same checks as POST .../revise."""
         return self._correct(model, record_id, reason, 'revise')
 
+    def unpost(self, model, record_id, reason):
+        """Take a posted record back to the state it posted from and cancel what it posted. The same checks as
+        POST /api/{model}/{id}/unpost."""
+        return self._correct(model, record_id, reason, 'unpost')
+
+    def repost(self, model, record_id, reason=None):
+        """Post an unposted record again through its posting move. The same checks as POST .../repost."""
+        return self._correct(model, record_id, reason, 'repost')
+
     def _correct(self, model, record_id, reason, operation):
         from . import corrections
         if self.readonly:

@@ -39,6 +39,8 @@ def parser():
     migrate = commands.add_parser('migrate', help='Back up and migrate a selected instance; recover interrupted installation')
     migrate.add_argument('instance')
     migrate.add_argument('--trust', action='store_true', help='Trust changed app source without prompting')
+    migrate.add_argument('--recompute-posted', action='store_true',
+                         help='Let Recompute operations recalculate posted records too; each changed one gets a journal entry')
     for name in ('serve', 'dev'):
         command = commands.add_parser(name, help='Serve an instance' if name == 'serve' else 'Develop with Python reloads and the bundled UI')
         if name == 'serve':
@@ -185,9 +187,13 @@ def main(argv=None):
                 raise ValueError('Provide an instance name or --list')
         elif args.command in ('install', 'migrate'):
             from .install import install
-            result = install(root, args.instance, app_name=args.name if args.command == 'install' else None, trust=args.trust, confirm=confirm)
+            posted = args.command == 'migrate' and args.recompute_posted
+            result = install(root, args.instance, app_name=args.name if args.command == 'install' else None, trust=args.trust, confirm=confirm,
+                             recompute_posted=posted)
             print(f'Instance {args.instance}: installed ' + ', '.join(result['apps']))
             print('Applied migrations: ' + (', '.join(result['migrations']) or 'none; schema is current'))
+            if posted:
+                print(f'Posted records recalculated: {result.get("posted", 0)}')
             if result['backup']:
                 print('Backup: ' + result['backup'])
         elif args.command == 'routes':

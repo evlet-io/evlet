@@ -215,6 +215,6 @@ class PostgreSQLDatabase(Database):
         from .postgres_schema import initialize
         initialize(self)
 
-    def migrate(self, migrations):
+    def migrate(self, migrations, *, recompute_posted=False):
         from .postgres_schema import migrate
-        return migrate(self, migrations)
+        return migrate(self, migrations, recompute_posted=recompute_posted)

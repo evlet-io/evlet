@@ -192,7 +192,7 @@ def apply(db, op):
         if op.field.kind == 'sequence': sequence_index(db, op.table, op.name, op.field)
 
 
-def migrate(database, migrations):
+def migrate(database, migrations, *, recompute_posted=False):
     validate_indexes(database.registry)
     migrations, checksums = _migration_plan(migrations)
     try:
@@ -222,9 +222,9 @@ def migrate(database, migrations):
                 db.execute('INSERT INTO evlet_migrations(position,name,checksum) VALUES(?,?,?)', (position, migration.name, checksums[position-1]))
             applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
-                applied.skipped = _recompute(db, database.registry, recomputes(pending), lambda connection: connection.execute(
+                applied.skipped, applied.posted = _recompute(db, database.registry, recomputes(pending), lambda connection: connection.execute(
                     "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_calculation_versions'").fetchone() is not None,
-                    postgres=True)
+                    postgres=True, include_posted=recompute_posted)
             check(db, database.registry, rows=True)
             save(db, database.registry)
             return applied

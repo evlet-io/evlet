@@ -326,20 +326,25 @@ class Recompute:
 
 
 class Applied(list):
-    """The names of the migrations a migrate() call applied; `skipped` counts the records Recompute kept."""
+    """The names of the migrations a migrate() call applied; `skipped` counts the records Recompute kept, and
+    `posted` the posted records it changed when the run included them (`recompute_posted=True`)."""
     skipped = 0
+    posted = 0
 
 
-def _recompute(connection, registry, operations, versions, *, postgres=False):
+def _recompute(connection, registry, operations, versions, *, postgres=False, include_posted=False):
     """Run Recompute operations in order. versions(connection) tells whether formula versions are recorded.
 
-    A record that posted effects (voided or not) keeps its saved results, so it is skipped. Records whose results change get
-    a `recomputed` Journal entry. Returns the number of records skipped."""
+    A record with posted effects (voided or not) keeps its saved results, so it is skipped, unless an admin runs the
+    migration with `include_posted`: then posted records are recalculated too, and each one that changes gets
+    `"posted": true` in its entry. Records whose results change get a `recomputed` Journal entry. Returns
+    (records skipped, posted records changed)."""
     from .database import Session
     from .calc import CalcError
     from .journal import recomputed
     session = Session(connection, registry)
     covered, skipped, changes = {}, set(), {}
+    posted = set() if include_posted else None
     for operation in operations:
         model = registry.models.get(operation.table)
         if model is None:
@@ -351,9 +356,9 @@ def _recompute(connection, registry, operations, versions, *, postgres=False):
         plan = registry.plan_for(model)
         try:
             if plan is None:
-                _recompute_legacy(session, model, operation, skipped, changes)
+                _recompute_legacy(session, model, operation, skipped, changes, posted)
             else:
-                path = _recompute_finite(session, registry, plan, model, operation, skipped, changes)
+                path = _recompute_finite(session, registry, plan, model, operation, skipped, changes, posted)
                 covered.setdefault(registry.root_of(model), set()).update((path, name) for name in operation.fields)
         except (CalcError, ArithmeticError) as exc:
             raise SchemaError(f'Recompute {operation.table} failed: {exc}') from exc
@@ -370,10 +375,36 @@ def _recompute(connection, registry, operations, versions, *, postgres=False):
                 part = ids[start:start + 500]
                 connection.execute(f'UPDATE evlet_calculation_versions SET plan_hash=? WHERE resource=? AND record_id IN ({", ".join("?" for _ in part)})',
                                    (registry.formula_hashes[root], registry.name_for(root), *part))
+    changed_posted = sorted((key for key in changes if key in (posted or ())), key=lambda key: (registry.name_for(key[0]), key[1]))
+    for key in changed_posted:
+        changes[key]['posted'] = True
     recomputed(connection, registry, changes, postgres=postgres)
     if skipped:
         logger.info('Recompute kept the saved results of %d posted records', len(skipped))
-    return len(skipped)
+    if changed_posted:
+        from .controls import audit, ensure_schema
+        ensure_schema(connection)
+        names = ', '.join(sorted({registry.name_for(model) for model, _ in changed_posted}))
+        count = len(changed_posted)
+        audit(connection, 'cli', 'Records', names, f'Recompute changed {count} posted record{"s" if count != 1 else ""}, as asked')
+        logger.warning('Recompute changed the saved results of %d posted records', count)
+    return len(skipped), len(changed_posted)
+
+
+def _skip(session, model, record, skipped, posted):
+    """Whether Recompute leaves this root record alone. With `posted` (a set, when the run includes posted
+    records), posted records are recalculated and collected there instead."""
+    key = (model, record.id)
+    if key in skipped:
+        return True
+    if posted is not None and key in posted:
+        return False
+    if _kept(session, model, record):
+        if posted is None:
+            skipped.add(key)
+            return True
+        posted.add(key)
+    return False
 
 
 def _kept(session, model, record):
@@ -400,7 +431,7 @@ def _rows(session, model, record_id, child):
     return owned_rows(session, child, [record_id]).get(record_id, ([], 0))[0]
 
 
-def _recompute_finite(session, registry, plan, model, operation, skipped, changes):
+def _recompute_finite(session, registry, plan, model, operation, skipped, changes, posted=None):
     from datetime import datetime, timezone
     from .calc import Document, Num, is_finite, to_decimal
     from .documents import fill_lookups, MESSAGES
@@ -428,8 +459,7 @@ def _recompute_finite(session, registry, plan, model, operation, skipped, change
     table = identifier(registry.name_for(root))
     for (record_id,) in session.connection.execute(f'SELECT "id" FROM {table} ORDER BY "id"').fetchall():
         record, saved = session.get(root, record_id), {}
-        if (root, record_id) in skipped or _kept(session, root, record):
-            skipped.add((root, record_id))
+        if _skip(session, root, record, skipped, posted):
             continue
         document = Document(plan, data(record), checked=True)
         if any(read[0] == 'today' for field in plan['fields'] for read in field['reads']):
@@ -464,7 +494,7 @@ def _recompute_finite(session, registry, plan, model, operation, skipped, change
     return path
 
 
-def _recompute_legacy(session, model, operation, skipped, changes):
+def _recompute_legacy(session, model, operation, skipped, changes, posted=None):
     from .documents import Draft
     from .reactivity import evaluate, graph, round_field
     if model.__tables__ or model.__sources__ or any(field.query is not None for field in model.__declared_fields__.values()) \
@@ -474,8 +504,7 @@ def _recompute_legacy(session, model, operation, skipped, changes):
     table = identifier(session.registry.name_for(model))
     for (record_id,) in session.connection.execute(f'SELECT "id" FROM {table} ORDER BY "id"').fetchall():
         record = session.get(model, record_id)
-        if (model, record_id) in skipped or _kept(session, model, record):
-            skipped.add((model, record_id))
+        if _skip(session, model, record, skipped, posted):
             continue
         draft = Draft(model, dict(record._values), record_id=record_id)
         for key in order:
@@ -565,7 +594,9 @@ def _normalized(schema):
     return schema
 
 
-def migrate(database, migrations):
+def migrate(database, migrations, *, recompute_posted=False):
+    """Apply pending migrations in one transaction. `recompute_posted=True`, an admin's explicit choice (the
+    `--recompute-posted` flag of `evlet migrate`), lets Recompute recalculate posted records too."""
     migrations, checksums = _migration_plan(migrations)
     database.path.parent.mkdir(parents=True, exist_ok=True)
     with database._connection() as connection:
@@ -600,8 +631,9 @@ def migrate(database, migrations):
                                    (position, migration.name, checksums[position - 1]))
             applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
-                applied.skipped = _recompute(connection, database.registry, recomputes(pending), lambda db: db.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='evlet_calculation_versions'").fetchone() is not None)
+                applied.skipped, applied.posted = _recompute(connection, database.registry, recomputes(pending), lambda db: db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='evlet_calculation_versions'").fetchone() is not None,
+                    include_posted=recompute_posted)
             _check(connection, database.registry, rows=True)
             _save_definition(connection, database.registry)
             connection.commit()

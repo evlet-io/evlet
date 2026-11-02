@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .database import ConflictError, NotFoundError
 from .models import ValidationError
+from .permissions import CORRECTIONS
 from .auth import AccessError
 from .business import Business, Download
 from .storage import StorageError
@@ -189,7 +190,7 @@ class Application:
             return
         elif len(parts) == 4 and parts[3] in ('measures', 'aggregate') or len(parts) == 5 and parts[4] == 'measures':
             need = ('extra', 'measures')
-        elif len(parts) == 5 and parts[4] in ('void', 'revise'):
+        elif len(parts) == 5 and parts[4] in CORRECTIONS:
             need = ('action', parts[4])
         elif len(parts) == 6 and parts[4] in ('actions', 'moves'):
             need = ('action', parts[5])
