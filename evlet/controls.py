@@ -645,10 +645,12 @@ class Controls:
             two_step = {row['user_id']: {'since': row['two_step_since'], 'agent': row['two_step_agent']} for row in connection.execute(
                 'SELECT user_id, two_step_since, two_step_agent FROM evlet_user_profile WHERE two_step_secret IS NOT NULL')}
             assistants = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_mcp_clients WHERE revoked_at IS NULL GROUP BY user_id')}
+            keys = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_api_keys WHERE revoked_at IS NULL GROUP BY user_id')}
         for item in page['items']:
             item['active'], item['sessions'] = bool(item['active']), sessions.get(item['id'], 0)
             item['two_step'] = two_step.get(item['id'])
             item['assistants'] = assistants.get(item['id'], 0)
+            item['keys'] = keys.get(item['id'], 0)
         return page
 
     def add_user(self, actor, body):
@@ -660,10 +662,13 @@ class Controls:
             connection, actor.username, 'Users', user.username, f'Added as {user.role}', None, {'role': user.role}))
 
     def change_user(self, actor, user_id, body):
-        if not isinstance(body, dict) or not body or set(body) - {'role', 'active', 'password', 'sessions', 'two_step'}:
-            raise ValidationError({'_form': 'Use role, active, password, sessions or two_step'})
+        if not isinstance(body, dict) or not body or set(body) - {'role', 'active', 'password', 'sessions', 'revoke_keys', 'two_step'}:
+            raise ValidationError({'_form': 'Use role, active, password, sessions, revoke_keys or two_step'})
         if 'sessions' in body and body['sessions'] != 'end':
             raise ValidationError({'sessions': 'Use "end" to sign out every session'})
+        revoke = body.get('revoke_keys', False)
+        if 'revoke_keys' in body and (type(revoke) is not bool or 'sessions' not in body):
+            raise ValidationError({'revoke_keys': 'Use true or false, with "sessions": "end"'})
         if 'two_step' in body:
             if body != {'two_step': 'reset'}:
                 raise ValidationError({'two_step': 'Send only {"two_step": "reset"}'})
@@ -676,7 +681,7 @@ class Controls:
                     raise AccessError(404, 'Account not found')
                 reset_two_step(tx.connection, actor.username, row['id'], row['username'])
             return
-        changes = {key: value for key, value in body.items() if key != 'sessions'}
+        changes = {key: value for key, value in body.items() if key not in ('sessions', 'revoke_keys')}
 
         def check(connection, row, values):
             if actor.role != 'admin' and (row['role'] == 'admin' or values.get('role') == 'admin'):
@@ -690,6 +695,9 @@ class Controls:
                 details.append('Password set')
             if 'sessions' in body:
                 details.append('Signed out everywhere')
+            if revoke:
+                keys = connection.execute('SELECT count(*) FROM evlet_api_keys WHERE user_id=? AND revoked_at IS NULL', (row['id'],)).fetchone()[0]
+                details.append(f'Revoked {keys} API key' + ('' if keys == 1 else 's'))
             before = {'role': row['role'], 'active': bool(row['active'])}
             after = {key: values[key] for key in ('role', 'active') if key in values}
             return lambda: audit(connection, actor.username, 'Users', row['username'], ' · '.join(details), before, after) if details else None
@@ -702,7 +710,7 @@ class Controls:
             if row is None:
                 raise AccessError(404, 'Account not found')
             after = check(tx.connection, row, {})
-            self.business.auth.end_sessions(tx.connection, user_id)
+            self.business.auth.end_sessions(tx.connection, user_id, keys=revoke)
             after()
 
     def role_list(self):
@@ -947,6 +955,9 @@ class Controls:
     def dispatch(self, scope, body, user):
         self.check(scope, user)
         path, method = scope['path'].removeprefix('/api/_controls'), scope['method']
+        # Every change asks for a recent two-step code; reading, and trying a naming series, do not.
+        if method not in ('GET', 'HEAD') and not re.fullmatch(r'/naming/[A-Za-z][A-Za-z0-9_]{0,63}/try', path):
+            self.business.settings.recently_verified(user)
         if path == '/state' and method == 'GET':
             return 200, self.state(user, scope), []
         if path == '/overrides':

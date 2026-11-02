@@ -696,8 +696,15 @@ from tests.test_settings import (  # noqa: E402
 from tests.test_settings_security import (  # noqa: E402
     test_a_lost_key_is_never_replaced_and_sign_in_answers_503 as test_postgres_lost_key,
     test_required_roles_need_a_verified_session_for_controls as test_postgres_verified_sessions,
-    test_sensitive_changes_need_the_password_and_a_current_code as test_postgres_reauthentication,
+    test_sensitive_changes_ask_only_a_code_with_two_step_on_and_the_password_without as test_postgres_reauthentication,
     test_wrong_codes_are_limited_per_account_across_networks as test_postgres_code_limit,
+    test_a_role_that_requires_two_step_uses_nothing_until_it_is_set_up as test_postgres_two_step_first,
+    test_controls_changes_ask_for_a_code_at_most_every_ten_minutes as test_postgres_controls_verification,
+    test_changing_your_own_password_asks_a_code_when_two_step_is_on as test_postgres_password_code,
+)
+from tests.test_revocation import (  # noqa: E402
+    test_a_settings_password_change_can_also_revoke_api_keys as test_postgres_password_revokes_keys,
+    test_controls_sign_out_everywhere_can_also_revoke_api_keys as test_postgres_sign_out_revokes_keys,
 )
 
 

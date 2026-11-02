@@ -9,9 +9,10 @@ import pytest
 
 from evlet import LocalAuth, LocalFileStorage
 from evlet import secrets as vault
+from evlet.auth import TWO_STEP_FIRST
 from evlet.controls import TWO_STEP, reset_two_step_from_shell
 from evlet.routing import ControlsAccess
-from evlet.settings import KEY_PROBLEM, NO_EMAIL, TOO_MANY_CODES, totp
+from evlet.settings import KEY_PROBLEM, NO_EMAIL, TOO_MANY_CODES, VERIFY, totp
 from examples.playground.app import build_app
 from examples.playground.migrate import configured_database
 from test_business import PASSWORD, client, hashed, http, secured  # noqa: F401
@@ -112,7 +113,8 @@ def test_required_roles_need_a_verified_session_for_controls(settled):
     assert admin('GET', '/api/_controls/state')[0] == 200
     with app.database.transaction() as tx:
         tx.connection.execute('UPDATE evlet_sessions SET two_step=NULL')
-    assert admin('GET', '/api/_controls/state')[:2] == (403, {'error': TWO_STEP})
+    # A required role's session without two-step uses nothing at all, not only Controls.
+    assert admin('GET', '/api/_controls/state')[:2] == (401, {'error': TWO_STEP_FIRST})
 
 
 def test_enrolment_is_audited_shown_and_can_be_reset_by_admins_and_the_shell(settled, tmp_path):
@@ -140,20 +142,27 @@ def test_enrolment_is_audited_shown_and_can_be_reset_by_admins_and_the_shell(set
         reset_two_step_from_shell(database, 'nobody')
 
 
-def test_sensitive_changes_need_the_password_and_a_current_code(settled):
+def test_sensitive_changes_ask_only_a_code_with_two_step_on_and_the_password_without(settled):
     app = settled
     editor, raw, codes = enrol(app, 'editor')
+    enter_code = {'code': 'Enter a current code from your app, or a backup code.'}
     for path in ('/api/_settings/me/two-step/codes', '/api/_settings/me/two-step/off'):
-        assert editor('POST', path, {})[1]['fields'] == {'password': 'Enter your password.'}
-        assert editor('POST', path, {'password': 'not the password at all'})[1]['fields'] == {'password': 'Your password is not right.'}
-        assert editor('POST', path, {'password': PASSWORD, 'code': '000000'})[1]['fields'] == {'code': 'Enter a current code from your app, or a backup code.'}
-    fresh = editor('POST', '/api/_settings/me/two-step/codes', {'password': PASSWORD, 'code': codes[0]})[1]['codes']
+        assert editor('POST', path, {})[1]['fields'] == enter_code
+        # The password is not asked, and a right password does not stand in for the code.
+        assert editor('POST', path, {'password': PASSWORD})[1]['fields'] == enter_code
+        assert editor('POST', path, {'code': '000000'})[1]['fields'] == enter_code
+    fresh = editor('POST', '/api/_settings/me/two-step/codes', {'code': codes[0]})[1]['codes']
     assert len(fresh) == 8
     # The old codes no longer work.
-    assert editor('POST', '/api/_settings/me/two-step/off', {'password': PASSWORD, 'code': codes[1]})[0] == 422
-    assert editor('POST', '/api/_settings/me/email', {'email': 'e@example.com', 'password': PASSWORD})[1]['fields'] == {'code': 'Enter a current code from your app, or a backup code.'}
-    assert editor('POST', '/api/_settings/me/email', {'email': 'e@example.com', 'password': PASSWORD, 'code': fresh[0]})[0] == 200
-    assert editor('POST', '/api/_settings/me/two-step/off', {'password': PASSWORD, 'code': totp(raw, int(time.time() // 30) + 1)})[1] == {'on': False}
+    assert editor('POST', '/api/_settings/me/two-step/off', {'code': codes[1]})[0] == 422
+    assert editor('POST', '/api/_settings/me/email', {'email': 'e@example.com', 'password': PASSWORD})[1]['fields'] == enter_code
+    assert editor('POST', '/api/_settings/me/email', {'email': 'e@example.com', 'code': fresh[0]})[0] == 200
+    assert editor('POST', '/api/_settings/me/two-step/off', {'code': totp(raw, int(time.time() // 30) + 1)})[1] == {'on': False}
+    # With two-step sign-in off, the password is asked instead.
+    assert editor('POST', '/api/_settings/me/two-step', {})[1]['fields'] == {'password': 'Enter your password.'}
+    assert editor('POST', '/api/_settings/me/two-step', {'password': 'not the password at all'})[1]['fields'] == {'password': 'Your password is not right.'}
+    assert editor('POST', '/api/_settings/me/email', {'email': 'e@example.com', 'code': fresh[1]})[1]['fields'] == {'password': 'Enter your password.'}
+    assert editor('POST', '/api/_settings/me/email', {'email': 'e@example.com', 'password': PASSWORD})[0] == 200
     assert editor('POST', '/api/_settings/me/two-step', {'password': PASSWORD})[0] == 200
 
 
@@ -238,7 +247,8 @@ def test_controls_lists_required_roles_that_cannot_use_two_step(secured, tmp_pat
     assert 'can be read by other users' in item['text']
     os.chmod(tmp_path / 'secret.key', 0o600)
     assert listed() == []
-    assert admin('GET', '/api/_controls/state')[:2] == (403, {'error': TWO_STEP})
+    # Admin's session predates the requirement taking effect, so it signs in again and sets two-step up.
+    assert admin('GET', '/api/_controls/state')[:2] == (401, {'error': TWO_STEP_FIRST})
 
 
 def test_one_key_and_one_rotation_cover_connectors_two_step_and_backup_codes(settled, tmp_path, monkeypatch):
@@ -258,3 +268,79 @@ def test_one_key_and_one_rotation_cover_connectors_two_step_and_backup_codes(set
     assert sign_in(app, 'editor', codes[0])[0] == 200
     # The enrolment used the current code; the next one opens the rotated secret.
     assert sign_in(app, 'editor', totp(raw, int(time.time() // 30) + 1))[0] == 200
+
+
+def user_id(app, username):
+    with app.database._connection() as db:
+        return db.execute('SELECT id FROM evlet_users WHERE username=?', (username,)).fetchone()[0]
+
+
+def test_a_role_that_requires_two_step_uses_nothing_until_it_is_set_up(settled):
+    from test_controls import save
+    app = settled
+    editor = client(app, 'editor')
+    _, key = app.business.auth.create_key(user_id(app, 'editor'), 'Script', {'access': 'write', 'models': None})
+    bearer = {b'authorization': f'Bearer {key}'.encode(), b'x-evlet-request': b''}
+    assert editor('GET', '/api/customer')[0] == 200
+    assert save(client(app), ('setting', 'security.two_step_roles', ['admin', 'editor']))[0] == 200
+    # Every surface of a browser session: records, writes, Settings, Controls-adjacent routes and the pages.
+    for method, path, body in (('GET', '/api/customer', None), ('POST', '/api/customer', {'name': 'x'}), ('GET', '/api/schema', None),
+                               ('GET', '/api/_settings/me', None), ('POST', '/api/_settings/me/two-step', {'password': PASSWORD}),
+                               ('GET', '/api/_settings/me/keys', None)):
+        assert editor(method, path, body)[:2] == (401, {'error': TWO_STEP_FIRST}), (method, path)
+    assert editor('GET', '/api/auth/session')[1]['user'] is None
+    assert editor('GET', '/settings/profile')[0] == 302
+    # API keys are not sessions: they keep working.
+    assert http(app, 'GET', '/api/customer', headers=bearer)[0] == 200
+    # Signing in again sets it up first.
+    assert http(app, 'POST', '/api/auth/login', {'username': 'editor', 'password': PASSWORD})[1]['two_step'] == 'setup'
+    assert client(app, 'editor')('GET', '/api/customer')[0] == 200
+
+
+def test_controls_changes_ask_for_a_code_at_most_every_ten_minutes(settled):
+    app = settled
+    admin = client(app)
+    codes = app._test_codes['admin']
+    change = lambda value: admin('POST', '/api/_controls/overrides', {'changes': [{'kind': 'setting', 'key': 'security.password_min', 'value': value}]})
+    # Signing in with a code counts as a fresh check.
+    assert change(20)[0] == 200
+    with app.database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_sessions SET two_step=two_step-601')
+    # Reading never asks; every change does, including an admin setting someone else's password.
+    assert admin('GET', '/api/_controls/state')[0] == 200 and admin('GET', '/api/_controls/users')[0] == 200
+    assert change(21)[:2] == (403, {'error': VERIFY})
+    editor = user_id(app, 'editor')
+    assert admin('PATCH', f'/api/_controls/users/{editor}', {'password': PASSWORD + ' reset'})[:2] == (403, {'error': VERIFY})
+    assert admin('PATCH', f'/api/_controls/users/{editor}', {'sessions': 'end'})[:2] == (403, {'error': VERIFY})
+    assert admin('POST', '/api/_controls/roles', {'id': 'ops', 'base': 'editor'})[:2] == (403, {'error': VERIFY})
+    assert admin('POST', '/api/_settings/me/two-step/verify', {'code': '00000000'})[1]['fields'] == {'code': 'Enter a current code from your app, or a backup code.'}
+    status, body, _ = admin('POST', '/api/_settings/me/two-step/verify', {'code': codes.pop()})
+    assert status == 200 and body['until'] - body['verified'] == 600
+    assert change(21)[0] == 200
+    assert admin('PATCH', f'/api/_controls/users/{editor}', {'password': PASSWORD + ' reset'})[0] == 204
+    with app.database._connection() as db:
+        assert db.execute("SELECT password FROM evlet_users WHERE username='editor'").fetchone()[0] != db.execute(
+            "SELECT password FROM evlet_users WHERE username='viewer'").fetchone()[0]
+
+
+def test_controls_without_two_step_on_asks_no_code(secured):
+    # No secret key: two-step sign-in is unavailable, and Controls changes need no code.
+    admin = client(secured)
+    with secured.database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_sessions SET two_step=NULL')
+    assert admin('POST', '/api/_controls/overrides', {'changes': [{'kind': 'setting', 'key': 'security.password_min', 'value': 20}]})[0] == 200
+
+
+def test_changing_your_own_password_asks_a_code_when_two_step_is_on(settled):
+    app = settled
+    editor, raw, codes = enrol(app, 'editor')
+    new = PASSWORD + ' changed'
+    assert editor('POST', '/api/_settings/me/password', {'current': PASSWORD, 'new': new})[1]['fields'] == {'code': 'Enter a current code from your app, or a backup code.'}
+    assert editor('POST', '/api/_settings/me/password', {'current': PASSWORD, 'new': new, 'code': '000000'})[0] == 422
+    # The current password is still needed with a right code.
+    assert editor('POST', '/api/_settings/me/password', {'current': 'not the password at all', 'new': new, 'code': codes[0]})[1]['fields'] == {
+        'current': 'Your current password is not right.'}
+    assert editor('POST', '/api/_settings/me/password', {'current': PASSWORD, 'new': new, 'code': codes[0]})[:2] == (200, {'changed': True, 'revoked_keys': 0})
+    # Without two-step sign-in the current password is enough.
+    viewer = client(app, 'viewer')
+    assert viewer('POST', '/api/_settings/me/password', {'current': PASSWORD, 'new': new})[0] == 200

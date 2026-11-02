@@ -26,6 +26,7 @@ PUBLIC = 'public'
 # Ids no custom role can take.
 RESERVED_ROLES = ('controls', PORTAL, PUBLIC)
 ROLE_ID = re.compile(r'[a-z][a-z0-9_]{1,30}')
+TWO_STEP_FIRST = 'Your role needs two-step sign-in. Sign in again to set it up.'
 LAST_ADMIN = 'This is the only active admin. Make someone else an admin first, so the instance always has one.'
 _HASH_SLOTS = BoundedSemaphore(2)
 # API keys: evk_<8-character prefix>_<secret>. Only the SHA-256 of the whole key is stored.
@@ -63,6 +64,8 @@ class User:
     two_step: bool = False
     # Set for API key requests; a key never does more than its user.
     access: KeyAccess | None = None
+    # When this session last gave a two-step code (sign-in or a later check), as a Unix time.
+    verified: int | None = None
 
     def public(self):
         return {'id': self.id, 'username': self.username, 'role': self.role}
@@ -368,11 +371,15 @@ class LocalAuth:
         links = tuple((item['model'], item['record_id']) for item in rows if item['model'] is not None)
         if row is None:
             raise AccessError(401, 'Sign in to continue')
+        # A role that requires two-step sign-in uses nothing until it is set up: a session from before the
+        # requirement (or before the instance could keep secrets) signs in again, and sets it up then.
+        if row['two_step'] is None and self.second_step is not None and self.second_step.required(row['role'], realm):
+            raise AccessError(401, TWO_STEP_FIRST)
         if scope['method'] not in ('GET', 'HEAD'):
             supplied = dict(scope.get('headers', [])).get(b'x-csrf-token', b'')
             if not hmac.compare_digest(supplied, row['csrf'].encode('ascii')):
                 raise AccessError(403, 'Invalid request token')
-        return User(row['id'], row['username'], row['role'], links, row['two_step'] is not None), row['csrf']
+        return User(row['id'], row['username'], row['role'], links, row['two_step'] is not None, verified=row['two_step']), row['csrf']
 
     # ---------- API keys ----------
 
