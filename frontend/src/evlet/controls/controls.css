@@ -62,6 +62,9 @@
 .ctl-default{color:var(--accent);display:inline-flex}
 .ctl-after{margin-top:12px}
 .ctl-small-cell{font-size:12.5px}
+.ctl-big{font-size:28px;font-weight:700;letter-spacing:-.03em;margin:10px 0 12px}
+.ctl-big small{font-size:12px;font-weight:500;letter-spacing:0;color:var(--fg-3);margin-left:8px}
+.ctl-steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:10px;line-height:1.55}
 .ctl-stack{display:flex;flex-direction:column;gap:16px}
 .ctl-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-sm);overflow:hidden}
 .ctl-card.pad{padding:18px}

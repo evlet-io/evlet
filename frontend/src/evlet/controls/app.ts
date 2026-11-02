@@ -20,11 +20,12 @@ import { RolesPage, UsersPage } from './people';
 import { PermissionsPage, SecurityPage } from './access';
 import { ConnectorsPage, EmailPage } from './connections';
 import { ApiKeysPage } from './keys';
+import { McpPage } from './ai';
 
 export const ROUTES = {
   overview: '/controls', users: '/controls/users', roles: '/controls/roles',
   permissions: '/controls/permissions', security: '/controls/security',
-  connectors: '/controls/connectors', email: '/controls/email', keys: '/controls/keys',
+  connectors: '/controls/connectors', email: '/controls/email', mcp: '/controls/mcp', keys: '/controls/keys',
 } as const;
 export type ControlsRouter = Router<typeof ROUTES>;
 export const controlsRouter = (options: { window?: Window } = {}): ControlsRouter => createRouter(ROUTES, options);
@@ -43,7 +44,7 @@ const NAV: Array<[string, Array<[keyof typeof ROUTES, string, string]>]> = [
   ['', [['overview', 'Overview', 'layout-grid']]],
   ['People', [['users', 'Users', 'users'], ['roles', 'Roles', 'user-cog']]],
   ['Access', [['permissions', 'Permissions', 'list-checks'], ['security', 'Security', 'lock']]],
-  ['Connections', [['connectors', 'Connectors', 'link'], ['email', 'Email', 'mail'], ['keys', 'API keys', 'hash']]],
+  ['Connections', [['connectors', 'Connectors', 'link'], ['email', 'Email', 'mail'], ['mcp', 'MCP & AI', 'sparkles'], ['keys', 'API keys', 'hash']]],
 ];
 const TITLES = Object.fromEntries(NAV.flatMap(([group, items]) => items.map(([id, label]) => [id, [group, label]])));
 
@@ -173,6 +174,7 @@ function Shell(ctx: ControlsContext): HTMLElement {
       case 'security': return SecurityPage(ctx);
       case 'connectors': return ConnectorsPage(ctx);
       case 'email': return EmailPage(ctx);
+      case 'mcp': return McpPage(ctx);
       case 'keys': return ApiKeysPage(ctx);
       default: return Overview(ctx);
     }

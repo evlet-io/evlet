@@ -1,6 +1,7 @@
 // Entry of the production app (index.html). The Python server serves it for every UI route;
-// in development Vite serves it and proxies /api to the backend. Controls (/controls) loads as its
-// own chunk. The component Library (evlet.html) is a development page and is not part of the build.
+// in development Vite serves it and proxies /api to the backend. Controls (/controls) and the AI
+// assistant consent page (/_/oauth/authorize) load as their own chunks. The component Library
+// (evlet.html) is a development page and is not part of the build.
 
 import '../ui/styles.css';
 import './screens.css';
@@ -15,6 +16,8 @@ if (/^\/controls(\/|$)/.test(window.location.pathname)) {
     router.start();
     mount(root, () => Controls({ router }));
   });
+} else if (window.location.pathname === '/_/oauth/authorize') {
+  void import('../settings/consent').then(({ ConsentPage }) => mount(root, () => ConsentPage({})));
 } else {
   const router = appRouter();
   router.start();
