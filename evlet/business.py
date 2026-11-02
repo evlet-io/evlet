@@ -259,6 +259,9 @@ class Business:
             if state is not None:
                 entry['state'] = state
             entry['attachments'] = model in self.attachments
+            from .measures import schema as measure_schema
+            if self.registry.measures.get(model):
+                entry['measures'] = measure_schema(self, user, model)
             plan = self.registry.plans.get(model)
             if plan is not None:
                 entry['calculation'] = self.calculation_projection(user, model, plan)
@@ -478,6 +481,9 @@ class Business:
                 self.changed(tx, model, record.id)
                 result = self.detail(tx, user, record)
             return 201, result, [(b'location', f'/api/{parts[2]}/{record.id}'.encode())]
+        if len(parts) == 4 and parts[3] in ('aggregate', 'measures') or len(parts) == 5 and parts[4] == 'measures':
+            from .measures import route
+            return route(self, scope, user, model, parts)
         if len(parts) < 4 or not re.fullmatch(r'[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1:
             raise AccessError(404, 'Record not found')
         record_id = int(parts[3])

@@ -165,6 +165,13 @@ def test_reference_app_full_public_flow(project):
     number = next(field for field in quote_schema['fields'] if field['name'] == 'number')
     assert (number['type'], number['read_only'], number['sequence']) == (
         'sequence', True, {'format': 'Q-{year}-{n:04}', 'scope': [], 'assign_on': 'sent', 'date': None})
+    # Declared measures: Q-1 is won; Q-3 and the revision of Q-4 are sent; Q-2 is a draft and the original Q-4 is void.
+    # Count() declares no condition, so the void original is counted.
+    assert [item['name'] for item in quote_schema['measures']] == ['open_total', 'won_total', 'quotes']
+    assert c('GET', '/api/quote/measures')[1] == {'measures': {'open_total': '35.70', 'won_total': '135.00', 'quotes': 5}}
+    by_stage = c('GET', '/api/quote/aggregate?measures=quotes,total:sum:grand_total&group_by=stage')[1]
+    assert sorted((item['stage'], item['quotes'], item['total']) for item in by_stage['items']) == [
+        ('draft', 1, '0.00'), ('sent', 2, '35.70'), ('void', 1, '25.20'), ('won', 1, '135.00')]
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest

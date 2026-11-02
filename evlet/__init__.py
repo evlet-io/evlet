@@ -62,3 +62,5 @@ from .forms import Dialog, Report, Column
 __all__ += ["Dialog", "Report", "Column"]
 from .services import api, cron
 __all__ += ["api", "cron"]
+from .measures import Count, CountDistinct, Day, Max, Min, Month, Sum, Year
+__all__ += ["Count", "CountDistinct", "Day", "Max", "Min", "Month", "Sum", "Year"]
