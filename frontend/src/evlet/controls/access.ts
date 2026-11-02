@@ -192,7 +192,7 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
           html`<span class="ctl-addon"><input class="input num" type="number" min=${String(file<number>('security.password_min'))} max="64" aria-label="Minimum password length"
             prop:value=${() => String(get<number>('security.password_min'))} on:change=${minimum}><span>chars</span></span>`)}
         ${row('security.session_hours', 'Session length', () => `People sign in again after this long. Default is ${file<number>('security.session_hours')} hours.`, choose('security.session_hours', 'hours', [1, 4, 8, 12]))}
-        ${row('security.lockout', 'Failed sign-ins before lockout', 'Sign-in is blocked for 15 minutes after this many wrong passwords from one network.', choose('security.lockout', 'attempts', [3, 5, 10]))}
+        ${row('security.lockout', 'Failed sign-ins before lockout', 'Sign-in is blocked for 15 minutes after this many wrong passwords from one network.', choose('security.lockout', 'attempts', [3, 4, 5]))}
       </section>
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Two-step sign-in ${mark('security.two_step_roles')}</h2>
         <p>People with these roles must set up an authenticator app before they can sign in.</p></div></div>

@@ -140,8 +140,8 @@ no customer links sees no records. Link users with `evlet link-user` or
 | Key | File value | Rule |
 |---|---|---|
 | `security.password_min` | 15 | Up only, 64 at most. Applies to new passwords. |
-| `security.session_hours` | 8 | Down only. Sets the session and cookie length in every realm. Lowering it ends sessions already older than the new length, desk and portal alike. |
-| `security.lockout` | 10 | Down only, 3 at least. Failed sign-ins per network and account. |
+| `security.session_hours` | 12 | Down only. Sets the session and cookie length in every realm. Lowering it ends sessions already older than the new length, desk and portal alike. |
+| `security.lockout` | 5 | Down only, 3 at least. Failed sign-ins per network and account, and wrong current passwords per account in Settings. |
 | `security.two_step_roles` | `["admin"]` | Admin stays. These roles must use two-step sign-in ([settings.md](settings.md#two-step-sign-in)) when the instance can keep secrets: people who have not set it up do so at their next sign-in (trust on first use), and Controls needs a verified session. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
 

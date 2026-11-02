@@ -506,7 +506,7 @@ def test_login_throttling_uses_the_forwarded_client(portal):
     def attempt(address):
         return http(app, 'POST', '/api/auth/login', {'username': 'admin', 'password': 'wrong password for this account'},
                     headers={b'x-forwarded-for': address.encode()})[0]
-    assert [attempt('198.51.100.7') for _ in range(10)] == [401] * 10
+    assert [attempt('198.51.100.7') for _ in range(5)] == [401] * 5
     assert attempt('198.51.100.7') == 429
     assert attempt('198.51.100.8') == 401
 

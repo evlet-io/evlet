@@ -6,7 +6,7 @@ import { ControlsClient } from '../controls/client';
 import { server, type Sent } from './server';
 import { byText, click, lastToast, requests, stopAll, text, typeInto, until } from './screens-helpers';
 
-const settings = { 'security.password_min': { file: 15, value: 15 }, 'security.session_hours': { file: 8, value: 8 }, 'security.lockout': { file: 10, value: 5 },
+const settings = { 'security.password_min': { file: 15, value: 15 }, 'security.session_hours': { file: 12, value: 12 }, 'security.lockout': { file: 5, value: 4 },
   'security.two_step_roles': { file: ['admin'], value: ['admin'] }, 'security.controls_ips': { file: [], value: [] } };
 const notes = { id: 'notes', title: 'Notes', version: '0.1.0', source: 'apps/notes', models: ['NotesItem'], connectors: [], permissions: 2, schedules: ['nightly'],
   frontends: [{ name: 'notes.desk', path: '/notes', host: 'localhost', realm: 'desk' }], update: { from: '0.1.0', to: '0.2.0', error: null }, restart: false };
@@ -19,7 +19,7 @@ const state = () => ({
   overrides: 2, users: { active: 1, total: 1 }, audit: [], two_step: false, links: false, client: '127.0.0.1', remove_fields: null, instance_fields: true,
 });
 const overrides = { version: 2, problems: [], items: [
-  { kind: 'setting', key: 'security.lockout', file: 10, value: 5, changed_by: 'owner', changed_at: 1790000000 },
+  { kind: 'setting', key: 'security.lockout', file: 5, value: 4, changed_by: 'owner', changed_at: 1790000000 },
   { kind: 'setting', key: 'schedule.nightly.active', file: true, value: false, changed_by: 'owner', changed_at: 1790000000 },
   { kind: 'setting', key: 'security.password_min', file: 15, value: null, changed_by: null, changed_at: null },
 ] };
@@ -42,7 +42,7 @@ function open(path: string) {
     ['GET', /\/api\/_controls\/state$/, () => reply(state())],
     ['GET', /\/api\/_controls\/overrides$/, () => reply(overrides)],
     ['GET', /\/api\/_controls\/overrides\/export/, (sent: Sent) => reply(sent.url.includes('kind=') ? [{ file: 'apps/notes/notes/hooks.py', code: '# nightly is paused\n' }]
-      : [{ file: 'instances/acme/config.py', code: 'security = Security(lockout=5)\n' }, { file: 'apps/notes/notes/hooks.py', code: '# nightly is paused\n' }])],
+      : [{ file: 'instances/acme/config.py', code: 'security = Security(lockout=4)\n' }, { file: 'apps/notes/notes/hooks.py', code: '# nightly is paused\n' }])],
     ['GET', /\/api\/_controls\/routing$/, () => reply({ rows: [{ host: 'localhost', path: '/controls', serves: 'evlet.controls', realm: 'control', source: 'locked', locked: true },
       { host: 'localhost', path: '/notes', serves: 'notes.desk', realm: 'desk', source: 'app notes', locked: false }],
       planned: ['/report', '/print'], hosts: [{ host: 'erp.acme.com', primary: true, sub: false, realm: 'desk' }, { host: 'portal.acme.com', primary: false, sub: true, realm: 'portal' }],
@@ -126,7 +126,7 @@ describe('Controls system pages', () => {
     expect(requests(sent, 'GET', /export\?kind=setting&key=schedule\.nightly\.active$/)).toHaveLength(1);
     click(byText(document.body, '.modal button', 'Done'));
     click(byText(host, 'button', 'Export as code'));
-    await until(() => expect(text(document.querySelector('.modal'))).toContain('security = Security(lockout=5)'));
+    await until(() => expect(text(document.querySelector('.modal'))).toContain('security = Security(lockout=4)'));
     click(byText(document.body, '.modal button', 'Done'));
     click(byText(byText(host, 'tr', /Failed sign-ins/)!, 'button', 'Reset'));
     await until(() => expect(text(document.querySelector('.ctl-changebar'))).toContain('1 unsaved change'));

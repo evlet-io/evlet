@@ -24,7 +24,7 @@ const state = () => ({
   models: [{ name: 'Customer', label: 'Customer', app: null, scopes: [null, 'owner'],
     fields: [{ name: 'name', label: 'Name', read_only: false }, { name: 'email', label: 'Email', read_only: false }, { name: 'owner', label: 'Owner', read_only: false }] }],
   scopes: { '': 'All records', owner: 'Records they own' },
-  settings: { 'security.password_min': { file: 15, value: 15 }, 'security.session_hours': { file: 8, value: 8 }, 'security.lockout': { file: 10, value: 10 },
+  settings: { 'security.password_min': { file: 15, value: 15 }, 'security.session_hours': { file: 12, value: 12 }, 'security.lockout': { file: 5, value: 5 },
     'security.two_step_roles': { file: ['admin'], value: ['admin'] }, 'security.controls_ips': { file: [], value: [] } },
   controls: { allow_ips: [], require_two_step: false }, attention: [], overrides: 0, users: { active: 3, total: 3 }, audit: [], two_step: false, client: '127.0.0.1',
 });
@@ -33,8 +33,8 @@ const item = (kind: 'perm' | 'setting', key: string, file: unknown, value: unkno
 const overrides = (saved: Record<string, unknown> = {}) => ({ version: 1, problems: [], items: [
   ...['admin', 'editor'].map(role => item('perm', `${role}|Customer`, all, saved[`${role}|Customer`] ?? null)),
   item('perm', 'viewer|Customer', { ...all, ops: ['read'] }, saved['viewer|Customer'] ?? null),
-  item('setting', 'security.password_min', 15), item('setting', 'security.session_hours', 8, saved['security.session_hours'] ?? null),
-  item('setting', 'security.lockout', 10), item('setting', 'security.two_step_roles', ['admin']), item('setting', 'security.controls_ips', []),
+  item('setting', 'security.password_min', 15), item('setting', 'security.session_hours', 12, saved['security.session_hours'] ?? null),
+  item('setting', 'security.lockout', 5), item('setting', 'security.two_step_roles', ['admin']), item('setting', 'security.controls_ips', []),
 ] });
 
 function open(path: string, save: (sent: Sent) => { status: number; body: any }) {
@@ -113,16 +113,16 @@ describe('Controls change bar', () => {
 
   it('keeps every draft and shows the server message per item when a save is refused', async () => {
     const { host, sent } = open('/controls/security', () => ({ status: 422,
-      body: { error: 'Validation failed', fields: { 'changes.0': 'Session length can only go down, from 8 hours to 1.' } } }));
+      body: { error: 'Validation failed', fields: { 'changes.0': 'Session length can only go down, from 12 hours to 1.' } } }));
     await until(() => expect(host.querySelector('select[aria-label="Session length"]')).toBeTruthy());
     const select = host.querySelector<HTMLSelectElement>('select[aria-label="Session length"]')!;
-    expect([...select.options].map(option => option.value)).toEqual(['1', '4', '8']);
+    expect([...select.options].map(option => option.value)).toEqual(['1', '4', '8', '12']);
     select.value = '4';
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await until(() => expect(text(bar())).toContain('1 unsaved change'));
     expect(text(host.querySelector('.ctl-setrow'))).not.toContain('Changed');
     click(byText(bar()!, 'button', 'Save changes'));
-    await until(() => expect(text(document.querySelector('.modal'))).toContain('Session length can only go down, from 8 hours to 1.'));
+    await until(() => expect(text(document.querySelector('.modal'))).toContain('Session length can only go down, from 12 hours to 1.'));
     expect(text(bar())).toContain('1 unsaved change');
     expect(sent.filter(item => item.method === 'POST')[0].body.changes).toEqual([{ kind: 'setting', key: 'security.session_hours', value: 4 }]);
     expect(byText(host, '.ctl-setrow', /^Session length Changed/)).toBeTruthy();

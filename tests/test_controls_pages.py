@@ -40,7 +40,7 @@ def test_the_audit_log_pages_newest_first_with_search_and_area(secured):
     admin = client(secured)
     for index in range(55):
         assert admin('POST', '/api/_controls/roles', {'id': f'team_{index}', 'base': 'viewer'})[0] == 201
-    save(admin, ('setting', 'security.lockout', 5))
+    save(admin, ('setting', 'security.lockout', 4))
     first = admin('GET', '/api/_controls/audit')[1]
     assert len(first['items']) == 50 and first['items'][0]['area'] == 'Security' and first['areas'] == ['Roles', 'Security']
     ids = [item['id'] for item in first['items']]
@@ -278,7 +278,7 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
                               ('field', 'Lead.source', {'options_add': ['exhibition'], 'default': 'web'}),
                               ('field', 'Lead.x_lpo', {'help_text': 'From the purchase order'}),
                               ('layout', 'Lead', sections), ('list', 'Lead', {'columns': ['title', 'value'], 'page_size': 25, 'sort': 'title'}),
-                              ('naming', 'Invoice', series), ('setting', 'security.controls_ips', ['127.0.0.0/8']), ('setting', 'security.lockout', 5))
+                              ('naming', 'Invoice', series), ('setting', 'security.controls_ips', ['127.0.0.0/8']), ('setting', 'security.lockout', 4))
     assert status == 200, payload
     exported = {item['file']: item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1]}
     folder = 'test_customization'
@@ -314,7 +314,7 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     routes = {}
     exec(exported['instances/<name>/routes.py'], names, routes)
     assert routes['controls'].allow_ips == ('127.0.0.0/8',)
-    assert 'security = Security(lockout=5)' in exported['instances/<name>/config.py']
+    assert 'security = Security(lockout=4)' in exported['instances/<name>/config.py']
 
     one = admin('GET', '/api/_controls/overrides/export?kind=list&key=Lead')[1]
     assert one == [{'file': f'{folder}/views/__init__.py',
@@ -365,7 +365,7 @@ def test_export_writes_callables_as_set_in_code_and_names_the_real_file(tmp_path
 def test_every_setting_kind_exports_under_its_own_prefix_and_round_trips(secured):
     admin = client(secured)
     secured.business.jobs.schedule('nightly', 'project_progress', {'project_id': 404}, every=3600)
-    values = {'security.password_min': 20, 'security.session_hours': 4, 'security.lockout': 5, 'security.two_step_roles': ['admin', 'editor'],
+    values = {'security.password_min': 20, 'security.session_hours': 4, 'security.lockout': 4, 'security.two_step_roles': ['admin', 'editor'],
               'security.controls_ips': ['127.0.0.0/8'], 'mcp.enabled': False, 'mcp.allow_writes': True, 'mcp.rate': 30,
               'mcp.disabled_tools': ['delete_record'], 'mcp.hidden_models': ['Customer'], 'mail.personal': True, 'schedule.nightly.active': False}
     status, payload, _ = save(admin, *(('setting', key, value) for key, value in values.items()))

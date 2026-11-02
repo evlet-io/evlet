@@ -244,8 +244,8 @@ def test_an_override_set_is_atomic_and_reports_each_invalid_item(secured):
     ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': 'owner'}, 'not available for Customer'),
     ('setting', 'security.password_min', 14, 'can only go up'),
     ('setting', 'security.password_min', 65, 'to 64 at most'),
-    ('setting', 'security.session_hours', 9, 'can only go down'),
-    ('setting', 'security.lockout', 11, 'can only go down'),
+    ('setting', 'security.session_hours', 13, 'can only go down'),
+    ('setting', 'security.lockout', 6, 'can only go down'),
     ('setting', 'security.lockout', 2, 'to 3'),
     ('setting', 'security.two_step_roles', ['editor'], 'Admin always needs two-step'),
     ('setting', 'security.controls_ips', ['example.com'], "isn't an IP address or range"),
@@ -265,7 +265,7 @@ def test_stricter_only_rules_reject_the_looser_value(tmp_path, hashed, kind, key
 def test_saved_overrides_apply_and_an_equal_value_is_not_stored(secured):
     admin = client(secured)
     assert save(admin, ('perm', 'editor|Customer', {'ops': ['read'], 'read': ['name'], 'write': None, 'scope': None}),
-                ('setting', 'security.password_min', 20), ('setting', 'security.lockout', 10))[0] == 200
+                ('setting', 'security.password_min', 20), ('setting', 'security.lockout', 5))[0] == 200
     items = {(item['kind'], item['key']): item for item in admin('GET', '/api/_controls/overrides')[1]['items']}
     assert items['perm', 'editor|Customer']['value']['read'] == ['name'] and items['perm', 'editor|Customer']['changed_by'] == 'admin'
     assert items['setting', 'security.lockout']['value'] is None and items['setting', 'security.password_min']['value'] == 20
@@ -383,13 +383,13 @@ def stale(app, key, value):
 def test_an_override_that_no_longer_validates_fails_closed_and_is_reported(secured):
     admin, editor = client(secured), client(secured, 'editor')
     assert save(admin, ('perm', 'editor|Customer', {'ops': [], 'read': None, 'write': None, 'scope': None}),
-                ('setting', 'security.lockout', 5), ('setting', 'security.password_min', 30))[0] == 200
+                ('setting', 'security.lockout', 4), ('setting', 'security.password_min', 30))[0] == 200
     stale(secured, 'editor|Customer', {'ops': ['read'], 'read': ['gone'], 'write': None, 'scope': None})
     stale(secured, 'security.lockout', 99)
     stale(secured, 'security.password_min', 'long')
     assert editor('GET', '/api/customer')[0] == 403 and editor('POST', '/api/customer', {'name': 'x'})[0] == 403
     assert editor('GET', '/api/project')[0] == 200
-    assert (secured.business.auth.lockout, secured.business.auth.password_min) == (10, 64)
+    assert (secured.business.auth.lockout, secured.business.auth.password_min) == (5, 64)
     attention = admin('GET', '/api/_controls/state')[1]['attention']
     assert {item['title'] for item in attention} >= {'No access for editor on Customer until this is fixed', 'security.lockout uses its strictest value until this is fixed'}
 
@@ -442,7 +442,7 @@ def test_only_admins_manage_admins_roles_and_who_opens_controls(secured):
     assert ops('PATCH', f'/api/_controls/users/{editor}', {'role': 'viewer'})[0] == 204
     assert ops('POST', '/api/_controls/users', {'username': 'helper', 'password': PASSWORD, 'role': 'editor'})[0] == 201
     assert ops('PATCH', '/api/_controls/roles/ops', {'description': 'Runs the instance'})[0] == 200
-    assert save(ops, ('setting', 'security.lockout', 5))[0] == 200
+    assert save(ops, ('setting', 'security.lockout', 4))[0] == 200
 
 
 def test_the_older_account_routes_use_controls_access_and_the_audit_log(secured):
@@ -515,3 +515,17 @@ def test_a_role_on_an_unknown_base_gets_nothing_by_default():
     from evlet.permissions import default_rule
     assert Policy(registry).rule(User(9, 'x', 'guest'), Customer).operations == ()
     assert default_rule('portal').operations == () and default_rule('editor').operations == ('read', 'create', 'update', 'delete')
+
+
+def test_security_defaults_are_twelve_hour_sessions_and_five_failed_sign_ins(secured):
+    from evlet.controls import SETTINGS
+    auth = secured.business.auth
+    assert (SETTINGS['security.session_hours'], SETTINGS['security.lockout']) == (12, 5)
+    assert (auth.session_hours, auth.lockout) == (12, 5)
+    status, _, headers = http(secured, 'POST', '/api/auth/login', {'username': 'admin', 'password': PASSWORD})
+    assert status == 200 and b'Max-Age=43200' in headers[b'set-cookie']
+    admin = client(secured)
+    for key, value in (('security.session_hours', 13), ('security.lockout', 6), ('security.lockout', 2)):
+        assert save(admin, ('setting', key, value))[0] == 422, (key, value)
+    assert save(admin, ('setting', 'security.lockout', 3), ('setting', 'security.session_hours', 8))[0] == 200
+    assert (auth.session_hours, auth.lockout) == (8, 3)

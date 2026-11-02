@@ -111,7 +111,7 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
   session holds only while the user's role is still of that realm.
 - **Cookies** are host-only, with no `Domain`, and named per realm: `evlet_session`
   for the desk and `evlet_portal_session` for portals. Sessions and cookies in every
-  realm last `security.session_hours` from Controls (8 hours unless lowered).
+  realm last `security.session_hours` from Controls (12 hours unless lowered).
 - **API scope.** `/api` on a sub-host serves `/api/auth/session`, `login` and `logout`,
   plus exactly what its frontend's `api` scopes list. Everything else answers 404 there,
   and permissions and row scopes still apply to every call:

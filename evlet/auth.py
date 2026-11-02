@@ -179,7 +179,7 @@ class LocalAuth:
         self.secure_cookies = secure_cookies
         self.allow_setup = allow_setup
         # Security settings; Controls overrides can only make them stricter.
-        self.password_min, self.session_hours, self.lockout = 15, 8, 10
+        self.password_min, self.session_hours, self.lockout = 15, 12, 5
         # Two-step sign-in (evlet.settings): challenge(tx, account, realm) and finish(scope, body).
         self.second_step = None
         # Child model -> parent model, so a key scoped to a model also covers its rows (Business fills it).
