@@ -174,7 +174,7 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
     assert status == 200 and len(detail['children']['lines']) == 100 and detail['children']['lines'][0]['product'] == product
     assert detail['children_pages']['lines']['total'] == 1000
     if make_app.backend == 'sqlite':
-        assert statements <= 10, statements  # 607 for 100 rows before batching.
+        assert statements <= 11, statements  # 607 for 100 rows before batching; one reads the config version.
 
     status, rows, _ = page(c, url, limit=100, offset=900)
     assert status == 200 and rows['total'] == 1000 and (rows['limit'], rows['offset']) == (100, 900)
@@ -193,7 +193,7 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
     (status, saved, _), statements = counted(c, 'PATCH', url, {'children': {'lines': {'update': [{'id': last, 'qty': '3'}]}}}, headers=headers)
     assert status == 200 and saved['total'] == '2505.00' and saved['line_count'] == 1000
     if make_app.backend == 'sqlite':
-        assert statements <= 35, statements
+        assert statements <= 36, statements
     assert page(c, url, limit=1, offset=999)[1]['items'][0]['qty'] == '3.0000'
 
     status, error, _ = edit(c, url, {'children': {'lines': {'create': [{'qty': '1'}]}}})

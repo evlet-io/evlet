@@ -1,7 +1,7 @@
 # Handoff plan: model amendments and the Evlet UI framework
 
-Status: every phase is done (PRs #35 to #50, then the cross-phase fixes); each waits
-for the owner to merge. This plan adapts [handoff-model.md](handoff-model.md) and
+Status: every phase is done (PRs #35 to #50, then the cross-phase fixes), and PRs 1 to 3
+of the second handoff sit on top (below); each waits for the owner to merge. This plan adapts [handoff-model.md](handoff-model.md) and
 [ui-design/README.md](ui-design/README.md) to the engine as it stands on `main`
 (tag `rollback/pre-native-ui`). Where this plan and the handoff differ, this plan
 records the owner's decision and wins.
@@ -92,8 +92,33 @@ Done on this branch:
   `/api/ui/resolve`, native panels, the Playground's Python pages, reports and form dialogs,
   and account management (the `/api/auth/users` routes).
 
-Open for the owner: the browser has no Accounts screen, so adding users needs the HTTP
-routes until one is built on the framework.
+Users are now managed in Controls (`/controls/users`, second handoff PR 3);
+`/settings/accounts` redirects there.
+
+## Second handoff: frontends and routing, Controls
+
+[handoff-routing-controls-settings.md](handoff-routing-controls-settings.md) lists nine PRs.
+PRs 1 to 3 were built on `ui-final/05-remove-solid` and then replayed, commit by commit, on
+`stack/07-cross-phase-fixes`, so each branch below stacks on the one before it.
+
+| PR | Branch | Scope | Docs |
+|---|---|---|---|
+| 1 | `h2/01-route-table` | `Frontend`, `Host`, `routes.py`, reserved paths, `resolve_routes`, `evlet routes`; dispatch through the table with no behavior change | [routing.md](routing.md) |
+| 2 | `h2/02-hosts-realms` | Sub-hosts, sign-in realms and cookies, API scopes, `static` and `server` frontends, user links and `own_customer`, the page config block, `evlet proxy`, `evlet link-user`, the Playground customer portal | [routing.md](routing.md) |
+| 3 | `h2/03-controls` | Roles, overrides, audit log and config version; Controls access, Users, Roles, Permissions and Security pages; `evlet controls grant`; `/settings/accounts` redirect | [controls.md](controls.md) |
+
+Decisions taken from section 7 of the handoff: portal users link to records through the
+framework table `evlet_user_links` (decision 3); Docs are on in development and off when a
+primary host or `Instance.domain` is set, unless `Docs(enabled=...)` says otherwise (decision 4).
+
+Fitting them onto the first program:
+
+- testCRM needs no `routes.py`: with no routes file the instance gets the default table, so
+  `scripts/testcrm.sh` and its HTTP tests run unchanged.
+- The `journal` operation from Phase 8 is a Rule operation like `void` and `revise`: a public
+  or custom role may name it, Controls keeps it on save and can take it away, and a custom
+  role based on the editor posts like the editor.
+- PRs 4 to 9 are not started.
 
 ## Quality gates for every phase
 

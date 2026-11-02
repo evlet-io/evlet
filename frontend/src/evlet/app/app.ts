@@ -66,6 +66,9 @@ export function App(options: AppOptions): Node {
     error.set('');
     phase.set('ready');
     const now = router.route.peek();
+    // Controls is its own page: after signing in from /login?next=/controls, open it there.
+    const next = now?.name === 'login' ? now.query.next ?? '' : '';
+    if (/^\/controls(\/[a-z]+)?$/.test(next)) { window.location.assign(next); return; }
     // Python page routes match no route here; they, sign-in and the root open the start page.
     if (!now || now.name === 'login' || now.name === 'home') await goStart(ctx, true);
   };
@@ -181,8 +184,6 @@ function page(ctx: AppContext): Child {
       const model = known(route.params.model);
       return model && model.permissions?.create !== false ? RecordPage(ctx, model.name, 'new') : unavailable(ctx);
     }
-    case 'accounts': return notHere(ctx, 'Accounts', 'Accounts are not managed in this interface',
-      'Administrators manage accounts through the /api/auth/users routes. Your role and permissions are unchanged.');
     case 'report': return notHere(ctx, 'Reports', 'Reports are not shown in this interface',
       'Python reports keep their API and permissions. Model lists, boards and measures cover the data in this interface.');
     default: return unavailable(ctx);

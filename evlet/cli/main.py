@@ -68,6 +68,12 @@ def parser():
     link.add_argument('model')
     link.add_argument('record_id', type=int)
     link.add_argument('--remove', action='store_true', help='Remove the link instead')
+    controls = commands.add_parser('controls', help='Restore access to Controls from the server shell')
+    controls_commands = controls.add_subparsers(dest='controls_command', required=True)
+    controls_grant = controls_commands.add_parser('grant', help='Make a user an active admin; audited as cli')
+    controls_grant.add_argument('instance')
+    controls_grant.add_argument('username')
+    controls_grant.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     effects = commands.add_parser('effects', help='Check the rows records post to other models')
     effects_commands = effects.add_subparsers(dest='effects_command', required=True)
     effects_check = effects_commands.add_parser('check', help='Recompute effect rows and report differences without writing')
@@ -212,6 +218,20 @@ def main(argv=None):
                 raise ValueError(exc.message) from None
             finally:
                 app.database.close()
+        elif args.command == 'controls':
+            from .project import child
+            from ..controls import grant
+            from ..instances import read_instance, read_routes
+            path = child(root, 'instances', args.instance)
+            read_instance(path)
+            grant(path / 'data/database.sqlite3', args.username)
+            print(f'{args.username} is now an active admin. Allowed networks set in Controls were cleared.')
+            try:
+                limits = getattr((read_routes(path) or {}).get('controls'), 'allow_ips', ())
+            except Exception:
+                limits = ('the networks in its ControlsAccess, if any',)
+            if limits:
+                print(f'routes.py still limits Controls to {", ".join(limits)}. Edit instances/{args.instance}/routes.py to open it from elsewhere.')
         elif args.command == 'effects':
             from .effects import check_instance
             from ..effects import describe

@@ -53,9 +53,15 @@ def dispatch(application, scope):
             return 302, Download(b''), [(b'location', target.encode())]
         found = application.routes.match(host, path)
         if found is None: raise HTTPError(404, 'Route not found')
+        if path == '/settings/accounts':
+            return 301, Download(b''), [(b'location', b'/controls/users')]
         if not found[0].startswith('evlet.'):
             return _frontend(application, scope, host, *found)
-        served = _serves(application, *found)
+        if found[0] == 'evlet.controls' and application.business:
+            served = application.business.controls.page(scope, path)
+            if not isinstance(served, bool): return served
+        else:
+            served = _serves(application, *found)
         if not served and path.startswith('/assets/'): raise HTTPError(404, 'Route not found')
         if served and found[0] == 'evlet.docs' and application.routes.docs_roles:
             _docs_access(application, scope)
@@ -84,8 +90,6 @@ def _serves(application, frontend, base, rest):
         return path == '/login'
     if frontend == 'evlet.docs':
         return rest == '' or rest.startswith('/')
-    if frontend == 'evlet.settings':
-        return path == '/settings/accounts'
     if frontend == 'evlet.assets':
         return rest.startswith('/')
     if frontend == 'evlet.reports':
@@ -154,9 +158,9 @@ def _frontend_user(application, scope, definition):
     """The signed-in user a frontend may see. A user from another realm counts as signed out. Server
     frontends with a realm, and frontends of any kind with roles=, need a matching sign-in to load."""
     from ..app import HTTPError
-    from ..auth import role_realm
     user = _user(application, scope)
-    if user is not None and definition.auth is not None and role_realm(user.role) != definition.auth:
+    # A session only holds on a host of its role's realm, so the host's realm is the user's.
+    if user is not None and definition.auth is not None and application.routes.realm(dict(scope.get('headers', [])).get(b'host', b'')) != definition.auth:
         user = None
     if definition.auth is not None and (definition.kind == 'server' or definition.roles):
         if user is None:

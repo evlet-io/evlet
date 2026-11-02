@@ -271,7 +271,6 @@ def test_static_ui_preserves_unknown_routes_and_api_authentication(secured):
         "/docs",
         "/docs/components",
         "/demo/projects",
-        "/settings/accounts",
         "/app/customer",
         "/app/customer/new",
         "/app/customer/12",

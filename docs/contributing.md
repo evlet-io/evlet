@@ -89,8 +89,7 @@ The sidebar lists the models with their database-backed screens.
 http://127.0.0.1:5173/evlet.html opens the component Library in development.
 
 Create the first administrator account when prompted. Add Editor or Viewer
-accounts through the `/api/auth/users` routes; the browser interface has no Accounts
-screen. Docs opens first; choose a model in the sidebar to create a customer, an invoice referencing it, and a payment
+accounts in Controls at `/controls/users`. Docs opens first; choose a model in the sidebar to create a customer, an invoice referencing it, and a payment
 referencing that invoice. Refresh or restart the backend to verify persistence.
 The default database is `examples/playground/.data/playground.sqlite3`, ignored
 by Git. `EVLET_DATABASE` can select another SQLite file. Each database has its own accounts.

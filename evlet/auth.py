@@ -14,15 +14,17 @@ from urllib.parse import urlsplit
 
 from .models import ValidationError, identifier
 
-ROLES = ('admin', 'editor', 'viewer', 'portal')
+# Framework roles. Custom roles live in evlet_roles; Policy.roles maps every role to its base.
+ROLES = ('admin', 'editor', 'viewer')
+# The framework portal role: realm portal, sees nothing until an app grants it.
+PORTAL = 'portal'
 # Public endpoints run as this role. No account can have it.
 PUBLIC = 'public'
+# Ids no custom role can take.
+RESERVED_ROLES = ('controls', PORTAL, PUBLIC)
+ROLE_ID = re.compile(r'[a-z][a-z0-9_]{1,30}')
+LAST_ADMIN = 'This is the only active admin. Make someone else an admin first, so the instance always has one.'
 _HASH_SLOTS = BoundedSemaphore(2)
-
-
-def role_realm(role):
-    """The sign-in realm of a role: portal users sign in on portal hosts, everyone else on the desk."""
-    return 'portal' if role == 'portal' else 'desk'
 
 
 class AccessError(Exception):
@@ -53,9 +55,9 @@ def hashing_slot():
         _HASH_SLOTS.release()
 
 
-def _encode(password):
-    if not isinstance(password, str) or not 15 <= len(password) <= 128:
-        raise ValidationError({'password': 'Use between 15 and 128 characters'})
+def _encode(password, minimum=15):
+    if not isinstance(password, str) or not minimum <= len(password) <= 128:
+        raise ValidationError({'password': f'Use between {minimum} and 128 characters'})
     try:
         return password.encode('utf-8')
     except UnicodeError:
@@ -69,8 +71,8 @@ def _scrypt(encoded, salt):
     return f'scrypt:{salt}:{digest}'
 
 
-def password_hash(password, salt=None):
-    encoded = _encode(password)
+def password_hash(password, salt=None, minimum=15):
+    encoded = _encode(password, minimum)
     salt = secrets.token_hex(16) if salt is None else salt
     with hashing_slot():
         return _scrypt(encoded, salt)
@@ -156,6 +158,8 @@ class LocalAuth:
             self.realms[authority(origin).encode()] = realm
         self.secure_cookies = secure_cookies
         self.allow_setup = allow_setup
+        # Security settings; Controls overrides can only make them stricter.
+        self.password_min, self.session_hours, self.lockout = 15, 8, 10
 
     def client_address(self, scope):
         """The request's client address, through the configured trusted proxies only."""
@@ -173,6 +177,20 @@ class LocalAuth:
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_session_user ON evlet_sessions(user_id)')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_session_expiry ON evlet_sessions(expires)')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_login_reset ON evlet_login_limits(resets)')
+            tx.connection.execute("CREATE TABLE IF NOT EXISTS evlet_roles (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('framework','custom')), base TEXT, realm TEXT NOT NULL DEFAULT 'desk' CHECK(realm IN ('desk','portal')), opens_controls INTEGER NOT NULL DEFAULT 0, description TEXT NOT NULL DEFAULT '')")
+            # A role's realm decides where its users sign in: desk roles on desk hosts, portal roles on portal hosts.
+            for role, realm, description in (('admin', 'desk', 'Full access to every app. Opens Controls.'), ('editor', 'desk', 'Reads and changes records.'),
+                                             ('viewer', 'desk', 'Reads records only.'), (PORTAL, 'portal', 'Signs in on portal hosts. Sees only what an app grants.')):
+                tx.connection.execute("INSERT OR IGNORE INTO evlet_roles(id,kind,base,realm,opens_controls,description) VALUES (?,'framework',NULL,?,?,?)", (role, realm, int(role == 'admin'), description))
+
+    def roles(self):
+        """Every role by id, with its kind, base, realm and whether it opens Controls."""
+        with self.database._connection() as connection:
+            return {row['id']: dict(row) for row in connection.execute('SELECT * FROM evlet_roles ORDER BY kind DESC, id')}
+
+    def _role(self, connection, role):
+        if not isinstance(role, str) or not connection.execute('SELECT 1 FROM evlet_roles WHERE id=?', (role,)).fetchone():
+            raise ValidationError({'role': 'Choose an existing role'})
 
     def guard(self, scope):
         protected = {b'host', b'origin', b'cookie', b'x-csrf-token', b'x-evlet-request', b'sec-fetch-site'}
@@ -217,13 +235,13 @@ class LocalAuth:
     def session(self, scope):
         realm = self.realm(scope)
         with self.database._connection() as connection:
-            # One statement: the session, its user and the user's record links.
+            # One statement: the session, its user and the user's record links, while the role's realm is the host's.
             rows = connection.execute('SELECT u.id, u.username, u.role, s.csrf, l.model, l.record_id FROM evlet_sessions s JOIN evlet_users u ON u.id=s.user_id '
-                                      'LEFT JOIN evlet_user_links l ON l.user_id=u.id WHERE s.token=? AND s.realm=? AND s.expires>? AND u.active=1 ORDER BY l.model, l.record_id',
+                                      'JOIN evlet_roles r ON r.id=u.role AND r.realm=s.realm LEFT JOIN evlet_user_links l ON l.user_id=u.id WHERE s.token=? AND s.realm=? AND s.expires>? AND u.active=1 ORDER BY l.model, l.record_id',
                                       (self.token(scope), realm, int(time.time()))).fetchall()
         row = rows[0] if rows else None
         links = tuple((item['model'], item['record_id']) for item in rows if item['model'] is not None)
-        if row is None or role_realm(row['role']) != realm:
+        if row is None:
             raise AccessError(401, 'Sign in to continue')
         if scope['method'] not in ('GET', 'HEAD'):
             supplied = dict(scope.get('headers', [])).get(b'x-csrf-token', b'')
@@ -231,22 +249,30 @@ class LocalAuth:
                 raise AccessError(403, 'Invalid request token')
         return User(row['id'], row['username'], row['role'], links), row['csrf']
 
-    @staticmethod
-    def account_values(body):
+    def account_values(self, body):
         if set(body) - {'username', 'password', 'role'}:
             raise ValidationError({'_form': 'Unknown account field'})
         name = body.get('username', '')
         role = body.get('role', 'viewer')
         if not isinstance(name, str) or not re.fullmatch(r'[a-zA-Z0-9_.-]{3,64}', name):
             raise ValidationError({'username': 'Use 3 to 64 letters, numbers, dots, hyphens, or underscores'})
-        if role not in ROLES:
-            raise ValidationError({'role': 'Choose admin, editor, viewer, or portal'})
-        return name.lower(), password_hash(body.get('password')), role
+        if role not in ROLES and not ROLE_ID.fullmatch(str(role)):
+            raise ValidationError({'role': 'Choose an existing role'})
+        return name.lower(), password_hash(body.get('password'), minimum=self.password_min), role
 
     def create_user(self, **values):
+        return self.add_user(values)
+
+    def add_user(self, values, check=None):
+        """Create an account; check(connection, user) runs in the same transaction (audit, limits)."""
         name, password, role = self.account_values(values)
         with self.database.transaction() as tx:
+            self._role(tx.connection, role)
+            if tx.connection.execute('SELECT 1 FROM evlet_users WHERE username=?', (name,)).fetchone():
+                raise ValidationError({'username': 'Someone already uses this username'})
             user_id = tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (name, password, role)).lastrowid
+            if check is not None:
+                check(tx.connection, User(user_id, name, role))
         return User(user_id, name, role)
 
     def setup_needed(self):
@@ -281,13 +307,13 @@ class LocalAuth:
             with self.database.transaction() as tx:
                 tx.connection.execute('DELETE FROM evlet_login_limits WHERE resets<=?', (now,))
                 tx.connection.execute('DELETE FROM evlet_sessions WHERE expires<=?', (now,))
-                for key, limit in ((pair, 10), (client, 100)):
+                for key, limit in ((pair, self.lockout), (client, 100)):
                     row = tx.connection.execute('SELECT attempts FROM evlet_login_limits WHERE client=?', (key,)).fetchone()
                     if row and row['attempts'] >= limit:
                         raise AccessError(429, 'Too many sign-in attempts. Try again in 15 minutes.')
                 for key in (pair, client):
                     tx.connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1', (key, now + 900))
-                account = tx.connection.execute('SELECT * FROM evlet_users WHERE username=?', (username,)).fetchone()
+                account = tx.connection.execute('SELECT u.*, r.realm AS role_realm FROM evlet_users u LEFT JOIN evlet_roles r ON r.id=u.role WHERE u.username=?', (username,)).fetchone()
             stored = account['password'] if account else 'scrypt:' + '00' * 16 + ':' + '00' * 64
             try:
                 candidate = _scrypt(_encode(body['password']), stored.split(':')[1])
@@ -295,7 +321,7 @@ class LocalAuth:
                 candidate = ''
         # A portal user on a desk host, or a desk user on a portal host, gets the same answer as a wrong password.
         realm = self.realm(scope)
-        if not hmac.compare_digest(candidate, stored) or not account or not account['active'] or role_realm(account['role']) != realm:
+        if not hmac.compare_digest(candidate, stored) or not account or not account['active'] or account['role_realm'] != realm:
             raise AccessError(401, 'Invalid username or password')
         token, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
         with self.database.transaction() as tx:
@@ -305,11 +331,11 @@ class LocalAuth:
                 raise AccessError(401, 'Invalid username or password')
             tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (pair,))
             tx.connection.execute('DELETE FROM evlet_sessions WHERE token=?', (self.token(scope),))
-            tx.connection.execute('INSERT INTO evlet_sessions(token,user_id,csrf,expires,realm) VALUES (?,?,?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), account['id'], csrf, now + 28800, realm))
+            tx.connection.execute('INSERT INTO evlet_sessions(token,user_id,csrf,expires,realm) VALUES (?,?,?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), account['id'], csrf, now + self.session_hours * 3600, realm))
         return {'user': User(account['id'], account['username'], account['role']).public(), 'csrf': csrf}, [self.cookie(token, realm)]
 
     def cookie(self, token, realm='desk'):
-        value = f'{self.cookie_for(realm)}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={28800 if token else 0}'
+        value = f'{self.cookie_for(realm)}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={self.session_hours * 3600 if token else 0}'
         if self.secure_cookies:
             value += '; Secure'
         return b'set-cookie', value.encode()
@@ -357,23 +383,27 @@ class LocalAuth:
             total = connection.execute('SELECT count(*) FROM evlet_users').fetchone()[0]
             return {'items': items, 'total': total, 'offset': offset, 'limit': 100}
 
-    def update_user(self, user_id, body):
+    def update_user(self, user_id, body, check=None):
+        """check(connection, row, changes) runs first in the transaction; what it returns runs after the writes."""
         if not body or set(body) - {'role', 'active', 'password'}:
             raise ValidationError({'_form': 'Use role, active, or password'})
-        if 'role' in body and body['role'] not in ROLES:
-            raise ValidationError({'role': 'Unknown role'})
         if 'active' in body and type(body['active']) is not bool:
             raise ValidationError({'active': 'Use true or false'})
         changes = dict(body)
         if 'password' in changes:
-            changes['password'] = password_hash(changes['password'])
+            changes['password'] = password_hash(changes['password'], minimum=self.password_min)
         with self.database.transaction() as tx:
+            if 'role' in changes:
+                self._role(tx.connection, changes['role'])
             row = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user_id,)).fetchone()
             if not row:
                 raise AccessError(404, 'Account not found')
+            after = check(tx.connection, row, changes) if check is not None else None
             if row['role'] == 'admin' and row['active'] and (changes.get('role', 'admin') != 'admin' or not changes.get('active', True)):
                 if tx.connection.execute("SELECT count(*) FROM evlet_users WHERE role='admin' AND active=1").fetchone()[0] == 1:
-                    raise AccessError(409, 'Keep at least one active administrator')
+                    raise AccessError(409, LAST_ADMIN)
             for key, value in changes.items():
                 tx.connection.execute(f'UPDATE evlet_users SET {key}=? WHERE id=?', (value, user_id))
             tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (user_id,))
+            if after is not None:
+                after()

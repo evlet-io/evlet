@@ -267,6 +267,8 @@ class JobQueue:
     def run_one(self, *, active=lambda: True, now=None):
         if not active():
             return False
+        if getattr(self, 'business', None) is not None:
+            self.business.controls.refresh()
         self.tick(now=now)
         claim = self.claim(now=now)
         return False if claim is None else self.execute(claim, active=active, now=now)

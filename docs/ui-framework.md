@@ -401,8 +401,9 @@ values.
 Routes are the paths the Python server serves (`evlet/ui/routes.py`): `/docs` and
 `/docs/:topic`, `/app/:model` (list), `/app/:model/new` (a new record; field values in the query
 fill it, `?customer=4`), `/app/:model/:id` (a record; `?tab=` keeps the tab) and the older
-`/app/:model/:id/view`, which opens the record. `/settings/accounts` and `/reports/:report` say
-that screen is not part of this interface; any other address opens Docs. The earlier
+`/app/:model/:id/view`, which opens the record. `/reports/:report` says that screen is not part
+of this interface; `/controls` loads Controls as its own chunk (`frontend/src/evlet/controls/`,
+see [controls.md](controls.md)); any other address opens Docs. The earlier
 development paths `/ui/...` and `/m/:model` are gone. A list keeps its search, sort, page, view, saved view and filters in the query, so
 a link opens the same list. A record with unsaved changes asks before the page changes or the
 tab closes. Signing in keeps the address the user opened.

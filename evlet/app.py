@@ -56,6 +56,7 @@ class Application:
             self.business.forms = Forms(self.business, reports)
             self.business.apis = tuple(apis)
             self.business.ui = self.ui
+            self.business.controls.routes = self.routes
         elif reports or apis:
             raise ValueError('Reports and APIs require authentication')
 
@@ -253,6 +254,8 @@ class Application:
             self._method(method, ["GET"])
             self.database.check()
             return 200, {"status": "ok"}, []
+        if self.business:
+            self.business.controls.refresh()
         from .ui.routes import dispatch
         response = dispatch(self, scope)
         if response is not None:

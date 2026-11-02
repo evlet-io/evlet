@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import re
 from urllib.parse import parse_qs, quote
 
-from .auth import AccessError, ROLES
+from .auth import AccessError
 from .database import ROW_LIMIT, Session
 from .fields import Link
 from .ui.metadata import view_for
@@ -71,6 +71,8 @@ class Business:
         self.policy = policy or Policy(self.registry)
         if self.policy.registry is not self.registry:
             raise ValueError('Policy must use the application registry')
+        from .controls import Controls
+        self.controls = Controls(self)
         self.actions, self.children, self.child_models = {}, {}, set()
         self.attachments = set(attachments)
         self.storage = storage if storage is not None else SQLiteStorage()
@@ -94,7 +96,7 @@ class Business:
         for action in actions:
             self.registry.name_for(action.model)
             identifier(action.name)
-            if not callable(action.handler) or not action.label or set(action.roles) - set(ROLES) or (action.model, action.name) in self.actions:
+            if not callable(action.handler) or not action.label or set(action.roles) - set(self.policy.roles) or (action.model, action.name) in self.actions:
                 raise ValueError('Invalid or duplicate action')
             self.actions[action.model, action.name] = action
         for child in children:
@@ -134,6 +136,7 @@ class Business:
 
     def initialize(self):
         self.auth.initialize()
+        self.controls.initialize()
         self.storage.initialize(self.database)
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
             with self.database.transaction() as tx:
@@ -163,7 +166,7 @@ class Business:
             self.events.initialize()
         if getattr(self, 'ui', None):
             from .auth import User
-            for role in ROLES:
+            for role in self.policy.roles:
                 user = User(0, 'schema', role)
                 self.ui.compile(self.schema(user), user)
         if self.jobs:
@@ -188,6 +191,7 @@ class Business:
         if self.events is None or scope['method'] != 'GET':
             raise AccessError(404, 'Events are unavailable')
         self.auth.guard(scope)
+        self.controls.refresh()
         guard = scope.get('evlet.tenant_active')
         if guard is not None and not guard():
             raise AccessError(421, 'Tenant is unavailable')
@@ -358,6 +362,8 @@ class Business:
             if endpoint is not None and endpoint.public:
                 return dispatch(self, scope, body, None)
         user, csrf = self.auth.session(scope)
+        if path == '/api/_controls' or path.startswith('/api/_controls/'):
+            return self.controls.dispatch(scope, body, user)
         if path.startswith('/api/_services/'):
             from .services import dispatch
             return dispatch(self, scope, body, user)
@@ -768,9 +774,11 @@ class Business:
             raise AccessError(409, 'This record changed since you opened it. Reload it before saving.')
 
     def accounts(self, scope, body, user):
+        """The older account routes: the same access check, limits and audit rows as Controls Users."""
         path, method = scope['path'], scope['method']
-        if user.role != 'admin':
+        if not self.controls.allows(scope, user):
             raise AccessError(403, 'Administrator access required')
+        self.controls.check(scope, user)
         if path == '/api/auth/users':
             if method == 'GET':
                 try:
@@ -782,10 +790,12 @@ class Business:
                     raise ValidationError({'offset': 'Use a valid offset'})
                 return 200, self.auth.user_page(offset), []
             if method == 'POST':
-                return 201, self.auth.create_user(**body).public(), []
+                return 201, self.controls.add_user(user, body).public(), []
         match = re.fullmatch(r'/api/auth/users/([1-9][0-9]{0,18})', path)
         if match and method == 'PATCH' and int(match[1]) <= 2**63-1:
-            self.auth.update_user(int(match[1]), body)
+            if not isinstance(body, dict) or 'sessions' in body:
+                raise ValidationError({'_form': 'Use role, active, or password'})
+            self.controls.change_user(user, int(match[1]), body)
             return 204, None, []
         raise AccessError(405, 'Method not allowed')
 

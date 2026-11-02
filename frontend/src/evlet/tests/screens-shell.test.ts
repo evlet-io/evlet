@@ -78,7 +78,7 @@ describe('addresses the Python server serves', () => {
     expect(location.pathname).toBe('/app/contact/1/view');
   });
 
-  it.each([['/settings/accounts', 'Accounts are not managed in this interface'], ['/reports/sales', 'Reports are not shown in this interface']])(
+  it.each([['/reports/sales', 'Reports are not shown in this interface']])(
     '%s says the screen is not part of this interface', async (path, title) => {
       const { host } = start(adminRoutes(), path);
       await until(() => expect(text(host.querySelector('.page .empty h3'))).toBe(title));

@@ -72,3 +72,6 @@ from .meaning import Attachments, Related
 __all__ += ["Attachments", "Related"]
 from .journal import Journal
 __all__ += ["Journal"]
+from .controls import SCOPES
+
+__all__ += ["SCOPES"]
