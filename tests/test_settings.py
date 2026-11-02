@@ -61,7 +61,7 @@ def test_app_settings_respect_editors_audit_and_the_config_version(secured):
     app = secured
     editor, viewer = client(app, 'editor'), client(app, 'viewer')
     state = viewer('GET', '/api/_settings/app/projects')[1]
-    assert not state['can_edit'] and state['editors'] == ['editor'] and [section['title'] for section in state['sections']] == ['Work week', 'Progress']
+    assert not state['can_edit'] and state['editors'] == ['editor'] and [section['title'] for section in state['sections']] == ['Work week', 'Progress', 'Money']
     hours = state['sections'][0]['fields'][1]
     assert (hours['name'], hours['value'], hours['default'], hours['suffix'], hours['label']) == ('hours', 8, 8, 'hours', 'Hours per day')
     assert viewer('PATCH', '/api/_settings/app/projects', {'values': {'hours': 7}})[0] == 403

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { adminRoutes, byText, click, lastToast, recorded, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
+import { choiceValues, choose } from './ui-helpers';
 import { copy } from './server';
 import { setRegion } from '../model/format';
 
@@ -59,10 +60,9 @@ describe('personal pages', () => {
   it('applies the region everywhere: the date format changes the dates in a list', async () => {
     const { host, sent } = start(routes([['GET', /\/api\/order\?/, screen.orders_open]]), '/settings/appearance');
     await until(() => expect(text(host.querySelector('.set-head h1'))).toBe('Appearance & region'));
-    const date = [...host.querySelectorAll<HTMLSelectElement>('select')].find(item => item.getAttribute('aria-label') === 'Date format')!;
-    expect([...date.options].map(option => option.value)).toEqual(['d MMM yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'MM/dd/yyyy']);
-    date.value = 'yyyy-MM-dd';
-    date.dispatchEvent(new Event('change', { bubbles: true }));
+    const date = host.querySelector<HTMLElement>('button[aria-label="Date format"]')!;
+    expect(choiceValues(date)).toEqual(['d MMM yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'MM/dd/yyyy']);
+    choose(date, 'yyyy-MM-dd');
     await until(() => expect(lastToast()).toBe('Saved'));
     expect(requests(sent, 'PATCH', /prefs$/).map(item => item.body)).toEqual([{ last_page: 'appearance' }, { date: 'yyyy-MM-dd' }]);
     click(byText(host, '.nav-item', 'Orders'));

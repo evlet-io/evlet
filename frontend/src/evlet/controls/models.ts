@@ -153,7 +153,7 @@ function openField(ctx: ControlsContext, model: ModelInfo, info: FieldInfo) {
   const value = () => effective(ctx, model.name, info.name);
   const file = ctx.drafts.item(id)!.file as FieldProps;
   const set = (prop: keyof FieldOverride, next: unknown) => setProp(ctx, model.name, info.name, prop, next);
-  const text = (prop: 'label' | 'help_text' | 'placeholder', label: string, placeholder = '') => field(label, `ctl-f-${prop}`,
+  const text = (prop: 'label' | 'help_text' | 'tooltip' | 'placeholder', label: string, placeholder = '') => field(label, `ctl-f-${prop}`,
     html`<input class="input" id=${`ctl-f-${prop}`} placeholder=${placeholder} class:ctl-changed=${() => value()[prop] !== file[prop]} prop:value=${() => value()[prop]}
       on:change=${(event: Event) => {
         const input = event.target as HTMLInputElement, next = input.value.trim();
@@ -211,6 +211,7 @@ function openField(ctx: ControlsContext, model: ModelInfo, info: FieldInfo) {
       <p class="muted ctl-small">${PY[info.type] ?? info.type}${info.target ? ` → ${info.target}` : ''} · ${info.custom ? 'added on this instance' : 'from models.py'}</p>
       ${when(() => ctx.drafts.errors.get().has(id), () => Callout('err', 'info', () => ctx.drafts.errors.get().get(id)))}
       <section class="ctl-section"><h3>Display</h3><div class="ctl-form">${text('label', 'Label')}${text('help_text', 'Help text', 'Shown under the field')}
+        ${text('tooltip', 'Tooltip', 'Shown from a ? at the end of the field')}
         ${text('placeholder', 'Placeholder', 'Shown inside an empty field')}</div></section>
       <section class="ctl-section"><h3>Rules</h3>
         ${rule('required', 'Required', () => file.required ? 'Required in models.py. It stays required.' : !info.editable ? 'Filled by the app or the server.' : 'New and edited records must have a value.')}
@@ -238,12 +239,13 @@ function openField(ctx: ControlsContext, model: ModelInfo, info: FieldInfo) {
 }
 
 function addField(ctx: ControlsContext, model: ModelInfo) {
-  const label = cell(''), name = cell(''), touched = cell(false), type = cell('Text'), help = cell(''), required = cell(false);
+  const label = cell(''), name = cell(''), touched = cell(false), type = cell('Text'), help = cell(''), tip = cell(''), required = cell(false);
   const choices = cell(''), target = cell(ctx.state.peek().models[0]?.table ?? ''), fallback = cell(''), errors = cell<Record<string, string>>({}), busy = cell(false);
   const input = (id: string, value: Cell<string>, placeholder = '', after?: (next: string) => void) => html`<input class="input" id=${id} placeholder=${placeholder} autocomplete="off"
     prop:value=${value} on:input=${(event: Event) => { value.set((event.target as HTMLInputElement).value); after?.(value.peek()); errors.set({}); }}>`;
   const submit = async (close: () => void) => {
     const body: Record<string, unknown> = { name: slug(name.peek()), type: type.peek(), label: label.peek().trim(), help_text: help.peek().trim(), required: required.peek() };
+    if (tip.peek().trim()) body.tooltip = tip.peek().trim();
     if (type.peek() === 'Select') body.options = choices.peek().split(',').map(item => item.trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
     if (type.peek() === 'Link') body.target = target.peek();
     if (fallback.peek().trim()) body.default = type.peek() === 'Boolean' ? fallback.peek() === 'true' : fallback.peek().trim();
@@ -268,6 +270,7 @@ function addField(ctx: ControlsContext, model: ModelInfo) {
       ${when(() => type.get() === 'Link', () => field('Links to', 'ctl-nf-target', Select({ id: 'ctl-nf-target', value: () => target.get(),
         options: () => ctx.state.peek().models.map(item => [item.table, item.name]), onChange: next => target.set(next) }), () => null, error('target')))}
       ${field('Help text', 'ctl-nf-help', input('ctl-nf-help', help, 'Optional') as Node, () => null, error('help_text'))}
+      ${field('Tooltip', 'ctl-nf-tip', input('ctl-nf-tip', tip, 'Optional') as Node, () => null, error('tooltip'))}
       <div class="ctl-line">${Switch({ on: required, ariaLabel: 'Required', onChange: next => required.set(next) })}<span>Required for new and edited records</span></div>
       ${when(() => required.get() || fallback.get(), () => field('Default', 'ctl-nf-default', input('ctl-nf-default', fallback, type.peek() === 'Boolean' ? 'true or false' : '') as Node,
         () => model.records ? `Fills the ${plural(model.records, 'existing record')} when the field is required.` : null, error('default')))}
@@ -430,6 +433,7 @@ export function sourceLine(ctx: ControlsContext, model: ModelInfo, info: FieldIn
   if (value.hidden) args.push('hidden=True');
   if (value.label !== file.label || !info.name.replace(/_/g, ' ').toLowerCase().startsWith(value.label.toLowerCase())) args.push(`label=${quote(value.label)}`);
   if (value.help_text) args.push(`help_text=${quote(value.help_text)}`);
+  if (value.tooltip) args.push(`tooltip=${quote(value.tooltip)}`);
   if (value.placeholder) args.push(`placeholder=${quote(value.placeholder)}`);
   return { text: `    ${info.name} = ${PY[info.type] ?? info.type}(${args.join(', ')})`, changed: merged && value.changed, added: merged && info.custom };
 }

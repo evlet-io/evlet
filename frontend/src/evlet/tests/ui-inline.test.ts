@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { localField } from '../ui/fields';
 import { FormSection, InlineValue, KeyValueList } from '../ui/inline';
 import { responses } from './server';
-import { backend, change, cleanup, key, render } from './ui-helpers';
+import { backend, change, cleanup, key, pick, render } from './ui-helpers';
 
 afterEach(() => { vi.useRealTimers(); cleanup(); });
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -50,7 +50,7 @@ describe('InlineValue with the record store', () => {
     await store.open(1);
     const host = render(() => InlineValue({ field: store.field('stage') }));
     host.querySelector<HTMLButtonElement>('button.fval')!.click();
-    change(host.querySelector('select')!, 'won');
+    pick(host.querySelector<HTMLElement>('.in-select')!, 'Won');
     await flush();
     expect(sent.find(item => item.method === 'PATCH')!.body.stage).toBe('won');
   });

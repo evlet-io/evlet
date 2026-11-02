@@ -20,11 +20,11 @@ export interface RoleRow {
 export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; assistants?: number; keys?: number; two_step?: { since: number | null; agent: string } | null }
 /** A field as models.py declares it: the props Controls can override. */
 export interface FieldProps {
-  label: string; help_text: string; placeholder: string; hidden: boolean; required: boolean; read_only: boolean;
+  label: string; help_text: string; tooltip: string; placeholder: string; hidden: boolean; required: boolean; read_only: boolean;
   default: unknown; options: string[] | null;
 }
 export interface FieldOverride {
-  label?: string; help_text?: string; placeholder?: string; hidden?: boolean; required?: boolean; read_only?: boolean;
+  label?: string; help_text?: string; tooltip?: string; placeholder?: string; hidden?: boolean; required?: boolean; read_only?: boolean;
   default?: unknown; options_add?: string[]; options_hidden?: string[];
 }
 export interface LayoutSection { title: string; fields: Array<{ name: string; width: 6 | 12 }> }

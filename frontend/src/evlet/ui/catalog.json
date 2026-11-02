@@ -223,7 +223,7 @@
    "id": "currency-field",
    "name": "CurrencyField",
    "level": "Element",
-   "desc": "Exact money amount with two decimals and the currency shown as a prefix.",
+   "desc": "Exact money amount with two decimals. The currency code sits in a box before the input: fixed, from a field of the record, from a linked record or from an app setting.",
    "props": [
     [
      "…BaseField",
@@ -252,7 +252,7 @@
    "id": "percent-field",
    "name": "PercentField",
    "level": "Element",
-   "desc": "Decimal from 0 to 100 shown with a percent suffix.",
+   "desc": "Decimal from 0 to 100 with a % box after the input.",
    "props": [
     [
      "…BaseField",
@@ -281,7 +281,7 @@
    "id": "date-field",
    "name": "DateField",
    "level": "Element",
-   "desc": "Calendar date shown as DD-MM-YYYY, stored as an ISO date.",
+   "desc": "Calendar date shown as DD-MM-YYYY, stored as an ISO date. A calendar opens from the input, with month and year views and Today; typing still works.",
    "props": [
     [
      "…BaseField",
@@ -310,7 +310,7 @@
    "id": "datetime-field",
    "name": "DateTimeField",
    "level": "Element",
-   "desc": "Date and time in the user's timezone, stored in UTC.",
+   "desc": "Date and time in the user's timezone, stored in UTC. The calendar has hour and minute steppers and Now.",
    "props": [
     [
      "…BaseField",
@@ -339,7 +339,7 @@
    "id": "time-field",
    "name": "TimeField",
    "level": "Element",
-   "desc": "Time of day without a date or timezone.",
+   "desc": "Time of day without a date or timezone. Hour and minute steppers, common times and Now.",
    "props": [
     [
      "…BaseField",
@@ -368,7 +368,7 @@
    "id": "duration-field",
    "name": "DurationField",
    "level": "Element",
-   "desc": "A length of time typed as 1h 30m, stored in seconds.",
+   "desc": "A length of time typed as 1h 30m, stored in seconds. Hour and minute steppers and common lengths.",
    "props": [
     [
      "…BaseField",
@@ -426,7 +426,7 @@
    "id": "select-field",
    "name": "SelectField",
    "level": "Element",
-   "desc": "One choice from a declared list.",
+   "desc": "One choice from a declared list. A list opens with the current choice ticked, a search box for long lists and Clear when the field is optional.",
    "props": [
     [
      "…BaseField",

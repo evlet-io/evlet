@@ -14,3 +14,4 @@ export * from './table';
 export * from './childtable';
 export * from './doc';
 export * from './list';
+export * from './pickers';

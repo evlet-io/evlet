@@ -7,6 +7,7 @@ import { ControlsClient } from '../controls/client';
 import { MyKeysClient, MyKeysPage } from '../settings/keys';
 import { server, type Sent } from './server';
 import { byText, click, lastToast, stopAll, text, typeInto, until } from './screens-helpers';
+import { choiceValues, choose } from './ui-helpers';
 
 const roles = ['admin', 'editor', 'viewer'].map(id => ({ id, kind: 'framework', base: null, realm: 'desk', opens_controls: id === 'admin', description: '', users: 1, app: null, declared: true }));
 const state = () => ({
@@ -140,13 +141,10 @@ describe('API keys', () => {
     click(byText(document.body, '.modal button', 'Create key'));
     await until(() => expect(text(document.querySelector('.modal'))).toContain('Give the key a name so you can recognise it later.'));
     typeInto(document.querySelector<HTMLInputElement>('#ctl-k-name')!, 'Website lead form');
-    const user = document.querySelector<HTMLSelectElement>('#ctl-k-user')!;
-    await until(() => expect(user.options.length).toBe(2));
-    user.value = 'rahul';
-    user.dispatchEvent(new Event('change', { bubbles: true }));
-    const models = document.querySelector<HTMLSelectElement>('#ctl-k-models')!;
-    models.value = 'Customer';
-    models.dispatchEvent(new Event('change', { bubbles: true }));
+    const user = document.querySelector<HTMLElement>('#ctl-k-user')!;
+    await until(() => expect(choiceValues(user)).toHaveLength(2));
+    choose(user, 'rahul');
+    choose(document.querySelector<HTMLElement>('#ctl-k-models')!, 'Customer');
     click(byText(document.body, '.modal button', 'Create key'));
     await until(() => expect(text(document.querySelector('.modal'))).toContain("Copy it now. For security it won't be shown again."));
     expect(text(document.querySelector('.modal'))).toContain('evk_ab12cd34_xxx');

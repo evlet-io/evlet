@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .controls import SCHEDULE, SCOPES, SETTINGS
 
-PROPS = ('label', 'help_text', 'placeholder', 'hidden', 'required', 'read_only', 'default')
+PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default')
 UNKNOWN = '...'
 # Setting prefixes other than security, as config.py names and what they cover.
 GROUPS = {'mcp': ('assistants', 'AI assistant settings (Controls, MCP and AI)'), 'mail': ('mail', 'Email settings (Controls, Email)')}
@@ -57,7 +57,8 @@ def field_line(name, kind, args, kwargs, props):
 def instance_line(name, definition, props, registry):
     """An instance field as an app field. Apps can't declare x_ names, so rename it while moving it."""
     kind, args = definition['type'], []
-    kwargs = {'label': definition['label']} | ({'help_text': definition['help_text']} if definition.get('help_text') else {})
+    kwargs = {'label': definition['label']} | ({'help_text': definition['help_text']} if definition.get('help_text') else {}) \
+        | ({'tooltip': definition['tooltip']} if definition.get('tooltip') else {})
     if kind == 'Select':
         args.append(tuple(definition['options']))
     if kind == 'Link':

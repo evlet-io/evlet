@@ -358,7 +358,8 @@ def test_new_types_validate_and_serialize():
     with pytest.raises(TypeError):
         Ref()
     fields = {field['name']: field for field in Registry(Contact).ui_schema()['models'][0]['fields']}
-    assert (fields['price']['currency'], fields['local']['currency'], fields['labels']['type'], fields['about']['type']) == ('AED', 'code', 'tags', 'reference')
+    assert (fields['price']['currency'], fields['local']['currency_source'], fields['labels']['type'], fields['about']['type']) == ('AED', {'field': 'code'}, 'tags', 'reference')
+    assert 'currency' not in fields['local'] and 'currency_source' not in fields['price']
 
 
 def check_types_storage_and_filters(database):
