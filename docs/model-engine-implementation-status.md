@@ -633,3 +633,66 @@ Review fixes (01-11-2026):
   through HTTP and `Context` (before, unknown names were 422).
 * `/api/{model}/measures` checks its filters even when no measure is available.
 * `group_by` of the wrong type names the accepted forms.
+
+## Phase 10: model meaning metadata (01-11-2026)
+
+Branch `model/10-meaning`, stacked on `model/05-void-revise`; restacked on
+`model/09-stacked` as `model/10-stacked`. Public API in [meaning.md](meaning.md).
+
+* **Key fields.** `Meta.key_fields`: up to eight distinct visible fields, checked when the
+  registry is built. Schema entries carry `key_fields` (readable fields only) when declared.
+* **Relations.** Every Link on a root model is a relation of its target, named
+  `{model}.{link}`, including several Links from one model and self Links (a revisable
+  model gets `Revisions`). Links on Table rows, on `ChildTable` models and hidden Links
+  are not relations. `Related(model, link, label=, limit=, order=, hidden=)` names,
+  orders, limits or hides one. Schema entries carry `relations` the caller can use (other
+  model and its Link readable). `GET /api/{model}/{id}/related/{name}` lists one page
+  under the caller's row scope after checking the owning record is readable; order
+  fields the caller cannot read are skipped.
+* **Attachments.** `Meta.attachments = Attachments(max_files=, max_size=)` within the
+  existing maximums (10 files, 1 MiB). `Application(attachments=...)` keeps working with
+  the defaults; when a model is in both, the Meta limits apply. Schema entries add
+  `attachment_limits` when attachments are enabled. Upload errors state the limit.
+* **Code.** `evlet/meaning.py` (validation, discovery, `Attachments`, `Related`), called
+  once from `Registry`; `Business` holds per-model limits and visible relations and serves
+  the related route. `view_for` accepts the three keys; its error message now lists the
+  allowed keys from the set, so later phases change one line.
+* **Playground.** The amendment `SalesOrder` declares key fields and a `Work orders`
+  relation; the `Quote` declares key fields and lists its revisions.
+  `tests/test_builds.py` checks both through HTTP.
+* **Fixtures.** `test-business-schema.json` and `ui-fixture.json` gained `relations` and
+  `attachment_limits`. New tests in `tests/test_meaning.py`.
+
+Known limitations:
+
+* The schema carries no relation counts. The related route returns `total` for the
+  caller, and a per-record measure on the same Link (`Count(Payment, link="invoice")`)
+  gives the count through `GET /api/{model}/{id}/measures`.
+* Related rows are listed without their owned Table rows, like the list route.
+* The connector, the MCP server and the SolidJS UI do not use these keys yet.
+
+Review fixes (01-11-2026):
+
+* The related route and the schema use one order rule, the same as the list route's
+  `order_by`: unreadable fields and Links to models row scoped for the caller are skipped,
+  falling back to `-id`. The schema no longer names fields the caller cannot read.
+* `key_fields` of the wrong types raise `ValueError`; the size message says `1 byte`.
+* `ChildTable` models cannot declare `Meta.key_fields` or `Meta.relations` either;
+  `Application(attachments=...)` on them is unchanged.
+* A subclass inheriting its parent's `Meta` applies only the inherited `Related` entries
+  that point to it, instead of failing the registry build.
+* The generated fixtures (`test-business-schema.json`, `ui-fixture.json`) will be
+  regenerated after the phase branches are stacked.
+
+Restacked on Phase 9 (01-11-2026):
+
+* `view_for` accepts `measures` beside `key_fields`, `relations` and `attachments`.
+* `GET /api/{model}/{id}/related/{name}` sits beside `/measures`, `/lines/{name}`,
+  `/void`, `/revise` and `/moves/{to}` without overlap; `tests/test_measures.py` hits
+  each on one model, on SQLite and PostgreSQL, and compares a per-record `Count` on the
+  revision Link with the `Revisions` relation total.
+* The amendment Quote keeps its sequence number and measures, and adds key fields and
+  its revisions relation.
+* The generated fixtures were regenerated on the stacked branch with
+  `scripts.generate_ui_fixtures`, `scripts.generate_document_fixtures` and
+  `scripts.generate_finite_fixtures`; they match the committed files.

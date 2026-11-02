@@ -210,6 +210,8 @@ readers download files and users with update access upload or remove them.
 `name` and a base64 `content` value. `GET/DELETE .../attachments/{attachment_id}`
 downloads or removes a file. Each file is nonempty and at most 1 MiB; each record
 has at most ten files. Filenames cannot contain paths or control characters.
+`Model.Meta.attachments = Attachments(max_files=..., max_size=...)` also enables
+attachments and lowers these limits per model; see [meaning.md](meaning.md#attachments).
 
 Content is stored as a BLOB in the same SQLite database. There is no public file
 folder or filesystem path supplied by the client. Download and deletion check both

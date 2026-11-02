@@ -36,6 +36,8 @@ language, nested owned tables and the shared Python/browser calculation engine.
 locks and actions with validated inputs. [Document numbers](docs/sequences.md) describe
 `Sequence` fields. [Measures](docs/measures.md) describe exact aggregates, declared model
 measures and their HTTP routes.
+[Model meaning](docs/meaning.md) describes key fields, related records and
+attachment limits.
 
 For virtual environment setup and each step explained, read
 [Your first site](docs/getting-started.md).

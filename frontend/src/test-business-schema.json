@@ -119,7 +119,29 @@
       "child_only": false,
       "children": [],
       "actions": [],
-      "attachments": false
+      "attachments": false,
+      "relations": [
+        {
+          "name": "invoice.customer",
+          "label": "Invoices",
+          "model": "invoice",
+          "link": "customer",
+          "limit": 10,
+          "order": [
+            "-id"
+          ]
+        },
+        {
+          "name": "project.customer",
+          "label": "Projects",
+          "model": "project",
+          "link": "customer",
+          "limit": 10,
+          "order": [
+            "-id"
+          ]
+        }
+      ]
     },
     {
       "name": "invoice",
@@ -293,7 +315,19 @@
       "child_only": false,
       "children": [],
       "actions": [],
-      "attachments": false
+      "attachments": false,
+      "relations": [
+        {
+          "name": "payment.invoice",
+          "label": "Payments",
+          "model": "payment",
+          "link": "invoice",
+          "limit": 10,
+          "order": [
+            "-id"
+          ]
+        }
+      ]
     },
     {
       "name": "payment",
@@ -642,7 +676,11 @@
           "label": "Recalculate progress"
         }
       ],
-      "attachments": true
+      "attachments": true,
+      "attachment_limits": {
+        "max_files": 10,
+        "max_size": 1048576
+      }
     },
     {
       "name": "projecttask",

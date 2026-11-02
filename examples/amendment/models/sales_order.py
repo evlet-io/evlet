@@ -1,12 +1,18 @@
 from datetime import date
 from evlet import (Model, Child, Table, Dialog, Link, Text, Decimal, Currency,
-                   Boolean, Integer, Date, Rule, Ref, depends, action, ValidationError, Select)
-from amendment.models.masters import Company, Warehouse, ItemMaster, BOM
+                   Boolean, Integer, Date, Rule, Ref, depends, action, ValidationError, Select, Related)
+from amendment.models.masters import Company, Warehouse, ItemMaster, BOM, WorkOrder
 from amendment.services.stock import available
 from amendment.services.planning import selection_rows, create_selected
 
 
 class SalesOrder(Model):
+    class Meta:
+        # The fields that summarize an order, and its work orders newest production date first.
+        # Work orders are found through their sales_order Link without this; Related names and orders them.
+        key_fields = ('company', 'warehouse', 'status', 'total')
+        relations = (Related(WorkOrder, 'sales_order', label='Work orders', limit=5, order=('-production_date', '-id')),)
+
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
     name = Text(required=True)
