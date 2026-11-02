@@ -47,7 +47,11 @@ class Application:
             raise ValueError("Business features require authentication")
         self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
-            self.business.application = {"name": name, "playground": bool(playground), "docs": "/docs" if self.routes.docs else None}
+            from .routing import authority
+            if auth.realms != {authority(origin).encode(): realm for origin, realm in self.routes.realms().items()}:
+                raise ValueError('LocalAuth realms must match the route table: pass realms=routes.realms()')
+            self.business.routes = self.routes
+            self.business.application = {"name": name, "playground": bool(playground), "docs": self.routes.docs_path if self.routes.docs else None}
             from .forms import Forms
             self.business.forms = Forms(self.business, reports)
             self.business.apis = tuple(apis)
@@ -68,6 +72,7 @@ class Application:
         try:
             if self.business is None:
                 self._guard_local(scope)
+            self._api_scope(scope)
             if scope['path'] == '/api/_events/stream' and self.business:
                 await self._event_stream(scope, receive, send)
                 return
@@ -128,6 +133,43 @@ class Application:
             response_headers.append((b"content-length", str(len(encoded)).encode()))
         await send({"type": "http.response.start", "status": status, "headers": response_headers})
         await send({"type": "http.response.body", "body": encoded})
+
+    def _api_scope(self, scope):
+        """On a sub-host, /api serves sign-in and its frontends' API scopes; everything else is 404."""
+        path = scope['path']
+        if path != '/api' and not path.startswith('/api/'):
+            return
+        scopes = self.routes.scopes(dict(scope.get('headers', [])).get(b'host', b''))
+        if scopes is None or path in ('/api/auth/session', '/api/auth/login', '/api/auth/logout'):
+            return
+        parts = path.split('/')
+        if path.startswith('/api/_services/'):
+            if any(path.removeprefix('/api/_services/') in item.endpoints for item in scopes):
+                return
+            raise HTTPError(404, 'Route not found')
+        draft = len(parts) == 4 and parts[2] == '_draft'
+        model = self.registry.models.get(parts[3] if draft else parts[2]) if len(parts) >= 3 else None
+        allowed = [item for item in scopes if model in item.models]
+        if model is None or not allowed:
+            raise HTTPError(404, 'Route not found')
+        # Each route family must be listed: records come with the model, the rest by action or extra.
+        if draft:
+            need = ('extra', 'drafts')
+        elif len(parts) == 3 or len(parts) == 4 and parts[3].isdigit():
+            return
+        elif len(parts) == 4 and parts[3] in ('measures', 'aggregate') or len(parts) == 5 and parts[4] == 'measures':
+            need = ('extra', 'measures')
+        elif len(parts) == 5 and parts[4] in ('void', 'revise'):
+            need = ('action', parts[4])
+        elif len(parts) == 6 and parts[4] in ('actions', 'moves'):
+            need = ('action', parts[5])
+        elif len(parts) >= 5 and parts[4] in ('related', 'lines', 'attachments'):
+            need = ('extra', parts[4])
+        else:
+            raise HTTPError(404, 'Route not found')
+        if any(need[1] in item.extras if need[0] == 'extra' else (model, need[1]) in item.actions for item in allowed):
+            return
+        raise HTTPError(404, 'Route not found')
 
     def _guard_local(self, scope):
         headers = {}

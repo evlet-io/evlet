@@ -53,6 +53,21 @@ def parser():
     routes = commands.add_parser('routes', help='Print the resolved hosts and paths of an instance')
     routes.add_argument('instance')
     routes.add_argument('--port', type=int, default=8000, help='Development port shown in loopback origins')
+    proxy = commands.add_parser('proxy', help='Print or write a Caddy or nginx configuration for the instance hosts')
+    proxy.add_argument('instance')
+    kind = proxy.add_mutually_exclusive_group(required=True)
+    kind.add_argument('--caddy', action='store_true')
+    kind.add_argument('--nginx', action='store_true')
+    proxy.add_argument('--write', metavar='PATH', help='Write the configuration to this file instead of printing it')
+    proxy.add_argument('--check', action='store_true', help='Check that each host resolves to this server')
+    proxy.add_argument('--ip', action='append', help='This server\'s public address, when it cannot be detected')
+    proxy.add_argument('--port', type=int, default=8000, help='Port the instance listens on')
+    link = commands.add_parser('link-user', help='Link an account to a record, such as a portal user to their customer')
+    link.add_argument('instance')
+    link.add_argument('username')
+    link.add_argument('model')
+    link.add_argument('record_id', type=int)
+    link.add_argument('--remove', action='store_true', help='Remove the link instead')
     effects = commands.add_parser('effects', help='Check the rows records post to other models')
     effects_commands = effects.add_subparsers(dest='effects_command', required=True)
     effects_check = effects_commands.add_parser('check', help='Recompute effect rows and report differences without writing')
@@ -163,6 +178,38 @@ def main(argv=None):
             app = load_runtime(root, args.instance, port=args.port)
             try:
                 print(app.routes.text())
+            finally:
+                app.database.close()
+        elif args.command == 'proxy':
+            from ..instances import load_runtime
+            from . import proxy
+            app = load_runtime(root, args.instance, port=args.port)
+            app.database.close()
+            text = (proxy.caddy if args.caddy else proxy.nginx)(app.routes, args.port, args.instance)
+            if args.write:
+                print(f'Wrote {proxy.write(args.write, text)}. Reload the proxy yourself after reviewing it.')
+            else:
+                print(text, end='')
+            if args.check:
+                report, ok = proxy.check(app.routes, args.ip)
+                print(report)
+                if not ok:
+                    raise SystemExit(1)
+        elif args.command == 'link-user':
+            from ..instances import load_runtime
+            from ..auth import AccessError
+            app = load_runtime(root, args.instance)
+            try:
+                auth = app.business.auth
+                auth.initialize()
+                with app.database._connection() as connection:
+                    row = connection.execute('SELECT id FROM evlet_users WHERE username=?', (args.username.lower(),)).fetchone()
+                if row is None:
+                    raise ValueError(f'No account named {args.username}')
+                (auth.unlink_user if args.remove else auth.link_user)(row['id'], args.model, args.record_id)
+                print(f'{"Unlinked" if args.remove else "Linked"} {args.username} {"from" if args.remove else "to"} {args.model} {args.record_id}')
+            except AccessError as exc:
+                raise ValueError(exc.message) from None
             finally:
                 app.database.close()
         elif args.command == 'effects':

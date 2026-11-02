@@ -8,7 +8,7 @@ import pytest
 from evlet import (AddField, Boolean, Child, Currency, Database, Decimal, Integer, Link, Migration, Model, Move, Registry,
                    Rule, SchemaError, State, Table, Text, ValidationError)
 from evlet import corrections
-from evlet.auth import AccessError, ROLES, User
+from evlet.auth import AccessError, User
 from evlet.calc import F
 from evlet.permissions import Policy
 from finite_fixtures import FiniteMeta
@@ -184,7 +184,7 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     def table(registry):
         policy, result = Policy(registry), {}
         for name, model in sorted(registry.models.items()):
-            for role in ROLES:
+            for role in ('admin', 'editor', 'viewer'):
                 user = User(1, 'x', role)
                 result[f'{role}:{name}'] = [[op for op in ('read', 'create', 'update', 'delete') if policy.allows(user, model, op)],
                                             sorted(policy.fields(user, model)), sorted(policy.fields(user, model, write=True)),

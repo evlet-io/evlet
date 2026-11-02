@@ -135,6 +135,9 @@ class Business:
     def initialize(self):
         self.auth.initialize()
         self.storage.initialize(self.database)
+        if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
+            with self.database.transaction() as tx:
+                tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_public_limits (client TEXT NOT NULL, period INTEGER NOT NULL, calls INTEGER NOT NULL, resets INTEGER NOT NULL, PRIMARY KEY (client, period))')
         if self.registry.plans:
             with self.database.transaction() as tx:
                 # The plan each saved finite-v1 document was calculated with (history guard).
@@ -314,6 +317,15 @@ class Business:
                         entry['actions'].append({'name': name, 'label': definition.title or name, 'dialog': True})
         return result
 
+    def docs_path(self, scope, user):
+        """Where Docs are for this request, or None: off, on a sub-host, or outside Docs(roles=...)."""
+        routes = getattr(self, 'routes', None)
+        if routes is None or not routes.docs or routes.scopes(dict(scope.get('headers', [])).get(b'host', b'')) is not None:
+            return None
+        if routes.docs_roles and (user is None or user.role not in routes.docs_roles):
+            return None
+        return routes.docs_path
+
     def dispatch(self, scope, body):
         path, method = scope['path'], scope['method']
         self.auth.guard(scope)
@@ -321,13 +333,18 @@ class Business:
             info = dict(self.application or {})
             if self.tenant:
                 info.update(name=self.tenant['label'], playground=False)
-            extra = {'application': info} if info else {}
             try:
                 user, csrf = self.auth.session(scope)
+                if 'docs' in info:
+                    info['docs'] = self.docs_path(scope, user)
+                extra = {'application': info} if info else {}
                 return 200, {'user': user.public(), 'csrf': csrf, **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
             except AccessError as exc:
                 if exc.status != 401:
                     raise
+                if 'docs' in info:
+                    info['docs'] = self.docs_path(scope, None)
+                extra = {'application': info} if info else {}
                 return 200, {'user': None, 'setup': self.auth.allow_setup and self.auth.setup_needed(), **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
         if path == '/api/auth/setup' and method == 'POST':
             self.auth.setup(scope, body)
@@ -335,6 +352,11 @@ class Business:
         if path == '/api/auth/login' and method == 'POST':
             payload, headers = self.auth.login(scope, body)
             return 200, payload, headers
+        if path.startswith('/api/_services/'):
+            from .services import dispatch, endpoint_for
+            endpoint = endpoint_for(self, path)
+            if endpoint is not None and endpoint.public:
+                return dispatch(self, scope, body, None)
         user, csrf = self.auth.session(scope)
         if path.startswith('/api/_services/'):
             from .services import dispatch
@@ -992,7 +1014,7 @@ class Business:
                 raise ValueError()
         except (ValueError, UnicodeError, RecursionError):
             raise ValidationError({'query': 'Invalid query parameters'})
-        self.policy.query_fields(user, model, filters, order)
+        self.policy.query_fields(user, model, filters, order, database=self.database)
         compiler = SqlQuery(self.registry, model)
         readable = self.policy.fields(user, model)
         search_fields = [name for name in view_for(model)['search_fields'] if name in readable]

@@ -1,9 +1,9 @@
 """Backend model, field, and row rules. Python database sessions remain trusted."""
 
 from dataclasses import dataclass
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 
-from .auth import AccessError, ROLES
+from .auth import AccessError, PUBLIC, ROLES
 from .fields import Link, Reference
 from .models import Model, ValidationError, identifier
 from .query import SqlQuery, OPERATORS
@@ -28,6 +28,21 @@ class Rule:
     read_fields: tuple | None = None
     write_fields: tuple | None = None
     scope: object = None
+
+
+def own_customer(field='customer', model='customer'):
+    """Row scope for portal users: rows whose field holds a record of model the user is linked to.
+
+    Links come from LocalAuth.link_user. Use field='id' on the linked model itself.
+    """
+    def scope(user):
+        return {field + '__in': [record_id for name, record_id in user.links if name == model]}
+    return scope
+
+
+def default_operations(role):
+    """Operations of a role on a model without a Rule. Portal and public roles see nothing unless an app grants it."""
+    return ('read',) if role == 'viewer' else ('read', 'create', 'update', 'delete') if role in ('admin', 'editor') else ()
 
 
 def child_operations(operations):
@@ -65,13 +80,13 @@ class Policy:
             return self.rules[role, model]
         self.governed = frozenset(model for model in registry.models.values() if governed(model))
         for model in self.governed:
-            for role in ROLES:
+            for role in (*ROLES, PUBLIC):
                 default(role, model)
         # Rules are fixed per policy, so cached finite derivation checks cannot go stale.
         self.rules = MappingProxyType(self.rules)
         for (role, model), rule in self.rules.items():
             registry.name_for(model)
-            if role not in ROLES or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', 'journal', *CORRECTIONS}:
+            if role not in (*ROLES, PUBLIC) or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', 'journal', *CORRECTIONS}:
                 raise ValueError('Invalid permission rule')
             if 'journal' in rule.operations and model not in registry.journals:
                 raise ValueError(f'{model.__name__}: Rule names \'journal\', but the model has no journal '
@@ -107,8 +122,7 @@ class Policy:
         # role only adds it, like void and revise.
         journalers = {}
         for model in registry.journals:
-            operations = {role: self.rules.get((role, model), Rule(('read',) if role == 'viewer' else ('read', 'create', 'update', 'delete'))).operations
-                          for role in ROLES}
+            operations = {role: self.rules.get((role, model), Rule(default_operations(role))).operations for role in ROLES}
             named = {role for role in ROLES if 'journal' in operations[role]}
             if 'read' in operations['admin']:
                 named.add('admin')
@@ -118,7 +132,7 @@ class Policy:
         self.journalers = MappingProxyType(journalers)
 
     def rule(self, user, model):
-        return self.rules.get((user.role, model), Rule(('read',) if user.role == 'viewer' else ('read', 'create', 'update', 'delete')))
+        return self.rules.get((user.role, model), Rule(default_operations(user.role)))
 
     def allows(self, user, model, operation):
         if operation in ('create', 'update', 'delete') and model in getattr(self.registry, 'effect_targets', ()):
@@ -317,7 +331,19 @@ class Policy:
                         result[name] = None
         return results
 
-    def query_fields(self, user, model, filters, order_by):
+    def _readable_ids(self, database, user, target, key, value):
+        """Whether an eq or in filter on a row-scoped Link names only records this user can read."""
+        if database is None or not (key.endswith('__in') or '__' not in key or key.endswith('__eq')):
+            return False
+        ids = value if key.endswith('__in') else [value]
+        if not isinstance(ids, list) or not ids or len(ids) > 100 or any(type(item) is not int for item in ids):
+            return False
+        with database._connection() as connection:
+            return set(ids) <= self.visible(SimpleNamespace(connection=connection), user, target, ids)
+
+    def query_fields(self, user, model, filters, order_by, *, database=None):
+        """Refuse query fields that could disclose rows or fields. With database, eq and in filters on a
+        row-scoped Link are allowed when every id is a record the user can read, such as a portal user's customer."""
         readable = {'id', *self.fields(user, model)}
         keys = list(filters or {}) + list(order_by or ())
         for key in keys:
@@ -331,7 +357,8 @@ class Policy:
                 raise AccessError(403, 'Query field is unavailable')
             field = model.__fields__.get(parts[0])
             if isinstance(field, Link) and self.rule(user, field.target).scope is not None:
-                raise AccessError(403, 'Queries on this restricted relationship are unavailable')
+                if not (key in (filters or {}) and self._readable_ids(database, user, field.target, key, filters[key])):
+                    raise AccessError(403, 'Queries on this restricted relationship are unavailable')
             if isinstance(field, Reference):
                 # Matching a reference could reveal one this role cannot follow. Equality needs a target
                 # model readable without row scope; other filters need that for every model.

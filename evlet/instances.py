@@ -25,7 +25,7 @@ from .migrations import Migration
 from .permissions import Policy
 from .models import Registry
 from .ui import ViewRegistry
-from .routing import require_served, resolve_routes
+from .routing import resolve_routes
 
 
 @dataclass(frozen=True)
@@ -35,10 +35,14 @@ class Instance:
     storage: str = 'local'
     domain: str | None = None
     timezone: str = 'UTC'
+    # Reverse proxies whose X-Forwarded-For is believed, such as ("127.0.0.1", "::1"). Empty: none.
+    trusted_proxies: tuple = ()
 
     def __post_init__(self):
         from .cli.project import valid_name
+        from .auth import proxy_networks
         valid_name(self.name)
+        object.__setattr__(self, 'trusted_proxies', proxy_networks(self.trusted_proxies))
         ZoneInfo(self.timezone)
         if self.database != 'sqlite':
             raise ValueError('The instance CLI supports isolated SQLite databases; use the existing PostgreSQL API for separately configured databases')
@@ -73,9 +77,10 @@ class AppDefinition:
     reports: tuple = ()
     apis: tuple = ()
     frontends: tuple = ()
+    api_scopes: tuple = ()
 
     def __post_init__(self):
-        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends'):
+        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes'):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         if not callable(self.actions):
             object.__setattr__(self, 'actions', tuple(self.actions))
@@ -83,9 +88,11 @@ class AppDefinition:
         from .services import CalendarSchedule
         if any(not isinstance(schedule, (Schedule, CalendarSchedule)) for schedule in self.schedules):
             raise ValueError('Register Schedule definitions')
-        from .routing import Frontend
+        from .routing import ApiScope, Frontend
         if any(not isinstance(frontend, Frontend) for frontend in self.frontends):
             raise ValueError('Register Frontend definitions')
+        if any(not isinstance(scope, ApiScope) for scope in self.api_scopes):
+            raise ValueError('Register ApiScope definitions')
 
 
 def read_instance(path):
@@ -297,10 +304,10 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     database_path = database_path or path / 'data/database.sqlite3'
     migrations = migration_plan(definitions, database_path)
     database = Database(database_path, registry, migrations=migrations)
-    routes = resolve_routes(definitions, config, read_routes(path), port=port)
-    require_served(routes, f'instances/{config.name}/routes.py')
+    routes = resolve_routes(definitions, config, read_routes(path), port=port, roots={package.name: package.source_root for package in pinned})
     secure = routes.primary is not None
-    auth = LocalAuth(database, origins=routes.origins(), secure_cookies=secure, allow_setup=not secure)
+    auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=secure, allow_setup=not secure,
+                     trusted_proxies=config.trusted_proxies)
     rules, views, schedules = {}, ViewRegistry(), []
     for name, definition in definitions:
         if rules.keys() & definition.permissions.keys():

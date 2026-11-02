@@ -28,8 +28,9 @@ def modules():
 def playground_app(directory, port=8000):
     app_module, models, migrate = modules()
     database = Database(Path(directory) / 'playground.sqlite3', models.registry, migrations=migrate.migrations)
-    auth = LocalAuth(database, origins=(f'http://127.0.0.1:{port}', f'http://localhost:{port}'), secure_cookies=False, allow_setup=True)
-    app = app_module.build_app(database, auth)
+    routes = app_module.playground_routes(port)
+    auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=False, allow_setup=True)
+    app = app_module.build_app(database, auth, routes=routes)
     app.initialize()
     customer = database.create(models.Customer, name='Example customer', email='hello@example.test')
     project = database.create(models.Project, name='Explore Evlet', customer=customer.id)

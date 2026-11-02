@@ -17,6 +17,7 @@ class BuildPy(build_py):
         (playground / '__init__.py').write_text('"""Bundled framework examples."""\n')
         for name in ('app.py', 'models.py', 'migrate.py', 'ui.py'):
             shutil.copy2(root / 'examples/playground' / name, playground / name)
+        shutil.copytree(root / 'examples/playground/portal', playground / 'portal', dirs_exist_ok=True)
         docs = resources / 'docs'
         docs.mkdir(parents=True, exist_ok=True)
         (docs / 'handoff.md').unlink(missing_ok=True)
