@@ -81,15 +81,14 @@ class Application:
             body = None
             internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/'))
             if internal:
-                # OAuth and the remote MCP endpoint read their own bodies (JSON or form).
-                from .mcp import MAX_MESSAGE
+                # OAuth and the remote MCP endpoint read their own bodies (JSON or form), at most 64 KiB like /api.
                 data = bytearray()
                 while scope['method'] == 'POST':
                     event = await receive()
                     if event['type'] == 'http.disconnect':
                         return
                     data.extend(event.get('body', b''))
-                    if len(data) > MAX_MESSAGE:
+                    if len(data) > MAX_BODY_BYTES:
                         raise HTTPError(413, 'Request body exceeds the allowed size')
                     if not event.get('more_body', False):
                         break

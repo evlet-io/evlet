@@ -9,7 +9,7 @@ import time
 from types import MappingProxyType
 from urllib.parse import parse_qs, quote
 
-from .auth import ROLE_ID, ROLES, AccessError, User
+from .auth import ROLE_ID, ROLES, AccessError, LocalAuth, User
 from .fields import Link
 from .models import ValidationError
 from .permissions import CORRECTIONS, Policy, Rule, default_rule
@@ -86,7 +86,10 @@ def grant(database_path, username):
         if row is None:
             raise ValueError(f'No user is named {username}.')
         connection.execute("UPDATE evlet_users SET role='admin', active=1 WHERE id=?", (row[0],))
-        connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (row[0],))
+        if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_mcp_clients'").fetchone():
+            LocalAuth.end_sessions(connection, row[0])
+        else:
+            connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (row[0],))
         audit(connection, 'cli', 'Users', username.lower(), 'Made an active admin from the server shell',
               {'role': row[1], 'active': bool(row[2])}, {'role': 'admin', 'active': True})
         # An allowlist that shuts everyone out is cleared too; routes.py stays as it is.

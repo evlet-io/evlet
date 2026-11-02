@@ -141,6 +141,7 @@ class Business:
         self.auth.initialize()
         self.controls.initialize()
         self.connectors.initialize()
+        self.assistants.initialize()
         self.storage.initialize(self.database)
         if self.registry.plans:
             with self.database.transaction() as tx:

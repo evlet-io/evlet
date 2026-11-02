@@ -19,10 +19,11 @@ from .auth import AccessError, KeyAccess, User, client_network
 from .connector import ConnectorError, strict_json
 from .controls import ADMIN_ONLY, NOT_FOUND, audit
 from .database import ConflictError, NotFoundError
-from .mcp import BY_NAME, MCPServer
+from .mcp import BY_NAME, SUPPORTED, MCPServer
 from .models import ValidationError
 
-ACCESS_SECONDS, REFRESH_SECONDS, CODE_SECONDS, KEEP_CALLS = 3600, 30 * 86400, 300, 30 * 86400
+ACCESS_SECONDS, REFRESH_SECONDS, CODE_SECONDS, KEEP = 3600, 30 * 86400, 300, 30 * 86400
+MAX_CLIENTS, MAX_PER_USER, LIGHT_RATE = 1000, 20, 120
 ACCESS = re.compile(r'evm_[A-Za-z0-9_-]{43}')
 VERIFIER = re.compile(r'[A-Za-z0-9._~-]{43,128}')
 CHALLENGE = re.compile(r'[A-Za-z0-9_-]{43}')
@@ -41,7 +42,8 @@ class OAuthError(Exception):
 
 def redirect_uri_ok(value):
     """https, http on a loopback address (RFC 8252) or a reverse-domain app scheme; no fragment or credentials."""
-    if not isinstance(value, str) or not 8 <= len(value) <= 2000 or '#' in value or any(ord(c) < 33 or ord(c) == 127 for c in value):
+    # ASCII only, so the consent page shows the real (punycode) host.
+    if not isinstance(value, str) or not 8 <= len(value) <= 2000 or not value.isascii() or '#' in value or any(ord(c) < 33 or ord(c) == 127 for c in value):
         return False
     try:
         url = urlsplit(value)
@@ -111,8 +113,12 @@ class RemoteServer(MCPServer):
         try:
             return super().call(name, values)
         except Exception as exc:
+            denied = getattr(exc, 'status', None) == 403
             if self.call_id is not None:
-                self.assistants.outcome(self.call_id, 'denied' if getattr(exc, 'status', None) == 403 else 'failed')
+                self.assistants.outcome(self.call_id, 'denied' if denied else 'failed')
+            elif denied and name in BY_NAME:
+                # Refused by the workspace settings (a disabled tool, writes off) before it was admitted.
+                self.assistants.count(self.row['id'], name, values.get('model') if isinstance(values, dict) else None, None, 'denied')
             raise
 
 
@@ -122,6 +128,27 @@ class Assistants:
 
     def settings(self):
         return self.business.controls.settings
+
+    def initialize(self):
+        self.pruned = 0.0
+        self.prune()
+
+    def prune(self):
+        """Remove calls and signed-out connections after 30 days, and registrations nobody connected within a day.
+        Runs at start and at most once an hour after that, whether or not assistants are used."""
+        now = time.time()
+        if now - getattr(self, 'pruned', 0.0) < 3600:
+            return
+        self.pruned = now
+        now = int(now)
+        with self.database.transaction() as tx:
+            connection = tx.connection
+            connection.execute('DELETE FROM evlet_mcp_calls WHERE at<?', (now - KEEP,))
+            connection.execute('DELETE FROM evlet_mcp_clients WHERE revoked_at<?', (now - KEEP,))
+            connection.execute('DELETE FROM evlet_oauth_codes WHERE expires<=?', (now,))
+            connection.execute('DELETE FROM evlet_mcp_tokens WHERE expires<=?', (now,))
+            connection.execute('DELETE FROM evlet_oauth_clients WHERE created_at<? AND NOT EXISTS '
+                               '(SELECT 1 FROM evlet_mcp_clients c WHERE c.oauth_client=evlet_oauth_clients.id)', (now - 86400,))
 
     def narrow(self, user, row=None):
         """The user an assistant acts as: never more than the person, minus hidden models and apps left out."""
@@ -163,9 +190,11 @@ class Assistants:
         if method != expect:
             raise HTTPError(405, 'Method not allowed', [(b'allow', expect.encode())])
         if path in ('/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/_/mcp'):
-            return 200, {'resource': origin + '/_/mcp', 'authorization_servers': [origin], 'bearer_methods_supported': ['header'],
+            # RFC 9728: the metadata path names the resource it describes.
+            resource = origin + path.removeprefix('/.well-known/oauth-protected-resource')
+            return 200, {'resource': resource, 'authorization_servers': [origin], 'bearer_methods_supported': ['header'],
                          'scopes_supported': ['mcp'], 'resource_name': (self.business.application or {}).get('name', 'Evlet')}, []
-        if path in ('/.well-known/oauth-authorization-server', '/.well-known/oauth-authorization-server/_/mcp'):
+        if path == '/.well-known/oauth-authorization-server':  # RFC 8414: the issuer has no path
             methods = ['none', 'client_secret_post', 'client_secret_basic']
             return 200, {'issuer': origin, 'authorization_endpoint': origin + '/_/oauth/authorize', 'token_endpoint': origin + '/_/oauth/token',
                          'registration_endpoint': origin + '/_/oauth/register', 'revocation_endpoint': origin + '/_/oauth/revoke',
@@ -173,6 +202,7 @@ class Assistants:
                          'code_challenge_methods_supported': ['S256'], 'token_endpoint_auth_methods_supported': methods,
                          'revocation_endpoint_auth_methods_supported': methods, 'scopes_supported': ['mcp'],
                          'authorization_response_iss_parameter_supported': True}, []
+        self.prune()
         if path == '/_/oauth/authorize':
             from .ui.serving import static_response
             response = static_response('/')
@@ -243,13 +273,13 @@ class Assistants:
         secret = None if method == 'none' else 'evs_' + secrets.token_urlsafe(32)
         now = int(time.time())
         with self.database.transaction() as tx:
-            # Registrations nobody connected within a day are removed.
+            # Registrations with no connected client after a day are removed; signed-out connections don't keep them.
             tx.connection.execute('DELETE FROM evlet_oauth_clients WHERE created_at<? AND NOT EXISTS '
-                                  '(SELECT 1 FROM evlet_mcp_clients c WHERE c.oauth_client=evlet_oauth_clients.id)', (now - 86400,))
-            if tx.connection.execute('SELECT count(*) FROM evlet_oauth_clients').fetchone()[0] >= 1000:
+                                  '(SELECT 1 FROM evlet_mcp_clients c WHERE c.oauth_client=evlet_oauth_clients.id AND c.revoked_at IS NULL)', (now - 86400,))
+            if tx.connection.execute('SELECT count(*) FROM evlet_oauth_clients').fetchone()[0] >= MAX_CLIENTS:
                 raise OAuthError('temporarily_unavailable', 'Too many registered clients. Try again tomorrow.', 503)
-            tx.connection.execute('INSERT INTO evlet_oauth_clients(id,name,redirect_uris,secret,created_at) VALUES (?,?,?,?,?)',
-                                  (client_id, name.strip(), json.dumps(uris), secret and digest(secret), now))
+            tx.connection.execute('INSERT INTO evlet_oauth_clients(id,name,redirect_uris,secret,auth_method,created_at) VALUES (?,?,?,?,?,?)',
+                                  (client_id, name.strip(), json.dumps(uris), secret and digest(secret), method, now))
         result = {'client_id': client_id, 'client_id_issued_at': now, 'client_name': name.strip(), 'redirect_uris': uris,
                   'grant_types': ['authorization_code', 'refresh_token'], 'response_types': ['code'], 'token_endpoint_auth_method': method}
         return {**result, 'client_secret': secret, 'client_secret_expires_at': 0} if secret else result
@@ -258,7 +288,9 @@ class Assistants:
         """The registered client making a token or revocation request, with its secret checked when it has one."""
         client_id, secret = form.get('client_id'), form.get('client_secret')
         value = dict(scope.get('headers', [])).get(b'authorization', b'').decode('latin1')
+        used = 'client_secret_post' if secret is not None else 'none'
         if value[:6].lower() == 'basic ':
+            used = 'client_secret_basic' if secret is None else 'both'
             try:
                 client_id, _, secret = base64.b64decode(value[6:].strip(), validate=True).decode().partition(':')
                 client_id, secret = unquote(client_id), unquote(secret)
@@ -266,7 +298,8 @@ class Assistants:
                 raise OAuthError('invalid_client', 'Unknown client.', 401) from None
         with self.database._connection() as connection:
             row = connection.execute('SELECT * FROM evlet_oauth_clients WHERE id=?', (client_id or '',)).fetchone()
-        if row is None or (row['secret'] is not None and not (secret and hmac.compare_digest(row['secret'], digest(secret)))):
+        # The client authenticates exactly the way it registered: a public client never sends a secret.
+        if row is None or used != row['auth_method'] or (row['secret'] is not None and not (secret and hmac.compare_digest(row['secret'], digest(secret)))):
             raise OAuthError('invalid_client', 'Unknown client.', 401)
         return row
 
@@ -314,6 +347,8 @@ class Assistants:
                     grant_id = connection.execute('INSERT INTO evlet_mcp_clients(user_id,oauth_client,client_name,created_at,calls,allow_changes,apps) VALUES (?,?,?,?,0,?,?)',
                                                   (code['user_id'], client['id'], client['name'], now, code['allow_changes'], latest['apps'] if latest else None)).lastrowid
                     connection.execute('UPDATE evlet_oauth_codes SET grant_id=? WHERE hash=?', (grant_id, code['hash']))
+                    person = connection.execute('SELECT username FROM evlet_users WHERE id=?', (code['user_id'],)).fetchone()['username']
+                    audit(connection, person, AREA, f"{client['name']} · {person}", 'Client connected' + (', can make changes' if code['allow_changes'] else ''))
                     result = self.issue(connection, grant_id)
             elif form.get('grant_type') == 'refresh_token':
                 row = connection.execute("SELECT t.hash, t.client_id, t.used, m.oauth_client, u.active FROM evlet_mcp_tokens t JOIN evlet_mcp_clients m ON m.id=t.client_id "
@@ -326,6 +361,7 @@ class Assistants:
                     result = invalid
                 else:
                     connection.execute('UPDATE evlet_mcp_tokens SET used=1 WHERE hash=?', (row['hash'],))
+                    connection.execute("DELETE FROM evlet_mcp_tokens WHERE client_id=? AND kind='access'", (row['client_id'],))
                     result = self.issue(connection, row['client_id'])
             else:
                 raise OAuthError('unsupported_grant_type', 'Use authorization_code or refresh_token.')
@@ -366,24 +402,30 @@ class Assistants:
             return 400, MCPServer.error(None, -32700, 'Invalid JSON')
         if isinstance(message, list):
             return 400, MCPServer.error(None, -32600, 'Send one JSON-RPC message per request')
+        version = dict(scope.get('headers', [])).get(b'mcp-protocol-version')
+        if version is not None and version.decode('latin1') not in SUPPORTED:
+            return 400, MCPServer.error(None, -32600, 'Unsupported MCP protocol version')
+        if isinstance(message, dict) and 'method' not in message and ('result' in message or 'error' in message):
+            return 202, None  # A client's reply; this server sends no requests, so there is nothing to match it with.
+        if isinstance(message, dict) and message.get('method') != 'tools/call' and not self.auth._count(f"mcp:{row['id']}", LIGHT_RATE):
+            return 429, MCPServer.error(message.get('id') if type(message.get('id')) in (str, int) else None, -32000, 'Too many requests. Try again in a minute.')
         server = RemoteServer(self, LocalClient(self.business, scope, user), row)
         if isinstance(message, dict) and message.get('method') == 'initialize':
             server.state = 'new'
         output = server.message(message)
         return (202, None) if output is None else (200, output)
 
-    def count(self, client_id, tool, model, rate):
-        """Admit one tool call within the per-client rate, and record it. Returns the call's row."""
+    def count(self, client_id, tool, model, rate, outcome='ok'):
+        """Admit one tool call within the per-client rate (None: record a refusal), and record it. Returns the call's row."""
         now = int(time.time())
         with self.database.transaction() as tx:
             connection = tx.connection
-            if connection.execute('SELECT count(*) FROM evlet_mcp_calls WHERE client_id=? AND at>?', (client_id, now - 60)).fetchone()[0] >= rate:
+            if rate is not None and connection.execute('SELECT count(*) FROM evlet_mcp_calls WHERE client_id=? AND at>?', (client_id, now - 60)).fetchone()[0] >= rate:
                 raise ConnectorError(429, f'Use at most {rate} tool calls per minute.')
-            connection.execute('DELETE FROM evlet_mcp_calls WHERE at<?', (now - KEEP_CALLS,))
             connection.execute('UPDATE evlet_mcp_clients SET calls=calls+1, last_used=? WHERE id=?', (now, client_id))
             kind = 'read' if BY_NAME[tool]['annotations']['readOnlyHint'] else 'write'
             return connection.execute('INSERT INTO evlet_mcp_calls(client_id,at,tool,model,kind,outcome) VALUES (?,?,?,?,?,?)',
-                                      (client_id, now, tool, model, kind, 'ok')).lastrowid
+                                      (client_id, now, tool, model if isinstance(model, str) else None, kind, outcome)).lastrowid
 
     def outcome(self, call_id, outcome):
         with self.database.transaction() as tx:
@@ -408,7 +450,7 @@ class Assistants:
             raise AccessError(400, "The assistant asked to return to an address it didn't register. Start connecting again from the assistant.")
         if params.get('response_type') != 'code' or params.get('code_challenge_method') != 'S256' or not CHALLENGE.fullmatch(params.get('code_challenge', '')):
             raise AccessError(400, 'The assistant sent an incomplete sign-in request. Update the assistant and try again.')
-        if len(params.get('state', '')) > 1000 or ('resource' in params and params['resource'].rstrip('/') != origin + '/_/mcp'):
+        if len(params.get('state', '')) > 1000 or ('resource' in params and params['resource'].rstrip('/') not in (origin, origin + '/_/mcp')):
             raise AccessError(400, 'This sign-in request is for another server. Start connecting again from the assistant.')
         return client, params
 
@@ -424,13 +466,17 @@ class Assistants:
         client, params = self.request(body['query'].encode('ascii', 'replace'), origin)
         if not body['approve']:
             return {'redirect': self.back(params, origin, error='access_denied')}
+        with self.database._connection() as connection:
+            active = connection.execute('SELECT count(*) FROM evlet_mcp_clients WHERE user_id=? AND revoked_at IS NULL AND oauth_client<>?', (user.id, client['id'])).fetchone()[0]
+        if active >= MAX_PER_USER:
+            raise AccessError(409, f'You have {MAX_PER_USER} connected assistants. Disconnect one in Settings first.')
         code = secrets.token_urlsafe(32)
         # The person's choice is kept; it only has effect while Controls allows changes (mcp.allow_writes).
         changes = body.get('allow_changes', False)
         with self.database.transaction() as tx:
             tx.connection.execute('INSERT INTO evlet_oauth_codes(hash,oauth_client,user_id,redirect_uri,challenge,allow_changes,expires) VALUES (?,?,?,?,?,?,?)',
                                   (digest(code), client['id'], user.id, params['redirect_uri'], params['code_challenge'], int(changes), int(time.time()) + CODE_SECONDS))
-            audit(tx.connection, user.username, AREA, f"{client['name']} · {user.username}", 'Client connected' + (', can make changes' if changes else ''))
+            audit(tx.connection, user.username, AREA, f"{client['name']} · {user.username}", 'Consent given')
         return {'redirect': self.back(params, origin, code=code)}
 
     def visible_apps(self, user):
@@ -444,7 +490,7 @@ class Assistants:
             clients = [dict(row) for row in connection.execute('SELECT id, client_name, created_at, last_used, calls, allow_changes, apps FROM evlet_mcp_clients '
                                                                 'WHERE user_id=? AND revoked_at IS NULL ORDER BY id DESC', (user.id,))]
             requests = [dict(row) for row in connection.execute('SELECT k.at, m.client_name, k.tool, k.model, k.kind, k.outcome FROM evlet_mcp_calls k '
-                                                                 'JOIN evlet_mcp_clients m ON m.id=k.client_id WHERE m.user_id=? ORDER BY k.id DESC LIMIT 50', (user.id,))]
+                                                                 'JOIN evlet_mcp_clients m ON m.id=k.client_id WHERE m.user_id=? AND k.at>? ORDER BY k.id DESC LIMIT 50', (user.id, int(time.time()) - KEEP))]
         for item in clients:
             item['allow_changes'], item['apps'] = bool(item['allow_changes']), None if item['apps'] is None else json.loads(item['apps'])
         return {'enabled': settings['mcp.enabled'], 'writes': settings['mcp.allow_writes'], 'address': origin + '/_/mcp',
@@ -463,7 +509,8 @@ class Assistants:
             visible = self.visible_apps(user)
             if apps is not None and (not isinstance(apps, list) or not apps or any(app not in visible for app in apps) or len(set(apps)) != len(apps)):
                 raise ValidationError({'apps': "Choose apps you can use, each once. You can't give an assistant more than your own access."})
-            stored = None if apps is None or set(apps) == set(visible) else json.dumps([app for app in visible if app in apps])
+            # An explicit list stays explicit: apps installed later aren't added on their own.
+            stored = None if apps is None else json.dumps([app for app in visible if app in apps])
             with self.database.transaction() as tx:
                 tx.connection.execute('UPDATE evlet_mcp_clients SET apps=? WHERE user_id=? AND revoked_at IS NULL', (stored, user.id))
             return
@@ -503,6 +550,7 @@ class Assistants:
         origin = self.origin(scope)
         if origin is None:
             raise AccessError(404, NOT_FOUND)
+        self.prune()
         if path == '/api/_oauth/authorize':
             if not self.settings()['mcp.enabled']:
                 raise AccessError(403, OFF)

@@ -238,15 +238,16 @@ A stored value that no longer validates fails closed: the switches turn off, the
 under `MCP`.
 
 The page also lists connected clients (who, last call, number of calls) and totals for the
-last 24 hours: reads, writes and calls denied by permissions. Admins can sign a client out at
+last 24 hours: reads, writes and calls denied by permissions or by these settings. Admins can sign a client out at
 once; only admins sign out an admin's client. Per-request detail is only on each person's own
 AI page. Clients also count in the Users page sessions, and "Sign out everywhere", a password
 or role change and deactivation sign them out too.
 
 The personal page is the `MyAIPage` component (`frontend/src/evlet/settings/ai.ts`), ready for
 the Settings shell. It shows the connect steps, the person's assistants with "Can make changes"
-and Disconnect, the apps assistants can use (only narrower than the person's own access), their
-last 50 requests and the local `evlet mcp` steps. "Can make changes" has effect only while
+and Disconnect, the apps assistants can use (only narrower than the person's own access; once
+chosen, apps installed later stay off), their last 50 requests from the past 30 days and the
+local `evlet mcp` steps. "Can make changes" has effect only while
 `mcp.allow_writes` is on.
 
 ## Audit log

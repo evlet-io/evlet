@@ -212,7 +212,7 @@ def test_tools_respect_permissions_writes_hidden_models_disabled_tools_and_rate(
     _, admin, _ = connect(secured, 'admin')
     assert 'list_records' not in tools(secured, admin['access_token'])
     assert tool(secured, admin['access_token'], 'list_records', {'model': 'project'})['structuredContent']['status'] == 403
-    for _ in range(3):
+    for _ in range(2):  # the refused call above counts toward the rate too
         assert tool(secured, admin['access_token'], 'get_record', {'model': 'project', 'id': 999999})['structuredContent']['status'] == 404
     assert tool(secured, admin['access_token'], 'discover_models', {})['structuredContent']['status'] == 429
     assert not tool(secured, write, 'discover_models', {})['isError']  # the rate is per client
@@ -350,3 +350,143 @@ def test_settings_are_validated_and_stdio_follows_them(secured):
 def test_consent_page_is_the_desk_shell_with_its_csp(secured):
     status, page, headers = send(secured, 'GET', '/_/oauth/authorize?client_id=x')
     assert status == 200 and b'<div id="evlet-app">' in page and b"frame-ancestors 'none'" in headers[b'content-security-policy']
+
+
+def queue(secured, monkeypatch):
+    from evlet import Task
+    seen = []
+    monkeypatch.setitem(secured.business.jobs.tasks, 'project_progress', Task('project_progress', lambda tx, job, payload: seen.append(job.user)))
+    project = client(secured)('POST', '/api/project', {'name': 'Queued'})[1]
+    return seen, project
+
+
+def test_jobs_queued_by_an_assistant_keep_its_narrowing(secured, monkeypatch):
+    from examples.playground.models import Customer
+    seen, project = queue(secured, monkeypatch)
+    settings(secured, hidden_models=['Customer'], allow_writes=True)
+    _, tokens, _ = connect(secured, 'admin')
+    assert not tool(secured, tokens['access_token'], 'run_action', {'model': 'project', 'id': project['id'], 'action': 'refresh_progress'})['isError']
+    assert secured.business.jobs.run_one()
+    user = seen[0]
+    assert user.access is not None and user.access.assistant > 0
+    assert not secured.business.policy.allows(user, Customer, 'read')
+
+
+def test_jobs_of_a_disconnected_assistant_fail_plainly(secured, monkeypatch):
+    seen, project = queue(secured, monkeypatch)
+    settings(secured, allow_writes=True)
+    _, tokens, person = connect(secured, 'admin')
+    result = tool(secured, tokens['access_token'], 'run_action', {'model': 'project', 'id': project['id'], 'action': 'refresh_progress'})
+    job = result['structuredContent']['job']['id']
+    person('DELETE', f"/api/_settings/me/ai/{person('GET', '/api/_settings/me/ai')[1]['clients'][0]['id']}")
+    secured.business.jobs.run_one()
+    assert seen == []
+    with secured.database._connection() as connection:
+        assert tuple(connection.execute('SELECT state, error FROM evlet_jobs WHERE id=?', (job,)).fetchone()) == ('failed', 'The AI assistant that queued this job was disconnected.')
+
+
+def test_registration_cap_ignores_signed_out_connections_and_recovers(secured, monkeypatch):
+    import evlet.assistants
+    monkeypatch.setattr(evlet.assistants, 'MAX_CLIENTS', 3)
+    for _ in range(3):
+        connect(secured, 'editor')
+    status, data, _ = register(secured)
+    assert status == 503 and data['error'] == 'temporarily_unavailable'
+    with secured.database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_oauth_clients SET created_at=0')
+        tx.connection.execute('UPDATE evlet_mcp_clients SET revoked_at=1')  # signed out long ago
+    assert register(secured)[0] == 201
+    secured.business.assistants.pruned = 0
+    secured.business.assistants.prune()
+    with secured.database._connection() as connection:
+        assert connection.execute('SELECT count(*) FROM evlet_mcp_clients').fetchone()[0] == 0
+        assert connection.execute('SELECT count(*) FROM evlet_oauth_clients').fetchone()[0] == 1
+
+
+def test_people_have_at_most_twenty_connected_assistants(secured, monkeypatch):
+    import evlet.assistants
+    monkeypatch.setattr(evlet.assistants, 'MAX_PER_USER', 2)
+    connect(secured, 'editor'); connect(secured, 'editor')
+    _, registered, _ = register(secured)
+    _, challenge = pkce()
+    status, data, _ = client(secured, 'editor')('POST', '/api/_oauth/authorize', {'query': authorize_query(registered['client_id'], challenge), 'approve': True})
+    assert status == 409 and 'Disconnect one' in data['error']
+
+
+def code_for(secured, role='editor'):
+    _, registered, _ = register(secured)
+    verifier, challenge = pkce()
+    approved = client(secured, role)('POST', '/api/_oauth/authorize', {'query': authorize_query(registered['client_id'], challenge), 'approve': True})[1]
+    code = parse_qs(urlsplit(approved['redirect']).query)['code'][0]
+    return {'grant_type': 'authorization_code', 'code': code, 'redirect_uri': CALLBACK, 'client_id': registered['client_id'], 'code_verifier': verifier}
+
+
+def test_unused_codes_end_with_sessions_password_changes_and_break_glass(secured):
+    from evlet.controls import grant
+    admin = client(secured)
+    users = {row['username']: row['id'] for row in admin('GET', '/api/_controls/users')[1]['items']}
+    exchange = code_for(secured)
+    admin('PATCH', f"/api/_controls/users/{users['editor']}", {'sessions': 'end'})
+    assert form(secured, '/_/oauth/token', exchange)[1]['error'] == 'invalid_grant'
+    exchange = code_for(secured)
+    admin('PATCH', f"/api/_controls/users/{users['editor']}", {'password': 'another long test password'})
+    assert form(secured, '/_/oauth/token', exchange)[1]['error'] == 'invalid_grant'
+    _, tokens, _ = connect(secured, 'viewer')
+    exchange = code_for(secured, 'viewer')
+    grant(secured.database.path, 'viewer')
+    assert rpc(secured, tokens['access_token'], 'ping')[0] == 401
+    assert form(secured, '/_/oauth/token', exchange)[1]['error'] == 'invalid_grant'
+
+
+def test_calls_older_than_thirty_days_are_pruned_without_new_calls(secured):
+    _, tokens, person = connect(secured, 'editor')
+    tool(secured, tokens['access_token'], 'discover_models', {})
+    with secured.database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_mcp_calls SET at=at-31*86400')
+    assert person('GET', '/api/_settings/me/ai')[1]['requests'] == []
+    secured.business.assistants.pruned = 0
+    secured.business.initialize()
+    with secured.database._connection() as connection:
+        assert connection.execute('SELECT count(*) FROM evlet_mcp_calls').fetchone()[0] == 0
+
+
+def test_refusals_from_settings_count_as_denied(secured):
+    settings(secured, disabled_tools=['list_records'])
+    _, tokens, _ = connect(secured, 'editor')
+    assert tool(secured, tokens['access_token'], 'list_records', {'model': 'project'})['isError']
+    assert tool(secured, tokens['access_token'], 'create_record', {'model': 'project', 'values': {'name': 'No'}})['isError']
+    assert client(secured)('GET', '/api/_controls/mcp')[1]['totals'] == {'reads': 0, 'writes': 0, 'denied': 2}
+
+
+def test_protocol_and_oauth_details(secured):
+    client_id, tokens, person = connect(secured)
+    bearer = {b'content-type': b'application/json', b'authorization': f"Bearer {tokens['access_token']}".encode()}
+    assert send(secured, 'POST', '/_/mcp', b'{"jsonrpc":"2.0","id":5,"result":{}}', bearer)[0] == 202
+    assert send(secured, 'POST', '/_/mcp', b'{"jsonrpc":"2.0","id":5,"error":{"code":1,"message":"x"}}', bearer)[0] == 202
+    assert send(secured, 'POST', '/_/mcp', b'{"jsonrpc":"2.0","id":1,"method":"ping"}', {**bearer, b'mcp-protocol-version': b'1999-01-01'})[0] == 400
+    assert send(secured, 'POST', '/_/mcp', b'{"jsonrpc":"2.0","id":1,"method":"ping"}', {**bearer, b'mcp-protocol-version': b'2025-06-18'})[0] == 200
+    assert send(secured, 'POST', '/_/mcp', b'{"jsonrpc":"2.0","id":1,"method":"ping","x":"' + b'a' * 70000 + b'"}', bearer)[0] == 413
+    refresh = {'grant_type': 'refresh_token', 'refresh_token': tokens['refresh_token'], 'client_id': client_id}
+    assert form(secured, '/_/oauth/token', {**refresh, 'client_secret': 'whatever'})[0] == 401  # a public client sends no secret
+    status, fresh, _ = form(secured, '/_/oauth/token', refresh)
+    assert status == 200 and rpc(secured, tokens['access_token'], 'ping')[0] == 401 and rpc(secured, fresh['access_token'], 'ping')[0] == 200
+    assert send(secured, 'GET', '/.well-known/oauth-protected-resource')[1]['resource'] == ORIGIN
+    assert send(secured, 'GET', '/.well-known/oauth-protected-resource/_/mcp')[1]['resource'] == ORIGIN + '/_/mcp'
+    assert send(secured, 'GET', '/.well-known/oauth-authorization-server/_/mcp')[0] == 404
+    _, basic, _ = register(secured, token_endpoint_auth_method='client_secret_basic')
+    assert form(secured, '/_/oauth/token', {'grant_type': 'refresh_token', 'refresh_token': 'x', 'client_id': basic['client_id'], 'client_secret': basic['client_secret']})[0] == 401
+    assert register(secured, ('https://cläude.ai/cb',))[0] == 400
+    exchange = code_for(secured)
+    with secured.database._connection() as connection:
+        details = [row[0] for row in connection.execute("SELECT detail FROM evlet_audit WHERE area='MCP' ORDER BY id")]
+    assert details[-1] == 'Consent given'
+    form(secured, '/_/oauth/token', exchange)
+    with secured.database._connection() as connection:
+        assert connection.execute("SELECT detail FROM evlet_audit WHERE area='MCP' ORDER BY id DESC").fetchone()[0] == 'Client connected'
+
+
+def test_other_requests_have_a_light_rate(secured, monkeypatch):
+    import evlet.assistants
+    monkeypatch.setattr(evlet.assistants, 'LIGHT_RATE', 3)
+    _, tokens, _ = connect(secured)
+    assert [rpc(secured, tokens['access_token'], 'ping')[0] for _ in range(4)] == [200, 200, 200, 429]

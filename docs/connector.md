@@ -187,7 +187,7 @@ OAuth 2.1, served on the primary host only (any other host gets 404):
 
 | Route | Purpose |
 |---|---|
-| `GET /.well-known/oauth-protected-resource[/_/mcp]` | Protected resource metadata (RFC 9728) |
+| `GET /.well-known/oauth-protected-resource/_/mcp` | Protected resource metadata (RFC 9728); the bare path describes the origin |
 | `GET /.well-known/oauth-authorization-server` | Authorization server metadata (RFC 8414) |
 | `POST /_/oauth/register` | Dynamic client registration (RFC 7591), JSON |
 | `GET /_/oauth/authorize` | The consent page, for a signed-in desk user |
@@ -196,33 +196,45 @@ OAuth 2.1, served on the primary host only (any other host gets 404):
 | `GET/POST /api/_oauth/authorize` | What the consent page reads and posts (session and CSRF token) |
 | `GET/PATCH /api/_settings/me/ai`, `PATCH/DELETE /api/_settings/me/ai/<id>` | A person's own clients, requests and app choice |
 
-- **Registration.** Redirect URIs (1 to 5) must be `https`, `http` on a loopback address, or
-  a reverse-domain app scheme (`com.example.app:/cb`), with no fragment or credentials.
-  Clients are public (`none`) by default; `client_secret_post` or `client_secret_basic` gets
-  a secret, shown once and stored hashed. Registrations nobody connected within a day are
-  removed. 20 registrations an hour per network.
+- **Registration.** Redirect URIs (1 to 5) must be ASCII (punycode hosts) and `https`, `http`
+  on a loopback address, or a reverse-domain app scheme (`com.example.app:/cb`), with no
+  fragment or credentials. Clients are public (`none`) by default; `client_secret_post` or
+  `client_secret_basic` gets a secret, shown once and stored hashed. A client must
+  authenticate the way it registered: a public client sending a secret is refused.
+  Registrations with no connected client after a day are removed, and only those count
+  toward the limit of 1000. 20 registrations an hour per network.
 - **Authorization.** `response_type=code`, PKCE with `S256` only, and a `redirect_uri` that
   matches a registered one exactly. An unknown client or address is shown on the page and
   never redirected to. `resource`, when sent, must be this server's `/_/mcp`. Consent is
-  asked every time; the answer is a POST with the session's CSRF token. The redirect carries
+  asked every time; the answer is a POST with the session's CSRF token and is audited as
+  "Consent given" ("Client connected" when the code is redeemed). The redirect carries
   `code`, `state` and `iss`. Codes last 5 minutes and work once; using one twice signs out the
-  client it created.
+  client it created. Signing a person out everywhere, a password or role change,
+  deactivation and `evlet controls grant` delete their unused codes. A person can have 20
+  connected clients at most.
 - **Tokens.** Access tokens (`evm_...`) last an hour; refresh tokens (`evr_...`) last 30 days
-  and rotate on every use. A rotated refresh token used again signs the client out. Tokens
+  and rotate on every use; refreshing also ends the previous access token. A rotated refresh
+  token used again signs the client out. Tokens
   are bound to the client and the person, stored as SHA-256 hashes and never logged. The token
   and revocation endpoints allow 60 requests a minute per network. Networks are read through
   the trusted proxy settings when they are configured.
 - **The endpoint.** Requests need `Authorization: Bearer evm_...`; without a valid one the
   answer is 401 with `WWW-Authenticate: Bearer resource_metadata="..."`. A request with an
   `Origin` header that isn't one of the instance's origins is refused. Tokens only work here,
-  never on `/api`. Bodies are at most 128 KiB.
+  never on `/api`. Bodies are at most 64 KiB, as on `/api`. An `MCP-Protocol-Version` header
+  this server doesn't support gets 400; a client's JSON-RPC response gets 202. Requests other
+  than tool calls (initialize, ping, tools/list) are limited to 120 a minute per client and
+  process.
 - **Clients and calls.** `evlet_oauth_clients` holds registrations, `evlet_mcp_clients(id,
   user_id, oauth_client, client_name, created_at, last_used, calls, allow_changes, apps,
   revoked_at)` each person's connected clients, `evlet_oauth_codes` and `evlet_mcp_tokens`
   the hashed codes and tokens, and `evlet_mcp_calls` one row per tool call (tool, model,
-  read or write, outcome) for 30 days. Connecting the same client again replaces the
-  earlier connection. The rate limit counts these rows, so it holds across processes.
-- **Jobs.** An action an assistant queues runs as the person, like one queued from the browser.
+  read or write, outcome), including calls refused by the settings. Calls and signed-out
+  connections are deleted after 30 days, at start and hourly. Connecting the same client again
+  replaces the earlier connection. The rate limit counts these rows, so it holds across processes.
+- **Jobs.** A job an assistant queues (`evlet_job_assistants`) runs with the same narrowing,
+  rebuilt from the current settings, and fails with "The AI assistant that queued this job was
+  disconnected." when the connection was signed out first, like jobs queued with an API key.
 
 ## Transport limits and verification
 

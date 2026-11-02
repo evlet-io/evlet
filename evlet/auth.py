@@ -142,7 +142,8 @@ class LocalAuth:
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_api_key_user ON evlet_api_keys(user_id)')
             # AI assistants: registered OAuth clients, each person's connections, their tokens (hashed) and calls.
             for statement in (
-                'CREATE TABLE IF NOT EXISTS evlet_oauth_clients (id TEXT PRIMARY KEY, name TEXT NOT NULL, redirect_uris TEXT NOT NULL, secret TEXT, created_at INTEGER NOT NULL)',
+                "CREATE TABLE IF NOT EXISTS evlet_oauth_clients (id TEXT PRIMARY KEY, name TEXT NOT NULL, redirect_uris TEXT NOT NULL, secret TEXT, "
+                "auth_method TEXT NOT NULL DEFAULT 'none' CHECK(auth_method IN ('none','client_secret_post','client_secret_basic')), created_at INTEGER NOT NULL)",
                 'CREATE TABLE IF NOT EXISTS evlet_mcp_clients (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
                 'oauth_client TEXT NOT NULL REFERENCES evlet_oauth_clients(id) ON DELETE CASCADE, client_name TEXT NOT NULL, created_at INTEGER NOT NULL, last_used INTEGER, '
                 'calls INTEGER NOT NULL DEFAULT 0, allow_changes INTEGER NOT NULL DEFAULT 0, apps TEXT, revoked_at INTEGER)',
@@ -294,6 +295,7 @@ class LocalAuth:
     def end_sessions(connection, user_id):
         """Sign a user out everywhere: browser sessions and connected AI assistants."""
         connection.execute('DELETE FROM evlet_sessions WHERE user_id=?', (user_id,))
+        connection.execute('DELETE FROM evlet_oauth_codes WHERE user_id=?', (user_id,))
         connection.execute('DELETE FROM evlet_mcp_tokens WHERE client_id IN (SELECT id FROM evlet_mcp_clients WHERE user_id=?)', (user_id,))
         connection.execute('UPDATE evlet_mcp_clients SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', (int(time.time()), user_id))
 
