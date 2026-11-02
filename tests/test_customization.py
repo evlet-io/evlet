@@ -910,7 +910,8 @@ def test_instance_fields_follow_the_record_for_roles_whose_rules_list_fields(tmp
     registry = Registry(Deal)
     database = Database(tmp_path / 'deal.sqlite3', registry) if backend == 'sqlite' else PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
     rules = {('editor', Deal): Rule(('read', 'create', 'update'), read_fields=('title', 'amount'), write_fields=('title',)),
-             ('viewer', Deal): Rule(('read',), read_fields=('title',))}
+             ('viewer', Deal): Rule(('read',), read_fields=('title',)),
+             ('portal', Deal): Rule(('read',), read_fields=('title',))}
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False),
                       policy=Policy(database.registry, rules=rules))
     app.initialize()
@@ -949,6 +950,19 @@ def test_instance_fields_follow_the_record_for_roles_whose_rules_list_fields(tmp
     assert admin('PATCH', '/api/deal/1', {'x_zone': 'north'})[0] == 200
     assert viewer('GET', '/api/deal/1')[1]['x_zone'] == 'north' and 'x_region' not in viewer('GET', '/api/deal/1')[1]
     assert editor('PATCH', '/api/deal/1', {'x_zone': 'south'})[0] == 200
+    # Customers in the portal get instance fields only when an admin grants them, and later fields stay hidden from them.
+    from evlet.auth import User
+    customer = User(99, 'buyer', 'portal')
+    def fields(user):
+        with app.database.activated():
+            return app.business.policy.fields(user, Deal)
+    assert fields(customer) == {'title'}
+    assert overrides['portal|Deal']['file']['read'] == ['title']
+    assert save(admin, ('perm', 'portal|Deal', {'ops': ['read'], 'read': ['title', 'x_region'], 'write': None, 'scope': None}))[0] == 200
+    assert fields(customer) == {'title', 'x_region'}
+    assert admin('POST', '/api/_controls/fields/Deal', {'name': 'cost', 'type': 'Text', 'label': 'Internal cost'})[0] == 201
+    assert fields(customer) == {'title', 'x_region'}
+    assert 'x_cost' in fields(User(98, 'viewer', 'viewer'))
     # Fields from the app file stay stricter only.
     status, data, _ = save(admin, ('perm', 'viewer|Deal', {'ops': ['read'], 'read': ['title', 'amount'], 'write': None, 'scope': None}))
     assert status == 422 and 'can only hide more' in json.dumps(data)

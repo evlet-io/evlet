@@ -134,11 +134,15 @@ job and rebuilds its `Policy` and settings when it moved. Open pages get a
 `{"ops": [...], "read": [...] | null, "write": [...] | null, "scope": id | null}`):
 operations (`read`, `create`, `update`, `delete`, `journal`, `void`, `revise`, `unpost`, `repost`), readable and
 writable fields must stay within the file rule. Stricter only applies to the fields declared in
-app files. An instance field (`x_`, added by Controls) follows the record: every role that reads
-the model reads it, and every role that creates or updates the model writes it, also when the app
-rule lists `read_fields` or `write_fields`. The file value on the Permissions page includes it, so
-an override can hide it from a role or make it read only, like any field. Adding a field also adds
-it to the field lists of existing overrides, so it stays hidden only where an admin unticks it.
+app files. An instance field (`x_`, added by Controls) follows the record for every signed-in
+staff role, that is every desk role: each one that reads the model reads it, and each one that
+creates or updates the model writes it, also when the app rule lists `read_fields` or
+`write_fields`. The file value on the Permissions page includes it, so an override can hide it
+from a role or make it read only, like any field. Adding a field also adds it to the field lists
+of existing desk-role overrides, so it stays hidden from staff only where an admin unticks it.
+Portal roles (customers) and public endpoints never get an instance field by default: an admin
+grants it to a portal role with a permission override, and fields added later stay hidden from
+it until ticked there.
 The API, generated screens, API keys, exports and AI assistants all read fields through the same
 `Policy`. Write needs read, no access clears fields and
 rows, revise needs create. Admin rules can't be overridden. The page shows the first four;

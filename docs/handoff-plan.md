@@ -188,9 +188,10 @@ Decisions taken while building them (the owner's where marked):
   some effect is an original, not a reversal. Unposting makes it a draft for this purpose, so
   edits recalculate and `Recompute` includes it. The state it returns to is the start of its
   posting move; when moves from several states post, the latest `moved` journal entry decides.
-- **Instance fields for every role** (owner's decision, 02-11-2026). An instance field follows
-  the record: every role that reads the model reads it and every role that creates or updates it
-  writes it, also when its app rule lists `read_fields` or `write_fields`. An admin can hide it
+- **Instance fields for every staff role** (owner's decision, 02-11-2026). An instance field
+  follows the record for desk roles: every one that reads the model reads it and every one that
+  creates or updates it writes it, also when its app rule lists `read_fields` or `write_fields`.
+  "All users" means signed-in staff: portal roles (customers) get one only through an override. An admin can hide it
   or make it read only per role with a permission override; a field added later also joins the
   field lists of existing overrides. Stricter only still applies to fields declared in app files.
 

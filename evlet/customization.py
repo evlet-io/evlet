@@ -622,10 +622,14 @@ class Customization:
 
     @staticmethod
     def grant_new_field(connection, model, name):
-        """A new instance field is readable and writable like the record. A permission override that lists a role's
-        fields gets it too, so it is hidden from a role only when an admin unticks it there."""
+        """A new instance field is readable and writable like the record for desk roles. A desk role's permission
+        override that lists fields gets it too, so it is hidden from staff only when an admin unticks it there.
+        Portal roles get it only when an admin ticks it."""
         pattern = '%|' + model.__name__.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        desk = {row['id'] for row in connection.execute("SELECT id FROM evlet_roles WHERE realm='desk'")}
         for row in connection.execute("SELECT key, value FROM evlet_overrides WHERE kind='perm' AND key LIKE ? ESCAPE '\\'", (pattern,)).fetchall():
+            if row['key'].partition('|')[0] not in desk:
+                continue
             value = json.loads(row['value'])
             if not isinstance(value, dict) or 'read' not in value.get('ops', []):
                 continue
