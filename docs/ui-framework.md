@@ -1,0 +1,255 @@
+# Evlet UI framework
+
+Status: core in place (phase `ui/01-core` of [handoff-plan.md](handoff-plan.md)). Components,
+screens and the switch away from SolidJS follow in later phases. The code lives in
+`frontend/src/evlet/` and imports nothing from SolidJS, the current views or
+`frontend/legacy`. It has no dependencies of its own.
+
+| Module | What it does |
+|---|---|
+| `reactive.ts` | Cells, derives, effects, batching and ownership scopes |
+| `dom.ts` | Templates, bindings, `when`, `match`, keyed `each`, `portal`, `mount` |
+| `router.ts` | Typed route table over the History API, link handling, guards |
+| `api.ts` | Fetch client for the Python routes: session, CSRF, ETags, typed errors |
+| `model/record.ts` | Record store: a cell per field, row stores per Table, draft over saved values |
+| `model/session.ts` | Calculation session: the finite-v1 engine bound to a record's cells |
+| `model/changes.ts` | Save bodies and Table change sets |
+| `model/format.ts` | AED money, DD-MM-YYYY dates, GST time |
+| `model/schema.ts` | Types for `GET /api/schema` |
+
+There is no virtual DOM. A template builds DOM once, and each dynamic value in it is bound
+to one effect that updates one node, attribute or property.
+
+## Reactive core
+
+```ts
+import { batch, cell, derive, effect, onCleanup, scope } from './evlet/reactive';
+
+const qty = cell('2', { name: 'invoice.lines[3].qty' });
+const rate = cell('12.50', { name: 'invoice.lines[3].rate' });
+const net = derive(() => Number(qty.get()) * Number(rate.get()), { name: 'invoice.lines[3].net' });
+
+const stop = scope(() => {
+  effect(() => console.log('net is', net.get()));
+  onCleanup(() => console.log('stopped'));
+});
+
+batch(() => { qty.set('3'); rate.set('10'); }); // the effect runs once, with both values
+stop();                                         // effects and derives inside are disposed
+```
+
+- `cell(value, {name, equals})` holds a value. `get()` reads and subscribes, `peek()` reads
+  without subscribing, `set()` writes. A write that is equal to the current value (by
+  `Object.is`, or the `equals` you give) does nothing. `equals: false` always notifies.
+- `derive(fn)` is cached and lazy: it computes when read, and again only after something it
+  read really changed. Reading a derive in a stale part of the graph first brings its
+  sources up to date in dependency order, so it never sees half of a change (glitch free)
+  and runs at most once per change, including in diamonds.
+- `effect(fn)` runs now and whenever what it read changes. Returning a function, or calling
+  `onCleanup`, registers cleanup that runs before the next run and on disposal.
+- `batch(fn)` defers effects until the outermost batch ends. A write outside a batch runs
+  its effects at once.
+- `untrack(fn)` reads without subscribing.
+- `scope(fn, {name, onError})` owns everything created inside it and returns `dispose`.
+  Disposal runs children newest first, then cleanups newest first, once. Effects created
+  inside an effect belong to it and are disposed when it runs again.
+- `getOwner()` and `runWithOwner()` attach work done after an `await` to the right scope.
+- Ownership rules. An effect or derive created inside a scope or another effect belongs to
+  it and is disposed with it. An effect created outside any scope lives until its returned
+  stop function is called. A derive created outside any scope subscribes to its sources only
+  while a derive or effect reads it; otherwise it remembers the versions it computed from and
+  checks them when read, so nothing holds it alive. Effects and derives created in a scope
+  that is already disposed never run or subscribe, and `onCleanup` there runs at once.
+  A disposed derive keeps its last value; its readers run again.
+- Errors are isolated. A throwing effect is reported to the nearest scope's `onError`, or
+  to `setErrorHandler`, and the other effects still run. A throwing derive rethrows to its
+  readers and recovers when its inputs change.
+- An effect that writes a cell it read in the same run runs again until it settles. In
+  development, writing a cell while a derive computes throws, naming both. Effects that keep
+  re-triggering each other stop after 1,000 rounds; the error names them and goes to the
+  nearest `onError`.
+- `describe(node)` shows a node's name, value, sources and readers for debugging.
+
+## DOM layer
+
+```ts
+import { each, html, mount, when } from './evlet/dom';
+
+const LineRow = (line: () => Line) => html`
+  <tr class:locked=${() => line().locked}>
+    <td>${() => line().item}</td>
+    <td class="num">${() => formatMoney(line().net)}</td>
+    <td><button on:click=${() => remove(line())} aria-label="Remove line">Remove</button></td>
+  </tr>`;
+
+const dispose = mount(document.querySelector('#app')!, () => html`
+  <table>
+    <tbody>${each(lines, line => line.id, LineRow, { fallback: () => html`<tr><td>No lines yet. Add the first one.</td></tr>` })}</tbody>
+  </table>
+  ${when(() => lines.get().length > 20, () => html`<p>${() => lines.get().length} lines</p>`)}`);
+```
+
+- `html` templates are parsed once per call site and cloned for each use. `template(markup)`
+  does the same for static markup.
+- A value in a hole is reactive when it is a function, a cell or a derive; anything else is
+  set once. Text goes through Text nodes and attributes through `setAttribute`. Data is never
+  parsed as HTML.
+- Attribute forms: `name=${v}` (removed when `null` or `false`), `class="row ${kind}"`
+  (text around values), `class:name=${on}`, `style:width=${v}`, `prop:value=${v}` (keeps
+  the written case), `on:click=${handler}` (removed with the scope) and `ref=${el => ...}`.
+- URLs. Values for `href`, `src`, `action`, `formaction`, `xlink:href`, `poster`,
+  `background`, `data`, `cite`, `codebase`, `longdesc` and `manifest`, as attributes or as
+  `prop:` bindings, pass `safeUrl()`: http, https, mailto and tel URLs and relative or
+  fragment URLs are kept; anything else becomes `about:blank`. The check first strips what the
+  browser's URL parser ignores (leading and trailing control characters and spaces, tabs and
+  newlines anywhere), so `java\tscript:` is caught. `srcset` and `ping` keep only their safe
+  URLs.
+- Refused when a template is compiled: values in `on...=` attributes (use `on:event`), in
+  the `style` attribute (use `style:property=${v}`, which sets one property), in `srcdoc`,
+  `innerHTML` and `outerHTML` (as attributes or `prop:`), in `<meta>` `content`, in SVG
+  `<animate>` and `<set>` attributes, inside raw-text elements (`<textarea>`, `<title>`,
+  `<style>`, `<script>`; bind a textarea with `prop:value=${v}`), in comments, and as tag or
+  attribute names.
+- Dynamic content always sits between two comment markers, so content added later inside it
+  (a `when` inside a `when`, a list that grows) is replaced, moved and removed with it.
+- `when(condition, yes, no)` switches only when the truthiness changes and disposes the old
+  branch. `match(value, cases, fallback)` does the same per value.
+- `each(list, key, render, {fallback})` keeps one row per key. Rows are reused, an item that
+  changes for the same key updates the row in place (`render` gets accessors), removed rows
+  are disposed, and reordering moves only the rows outside the longest run that kept its
+  order. A row that renders one element is that element; any other row (several nodes, text,
+  a `when`, an accessor) sits between markers and moves as a unit. A duplicate key is
+  reported as an error and leaves the list as it was.
+- `portal(target, render)` renders elsewhere (a modal on `document.body`) and removes the
+  content with the scope.
+- `listen(target, type, handler)` adds a listener that is removed with the scope.
+
+## Router
+
+```ts
+import { createRouter } from './evlet/router';
+
+const router = createRouter({ home: '/', list: '/m/:model', record: '/m/:model/:id' });
+router.start();
+router.href('record', { model: 'invoice', id: '42' }); // '/m/invoice/42'
+effect(() => render(router.route.get()));             // {name, params, query, url} or null
+
+router.confirmLeave(() => record.dirty.get(), () => confirmDialog('Discard your changes?'));
+```
+
+- Parameters are decoded on match and encoded in `href`. The parameter names are checked
+  by TypeScript from the pattern. A parameter of only dots (`.`, `..`) is encoded twice,
+  since URL parsers would otherwise treat it as a path step, so every value round-trips.
+- Clicks on same-origin links that match a route are handled in the page. Links with a
+  modifier key, `target`, `download` or `rel="external"`, and links to paths the table does
+  not know (such as `/api/...`), stay ordinary links.
+- `guard(fn)` can stop any navigation (sync or async). `confirmLeave` asks only while its
+  condition is true and also asks before the tab closes. A refused back or forward step
+  returns to the page the user was on. The latest of two concurrent navigations wins.
+- `router.signal` is aborted when the route changes. Pass `() => router.signal` to the API
+  client so requests of the old page stop.
+
+## API client
+
+```ts
+import { ConflictError, createClient, ValidationError } from './evlet/api';
+
+const api = createClient({ signal: () => router.signal });
+await api.session();                                   // learns the CSRF token
+const { data, etag } = await api.get('order', 1);
+await api.update('order', 1, { children: { lines: { update: [{ id: 2, qty: '3' }] } } }, etag);
+```
+
+- Writes send `X-Evlet-Request: 1` and `X-CSRF-Token`; the session cookie goes with every
+  request. A 401 outside sign-in clears the token, calls `onSessionEnded` and dispatches the
+  `evlet-session-ended` window event the current app listens for.
+- Record writes take the ETag from the last read and send it as `If-Match`.
+- Errors: `ValidationError` (422) with `fields` such as `{"lines.4.qty": "..."}`,
+  `ConflictError` for 409, 412 and 428 (decided by the status alone, whatever the body),
+  and `ApiError` with a `kind` (`network`, `aborted`,
+  `auth`, `forbidden`, `not_found`, `limited`, `server`). `code` holds a leading machine
+  code such as `SCHEMA_VERSION_MISMATCH`. `retryable` says whether trying again can help.
+- Routes: `session`, `login`, `logout`, `schema`, `list`, `get`, `create`, `update`,
+  `remove`, `lines` (`GET /api/{model}/{id}/lines/{table}[/{row id}/{table}...]`),
+  `draft` (`POST /api/_draft/{model}`), `action` and `move`
+  (`POST /api/{model}/{id}/moves/{to}`).
+- `move()` sends no values (the server refuses a move with a body) and the record's ETag.
+  It answers with the record, its new `_moves`, `_actions`, `_void`, `_revise` and
+  `_effects`, and a new ETag. A move the record does not allow now is a 409
+  `ConflictError` whose message gives the reason. Its tests replay responses recorded from
+  the real routes, including void, revise, measures, related records and line pages
+  (`scripts/generate_ui_framework_fixtures.py`).
+- A request's own signal and the page signal are combined with `AbortSignal.any`, or with
+  listeners that are removed when the request ends.
+
+## Model runtime
+
+```ts
+import { RecordStore } from './evlet/model/record';
+
+const record = new RecordStore({ api, schema, model: 'order' });
+await record.open(1);                      // pages in every row, then attaches calculations
+const qty = record.table('lines').rows.peek()[0].field('qty');
+qty.set('3');                              // amount and total recalculate at once
+record.field('total').value.get();         // exact decimal text, for example '305.00'
+record.dirty.get();                        // true
+await record.save();                       // the server's answer replaces the draft
+```
+
+- Each field has `value` (the draft), `server` (the saved value), `dirty`, `error`, `rules`
+  (`applies`, `required`, `locked`), `result` (for calculated fields: ready, or pending or
+  error with a code), `editable` and `meta` (label, type, scale, choices, `compute`,
+  `initial` and the rule expressions from `/api/schema`). Numbers compare exactly, so
+  `1.0` is not a change from `1.0000`.
+- Each Table is a `Table` with `rows` (a cell of `Row` objects with a stable `key`),
+  `add`, `remove`, `move`, `removed`, `total` and `partial`. Rows nest to any depth. Key
+  lists by `row.key`: rows keep their objects (and DOM) across saves, including new rows,
+  which are matched through the `_row_ids` the server returns.
+- When the schema ships a calculation plan, a `FiniteDocument` session
+  (`frontend/src/runtime/FiniteEngine.ts`, the same evaluator as the server's fixtures)
+  computes calculated fields, `initial` values and the field rules. Results flow into the
+  cells; a lock is decided on the record as saved, as the server enforces it. The store
+  supplies `today()` as the date in GST and reads Link lookups (`customer.credit_days`)
+  with `GET /api/{model}/{id}`, following multi-step paths. Until a lookup arrives, a saved
+  result keeps its saved value.
+- A detail embeds the first 100 rows of a Table. `open` pages in the rest through the lines
+  endpoint before edits are allowed (`ready`). `open(id, {loadAll: false})` skips this for
+  read-only views. If paging fails, `loadError` holds the (usually retryable) error, edits
+  say why they are refused, and `loadAll()` tries again. A save or action that succeeded
+  still returns true when reading its result back fails; `loadError` reports that. Of two
+  overlapping `open` calls, the later one wins.
+- Writes are refused, with the reason, for calculated, read-only, locked and not-applying
+  fields. A value the user cleared on a new record is sent as `null`.
+- New rows get keys that are unique in the record and never only digits (digit keys name
+  saved rows): a requested `_key` is kept when it qualifies, otherwise `n1`, `n2`...
+- A server answer that leaves a field out keeps that field's saved value.
+- Lookups that fail (network, permission) leave their results pending and are tried again on
+  the next edit; `reload()` reads them again.
+- `save()` sends only changes for a saved record: changed fields, and each Table as
+  `{create, update, delete, order}` (with `order` only when rows moved), nested for rows of
+  rows. A new record sends everything with full row lists. A plan's hash goes along as
+  `_calculation`. Conflicts land in `conflict`, field errors on their fields (by row id or
+  `_key`, at any depth) and the rest in `formError`. `revert()` and `reload()` discard the
+  draft. `runAction()` and `move()` require a clean record. `preview()` asks the server to
+  evaluate the draft for plans it does not ship.
+- `formatMoney('25200')` is `AED 25,200.00` (exact, half up). Money and numbers take decimal
+  strings or safe integers only; a JavaScript fraction or text that is not a plain decimal
+  shows `Invalid amount`. `formatDate('2026-11-01')` is `01-11-2026`; impossible dates show
+  `Invalid date`. `formatDateTime` shows GST (Asia/Dubai, UTC+4) whatever the browser's
+  zone: a timestamp with `Z` or an offset is converted, one without a zone is taken as GST
+  already. `todayGst()` is the date `today()` uses.
+
+## Tests and benchmarks
+
+The tests in `frontend/src/evlet/tests/` run in jsdom with `npm test`. API and record store
+tests replay responses recorded from the real ASGI routes in `api-fixture.json`
+(regenerate with `.venv/bin/python -m scripts.generate_ui_framework_fixtures` and review the
+diff). The record store also replays the shared finite-v1 scenarios through its public API.
+`npm run bench:ui` measures the budgets; see "UI framework" in
+[performance.md](performance.md).
+
+## Limits of this phase
+
+- No components yet. The screens still run on SolidJS.
+- State metadata (`record.state`) is read when the schema sends it.
+- Lookups that a role cannot read stay pending; their saved results keep showing.
