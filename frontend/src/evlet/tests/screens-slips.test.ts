@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, lastToast, press, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
 import { copy } from './server';
+import { choose } from './ui-helpers';
 
 afterEach(() => stopAll());
 
@@ -34,7 +35,7 @@ describe('slips', () => {
     expect(text(sheet()!.querySelector('.modal-h h2'))).toBe('Plan a visit · Corniche Foods');
     expect([...sheet()!.querySelectorAll('.slip-group')].map(text)).toEqual(['Visit', 'Stops']);
     // The source fills the customer and keeps it read only; the rate applies only to installs.
-    expect(field('customer')!.querySelector('input,select')).toBeNull();
+    expect(field('customer')!.querySelector('input,select,button[aria-haspopup]:not([disabled])')).toBeNull();
     expect(field('rate')!.hidden).toBe(true);
     expect(field('hours')!.querySelector('.fval.ro')).not.toBeNull();
     expect(text(sheet()!.querySelector('.slip-empty'))).toBe('No rows yet.');
@@ -44,9 +45,7 @@ describe('slips', () => {
 
   it('checks each change on the server and shows what it decides', async () => {
     const { sent } = await openVisit();
-    const select = field('kind')!.querySelector('select')!;
-    select.value = 'install';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
+    choose(field('kind')!.querySelector<HTMLElement>('button[aria-haspopup="listbox"]')!, 'install');
     await until(() => expect(field('rate')!.hidden).toBe(false));
     const check = requests(sent, 'POST', /plan_visit\/check$/).at(-1)!;
     expect(check.body.values.kind).toBe('install');
