@@ -351,9 +351,11 @@ reasons above. They never include counts or names.
 * The Journal (Phase 8) will record each move, void and revise. The places that write it are
   `evlet.states.moved()`, `evlet.corrections.voided()` and `evlet.corrections.revised()`,
   each called in the operation's transaction.
-* Effects (Phase 6) will be reversed in `evlet.corrections.reverse_effects()` and Sequence
-  numbers (Phase 7) cleared on a revision in `evlet.corrections.prepare_copy()`. Both are
+* Effects (Phase 6) will be reversed in `evlet.corrections.reverse_effects()`, which is
   empty today.
+* Document numbers are described in [sequences.md](sequences.md). A void record keeps its
+  number; `evlet.corrections.prepare_copy()` clears the numbers on a revision's copy, which
+  is numbered again when it reaches `assign_on`.
 * The void reason is not stored until the Journal exists.
 * Draft previews (`/api/_draft`) do not report the State lock; the save does.
 * The connector and the MCP server do not offer moves, void or revise yet.

@@ -37,6 +37,17 @@ def _index(connection, table, field, *, unique=False):
     connection.execute(f'CREATE {"UNIQUE " if unique else ""}INDEX {identifier(name)} ON {identifier(table)} ({identifier(field)})')
 
 
+def _sequence_index(connection, table, name, field):
+    """The unique index of a Sequence: its scope fields and the number, for assigned numbers only."""
+    from .sequences import index_sql
+    base, suffix = f'evlet_{table}_{name}_sequence', 1
+    index = base
+    while connection.execute('SELECT 1 FROM sqlite_master WHERE name = ?', (index,)).fetchone():
+        suffix += 1
+        index = f'{base}_{suffix}'
+    connection.execute(index_sql(index, table, name, field))
+
+
 def _create(connection, table, model):
     columns = ['"id" INTEGER PRIMARY KEY AUTOINCREMENT']
     columns.extend(sql for name, field in model.__fields__.items() for sql in _column(name, field))
@@ -44,6 +55,8 @@ def _create(connection, table, model):
     for name, field in model.__fields__.items():
         if field.index or field.unique:
             _index(connection, table, name, unique=field.unique)
+        if field.kind == 'sequence':
+            _sequence_index(connection, table, name, field)
 
 
 def _metadata(connection):
@@ -74,11 +87,13 @@ def _check(connection, registry, *, rows=False):
                           for key, field in model.__fields__.items() if isinstance(field, Link)}
         if links != expected_links:
             raise SchemaError(f'{name}: foreign keys differ from models')
-        unique, indexed = set(), set()
+        unique, indexed, partial = set(), set(), set()
         for index in connection.execute(f'PRAGMA index_list({table})').fetchall():
-            if index['partial']:
-                continue
             fields = tuple(row['name'] for row in connection.execute('SELECT * FROM pragma_index_info(?)', (index['name'],)))
+            if index['partial']:
+                if index['unique']:
+                    partial.add(fields)
+                continue
             indexed.add(fields)
             if index['unique']:
                 unique.add(fields)
@@ -86,6 +101,8 @@ def _check(connection, registry, *, rows=False):
             raise SchemaError(f'{name}: unique constraints differ from models')
         if any((key,) not in indexed for key, field in model.__fields__.items() if field.index):
             raise SchemaError(f'{name}: an explicit index migration is required')
+        if any((*field.scope, key) not in partial for key, field in model.__fields__.items() if field.kind == 'sequence'):
+            raise SchemaError(f'{name}: a Sequence field is missing its unique index')
         if rows:
             for row in connection.execute(f'SELECT * FROM {table}'):
                 try:
@@ -169,6 +186,8 @@ class AddField:
             raise SchemaError(str(exc)) from exc
         if isinstance(cleaned, str) and '\x00' in cleaned:
             raise SchemaError('Migration backfills cannot contain NUL characters')
+        if self.field.kind == 'sequence' and cleaned is not None:
+            raise SchemaError('Add a Sequence field without a backfill; number existing rows with sequences.backfill()')
         return cleaned
 
     def signature(self):
@@ -186,6 +205,8 @@ class AddField:
             connection.execute(f'ALTER TABLE {identifier(self.table)} ADD COLUMN {sql} DEFAULT {literal}')
         if self.field.unique or self.field.index:
             _index(connection, self.table, self.name, unique=self.field.unique)
+        if self.field.kind == 'sequence':
+            _sequence_index(connection, self.table, self.name, self.field)
 
 
 @dataclass(frozen=True)
@@ -420,6 +441,10 @@ def _planned_definition(saved, pending):
                 fields = {operation.new_name if key == operation.old_name else key:
                           {**field, 'name': operation.new_name} if key == operation.old_name else field
                           for key, field in fields.items()}
+                # A Sequence's scope names fields; its counters key the scope by values, not names.
+                for field in fields.values():
+                    if 'scope' in field:
+                        field['scope'] = [operation.new_name if name == operation.old_name else name for name in field['scope']]
             elif isinstance(operation, AddIndex):
                 if operation.field not in fields:
                     raise SchemaError('Index field does not exist')

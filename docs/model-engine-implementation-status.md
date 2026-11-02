@@ -470,7 +470,7 @@ section of [states-actions.md](states-actions.md).
 * **Hooks** in `evlet/corrections.py`, all empty and called inside the transaction:
   `reverse_effects(context, model, record_id, previous)` after the void state is written
   (Phase 6), `prepare_copy(context, model, original, copy)` before the copy settles (Phase 7
-  clears Sequence numbers here), `voided(context, model, record_id, previous, reason)` and
+  clears Sequence numbers here; no longer empty once Phase 7 is stacked), `voided(context, model, record_id, previous, reason)` and
   `revised(context, model, original_id, copy_id, reason)` once each operation is saved
   (Phase 8 Journal; `voided` is skipped when a void record is revised again). A failure in any of them rolls the whole operation back (tested).
 * **Playground.** The amendment Quote has a `void` state (locked and final), `sent` is
@@ -487,3 +487,91 @@ Known limitations:
   fetched field the caller cannot read) are not predicted; they roll back with 403, 404 or 422.
 * Revising a document copies its rows one statement per row, like creating one.
 * The connector, the MCP server and the SolidJS form do not offer void or revise.
+
+## Phase 7: document numbers (01-11-2026)
+
+Branch `model/07-sequences`, stacked on `model/04-state`; restacked on `model/05-void-revise`
+as `model/07-stacked`. Guide: [sequences.md](sequences.md).
+
+* **Sequence.** `Sequence(format, scope=(), assign_on="create", date=None)` in
+  `evlet/sequences.py`, exported from `evlet`. A read-only, nullable short text field with
+  schema type `sequence`. The format (tokens `{n}`, `{n:0W}`, `{year}`, `{yy}`, `{month}`)
+  is checked at declaration; scope fields (stored, required, not calculated), the `date`
+  field (a stored Date) and `assign_on` (`"create"` or a state of the model) are checked at
+  registration. A Sequence on Table rows, or read by a calculation, `initial` or field rule
+  of the same document, fails at registration. A model with a Sequence is a document.
+* **Assignment.** `sequences.assign()` runs in `operate()` after settlement and before the
+  record is written: on create for `"create"` (or when the default state is `assign_on`),
+  and on a move into `assign_on`. A number, once assigned, is kept (reopen, void) and fixes
+  its scope fields and the period of its date field.
+* **Counters.** `evlet_sequence(model, field, scope_key, period, last)` is created by
+  `Business.initialize()` when a Sequence exists. One upsert with `RETURNING` takes the next
+  value in the write transaction, so a rollback consumes nothing. Writers were already
+  serialized on both adapters.
+* **Read only.** Ordinary writes (HTTP, `Context`, dialogs, services) get a field error
+  unless they send null on create or the saved value; draft assignment in actions and `run`
+  is refused; raw `Session` writes raise outside `maintenance()`.
+* **Storage.** A partial unique index on (scope fields, number) `WHERE number IS NOT NULL`
+  is created with the table and by `AddField`, on SQLite and PostgreSQL, and the schema
+  check reports a missing one. `AddField` refuses a non-null backfill;
+  `sequences.backfill()` numbers existing rows from the same counters. The stored model
+  definition records the scope only, so the format, `assign_on` and `date` can change
+  without a migration.
+* **Schema.** Field entries gain `sequence: {format, scope, assign_on, date}`. The SolidJS
+  schema check accepts the `sequence` type (`frontend/src/schema.js`), so generated screens
+  load models that declare one.
+* **Hooks for later phases.** `sequences.clear_for_copy(model, values)` for revise
+  (Phase 5); `sequences.assigned(...)`, an empty hook called after the write, for the
+  Journal (Phase 8). Void keeps the number with no extra code.
+* **Playground.** The amendment Quote has `number = Sequence("Q-{year}-{n:04}",
+  assign_on="sent")`; `tests/test_builds.py` checks it is null until sent, refused on PATCH,
+  kept when a lost quote is reopened and resent, and described in the schema.
+* **Tests.** `tests/test_sequences.py` (format and registration checks, assignment on
+  create and on a move, year and month resets from a date field, scope separation,
+  rollback after assignment, deletes, read-only enforcement over HTTP, `Context`, actions
+  and `Session`, uniqueness, parallel writers with separate connections, `AddField` and
+  backfill, a missing index) and PostgreSQL variants in `tests/test_postgres.py`, including
+  parallel sessions.
+
+Known limitations:
+
+* Without `date=`, the period is the day of assignment, not the creation date, for numbers
+  assigned on a state. Records store no creation timestamp.
+* `RenameField` of a Sequence does not rename its counter rows (documented).
+* `{yy}` repeats every century and the unique index would then refuse a repeated number.
+* The connector, the MCP server and the SolidJS form show the number but do not explain
+  when it will be assigned.
+
+Review fixes (01-11-2026):
+
+* Every document operation (create, update, move, action, delete) runs in a savepoint on
+  SQLite and PostgreSQL. A failure caught by trusted code inside one `Context` rolls back
+  that operation only, so it leaves no counter step, state change or number. Integrity
+  errors inside an operation are raised as `ConflictError`.
+* A Sequence value sent by a role that cannot read the field is refused with 403 whatever
+  it is; the scope and period errors are generic for such roles.
+* `RenameField` of a scope field updates the stored scope. The State cannot be a scope.
+* `next_number` skips numbers already held in the scope, so a planted number, a format
+  change or a `{yy}` wrap no longer blocks the series.
+* Raw `Session.update` refuses scope and period changes of an assigned number outside
+  `maintenance()`, and raw `Session.create` assigns numbers due on create (period day in
+  UTC).
+
+Connection with void and revise (01-11-2026):
+
+* `corrections.prepare_copy()` calls `sequences.clear_for_copy()`, so a revision starts
+  without the original's number. `corrections.revise()` then runs `sequences.assign()` on
+  the settled copy like a create: a number due on create (or on the copy's starting state)
+  is assigned before the copy is written, and `sequences.assigned()` is called after it.
+  Other copies are numbered by the move into `assign_on`.
+* Void writes only the State, so the number stays, and a record voided before its number
+  was due stays null. Neither operation goes through raw `Session` writes, so the Session
+  guards on scope, period and State do not apply to them.
+* `Context.void()` and `Context.revise()` run in the same per-operation savepoint as the
+  other operations; a revise that fails after its copy was numbered and is caught by
+  trusted code gives the number back.
+* The Phase 7 test Invoice now reaches `void` through `void()` only, because Phase 5
+  rejects a declared move into `void` when voidable states exist. New tests in
+  `tests/test_sequences.py` (with PostgreSQL variants) and `tests/test_builds.py` cover a
+  revised copy's fresh number, numbers kept on void, a void before assignment, a revisable
+  model numbered on create, and gapless numbers after a caught revise failure.

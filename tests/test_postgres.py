@@ -491,3 +491,51 @@ def test_postgres_revisable_needs_an_add_field_migration(pg_dsn):
         database.migrate(migrations) if migrate else database.initialize()
         return database
     check_revises_migration(make)
+
+
+@pytest.mark.parametrize('check', ['check_numbers_follow_moves_scopes_and_periods', 'check_assigned_numbers_fix_their_scope_and_period',
+                                   'check_failures_do_not_consume_numbers', 'check_only_the_engine_writes_a_sequence',
+                                   'check_assigned_numbers_are_unique_per_scope', 'check_a_planted_number_is_skipped',
+                                   'check_roles_that_cannot_read_the_number_learn_nothing',
+                                   'check_raw_session_writes_number_and_keep_scope', 'check_void_and_revise_keep_and_renew_numbers',
+                                   'check_a_caught_revise_failure_leaves_no_number'])
+def test_postgres_sequences_assign_scope_reset_and_stay_engine_written(pg_dsn, check):
+    from tests import test_sequences as sequences
+    from tests.test_rules_types import start
+    getattr(sequences, check)(sequences.seed(start(PostgreSQLDatabase(pg_dsn, Registry(*sequences.MODELS)))))
+
+
+def test_postgres_parallel_sessions_get_distinct_gapless_numbers(pg_dsn):
+    from tests import test_sequences as sequences
+    from tests.test_rules_types import start
+    app = start(PostgreSQLDatabase(pg_dsn, Registry(*sequences.MODELS)))
+    sequences.check_parallel_writers_get_distinct_gapless_numbers(app, writers=8, each=9)
+    with app.database.transaction() as tx:
+        index = tx.connection.execute("SELECT indexdef FROM pg_indexes WHERE tablename='invoice' AND indexdef LIKE '%IS NOT NULL%'").fetchone()[0]
+    assert 'UNIQUE' in index and '(company, number)' in index
+
+
+def test_postgres_sequence_can_be_added_by_migration(pg_dsn):
+    from tests.test_sequences import check_a_sequence_can_be_added_to_an_existing_table
+
+    def make(registry, migrations, migrate=False):
+        database = PostgreSQLDatabase(pg_dsn, registry, migrations=migrations)
+        database.migrate(migrations) if migrate else database.initialize()
+        return database
+    check_a_sequence_can_be_added_to_an_existing_table(make)
+
+
+def test_postgres_a_caught_failure_leaves_no_trace(pg_dsn):
+    from tests import test_sequences as sequences
+    from tests.test_rules_types import start
+    sequences.check_a_caught_failure_leaves_no_trace(start(PostgreSQLDatabase(pg_dsn, Registry(*sequences.MODELS))))
+
+
+def test_postgres_sequence_scope_field_can_be_renamed(pg_dsn):
+    from tests.test_sequences import check_a_scope_field_can_be_renamed
+
+    def make(registry, migrations, migrate=False):
+        database = PostgreSQLDatabase(pg_dsn, registry, migrations=migrations)
+        database.migrate(migrations) if migrate else database.initialize()
+        return database
+    check_a_scope_field_can_be_renamed(make)
