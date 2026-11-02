@@ -230,6 +230,8 @@ class Application:
 
     def _internal(self, scope, raw):
         self.business.controls.refresh()
+        if scope['path'] == '/_/mail/callback':
+            return self.business.mailboxes.callback(scope)
         return self.business.assistants.dispatch(scope, raw)
 
     def _dispatch(self, scope, body):
