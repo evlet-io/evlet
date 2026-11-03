@@ -4,7 +4,8 @@ from .app import Application
 from .database import ConflictError, Database, NotFoundError
 from .fields import (Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Duration, Email, Integer,
                      Link, LongText, MultiSelect, Percent, Phone, Reference, Select, State, Tags, Text, Time, URL)
-from .migrations import AddField, AddIndex, AddTable, CreateModel, Migration, MigrationPlan, Recompute, RenameField, SchemaError
+from .migrations import (AddField, AddIndex, AddTable, AlterField, CreateModel, DropField, Migration, MigrationPlan, Recompute,
+                         RenameField, RetireField, RunData, SchemaError)
 from .models import Model, Registry, ValidationError, Child
 from .declarations import Move, Ref, Table, Query, action, depends
 from .sequences import Naming, Sequence, Series
@@ -12,11 +13,11 @@ from .lifecycle import validate, install_decorators
 install_decorators(action)
 
 __all__ = [
-    "AddField", "AddIndex", "AddTable", "Application", "Boolean", "ConflictError", "CreateModel",
+    "AddField", "AddIndex", "AddTable", "AlterField", "Application", "Boolean", "ConflictError", "CreateModel", "DropField",
     "Currency", "CurrentUser", "Database", "Date", "DateTime", "Decimal", "Email", "Integer", "Link",
     "LongText", "Migration", "MigrationPlan", "Model", "MultiSelect", "NotFoundError", "Registry", "RenameField",
     "SchemaError", "Select", "Text", "URL", "ValidationError",
-    "Duration", "Naming", "Percent", "Phone", "Recompute", "Reference", "Sequence", "Series", "State", "Tags", "Time",
+    "Duration", "Naming", "Percent", "Phone", "Recompute", "Reference", "RetireField", "RunData", "Sequence", "Series", "State", "Tags", "Time",
 ]
 
 from .auth import LocalAuth, User

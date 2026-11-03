@@ -347,8 +347,10 @@ current models, for example `employee.days: type is 'integer' after the migratio
 'decimal' in the models`. `suggestion` is Python for one migration covering what can be
 inferred: new models (`CreateModel` with a frozen class), new child tables (`AddTable`),
 new fields (`AddField` with a frozen copy of the field), a single renamed field
-(`RenameField`) and new indexes (`AddIndex`). A required field without a fixed default gets
-`backfill=...`, and changes it cannot write become `#` comments; fill both in by hand.
+(`RenameField`), removed fields (`RetireField`), safe type changes (`AlterField`) and new
+indexes (`AddIndex`). A required field without a fixed default gets `backfill=...`, and changes
+it cannot write become `#` comments; fill both in by hand. A removed field's values are not
+moved anywhere: add a `RunData` step when they belong in new fields.
 `migrate()` refuses a mismatch with the same list of differences, so the error names the
 model, field and property that differs.
 
@@ -373,11 +375,98 @@ A legacy database without schema metadata must first be initialized with its
 original models, then explicitly upgraded.
 
 Supported operations are deliberately bounded: add a model, add a child table, add a field, rename
-a field, add an index, and recalculate stored values. Fixed backfills are validated; required added fields
-need a value. Callable or NUL-containing backfills, non-null Link backfills, removals, arbitrary
-type changes, decimal scale changes, and reverse migrations are not supported.
-They fail instead of rebuilding tables or guessing how to transform existing data.
-Changes to runtime defaults alone do not require a database migration.
+a field, add an index, retire or drop a field, convert a field safely, run a data step, and recalculate
+stored values. Fixed backfills are validated; required added fields need a value. Callable or
+NUL-containing backfills, non-null Link backfills, removing a model, other type changes, narrowing
+changes, and reverse migrations are not supported. They fail instead of rebuilding tables or guessing
+how to transform existing data. Changes to runtime defaults alone do not require a database migration.
+
+### Retiring and dropping fields
+
+`RetireField(model, name)` takes a field out of the models: remove it from `models.py` and the
+field leaves schema checks, the HTTP API and every screen. Its column and stored values stay, and
+the column becomes nullable so new records leave it empty. Data in revisions and the Journal is
+not touched. Use it whenever a field stops being used; nothing is lost.
+
+`DropField(model, name)` later deletes the column and its values. It needs a field an earlier
+migration retired (not one retired in the same migration, so the values can be checked or moved
+first; a later migration in the same run is fine, since data steps run with their own migration), and it destroys data, so `migrate()` refuses it unless called with
+`allow_destructive=True`. From the CLI, `evlet migrate <instance> --allow-destructive` runs it
+after writing the usual backup to `data/backups/`.
+
+A retired Link loses its foreign key, so the records it pointed at can be deleted later; its
+stored ids stay as they were.
+
+On SQLite, retiring a field and dropping a Link field edit the table's stored definition with
+SQLite's documented in-place procedure for constraint changes (`writable_schema` with a schema
+version bump), inside the migration transaction. Stored rows are not rewritten. A SQLite build in
+defensive mode refuses this, and the migration then fails with a message saying so.
+
+### Changing a field's type
+
+`AlterField(model, name, new_field)` accepts only conversions every stored value survives:
+
+| From | To |
+|---|---|
+| `Integer` | `Decimal`, `Currency` or `Percent` (values are multiplied by 10^scale) |
+| `Decimal` (any decimal kind) | a decimal kind with the same or a wider scale |
+| `Text` | `Text` or `LongText` with the same or a longer `max_length` |
+| `Select` | `Select` with the same choices plus new ones |
+
+`minimum` and `maximum` may change too. `required`, `unique`, `index` and Link targets may not.
+Each stored row is converted and validated against the new definition inside the migration
+transaction; a value that overflows or fails (a bound, a length) names the record and rolls the
+batch back. Revisions and Journal entries keep the values they recorded.
+
+```python
+from evlet import AlterField, Decimal, Migration
+
+Migration("0003_half_days", AlterField("leaveapplication", "days", Decimal(scale=1)))
+```
+
+### Data steps
+
+`RunData(function)` runs trusted Python that moves or fills values, for example when one field is
+split into two:
+
+```python
+from evlet import AddField, Migration, RetireField, RunData, Text
+
+
+def split_names(session):
+    Employee = session.registry.models["employee"]
+    for record_id, name in session.connection.execute('SELECT "id", "name" FROM "employee"').fetchall():
+        first, _, last = name.partition(" ")
+        session.update(Employee, record_id, first_name=first, last_name=last)
+
+
+migration = Migration(
+    "0004_split_name",
+    AddField("employee", "first_name", Text(default="")),
+    AddField("employee", "last_name", Text(default="")),
+    RetireField("employee", "name"),
+    RunData(split_names),
+)
+```
+
+Each data step runs right after its own migration's structural operations, in declaration
+order, so a later migration in the same run (a `DropField`, say) cannot remove what it reads.
+`Recompute` still runs once, after every pending migration. `session` is a trusted Session over
+the current models, so a step that runs before a later migration adds a field should not read or
+write that model through the session; use `session.connection` with parameterized SQL instead.
+Read retired columns the same way.
+
+By default the session refuses writes to confirmed, tracked, posted and finite-v1 documents, as any
+trusted session does. A step that must change them is declared `RunData(function, maintenance=True)`
+and runs only when the admin allows it for that run: `evlet migrate <instance> --allow-maintenance`,
+or `migrate(migrations, allow_maintenance=True)` from Python. Each such step writes a Controls
+audit row (actor `cli`, area `Records`, the migration's name) and logs a warning. Their revisions
+and Journal entries stay as they were; the step writes no Journal entries of its own.
+
+The migration checksum covers the function's source and `maintenance`, so keep the function in
+the migration file and never change it once applied. Any exception rolls back the whole run,
+structural changes included. Like `Recompute`, data steps do not run when a database adopts its
+baseline.
 
 ### Recalculating stored values
 

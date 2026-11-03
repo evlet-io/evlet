@@ -38,7 +38,8 @@ def recover(path):
     sync_directory(path)
 
 
-def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_posted=False):
+def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_posted=False, allow_destructive=False,
+            allow_maintenance=False):
     path = child(root, 'instances', name)
     if not path.is_dir():
         raise ValueError(f'Instance does not exist: {name}')
@@ -83,7 +84,9 @@ def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_p
                 snapshot(database, backup)
                 snapshot(backup, stage)
             app, schedules = build_instance(config, path, packages, database_path=stage, storage_path=Path(directory) / 'private')
-            applied = app.database.migrate(app.database.migrations, recompute_posted=recompute_posted)
+            # A backup of the current database is written above before any migration runs, including DropField.
+            applied = app.database.migrate(app.database.migrations, recompute_posted=recompute_posted, allow_destructive=allow_destructive,
+                                           allow_maintenance=allow_maintenance)
             # Framework steps run on the same staged copy, after the backup, before the additive startup tables.
             framework = upgrade(app.database)
             app.initialize()

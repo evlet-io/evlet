@@ -41,6 +41,21 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   (`evlet_framework_migrations`) on the staged copy. Existing instances need one
   `evlet migrate` after upgrading; it adopts today's startup tables with no other change
   ([docs/app-upgrades.md](docs/app-upgrades.md#upgrade-evlet)).
+- **Field retirement, safe type changes and data steps.** `RetireField` removes a field from the
+  models and API while keeping its column and values; `DropField` deletes a retired field's column
+  only with `allow_destructive=True` (`evlet migrate --allow-destructive`, which keeps a backup).
+  `AlterField` converts Integer to Decimal, widens a decimal scale, lengthens text and adds Select
+  choices, validating every stored row in the migration transaction. `RunData(function)` runs a
+  trusted data step right after its own migration; `RunData(..., maintenance=True)` may write
+  confirmed and posted records only with `--allow-maintenance`, and each such step is audited. A
+  retired Link drops its foreign key. `--plan` suggests RetireField and AlterField
+  ([docs/model-engine.md](docs/model-engine.md#retiring-and-dropping-fields)).
+- **Migration plans.** `evlet migrate <instance> --plan` and `database.plan(migrations)` show the
+  pending migrations and each model, field and property that differs from the models, with a
+  suggested migration; nothing is written. `evlet makemigration <app> --instance <instance>`
+  writes that suggestion into a flat app. A mismatch error now lists the same differences.
+  `AddTable(parent, name, ChildClass)` adds a child table without hand-written owner and position
+  fields, and `CreateModel` no longer compares the Python class name ([docs/model-engine.md](docs/model-engine.md#planning-a-migration)).
 - **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
   follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
   the default). The server writes the theme on `<html>` before the page paints, so nothing

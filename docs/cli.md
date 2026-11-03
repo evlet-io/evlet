@@ -48,6 +48,7 @@ evlet dev --instance acme
 evlet dev-link
 evlet migrate acme --trust
 evlet migrate acme --plan --trust
+evlet migrate acme --trust --allow-destructive
 evlet makemigration people --instance acme --name dependents --trust
 evlet effects check acme
 evlet journal verify acme
@@ -83,6 +84,11 @@ differs from the migrations, and for each app a suggested migration to review
 `m<number>_<name>.py` (`--name` sets the name, default `changes`). It refuses when nothing
 changed and never overwrites a file. Review the file, fill in any `...` or `#` note, then run
 `migrate`. Like `migrate`, both import the apps, so changed sources need `--trust`.
+`migrate --allow-destructive` lets `DropField` delete the columns and values of retired
+fields; without it such a migration is refused. The backup `migrate` writes before every change
+holds the deleted values. `migrate --allow-maintenance` lets `RunData` steps declared with
+`maintenance=True` write confirmed, tracked and posted records; each one is recorded in the Controls
+audit log ([model-engine.md](model-engine.md#data-steps)).
 `migrate --recompute-posted` lets the `Recompute` operations of that run recalculate posted
 records too; it prints how many changed, and each one gets a journal entry
 ([model-engine.md](model-engine.md#recalculating-stored-values)). Without the flag, posted
