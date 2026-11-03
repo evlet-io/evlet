@@ -10891,6 +10891,17 @@
           "read_only": true,
           "default_kind": "none",
           "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
           "compute": null,
           "initial": null,
           "applies_when": null,
