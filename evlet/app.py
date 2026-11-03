@@ -26,6 +26,9 @@ class HTTPError(Exception):
 
 
 class Application:
+    # build_instance sets this: an instance's framework steps run only inside evlet migrate.
+    managed_framework = False
+
     def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None):
         from .ui import ViewRegistry
         from .routing import RouteTable, resolve_routes
@@ -415,6 +418,9 @@ class Application:
 
     def initialize(self):
         self.database.initialize()
+        # Instances apply framework steps only through evlet migrate; other applications apply them here.
+        from .framework import upgrade
+        upgrade(self.database, apply=not self.managed_framework)
         if self.business:
             self.business.initialize()
 

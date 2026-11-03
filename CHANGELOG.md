@@ -34,6 +34,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **`DevSignIn` export.** The root exports gain `DevSignIn`, which serves the one-time
   development sign-in links of `evlet dev` and `evlet playground` ([docs/cli.md](docs/cli.md#development-sign-in-links)).
   Never wrap an application you serve with it.
+- **Team and hierarchy row scopes.** New root exports `Hierarchy` and `any_of`. `Hierarchy(model, parent=...)` declares a reporting tree, and
+  `Hierarchy.team(field)` is a row scope over the user's linked record and everyone below it at any
+  depth, resolved in SQL with a recursive query on SQLite and PostgreSQL. `any_of(...)` combines
+  row scopes and filter objects with OR. They apply on every surface a row scope covers
+  ([docs/business-capabilities.md](docs/business-capabilities.md#team-and-hierarchy-scopes)). List pages
+  now check Link values for the whole page at once instead of per row.
+- **Account links are audited.** `LocalAuth.link_user` and `unlink_user` take an `actor` and write
+  each change to the Controls audit log (area Users); `evlet link-user` records `cli`.
 - **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
   follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
   the default). The server writes the theme on `<html>` before the page paints, so nothing
@@ -64,6 +72,23 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   labelled Customer reference. `/api/schema` marks a naming series field with `naming: {"field": ...}`
   and the placeholder `Assigned on save`, and the New screen shows that field read only
   ([docs/sequences.md](docs/sequences.md#naming-series)).
+- **Evlet upgrades go through `evlet migrate`.** `apps.lock` and the installed manifest
+  now record the Evlet version and its last framework migration. An instance migrated
+  with another Evlet version refuses to serve and asks for `evlet migrate`, which backs
+  up the database and runs ordered, checksummed framework migrations
+  (`evlet_framework_migrations`) on the staged copy. Existing instances need one
+  `evlet migrate` after upgrading; it adopts today's startup tables with no other change
+  ([docs/app-upgrades.md](docs/app-upgrades.md#upgrade-evlet)).
+- **Field retirement, safe type changes and data steps.** `RetireField` removes a field from the
+  models and API while keeping its column and values; `DropField` deletes a retired field's column
+  only with `allow_destructive=True` (`evlet migrate --allow-destructive`, which keeps a backup).
+  `AlterField` converts Integer to Decimal, widens a decimal scale, lengthens text and adds Select
+  choices, validating every stored row in the migration transaction. `RunData(function)` runs a
+  trusted data step right after its own migration; `RunData(..., maintenance=True)` may write
+  confirmed and posted records only with `--allow-maintenance`, and each such step is audited. A
+  retired Link drops its foreign key. `--plan` suggests RetireField and AlterField
+  ([docs/model-engine.md](docs/model-engine.md#retiring-and-dropping-fields)).
+  `RetireField`, `DropField`, `AlterField` and `RunData` are new root exports.
 - **Migration plans.** `evlet migrate <instance> --plan` and `database.plan(migrations)` show the
   pending migrations and each model, field and property that differs from the models, with a
   suggested migration; nothing is written. `evlet makemigration <app> --instance <instance>`

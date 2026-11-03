@@ -198,9 +198,9 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     # those two fields the table hashes to the earlier 58ecf53f... value. Re-recorded again when Invoice.number
     # (0006_invoice_number) was added: readable by every role, writable by none; without it the table hashes to
     # the earlier cf1f61c2... value.
-    # The Playground's Item and its tables (0005_items) came later with permissions of their own; left out, the
-    # models above keep exactly the recorded table.
-    data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes')), 'states': table(Registry(*test_states.MODELS))}
+    # The Playground's Item and its tables (0005_items) and Employee (0007_employees) came later with permissions
+    # of their own; left out, the models above keep exactly the recorded table.
+    data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes', 'employee')), 'states': table(Registry(*test_states.MODELS))}
     assert hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest() == \
         'b1bb34ff00fa23337e52bf04f0d030a50b8f2316159271bdd0f128fd3b74f1c4'
     policy = Policy(Registry(*MODELS))

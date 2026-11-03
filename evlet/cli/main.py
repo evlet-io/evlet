@@ -56,6 +56,10 @@ def parser():
     migrate.add_argument('--trust', action='store_true', help='Trust changed app source without prompting')
     migrate.add_argument('--recompute-posted', action='store_true',
                          help='Let Recompute operations recalculate posted records too; each changed one gets a journal entry')
+    migrate.add_argument('--allow-destructive', action='store_true',
+                         help='Let DropField delete the columns and values of retired fields; a backup is written first')
+    migrate.add_argument('--allow-maintenance', action='store_true',
+                         help='Let RunData steps declared with maintenance=True write confirmed, tracked and posted records; each is audited')
     migrate.add_argument('--plan', action='store_true',
                          help='Print the pending migrations and how they differ from the models; write nothing')
     makemigration = commands.add_parser('makemigration', help="Write the migration --plan suggests into a flat app's migrations folder")
@@ -221,11 +225,15 @@ def main(argv=None):
                 raise ValueError('Provide an instance name or --list')
         elif args.command == 'migrate' and args.plan:
             from .install import plan
-            if args.recompute_posted:
-                raise ValueError('Choose --plan or --recompute-posted')
-            result, suggestions, packages = plan(root, args.instance, trust=args.trust, confirm=confirm)
+            if args.recompute_posted or args.allow_destructive or args.allow_maintenance:
+                raise ValueError('--plan writes nothing; run migrate without --plan to use --recompute-posted, '
+                                 '--allow-destructive or --allow-maintenance')
+            result, suggestions, packages, steps = plan(root, args.instance, trust=args.trust, confirm=confirm)
             print(f'Instance {args.instance}: plan only; nothing was written')
             print(result.text(suggestion=False))
+            if steps:
+                print('Pending framework migrations (run after a backup):')
+                print('\n'.join(f'  {step.name}\n    {step.summary}' for step in steps))
             for package in packages:
                 migration, code = suggestions[package.name]
                 if not code:
@@ -246,9 +254,12 @@ def main(argv=None):
             from .install import install
             posted = args.command == 'migrate' and args.recompute_posted
             result = install(root, args.instance, app_name=args.name if args.command == 'install' else None, trust=args.trust, confirm=confirm,
-                             recompute_posted=posted)
+                             recompute_posted=posted, allow_destructive=args.command == 'migrate' and args.allow_destructive,
+                             allow_maintenance=args.command == 'migrate' and args.allow_maintenance)
             print(f'Instance {args.instance}: installed ' + ', '.join(result['apps']))
             print('Applied migrations: ' + (', '.join(result['migrations']) or 'none; schema is current'))
+            if result.get('framework'):
+                print('Framework migrations: ' + ', '.join(result['framework']))
             if posted:
                 print(f'Posted records recalculated: {result.get("posted", 0)}')
             if result['backup']:
@@ -290,7 +301,7 @@ def main(argv=None):
                     row = connection.execute('SELECT id FROM evlet_users WHERE username=?', (args.username.lower(),)).fetchone()
                 if row is None:
                     raise ValueError(f'No account named {args.username}')
-                (auth.unlink_user if args.remove else auth.link_user)(row['id'], args.model, args.record_id)
+                (auth.unlink_user if args.remove else auth.link_user)(row['id'], args.model, args.record_id, actor='cli')
                 print(f'{"Unlinked" if args.remove else "Linked"} {args.username} {"from" if args.remove else "to"} {args.model} {args.record_id}')
             except AccessError as exc:
                 raise ValueError(exc.message) from None

@@ -1261,7 +1261,8 @@ class Business:
             tx = Session(connection, self.registry)
             rows = connection.execute(f'SELECT record.* FROM {table} AS record{where}{ordering} LIMIT ? OFFSET ?', [*values, limit, offset]).fetchall()
             total = connection.execute(f'SELECT count(*) FROM {table} AS record{where}', values).fetchone()[0]
-            items = [self.policy.serialize(tx, user, model._from_row(row)) for row in rows]
+            # One visibility check per Link target for the page, not per row.
+            items = self.policy.serialize_many(tx, user, [model._from_row(row) for row in rows])
         return 200, {'items': items, 'total': total, 'limit': limit, 'offset': offset}, []
 
     def files(self, user, model, record_id, tail, method, body):

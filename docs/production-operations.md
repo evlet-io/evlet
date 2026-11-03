@@ -24,6 +24,11 @@ hardware still need verification on the actual deployment.
 5. Take a consistent backup, stop application writers and workers, run explicit
    migrations, and verify startup before routing traffic to the new release.
    Never allow old and new schema-dependent writers during the migration window.
+   An Evlet upgrade is a migration too: an instance refuses to serve until
+   `evlet migrate` has backed it up and applied the new release's framework
+   migrations (see docs/app-upgrades.md). Applications built directly on
+   `Application`, including tenant deployments, apply pending framework migrations
+   when they start, so back up their databases before starting a new Evlet release.
 
 Start with the documented single service process and bounded concurrency. Measure
 password-hashing memory under expected sign-in traffic as well as ordinary request
