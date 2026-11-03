@@ -166,6 +166,14 @@ or fields. Python queries retain relationship traversal. Direct Link filters are
 also rejected when the target has a row scope. These restrictions are deliberate;
 a permission-aware join planner is future work.
 
+Child table filters (`{"child": "prices", ...}`, see [model-engine.md](model-engine.md#filter-lists-and-child-tables))
+follow the same rules on the child rows: the role must be able to read the child model, every
+field named in the group must be readable on it, and a child model with a row scope of its own
+cannot be queried. An unknown field, a field the role cannot read, an unknown table and a table
+the role cannot read all give the same 403 "Query field is unavailable", before any value is
+compared. A restricted field is refused, never answered, so filters cannot be used to guess its
+values. The parent's row scope, tenant and account checks apply as for any list.
+
 A scope on the signed-in user pairs with `default=CurrentUser`, which fills a field from that
 user when a record is created without a value: the username in a `Text` field, the account id
 in an `Integer` field. Other field types refuse it. A value the caller sends wins and still has

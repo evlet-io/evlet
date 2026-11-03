@@ -20,7 +20,7 @@ describe('the account area', () => {
     // The name block is styled apart from the avatar, so the avatar keeps its centred letter.
     expect(document.querySelector('.me-head .me-who strong')).not.toBeNull();
     expect(document.querySelector('.me-head .me-who .avatar')).toBeNull();
-    expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['Your profile', 'Appearance', 'Sign-in & security', 'All settings', 'Controls↗', 'Sign out']);
+    expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['Your profile', 'Appearance', 'Sign-in & security', 'Dark theme', 'All settings', 'Controls↗', 'Sign out']);
     click(byText(document.body, '.pop [role="menuitem"]', 'All settings'));
     await until(() => expect(location.pathname).toBe('/settings/profile'));
     stopAll();

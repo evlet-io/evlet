@@ -27,6 +27,9 @@ def main():
     for font, licence in (("InterVariable-", "Inter-OFL.txt"), ("JetBrainsMono-", "JetBrainsMono-OFL.txt")):
         if not list(assets.glob(font + "*.woff2")) or "SIL OPEN FONT LICENSE" not in (assets / licence).read_text().upper():
             raise RuntimeError(f"Installed wheel lacks {font} fonts or {licence}")
+    for logo in ("evlet-logo-primary.svg", "evlet-logo-white.svg", "evlet-icon-blue.svg"):
+        if not (assets / logo).read_bytes().startswith(b"<?xml"):
+            raise RuntimeError(f"Installed wheel lacks the {logo} logo")
 
     from evlet import PostgreSQLDatabase
     try:

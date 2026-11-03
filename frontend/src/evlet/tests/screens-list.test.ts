@@ -62,11 +62,16 @@ describe('generated list page', () => {
   it('filters by a choice field with a chip that clears it', async () => {
     const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/order\?/, sent => query(sent).filters ? screen.orders_open : recorded.list]], '/app/order');
     await until(() => expect(rowTitles(host)).toEqual(['Big order']));
-    click(byText(host, '.ph-actions button', 'Filter'));
-    click(byText(document.body, '.pop [role="menuitem"]', 'Open'));
+    click(byText(host, '.ph-actions button', /^Filter/));
+    // The builder adds a first row and opens its field search.
+    await until(() => expect(document.querySelector('.field-pop input')).not.toBeNull());
+    typeInto(document.querySelector<HTMLInputElement>('.field-pop input')!, 'stage');
+    press(document.querySelector<HTMLInputElement>('.field-pop input')!, 'Enter');
+    await until(() => expect(host.querySelector('.fb-value .chip')).not.toBeNull());
+    click(byText(host, '.fb-value .chip', 'Open'));
     await until(() => expect(rowTitles(host)).toEqual(['Warehouse racks', 'Office fit-out']));
-    expect(JSON.parse(listCalls(sent, 'order').pop()!.filters)).toEqual({ stage: 'open' });
-    expect(text(host.querySelector('.filter-chip'))).toBe('Stage: Open');
+    expect(JSON.parse(listCalls(sent, 'order').pop()!.filters)).toEqual([['stage', 'in', ['open']]]);
+    expect(text(host.querySelector('.filter-chip'))).toBe('Stage in Open');
     // Stage is a plain choice on this model; the pill appears only for a State.
     expect(host.querySelector('tbody .pill')).toBeNull();
     click(host.querySelector('.filter-chip button'));
@@ -74,10 +79,11 @@ describe('generated list page', () => {
     expect(listCalls(sent, 'order').pop()!.filters).toBeUndefined();
   });
 
-  it('a link to a filtered list opens it as it was', async () => {
+  it('a link to a filtered list opens it as it was, including links made before the filter builder', async () => {
     const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/order\?/, screen.orders_open]], '/app/order?f=%7B%22stage%22%3A%22open%22%7D');
-    await until(() => expect(text(host.querySelector('.filter-chip'))).toBe('Stage: Open'));
-    expect(JSON.parse(listCalls(sent, 'order')[0].filters)).toEqual({ stage: 'open' });
+    await until(() => expect(text(host.querySelector('.filter-chip'))).toBe('Stage in Open'));
+    expect(JSON.parse(listCalls(sent, 'order')[0].filters)).toEqual([['stage', 'in', ['open']]]);
+    await until(() => expect(new URLSearchParams(location.search).get('f')).toBe('[["stage","in",["open"]]]'));
   });
 
   it('selects rows and deletes them through the bulk bar, each with its current revision', async () => {

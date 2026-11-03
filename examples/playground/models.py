@@ -94,4 +94,8 @@ class Employee(Model):
     reports_to = Link('employee', index=True, label='Reports to')
 
 
-registry = Registry(Customer, Invoice, Payment, Project, ProjectTask, Employee)
+# Items have about 200 fields and two child tables: the list filters at scale. Imported here so the
+# registry lists every Playground model; items.py links to customers by name, not by import.
+from .items import Item  # noqa: E402
+
+registry = Registry(Customer, Invoice, Payment, Project, ProjectTask, Item, Employee)
