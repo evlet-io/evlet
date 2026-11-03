@@ -53,7 +53,7 @@ export interface SettingsContext {
 export const PAGES: Record<string, [title: string, icon: string, group: string]> = {
   profile: ['Profile', 'user', 'Your account'], appearance: ['Appearance & region', 'sun', 'Your account'],
   security: ['Sign-in & security', 'lock', 'Your account'], notifications: ['Notifications', 'bell', 'Your account'],
-  email: ['Your email', 'mail', 'Connections'], ai: ['AI assistants', 'sparkles', 'Connections'], keys: ['API keys', 'hash', 'Connections'],
+  email: ['Your email', 'mail', 'Connections'], ai: ['AI', 'sparkles', 'Connections'], keys: ['API keys', 'hash', 'Connections'],
 };
 const INDEX: Record<string, string[]> = {
   profile: ['Photo', 'Full name', 'Short name', 'Job title', 'Mobile', 'Email', 'Email signature', 'Username'],
@@ -61,7 +61,7 @@ const INDEX: Record<string, string[]> = {
   security: ['Password', 'Two-step sign-in', 'Backup codes', 'Sessions', 'Sign out everywhere'],
   notifications: ['Notifications', 'Quiet hours'],
   email: ['Your email', 'Mailbox'],
-  ai: ['MCP', 'Claude', 'AI assistants', 'Connectors'],
+  ai: ['Eva', 'MCP', 'Claude', 'AI assistants', 'Approvals', 'Connectors'],
   keys: ['API keys', 'Scripts', 'Bearer token'],
 };
 const ZONES: Array<[string, string]> = [['Asia/Dubai', 'Gulf Standard Time (UTC+4)'], ['Asia/Riyadh', 'Arabia Standard Time (UTC+3)'],

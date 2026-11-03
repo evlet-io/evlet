@@ -25,6 +25,7 @@ import { AppsPage, AuditPage, AuditRows, JobsPage, OverridesPage, RoutingPage } 
 import { ConnectorsPage, EmailPage } from './connections';
 import { ApiKeysPage } from './keys';
 import { McpPage } from './ai';
+import { EvaSettingsPage, UsagePage } from './eva';
 import { ToolLogPage } from './log';
 
 export const ROUTES = {
@@ -33,7 +34,7 @@ export const ROUTES = {
   models: '/controls/models', naming: '/controls/naming', apps: '/controls/apps', routing: '/controls/routing',
   jobs: '/controls/jobs', overrides: '/controls/overrides', audit: '/controls/audit',
   connectors: '/controls/connectors', email: '/controls/email', mcp: '/controls/mcp', keys: '/controls/keys',
-  log: '/controls/log',
+  eva: '/controls/eva', usage: '/controls/usage', log: '/controls/log',
 } as const;
 export type ControlsRouter = Router<typeof ROUTES>;
 export const controlsRouter = (options: { window?: Window } = {}): ControlsRouter => createRouter(ROUTES, options);
@@ -53,7 +54,7 @@ const NAV: Array<[string, Array<[keyof typeof ROUTES, string, string]>]> = [
   ['People', [['users', 'Users', 'users'], ['roles', 'Roles', 'user-cog']]],
   ['Access', [['permissions', 'Permissions', 'list-checks'], ['security', 'Security', 'lock']]],
   ['Connections', [['connectors', 'Connectors', 'link'], ['email', 'Email', 'mail'], ['keys', 'API keys', 'hash']]],
-  ['AI', [['mcp', 'MCP', 'sparkles'], ['log', 'Tool log', 'activity']]],
+  ['AI', [['eva', 'Eva', 'sparkles'], ['mcp', 'MCP', 'link'], ['usage', 'Usage', 'chart-column'], ['log', 'Tool log', 'activity']]],
   ['Build', [['apps', 'Apps', 'package'], ['models', 'Models', 'layers'], ['naming', 'Naming', 'hash'], ['routing', 'Routing', 'globe']]],
   ['System', [['jobs', 'Jobs', 'clock'], ['overrides', 'Overrides', 'file-text'], ['audit', 'Audit log', 'activity']]],
 ];
@@ -233,6 +234,8 @@ function Shell(ctx: ControlsContext): HTMLElement {
       case 'connectors': return ConnectorsPage(ctx);
       case 'email': return EmailPage(ctx);
       case 'mcp': return McpPage(ctx);
+      case 'eva': return EvaSettingsPage(ctx);
+      case 'usage': return UsagePage(ctx);
       case 'log': return ToolLogPage(ctx);
       case 'keys': return ApiKeysPage(ctx);
       default: return Overview(ctx);

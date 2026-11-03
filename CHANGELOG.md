@@ -1,17 +1,26 @@
 # Changelog
 
-Evlet is pre-1.0. A minor version (0.2, 0.3) may change public APIs; the notes below
-say what to change. Evlet is not production ready.
+Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument that is
+removed or changed keeps working with a `DeprecationWarning` for at least one minor release
+first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## Unreleased (0.3.0.dev0)
 
-- **Evlet upgrades go through `evlet migrate`.** `apps.lock` and the installed manifest
-  now record the Evlet version and its last framework migration. An instance migrated
-  with another Evlet version refuses to serve and asks for `evlet migrate`, which backs
-  up the database and runs ordered, checksummed framework migrations
-  (`evlet_framework_migrations`) on the staged copy. Existing instances need one
-  `evlet migrate` after upgrading; it adopts today's startup tables with no other change
-  ([docs/app-upgrades.md](docs/app-upgrades.md#upgrade-evlet)).
+- **API stability for apps.** [docs/api-stability.md](docs/api-stability.md) names the
+  surface apps can rely on (the root exports, field keywords, lifecycle decorators and the
+  `evlet.ui` names in the app docs), the deprecation rule and what stays internal.
+  `tests/test_public_api.py` pins those names and signatures. A change needs a regenerated
+  snapshot and an entry here.
+- **Tool Engine and Eva exports.** The root exports gain `AI` (Eva's model settings),
+  `Application(ai=...)` turns Eva on for an application, and `@api(..., tool=True)` offers an
+  app service as a tool to Eva and MCP clients ([docs/eva.md](docs/eva.md),
+  [docs/tools.md](docs/tools.md)). These are additions; existing apps need no change.
+- **Version 0.3.0.dev0.** Generated apps and the examples now require
+  `evlet>=0.3.0.dev0,<0.4`, because a `<0.3` range does not match 0.3 pre-releases. Apps
+  that declare `evlet>=0.2.0,<0.3` must widen the range to install on `main`.
+- **`DevSignIn` export.** The root exports gain `DevSignIn`, which serves the one-time
+  development sign-in links of `evlet dev` and `evlet playground` ([docs/cli.md](docs/cli.md#development-sign-in-links)).
+  Never wrap an application you serve with it.
 - **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
   follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
   the default). The server writes the theme on `<html>` before the page paints, so nothing
@@ -36,12 +45,36 @@ say what to change. Evlet is not production ready.
 - **Playground items.** A new Item model has about 200 fields and two child tables (prices,
   barcodes), to try filters at scale. Run `.venv/bin/python -m examples.playground.migrate` (migration `0005_items`) on an
   existing Playground database.
+- **Playground invoice numbers.** New Playground invoices are named by a naming series,
+  `INV-{YYYY}-{#####}` dated by the posting date (`INV-2026-00001`), in a new `number` field
+  (migration `0006_invoice_number`; run `python -m examples.playground.migrate`). `reference` is now
+  labelled Customer reference. `/api/schema` marks a naming series field with `naming: {"field": ...}`
+  and the placeholder `Assigned on save`, and the New screen shows that field read only
+  ([docs/sequences.md](docs/sequences.md#naming-series)).
+- **Evlet upgrades go through `evlet migrate`.** `apps.lock` and the installed manifest
+  now record the Evlet version and its last framework migration. An instance migrated
+  with another Evlet version refuses to serve and asks for `evlet migrate`, which backs
+  up the database and runs ordered, checksummed framework migrations
+  (`evlet_framework_migrations`) on the staged copy. Existing instances need one
+  `evlet migrate` after upgrading; it adopts today's startup tables with no other change
+  ([docs/app-upgrades.md](docs/app-upgrades.md#upgrade-evlet)).
+- **Field retirement, safe type changes and data steps.** `RetireField` removes a field from the
+  models and API while keeping its column and values; `DropField` deletes a retired field's column
+  only with `allow_destructive=True` (`evlet migrate --allow-destructive`, which keeps a backup).
+  `AlterField` converts Integer to Decimal, widens a decimal scale, lengthens text and adds Select
+  choices, validating every stored row in the migration transaction. `RunData(function)` runs a
+  trusted data step right after its own migration; `RunData(..., maintenance=True)` may write
+  confirmed and posted records only with `--allow-maintenance`, and each such step is audited. A
+  retired Link drops its foreign key. `--plan` suggests RetireField and AlterField
+  ([docs/model-engine.md](docs/model-engine.md#retiring-and-dropping-fields)).
+  `RetireField`, `DropField`, `AlterField` and `RunData` are new root exports.
 - **Migration plans.** `evlet migrate <instance> --plan` and `database.plan(migrations)` show the
   pending migrations and each model, field and property that differs from the models, with a
   suggested migration; nothing is written. `evlet makemigration <app> --instance <instance>`
   writes that suggestion into a flat app. A mismatch error now lists the same differences.
   `AddTable(parent, name, ChildClass)` adds a child table without hand-written owner and position
   fields, and `CreateModel` no longer compares the Python class name ([docs/model-engine.md](docs/model-engine.md#planning-a-migration)).
+  `AddTable` and `MigrationPlan` (what `database.plan()` returns) are new root exports.
 - **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
   lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
   duration fields keep their typed input and add a calendar or steppers. List pages filter
