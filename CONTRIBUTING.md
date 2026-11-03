@@ -29,6 +29,13 @@ using the app. Press **Control-C** to stop its processes; your SQLite data remai
 On later runs, use `bash scripts/playground.sh` from the same folder. The launcher
 activates Homebrew's versioned Node and Python paths for its own process only.
 
+When the Playground is ready, the launcher prints a one-time sign-in link. Open it to
+sign straight in. On an empty database it first creates `demo-admin` with a random
+password that is never shown. For a fresh link while the launcher runs, use
+`bash scripts/playground.sh --link` in another terminal. `EVLET_DEV_USER=NAME` picks
+another account and `EVLET_DEV_LINK=0` skips the link at startup. See
+[development sign-in links](docs/cli.md#development-sign-in-links).
+
 Logs are in `examples/playground/.data/logs/5173/` by default. If ports 8000 or 5173 are already
 occupied, the launcher exits without stopping any existing service. Linux can
 use the same launcher with Python and Node already installed. Set
@@ -82,8 +89,9 @@ In another terminal, start Vite:
 npm --prefix frontend run dev
 ```
 
-The backend listens on port 8000; Vite listens on port 5173 and proxies `/api` and
-`/health` to it. Both bind to loopback. Use your development environment's normal
+The backend listens on port 8000; Vite listens on port 5173 and proxies `/api`,
+`/health` and `/_dev/signin` to it. The launcher runs `examples.playground.app:create_dev_app`,
+which adds one-time sign-in links; `create_app` has none. Both bind to loopback. Use your development environment's normal
 browser access where supported. Open http://127.0.0.1:5173 for the Evlet UI. Sign-in opens Docs.
 The sidebar lists the models with their database-backed screens.
 http://127.0.0.1:5173/evlet.html opens the component Library in development.

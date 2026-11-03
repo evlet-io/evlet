@@ -38,7 +38,12 @@ def playground_app(directory, port=8000):
     return app
 
 
-def playground(*, port=8000):
+def playground(*, port=8000, link=True, user=None):
+    from ..devlink import DevSignIn, write_marker
     with tempfile.TemporaryDirectory(prefix='evlet-playground-') as directory:
-        print(f'Playground: http://127.0.0.1:{port}\nDemo data is temporary. Create an administrator to explore the existing UI.', flush=True)
-        run_server(ManagedRuntime(lambda: playground_app(directory, port), jobs=True), host='127.0.0.1', port=port, lifespan='on', proxy_headers=False)
+        print(f'Playground: http://127.0.0.1:{port}\nDemo data is temporary.'
+              + ('' if link else ' Create an administrator to explore the existing UI.'), flush=True)
+        # evlet dev-link finds this Playground by the marker in its private temporary folder.
+        write_marker(directory, port)
+        runtime = ManagedRuntime(lambda: playground_app(directory, port), jobs=True)
+        run_server(DevSignIn(runtime, announce=link, user=user, create_admin=True), host='127.0.0.1', port=port, lifespan='on', proxy_headers=False)

@@ -13,6 +13,20 @@ def confirm(message):
     return sys.stdin.isatty() and input(message + ' [y/N] ').strip().lower() in ('y', 'yes')
 
 
+def add_link_options(command):
+    command.add_argument('--no-link', action='store_true', help='Do not print a one-time sign-in link at startup')
+    command.add_argument('--user', help='Sign the startup link in as this user (default: the only admin)')
+
+
+def choose_instance(root, command):
+    names = sorted(path.name for path in (root / 'instances').iterdir() if path.is_dir() and (path / 'config.py').is_file())
+    if len(names) == 1:
+        return names[0]
+    if names and sys.stdin.isatty():
+        return input('Choose an instance (' + ', '.join(names) + '): ').strip()
+    raise ValueError(f'Select an instance with evlet {command} --instance NAME. Create and install an app first')
+
+
 def parser():
     result = argparse.ArgumentParser(prog='evlet', description=__doc__)
     result.add_argument('--project', help='Project path; also accepted after the command')
@@ -49,6 +63,7 @@ def parser():
         else:
             command.add_argument('--instance', help='Required when the project has several instances')
             command.add_argument('--watch', action='store_true', help='Rebuild and reload when app source or assets change')
+            add_link_options(command)
         command.add_argument('--debug', action='store_true', help='Show tracebacks for expected startup errors')
         command.add_argument('--host', default='127.0.0.1')
         command.add_argument('--port', type=int, default=8000)
@@ -100,6 +115,13 @@ def parser():
     for name, port in (('playground', 8000), ('docs', 8001)):
         command = commands.add_parser(name, help='Launch bundled ' + name + ' without a project')
         command.add_argument('--port', type=int, default=port)
+        if name == 'playground':
+            add_link_options(command)
+    dev_link = commands.add_parser('dev-link', help='Print a fresh one-time sign-in link for a running evlet dev or evlet playground')
+    dev_link.add_argument('--user', help='Sign in as this user (default: the only admin)')
+    dev_link.add_argument('--instance', help='Required when the project has several instances')
+    dev_link.add_argument('--port', type=int, help='The development server port (default: 8000, or the running Playground)')
+    dev_link.add_argument('--playground', action='store_true', help='Use the running evlet playground even inside a project')
     for command in commands.choices.values():
         command.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     commands.add_parser('new', help='Create the original standalone starter', add_help=False)
@@ -119,7 +141,7 @@ def main(argv=None):
         from .connector import run
         return run(args)
     try:
-        if hasattr(args, 'port') and not 1 <= args.port <= 65535:
+        if getattr(args, 'port', None) is not None and not 1 <= args.port <= 65535:
             raise ValueError('Use a port between 1 and 65535')
         if args.command == 'setup':
             from .setup import setup
@@ -132,7 +154,11 @@ def main(argv=None):
                 docs(port=args.port)
             else:
                 from .playground import playground
-                playground(port=args.port)
+                playground(port=args.port, link=not args.no_link, user=args.user)
+            return
+        if args.command == 'dev-link':
+            from .devlink import dev_link
+            print(dev_link(args.project, playground=args.playground, instance=args.instance, port=args.port, user=args.user))
             return
         root = project_root(args.project)
         if argv is None:
@@ -294,16 +320,10 @@ def main(argv=None):
             print(f'Journal verified: {checked} hashed entries, no breaks')
         elif args.command in ('serve', 'dev'):
             from .serve import serve
-            name = args.instance
-            if not name:
-                names = sorted(path.name for path in (root / 'instances').iterdir() if path.is_dir() and (path / 'config.py').is_file())
-                if len(names) == 1:
-                    name = names[0]
-                elif names and sys.stdin.isatty():
-                    name = input('Choose an instance (' + ', '.join(names) + '): ').strip()
-                else:
-                    raise ValueError('Select an instance with evlet dev --instance NAME. Create and install an app first')
-            serve(root, name, host=args.host, port=args.port, development=args.command == 'dev', jobs=getattr(args, 'jobs', False), debug=args.debug)
+            name = args.instance or choose_instance(root, 'dev')
+            development = args.command == 'dev'
+            serve(root, name, host=args.host, port=args.port, development=development, jobs=getattr(args, 'jobs', False), debug=args.debug,
+                  link=development and not args.no_link, user=args.user if development else None)
     except (KeyboardInterrupt, BrokenPipeError):
         return
     except (ValueError, TypeError, SyntaxError, OSError, RuntimeError, ImportError, sqlite3.Error, subprocess.SubprocessError) as exc:
