@@ -1,6 +1,6 @@
 from datetime import date
 from evlet import (Model, Child, Table, Dialog, Link, Text, Decimal, Currency,
-                   Boolean, Integer, Date, Rule, Ref, depends, action, ValidationError, Select, Related)
+                   Boolean, Date, Rule, Ref, depends, action, ValidationError, Select, Related)
 from amendment.models.masters import Company, Warehouse, ItemMaster, BOM, WorkOrder
 from amendment.services.stock import available
 from amendment.services.planning import selection_rows, create_selected
@@ -52,7 +52,7 @@ class SalesOrder(Model):
 
         class Item(Child):
             selected = Boolean(default=True, required=True)
-            source_row_id = Integer(read_only=True)
+            source_row_id = Text(read_only=True)
             item = Link(ItemMaster, read_only=True)
             pending_qty = Decimal(read_only=True)
             qty = Decimal(default='0', minimum='0')

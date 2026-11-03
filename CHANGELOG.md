@@ -6,6 +6,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Breaking: record ids are text.** New records get a 63-bit, time-ordered id (milliseconds since
+  01-01-2026 and 21 random bits), stored as before in the `INTEGER` primary key. Outside the
+  database an id is always 13 lowercase Crockford base32 characters, such as `01hc1sd9vc1ye`: JSON
+  bodies, Link values, `{"model", "id"}` References, row ids, the journal, events, Slips' `source`,
+  Eva and MCP tool arguments, and URLs (`/api/invoice/01hc1sd9vc1ye`, `/app/invoice/01hc1sd9vc1ye`).
+  Ids are never JSON numbers, because a browser cannot hold 63 bits in a number. Existing rows keep
+  their ids (42 shows as `000000000001a`); nothing is rewritten.
+  What to change: clients read ids as strings and build URLs from them. A decimal id in an API path
+  is now a 404 (the browser turns an old `/app/invoice/42` bookmark into the text id). Writes still
+  take a JSON integer for a Link or a row id. In Python, `record.id` and Link values are
+  `RecordId` (a new root export), an `int` whose `str()` is the text id; `Database.get` takes either
+  form, and services and actions may take `RecordId` arguments
+  ([docs/model-engine.md](docs/model-engine.md#record-ids)).
 - **API stability for apps.** [docs/api-stability.md](docs/api-stability.md) names the
   surface apps can rely on (the root exports, field keywords, lifecycle decorators and the
   `evlet.ui` names in the app docs), the deprecation rule and what stays internal.
@@ -21,6 +34,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **`DevSignIn` export.** The root exports gain `DevSignIn`, which serves the one-time
   development sign-in links of `evlet dev` and `evlet playground` ([docs/cli.md](docs/cli.md#development-sign-in-links)).
   Never wrap an application you serve with it.
+- **Team and hierarchy row scopes.** New root exports `Hierarchy` and `any_of`. `Hierarchy(model, parent=...)` declares a reporting tree, and
+  `Hierarchy.team(field)` is a row scope over the user's linked record and everyone below it at any
+  depth, resolved in SQL with a recursive query on SQLite and PostgreSQL. `any_of(...)` combines
+  row scopes and filter objects with OR. They apply on every surface a row scope covers
+  ([docs/business-capabilities.md](docs/business-capabilities.md#team-and-hierarchy-scopes)). List pages
+  now check Link values for the whole page at once instead of per row.
+- **Account links are audited.** `LocalAuth.link_user` and `unlink_user` take an `actor` and write
+  each change to the Controls audit log (area Users); `evlet link-user` records `cli`.
 - **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
   follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
   the default). The server writes the theme on `<html>` before the page paints, so nothing

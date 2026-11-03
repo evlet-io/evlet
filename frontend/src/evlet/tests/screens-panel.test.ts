@@ -7,7 +7,9 @@ import { copy, type Recorded } from './server';
 
 afterEach(stopAll);
 
-const details: Record<number, Recorded> = { 3: invoice.invoice_draft, 2: invoice.invoice_revise_before, 1: invoice.invoice_void };
+// Ids as the server sends them: 13-character text.
+const [three, two, one] = [invoice.invoice_draft, invoice.invoice_revise_before, invoice.invoice_void].map(item => String(item.body.id));
+const details: Record<string, Recorded> = { [three]: invoice.invoice_draft, [two]: invoice.invoice_revise_before, [one]: invoice.invoice_void };
 /** The recorded schema, with the invoice opening records in `openIn` (absent: the recorded default). */
 function schema(openIn?: 'page' | 'panel'): Recorded {
   const body = copy(invoice.schema).body;
@@ -20,17 +22,17 @@ const routes = (openIn: 'page' | 'panel' | undefined = 'panel'): Route[] => [
   ['GET', /\/api\/invoice\?/, invoice.invoices],
   ['GET', /\/api\/invoice\/measures/, invoice.invoice_measures],
   ['GET', /\/api\/invoice\/aggregate/, invoice.invoice_aggregate_by_status],
-  ['GET', /\/api\/invoice\/\d+\/measures$/, invoice.invoice_record_measures],
-  ['GET', /\/api\/invoice\/\d+\/related\/payment\.invoice/, invoice.invoice_related_payments],
-  ['GET', /\/api\/invoice\/\d+\/related\/invoice\.revises/, invoice.invoice_related_revisions],
-  ['GET', /\/api\/invoice\/\d+\/journal/, invoice.invoice_journal],
-  ['GET', /\/api\/invoice\/\d+\/attachments$/, invoice.invoice_attachments],
-  ['GET', /\/api\/invoice\/\d+$/, sent => copy(details[Number(sent.url.match(/\/api\/invoice\/(\d+)$/)![1])])],
+  ['GET', /\/api\/invoice\/\w+\/measures$/, invoice.invoice_record_measures],
+  ['GET', /\/api\/invoice\/\w+\/related\/payment\.invoice/, invoice.invoice_related_payments],
+  ['GET', /\/api\/invoice\/\w+\/related\/invoice\.revises/, invoice.invoice_related_revisions],
+  ['GET', /\/api\/invoice\/\w+\/journal/, invoice.invoice_journal],
+  ['GET', /\/api\/invoice\/\w+\/attachments$/, invoice.invoice_attachments],
+  ['GET', /\/api\/invoice\/\w{13}$/, sent => copy(details[sent.url.match(/\/api\/invoice\/(\w{13})$/)![1]])],
   ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ['GET', new RegExp(`/api/payment/${invoice.invoice_payment.body.id}$`), invoice.invoice_payment],
 ];
 
-const row = (host: Element, id: number) => host.querySelector<HTMLElement>(`.ev-list tbody tr[data-key="${id}"]`);
+const row = (host: Element, id: string) => host.querySelector<HTMLElement>(`.ev-list tbody tr[data-key="${id}"]`);
 const panel = (host: Element) => host.querySelector<HTMLElement>('.ev-panel');
 const panelTitle = (host: Element) => text(panel(host)?.querySelector('.doc-head h1'));
 const columns = (host: Element) => [...host.querySelectorAll('.ev-list thead th')].map(text);
@@ -57,15 +59,15 @@ async function editFirstLine(host: HTMLElement) {
 describe('records in a side panel beside the list', () => {
   it('opens a row in the panel: the list narrows, the row is current and the address names it', async () => {
     const { host } = start(routes(), '/app/invoice');
-    await until(() => expect(row(host, 3)).not.toBeNull());
+    await until(() => expect(row(host, three)).not.toBeNull());
     expect(columns(host)).toContain('Customer');
-    click(row(host, 3));
-    await until(() => expect(location.search).toBe('?open=3'));
+    click(row(host, three));
+    await until(() => expect(location.search).toBe(`?open=${three}`));
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
     // The list keeps the title, the State and the first amount, without bulk checkboxes.
     await until(() => expect(columns(host)).toEqual(['Number', 'Status', 'Total']));
-    expect(row(host, 3)!.getAttribute('aria-current')).toBe('true');
-    expect(row(host, 3)!.classList.contains('cur')).toBe(true);
+    expect(row(host, three)!.getAttribute('aria-current')).toBe('true');
+    expect(row(host, three)!.classList.contains('cur')).toBe(true);
     // Same sections as the full page: tabs, and the side column folded into Details.
     expect([...panel(host)!.querySelectorAll('.doc-tabs [role="tab"]')].map(text)).toEqual(['Activity', 'Details', 'Lines2', 'Related', 'Postings']);
     expect(panel(host)!.querySelector('.doc-side')).toBeNull();
@@ -82,18 +84,18 @@ describe('records in a side panel beside the list', () => {
 
   it('follows the arrow keys along the list, replacing the history entry, and Back closes the panel', async () => {
     const { host } = start(routes(), '/app/invoice');
-    await until(() => expect(row(host, 3)).not.toBeNull());
+    await until(() => expect(row(host, three)).not.toBeNull());
     const before = history.length;
-    click(row(host, 3));
+    click(row(host, three));
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
     expect(history.length).toBe(before + 1);
-    press(row(host, 3)!, 'ArrowDown');
-    await until(() => expect(location.search).toBe('?open=2'));
+    press(row(host, three)!, 'ArrowDown');
+    await until(() => expect(location.search).toBe(`?open=${two}`));
     await until(() => expect(panelTitle(host)).toBe('INV-2026-00002'));
-    expect(row(host, 2)!.getAttribute('aria-current')).toBe('true');
-    expect(document.activeElement).toBe(row(host, 2));
-    press(row(host, 2)!, 'ArrowDown');
-    await until(() => expect(location.search).toBe('?open=1'));
+    expect(row(host, two)!.getAttribute('aria-current')).toBe('true');
+    expect(document.activeElement).toBe(row(host, two));
+    press(row(host, two)!, 'ArrowDown');
+    await until(() => expect(location.search).toBe(`?open=${one}`));
     expect(history.length).toBe(before + 1);
     history.back();
     await until(() => expect(location.search).toBe(''));
@@ -101,30 +103,30 @@ describe('records in a side panel beside the list', () => {
   });
 
   it('switching tabs keeps the record and writes rtab; leaving the record with unsaved changes asks', async () => {
-    const { host } = start(routes(), '/app/invoice?open=3');
+    const { host } = start(routes(), `/app/invoice?open=${three}`);
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
     await editFirstLine(host);
-    await until(() => expect(location.search).toBe('?open=3&rtab=t-lines'));
+    await until(() => expect(location.search).toBe(`?open=${three}&rtab=t-lines`));
     // Another tab of the same record does not ask.
     click(byText(panel(host)!, '[role="tab"]', 'Activity'));
-    await until(() => expect(location.search).toBe('?open=3'));
+    await until(() => expect(location.search).toBe(`?open=${three}`));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     // Another row does: Cancel keeps the record and its change, Discard moves on.
-    press(row(host, 3)!, 'ArrowDown');
+    press(row(host, three)!, 'ArrowDown');
     await until(() => expect(dialogTitle()).toBe('Discard unsaved changes?'));
     click(byText(document, '[role="dialog"] button', 'Cancel'));
-    await until(() => expect(location.search).toBe('?open=3'));
+    await until(() => expect(location.search).toBe(`?open=${three}`));
     expect(panelTitle(host)).toBe('Draft invoice');
     expect(panel(host)!.querySelector('.ev-savebar')).not.toBeNull();
-    click(row(host, 2));
+    click(row(host, two));
     await until(() => expect(dialogTitle()).toBe('Discard unsaved changes?'));
     click(byText(document, '[role="dialog"] button', 'Discard changes'));
     await until(() => expect(panelTitle(host)).toBe('INV-2026-00002'));
-    expect(location.search).toBe('?open=2');
+    expect(location.search).toBe(`?open=${two}`);
   });
 
   it('a link or a reload opens the same record and tab; Escape closes it and returns focus to the row', async () => {
-    const { host } = start(routes('page'), '/app/invoice?open=3&rtab=t-lines');
+    const { host } = start(routes('page'), `/app/invoice?open=${three}&rtab=t-lines`);
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
     expect(byText(panel(host)!, '[role="tab"]', /^Lines/)!.getAttribute('aria-selected')).toBe('true');
     // Narrow child rows: the first value, the amount and Open full table.
@@ -133,35 +135,35 @@ describe('records in a side panel beside the list', () => {
     press(panel(host)!.querySelector('.crow-h')!, 'Escape');
     await until(() => expect(location.search).toBe(''));
     expect(panel(host)).toBeNull();
-    await until(() => expect(document.activeElement).toBe(row(host, 3)));
+    await until(() => expect(document.activeElement).toBe(row(host, three)));
   });
 
   it('opens on the full page when the model says so, unless the person chose the side panel', async () => {
     const page = start(routes('page'), '/app/invoice');
-    await until(() => expect(row(page.host, 3)).not.toBeNull());
-    click(row(page.host, 3));
-    await until(() => expect(location.pathname).toBe('/app/invoice/3'));
+    await until(() => expect(row(page.host, three)).not.toBeNull());
+    click(row(page.host, three));
+    await until(() => expect(location.pathname).toBe(`/app/invoice/${three}`));
     stopAll();
 
     const user = invoice.session.body.user.username;
     const chosen = start(routes('page'), '/app/invoice', { storage: storage({ [`evlet.${user}.openIn.invoice`]: 'panel' }) });
-    await until(() => expect(row(chosen.host, 3)).not.toBeNull());
-    click(row(chosen.host, 3));
-    await until(() => expect(location.search).toBe('?open=3'));
+    await until(() => expect(row(chosen.host, three)).not.toBeNull());
+    click(row(chosen.host, three));
+    await until(() => expect(location.search).toBe(`?open=${three}`));
     // The layout menu switches back to the full page for this person.
     click(chosen.host.querySelector('.ev-list button[aria-label="Open records in"]'));
     await until(() => expect(byText(document, '[role="menuitem"]', 'Full page')).not.toBeNull());
     click(byText(document, '[role="menuitem"]', 'Full page'));
-    click(row(chosen.host, 2));
-    await until(() => expect(location.pathname).toBe('/app/invoice/2'));
+    click(row(chosen.host, two));
+    await until(() => expect(location.pathname).toBe(`/app/invoice/${two}`));
   });
 
   it('expands to the full page at the same tab with the unsaved change, without asking', async () => {
-    const { host } = start(routes(), '/app/invoice?open=3');
+    const { host } = start(routes(), `/app/invoice?open=${three}`);
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
     await editFirstLine(host);
     click(panel(host)!.querySelector('.ev-panel-bar button[aria-label="Open full page"]'));
-    await until(() => expect(location.pathname + location.search).toBe('/app/invoice/3?tab=t-lines'));
+    await until(() => expect(location.pathname + location.search).toBe(`/app/invoice/${three}?tab=t-lines`));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     await until(() => expect(host.querySelector('.ev-savebar')).not.toBeNull());
     expect(host.querySelector('.ev-panel')).toBeNull();
@@ -169,7 +171,7 @@ describe('records in a side panel beside the list', () => {
   });
 
   it('keeps two header buttons in the panel and moves the rest into More', async () => {
-    const { host } = start(routes(), '/app/invoice?open=3');
+    const { host } = start(routes(), `/app/invoice?open=${three}`);
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
     const buttons = () => [...panel(host)!.querySelectorAll('.doc-head .ph-actions button:not([aria-label="More actions"])')].map(text);
     await until(() => expect(buttons()).toEqual(['Issue', 'Record payment']));
@@ -181,7 +183,7 @@ describe('records in a side panel beside the list', () => {
 
   it('creates a record in the panel: New opens ?open=new and Cancel closes it', async () => {
     const { host } = start(routes(), '/app/invoice');
-    await until(() => expect(row(host, 3)).not.toBeNull());
+    await until(() => expect(row(host, three)).not.toBeNull());
     click(byText(host, '.ev-list .ph-actions button, .ev-list button', /New invoice/));
     await until(() => expect(location.search).toBe('?open=new'));
     await until(() => expect(panelTitle(host)).toBe('New invoice'));

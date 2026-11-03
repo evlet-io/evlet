@@ -6,6 +6,7 @@
 
 import { html, match, when, type Child } from '../dom';
 import { ApiError, ValidationError, type RecordData } from '../api';
+import { legacyRecordId, recordId } from '../ids';
 import { batch, cell, derive, effect, onCleanup, runWithOwner, untrack, type Readable } from '../reactive';
 import type { Route } from '../router';
 import { RecordStore, type Field, type Rules } from '../model/record';
@@ -67,7 +68,8 @@ function initialValues(model: ScreenModel, query: Record<string, string>) {
   for (const [name, text] of Object.entries(query)) {
     const meta = fieldOf(model, name);
     if (RESERVED.has(name) || !meta || meta.hidden || meta.read_only || meta.compute || meta.type === 'sequence' || isStateField(model, meta)) continue;
-    values[name] = meta.type === 'link' || meta.type === 'integer' ? (Number.isSafeInteger(Number(text)) ? Number(text) : null) : meta.type === 'boolean' ? text === 'true' : text;
+    values[name] = meta.type === 'link' ? recordId(text) ?? legacyRecordId(text)
+      : meta.type === 'integer' ? (Number.isSafeInteger(Number(text)) ? Number(text) : null) : meta.type === 'boolean' ? text === 'true' : text;
   }
   return values;
 }
@@ -86,7 +88,7 @@ export interface PanelHost {
   stays(to: Route<any> | null): boolean;
   close(): void;
   /** Open another record of the model in the panel, or the one just created. */
-  show(id: number): void;
+  show(id: string): void;
   /** The record was deleted. */
   removed(): void;
 }
@@ -104,8 +106,15 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
   const { api, router } = ctx;
   const model = screenModel(ctx.schema, name);
   const isNew = idText === 'new';
-  const id = isNew ? null : Number(idText);
-  if (!isNew && !(Number.isSafeInteger(id) && id! > 0)) return missing(ctx, model, panel);
+  // An older bookmark carries a decimal id (/app/invoice/42): open the same record under its text id.
+  const legacy = isNew ? null : legacyRecordId(idText);
+  if (legacy && !panel) {
+    const route = router.route.peek();
+    queueMicrotask(() => void router.go(route?.name === 'view' ? 'view' : 'record', { model: name, id: legacy }, route?.query ?? {}, { replace: true }));
+    return html`<div></div>` as HTMLElement;
+  }
+  const id = isNew ? null : recordId(legacy ?? idText);
+  if (!isNew && !id) return missing(ctx, model, panel);
   const handed = panel ? null : takeHandoff(name, idText);
   // A panel's store lives outside the panel's scope so Expand can hand it to the record page.
   const make = () => new RecordStore({ api, schema: ctx.schema, model: name, user: ctx.user });
@@ -286,7 +295,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   };
   // An action may answer with a slip to present next: return present(Slip, ...) in Python.
   const presentNext = () => {
-    const next = (store.outcome as { present?: { slip: string; source?: { model: string; id: number } | null; values?: Record<string, unknown> } } | null)?.present;
+    const next = (store.outcome as { present?: { slip: string; source?: { model: string; id: string } | null; values?: Record<string, unknown> } } | null)?.present;
     if (next) void presentSlip(next.slip, { source: next.source, values: next.values });
     return Boolean(next);
   };
@@ -507,7 +516,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const stats: StatProps[] = summaryFields(model).filter(meta => has(meta.name)).map(meta => ({
     label: meta.label, value: () => {
       const value = view(meta.name).value.get();
-      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, Number(value)).get() ?? '…';
+      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
       return formatOf(meta, value);
     },
     empty: 'Not set',
@@ -715,7 +724,7 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
 
 // ---------- related ----------
 
-function Related(ctx: AppContext, model: ScreenModel, id: number, relations: NonNullable<ScreenModel['relations']>): Child {
+function Related(ctx: AppContext, model: ScreenModel, id: string, relations: NonNullable<ScreenModel['relations']>): Child {
   return relations.map(relation => {
     const target = screenModel(ctx.schema, relation.model);
     const rows = cell<RecordData[]>([]), total = cell<number | null>(null), problem = cell('');
@@ -760,7 +769,7 @@ const KINDS: Record<string, [string, any, string]> = {
 };
 
 interface Change { old: unknown; new: unknown }
-interface RowChanges { added?: Array<{ id: number }>; updated?: Array<{ id: number }>; removed?: Array<{ id: number }>; reordered?: boolean }
+interface RowChanges { added?: Array<{ id: string }>; updated?: Array<{ id: string }>; removed?: Array<{ id: string }>; reordered?: boolean }
 
 function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
   const page = cell<JournalPage | null>(null), problem = cell('');

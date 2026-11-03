@@ -167,7 +167,7 @@ export class Session {
   }
 
   // Lookups this session wants that an earlier session of the record already read.
-  private cached(doc: FiniteDocument): Array<[string, number, Record<string, unknown>]> {
+  private cached(doc: FiniteDocument): Array<[string, string, Record<string, unknown>]> {
     return doc.lookupRequests().filter(([model, id]) => !this.tried.has(`${model}:${id}`) && this.lookups.has(`${model}:${id}`))
       .map(([model, id, fields]) => {
         this.tried.add(`${model}:${id}`);
@@ -205,8 +205,8 @@ export class Session {
 
   // Records that arrive together are handed over in one batch, so the document settles once for
   // them instead of once per record; each still applies as soon as it arrives.
-  private arrived: Array<[string, number, Record<string, unknown>]> = [];
-  private arrive(doc: FiniteDocument, item: [string, number, Record<string, unknown>]) {
+  private arrived: Array<[string, string, Record<string, unknown>]> = [];
+  private arrive(doc: FiniteDocument, item: [string, string, Record<string, unknown>]) {
     this.arrived.push(item);
     if (this.arrived.length > 1) return;
     queueMicrotask(() => {

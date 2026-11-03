@@ -9,6 +9,7 @@ import json
 import re
 
 from .auth import AccessError
+from .identity import RecordId, path_id, text as text_id
 
 SOURCES = ('User', 'API', 'Automation', 'Scheduler', 'System', 'Integration')
 OPERATIONS = {'confirm': ('draft', 'confirmed'), 'cancel': ('confirmed', 'cancelled'), 'reopen': ('cancelled', 'draft')}
@@ -282,7 +283,7 @@ def project_tree(context, model, data):
     visibility = Visibility(business, context._tx, context.user)
     def project(definition, tree):
         allowed = policy.fields(context.user, definition)
-        result = {'id': tree['id']}
+        result = {'id': text_id(tree['id'])}
         for name, field in definition.__fields__.items():
             if name in allowed and name in tree and field.tracking != 'exclude':
                 value = tree[name]
@@ -294,7 +295,7 @@ def project_tree(context, model, data):
             if child.parent is definition and policy.allows(context.user, child.model, 'read'):
                 scoped = policy.rule(context.user, child.model).scope is not None
                 rows = tree.get('children', {}).get(child.name, [])
-                children[child.name] = [project(child.model, row) for row in rows if not scoped or visibility(child.model, row['id'])]
+                children[child.name] = [project(child.model, row) for row in rows if not scoped or visibility(child.model, RecordId(row['id']))]
         result['children'] = children
         return result
     result = project(model, data)
@@ -359,9 +360,9 @@ def diff(context, model, record_id, first, second):
 def route(business, scope, body, user, model, parts):
     from urllib.parse import parse_qs
     from .models import ValidationError
-    if len(parts) != 5 or not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1:
+    if len(parts) != 5 or path_id(parts[3]) is None:
         raise AccessError(404, 'Record not found')
-    record_id, operation, method = int(parts[3]), parts[4], scope['method']
+    record_id, operation, method = path_id(parts[3]), parts[4], scope['method']
     if operation in OPERATIONS:
         if method != 'POST':
             raise AccessError(405, 'Method not allowed')

@@ -1,6 +1,7 @@
 """A small consumer of Evlet's public API, not an accounting system."""
 
-from evlet import Boolean, Currency, Date, DateTime, Decimal, Integer, Link, LongText, Model, Naming, Registry, Select, Series, Text
+from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Registry,
+                   Rule, Select, Series, Text)
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
 CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
@@ -87,8 +88,28 @@ class ProjectTask(Model):
     done = Boolean(required=True, default=False)
 
 
+# Who reports to whom. A viewer linked to an employee (LocalAuth.link_user) reads that employee and
+# everyone below them, at any depth; editors and admins (HR) read everyone. See seed_team in team.py.
+TEAM = Hierarchy('employee', parent='reports_to')
+
+
+class Employee(Model):
+    class Meta:
+        description = "People and who they report to."
+        list_fields = ('name', 'email', 'reports_to')
+        search_fields = ('name', 'email')
+
+    # Moving someone changes every team above them, so each save keeps who changed reports_to and when.
+    track_changes = True
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete')),
+                   'viewer': Rule(('read',), scope=TEAM.team())}
+    name = Text(required=True, max_length=120)
+    email = Text(max_length=254)
+    reports_to = Link('employee', index=True, label='Reports to')
+
+
 # Items have about 200 fields and two child tables: the list filters at scale. Imported here so the
 # registry lists every Playground model; items.py links to customers by name, not by import.
 from .items import Item  # noqa: E402
 
-registry = Registry(Customer, Invoice, Payment, Project, ProjectTask, Item)
+registry = Registry(Customer, Invoice, Payment, Project, ProjectTask, Item, Employee)

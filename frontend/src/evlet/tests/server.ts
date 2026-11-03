@@ -1,12 +1,16 @@
 // A fetch stub that replays real backend responses recorded in api-fixture.json
 // (scripts/generate_ui_framework_fixtures.py), and records what the client sent.
 import fixture from './api-fixture.json';
+import { legacyRecordId } from '../ids';
 
 export type Recorded = { status: number; body: any; etag: string | null };
 export const responses = fixture as Record<string, Recorded>;
 export interface Sent { method: string; url: string; headers: Record<string, string>; body: any }
 type Reply = keyof typeof fixture | Recorded | ((sent: Sent) => Recorded | Promise<Recorded>);
 type Route = [method: string, path: RegExp, reply: Reply];
+
+/** The text id of an old integer id, as the recordings number rows per table: id(1) is '0000000000001'. */
+export const id = (n: number): string => legacyRecordId(String(n))!;
 
 /** Deep copy, so a test that changes a response does not change it for the next test. */
 export const copy = <T>(value: T): T => structuredClone(value);
@@ -18,7 +22,7 @@ export function server(routes: Route[]) {
   // answered from the routes of the single records, as the server would list them.
   const titles = async (url: string): Promise<Recorded | null> => {
     const parsed = new URL(url, 'http://127.0.0.1');
-    const ids = (JSON.parse(parsed.searchParams.get('filters') ?? '{}') as { id__in?: number[] }).id__in;
+    const ids = (JSON.parse(parsed.searchParams.get('filters') ?? '{}') as { id__in?: string[] }).id__in;
     if (!ids) return null;
     const items: unknown[] = [];
     for (const id of ids) {

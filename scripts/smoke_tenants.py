@@ -115,7 +115,7 @@ def main():
                 time.sleep(0.1)
             else:
                 raise RuntimeError('Smoke servers did not become ready')
-            credentials = {}
+            credentials, projects = {}, {}
             for slug in ('alpha', 'beta'):
                 status, session, _ = request(slug, '/api/auth/session')
                 assert status == 200 and session['tenant']['slug'] == slug and not session['setup']
@@ -124,9 +124,10 @@ def main():
                 if production: assert cookie.startswith('__Host-evlet_session=') and '; Secure' in cookie
                 auth = credentials[slug] = {'cookie': cookie.split(';')[0], 'csrf': login['csrf']}
                 status, project, _ = request(slug, '/api/project', 'POST', {'name': slug, 'children': {'tasks': [{'title': slug, 'done': True}]}}, auth)
-                assert status == 201 and project['id'] == 1
-                assert request(slug, '/api/project/1/actions/start', 'POST', {}, auth)[0] == 200
-                assert request(slug, '/api/project/1/attachments', 'POST', {'name': 'private.txt', 'content': base64.b64encode(slug.encode()).decode()}, auth)[0] == 201
+                assert status == 201 and isinstance(project['id'], str)
+                projects[slug] = project['id']
+                assert request(slug, f'/api/project/{projects[slug]}/actions/start', 'POST', {}, auth)[0] == 200
+                assert request(slug, f'/api/project/{projects[slug]}/attachments', 'POST', {'name': 'private.txt', 'content': base64.b64encode(slug.encode()).decode()}, auth)[0] == 201
             for slug, other in (('alpha', 'beta'), ('beta', 'alpha')):
                 auth = credentials[slug]
                 assert request(slug, '/api/project', auth=auth)[1]['items'][0]['name'] == slug
@@ -138,19 +139,19 @@ def main():
                     messages = [
                         {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-11-25', 'capabilities': {}, 'clientInfo': {'name': 'smoke', 'version': '1'}}},
                         {'jsonrpc': '2.0', 'method': 'notifications/initialized'},
-                        {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'get_record', 'arguments': {'model': 'project', 'id': 1}}},
+                        {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'get_record', 'arguments': {'model': 'project', 'id': projects[slug]}}},
                     ]
                     result = subprocess.run([sys.executable, '-m', 'evlet', 'mcp', '--session', str(session_file)], cwd=ROOT,
                                             input=''.join(json.dumps(message) + '\n' for message in messages), capture_output=True, text=True, timeout=15, check=True)
                     replies = [json.loads(line) for line in result.stdout.splitlines()]
                     assert len(replies) == 2 and replies[1]['result']['structuredContent']['name'] == slug
 
-                assert request(slug, '/api/project/1/attachments/1', auth=auth)[1] == slug.encode()
-                assert request(slug, '/api/project/1/attachments/1', auth=credentials[other])[0] == 401
+                assert request(slug, f'/api/project/{projects[slug]}/attachments/1', auth=auth)[1] == slug.encode()
+                assert request(slug, f'/api/project/{projects[slug]}/attachments/1', auth=credentials[other])[0] == 401
                 assert request(slug, '/api/auth/session', auth=auth, headers={'X-Forwarded-Host': other + suffix, 'X-Forwarded-For': '203.0.113.12'})[1]['tenant']['slug'] == slug
             jobs = {}
             for slug in ('alpha', 'beta'):
-                status, result, _ = request(slug, '/api/project/1/actions/refresh_progress', 'POST', {}, credentials[slug])
+                status, result, _ = request(slug, f'/api/project/{projects[slug]}/actions/refresh_progress', 'POST', {}, credentials[slug])
                 assert status == 202
                 jobs[slug] = result['job']['id']
             cursor = request('alpha', '/api/_events', auth=credentials['alpha'])[1]['cursor']
@@ -167,7 +168,7 @@ def main():
                     line = feed.readline()
                     if line.startswith(b'data: '):
                         page = json.loads(line[6:])
-                        if any(item['model'] == 'project' and item['id'] == 1 for item in page['items']):
+                        if any(item['model'] == 'project' and item['id'] == projects['alpha'] for item in page['items']):
                             observed = True; break
                 assert observed, 'No job completion event arrived over SSE'
             finally:
@@ -178,7 +179,7 @@ def main():
                     if status['state'] == 'succeeded': break
                     time.sleep(0.1)
                 else: raise AssertionError('Worker did not complete the queued task')
-                assert request(slug, '/api/project/1', auth=credentials[slug])[1]['progress'] == 100
+                assert request(slug, f'/api/project/{projects[slug]}', auth=credentials[slug])[1]['progress'] == 100
             replay = request('alpha', '/api/_events?cursor=' + cursor, auth=credentials['alpha'])[1]
             assert any(item['model'] == 'project' for item in replay['items'])
             if not production:
@@ -190,13 +191,13 @@ def main():
             start(server)
             for attempt in range(100):
                 try:
-                    if request('alpha', '/api/project/1/attachments/1', auth=credentials['alpha'])[1] == b'alpha': break
+                    if request('alpha', f"/api/project/{projects['alpha']}/attachments/1", auth=credentials['alpha'])[1] == b'alpha': break
                 except (OSError, http.client.HTTPException, ValueError): pass
                 time.sleep(0.1)
             else: raise AssertionError('Tenant session/file did not survive restart')
             catalog.set_active('alpha', False)
             assert request('alpha', '/api/auth/session', auth=credentials['alpha'])[0] == 421
-            assert request('beta', '/api/project/1', auth=credentials['beta'])[0] == 200
+            assert request('beta', f"/api/project/{projects['beta']}", auth=credentials['beta'])[0] == 200
             print('Two-tenant smoke passed: sign-in, records, children, actions, files, discovery, durable jobs, SSE/polling replay, restart, and revocation' + (' with connector reads' if not production else '') + (' through local Caddy HTTPS.' if production else ' through Vite.' if args.frontend else '.'))
         except BaseException:
             log.flush(); log.seek(0); print(log.read(), file=sys.stderr)

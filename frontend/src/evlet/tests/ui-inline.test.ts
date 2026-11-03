@@ -3,7 +3,7 @@ import { cell } from '../reactive';
 import { localField } from '../ui/fields';
 import { FormSection, InlineValue, KeyValueList } from '../ui/inline';
 import { responses } from './server';
-import { backend, change, cleanup, key, pick, render } from './ui-helpers';
+import { backend, id, change, cleanup, key, pick, render } from './ui-helpers';
 
 afterEach(() => { vi.useRealTimers(); cleanup(); });
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -11,7 +11,7 @@ const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 describe('InlineValue with the record store', () => {
   it('reads first, edits on click, saves one field on Enter with no Save button, and offers Undo', async () => {
     const { store, sent } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const host = render(() => InlineValue({ field: store.field('title') }));
     const rest = host.querySelector<HTMLButtonElement>('button.fval')!;
     expect(rest.textContent).toContain('Big order');
@@ -34,7 +34,7 @@ describe('InlineValue with the record store', () => {
 
   it('cancels with Esc and restores the value, without a request', async () => {
     const { store, sent } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const host = render(() => InlineValue({ field: store.field('title') }));
     host.querySelector<HTMLButtonElement>('button.fval')!.click();
     const input = host.querySelector('input')!;
@@ -48,7 +48,7 @@ describe('InlineValue with the record store', () => {
 
   it('saves a select as soon as it changes', async () => {
     const { store, sent } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const host = render(() => InlineValue({ field: store.field('stage') }));
     host.querySelector<HTMLButtonElement>('button.fval')!.click();
     pick(host.querySelector<HTMLElement>('.in-select')!, 'Won');
@@ -57,8 +57,8 @@ describe('InlineValue with the record store', () => {
   });
 
   it('stays in edit mode with the server message when the save is refused', async () => {
-    const { store } = backend([['PATCH', /\/api\/order\/1$/, { status: 422, etag: null, body: { error: 'Validation failed', fields: { title: 'Use a shorter title' } } }]]);
-    await store.open(1);
+    const { store } = backend([['PATCH', /\/api\/order\/0000000000001$/, { status: 422, etag: null, body: { error: 'Validation failed', fields: { title: 'Use a shorter title' } } }]]);
+    await store.open(id(1));
     const host = render(() => InlineValue({ field: store.field('title') }));
     host.querySelector<HTMLButtonElement>('button.fval')!.click();
     const input = host.querySelector('input')!;
@@ -72,7 +72,7 @@ describe('InlineValue with the record store', () => {
 
   it('shows calculated and locked values read only, with the reason on hover', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const host = render(() => KeyValueList([store.field('total')]));
     const value = host.querySelector<HTMLElement>('.fval.ro')!;
     expect(host.querySelector('button.fval')).toBeNull();

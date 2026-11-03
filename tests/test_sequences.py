@@ -10,6 +10,7 @@ from evlet import (AddField, ConflictError, Database, Date, Link, Migration, Mod
                    Sequence, State, Text, ValidationError, action)
 from evlet.auth import User
 from evlet.calc import F
+from evlet.identity import RecordId
 from evlet.sequences import backfill, clear_for_copy, parse_format
 from test_business import client
 from test_rules_types import ALL, add_user, start
@@ -427,7 +428,7 @@ def test_counters_live_in_the_framework_table(numbered):
     issue(c, two, '2027-04-01')
     with app.database.transaction() as tx:
         rows = tx.connection.execute('SELECT model, field, scope_key, period, "last" FROM evlet_sequence ORDER BY scope_key').fetchall()
-    assert [tuple(row) for row in rows] == [('invoice', 'number', f'[{one}]', '2026', 1), ('invoice', 'number', f'[{two}]', '2027', 1)]
+    assert [tuple(row) for row in rows] == [('invoice', 'number', f'[{int(RecordId(one))}]', '2026', 1), ('invoice', 'number', f'[{int(RecordId(two))}]', '2027', 1)]
 
 
 def test_clear_for_copy_gives_a_copy_a_fresh_number():
@@ -443,8 +444,7 @@ def check_a_sequence_can_be_added_to_an_existing_table(make):
         permissions = ALL
         title = Text(default='')
     database = make(Registry(Ticket), [])
-    for title in ('a', 'b', 'c'):
-        database.create(Ticket, title=title)
+    made = [database.create(Ticket, title=title).id for title in ('a', 'b', 'c')]
     with pytest.raises(SchemaError, match='without a backfill'):
         AddField('ticket', 'code', Sequence('T{n}'), backfill='T1').signature()
 
@@ -463,7 +463,7 @@ def check_a_sequence_can_be_added_to_an_existing_table(make):
     assert [record.code for record in upgraded.list(Ticket, order_by=('id',))] == ['T2', 'T3', None, 'T1']
     with pytest.raises(ConflictError):
         with upgraded.transaction() as tx, tx.maintenance():
-            tx.update(Ticket, 3, code='T1')
+            tx.update(Ticket, made[2], code='T1')
     return upgraded
 
 
@@ -579,7 +579,7 @@ def check_raw_session_writes_number_and_keep_scope(numbered):
         assert tx.create(Ticket, title='raw').code == 'T1'
         assert tx.create(Invoice, company=one, posting_date='2026-01-01').number is None
         with tx.maintenance():
-            assert tx.update(Invoice, record['id'], company=two).company == two
+            assert tx.update(Invoice, record['id'], company=two).company == RecordId(two)
     assert c('POST', '/api/ticket', {})[1]['code'] == 'T2'
 
 

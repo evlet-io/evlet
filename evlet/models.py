@@ -5,6 +5,7 @@ from types import MappingProxyType
 
 from .fields import ACTIVE, Field, Link, MISSING, RULES, Reference, State, active_layer
 from .declarations import Table, ReactiveQuery, DEFAULT_TABLE_ROWS
+from .identity import RecordId
 
 
 def identifier(name):
@@ -217,7 +218,7 @@ class Model(metaclass=ModelType):
             # A column another process just dropped reads as empty.
             if not getattr(field, 'instance', None) or name in row.keys()
         })
-        instance._id = row["id"]
+        instance._id = RecordId(row["id"])
         return instance
 
 

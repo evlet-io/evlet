@@ -365,8 +365,8 @@ def check_retire_alter_and_run_data(make):
     database = make(people_models(), [])
     app = application(database)
     with app.business.context(ADMIN) as context:
-        context.update(database.registry.models['employee'], context.create(database.registry.models['employee'], name='x')['id'],
-                       name='Mariam Khan')
+        khan = context.create(database.registry.models['employee'], name='x')['id']
+        context.update(database.registry.models['employee'], khan, name='Mariam Khan')
     employee, leave = confirmed_leave(database)
 
     # Integer to Decimal: a failing batch changes nothing.
@@ -402,11 +402,11 @@ def check_retire_alter_and_run_data(make):
     app = application(database)
     Employee = split.models['employee']
     with app.business.context(ADMIN) as context:
-        record = context.get(Employee, 1)
+        record = context.get(Employee, khan)
         assert (record.first_name, record.last_name) == ('Mariam', 'Khan')
         assert not hasattr(record, 'name')
         added = context.create(Employee, first_name='Omar')['id']
-    assert raw(database, f'SELECT name FROM employee WHERE id IN (1, {added}) ORDER BY id') == [('Mariam Khan',), (None,)]
+    assert raw(database, f'SELECT name FROM employee WHERE id IN ({int(khan)}, {int(added)}) ORDER BY id') == [('Mariam Khan',), (None,)]
     checked, breaks = verify(database)
     assert checked and not breaks
 
@@ -414,13 +414,13 @@ def check_retire_alter_and_run_data(make):
     later = history + [Migration('0003_drop_name', DropField('employee', 'name'))]
     with pytest.raises(SchemaError, match='allow_destructive'):
         make(split, later, migrate=True)
-    assert raw(database, 'SELECT name FROM employee WHERE id = 1') == [('Mariam Khan',)]
+    assert raw(database, f'SELECT name FROM employee WHERE id = {int(khan)}') == [('Mariam Khan',)]
     database = make(split, later, migrate=True, allow_destructive=True)
     database = make(split, later)
     with pytest.raises(sqlite3.OperationalError):
         raw(database, 'SELECT name FROM employee')
     with application(database).business.context(ADMIN) as context:
-        assert context.get(Employee, 1).first_name == 'Mariam'
+        assert context.get(Employee, khan).first_name == 'Mariam'
 
 
 def sqlite_maker(path):
@@ -473,8 +473,8 @@ def test_alter_field_refuses_values_that_overflow_and_rows_that_fail(tmp_path):
     path = tmp_path / 'leave.sqlite3'
     database = Database(path, leave_registry(Integer()), migrations=[])
     database.initialize()
-    database.create(database.registry.models['leave'], days=2**62)
-    with pytest.raises(SchemaError, match=r'leave #1.days: the value is too large'):
+    record = database.create(database.registry.models['leave'], days=2**62)
+    with pytest.raises(SchemaError, match=rf'leave #{record.id}.days: the value is too large'):
         Database(path, leave_registry(Decimal(scale=9))).migrate([Migration('0001', AlterField('leave', 'days', Decimal(scale=9)))])
     with pytest.raises(SchemaError, match='stored data fails validation'):
         Database(path, leave_registry(Integer(maximum=5))).migrate([Migration('0001', AlterField('leave', 'days', Integer(maximum=5)))])
@@ -554,8 +554,8 @@ def check_run_data_order_and_maintenance(make):
 
     # A run that spans releases copies values before a later migration drops their column.
     database = make(contacts('phone', 'manager'), [])
-    database.create(database.registry.models['contact'], name='Boss', phone='+971 4 000 0000')
-    database.create(database.registry.models['contact'], name='Mariam', phone='+971 50 123 4567', manager=1)
+    boss = database.create(database.registry.models['contact'], name='Boss', phone='+971 4 000 0000').id
+    database.create(database.registry.models['contact'], name='Mariam', phone='+971 50 123 4567', manager=boss)
     release = [Migration('0001_contact_phone', AddField('contact', 'contact_phone', Text(default='')),
                          RetireField('contact', 'phone'), RetireField('contact', 'manager'), RunData(copy_phone)),
                Migration('0002_drop_phone', DropField('contact', 'phone'))]
@@ -563,8 +563,8 @@ def check_run_data_order_and_maintenance(make):
     Contact = database.registry.models['contact']
     assert sorted(record.contact_phone for record in database.list(Contact)) == ['+971 4 000 0000', '+971 50 123 4567']
     # The retired manager Link no longer guards the record it pointed at.
-    database.delete(Contact, 1)
-    assert raw(database, 'SELECT manager FROM contact') == [(1,)]
+    database.delete(Contact, boss)
+    assert raw(database, 'SELECT manager FROM contact') == [(boss,)]
 
 
 def check_maintenance_steps(make):

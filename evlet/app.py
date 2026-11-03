@@ -7,6 +7,7 @@ import sqlite3
 from urllib.parse import parse_qs, urlsplit
 
 from .database import ConflictError, NotFoundError
+from .identity import jsonable, path_id
 from .models import ValidationError
 from .permissions import CORRECTIONS
 from .auth import AccessError
@@ -162,7 +163,7 @@ class Application:
             status, payload = 500, {"error": "Internal server error"}
         download = isinstance(payload, Download)
         try:
-            encoded = payload.content if download else b"" if status == 204 else json.dumps(payload, ensure_ascii=True, allow_nan=False).encode("utf-8")
+            encoded = payload.content if download else b"" if status == 204 else json.dumps(jsonable(payload), ensure_ascii=True, allow_nan=False).encode("utf-8")
         except (TypeError, ValueError, RecursionError):
             # Keep the application's JSON error and headers if a payload cannot be encoded.
             logger.exception("Response encoding failed")
@@ -201,7 +202,7 @@ class Application:
         # Each route family must be listed: records come with the model, the rest by action or extra.
         if draft:
             need = ('extra', 'drafts')
-        elif len(parts) == 3 or len(parts) == 4 and parts[3].isdigit():
+        elif len(parts) == 3 or len(parts) == 4 and path_id(parts[3]) is not None:
             return
         elif len(parts) == 4 and parts[3] in ('measures', 'aggregate') or len(parts) == 5 and parts[4] == 'measures':
             need = ('extra', 'measures')
@@ -258,7 +259,7 @@ class Application:
         stopping = asyncio.create_task(self._stopping.wait())
         try:
             for iteration in range(25):
-                encoded = ('id: ' + page['cursor'] + '\nevent: evlet\ndata: ' + json.dumps(page) + '\n\n').encode()
+                encoded = ('id: ' + page['cursor'] + '\nevent: evlet\ndata: ' + json.dumps(jsonable(page)) + '\n\n').encode()
                 await send({'type': 'http.response.body', 'body': encoded, 'more_body': True})
                 done, _ = await asyncio.wait({disconnect, stopping}, timeout=0.05 if page['more'] else 1, return_when=asyncio.FIRST_COMPLETED)
                 if done:
@@ -384,9 +385,9 @@ class Application:
                 raise ValidationError(errors)
         if len(parts) == 4:
             self._method(method, ["GET", "PATCH", "DELETE"])
-            if not parts[3].isascii() or not parts[3].isdigit() or len(parts[3]) > 19:
+            record_id = path_id(parts[3])
+            if record_id is None:
                 raise HTTPError(404, "Record not found")
-            record_id = int(parts[3])
             if method == "DELETE":
                 self.database.delete(model, record_id)
                 return 204, None, []

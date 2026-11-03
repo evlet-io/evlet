@@ -8,6 +8,7 @@ from evlet import (AddField, AddIndex, Application, RenameField, Boolean, Child,
                    Migration, Model, Percent, Phone, Recompute, Ref, Reference, Registry, Rule, SchemaError, Select, Table,
                    Tags, Text, Time, User, ValidationError, action)
 from evlet.calc import CalcError, D, Document, F, parent, when
+from evlet.identity import RecordId, encode
 from test_business import http, client, PASSWORD
 from finite_fixtures import FiniteMeta
 
@@ -452,12 +453,12 @@ def test_references_check_existence_and_hide_unreadable_targets_over_http(tmp_pa
     secret = c('POST', '/api/secret', {'name': 'x'})[1]['id']
     status, memo, _ = c('POST', '/api/memo', {'about': {'model': 'secret', 'id': secret}})
     assert status == 201 and memo['about'] == {'model': 'secret', 'id': secret}
-    assert c('POST', '/api/memo', {'about': {'model': 'secret', 'id': secret + 50}})[0] == 404
+    assert c('POST', '/api/memo', {'about': {'model': 'secret', 'id': encode(RecordId(secret) + 50)}})[0] == 404
     assert c('POST', '/api/memo', {'about': {'model': 'nothing', 'id': 1}})[0] == 422
     viewer = add_user(app, 'viewer')
     assert viewer('GET', f"/api/memo/{memo['id']}")[1]['about'] is None
     assert viewer('GET', '/api/memo')[1]['items'][0]['about'] is None
-    query = '/api/memo?filters=%7B%22about%22%3A%7B%22model%22%3A%22secret%22%2C%22id%22%3A' + str(secret) + '%7D%7D'
+    query = '/api/memo?filters=%7B%22about%22%3A%7B%22model%22%3A%22secret%22%2C%22id%22%3A%22' + secret + '%22%7D%7D'
     assert viewer('GET', query)[0] == 403 and c('GET', query)[1]['total'] == 1
     assert viewer('GET', '/api/memo?filters=%7B%22about__isnull%22%3Afalse%7D')[0] == 403
     assert viewer('GET', query.replace('%22about%22', '%22about__eq%22'))[0] == 403 and c('GET', query.replace('%22about%22', '%22about__eq%22'))[1]['total'] == 1
@@ -698,7 +699,7 @@ def check_recompute_clears(make):
     database.initialize()
     with database.transaction() as tx:
         with tx.maintenance():
-            tx.create(Ticket, stage='open', reason='kept?', size='3', total='6')
+            created = tx.create(Ticket, stage='open', reason='kept?', size='3', total='6')
 
     class Ticket(Model):  # noqa: F811 - reason now applies only to lost tickets
         storage_name = 'ticket'
@@ -711,7 +712,7 @@ def check_recompute_clears(make):
     upgraded = make(Registry(Ticket), steps)
     upgraded.migrate(steps)
     with upgraded.transaction() as tx:
-        record = tx.get(Ticket, 1)
+        record = tx.get(Ticket, created.id)
     assert (record.reason, str(record.total)) == (None, '6.0000')
 
 

@@ -17,6 +17,7 @@ from threading import BoundedSemaphore, Lock
 from urllib.parse import urlsplit
 
 from .models import ValidationError, identifier
+from .identity import RecordId
 
 # Framework roles. Custom roles live in evlet_roles; Policy.roles maps every role to its base.
 ROLES = ('admin', 'editor', 'viewer')
@@ -407,7 +408,7 @@ class LocalAuth:
                                       'JOIN evlet_roles r ON r.id=u.role AND r.realm=s.realm LEFT JOIN evlet_user_links l ON l.user_id=u.id WHERE s.token=? AND s.realm=? AND s.expires>? AND u.active=1 ORDER BY l.model, l.record_id',
                                       (self.token(scope), realm, int(time.time()))).fetchall()
         row = rows[0] if rows else None
-        links = tuple((item['model'], item['record_id']) for item in rows if item['model'] is not None)
+        links = tuple((item['model'], RecordId(item['record_id'])) for item in rows if item['model'] is not None)
         if row is None:
             raise AccessError(401, 'Sign in to continue')
         # A role that requires two-step sign-in uses nothing until it is set up: a session from before the
@@ -448,7 +449,7 @@ class LocalAuth:
                 row = connection.execute('SELECT k.id AS key_id, k.hash, k.scope, k.last_used, u.id, u.username, u.role FROM evlet_api_keys k JOIN evlet_users u ON u.id=k.user_id '
                                          "JOIN evlet_roles r ON r.id=u.role AND r.realm='desk' WHERE k.prefix=? AND k.revoked_at IS NULL AND u.active=1", (match[1],)).fetchone()
                 if row is not None:
-                    links = tuple((item['model'], item['record_id']) for item in connection.execute(
+                    links = tuple((item['model'], RecordId(item['record_id'])) for item in connection.execute(
                         'SELECT model, record_id FROM evlet_user_links WHERE user_id=? ORDER BY model, record_id', (row['id'],)))
         if row is None or not hmac.compare_digest(row['hash'], hashlib.sha256(token.encode()).hexdigest()):
             network = 'key-failure:' + client_network(self.client_address(scope))
@@ -659,28 +660,43 @@ class LocalAuth:
 
     def _link_target(self, model, record_id):
         name = self.database.registry.name_for(self.database.registry.resolve(model))
-        if type(record_id) is not int or not 0 < record_id < 2**63:
-            raise ValidationError({'record_id': 'Use a record ID'})
-        return name
+        try:
+            return name, RecordId(record_id)
+        except ValueError:
+            raise ValidationError({'record_id': 'Use a record id'}) from None
 
-    def link_user(self, user_id, model, record_id):
-        """Link an account to a record, such as a portal user to their customer. Row scopes read these links."""
-        name = self._link_target(model, record_id)
+    def link_user(self, user_id, model, record_id, *, actor='system'):
+        """Link an account to a record, such as a portal user to their customer. Row scopes read these links.
+
+        A link widens what the account's row scopes allow, so it is written to the audit log as actor.
+        """
+        name, record_id = self._link_target(model, record_id)
         with self.database.transaction() as tx:
-            if not tx.connection.execute('SELECT 1 FROM evlet_users WHERE id=?', (user_id,)).fetchone():
+            account = tx.connection.execute('SELECT username FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            if not account:
                 raise AccessError(404, 'Account not found')
             if not tx.connection.execute(f'SELECT 1 FROM {identifier(name)} WHERE id=?', (record_id,)).fetchone():
                 raise AccessError(404, 'Record not found')
-            tx.connection.execute('INSERT INTO evlet_user_links(user_id,model,record_id) VALUES (?,?,?) ON CONFLICT DO NOTHING', (user_id, name, record_id))
+            if tx.connection.execute('INSERT INTO evlet_user_links(user_id,model,record_id) VALUES (?,?,?) ON CONFLICT DO NOTHING', (user_id, name, record_id)).rowcount:
+                self._audit_link(tx.connection, actor, account['username'], f'Linked to {name} {record_id}')
 
-    def unlink_user(self, user_id, model, record_id):
-        name = self._link_target(model, record_id)
+    def unlink_user(self, user_id, model, record_id, *, actor='system'):
+        name, record_id = self._link_target(model, record_id)
         with self.database.transaction() as tx:
-            tx.connection.execute('DELETE FROM evlet_user_links WHERE user_id=? AND model=? AND record_id=?', (user_id, name, record_id))
+            account = tx.connection.execute('SELECT username FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            if account and tx.connection.execute('DELETE FROM evlet_user_links WHERE user_id=? AND model=? AND record_id=?', (user_id, name, record_id)).rowcount:
+                self._audit_link(tx.connection, actor, account['username'], f'Unlinked from {name} {record_id}')
+
+    @staticmethod
+    def _audit_link(connection, actor, username, detail):
+        from .controls import audit, ensure_schema
+        # LocalAuth also runs without Business (which creates the Controls tables), so make sure the log exists.
+        ensure_schema(connection)
+        audit(connection, actor, 'Users', username, detail)
 
     def user_links(self, user_id):
         with self.database._connection() as connection:
-            return tuple((row['model'], row['record_id']) for row in connection.execute(
+            return tuple((row['model'], RecordId(row['record_id'])) for row in connection.execute(
                 'SELECT model, record_id FROM evlet_user_links WHERE user_id=? ORDER BY model, record_id', (user_id,)))
 
     def users(self):

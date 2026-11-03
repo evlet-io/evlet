@@ -354,20 +354,20 @@
   "draft": {
     "status": 201,
     "body": {
-      "id": 1,
+      "id": "0000000000001",
       "number": "ORD-001",
       "customer": "A",
       "remarks": null,
       "children": {
         "lines": [
           {
-            "id": 1,
+            "id": "0000000000001",
             "description": "First",
             "quantity": 1,
             "rate": "10.00"
           },
           {
-            "id": 2,
+            "id": "0000000000002",
             "description": "Second",
             "quantity": 1,
             "rate": "20.00"
@@ -380,8 +380,8 @@
         "confirmation_id": null
       },
       "_row_ids": {
-        "row-0": 1,
-        "row-1": 2
+        "row-0": "0000000000001",
+        "row-1": "0000000000002"
       },
       "_journal": {
         "count": 1,
@@ -398,20 +398,20 @@
   "confirmed": {
     "status": 200,
     "body": {
-      "id": 1,
+      "id": "0000000000001",
       "number": "ORD-001",
       "customer": "A",
       "remarks": "Confirmed revision 1",
       "children": {
         "lines": [
           {
-            "id": 1,
+            "id": "0000000000001",
             "description": "First",
             "quantity": 1,
             "rate": "10.00"
           },
           {
-            "id": 2,
+            "id": "0000000000002",
             "description": "Second",
             "quantity": 1,
             "rate": "20.00"
@@ -444,21 +444,21 @@
       "actor": "1",
       "hash": "fixture-hash",
       "document": {
-        "id": 1,
+        "id": "0000000000001",
         "number": "ORD-001",
         "customer": "A",
         "remarks": "Confirmed revision 1",
         "children": {
           "lines": [
             {
-              "id": 1,
+              "id": "0000000000001",
               "description": "First",
               "quantity": 1,
               "rate": "10.00",
               "children": {}
             },
             {
-              "id": 2,
+              "id": "0000000000002",
               "description": "Second",
               "quantity": 1,
               "rate": "20.00",
@@ -475,20 +475,20 @@
   "cancelled": {
     "status": 200,
     "body": {
-      "id": 1,
+      "id": "0000000000001",
       "number": "ORD-001",
       "customer": "A",
       "remarks": "Confirmed revision 1",
       "children": {
         "lines": [
           {
-            "id": 1,
+            "id": "0000000000001",
             "description": "First",
             "quantity": 1,
             "rate": "10.00"
           },
           {
-            "id": 2,
+            "id": "0000000000002",
             "description": "Second",
             "quantity": 1,
             "rate": "20.00"
@@ -515,20 +515,20 @@
   "reopened": {
     "status": 200,
     "body": {
-      "id": 1,
+      "id": "0000000000001",
       "number": "ORD-001",
       "customer": "A",
       "remarks": "Confirmed revision 1",
       "children": {
         "lines": [
           {
-            "id": 1,
+            "id": "0000000000001",
             "description": "First",
             "quantity": 1,
             "rate": "10.00"
           },
           {
-            "id": 2,
+            "id": "0000000000002",
             "description": "Second",
             "quantity": 1,
             "rate": "20.00"
@@ -555,20 +555,20 @@
   "edited": {
     "status": 200,
     "body": {
-      "id": 1,
+      "id": "0000000000001",
       "number": "ORD-001",
       "customer": "B",
       "remarks": "Confirmed revision 1",
       "children": {
         "lines": [
           {
-            "id": 1,
+            "id": "0000000000001",
             "description": "First",
             "quantity": 2,
             "rate": "10.00"
           },
           {
-            "id": 3,
+            "id": "0000000000003",
             "description": "Third",
             "quantity": 1,
             "rate": "30.00"
@@ -581,7 +581,7 @@
         "confirmation_id": "fixture-confirmation_id"
       },
       "_row_ids": {
-        "row-0": 3
+        "row-0": "0000000000003"
       },
       "_journal": {
         "count": 5,
@@ -598,20 +598,20 @@
   "reconfirmed": {
     "status": 200,
     "body": {
-      "id": 1,
+      "id": "0000000000001",
       "number": "ORD-001",
       "customer": "B",
       "remarks": "Confirmed revision 2",
       "children": {
         "lines": [
           {
-            "id": 1,
+            "id": "0000000000001",
             "description": "First",
             "quantity": 2,
             "rate": "10.00"
           },
           {
-            "id": 3,
+            "id": "0000000000003",
             "description": "Third",
             "quantity": 1,
             "rate": "30.00"
@@ -669,21 +669,21 @@
       "actor": "1",
       "hash": "fixture-hash",
       "document": {
-        "id": 1,
+        "id": "0000000000001",
         "number": "ORD-001",
         "customer": "B",
         "remarks": "Confirmed revision 2",
         "children": {
           "lines": [
             {
-              "id": 1,
+              "id": "0000000000001",
               "description": "First",
               "quantity": 2,
               "rate": "10.00",
               "children": {}
             },
             {
-              "id": 3,
+              "id": "0000000000003",
               "description": "Third",
               "quantity": 1,
               "rate": "30.00",
@@ -717,7 +717,7 @@
           "lines": {
             "added": [
               {
-                "id": 3,
+                "id": "0000000000003",
                 "description": "Third",
                 "quantity": 1,
                 "rate": "30.00",
@@ -726,7 +726,7 @@
             ],
             "removed": [
               {
-                "id": 2,
+                "id": "0000000000002",
                 "description": "Second",
                 "quantity": 1,
                 "rate": "20.00",
@@ -735,7 +735,7 @@
             ],
             "updated": [
               {
-                "id": 1,
+                "id": "0000000000001",
                 "fields": {
                   "quantity": {
                     "old": 1,
@@ -778,7 +778,7 @@
             "effects": []
           },
           "event_id": "fixture-event_id",
-          "document_id": 1,
+          "document_id": "0000000000001",
           "model": "order",
           "operation": "reconfirmed",
           "timestamp": "fixture-timestamp",
@@ -811,7 +811,7 @@
               "lines": {
                 "added": [
                   {
-                    "id": 3,
+                    "id": "0000000000003",
                     "fields": {
                       "description": {
                         "new": "Third",
@@ -830,7 +830,7 @@
                 ],
                 "updated": [
                   {
-                    "id": 1,
+                    "id": "0000000000001",
                     "fields": {
                       "quantity": {
                         "new": 2,
@@ -841,7 +841,7 @@
                 ],
                 "removed": [
                   {
-                    "id": 2,
+                    "id": "0000000000002",
                     "fields": {
                       "description": {
                         "new": null,
@@ -866,7 +866,7 @@
             "correlation_id": null
           },
           "event_id": "fixture-event_id",
-          "document_id": 1,
+          "document_id": "0000000000001",
           "model": "order",
           "operation": "changed",
           "timestamp": "fixture-timestamp",
@@ -883,7 +883,7 @@
               "lines": {
                 "added": [
                   {
-                    "id": 3,
+                    "id": "0000000000003",
                     "fields": {
                       "description": {
                         "new": "Third",
@@ -902,7 +902,7 @@
                 ],
                 "updated": [
                   {
-                    "id": 1,
+                    "id": "0000000000001",
                     "fields": {
                       "quantity": {
                         "new": 2,
@@ -913,7 +913,7 @@
                 ],
                 "removed": [
                   {
-                    "id": 2,
+                    "id": "0000000000002",
                     "fields": {
                       "description": {
                         "new": null,
@@ -954,7 +954,7 @@
             "effects": []
           },
           "event_id": "fixture-event_id",
-          "document_id": 1,
+          "document_id": "0000000000001",
           "model": "order",
           "operation": "reopened",
           "timestamp": "fixture-timestamp",
@@ -982,7 +982,7 @@
             "effects": []
           },
           "event_id": "fixture-event_id",
-          "document_id": 1,
+          "document_id": "0000000000001",
           "model": "order",
           "operation": "cancelled",
           "timestamp": "fixture-timestamp",
@@ -1016,7 +1016,7 @@
             "effects": []
           },
           "event_id": "fixture-event_id",
-          "document_id": 1,
+          "document_id": "0000000000001",
           "model": "order",
           "operation": "confirmed",
           "timestamp": "fixture-timestamp",
@@ -1053,7 +1053,7 @@
               "lines": {
                 "added": [
                   {
-                    "id": 1,
+                    "id": "0000000000001",
                     "fields": {
                       "description": {
                         "new": "First",
@@ -1070,7 +1070,7 @@
                     }
                   },
                   {
-                    "id": 2,
+                    "id": "0000000000002",
                     "fields": {
                       "description": {
                         "new": "Second",
@@ -1095,7 +1095,7 @@
             "correlation_id": null
           },
           "event_id": "fixture-event_id",
-          "document_id": 1,
+          "document_id": "0000000000001",
           "model": "order",
           "operation": "created",
           "timestamp": "fixture-timestamp",
@@ -1116,7 +1116,7 @@
               "lines": {
                 "added": [
                   {
-                    "id": 1,
+                    "id": "0000000000001",
                     "fields": {
                       "description": {
                         "new": "First",
@@ -1133,7 +1133,7 @@
                     }
                   },
                   {
-                    "id": 2,
+                    "id": "0000000000002",
                     "fields": {
                       "description": {
                         "new": "Second",

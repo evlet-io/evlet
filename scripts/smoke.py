@@ -52,7 +52,7 @@ def main():
     csrf = request('/api/auth/login', {'username': username, 'password': password})['csrf']
     schema = request("/api/schema")
     check(schema["version"] == 1 and schema["ui_version"] == 1, "Unexpected schema version")
-    check({item["name"] for item in schema["models"]} == {"customer", "invoice", "payment", "project", "projecttask", "item", "item_prices", "item_barcodes"}, "Missing Playground models")
+    check({item["name"] for item in schema["models"]} == {"customer", "invoice", "payment", "project", "projecttask", "item", "item_prices", "item_barcodes", "employee"}, "Missing Playground models")
     suffix = uuid4().hex[:12]
     customer = request("/api/customer", {"name": f"Smoke {suffix}"}, 201)
     invoice = request("/api/invoice", {

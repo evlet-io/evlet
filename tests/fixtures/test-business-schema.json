@@ -8310,6 +8310,171 @@
       "attachments": false
     },
     {
+      "name": "employee",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "name",
+            "email",
+            "reports_to"
+          ]
+        }
+      ],
+      "label": "Employee",
+      "plural": "Employees",
+      "description": "People and who they report to.",
+      "title_field": "name",
+      "list_fields": [
+        "id",
+        "name",
+        "email",
+        "reports_to"
+      ],
+      "search_fields": [
+        "name",
+        "email"
+      ],
+      "open_in": "page",
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 120,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 254,
+          "label": "Email",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "reports_to",
+          "type": "link",
+          "required": false,
+          "unique": false,
+          "index": true,
+          "minimum": 1,
+          "maximum": null,
+          "target": "employee",
+          "label": "Reports to",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        }
+      ],
+      "document_version": 1,
+      "resource": "employee",
+      "behavior": {
+        "name": {},
+        "email": {},
+        "reports_to": {}
+      },
+      "order": [
+        "name",
+        "email",
+        "reports_to"
+      ],
+      "sources": {},
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": false,
+      "children": [],
+      "actions": [],
+      "attachments": false,
+      "journal": {
+        "tamper_evident": true,
+        "kinds": [
+          "note",
+          "message",
+          "call",
+          "follow_up",
+          "follow_up_done"
+        ]
+      },
+      "relations": [
+        {
+          "name": "employee.reports_to",
+          "label": "Employees",
+          "model": "employee",
+          "link": "reports_to",
+          "limit": 10,
+          "order": [
+            "-id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "item_prices",
       "layout": [
         {

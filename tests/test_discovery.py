@@ -1,6 +1,6 @@
 import json
 
-from evlet import Application, Database, Integer, Link, LocalAuth, Model, Policy, Registry, Rule, Text
+from evlet import Application, Database, Integer, Link, LocalAuth, Model, Policy, Registry, Rule, Text, identity
 from tests.test_business import client, hashed, http, secured
 from examples.playground.models import Customer, Project, ProjectTask
 
@@ -9,11 +9,11 @@ def test_discovery_requires_a_session_and_catalog_is_compact(secured):
     assert http(secured, 'GET', '/api/_discovery')[0] == 401
     c = client(secured)
     status, catalog, _ = c('GET', '/api/_discovery?limit=2')
-    assert status == 200 and len(catalog['models']) == 2 and catalog['total'] == 5
+    assert status == 200 and len(catalog['models']) == 2 and catalog['total'] == 6
     assert all('fields' not in model for model in catalog['models'])
     assert len(json.dumps(catalog)) < len(json.dumps(c('GET', '/api/schema')[1])) / 2
     assert c('GET', '/api/_discovery?q=project')[1]['models'][0]['name'] == 'project'
-    assert c('GET', '/api/_discovery?offset=5')[1]['models'] == []
+    assert c('GET', '/api/_discovery?offset=6')[1]['models'] == []
     for query in ('limit=0', 'limit=101', 'offset=-1', 'q=x&q=y', 'unknown=1'):
         assert c('GET', '/api/_discovery?' + query)[0] == 422
     assert c('GET', '/api/_discovery/missing')[0] == 404
@@ -61,7 +61,7 @@ def test_child_schema_allows_only_the_callers_permitted_row_operations(secured):
     item = c('GET', '/api/_discovery/project')[1]
     variants = item['schemas']['update']['properties']['children']['properties']['tasks']['items']['oneOf']
     assert 'title' in variants[0]['properties']
-    assert variants[1]['properties'] == {'id': {'type': 'integer', 'minimum': 1, 'maximum': 2**63 - 1}}
+    assert variants[1]['properties'] == {'id': {'type': 'string', 'pattern': identity.PATTERN}}
     secured.business.policy = Policy(secured.registry, rules={('editor', ProjectTask): Rule(operations=('read', 'update'))})
     item = c('GET', '/api/_discovery/project')[1]
     assert 'children' not in item['schemas']['create']['properties']

@@ -29,8 +29,8 @@ def request(app, method, path, data=None, *, body=None, content_type=b"applicati
 def test_complete_customer_invoice_payment_api(application):
     assert request(application, "GET", "/health")[:2] == (200, {"status": "ok"})
     status, schema, _ = request(application, "GET", "/api/schema")
-    # Customer, Invoice, Payment, Project, ProjectTask, and Item with its two tables.
-    assert status == 200 and len(schema["models"]) == 8
+    # Customer, Invoice, Payment, Project, ProjectTask, Item with its two tables, and Employee.
+    assert status == 200 and len(schema["models"]) == 9
     status, customer, headers = request(application, "POST", "/api/customer", {"name": "Studio"})
     assert status == 201
     assert headers[b"location"] == f'/api/customer/{customer["id"]}'.encode()
@@ -102,7 +102,7 @@ def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
     assert path.is_file()
     from test_business import http
     assert http(app, "POST", "/api/customer", {"name": "Ready"})[0] == 401
-    app.database.create(Customer, name="Ready")
+    ready = app.database.create(Customer, name="Ready")
 
     from evlet import CreateModel, Migration, Model, Registry, Text
     from examples.playground.migrate import migrations
@@ -115,7 +115,7 @@ def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
     owned = {child.model for child in registry.children}
     target = Database(path, Registry(*(model for model in registry.models.values() if model not in owned), Note))
     assert target.migrate([*migrations, next_migration]) == ['0004_notes']
-    assert target.get(Customer, 1).name == 'Ready'
+    assert target.get(Customer, ready.id).name == 'Ready'
 
 
 def test_database_failure_returns_service_unavailable(tmp_path):

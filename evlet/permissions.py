@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from types import MappingProxyType, SimpleNamespace
 
 from .auth import AccessError, PORTAL, PUBLIC, ROLES
+from .identity import RecordId
 from .fields import Link, Reference
 from .models import Model, ValidationError, identifier
 from .query import Condition, SqlQuery, child_tables, conditions
@@ -46,6 +47,119 @@ def own_customer(field='customer', model='customer'):
     return scope
 
 
+class Hierarchy:
+    """A tree of records of one model through a Link to the same model, such as employees by reports_to.
+
+    team() is a row scope over the tree below the user's linked records of the model (LocalAuth.link_user),
+    resolved inside SQL with a recursive query, so a team has no size limit. Declare the parent Link with
+    index=True so each level is an index lookup.
+    """
+
+    def __init__(self, model, *, parent):
+        if not isinstance(parent, str) or not parent:
+            raise ValueError('Hierarchy needs the name of its parent Link field')
+        self.model, self.parent = model, parent
+
+    def team(self, field='id', *, include_self=True):
+        """Row scope: rows whose field names the user's linked record or any record below it.
+
+        field is 'id' on the hierarchy model itself, or a Link (path) to it such as 'employee'.
+        include_self=False leaves out the user's own record and keeps only the records below it.
+        """
+        def scope(user):
+            return Team(self, field, include_self, tuple(user.links))
+        scope.teams = ((self, field),)
+        return scope
+
+
+@dataclass(frozen=True)
+class Team:
+    """What a Hierarchy.team scope returns for one user; compiled by scope_condition."""
+    hierarchy: Hierarchy
+    field: str
+    include_self: bool
+    links: tuple
+
+
+@dataclass(frozen=True)
+class AnyOf:
+    """What an any_of scope returns for one user: rows that meet any of the conditions."""
+    conditions: tuple
+
+
+def any_of(*scopes):
+    """Row scope that allows a row when any of scopes allows it, such as own records or a team's.
+
+    Each scope is a row scope callable or a filter object; an empty filter object allows every row.
+    """
+    if not scopes or any(not callable(scope) and not isinstance(scope, dict) for scope in scopes):
+        raise ValueError('any_of takes row scopes or filter objects')
+    def scope(user):
+        return AnyOf(tuple(item(user) if callable(item) else item for item in scopes))
+    scope.teams = tuple(team for item in scopes for team in getattr(item, 'teams', ()))
+    return scope
+
+
+def team_target(registry, model, team):
+    """The hierarchy model of team, after checking its parent Link and that field leads to it from model."""
+    hierarchy, field = team
+    target = registry.resolve(hierarchy.model)
+    parent = target.__fields__.get(hierarchy.parent)
+    if not isinstance(parent, Link) or registry.resolve(parent.target) is not target:
+        raise ValueError(f'Hierarchy {registry.name_for(target)}: {hierarchy.parent} must be a Link to the same model')
+    parts = field.split('__') if isinstance(field, str) and field else []
+    owner = model
+    for index, name in enumerate(parts):
+        last = index == len(parts) - 1
+        if name == 'id' and last:
+            if owner is target:
+                return target
+            break
+        found = owner.__fields__.get(name)
+        if not isinstance(found, Link):
+            break
+        owner = registry.resolve(found.target)
+        if last and owner is target:
+            return target
+    raise ValueError(f'{model.__name__}: team field {field!r} must be id on {target.__name__} or a Link to it')
+
+
+def scope_condition(registry, model, condition):
+    """SQL for what a row scope returned, over the alias "record": (clause, values), or (None, []) for every row.
+
+    A filter object combines its filters with AND, AnyOf its conditions with OR, and Team selects the
+    hierarchy with a recursive query from the linked records, which UNION stops at a cycle.
+    """
+    if isinstance(condition, dict):
+        where, values = SqlQuery(registry, model).where(condition)
+        return (f'({where.removeprefix(" WHERE ")})' if where else None), values
+    if isinstance(condition, AnyOf):
+        clauses, values = [], []
+        for item in condition.conditions:
+            clause, more = scope_condition(registry, model, item)
+            if clause is None:
+                return None, []
+            clauses.append(clause)
+            values += more
+        return ('(' + ' OR '.join(clauses) + ')') if clauses else '1=0', values
+    if isinstance(condition, Team):
+        target = team_target(registry, model, (condition.hierarchy, condition.field))
+        name = registry.name_for(target)
+        roots = sorted({record_id for linked, record_id in condition.links if linked == name})
+        if not roots:
+            return '1=0', []
+        column, _ = SqlQuery(registry, model).reference(condition.field)
+        table, parent = identifier(name), identifier(condition.hierarchy.parent)
+        marks = ', '.join('?' for _ in roots)
+        start = f'SELECT id FROM {table} WHERE id IN ({marks})' if condition.include_self else f'SELECT id FROM {table} WHERE {parent} IN ({marks})'
+        # The range join cannot be hashed, so PostgreSQL walks the parent index level by level instead of
+        # scanning the table at each level (it guesses ten rows per level); SQLite plans both forms alike.
+        return (f'{column} IN (WITH RECURSIVE evlet_team(id) AS ({start} UNION SELECT below.id FROM evlet_team '
+                f'JOIN {table} AS below ON below.{parent} >= evlet_team.id AND below.{parent} <= evlet_team.id) '
+                f'SELECT id FROM evlet_team)'), roots
+    raise ValueError('Row scope must return a filter object')
+
+
 def default_rule(base):
     """The framework default for a base role: admin and editor everything, viewer read, any other base nothing."""
     return Rule(('read', 'create', 'update', 'delete') if base in ('admin', 'editor') else ('read',) if base == 'viewer' else ())
@@ -58,6 +172,14 @@ def child_operations(operations):
     if result and 'update' in operations:
         result |= {'update', 'delete'}
     return tuple(name for name in ('read', 'create', 'update', 'delete') if name in result)
+
+
+def _is_id(value):
+    try:
+        RecordId(value)
+    except ValueError:
+        return False
+    return True
 
 
 class Policy:
@@ -154,6 +276,8 @@ class Policy:
                     raise ValueError('Permission fields must name model fields')
             if rule.scope is not None and not callable(rule.scope):
                 raise ValueError('Row scope must be a callable returning query filters')
+            for team in getattr(rule.scope, 'teams', ()):
+                team_target(registry, model, team)
         # Void, revise, unpost and repost: admin, when its Rule allows reading and updating the model (and
         # creating, for revise), plus every role whose Rule names the operation. The rules table is not changed.
         corrections = {}
@@ -296,16 +420,20 @@ class Policy:
 
     def scope_sql(self, user, model):
         rule = self.rule(user, model)
-        filters = {} if rule.scope is None else rule.scope(user)
-        if not isinstance(filters, dict):
-            raise ValueError('Row scope must return a filter object')
-        return SqlQuery(self.registry, model).where(filters)
+        if rule.scope is None:
+            return '', []
+        clause, values = scope_condition(self.registry, model, rule.scope(user))
+        return (' WHERE ' + clause if clause else ''), values
 
     def record(self, tx, user, model, record_id, operation='read'):
         self.require(user, model, operation)
         where, values = self.scope_sql(user, model)
         table = identifier(self.registry.name_for(model))
         sql = f'SELECT 1 FROM {table} AS record{where} {"AND" if where else "WHERE"} record.id=?'
+        try:
+            record_id = RecordId(record_id)
+        except ValueError:
+            raise AccessError(404, 'Record not found') from None
         if not tx.connection.execute(sql, [*values, record_id]).fetchone():
             raise AccessError(404, 'Record not found')
         return tx.get(model, record_id)
@@ -325,7 +453,7 @@ class Policy:
     def _scoped(self, tx, user, model, record_ids, operation, columns):
         if not self.allows(user, model, operation):
             return {}
-        ids = list(dict.fromkeys(record_ids))
+        ids = list(dict.fromkeys(RecordId(record_id) for record_id in record_ids if _is_id(record_id)))
         where, values = self.scope_sql(user, model)
         table = identifier(self.registry.name_for(model))
         found = {}
@@ -333,8 +461,8 @@ class Policy:
             part = ids[start:start + CHUNK]
             sql = f'SELECT {columns} FROM {table} AS record{where} {"AND" if where else "WHERE"} record.id IN ({", ".join("?" for _ in part)})'
             for row in tx.connection.execute(sql, [*values, *part]).fetchall():
-                if columns == 'record.id': found[row[0]] = None
-                else: found[row['id']] = model._from_row(row)
+                if columns == 'record.id': found[RecordId(row[0])] = None
+                else: found[RecordId(row['id'])] = model._from_row(row)
         return found
 
     def check_values(self, tx, user, model, values, *, targets=None):
@@ -380,7 +508,7 @@ class Policy:
                     continue
                 shown = self.visible(tx, user, field.target, wanted)
                 for result in results:
-                    if result.get(name) is not None and result[name] not in shown:
+                    if result.get(name) is not None and RecordId(result[name]) not in shown:
                         result[name] = None
             elif isinstance(field, Reference):
                 # A reference this user cannot follow is shown as empty, including the model it names.
@@ -391,7 +519,7 @@ class Policy:
                 shown = {target: self.visible(tx, user, self.registry.models[target], ids) if target in self.registry.models else set()
                          for target, ids in wanted.items()}
                 for result in results:
-                    if result.get(name) is not None and result[name]['id'] not in shown[result[name]['model']]:
+                    if result.get(name) is not None and RecordId(result[name]['id']) not in shown[result[name]['model']]:
                         result[name] = None
         return results
 
@@ -400,7 +528,11 @@ class Policy:
         if database is None or operator not in ('eq', 'in'):
             return False
         ids = value if operator == 'in' else [value]
-        if not isinstance(ids, list) or not ids or len(ids) > 100 or any(type(item) is not int for item in ids):
+        if not isinstance(ids, list) or not ids or len(ids) > 100:
+            return False
+        try:
+            ids = [RecordId(item) for item in ids]
+        except ValueError:
             return False
         with database._connection() as connection:
             return set(ids) <= self.visible(SimpleNamespace(connection=connection), user, target, ids)

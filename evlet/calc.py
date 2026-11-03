@@ -13,6 +13,8 @@ import inspect
 import json
 import re
 
+from .identity import RecordId
+
 LANGUAGE = 'finite-v1'
 PROFILE = 'finite40-hu18-v1'
 LEGACY_PROFILE = 'legacy-document-v2'
@@ -73,6 +75,21 @@ def integer(value):
     if type(value) is float and value.is_integer():
         value = int(value)
     return value if type(value) is int and abs(value) <= SAFE_INTEGER else None
+
+
+def link_id(value):
+    """A Link value as a RecordId: an id from storage, its text form from JSON, or a whole number from
+    older fixtures. Booleans and anything else are not ids."""
+    if isinstance(value, RecordId):
+        return value
+    if isinstance(value, str) and value.isdigit() and len(value) < 13:
+        value = int(value)
+    # A plain JSON number above 2^53 is not exact in a browser, so neither runtime takes it as an id.
+    value = integer(value) if not isinstance(value, str) else value
+    try:
+        return None if value is None else RecordId(value)
+    except ValueError:
+        return None
 
 
 def parse(value):
@@ -991,8 +1008,8 @@ def hop(node, scope):
     for model, name, kind in node['steps']:
         if current.state != 'ready' or current.value is None:
             return current
-        record_id = integer(current.value)
-        if record_id is None or record_id < 1:
+        record_id = link_id(current.value)
+        if record_id is None:
             return error('COMPUTE_TYPE_ERROR', scope.causes())
         values = lookups.get(model, {}).get(record_id)
         if values is None or name not in values:
@@ -1205,10 +1222,9 @@ class Document:
         if entry is None:
             raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'Unknown collection {address(path, "")}')
         record_id = data.get('id')
-        if record_id is not None:
-            record_id = integer(record_id)
-            if record_id is None or record_id < 1:
-                raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be positive safe integers')
+        # A row id keeps the form it came in (a RecordId from storage, numbers in fixtures), as in the browser.
+        if record_id is not None and link_id(record_id) is None:
+            raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be record ids')
         handle = self._handle()
         key = data.get('_key')
         if key is not None and (not isinstance(key, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', key)):
@@ -1477,8 +1493,8 @@ class Document:
     def set_lookups(self, model, record_id, values):
         """Field values of one linked record, as the host read them, for Link path expressions."""
         def run():
-            fields, key = self.lookup_fields.get(model), integer(record_id)
-            if fields is None or key is None or key < 1 or not isinstance(values, dict) or set(values) - fields:
+            fields, key = self.lookup_fields.get(model), link_id(record_id)
+            if fields is None or key is None or not isinstance(values, dict) or set(values) - fields:
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'This plan does not look up {model}')
             # Copy on write so a rolled-back command restores the previous record.
             self.lookups = {**self.lookups, model: {**self.lookups.get(model, {}), key: {**self.lookups.get(model, {}).get(key, {}), **values}}}
@@ -1492,7 +1508,8 @@ class Document:
             if node in self.deps:
                 for model, record_id in misses:
                     wanted.setdefault(model, set()).add(record_id)
-        return [[model, record_id, sorted(self.lookup_fields[model])] for model in sorted(wanted) for record_id in sorted(wanted[model])]
+        # Ids as text, as the browser engine reports them (evlet/identity.py).
+        return [[model, str(record_id), sorted(self.lookup_fields[model])] for model in sorted(wanted) for record_id in sorted(wanted[model])]
 
     def add_row(self, owner, table, values=None):
         created = []
@@ -1533,9 +1550,8 @@ class Document:
             seen, placed = set(), (set(), set())
             for data in items:
                 record_id = data.get('id') if isinstance(data, dict) else None
-                if record_id is not None and integer(record_id) is None:
-                    raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be positive safe integers')
-                record_id = None if record_id is None else integer(record_id)
+                if record_id is not None and link_id(record_id) is None:
+                    raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be record ids')
                 if record_id is not None:
                     if record_id not in existing or record_id in seen:
                         raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must belong to this collection and appear once')

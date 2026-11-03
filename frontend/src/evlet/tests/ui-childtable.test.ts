@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cell } from '../reactive';
 import { ChildRows, ChildTable } from '../ui/childtable';
 import { emptyPrefs } from '../ui/table';
-import { backend, bigOrder, change, cleanup, key, render, watch } from './ui-helpers';
+import { backend, id, bigOrder, change, cleanup, key, render, watch } from './ui-helpers';
 
 afterEach(cleanup);
 
@@ -29,8 +29,8 @@ describe('ChildTable over a record store', () => {
   it('starts the Link search when the user types in a Link cell', async () => {
     const { store } = await bigOrder(3);
     const searched: string[] = [];
-    const links = { search: async (_meta: unknown, query: string) => { searched.push(query); return [{ id: 2, title: 'Licence' }]; },
-      title: (_model: string, id: number) => cell<string | null>(id === 2 ? 'Licence' : 'Support hours') };
+    const links = { search: async (_meta: unknown, query: string) => { searched.push(query); return [{ id: id(2), title: 'Licence' }]; },
+      title: (_model: string, row: string) => cell<string | null>(row === id(2) ? 'Licence' : 'Support hours') };
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'], links }));
     // Typing on a cell that is not being edited opens the search with that letter.
     key(cellOf(rowsIn(host)[0], 'product'), 'L');
@@ -39,7 +39,7 @@ describe('ChildTable over a record store', () => {
     expect(input.value).toBe('L');
     expect(searched.at(-1)).toBe('L');
     key(input, 'Enter');
-    expect(store.table('lines').rows.peek()[0].field('product').value.peek()).toBe(2);
+    expect(store.table('lines').rows.peek()[0].field('product').value.peek()).toBe(id(2));
     expect(document.querySelector('.link-search')).toBeNull();
     // Typing on the cell's open control does the same.
     cellOf(rowsIn(host)[1], 'product').click();
@@ -230,7 +230,7 @@ describe('ChildTable over a record store', () => {
 
   it('keeps editing out until every row is loaded', async () => {
     const { store } = backend();
-    await store.open(1, { loadAll: false });
+    await store.open(id(1), { loadAll: false });
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'amount'] }));
     cellOf(rowsIn(host)[0], 'qty').click();
     expect(host.querySelector('td.editing')).toBeNull();

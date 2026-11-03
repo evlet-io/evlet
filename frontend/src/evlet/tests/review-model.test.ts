@@ -6,7 +6,7 @@ import { formatDate, formatDateTime, formatMoney, formatNumber } from '../model/
 import { RecordStore } from '../model/record';
 import type { AppSchema } from '../model/schema';
 import { createRouter } from '../router';
-import { copy, responses, server } from './server';
+import { copy, id, responses, server } from './server';
 
 describe('router', () => {
   const routes = { home: '/', record: '/m/:model/:id' } as const;
@@ -45,23 +45,23 @@ describe('api errors', () => {
   const replying = (status: number, body: string) => createClient({ fetch: (async () => new Response(body, { status })) as any });
 
   it.each([409, 412, 428])('%i is a ConflictError whatever the body', async status => {
-    await expect(replying(status, '<html>Precondition Failed</html>').update('order', 1, {}, 'x')).rejects.toBeInstanceOf(ConflictError);
-    await expect(replying(status, '{"error":"changed"}').update('order', 1, {}, 'x')).rejects.toBeInstanceOf(ConflictError);
+    await expect(replying(status, '<html>Precondition Failed</html>').update('order', id(1), {}, 'x')).rejects.toBeInstanceOf(ConflictError);
+    await expect(replying(status, '{"error":"changed"}').update('order', id(1), {}, 'x')).rejects.toBeInstanceOf(ConflictError);
   });
 
   it('422 is a ValidationError whatever the body, and fields must be an object', async () => {
-    await expect(replying(422, 'bad').update('order', 1, {}, 'x')).rejects.toBeInstanceOf(ValidationError);
-    const error = await replying(422, JSON.stringify({ error: 'x', fields: ['a'] })).update('order', 1, {}, 'x').catch(caught => caught);
+    await expect(replying(422, 'bad').update('order', id(1), {}, 'x')).rejects.toBeInstanceOf(ValidationError);
+    const error = await replying(422, JSON.stringify({ error: 'x', fields: ['a'] })).update('order', id(1), {}, 'x').catch(caught => caught);
     expect(error.fields).toEqual({});
   });
 
   it('removes its listeners from the page signal after each request', async () => {
     const page = new AbortController();
     const added = vi.spyOn(page.signal, 'addEventListener'), removed = vi.spyOn(page.signal, 'removeEventListener');
-    const { fetch } = server([['GET', /order\/1$/, 'detail']]);
+    const { fetch } = server([['GET', /order\/0000000000001$/, 'detail']]);
     const api = createClient({ fetch, signal: () => page.signal });
     const own = new AbortController();
-    for (let index = 0; index < 5; index++) await api.get('order', 1, own.signal);
+    for (let index = 0; index < 5; index++) await api.get('order', id(1), own.signal);
     // Either AbortSignal.any combined them, or every listener added was removed again.
     expect(added.mock.calls.length).toBe(removed.mock.calls.length);
   });
@@ -75,23 +75,23 @@ function backend(overrides: Array<[string, RegExp, any]> = []) {
   let saved = false;
   const stub = server([
     ...overrides,
-    ['GET', /\/api\/order\/1$/, 'detail'],
-    ['GET', /\/api\/order\/1\/lines\/lines\?limit=100&offset=100$/, () => responses[saved ? 'lines_page_after_update' : 'lines_page']],
-    ['GET', /\/api\/customer\/1$/, { ...responses.customer, status: 200 }],
-    ['GET', /\/api\/product\/1$/, { ...responses.product, status: 200 }],
-    ['PATCH', /\/api\/order\/1$/, () => { saved = true; return responses.update; }],
-    ['POST', /\/api\/order\/1\/actions\/close$/, () => { saved = true; return responses.action; }],
+    ['GET', /\/api\/order\/0000000000001$/, 'detail'],
+    ['GET', /\/api\/order\/0000000000001\/lines\/lines\?limit=100&offset=100$/, () => responses[saved ? 'lines_page_after_update' : 'lines_page']],
+    ['GET', /\/api\/customer\/0000000000001$/, { ...responses.customer, status: 200 }],
+    ['GET', /\/api\/product\/0000000000001$/, { ...responses.product, status: 200 }],
+    ['PATCH', /\/api\/order\/0000000000001$/, () => { saved = true; return responses.update; }],
+    ['POST', /\/api\/order\/0000000000001\/actions\/close$/, () => { saved = true; return responses.action; }],
   ]);
   const store = new RecordStore({ api: createClient({ fetch: stub.fetch }), schema, model: 'order', today: () => '2026-11-01' });
   stores.push(store);
   return { store, sent: stub.sent };
 }
-const line = (store: RecordStore, id: number) => store.table('lines').rows.peek().find(row => row.id === id)!;
+const line = (store: RecordStore, n: number) => store.table('lines').rows.peek().find(row => row.id === id(n))!;
 
 describe('record store', () => {
   it('a 409 without a JSON body is a conflict', async () => {
-    const { store } = backend([['PATCH', /\/api\/order\/1$/, { status: 409, body: undefined, etag: null }]]);
-    await store.open(1);
+    const { store } = backend([['PATCH', /\/api\/order\/0000000000001$/, { status: 409, body: undefined, etag: null }]]);
+    await store.open(id(1));
     store.field('title').set('x');
     expect(await store.save()).toBe(false);
     expect(store.conflict.peek()).toBeInstanceOf(ConflictError);
@@ -100,7 +100,7 @@ describe('record store', () => {
   it('a failed page load leaves a retryable error, not a record that looks still loading', async () => {
     let fail = true;
     const { store } = backend([['GET', /lines\/lines\?limit=100&offset=100$/, () => fail ? { status: 500, body: { error: 'boom' }, etag: null } : responses.lines_page]]);
-    await expect(store.open(1)).rejects.toMatchObject({ status: 500 });
+    await expect(store.open(id(1))).rejects.toMatchObject({ status: 500 });
     expect(store.ready.peek()).toBe(false);
     expect(store.loadError.peek()).toMatchObject({ retryable: true });
     expect(() => store.field('title').set('x')).toThrow('could not be loaded');
@@ -113,7 +113,7 @@ describe('record store', () => {
   it('a save that succeeds keeps succeeding when paging its answer fails', async () => {
     let fail = false;
     const { store } = backend([['GET', /lines\/lines\?limit=100&offset=100$/, () => fail ? { status: 503, body: { error: 'busy' }, etag: null } : responses.lines_page]]);
-    await store.open(1);
+    await store.open(id(1));
     store.field('title').set('Renamed');
     fail = true;
     expect(await store.save()).toBe(true);
@@ -126,41 +126,41 @@ describe('record store', () => {
     let calls = 0;
     const old = copy(responses.detail);
     old.body.title = 'Old';
-    const { store } = backend([['GET', /\/api\/order\/1$/, async () => {
+    const { store } = backend([['GET', /\/api\/order\/0000000000001$/, async () => {
       calls++;
       if (calls === 1) { await new Promise(resolve => setTimeout(resolve, 30)); return old; }
       return responses.detail;
     }]]);
-    const first = store.open(1, { loadAll: false }), second = store.open(1, { loadAll: false });
+    const first = store.open(id(1), { loadAll: false }), second = store.open(id(1), { loadAll: false });
     await Promise.all([first, second]);
     expect(store.field('title').value.peek()).toBe('Big order');
   });
 
   it('retries a lookup that failed, and reads lookups again after reload', async () => {
     let available = false;
-    const { store, sent } = backend([['GET', /\/api\/customer\/2$/, () => available
-      ? { status: 200, body: { ...responses.customer.body, id: 2, credit_days: 10 }, etag: null }
+    const { store, sent } = backend([['GET', /\/api\/customer\/0000000000002$/, () => available
+      ? { status: 200, body: { ...responses.customer.body, id: id(2), credit_days: 10 }, etag: null }
       : { status: 503, body: { error: 'busy' }, etag: null }]]);
-    await store.open(1);
+    await store.open(id(1));
     await store.idle();
-    store.field('customer').set(2);
+    store.field('customer').set(id(2));
     await store.idle();
     expect(store.field('due').result.peek().state).toBe('pending');
     available = true;
     store.field('title').set('Again');
     await store.idle();
     expect(store.field('due').value.peek()).toBe('2026-11-11');
-    const before = sent.filter(item => item.url.endsWith('/api/customer/1')).length;
+    const before = sent.filter(item => item.url.endsWith('/api/customer/0000000000001')).length;
     await store.reload();
     await store.idle();
-    expect(sent.filter(item => item.url.endsWith('/api/customer/1')).length).toBe(before + 1);
+    expect(sent.filter(item => item.url.endsWith('/api/customer/0000000000001')).length).toBe(before + 1);
   });
 
   it('a response without a field does not clear it', async () => {
     const partial = copy(responses.update);
     delete partial.body.title;
-    const { store } = backend([['PATCH', /\/api\/order\/1$/, partial]]);
-    await store.open(1);
+    const { store } = backend([['PATCH', /\/api\/order\/0000000000001$/, partial]]);
+    await store.open(id(1));
     store.field('remark').set('note');
     expect(await store.save()).toBe(true);
     expect(store.field('title').value.peek()).toBe('Big order');
@@ -175,7 +175,7 @@ describe('record store', () => {
 
   it('a digit-only _key never collides with a saved row', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const added = store.table('lines').add({ _key: '5', qty: '1', rate: '1' });
     const keys = store.table('lines').rows.peek().map(row => row.key);
     expect(new Set(keys).size).toBe(keys.length);
@@ -186,13 +186,13 @@ describe('record store', () => {
 
   it('refuses writes to fields that do not apply or are read only', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     expect(() => store.field('reason').set('why')).toThrow('does not apply');
   });
 
   it('after an action the saved lock applies', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     expect(await store.runAction('close')).toBe(true);
     expect(store.field('remark').rules.peek().locked).toBe(true);
     expect(() => store.field('remark').set('x')).toThrow('locked');
@@ -200,10 +200,10 @@ describe('record store', () => {
 
   it('new rows nest full children and land errors by key at depth', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const added = store.table('lines').add({ qty: '1' });
     const part = added.table('parts').add({ hours: '1' });
-    store.showErrors({ 'lines.1.parts.2.hours': 'A', [`lines.${added.key}.qty`]: 'B', [`lines.${added.key}.parts.${part.key}.hours`]: 'C' });
+    store.showErrors({ [`lines.${id(1)}.parts.${id(2)}.hours`]: 'A', [`lines.${added.key}.qty`]: 'B', [`lines.${added.key}.parts.${part.key}.hours`]: 'C' });
     expect(line(store, 1).table('parts').rows.peek()[1].field('hours').error.peek()).toBe('A');
     expect([added.field('qty').error.peek(), part.field('hours').error.peek(), store.formError.peek()]).toEqual(['B', 'C', null]);
   });

@@ -6,6 +6,7 @@ import secrets
 
 from .auth import AccessError
 from .database import Session, NotFoundError
+from .identity import RecordId, text as text_id
 from .models import ValidationError
 
 
@@ -24,8 +25,10 @@ class EventStore:
         entry; clients refresh the record or its journal. Stored as deleted = 0, 1 or 2."""
         if not self.database.owns(tx):
             raise ValueError('Event transaction belongs to another database')
-        if type(record_id) is not int or not 1 <= record_id <= 2**63 - 1:
-            raise ValueError('Use a valid record ID')
+        try:
+            record_id = RecordId(record_id)
+        except ValueError:
+            raise ValueError('Use a valid record ID') from None
         token = secrets.token_hex(24)
         event_id = tx.connection.execute('INSERT INTO evlet_events(token,model,record_id,deleted) VALUES (?,?,?,?)', (token, self.database.registry.name_for(model), record_id, 1 if deleted else 2 if journal else 0)).lastrowid
         tx.connection.execute('DELETE FROM evlet_events WHERE id<=?', (event_id - self.retention,))
@@ -73,7 +76,7 @@ class EventStore:
                         policy.record(tx, user, model, row['record_id'])
                     except (AccessError, NotFoundError):
                         continue
-                item = {'model': row['model'], 'id': row['record_id'], 'deleted': row['deleted'] == 1}
+                item = {'model': row['model'], 'id': text_id(row['record_id']), 'deleted': row['deleted'] == 1}
                 if row['deleted'] == 2:
                     item['journal'] = True
                 items.append(item)

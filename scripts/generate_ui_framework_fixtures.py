@@ -17,6 +17,7 @@ from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Tab
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
                    Move, MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome)
 from evlet.calc import D, F, round, days
+from evlet.identity import sequential_ids
 
 PASSWORD = 'a sufficiently long fixture password'
 FULL = Rule(('read', 'create', 'update', 'delete'))
@@ -238,7 +239,7 @@ def record_api(folder):
     keep('validation', c('PATCH', url, {'children': {'lines': {'update': [{'id': ids['l3'], 'qty': '13'}]}}}, headers={b'if-match': etag}))
     keep('draft', c('POST', '/api/_draft/order', {'id': created['id'], 'values': {'title': 'Draft', 'stage': 'lost'}, 'revision': 3}))
     keep('action', c('POST', f'{url}/actions/close', {'note': 'done'}, headers={b'if-match': etag}))
-    keep('not_found', c('GET', '/api/order/999999'))
+    keep('not_found', c('GET', '/api/order/000000000yghz'))
     keep('logout', c('POST', '/api/auth/logout'))
     documents(out, folder)
     database.close()
@@ -517,7 +518,7 @@ def record_slips(folder):
     keep('slip_session', admin('GET', '/api/auth/session'))
     keep('slip_schema', admin('GET', '/api/schema'))
     assert admin('POST', '/api/customer', {'name': 'Corniche Foods', 'rate': '12.50', 'credit_days': 30})[0] == 201
-    customer = keep('slip_customer', admin('GET', '/api/customer/1'))
+    customer = keep('slip_customer', admin('GET', '/api/customer/0000000000001'))
     source = {'model': 'customer', 'id': customer['id']}
     keep('slip_present', admin('POST', '/api/_slips/plan_visit/present', {'source': source, 'values': {}}))
     keep('slip_check', admin('POST', '/api/_slips/plan_visit/check', {'source': source, 'revision': 1, 'values': {
@@ -534,8 +535,8 @@ def record_slips(folder):
 
 
 def generate():
-    """Both fixtures, recorded from fresh databases."""
-    with TemporaryDirectory() as directory:
+    """Both fixtures, recorded from fresh databases. Ids count up per table so the recording is stable."""
+    with TemporaryDirectory() as directory, sequential_ids():
         return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_slips(Path(directory))}}
 
 

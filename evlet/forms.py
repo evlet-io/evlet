@@ -6,6 +6,7 @@ import hashlib
 import json
 
 from .auth import AccessError
+from .identity import jsonable, path_id
 from .models import Model, ValidationError
 from .documents import Draft, Context, Snapshot, settle
 from .ui.metadata import field_schema, source_schema
@@ -203,8 +204,9 @@ class Forms:
                 if type(result.get('total')) is not int or result['total'] < len(result['rows']): raise ValueError('Report total must be a nonnegative row count')
                 allowed = {column.name for column in report.columns}
                 if any(not isinstance(row, dict) or set(row) - allowed for row in result['rows']): raise ValueError('Report rows must match declared columns')
-                from .fields import Text, Integer, Decimal, Currency, Date, Boolean
-                types = {'text': Text, 'integer': Integer, 'decimal': Decimal, 'currency': Currency, 'date': Date, 'boolean': Boolean, 'link': Integer}
+                from .fields import Text, Integer, Decimal, Currency, Date, Boolean, Link
+                # A link column holds record ids, which the response writes as text ids.
+                types = {'text': Text, 'integer': Integer, 'decimal': Decimal, 'currency': Currency, 'date': Date, 'boolean': Boolean, 'link': lambda: Link(None)}
                 totals = {}
                 for column in report.columns:
                     field = types[column.type]()
@@ -220,8 +222,8 @@ class Forms:
             if len(parts) != 4 or method != 'POST' or parts[3] not in ('load', 'submit', 'evaluate'):
                 raise AccessError(404, 'Dialog operation is unavailable')
             model = self.business.registry.resolve(parts[0])
-            try: record_id = int(parts[1])
-            except ValueError: raise AccessError(404, 'Record not found') from None
+            record_id = path_id(parts[1])
+            if record_id is None: raise AccessError(404, 'Record not found')
             definition = self.dialogs.get((model, parts[2]))
             if definition is None: raise AccessError(404, 'Dialog is unavailable')
             submit = parts[3] == 'submit'
@@ -261,6 +263,7 @@ class Forms:
                     for table in descriptor['children']: table['allow_add'] = not bool(draft._rows.get(table['name']))
                     return 200, {'definition': descriptor, 'values': draft_values(draft), 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
                 outcome = draft.submit(source)
+                outcome = jsonable(outcome)
                 encoded = json.dumps(outcome, allow_nan=False)
                 if len(encoded) > 65536: raise ValueError('Dialog result exceeds 64 KiB')
                 context._tx.connection.execute('INSERT INTO evlet_operations(key,actor,request,result) VALUES (?,?,?,?)', (key, user.id, signature, encoded))
