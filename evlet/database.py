@@ -83,9 +83,9 @@ class Database:
         from .migrations import initialize
         initialize(self)
 
-    def migrate(self, migrations, *, recompute_posted=False):
+    def migrate(self, migrations, *, recompute_posted=False, allow_destructive=False):
         from .migrations import migrate
-        return migrate(self, migrations, recompute_posted=recompute_posted)
+        return migrate(self, migrations, recompute_posted=recompute_posted, allow_destructive=allow_destructive)
 
     def plan(self, migrations):
         """What migrate(migrations) would do, without writing: a MigrationPlan whose text() lists the pending

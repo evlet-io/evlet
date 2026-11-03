@@ -8,7 +8,7 @@ import logging
 import re
 import sqlite3
 
-from .fields import Field, Integer, Link, MISSING, Reference
+from .fields import Field, Integer, Link, MAX_INTEGER, MISSING, Reference
 from .models import identifier, storage_name
 
 logger = logging.getLogger(__name__)
@@ -125,11 +125,12 @@ def instance_columns(connection, postgres=False):
 
 
 def _check(connection, registry, *, rows=False):
-    added = instance_columns(connection)
+    added, retired = instance_columns(connection), retired_columns(connection)
     for name, model in registry.models.items():
         table = identifier(name)
-        skip = added.get(name, set())
         columns = connection.execute(f'PRAGMA table_info({table})').fetchall()
+        names = [row['name'] for row in columns]
+        skip = added.get(name, set()) | {column for field in retired.get(name, ()) for column in stored_columns(names, field)}
         actual = {row['name']: (row['type'].upper(), bool(row['notnull']), row['pk']) for row in columns if row['name'] not in skip}
         expected = {'id': ('INTEGER', False, 1), **{
             column: (sql_type, field.required, 0) for key, field in app_fields(model).items() for column, sql_type in field.columns(key)}}
@@ -144,6 +145,8 @@ def _check(connection, registry, *, rows=False):
         unique, indexed, partial = set(), set(), set()
         for index in connection.execute(f'PRAGMA index_list({table})').fetchall():
             fields = tuple(row['name'] for row in connection.execute('SELECT * FROM pragma_index_info(?)', (index['name'],)))
+            if set(fields) & skip:
+                continue
             if index['partial']:
                 if index['unique']:
                     partial.add(fields)
@@ -388,6 +391,206 @@ class Recompute:
         """No structural change; migrate() recalculates after the batch's other operations."""
 
 
+def retired_columns(connection, postgres=False):
+    """{table: {column}} of the fields RetireField took out of the models; their columns and data stay."""
+    exists = "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_retired_fields'" if postgres \
+        else "SELECT 1 FROM sqlite_master WHERE name='evlet_retired_fields'"
+    if connection.execute(exists).fetchone() is None:
+        return {}
+    result = {}
+    for row in connection.execute('SELECT model, name FROM evlet_retired_fields'):
+        result.setdefault(row[0], set()).add(row[1])
+    return result
+
+
+def _retired_table(connection):
+    connection.execute('CREATE TABLE IF NOT EXISTS evlet_retired_fields (model TEXT NOT NULL, name TEXT NOT NULL, '
+                       'definition TEXT NOT NULL, PRIMARY KEY (model, name))')
+
+
+def _relax(connection, table, columns, *, references=False):
+    """Drop NOT NULL (and with `references`, the foreign key) from columns of an engine-created SQLite table.
+
+    This is SQLite's documented procedure for constraint changes that leave stored content as it is: the
+    table's CREATE statement is edited in place and the schema version bumped, inside the migration
+    transaction, so a rollback restores it."""
+    sql = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]
+    edited = sql
+    for column in columns:
+        pattern = re.compile(re.escape(identifier(column)) + r' (\w+)( NOT NULL)?( REFERENCES "[A-Za-z0-9_]+"\("id"\))?')
+        match = pattern.search(edited)
+        if match is None:
+            raise SchemaError(f'{table}.{column}: the column definition was not created by Evlet')
+        replacement = f'{identifier(column)} {match.group(1)}' + ('' if references else match.group(3) or '')
+        edited = edited[:match.start()] + replacement + edited[match.end():]
+    if edited == sql:
+        return
+    version = connection.execute('PRAGMA schema_version').fetchone()[0]
+    connection.execute('PRAGMA writable_schema = ON')
+    try:
+        connection.execute("UPDATE sqlite_master SET sql = ? WHERE type = 'table' AND name = ?", (edited, table))
+        connection.execute(f'PRAGMA schema_version = {int(version) + 1}')
+    finally:
+        connection.execute('PRAGMA writable_schema = OFF')
+
+
+def _column_names(connection, table):
+    return {row[1] for row in connection.execute(f'PRAGMA table_info({identifier(table)})')}
+
+
+@dataclass(frozen=True)
+class RetireField:
+    """Take a field out of the models and the API while keeping its column and stored values.
+
+    The column becomes nullable, so new records leave it empty; schema checks skip it from then on.
+    A later migration may delete it with DropField."""
+    table: str
+    name: str
+
+    def signature(self):
+        identifier(self.table)
+        identifier(self.name)
+        if self.name == 'id':
+            raise SchemaError('Record IDs cannot be retired')
+        return {'operation': 'retire_field', 'table': self.table, 'name': self.name}
+
+    def apply(self, connection, definition=None):
+        columns = stored_columns(_column_names(connection, self.table), self.name)
+        _relax(connection, self.table, columns)
+        _retired_table(connection)
+        connection.execute('INSERT INTO evlet_retired_fields (model, name, definition) VALUES (?, ?, ?)',
+                           (self.table, self.name, json.dumps(definition or {}, sort_keys=True)))
+
+
+@dataclass(frozen=True)
+class DropField:
+    """Delete the column and stored values of a field an earlier migration retired.
+
+    It destroys data, so migrate() refuses it unless called with allow_destructive=True (`evlet migrate
+    --allow-destructive`, which backs the database up first)."""
+    table: str
+    name: str
+
+    def signature(self):
+        identifier(self.table)
+        identifier(self.name)
+        return {'operation': 'drop_field', 'table': self.table, 'name': self.name}
+
+    def _retired(self, connection, postgres=False):
+        if self.name not in retired_columns(connection, postgres).get(self.table, set()):
+            raise SchemaError(f'{self.table}.{self.name}: DropField needs a field an earlier migration retired')
+
+    def apply(self, connection):
+        self._retired(connection)
+        columns = stored_columns(_column_names(connection, self.table), self.name)
+        for index in connection.execute(f'PRAGMA index_list({identifier(self.table)})').fetchall():
+            covered = {row[2] for row in connection.execute('SELECT * FROM pragma_index_info(?)', (index[1],))}
+            if covered & set(columns):
+                connection.execute(f'DROP INDEX {identifier(index[1])}')
+        _relax(connection, self.table, columns, references=True)
+        for column in columns:
+            connection.execute(f'ALTER TABLE {identifier(self.table)} DROP COLUMN {identifier(column)}')
+        connection.execute('DELETE FROM evlet_retired_fields WHERE model = ? AND name = ?', (self.table, self.name))
+
+
+TEXTS = ('text', 'longtext')
+DECIMALS = ('decimal', 'currency', 'percent')
+# Properties AlterField may change; values are then checked row by row in the migration transaction.
+ALTERABLE = {'type', 'scale', 'max_length', 'choices', 'minimum', 'maximum'}
+
+
+def conversion(table, name, old, new):
+    """The factor stored values are multiplied by when `old` field metadata becomes `new`, or SchemaError
+    when the change is not a safe conversion."""
+    where = f'{table}.{name}'
+    changed = {key for key in old.keys() | new.keys() if old.get(key) != new.get(key)}
+    if changed - ALTERABLE:
+        raise SchemaError(f'{where}: AlterField cannot change {", ".join(sorted(changed - ALTERABLE))}')
+    before, after = old['type'], new['type']
+    if before == 'integer' and after in DECIMALS:
+        return 10 ** new['scale']
+    if before in DECIMALS and after in DECIMALS:
+        if new['scale'] < old['scale']:
+            raise SchemaError(f'{where}: AlterField can widen a decimal scale ({old["scale"]} to at least {old["scale"]}), not narrow it')
+        return 10 ** (new['scale'] - old['scale'])
+    if before == after or before in TEXTS and after in TEXTS:
+        if 'max_length' in old and new.get('max_length', 0) < old['max_length']:
+            raise SchemaError(f'{where}: AlterField can lengthen text ({old["max_length"]} or more), not shorten it')
+        if 'choices' in old and not set(old['choices']) <= set(new.get('choices', ())):
+            raise SchemaError(f'{where}: AlterField can add Select choices, not remove them')
+        if before == after or not ({'scale', 'choices'} & changed):
+            return 1
+    raise SchemaError(f'{where}: AlterField cannot convert {before} to {after}; it supports Integer to Decimal, '
+                      'wider decimal scales, longer text and added Select choices')
+
+
+@dataclass(frozen=True)
+class AlterField:
+    """Change a field's definition where every stored value converts safely: Integer to Decimal (or
+    Currency, Percent), a wider decimal scale, longer text, or added Select choices. Bounds may change
+    too. Each stored row is converted and validated inside the migration transaction."""
+    table: str
+    name: str
+    field: Field
+
+    def signature(self):
+        identifier(self.table)
+        identifier(self.name)
+        if self.field.kind == 'reference' or not self.field.stored:
+            raise SchemaError('AlterField changes a stored field with one column')
+        return {'operation': 'alter_field', 'table': self.table, 'name': self.name, 'field': self.field.metadata()}
+
+    def apply(self, connection, factor=1):
+        table, column = identifier(self.table), identifier(self.name)
+        if factor != 1:
+            limit = MAX_INTEGER // factor
+            row = connection.execute(f'SELECT "id" FROM {table} WHERE {column} > ? OR {column} < ? ORDER BY "id" LIMIT 1',
+                                     (limit, -limit)).fetchone()
+            if row is not None:
+                raise SchemaError(f'{self.table} #{row[0]}.{self.name}: the value is too large for the new scale')
+            connection.execute(f'UPDATE {table} SET {column} = {column} * ? WHERE {column} IS NOT NULL', (factor,))
+        # Every stored value must pass the new definition (bounds, length, choices), not only its type.
+        after = 0
+        while True:
+            rows = connection.execute(f'SELECT "id", {column} FROM {table} WHERE "id" > ? ORDER BY "id" LIMIT 1000', (after,)).fetchall()
+            if not rows:
+                return
+            for record_id, stored in rows:
+                if stored is not None:
+                    try:
+                        self.field.validate(self.field.from_storage(stored))
+                    except (ValueError, TypeError) as exc:
+                        raise SchemaError(f'{self.table} #{record_id}.{self.name}: stored data fails validation: {exc}') from exc
+            after = rows[-1][0]
+
+
+@dataclass(frozen=True)
+class RunData:
+    """A trusted Python step that moves or fills values: function(session).
+
+    It runs after the batch's structural changes, in declaration order, inside the migration transaction.
+    `session` is a trusted Session over the target models, already in maintenance mode, so it can write
+    confirmed and tracked records (their revisions and journal stay as they were). Columns of retired
+    fields are read through `session.connection`. The checksum covers the function's source, so an
+    applied step cannot change silently. Any exception rolls back the whole batch."""
+    function: object
+    name: str = None
+
+    def signature(self):
+        import inspect
+        if not callable(self.function):
+            raise SchemaError('RunData needs a function')
+        try:
+            source = inspect.getsource(self.function)
+        except (OSError, TypeError) as exc:
+            raise SchemaError('RunData needs a function defined in a source file') from exc
+        return {'operation': 'run_data', 'name': self.name or getattr(self.function, '__qualname__', 'step'),
+                'source': hashlib.sha256(source.encode()).hexdigest()}
+
+    def apply(self, connection):
+        """No structural change; migrate() calls the function after the batch's other operations."""
+
+
 class Applied(list):
     """The names of the migrations a migrate() call applied; `skipped` counts the records Recompute kept, and
     `posted` the posted records it changed when the run included them (`recompute_posted=True`)."""
@@ -599,7 +802,7 @@ def _write(session, model, record_id, values):
     session.connection.execute(f'UPDATE {identifier(session.registry.name_for(model))} SET {assignments} WHERE "id" = ?', [*stored, record_id])
 
 
-OPERATIONS = (AddField, RenameField, AddIndex, CreateModel, AddTable, Recompute)
+OPERATIONS = (AddField, RenameField, AddIndex, CreateModel, AddTable, RetireField, DropField, AlterField, RunData, Recompute)
 
 
 class Migration:
@@ -615,11 +818,17 @@ class Migration:
         return hashlib.sha256(value.encode()).hexdigest()
 
 
-def _planned_definition(saved, pending):
+def _planned_definition(saved, pending, steps=None):
+    """The schema the pending migrations produce from a saved definition. `steps`, a dict when given, gets
+    what applying needs per operation: AlterField's value factor and RetireField's old field metadata."""
     schema = copy.deepcopy(json.loads(saved))
     models = {model['name']: model for model in schema['models']}
+    retired = set()
+    steps = {} if steps is None else steps
     for migration in pending:
         for operation in migration.operations:
+            if isinstance(operation, RunData):
+                continue
             if isinstance(operation, (CreateModel, AddTable)):
                 model = operation.model() if isinstance(operation, AddTable) else operation.model
                 name = storage_name(model)
@@ -647,6 +856,25 @@ def _planned_definition(saved, pending):
                 for field in fields.values():
                     if 'scope' in field:
                         field['scope'] = [operation.new_name if name == operation.old_name else name for name in field['scope']]
+            elif isinstance(operation, RetireField):
+                if operation.name not in fields:
+                    raise SchemaError(f'{operation.table}.{operation.name}: RetireField names a field that does not exist')
+                if any(operation.name in field.get('scope', ()) for field in fields.values()):
+                    raise SchemaError(f'{operation.table}.{operation.name}: a Sequence scope uses this field; it cannot be retired')
+                steps[id(operation)] = fields.pop(operation.name)
+                retired.add((operation.table, operation.name))
+            elif isinstance(operation, DropField):
+                if operation.name in fields:
+                    raise SchemaError(f'{operation.table}.{operation.name}: retire the field with RetireField before DropField')
+                if (operation.table, operation.name) in retired:
+                    raise SchemaError(f'{operation.table}.{operation.name}: drop a retired field in a later migration, '
+                                      'after its data was checked')
+            elif isinstance(operation, AlterField):
+                if operation.name not in fields:
+                    raise SchemaError(f'{operation.table}.{operation.name}: AlterField names a field that does not exist')
+                new = {**operation.field.metadata(), 'name': operation.name}
+                steps[id(operation)] = conversion(operation.table, operation.name, fields[operation.name], new)
+                fields[operation.name] = new
             elif isinstance(operation, AddIndex):
                 if operation.field not in fields:
                     raise SchemaError('Index field does not exist')
@@ -707,9 +935,38 @@ def _normalized(schema):
     return schema
 
 
-def migrate(database, migrations, *, recompute_posted=False):
+def destructive(migrations, allow_destructive):
+    """Refuse DropField unless the caller allowed deleting stored data."""
+    if not allow_destructive and any(isinstance(operation, DropField) for migration in migrations for operation in migration.operations):
+        raise SchemaError('DropField deletes stored data; back the database up and migrate with allow_destructive=True '
+                          '(evlet migrate --allow-destructive keeps a backup)')
+
+
+def step_arguments(operation, steps):
+    """What _planned_definition worked out for applying an operation: AlterField's factor, RetireField's field."""
+    return (steps[id(operation)],) if isinstance(operation, (AlterField, RetireField)) else ()
+
+
+def run_data(connection, registry, migrations):
+    """Call the RunData steps of `migrations` in order with a trusted maintenance session over the models."""
+    from .database import Session
+    for migration in migrations:
+        for operation in migration.operations:
+            if isinstance(operation, RunData):
+                session = Session(connection, registry)
+                try:
+                    with session.maintenance():
+                        operation.function(session)
+                except SchemaError:
+                    raise
+                except Exception as exc:
+                    raise SchemaError(f'{migration.name}: RunData {operation.name or operation.function.__name__} failed: {exc}') from exc
+
+
+def migrate(database, migrations, *, recompute_posted=False, allow_destructive=False):
     """Apply pending migrations in one transaction. `recompute_posted=True`, an admin's explicit choice (the
-    `--recompute-posted` flag of `evlet migrate`), lets Recompute recalculate posted records too."""
+    `--recompute-posted` flag of `evlet migrate`), lets Recompute recalculate posted records too.
+    `allow_destructive=True` (`--allow-destructive`) permits DropField."""
     migrations, checksums = _migration_plan(migrations)
     database.path.parent.mkdir(parents=True, exist_ok=True)
     with database._connection() as connection:
@@ -723,10 +980,12 @@ def migrate(database, migrations, *, recompute_posted=False):
             if not fresh and not saved:
                 raise SchemaError('Initialize the legacy database with its original models before migrating')
             pending = migrations[len(history):]
+            steps = {}
             if saved and (history or not _same(saved[0], database.registry)):
-                planned = _planned_definition(saved[0], pending)
+                planned = _planned_definition(saved[0], pending, steps)
                 if _comparable(planned) != _comparable(database.registry.schema()):
                     raise mismatch(planned, database.registry.schema())
+                destructive(pending, allow_destructive)
             # A new database initialized directly from current models already has
             # the target schema. Explicit migration adopts that verified baseline.
             baseline = not history and saved and _same(saved[0], database.registry)
@@ -739,7 +998,7 @@ def migrate(database, migrations, *, recompute_posted=False):
             for position, migration in enumerate(pending, len(history) + 1):
                 if not fresh and not baseline:
                     for operation in migration.operations:
-                        operation.apply(connection)
+                        operation.apply(connection, *step_arguments(operation, steps))
                 connection.execute('INSERT INTO evlet_migrations (position, name, checksum) VALUES (?, ?, ?)',
                                    (position, migration.name, checksums[position - 1]))
             if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
@@ -747,6 +1006,7 @@ def migrate(database, migrations, *, recompute_posted=False):
                 ensure_tables(connection)
             applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
+                run_data(connection, database.registry, pending)
                 applied.skipped, applied.posted = _recompute(connection, database.registry, recomputes(pending), lambda db: db.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='evlet_calculation_versions'").fetchone() is not None,
                     include_posted=recompute_posted)
@@ -815,6 +1075,14 @@ def describe(operation):
         return f'add {"unique " if operation.unique else ""}index on {operation.table}.{operation.field}'
     if isinstance(operation, Recompute):
         return f'recompute {operation.table}: {", ".join(operation.fields)}'
+    if isinstance(operation, RetireField):
+        return f'retire field {operation.table}.{operation.name} (column and values kept)'
+    if isinstance(operation, DropField):
+        return f'drop field {operation.table}.{operation.name} (deletes its column and values)'
+    if isinstance(operation, AlterField):
+        return f'alter field {operation.table}.{operation.name} to {operation.field.kind}'
+    if isinstance(operation, RunData):
+        return f'run data step {operation.name or getattr(operation.function, "__qualname__", "")}'
     return type(operation).__name__
 
 
@@ -862,7 +1130,8 @@ def _frozen_class(model, base, fields, storage=None):
 def suggest(registry, planned, name='0002_changes', tables=None):
     """Python for one migration covering what can be inferred from the differences between `planned` (the
     schema after the migrations) and the models: new models, owned tables, fields, renames and indexes.
-    Removals and type changes are written as comments to resolve by hand. `tables` limits it to those
+    Removed fields become RetireField and safe type changes AlterField; other changes are written as
+    comments to resolve by hand. `tables` limits it to those
     storage names, such as one app's models."""
     before = {model['name']: {field['name']: field for field in model['fields']} for model in _comparable(planned)['models']}
     after = {model['name']: {field['name']: field for field in model['fields']} for model in _comparable(registry.schema())['models']}
@@ -915,7 +1184,10 @@ def suggest(registry, planned, name='0002_changes', tables=None):
             operations.append(f'AddField({table!r}, {key!r}, {code}{backfill}){comment}')
             names |= used | {'AddField'}
         for key in removed:
-            notes.append(f'# {table}.{key}: the field was removed; removing a field is not supported')
+            operations.append(f'RetireField({table!r}, {key!r})')
+            names.add('RetireField')
+            notes.append(f'# {table}.{key}: RetireField keeps the column and its values; to move them into new fields, '
+                         'add a RunData step')
         for key in sorted(old.keys() & new.keys()):
             changed = {item for item in old[key].keys() | new[key].keys() if old[key].get(item) != new[key].get(item)}
             if changed and changed <= {'index', 'unique'} and all(new[key].get(item) for item in changed):
@@ -923,7 +1195,14 @@ def suggest(registry, planned, name='0002_changes', tables=None):
                 operations.append(f'AddIndex({table!r}, {key!r}' + (', unique=True)' if unique else ')'))
                 names.add('AddIndex')
             elif changed:
-                notes.append(f'# {table}.{key}: {", ".join(sorted(changed))} changed; this change is not supported')
+                try:
+                    conversion(table, key, old[key], new[key])
+                except SchemaError as exc:
+                    notes.append(f'# {exc}')
+                    continue
+                code, used = field_code(model.__app_stored__[key])
+                operations.append(f'AlterField({table!r}, {key!r}, {code})')
+                names |= used | {'AlterField'}
     if not operations and not notes:
         return ''
     parts = [f'from evlet import {", ".join(sorted(names))}', *classes]
