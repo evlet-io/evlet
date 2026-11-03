@@ -253,8 +253,7 @@ describe('printing a record', () => {
     const schema = copy(screen.schema);
     schema.body.printing = { available };
     const contact = schema.body.models.find((model: any) => model.name === 'contact');
-    contact.prints = prints;
-    contact.permissions = { ...contact.permissions, print: prints.length > 0 };
+    if (prints.length) contact.prints = prints;
     return schema;
   };
   const routes = (schema: any, filed: () => void = () => {}): Route[] => [

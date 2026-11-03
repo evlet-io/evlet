@@ -81,7 +81,7 @@ export interface ModelSchema {
   order_by?: string;
   children?: ChildSchema[];
   actions?: ActionSchema[];
-  permissions?: { create: boolean; update: boolean; delete: boolean; print?: boolean };
+  permissions?: { create: boolean; update: boolean; delete: boolean };
   child_only?: boolean;
   calculation?: CalculationSchema;
   state?: StateSchema;
