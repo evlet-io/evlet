@@ -98,6 +98,10 @@ def test_authentication_cookie_csrf_logout_and_expiry(secured):
     with secured.database._connection() as db:
         token = db.execute('SELECT token FROM evlet_sessions').fetchone()[0]
         assert token == hashlib.sha256(c.cookie.split('=')[1].encode()).hexdigest()
+    # Writes are JSON only: a sign-out without the JSON type is refused and the session stays
+    # (the browser client sends an empty object for writes without a body).
+    assert c('POST', '/api/auth/logout', headers={b'content-type': b''})[0] == 415
+    assert c('GET', '/api/schema')[0] == 200
     assert c('POST', '/api/auth/logout')[0] == 204
     assert c('GET', '/api/schema')[0] == 401
     c = client(secured)
@@ -145,6 +149,25 @@ def test_account_management_revokes_sessions_and_preserves_last_admin(secured):
     assert admin('PATCH', '/api/auth/users/3', {'role': 'editor'})[0] == 204
     assert viewer('GET', '/api/schema')[0] == 401
     assert all('password' not in row for row in admin('GET', '/api/auth/users')[1]['items'])
+
+
+def test_project_tasks_save_the_full_lists_the_record_page_sends(secured):
+    # The schema tells the browser that Project tasks take only full lists; change sets and _key stay refused.
+    c = client(secured, 'editor')
+    project = next(m for m in c('GET', '/api/schema')[1]['models'] if m['name'] == 'project')
+    assert [(child['name'], child['row_changes']) for child in project['children']] == [('tasks', False)]
+    status, created, _ = c('POST', '/api/project', {'name': 'Explore Evlet', 'children': {'tasks': [{'title': 'Read', 'done': False}]}})
+    assert status == 201, created
+    path, first = f"/api/project/{created['id']}", created['children']['tasks'][0]['id']
+    assert c('PATCH', path, {'children': {'tasks': [{'id': first}, {'title': 'Try', 'done': False}]}})[0] == 200
+    second = c('GET', path)[1]['children']['tasks'][1]['id']
+    status, saved, _ = c('PATCH', path, {'children': {'tasks': [{'id': first, 'done': True}, {'id': second}, {'title': 'Ship', 'done': False}]}})
+    assert status == 200, saved
+    assert [(task['title'], task['done']) for task in saved['children']['tasks']] == [('Read', True), ('Try', False), ('Ship', False)]
+    status, refused, _ = c('PATCH', path, {'children': {'tasks': {'update': [{'id': first, 'done': False}]}}})
+    assert status == 422 and refused['fields']['children'].endswith('Use a known child collection with at most 100 rows')
+    assert c('POST', '/api/project', {'name': 'Keyed', 'children': {'tasks': [{'_key': 'n1', 'title': 'Plan'}]}})[0] == 403
+    assert len(c('GET', path)[1]['children']['tasks']) == 3
 
 
 def test_deleting_a_project_removes_more_than_100_tasks(secured):

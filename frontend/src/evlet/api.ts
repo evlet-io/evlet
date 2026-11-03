@@ -142,13 +142,16 @@ export class ApiClient {
       headers['X-Evlet-Request'] = '1';
       if (this.csrf) headers['X-CSRF-Token'] = this.csrf;
     }
-    if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+    // The server takes writes only as JSON (evlet/app.py answers 415 otherwise), so a write
+    // without a body (sign-out, mailbox sync) sends an empty object.
+    const body = options.body === undefined && ['POST', 'PATCH', 'PUT'].includes(method) ? {} : options.body;
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (options.ifMatch) headers['If-Match'] = options.ifMatch;
     const query = Object.entries(options.query ?? {}).filter(([, value]) => value !== undefined && value !== '');
     const url = this.url(path) + (query.length ? '?' + new URLSearchParams(query.map(([key, value]) => [key, String(value)])) : '');
     const { signal, release } = anySignal([options.signal, this.options.signal?.()]);
     try {
-      return await this.send<T>(method, path, url, headers, options, signal);
+      return await this.send<T>(method, path, url, headers, { ...options, body }, signal);
     } finally {
       release();
     }
@@ -241,6 +244,15 @@ export class ApiClient {
   async draft(model: string, body: { id?: number | null; values: Record<string, unknown>; revision?: unknown; calculation?: unknown }): Promise<DraftResult> {
     modelPath(model);
     return (await this.request<DraftResult>('POST', `/api/_draft/${model}`, { body })).data;
+  }
+
+  /**
+   * A step of a slip (POST /api/_slips/{name}/{step}): present and check answer its surface, hand-in its
+   * outcome. A slip presented from a record hands in with that record's revision as If-Match.
+   */
+  async slip<T>(name: string, step: 'present' | 'check' | 'hand-in', body: Record<string, unknown>, ifMatch: string | null = null): Promise<T> {
+    if (!NAME.test(name)) throw new ApiError(`Unknown slip ${name}`, 0, 'response');
+    return (await this.request<T>('POST', `/api/_slips/${name}/${step}`, { body, ifMatch })).data;
   }
 
   /** Run a model action. A long action answers 202 with {job, record}. */

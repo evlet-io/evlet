@@ -4,6 +4,8 @@
 // changed values, and each Table as a change set:
 //   children: {lines: {create: [{_key, ...}], update: [{id, ...}], delete: [ids], order: [ids and _keys]}}
 // `order` is sent only when saved rows changed places or a new row is not at the end.
+// A table whose schema says row_changes: false (a ChildTable on a plain model) takes only a full
+// list: saved rows as {id, ...changed values}, new rows without _key, rows left out are deleted.
 
 import type { Field, Row, Table } from './record';
 
@@ -24,7 +26,7 @@ function fullRow(row: Row, withKey: boolean): Body {
   const children: Body = {};
   for (const [name, table] of row.tables) {
     const rows = table.rows.peek();
-    if (rows.length) children[name] = rows.map(item => fullRow(item, true));
+    if (rows.length) children[name] = rows.map(item => fullRow(item, table.meta.row_changes !== false));
   }
   if (Object.keys(children).length) body.children = children;
   return body;
@@ -35,11 +37,17 @@ function changedRow(row: Row): Body {
   for (const field of writable(row)) if (field.dirty.peek()) body[field.name] = field.value.peek() ?? null;
   const children: Body = {};
   for (const [name, table] of row.tables) {
-    const changes = tableChanges(table);
+    const changes = table.meta.row_changes === false ? fullList(table) : tableChanges(table);
     if (changes) children[name] = changes;
   }
   if (Object.keys(children).length) body.children = children;
   return body;
+}
+
+/** Every current row of a Table that takes only full lists, or null when it did not change. */
+function fullList(table: Table): Body[] | null {
+  if (!table.changed.peek()) return null;
+  return table.rows.peek().map(row => row.isNew ? fullRow(row, false) : { id: row.id, ...changedRow(row) });
 }
 
 /** The change set for one Table, or null when it did not change. */

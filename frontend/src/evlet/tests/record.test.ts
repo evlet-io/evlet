@@ -222,6 +222,53 @@ describe('saving', () => {
     expect(buildChanges(store.root)).toEqual({ title: 'Fresh', stage: 'open', children: { lines: [{ _key: 'n1', qty: '2', rate: '3' }] } });
   });
 
+  // A ChildTable on a plain model (the Playground's Project tasks) takes only full row lists.
+  describe('a table that takes only full lists', () => {
+    const text = (name: string) => ({ name, type: 'text', label: name, required: false, read_only: false, default_kind: 'none' });
+    const plain = { version: 1, ui_version: 1, models: [
+      { name: 'project', label: 'Project', plural: 'Projects', title_field: 'name', list_fields: ['name'], fields: [text('name')],
+        children: [{ name: 'tasks', model: 'projecttask', link: 'project', label: 'Tasks', min_rows: 0, max_rows: 100, row_changes: false }] },
+      { name: 'projecttask', label: 'Project task', plural: 'Project tasks', title_field: 'title', list_fields: ['title', 'done'], child_only: true,
+        fields: [{ ...text('project'), type: 'link', target: 'project' }, text('title'),
+          { name: 'done', type: 'boolean', label: 'Done', required: true, read_only: false, default_kind: 'static', default: false }] },
+    ] } as unknown as AppSchema;
+    const detail = { id: 4, name: 'Explore Evlet', children: { tasks: [{ id: 1, title: 'Read', done: false }, { id: 2, title: 'Try', done: true }] } };
+    const open = async () => {
+      const stub = server([['GET', /\/api\/project\/4$/, { status: 200, body: detail, etag: '"r1"' }],
+        ['PATCH', /\/api\/project\/4$/, { status: 200, body: detail, etag: '"r2"' }]]);
+      const store = new RecordStore({ api: createClient({ fetch: stub.fetch }), schema: plain, model: 'project', today: () => '2026-11-01' });
+      stores.push(store);
+      return { store, sent: stub.sent };
+    };
+
+    it('sends saved rows by id with their changes and new rows without _key', async () => {
+      const { store, sent } = await open();
+      await store.open(4);
+      const tasks = store.table('tasks');
+      tasks.rows.peek()[0].field('done').set(true);
+      tasks.add({ title: 'Ship' });
+      expect(buildChanges(store.root)).toEqual({ children: { tasks: [{ id: 1, done: true }, { id: 2 }, { title: 'Ship', done: false }] } });
+      expect(await store.save()).toBe(true);
+      expect(sent.find(item => item.method === 'PATCH')!.body).toEqual({ children: { tasks: [{ id: 1, done: true }, { id: 2 }, { title: 'Ship', done: false }] } });
+    });
+
+    it('leaves out a removed row and sends nothing for an unchanged table', async () => {
+      const { store } = await open();
+      await store.open(4);
+      store.field('name').set('Renamed');
+      expect(buildChanges(store.root)).toEqual({ name: 'Renamed' });
+      store.table('tasks').remove(store.table('tasks').rows.peek()[1]);
+      expect(buildChanges(store.root)).toEqual({ name: 'Renamed', children: { tasks: [{ id: 1 }] } });
+    });
+
+    it('a new record sends its rows without _key', async () => {
+      const { store } = await open();
+      await store.create({ name: 'Fresh' });
+      store.table('tasks').add({ title: 'Plan' });
+      expect(buildChanges(store.root)).toEqual({ name: 'Fresh', children: { tasks: [{ title: 'Plan', done: false }] } });
+    });
+  });
+
   it('fills default=CurrentUser fields with the signed-in user on a new record', async () => {
     const order = schema.models.find(model => model.name === 'order')!;
     const withOwner = { ...schema, models: schema.models.map(model => model === order ? { ...order, fields: [...order.fields,
