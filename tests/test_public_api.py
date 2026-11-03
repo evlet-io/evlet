@@ -45,8 +45,9 @@ def signature(value):
 
 
 def normalise(text):
-    # Sentinel defaults print their memory address.
-    return re.sub(r" at 0x[0-9a-f]+", "", text)
+    # Sentinel defaults print their memory address, and annotations print private modules that
+    # move between Python versions (pathlib.Path is pathlib._local.Path on 3.13).
+    return re.sub(r"\b(\w+)(?:\._\w+)+\.", r"\1.", re.sub(r" at 0x[0-9a-f]+", "", text))
 
 
 def current():
