@@ -149,6 +149,8 @@ export interface ModalOptions {
   className?: string;
   /** One column body (action dialogs). */
   narrow?: boolean;
+  /** Asked before Esc, the scrim or the close button closes it; false keeps it open. */
+  confirmClose?: () => boolean;
 }
 
 const stack: Array<() => void> = [];
@@ -171,21 +173,23 @@ function dialog(kind: 'modal' | 'drawer', options: ModalOptions): () => void {
     options.onClose?.();
     if (opener?.isConnected) opener.focus();
   };
+  // Closing by Esc, the scrim or the close button asks first when the layer has something to keep.
+  const dismiss = () => { if (options.confirmClose?.() !== false) close(); };
   const keys = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); dismiss(); return; }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && options.onSubmit) { event.preventDefault(); options.onSubmit(); return; }
     trapFocus(panel, event);
   };
   const head = (closeLabel: string) => html`<div class=${kind === 'modal' ? 'modal-h' : 'drawer-h'}>
     ${options.icon ? html`<span class=${`ph-icon b-${tint(options.tint)}`} style="width:28px;height:28px;border-radius:8px">${Icon(options.icon, { size: 'sm' })}</span>` : null}
     ${kind === 'modal' ? html`<h2 id=${titleId}>${options.title}</h2>` : html`<span class="grow" id=${titleId}>${options.title}</span>`}
-    <button type="button" class="icon-btn" aria-label=${closeLabel} on:click=${close}>${Icon('x')}</button></div>`;
+    <button type="button" class="icon-btn" aria-label=${closeLabel} on:click=${dismiss}>${Icon('x')}</button></div>`;
   const view = layer(() => kind === 'modal'
-    ? html`<div class="scrim show" on:click=${close}></div><div class="modal-wrap show">
+    ? html`<div class="scrim show" on:click=${dismiss}></div><div class="modal-wrap show">
         <div class=${`modal ${options.className ?? ''}`} role="dialog" aria-modal="true" aria-labelledby=${titleId} tabindex="-1" on:keydown=${keys}>
           ${head('Close')}<div class="modal-b" style:grid-template-columns=${options.narrow ? '1fr' : null}>${options.body(close)}</div>
           ${options.footer ? html`<div class="modal-f">${options.footer(close)}</div>` : null}</div></div>`
-    : html`<div class="scrim show" on:click=${close}></div>
+    : html`<div class="scrim show" on:click=${dismiss}></div>
         <aside class=${`drawer show ${options.className ?? ''}`} role="dialog" aria-modal="true" aria-labelledby=${titleId} tabindex="-1" on:keydown=${keys}>
           ${head('Close panel')}<div class="drawer-b">${options.body(close)}</div>
           ${options.footer ? html`<div class="drawer-f">${options.footer(close)}</div>` : null}</aside>`);

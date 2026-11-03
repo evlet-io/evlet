@@ -24,6 +24,7 @@ import { applyTheme, Prefs } from './prefs';
 import { RecordPage } from './record-page';
 import { applyMe, loadMe, PAGES as SETTINGS_PAGES, SettingsView, showCodes, type Me } from './settings';
 import { Shell } from './shell';
+import { useSlips } from './slips';
 
 export interface AppOptions {
   router: AppRouter;
@@ -68,6 +69,7 @@ export function App(options: AppOptions): Node {
     };
     session.set(current);
     context.set(ctx);
+    useSlips(ctx);
     error.set('');
     phase.set('ready');
     const now = router.route.peek();

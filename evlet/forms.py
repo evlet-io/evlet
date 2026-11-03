@@ -68,7 +68,9 @@ class Report(Model):
 def metadata(definition, name, source=None):
     source = getattr(definition, '__source__', source)
     fields = plans(definition)
-    result = {'name': name, 'label': getattr(definition, 'title', '') or definition.__name__,
+    # A child row may declare a field called title; only a text title labels the form.
+    title = getattr(definition, 'title', '')
+    result = {'name': name, 'label': title if isinstance(title, str) and title else definition.__name__,
               'fields': [field_schema(field) for field in definition.__declared_fields__.values()],
               'behavior': {key: {kind: {name: serialized(value) for name, value in entry.items()} if kind == 'filters' else serialized(entry)
                                 for kind, entry in value.items()} for key, value in fields.items()},
@@ -80,9 +82,17 @@ def metadata(definition, name, source=None):
     return result
 
 
+def shown(field, value):
+    """A value as the browser gets it; an input that failed its check comes back as typed."""
+    try:
+        return field.serialize(value)
+    except (ValueError, TypeError, ArithmeticError):
+        return value if isinstance(value, str) else None
+
+
 def draft_values(draft):
     from .documents import source_values
-    return {**{name: field.serialize(draft._values.get(name)) for name, field in draft._definition.__declared_fields__.items()},
+    return {**{name: shown(field, draft._values.get(name)) for name, field in draft._definition.__declared_fields__.items()},
             '_sources': source_values(draft, set(draft._definition.__declared_fields__),
                                       ('compute', 'visible_if', 'required_if', 'read_only_if', 'default_ref', 'filters')),
             '_source': {} if draft.source is None else {key: value for key, value in draft.source._data.items() if not isinstance(value, (Snapshot, tuple))},

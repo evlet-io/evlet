@@ -3656,6 +3656,13 @@
             "-id"
           ]
         }
+      ],
+      "slips": [
+        {
+          "name": "plan_project",
+          "label": "Plan a project",
+          "hand_in_label": "Create project"
+        }
       ]
     },
     {

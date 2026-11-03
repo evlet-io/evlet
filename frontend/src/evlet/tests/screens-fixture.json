@@ -2807,6 +2807,1079 @@
   "etag": null,
   "status": 201
  },
+ "slip_check": {
+  "body": {
+   "definition": {
+    "behavior": {
+     "customer": {},
+     "hours": {
+      "compute": {
+       "$expr": "sum",
+       "args": [
+        {
+         "$expr": "ref",
+         "args": [
+          "stops.hours"
+         ]
+        }
+       ]
+      }
+     },
+     "kind": {},
+     "rate": {
+      "required_if": {
+       "$expr": "eq",
+       "args": [
+        {
+         "$expr": "ref",
+         "args": [
+          "kind"
+         ]
+        },
+        "install"
+       ]
+      },
+      "visible_if": {
+       "$expr": "eq",
+       "args": [
+        {
+         "$expr": "ref",
+         "args": [
+          "kind"
+         ]
+        },
+        "install"
+       ]
+      }
+     },
+     "visit_on": {}
+    },
+    "children": [
+     {
+      "allow_add": true,
+      "definition": {
+       "behavior": {
+        "hours": {},
+        "place": {}
+       },
+       "children": [],
+       "fields": [
+        {
+         "default_kind": "none",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Place",
+         "max_length": 255,
+         "name": "place",
+         "placeholder": "",
+         "read_only": false,
+         "required": true,
+         "type": "text",
+         "unique": false
+        },
+        {
+         "default": "0.0000",
+         "default_kind": "static",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Hours",
+         "maximum": null,
+         "minimum": "0",
+         "name": "hours",
+         "placeholder": "",
+         "read_only": false,
+         "required": false,
+         "scale": 4,
+         "type": "decimal",
+         "unique": false
+        }
+       ],
+       "label": "Stop",
+       "name": "plan_visit.stops",
+       "source_fields": [
+        {
+         "default": "customer",
+         "default_kind": "static",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Name",
+         "max_length": 255,
+         "name": "name",
+         "placeholder": "",
+         "read_only": false,
+         "required": false,
+         "type": "text",
+         "unique": false
+        },
+        {
+         "default": "0.00",
+         "default_kind": "static",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Rate",
+         "maximum": null,
+         "minimum": null,
+         "name": "rate",
+         "placeholder": "",
+         "read_only": false,
+         "required": false,
+         "scale": 2,
+         "type": "currency",
+         "unique": false
+        },
+        {
+         "default": 30,
+         "default_kind": "static",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Credit days",
+         "maximum": null,
+         "minimum": null,
+         "name": "credit_days",
+         "placeholder": "",
+         "read_only": false,
+         "required": false,
+         "type": "integer",
+         "unique": false
+        }
+       ],
+       "sources": {}
+      },
+      "label": "Stops",
+      "name": "stops"
+     }
+    ],
+    "fields": [
+     {
+      "default_kind": "none",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Customer",
+      "maximum": null,
+      "minimum": 1,
+      "name": "customer",
+      "placeholder": "",
+      "read_only": true,
+      "required": false,
+      "target": "customer",
+      "type": "link",
+      "unique": false
+     },
+     {
+      "default_kind": "none",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Visit on",
+      "name": "visit_on",
+      "placeholder": "",
+      "read_only": false,
+      "required": true,
+      "type": "date",
+      "unique": false
+     },
+     {
+      "choices": [
+       "survey",
+       "install"
+      ],
+      "default": "survey",
+      "default_kind": "static",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Kind",
+      "max_length": 255,
+      "name": "kind",
+      "placeholder": "",
+      "read_only": false,
+      "required": false,
+      "type": "select",
+      "unique": false
+     },
+     {
+      "default_kind": "none",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Rate",
+      "maximum": null,
+      "minimum": null,
+      "name": "rate",
+      "placeholder": "",
+      "read_only": false,
+      "required": false,
+      "scale": 2,
+      "type": "currency",
+      "unique": false
+     },
+     {
+      "calculated": true,
+      "default_kind": "none",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Hours",
+      "maximum": null,
+      "minimum": null,
+      "name": "hours",
+      "placeholder": "",
+      "read_only": true,
+      "required": false,
+      "scale": 4,
+      "stored": false,
+      "type": "decimal",
+      "unique": false
+     }
+    ],
+    "label": "Plan a visit",
+    "name": "plan_visit",
+    "source_fields": [
+     {
+      "default": "customer",
+      "default_kind": "static",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Name",
+      "max_length": 255,
+      "name": "name",
+      "placeholder": "",
+      "read_only": false,
+      "required": false,
+      "type": "text",
+      "unique": false
+     },
+     {
+      "default": "0.00",
+      "default_kind": "static",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Rate",
+      "maximum": null,
+      "minimum": null,
+      "name": "rate",
+      "placeholder": "",
+      "read_only": false,
+      "required": false,
+      "scale": 2,
+      "type": "currency",
+      "unique": false
+     },
+     {
+      "default": 30,
+      "default_kind": "static",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Credit days",
+      "maximum": null,
+      "minimum": null,
+      "name": "credit_days",
+      "placeholder": "",
+      "read_only": false,
+      "required": false,
+      "type": "integer",
+      "unique": false
+     }
+    ],
+    "sources": {}
+   },
+   "errors": {},
+   "hand_in_label": "Plan visit",
+   "label": "Plan a visit",
+   "layout": [
+    {
+     "fields": [
+      "customer",
+      "visit_on",
+      "kind",
+      "rate"
+     ],
+     "label": "Visit"
+    },
+    {
+     "fields": [
+      "stops"
+     ],
+     "label": "Stops"
+    }
+   ],
+   "outcome": {
+    "kind": "handler"
+   },
+   "revision": 1,
+   "rules": {
+    "rate": {
+     "required": true,
+     "visible": true
+    }
+   },
+   "slip": "plan_visit",
+   "source": {
+    "id": 1,
+    "model": "customer",
+    "revision": "\"f6b2b6c5999af2a5deb8cda3ba57e0b22511acbe85a790c422772f2973c0beba\"",
+    "title": "Corniche Foods"
+   },
+   "states": {
+    "rate": "required-input",
+    "visit_on": "required-input"
+   },
+   "values": {
+    "_source": {
+     "credit_days": 30,
+     "id": 1,
+     "name": "Corniche Foods",
+     "rate": "12.50"
+    },
+    "_sources": {},
+    "children": {
+     "stops": [
+      {
+       "_key": "row-1",
+       "_source": {
+        "credit_days": 30,
+        "id": 1,
+        "name": "Corniche Foods",
+        "rate": "12.50"
+       },
+       "_sources": {},
+       "children": {},
+       "hours": "2.5000",
+       "place": "Warehouse"
+      }
+     ]
+    },
+    "customer": 1,
+    "hours": "2.5000",
+    "kind": "install",
+    "rate": null,
+    "visit_on": null
+   },
+   "version": 1
+  },
+  "etag": null,
+  "status": 200
+ },
+ "slip_customer": {
+  "body": {
+   "credit_days": 30,
+   "id": 1,
+   "name": "Corniche Foods",
+   "rate": "12.50"
+  },
+  "etag": "\"f6b2b6c5999af2a5deb8cda3ba57e0b22511acbe85a790c422772f2973c0beba\"",
+  "status": 200
+ },
+ "slip_hand_in": {
+  "body": {
+   "data": {
+    "hours": "2.5000"
+   },
+   "message": "Visit planned for 2026-11-16"
+  },
+  "etag": null,
+  "status": 200
+ },
+ "slip_hand_in_invalid": {
+  "body": {
+   "error": "Validation failed",
+   "fields": {
+    "rate": "This field is required",
+    "stops.row-1.place": "This field is required",
+    "visit_on": "This field is required"
+   }
+  },
+  "etag": null,
+  "status": 422
+ },
+ "slip_present": {
+  "body": {
+   "definition": {
+    "behavior": {
+     "customer": {},
+     "hours": {
+      "compute": {
+       "$expr": "sum",
+       "args": [
+        {
+         "$expr": "ref",
+         "args": [
+          "stops.hours"
+         ]
+        }
+       ]
+      }
+     },
+     "kind": {},
+     "rate": {
+      "required_if": {
+       "$expr": "eq",
+       "args": [
+        {
+         "$expr": "ref",
+         "args": [
+          "kind"
+         ]
+        },
+        "install"
+       ]
+      },
+      "visible_if": {
+       "$expr": "eq",
+       "args": [
+        {
+         "$expr": "ref",
+         "args": [
+          "kind"
+         ]
+        },
+        "install"
+       ]
+      }
+     },
+     "visit_on": {}
+    },
+    "children": [
+     {
+      "allow_add": true,
+      "definition": {
+       "behavior": {
+        "hours": {},
+        "place": {}
+       },
+       "children": [],
+       "fields": [
+        {
+         "default_kind": "none",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Place",
+         "max_length": 255,
+         "name": "place",
+         "placeholder": "",
+         "read_only": false,
+         "required": true,
+         "type": "text",
+         "unique": false
+        },
+        {
+         "default": "0.0000",
+         "default_kind": "static",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Hours",
+         "maximum": null,
+         "minimum": "0",
+         "name": "hours",
+         "placeholder": "",
+         "read_only": false,
+         "required": false,
+         "scale": 4,
+         "type": "decimal",
+         "unique": false
+        }
+       ],
+       "label": "Stop",
+       "name": "plan_visit.stops",
+       "source_fields": [
+        {
+         "default": "customer",
+         "default_kind": "static",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Name",
+         "max_length": 255,
+         "name": "name",
+         "placeholder": "",
+         "read_only": false,
+         "required": false,
+         "type": "text",
+         "unique": false
+        },
+        {
+         "default": "0.00",
+         "default_kind": "static",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Rate",
+         "maximum": null,
+         "minimum": null,
+         "name": "rate",
+         "placeholder": "",
+         "read_only": false,
+         "required": false,
+         "scale": 2,
+         "type": "currency",
+         "unique": false
+        },
+        {
+         "default": 30,
+         "default_kind": "static",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Credit days",
+         "maximum": null,
+         "minimum": null,
+         "name": "credit_days",
+         "placeholder": "",
+         "read_only": false,
+         "required": false,
+         "type": "integer",
+         "unique": false
+        }
+       ],
+       "sources": {}
+      },
+      "label": "Stops",
+      "name": "stops"
+     }
+    ],
+    "fields": [
+     {
+      "default_kind": "none",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Customer",
+      "maximum": null,
+      "minimum": 1,
+      "name": "customer",
+      "placeholder": "",
+      "read_only": true,
+      "required": false,
+      "target": "customer",
+      "type": "link",
+      "unique": false
+     },
+     {
+      "default_kind": "none",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Visit on",
+      "name": "visit_on",
+      "placeholder": "",
+      "read_only": false,
+      "required": true,
+      "type": "date",
+      "unique": false
+     },
+     {
+      "choices": [
+       "survey",
+       "install"
+      ],
+      "default": "survey",
+      "default_kind": "static",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Kind",
+      "max_length": 255,
+      "name": "kind",
+      "placeholder": "",
+      "read_only": false,
+      "required": false,
+      "type": "select",
+      "unique": false
+     },
+     {
+      "default_kind": "none",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Rate",
+      "maximum": null,
+      "minimum": null,
+      "name": "rate",
+      "placeholder": "",
+      "read_only": false,
+      "required": false,
+      "scale": 2,
+      "type": "currency",
+      "unique": false
+     },
+     {
+      "calculated": true,
+      "default_kind": "none",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Hours",
+      "maximum": null,
+      "minimum": null,
+      "name": "hours",
+      "placeholder": "",
+      "read_only": true,
+      "required": false,
+      "scale": 4,
+      "stored": false,
+      "type": "decimal",
+      "unique": false
+     }
+    ],
+    "label": "Plan a visit",
+    "name": "plan_visit",
+    "source_fields": [
+     {
+      "default": "customer",
+      "default_kind": "static",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Name",
+      "max_length": 255,
+      "name": "name",
+      "placeholder": "",
+      "read_only": false,
+      "required": false,
+      "type": "text",
+      "unique": false
+     },
+     {
+      "default": "0.00",
+      "default_kind": "static",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Rate",
+      "maximum": null,
+      "minimum": null,
+      "name": "rate",
+      "placeholder": "",
+      "read_only": false,
+      "required": false,
+      "scale": 2,
+      "type": "currency",
+      "unique": false
+     },
+     {
+      "default": 30,
+      "default_kind": "static",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Credit days",
+      "maximum": null,
+      "minimum": null,
+      "name": "credit_days",
+      "placeholder": "",
+      "read_only": false,
+      "required": false,
+      "type": "integer",
+      "unique": false
+     }
+    ],
+    "sources": {}
+   },
+   "errors": {},
+   "hand_in_label": "Plan visit",
+   "label": "Plan a visit",
+   "layout": [
+    {
+     "fields": [
+      "customer",
+      "visit_on",
+      "kind",
+      "rate"
+     ],
+     "label": "Visit"
+    },
+    {
+     "fields": [
+      "stops"
+     ],
+     "label": "Stops"
+    }
+   ],
+   "outcome": {
+    "kind": "handler"
+   },
+   "revision": null,
+   "rules": {
+    "rate": {
+     "required": false,
+     "visible": false
+    }
+   },
+   "slip": "plan_visit",
+   "source": {
+    "id": 1,
+    "model": "customer",
+    "revision": "\"f6b2b6c5999af2a5deb8cda3ba57e0b22511acbe85a790c422772f2973c0beba\"",
+    "title": "Corniche Foods"
+   },
+   "states": {
+    "visit_on": "required-input"
+   },
+   "values": {
+    "_source": {
+     "credit_days": 30,
+     "id": 1,
+     "name": "Corniche Foods",
+     "rate": "12.50"
+    },
+    "_sources": {},
+    "children": {},
+    "customer": 1,
+    "hours": "0.0000",
+    "kind": "survey",
+    "rate": null,
+    "visit_on": null
+   },
+   "version": 1
+  },
+  "etag": null,
+  "status": 200
+ },
+ "slip_quick_hand_in": {
+  "body": {
+   "document": {
+    "model": "customer",
+    "review": true,
+    "values": {
+     "credit_days": 45,
+     "name": "Oasis Water"
+    }
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
+ "slip_quick_present": {
+  "body": {
+   "definition": {
+    "behavior": {
+     "credit_days": {},
+     "name": {}
+    },
+    "children": [],
+    "fields": [
+     {
+      "default_kind": "none",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Name",
+      "max_length": 255,
+      "name": "name",
+      "placeholder": "",
+      "read_only": false,
+      "required": true,
+      "type": "text",
+      "unique": false
+     },
+     {
+      "default": 30,
+      "default_kind": "static",
+      "help_text": "",
+      "hidden": false,
+      "index": false,
+      "label": "Credit days",
+      "maximum": null,
+      "minimum": null,
+      "name": "credit_days",
+      "placeholder": "",
+      "read_only": false,
+      "required": false,
+      "type": "integer",
+      "unique": false
+     }
+    ],
+    "label": "Quick customer",
+    "name": "quick_customer",
+    "source_fields": [],
+    "sources": {}
+   },
+   "errors": {},
+   "hand_in_label": "Quick customer",
+   "label": "Quick customer",
+   "layout": [],
+   "outcome": {
+    "kind": "document",
+    "model": "customer",
+    "review": true
+   },
+   "revision": null,
+   "rules": {},
+   "slip": "quick_customer",
+   "source": null,
+   "states": {
+    "name": "required-input"
+   },
+   "values": {
+    "_source": {},
+    "_sources": {},
+    "children": {},
+    "credit_days": 30,
+    "name": null
+   },
+   "version": 1
+  },
+  "etag": null,
+  "status": 200
+ },
+ "slip_schema": {
+  "body": {
+   "models": [
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "credit_days": {},
+      "name": {},
+      "rate": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "customer",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "name",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Rate",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "rate",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": 30,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Credit days",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "credit_days",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "integer",
+       "unique": false
+      }
+     ],
+     "label": "Customer",
+     "layout": [
+      {
+       "fields": [
+        "name",
+        "rate",
+        "credit_days"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "name",
+      "rate",
+      "credit_days"
+     ],
+     "name": "customer",
+     "order": [
+      "name",
+      "rate",
+      "credit_days"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Customers",
+     "resource": "customer",
+     "search_fields": [
+      "name"
+     ],
+     "slips": [
+      {
+       "hand_in_label": "Plan visit",
+       "label": "Plan a visit",
+       "name": "plan_visit"
+      }
+     ],
+     "sources": {},
+     "title_field": "name"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "name": {},
+      "price": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "product",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "name",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Price",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "price",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      }
+     ],
+     "label": "Product",
+     "layout": [
+      {
+       "fields": [
+        "name",
+        "price"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "name",
+      "price"
+     ],
+     "name": "product",
+     "order": [
+      "name",
+      "price"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Products",
+     "resource": "product",
+     "search_fields": [
+      "name"
+     ],
+     "sources": {},
+     "title_field": "name"
+    }
+   ],
+   "slips": [
+    {
+     "hand_in_label": "Quick customer",
+     "label": "Quick customer",
+     "name": "quick_customer"
+    }
+   ],
+   "ui_version": 1,
+   "version": 1
+  },
+  "etag": null,
+  "status": 200
+ },
+ "slip_session": {
+  "body": {
+   "application": {
+    "docs": "/docs",
+    "name": "Evlet",
+    "playground": false
+   },
+   "csrf": "fixture-csrf-token",
+   "user": {
+    "id": 1,
+    "role": "admin",
+    "username": "owner"
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
  "viewer_contact_detail": {
   "body": {
    "email": "mariam@example.com",
