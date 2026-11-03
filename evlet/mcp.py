@@ -1,41 +1,16 @@
-"""MCP tools over the ordinary authenticated API routes: stdio here, remote HTTP in evlet.assistants."""
+"""MCP over the Tool Engine (evlet.tools): stdio here, remote HTTP in evlet.assistants."""
 
 from collections import deque
 import json
-import re
 import sys
 import time
-from urllib.parse import urlencode
 
 from .connector import ConnectorError, strict_json
+from .tools import BY_NAME
 
 PROTOCOL = '2025-11-25'
 SUPPORTED = (PROTOCOL, '2025-06-18', '2025-03-26')
 MAX_MESSAGE = 128 * 1024
-SAFE_INTEGER = 2**53 - 1
-MODEL = {'type': 'string', 'pattern': '^[a-z][a-z0-9_]{0,127}$'}
-ID = {'type': 'integer', 'minimum': 1, 'maximum': SAFE_INTEGER}
-PAGE = {'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100}, 'offset': {'type': 'integer', 'minimum': 0, 'maximum': SAFE_INTEGER}}
-
-
-def tool(name, description, properties, required=(), *, write=False):
-    return {'name': name, 'description': description,
-            'inputSchema': {'type': 'object', 'properties': properties, 'required': list(required), 'additionalProperties': False},
-            'annotations': {'readOnlyHint': not write, 'destructiveHint': write, 'idempotentHint': not write, 'openWorldHint': write}}
-
-
-TOOLS = [
-    tool('discover_models', 'List permitted models and operations. Use describe_model for fields before creating or changing records.', {**PAGE, 'search': {'type': 'string', 'maxLength': 200}}),
-    tool('describe_model', 'Read one permitted model, validation metadata, input schemas, child collections, and registered actions.', {'model': MODEL}, ('model',)),
-    tool('list_records', 'Query permitted records. Filters use the described fields and operators; all results obey row and field permissions.', {'model': MODEL, **PAGE, 'search': {'type': 'string', 'maxLength': 200}, 'filters': {'type': 'object'}, 'order_by': {'type': 'string', 'maxLength': 500}}, ('model',)),
-    tool('get_record', 'Read a permitted record and its accessible child collections.', {'model': MODEL, 'id': ID}, ('model', 'id')),
-    tool('job_status', 'Read the status of a queued action owned by this account, or accessible to its administrator.', {'id': ID}, ('id',)),
-    tool('create_record', 'Create a record using its described create schema. Backend validation and permissions apply. Do not retry an uncertain write automatically.', {'model': MODEL, 'values': {'type': 'object'}}, ('model', 'values'), write=True),
-    tool('update_record', 'Update supplied values only. Supplied child collections replace their rows; omit children to preserve them.', {'model': MODEL, 'id': ID, 'values': {'type': 'object'}}, ('model', 'id', 'values'), write=True),
-    tool('delete_record', 'Delete a permitted record and owned children. This can permanently remove data; obtain user approval in the client.', {'model': MODEL, 'id': ID}, ('model', 'id'), write=True),
-    tool('run_action', 'Execute one registered permitted action on a record. It may modify records or enqueue work. Obtain user approval in the client.', {'model': MODEL, 'id': ID, 'action': MODEL}, ('model', 'id', 'action'), write=True),
-]
-BY_NAME = {entry['name']: entry for entry in TOOLS}
 
 
 class RPCError(Exception):
@@ -43,22 +18,9 @@ class RPCError(Exception):
         self.code, self.message = code, message
 
 
-def arguments(name, values):
-    schema = BY_NAME[name]['inputSchema']
-    if not isinstance(values, dict) or set(values) - schema['properties'].keys() or set(schema['required']) - values.keys():
-        raise ConnectorError(422, 'Use the documented tool arguments')
-    for key, value in values.items():
-        field = schema['properties'][key]
-        kind = field['type']
-        valid = (kind == 'object' and isinstance(value, dict)) or (kind == 'string' and isinstance(value, str)) or (kind == 'integer' and type(value) is int)
-        if not valid or (kind == 'string' and ('\x00' in value or len(value) > field.get('maxLength', 128))) or (kind == 'integer' and not field['minimum'] <= value <= field['maximum']):
-            raise ConnectorError(422, f'Invalid argument: {key}')
-        if 'pattern' in field and not re.fullmatch(field['pattern'], value):
-            raise ConnectorError(422, f'Invalid argument: {key}')
-    return values
-
-
 class MCPServer:
+    """MCP over the application's tool routes: GET /api/_tools lists, POST /api/_tools/execute calls.
+    The application decides what this person may call; allow_writes=False keeps this process to reading."""
     no_writes = 'This connector was started without write access'
     instructions = 'This process uses one application session.'
 
@@ -68,84 +30,43 @@ class MCPServer:
         self.client, self.allow_writes = client, allow_writes
         self.state = 'new'
         self.calls = deque()
-        self.policy, self.checked = None, 0.0
         # The application narrows this session to what Controls allows AI assistants (hidden models, writes).
         if hasattr(client, 'assistant'):
             client.assistant = True
 
-    def assistant(self, capabilities=None):
-        """The workspace's AI settings (writes, rate, disabled_tools), read from discovery at most once a minute."""
-        now = time.monotonic()
-        if capabilities is None and (self.policy is None or now - self.checked > 60):
-            capabilities = self.client.get('/api/_discovery?limit=1')['capabilities']
-        if capabilities is not None:
-            self.policy, self.checked = capabilities.get('assistant') or {}, now
-        return self.policy
+    def listing(self):
+        return self.client.get('/api/_tools')['tools']
 
-    def limit(self, name, values, rate):
+    def available(self):
+        return [{'name': tool['name'], 'description': tool['description'], 'inputSchema': tool['input_schema'],
+                 'annotations': {'readOnlyHint': tool['kind'] == 'read', 'destructiveHint': tool['kind'] != 'read',
+                                 'idempotentHint': tool['kind'] == 'read', 'openWorldHint': tool['kind'] != 'read'}}
+                for tool in self.listing() if self.allow_writes or tool['kind'] == 'read']
+
+    def limit(self):
+        """At most 60 calls a minute from this process; the application also counts each client."""
         now = time.monotonic()
         while self.calls and self.calls[0] <= now - 60:
             self.calls.popleft()
-        if len(self.calls) >= rate:
-            raise ConnectorError(429, f'Use at most {rate} tool calls per minute')
+        if len(self.calls) >= 60:
+            raise ConnectorError(429, 'Use at most 60 tool calls per minute')
         self.calls.append(now)
 
-    def available(self):
-        capabilities = self.client.get('/api/_discovery?limit=1')['capabilities']
-        policy = self.assistant(capabilities)
-        allowed = {'discover_models', 'describe_model', 'list_records', 'get_record'}
-        if capabilities['jobs']:
-            allowed.add('job_status')
-        if self.allow_writes and policy.get('writes', True):
-            for operation in ('create', 'update', 'delete'):
-                if operation in capabilities['operations']:
-                    allowed.add(operation + '_record')
-            if capabilities['actions']:
-                allowed.add('run_action')
-        allowed -= set(policy.get('disabled_tools', ()))
-        return [entry for entry in TOOLS if entry['name'] in allowed]
-
     def call(self, name, values):
-        if name not in BY_NAME:
+        known = BY_NAME.get(name) if isinstance(name, str) else None
+        if known is None:
             raise RPCError(-32602, 'Unknown tool')
-        policy = self.assistant()
-        if name in policy.get('disabled_tools', ()):
-            raise ConnectorError(403, 'This tool is turned off for this workspace.')
-        if BY_NAME[name]['annotations']['readOnlyHint'] is False:
-            if not policy.get('writes', True):
-                raise ConnectorError(403, 'Your admin has turned off changes from AI assistants. They can read and search only.')
-            if not self.allow_writes:
-                raise ConnectorError(403, self.no_writes)
-        values = arguments(name, values)
-        self.limit(name, values, min(60, policy.get('rate', 60)))
-        if name == 'discover_models':
-            query = {key: value for key, value in values.items() if key != 'search'}
-            if 'search' in values:
-                query['q'] = values['search']
-            return self.client.get('/api/_discovery?' + urlencode(query))
-        if name == 'describe_model':
-            return self.client.get('/api/_discovery/' + values['model'])
-        if name == 'job_status':
-            return self.client.get('/api/_jobs/' + str(values['id']))
-        path = '/api/' + values['model']
-        if name == 'list_records':
-            query = {key: values[key] for key in ('limit', 'offset', 'order_by') if key in values}
-            if 'search' in values:
-                query['q'] = values['search']
-            if 'filters' in values:
-                query['filters'] = json.dumps(values['filters'], allow_nan=False, separators=(',', ':'))
-            return self.client.get(path + '?' + urlencode(query))
-        if name == 'create_record':
-            return self.client.request('POST', path, values['values'])[0]
-        path += '/' + str(values['id'])
-        if name == 'get_record':
-            return self.client.get(path)
-        if name == 'update_record':
-            return self.client.request('PATCH', path, values['values'])[0]
-        if name == 'delete_record':
-            self.client.request('DELETE', path)
-            return {'deleted': True}
-        return self.client.request('POST', path + '/actions/' + values['action'], {})[0]
+        if known.writes and not self.allow_writes:
+            raise ConnectorError(403, self.no_writes)
+        if not isinstance(values, dict):
+            raise ConnectorError(422, 'Use the documented tool arguments')
+        self.limit()
+        payload = self.client.request('POST', '/api/_tools/execute', {'tool': name, 'arguments': values})[0]
+        if isinstance(payload, dict) and 'approval' in payload:
+            approval = payload['approval']
+            raise ConnectorError(403, f"This change needs the person's approval in Evlet. Ask them to approve request {approval['id']} "
+                                      'in Evlet under Settings, AI, then call this tool again with the same arguments.', {'approval': approval['id']})
+        return payload['result']
 
     def message(self, message):
         request_id = None
@@ -186,6 +107,8 @@ class MCPServer:
                     data = self.call(params['name'], params.get('arguments', {}))
                     result = self.tool_result(data)
                 except ConnectorError as exc:
+                    if exc.status == 404 and exc.message == 'Unknown tool':
+                        raise RPCError(-32602, 'Unknown tool') from None
                     result = self.tool_result(exc.public(), error=True)
             else:
                 raise RPCError(-32601, 'Method not found')

@@ -19,7 +19,7 @@ from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
-PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'keys', 'models', 'naming', 'apps', 'routing', 'jobs', 'overrides', 'audit')
+PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'log', 'keys', 'models', 'naming', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
     'security.password_min': 15, 'security.session_hours': 12, 'security.lockout': 5,
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
@@ -161,10 +161,10 @@ def strictest(key, value, roles, file=None):
         return min(max(value, 1), 60) if number else 1
     if key in ('mcp.disabled_tools', 'mcp.hidden_models'):
         # Names are kept as they are; a value that is not a list turns every tool off or hides every model ('*').
-        from .mcp import BY_NAME
+        from .tools import NAMES
         if isinstance(value, list):
             return [item for item in value if isinstance(item, str)]
-        return list(BY_NAME) if key == 'mcp.disabled_tools' else ['*']
+        return list(NAMES) if key == 'mcp.disabled_tools' else ['*']
     if key == 'security.password_min':
         return min(max(value, file), 64) if number else 64
     if key == 'security.session_hours':
@@ -527,8 +527,8 @@ class Controls:
         if key == 'mcp.rate' and not (number and 1 <= value <= 60):
             raise ValueError('Use 1 to 60 tool calls a minute. The framework allows at most 60.')
         if key in ('mcp.disabled_tools', 'mcp.hidden_models'):
-            from .mcp import BY_NAME
-            known = list(BY_NAME) if key == 'mcp.disabled_tools' else list(self.models())
+            from .tools import NAMES
+            known = list(NAMES) if key == 'mcp.disabled_tools' else list(self.models())
             if not isinstance(value, list) or any(item not in known for item in value) or len(set(value)) != len(value):
                 raise ValueError('Choose known tools, each once.' if key == 'mcp.disabled_tools' else 'Choose models from this instance, each once.')
             value = [item for item in known if item in value]
@@ -656,8 +656,10 @@ class Controls:
                 'SELECT user_id, two_step_since, two_step_agent FROM evlet_user_profile WHERE two_step_secret IS NOT NULL')}
             assistants = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_mcp_clients WHERE revoked_at IS NULL GROUP BY user_id')}
             keys = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_api_keys WHERE revoked_at IS NULL GROUP BY user_id')}
+            ai = {row['id']: bool(row['allow_mcp']) for row in connection.execute('SELECT id, allow_mcp FROM evlet_users')}
         for item in page['items']:
             item['active'], item['sessions'] = bool(item['active']), sessions.get(item['id'], 0)
+            item['allow_mcp'] = ai.get(item['id'], False)
             item['two_step'] = two_step.get(item['id'])
             item['assistants'] = assistants.get(item['id'], 0)
             item['keys'] = keys.get(item['id'], 0)
@@ -672,8 +674,10 @@ class Controls:
             connection, actor.username, 'Users', user.username, f'Added as {user.role}', None, {'role': user.role}))
 
     def change_user(self, actor, user_id, body):
+        if isinstance(body, dict) and body and not set(body) - {'allow_mcp'}:
+            return self.ai_access(actor, user_id, body)
         if not isinstance(body, dict) or not body or set(body) - {'role', 'active', 'password', 'sessions', 'revoke_keys', 'two_step'}:
-            raise ValidationError({'_form': 'Use role, active, password, sessions, revoke_keys or two_step'})
+            raise ValidationError({'_form': 'Use role, active, password, sessions, revoke_keys, two_step, or allow_mcp on its own'})
         if 'sessions' in body and body['sessions'] != 'end':
             raise ValidationError({'sessions': 'Use "end" to sign out every session'})
         revoke = body.get('revoke_keys', False)
@@ -722,6 +726,29 @@ class Controls:
             after = check(tx.connection, row, {})
             self.business.auth.end_sessions(tx.connection, user_id, keys=revoke)
             after()
+
+    def ai_access(self, actor, user_id, body):
+        """Allow MCP on one person. Turning it off signs out their assistants at once."""
+        if any(type(value) is not bool for value in body.values()):
+            raise ValidationError({key: 'Use true or false' for key, value in body.items() if type(value) is not bool})
+        with self.database.transaction() as tx:
+            row = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            if row is None:
+                raise AccessError(404, 'Account not found')
+            if actor.role != 'admin' and row['role'] == 'admin':
+                raise AccessError(403, ADMIN_ONLY)
+            details = []
+            for key, label in (('allow_mcp', 'Allow MCP'),):
+                if key in body and body[key] != bool(row[key]):
+                    tx.connection.execute(f'UPDATE evlet_users SET {key}=? WHERE id=?', (int(body[key]), user_id))
+                    details.append(f"{label}: {'on' if body[key] else 'off'}")
+            if body.get('allow_mcp') is False:
+                for client in tx.connection.execute('SELECT id FROM evlet_mcp_clients WHERE user_id=? AND revoked_at IS NULL', (user_id,)).fetchall():
+                    self.business.assistants.end(tx.connection, client[0])
+                tx.connection.execute('DELETE FROM evlet_oauth_codes WHERE user_id=?', (user_id,))
+            if details:
+                audit(tx.connection, actor.username, 'Users', row['username'], ' · '.join(details),
+                      {key: bool(row[key]) for key in body}, dict(body))
 
     def role_list(self):
         with self.database._connection() as connection:
@@ -1042,6 +1069,10 @@ class Controls:
                 raise AccessError(503, str(exc)) from None
         if path == '/mcp' and method == 'GET':
             return 200, self.business.assistants.overview(scope), []
+        if path == '/tools' and method == 'GET':
+            # The Tool log: every call from Eva, MCP clients and the API.
+            from .tools import query_of
+            return 200, self.business.tools.calls(query_of(scope)), []
         match = re.fullmatch(r'/mcp/([1-9][0-9]{0,18})', path)
         if match and method == 'DELETE' and int(match[1]) <= 2**63 - 1:
             self.business.assistants.revoke(user, int(match[1]), personal=False)

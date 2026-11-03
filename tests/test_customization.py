@@ -929,6 +929,9 @@ def test_instance_fields_follow_the_record_for_roles_whose_rules_list_fields(tmp
     viewer_id = next(row['id'] for row in admin('GET', '/api/_controls/users')[1]['items'] if row['username'] == 'viewer')
     _, key = app.business.auth.create_key(viewer_id, 'Script', {'access': 'read', 'models': None})
     assert http(app, 'GET', '/api/deal/1', headers={b'authorization': f'Bearer {key}'.encode(), b'x-evlet-request': b''})[1]['x_region'] == 'dxb'
+    with app.database.transaction() as tx:
+        # The local MCP connector acts for people with Allow MCP.
+        tx.connection.execute("UPDATE evlet_users SET allow_mcp=1 WHERE username='viewer'")
     assert viewer('GET', '/api/deal/1', headers={b'x-evlet-client': b'mcp'})[1]['x_region'] == 'dxb'
     # Write: a role that updates the record writes the field; fields the app keeps from it stay closed.
     assert editor('PATCH', '/api/deal/1', {'x_region': 'auh'})[0] == 200
