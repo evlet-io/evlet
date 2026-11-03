@@ -474,8 +474,8 @@ from evlet import AddField, Migration, RetireField, RunData, Text
 
 def split_names(session):
     Employee = session.registry.models["employee"]
-    for record_id, name in session.connection.execute('SELECT "id", "name" FROM "employee"').fetchall():
-        first, _, last = name.partition(" ")
+    for record_id, full_name in session.connection.execute('SELECT "id", "full_name" FROM "employee"').fetchall():
+        first, _, last = full_name.partition(" ")
         session.update(Employee, record_id, first_name=first, last_name=last)
 
 
@@ -483,7 +483,7 @@ migration = Migration(
     "0004_split_name",
     AddField("employee", "first_name", Text(default="")),
     AddField("employee", "last_name", Text(default="")),
-    RetireField("employee", "name"),
+    RetireField("employee", "full_name"),
     RunData(split_names),
 )
 ```

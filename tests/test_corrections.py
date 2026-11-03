@@ -198,13 +198,13 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     # those two fields the table hashes to the earlier 58ecf53f... value. Re-recorded again when Invoice.number
     # (0006_invoice_number) was added: readable by every role, writable by none; without it the table hashes to
     # the earlier cf1f61c2... value.
-    # The Playground's Item and its tables (0005_items) came later with permissions of their own; left out, the
+    # The Playground's Item and its tables (0005_items) and Employee (0007_employees) came later with permissions of their own; left out, the
     # models above keep exactly the recorded table.
     # Re-recorded for the standard record name and title (0007_record_names): every record model gains a
     # readable `name` and `title`; Customer.name became customer_name, Project.name the declared title,
     # Invoice.number moved into the named (and so writable) standard name, and test_states renamed its
     # own name fields to title. Before this the table hashed to b1bb34ff....
-    data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes')), 'states': table(Registry(*test_states.MODELS))}
+    data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes', 'employee')), 'states': table(Registry(*test_states.MODELS))}
     assert hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest() == \
         '19b87059b740d3707ec07dd4dad1146f78825b984ea394a0844b6340abd76c1a'
     policy = Policy(Registry(*MODELS))

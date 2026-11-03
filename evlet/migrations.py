@@ -9,6 +9,7 @@ import re
 import sqlite3
 
 from .fields import Field, Integer, Link, MAX_INTEGER, MISSING, Reference
+from .identity import RecordId
 from .models import identifier, storage_name
 from .identity import RecordId
 from .naming import declared_name, standard

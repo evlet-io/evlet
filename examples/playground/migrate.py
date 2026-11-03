@@ -80,6 +80,18 @@ migrations.append(Migration('0005_items', CreateModel(FrozenItem), CreateModel(P
 migrations.append(Migration('0006_invoice_number', AddField('invoice', 'number', Text(unique=True, max_length=40))))
 
 
+class Employee(Model):
+    """Frozen creation schema for the team demo."""
+    name = Text(required=True, max_length=120)
+    email = Text(max_length=254)
+    reports_to = Link('employee', index=True)
+
+
+# The frozen model is in no registry, so its Link to itself names the class directly.
+Employee.__fields__['reports_to'].target = Employee
+migrations.append(Migration('0007_employees', CreateModel(Employee)))
+
+
 def invoice_numbers_become_names(session):
     """Records have a standard name now: invoice numbers move into it and their counters follow."""
     session.add_standard_columns(session.registry.models['invoice'])
@@ -90,11 +102,12 @@ def invoice_numbers_become_names(session):
         session.connection.execute("UPDATE evlet_sequence SET field = 'name' WHERE model = 'invoice' AND field = 'number'")
 
 
-# Record identity: `name` is the standard record name, so the customer's and project's own fields
-# move aside (the project's becomes its declared title) and invoice numbers become names.
-migrations.append(Migration('0007_record_names',
+# Record identity: `name` is the standard record name, so the customer's, project's and employee's own
+# fields move aside (the project's becomes its declared title) and invoice numbers become names.
+migrations.append(Migration('0008_record_names',
     RenameField('customer', 'name', 'customer_name'),
     RenameField('project', 'name', 'title'),
+    RenameField('employee', 'name', 'full_name'),
     RetireField('invoice', 'number'),
     RunData(invoice_numbers_become_names),
 ))

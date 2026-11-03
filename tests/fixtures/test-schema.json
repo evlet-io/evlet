@@ -4627,6 +4627,126 @@
       "sources": {}
     },
     {
+      "name": "employee",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "full_name",
+            "email",
+            "reports_to"
+          ]
+        }
+      ],
+      "label": "Employee",
+      "plural": "Employees",
+      "description": "People and who they report to.",
+      "title_field": "full_name",
+      "list_fields": [
+        "id",
+        "full_name",
+        "email",
+        "reports_to"
+      ],
+      "search_fields": [
+        "full_name",
+        "email",
+        "title",
+        "name"
+      ],
+      "fields": [
+        {
+          "name": "full_name",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 120,
+          "label": "Full name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 254,
+          "label": "Email",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "reports_to",
+          "type": "link",
+          "required": false,
+          "unique": false,
+          "index": true,
+          "minimum": 1,
+          "maximum": null,
+          "target": "employee",
+          "label": "Reports to",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        }
+      ],
+      "document_version": 1,
+      "resource": "employee",
+      "behavior": {
+        "full_name": {},
+        "email": {},
+        "reports_to": {},
+        "name": {},
+        "title": {}
+      },
+      "order": [
+        "full_name",
+        "email",
+        "reports_to",
+        "name",
+        "title"
+      ],
+      "sources": {}
+    },
+    {
       "name": "item_prices",
       "layout": [
         {

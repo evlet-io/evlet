@@ -301,7 +301,7 @@ def main(argv=None):
                     row = connection.execute('SELECT id FROM evlet_users WHERE username=?', (args.username.lower(),)).fetchone()
                 if row is None:
                     raise ValueError(f'No account named {args.username}')
-                (auth.unlink_user if args.remove else auth.link_user)(row['id'], args.model, args.record_id)
+                (auth.unlink_user if args.remove else auth.link_user)(row['id'], args.model, args.record_id, actor='cli')
                 print(f'{"Unlinked" if args.remove else "Linked"} {args.username} {"from" if args.remove else "to"} {args.model} {args.record_id}')
             except AccessError as exc:
                 raise ValueError(exc.message) from None

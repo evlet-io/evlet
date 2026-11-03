@@ -188,7 +188,7 @@ class Context:
         table = identifier(business.registry.name_for(model))
         rows = tx.connection.execute(f'SELECT record.* FROM {table} AS record{where}{query.ordering(order_by)} LIMIT ? OFFSET ?', [*values, limit, offset]).fetchall()
         total = tx.connection.execute(f'SELECT count(*) FROM {table} AS record{where}', values).fetchone()[0]
-        return {'rows': [business.policy.serialize(tx, self.user, model._from_row(row)) for row in rows],
+        return {'rows': business.policy.serialize_many(tx, self.user, [model._from_row(row) for row in rows]),
                 'total': total, 'limit': limit, 'offset': offset}
 
     def count(self, model, *, filters=None):
