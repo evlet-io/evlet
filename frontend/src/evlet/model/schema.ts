@@ -81,18 +81,24 @@ export interface ModelSchema {
   order_by?: string;
   children?: ChildSchema[];
   actions?: ActionSchema[];
-  permissions?: { create: boolean; update: boolean; delete: boolean };
+  permissions?: { create: boolean; update: boolean; delete: boolean; print?: boolean };
   child_only?: boolean;
   calculation?: CalculationSchema;
   state?: StateSchema;
   /** Slips the role may present from a record of this model. */
   slips?: SlipSchema[];
+  /** Print designs the role may print a record of this model with, the default first. */
+  prints?: PrintSchema[];
 }
+
+/** A print design (evlet.PrintDesign) the role may print with; the PDF comes from the server. */
+export interface PrintSchema { name: string; title: string; default: boolean }
 
 /** A slip (evlet.Slip) the role may present; its fields come from the slip's own routes. */
 export interface SlipSchema { name: string; label: string; hand_in_label: string }
 
-export interface AppSchema { version: number; ui_version: number; models: ModelSchema[]; /** Slips for the New menu. */ slips?: SlipSchema[] }
+export interface AppSchema { version: number; ui_version: number; models: ModelSchema[]; /** Slips for the New menu. */ slips?: SlipSchema[];
+  /** Present when the app has print designs; available is false without the server's print extra. */ printing?: { available: boolean } }
 
 /** Look up models and fields by name. */
 export class SchemaIndex {

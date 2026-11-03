@@ -18,6 +18,9 @@ The previous SolidJS interface and the Vue regression harness have been removed.
   files.
 - Slips ([slips.md](slips.md)): forms presented from a record, the New menu, an action or browser
   code, checked on the server and handed in to a handler or turned into a record.
+- Printing ([printing.md](printing.md)): a Print button on record views for roles that may print the
+  model, when the server has the print extra. It opens a drawer with the server's PDF in the browser's
+  own viewer, a choice of design, Download, and File a copy on records that keep attachments.
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout`, `key_fields`, `relations` and `measures`. See "What the model decides" in

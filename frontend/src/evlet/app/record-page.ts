@@ -15,7 +15,7 @@ import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusFlow, 
 import { displayValue, fieldFor, localField, stateTint, type FieldLike } from '../ui/fields';
 import { FormSection, KeyValueList } from '../ui/inline';
 import { humanize } from '../ui/kinds';
-import { copyText, DialogFooter, MenuButton, openModal, toast, type MenuItem } from '../ui/layers';
+import { copyText, DialogFooter, MenuButton, openDrawer, openModal, toast, type MenuItem } from '../ui/layers';
 import { DataTable, emptyPrefs, type Column } from '../ui/table';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
@@ -361,7 +361,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     // Ask Eva, when Eva is on for this person: a chat about this record, in a side panel.
     const askEva = ctx.eva.get() ? Button({ label: 'Ask Eva', icon: 'sparkles', iconTint: 'violet', hideLabelOnPhone: true,
       onClick: () => openEvaPanel(ctx, ctx.eva, { name, label: model.label }, store.id!, titleText.peek()) }) : null;
-    return [...lifecycleButtons, ...moveButtons, ...actionButtons, ...slipButtons, askEva, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items: moreItems, menuLabel: 'More actions' })];
+    // Print, when the role may print this model and the server has the print extra: the preview is the server's PDF.
+    const designs = ctx.schema.schema.printing?.available ? model.prints ?? [] : [];
+    const print = designs.length ? Button({ label: 'Print', icon: 'printer', hideLabelOnPhone: true,
+      onClick: () => openPrint(ctx, model, store.id!, titleText.peek(), designs) }) : null;
+    return [...lifecycleButtons, ...moveButtons, ...actionButtons, ...slipButtons, print, askEva, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items: moreItems, menuLabel: 'More actions' })];
   };
 
   // ---------- header ----------
@@ -601,11 +605,39 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
   return blocks;
 }
 
+/** The print preview: the PDF the server renders for this person, with Download and File a copy. */
+export function openPrint(ctx: AppContext, model: ScreenModel, id: number, title: string, designs: Array<{ name: string; title: string }>) {
+  const design = cell(designs[0].name);
+  const canFile = Boolean(model.attachments) && model.permissions?.update !== false;
+  const fileCopy = async () => {
+    try {
+      const file = await ctx.api.fileCopy(model.name, id, design.peek());
+      window.dispatchEvent(new CustomEvent('evlet-files-changed', { detail: { model: model.name, id } }));
+      toast(`${file.name} filed with this ${model.label.toLowerCase()}`, { icon: 'paperclip' });
+    } catch (error) { toast(error instanceof ApiError ? `Not filed: ${error.fields.attachment ?? error.message}` : 'Not filed.', { icon: 'info' }); }
+  };
+  openDrawer({ title: `Print ${title}`, icon: 'printer', className: 'ev-print',
+    body: () => html`<div class="ev-print-body">
+      ${designs.length > 1 ? html`<label class="ev-print-design"><span class="muted">Print design</span>
+        <select class="input" aria-label="Print design" on:change=${(event: Event) => design.set((event.target as HTMLSelectElement).value)}>
+          ${designs.map(item => html`<option value=${item.name}>${item.title}</option>`)}</select></label>` : null}
+      <iframe class="ev-print-frame" title=${() => `${title}, PDF preview`} src=${() => ctx.api.printUrl(model.name, id, design.get())}></iframe>
+      <p class="muted ev-print-note">Printed as you: fields you cannot read are left out.</p></div>`,
+    footer: close => html`<div class="ev-print-actions">
+      <a class="btn primary" rel="external" href=${() => ctx.api.printUrl(model.name, id, design.get(), true)}>${Icon('download', { size: 'sm' })}<span>Download</span></a>
+      ${canFile ? Button({ label: 'File a copy', icon: 'paperclip', onClick: () => void fileCopy() }) : null}
+      ${Button({ label: 'Close', onClick: close })}</div>` });
+}
+
 function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
   const files = cell<Array<{ id: number; name: string; size: number }> | null>(null);
   const problem = cell('');
   const load = () => void ctx.api.attachments(model.name, store.id!).then(items => files.set(items), error => problem.set(error instanceof ApiError ? error.message : 'Files could not be loaded.'));
   load();
+  // A filed print copy is a new attachment of this record.
+  const changed = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.model === model.name && detail?.id === store.id) load(); };
+  window.addEventListener('evlet-files-changed', changed);
+  onCleanup(() => window.removeEventListener('evlet-files-changed', changed));
   const canWrite = model.permissions?.update !== false;
   // The files of a locked record cannot change: the server refuses with 409.
   const locked = () => Boolean(extrasOf(ctx.api.detail(model.name, store.id!).get())._locked);

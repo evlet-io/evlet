@@ -167,8 +167,18 @@ with that context's user and permissions.
 The Playground prints its invoices (`InvoicePrint`, with a DRAFT watermark on drafts) and the
 **Invoices by status** report (`InvoicesByStatusPrint`); see `examples/playground/prints.py`.
 
+## In the browser
+
+A record view shows **Print** when the schema lists designs for the model (`prints`) and
+`printing.available` is true. It opens a drawer with the PDF from
+`GET /api/{model}/{id}/prints/{design}.pdf` in the browser's own PDF viewer, so the preview is
+exactly what prints. With more than one design the drawer offers a choice, the default first.
+Download saves the same PDF; File a copy appears when the model keeps attachments and the role may
+update the record, and the Files block then lists the new PDF.
+
 ## Not yet
 
-The browser Print button, the preview drawer and the block designer come in the next steps.
+The block designer comes in the next step. Reports have no screen in this browser interface, so
+report designs print through their route.
 Bulk printing many records into one PDF, barcodes, PDF/A, digital signatures and letterheads stored
 per company are not built.

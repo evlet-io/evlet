@@ -246,3 +246,54 @@ describe('permission-driven screens', () => {
     await until(() => expect(lastToast()).toBe('Not attached: Use a nonempty file up to 1 MiB'));
   });
 });
+
+describe('printing a record', () => {
+  // The schema the server sends when the role may print contacts and the print extra is installed.
+  const printing = (available = true, prints = [{ name: 'ContactPrint', title: 'Contact sheet', default: true }, { name: 'LabelPrint', title: 'Label', default: false }]) => {
+    const schema = copy(screen.schema);
+    schema.body.printing = { available };
+    const contact = schema.body.models.find((model: any) => model.name === 'contact');
+    contact.prints = prints;
+    contact.permissions = { ...contact.permissions, print: prints.length > 0 };
+    return schema;
+  };
+  const routes = (schema: any, filed: () => void = () => {}): Route[] => [
+    ['GET', /\/api\/auth\/session$/, recorded.session],
+    ['GET', /\/api\/schema$/, schema],
+    ['GET', /\/api\/contact\/1$/, screen.contact_detail],
+    ['GET', /\/api\/contact\/1\/attachments$/, screen.attachments_empty],
+    ['POST', /\/api\/contact\/1\/prints\/LabelPrint\/file$/, () => { filed(); return { status: 201, body: { id: 7, name: 'Mariam Haddad.pdf', size: 15000 }, headers: {} } as any; }],
+  ];
+
+  it('opens the server PDF of the chosen design, with Download and File a copy', async () => {
+    let filed = 0;
+    const { host, sent } = start(routes(printing(), () => { filed += 1; }), '/app/contact/1');
+    await until(() => expect(byText(host, '.doc-head button', 'Print')).not.toBeNull());
+    click(byText(host, '.doc-head button', 'Print'));
+    const drawer = () => document.querySelector<HTMLElement>('.drawer.ev-print')!;
+    await until(() => expect(drawer()).not.toBeNull());
+    const frame = drawer().querySelector('iframe')!;
+    expect(frame.getAttribute('src')).toBe('/api/contact/1/prints/ContactPrint.pdf');
+    expect(drawer().querySelector('a.btn.primary')!.getAttribute('href')).toBe('/api/contact/1/prints/ContactPrint.pdf?download=1');
+    const select = drawer().querySelector('select')!;
+    expect([...select.options].map(option => option.textContent)).toEqual(['Contact sheet', 'Label']);
+    select.value = 'LabelPrint';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await until(() => expect(frame.getAttribute('src')).toBe('/api/contact/1/prints/LabelPrint.pdf'));
+    click(byText(drawer(), 'button', 'File a copy'));
+    await until(() => expect(filed).toBe(1));
+    expect(requests(sent, 'POST', /prints\/LabelPrint\/file$/)[0].headers['x-evlet-request']).toBe('1');
+    await until(() => expect(lastToast()).toBe('Mariam Haddad.pdf filed with this contact'));
+    // The Files block loads again for the new attachment.
+    await until(() => expect(requests(sent, 'GET', /attachments$/).length).toBeGreaterThan(1));
+  });
+
+  it('shows no Print without designs for the role or without the print extra', async () => {
+    for (const schema of [printing(false), printing(true, [])]) {
+      const { host } = start(routes(schema), '/app/contact/1');
+      await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('Mariam Haddad'));
+      expect(byText(host, '.doc-head button', 'Print')).toBeNull();
+      stopAll();
+    }
+  });
+});
