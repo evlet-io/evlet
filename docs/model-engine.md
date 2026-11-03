@@ -389,11 +389,11 @@ bash scripts/playground.sh
 `EVLET_DATABASE` selects the file for both commands. The migration command creates
 a timestamped SQLite backup beside an existing database using SQLite's backup API,
 validates the frozen Milestone 1 definitions when necessary, and applies
-`0001_model_engine` and `0002_projects`. IDs, original values, and links stay intact. Fresh installations
+the pending migrations, from `0001_model_engine` to `0006_invoice_number`. IDs, original values, and links stay intact. Fresh installations
 can still use `bash scripts/playground.sh --setup` directly.
 
-The Playground demonstrates active flags and notes on customers, dates/statuses
-and exact tax rates on invoices, and timezone-aware timestamps on payments. Its
+The Playground demonstrates active flags and notes on customers, dates/statuses,
+exact tax rates and naming series numbers (`INV-2026-00001`, [sequences.md](sequences.md#naming-series)) on invoices, and timezone-aware timestamps on payments. Its
 edit, confirmed delete, search, and ordering controls use the public HTTP API.
 Tax rate and status are stored example fields; they do not calculate tax, settle
 invoices, post a ledger, or trigger workflow actions. Existing email remains Text
