@@ -159,8 +159,13 @@ def read_lock(path):
         value = json.loads((path / 'apps.lock').read_text())
     except (OSError, ValueError) as exc:
         raise ValueError(f'Cannot read {path.name}/apps.lock: {exc}') from None
-    if not isinstance(value, dict) or set(value) != {'apps'} or not isinstance(value['apps'], dict):
+    if not isinstance(value, dict) or set(value) - {'evlet'} != {'apps'} or not isinstance(value['apps'], dict):
         raise ValueError('Invalid apps.lock; expected an apps object')
+    # Locks written before framework versioning have no evlet entry; serving then asks for evlet migrate.
+    framework = value.get('evlet')
+    if 'evlet' in value and (not isinstance(framework, dict) or set(framework) != {'version', 'schema'}
+                             or any(not isinstance(item, str) or not item for item in framework.values())):
+        raise ValueError('Invalid evlet entry in apps.lock')
     from .cli.project import valid_name
     for name, entry in value['apps'].items():
         valid_name(name)
@@ -384,6 +389,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
                       reports=tuple(report for _, definition in definitions for report in definition.reports),
                       apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
                       storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, ai=config.ai, **options)
+    app.managed_framework = True
     app.business.timezone = config.timezone
     # One key for connector secrets, two-step secrets and backup codes (evlet.secrets).
     from .secrets import SecretKey
@@ -454,6 +460,11 @@ def load_runtime(root, name, *, port=8000, development=False, public=False):
     locked = require_consistent(path)
     if not locked['apps']:
         raise ValueError('Instance has no installed apps. Run evlet install APP --instance ' + name)
+    from .framework import state
+    if locked.get('evlet') != state():
+        recorded = locked.get('evlet', {}).get('version', 'a release before framework versioning')
+        raise ValueError(f'Evlet {state()["version"]} is installed but instance {name} was migrated with Evlet {recorded}; '
+                         f'stop serving and run evlet migrate {name}')
     packages = resolve_packages(root, sorted(locked['apps']))
     if {package.name for package in packages} != set(locked['apps']):
         raise ValueError('App dependencies changed; run evlet migrate before serving')

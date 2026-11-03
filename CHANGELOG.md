@@ -51,6 +51,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   labelled Customer reference. `/api/schema` marks a naming series field with `naming: {"field": ...}`
   and the placeholder `Assigned on save`, and the New screen shows that field read only
   ([docs/sequences.md](docs/sequences.md#naming-series)).
+- **Evlet upgrades go through `evlet migrate`.** `apps.lock` and the installed manifest
+  now record the Evlet version and its last framework migration. An instance migrated
+  with another Evlet version refuses to serve and asks for `evlet migrate`, which backs
+  up the database and runs ordered, checksummed framework migrations
+  (`evlet_framework_migrations`) on the staged copy. Existing instances need one
+  `evlet migrate` after upgrading; it adopts today's startup tables with no other change
+  ([docs/app-upgrades.md](docs/app-upgrades.md#upgrade-evlet)).
 - **Field retirement, safe type changes and data steps.** `RetireField` removes a field from the
   models and API while keeping its column and values; `DropField` deletes a retired field's column
   only with `allow_destructive=True` (`evlet migrate --allow-destructive`, which keeps a backup).
