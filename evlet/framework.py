@@ -30,6 +30,8 @@ class FrameworkStep:
     name: str
     summary: str
     run: object = None
+    # A step that reads the app's models gets the registry as a third argument.
+    registry: bool = False
 
     def checksum(self):
         target = None if self.run is None else f'{self.run.__module__}.{self.run.__qualname__}'
@@ -54,9 +56,24 @@ def _tool_calls(connection, postgres):
         connection.execute('DROP TABLE evlet_mcp_calls')
 
 
+def _record_names(connection, postgres, registry):
+    """Give every record table the standard name and title columns (evlet/naming.py) and fill empty titles.
+
+    Tables made by CreateModel since have them already, as do tables a data migration prepared with
+    Session.add_standard_columns. `name` stays empty for existing rows: an app that wants names for them
+    backfills them itself (evlet.sequences.backfill or a RunData migration).
+    """
+    from .naming import add_columns, fill_titles
+    for table, model in registry.models.items():
+        add_columns(connection, postgres, table, model)
+        fill_titles(connection, table, model)
+
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
+    FrameworkStep('0003_record_names', 'Add the standard name and title columns to record tables and fill each title.',
+                  _record_names, registry=True),
 )
 
 LEDGER = ('CREATE TABLE IF NOT EXISTS evlet_framework_migrations (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, '
@@ -103,7 +120,7 @@ def upgrade(database, *, apply=True):
                               + '); stop serving and run evlet migrate')
         for position, step in enumerate(waiting, len(STEPS) - len(waiting) + 1):
             if step.run is not None:
-                step.run(connection, postgres)
+                step.run(connection, postgres, *((database.registry,) if step.registry else ()))
             connection.execute('INSERT INTO evlet_framework_migrations (position, name, checksum, evlet_version, applied_at) VALUES (?, ?, ?, ?, ?)',
                                (position, step.name, step.checksum(), version(), int(time.time())))
     return [step.name for step in waiting]

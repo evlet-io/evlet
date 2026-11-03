@@ -479,14 +479,15 @@ def is_balanced(bound, rows):
 def write(engine, bound, draft):
     """Insert one row with one statement, plus the calculation version of a finite-v1 target and an event when
     events are enabled. The source is the record being moved or voided, so it is not checked again."""
-    from .database import insert, storage_columns
+    from .database import insert, storage_columns, stored_values
     from .documents import record_plan
+    from .naming import has_title
     business, tx, target = engine._business, engine._tx, bound.target
     tx.check_references(target, {name: draft._values.get(name) for name, field in target.__declared_fields__.items()
                                  if isinstance(field, Reference) and name != SOURCE})
-    names, values = storage_columns(target, draft._values, target.__fields__)
+    names, values = storage_columns(target, stored_values(target, draft._values), target.__fields__)
     table = identifier(business.registry.name_for(target))
-    record_id = insert(tx.connection, table, names, values)
+    record_id = insert(tx.connection, table, names, values, id_title=has_title(target))
     if business.registry.plan_for(target) is not None:
         record_plan(tx, business.registry.name_for(target), record_id, business.registry.formula_hashes.get(target))
     business.changed(tx, target, record_id)

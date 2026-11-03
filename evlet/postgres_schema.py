@@ -9,7 +9,9 @@ from .models import identifier, storage_name
 from .migrations import (Applied, SchemaError, AddField, AddIndex, AddTable, AlterField, CreateModel, DropField, RenameField,
                          Recompute, RetireField, RunData, retired_columns, step_arguments, destructive, maintenance_steps, run_data,
                          _metadata, _definition, _migration_plan, _history, _same, _comparable, mismatch, link_target, plan_from,
-                         _planned_definition, _recompute, recomputes, index_columns, stored_columns, app_fields, instance_columns)
+                         _planned_definition, _recompute, recomputes, index_columns, stored_columns, app_fields, instance_columns,
+                         standard_fields)
+from .naming import standard
 
 
 def validate_indexes(registry):
@@ -90,9 +92,15 @@ def check(db, registry, rows=False):
         names = [r[0] for r in columns]
         skip = added.get(table, set()) | {column for field in retired.get(table, ()) for column in stored_columns(names, field)}
         actual = {r[0]: (r[1], r[2] == 'NO', r[3] == 'YES') for r in columns if r[0] not in skip}
+        # A table made before records had standard columns gets them from framework step 0003 (evlet migrate).
+        framework = standard_fields(model)
+        present = {key for key in framework if key in names}
+        if present and present != set(framework):
+            raise SchemaError(f'{table}: the standard name and title columns are incomplete; run evlet migrate')
         expected = {'id': ('bigint', True, True), **{
             name: ('bigint' if sql_type == 'INTEGER' else 'text', field.required, False)
-            for key, field in app_fields(model).items() for name, sql_type in field.columns(key)}}
+            for key, field in app_fields(model).items() for name, sql_type in field.columns(key)},
+            **({key: ('text', False, False) for key in framework} if present else {})}
         if actual != expected:
             raise SchemaError(f'{table}: database columns differ from models')
         foreign = db.execute('''SELECT a.attname, target.relname, ta.attname, c.confdeltype, tn.nspname, cardinality(c.conkey), cardinality(c.confkey), c.convalidated
@@ -113,7 +121,7 @@ def check(db, registry, rows=False):
         if {tuple(r['fields']) for r in indexes if r['indisprimary']} != {('id',)}:
             raise SchemaError(f'{table}: primary key differs from models')
         if {tuple(r['fields']) for r in indexes if r['indisunique'] and not r['indisprimary'] and not set(r['fields']) & skip} \
-                != {(name,) for name, field in model.__fields__.items() if field.unique}:
+                != {(name,) for name, field in model.__fields__.items() if field.unique and (name in present or not standard(field))}:
             raise SchemaError(f'{table}: unique constraints differ from models')
         indexed = {tuple(r['fields']) for r in indexes}
         if any(index_columns(name, field) not in indexed for name, field in model.__fields__.items() if field.index):

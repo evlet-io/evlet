@@ -24,7 +24,8 @@
       ],
       "search_fields": [
         "title",
-        "status"
+        "status",
+        "name"
       ],
       "fields": [
         {
@@ -123,6 +124,37 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "document_version": 1,
@@ -142,13 +174,15 @@
               }
             ]
           }
-        }
+        },
+        "name": {}
       },
       "order": [
         "title",
         "status",
         "items.amount",
         "total",
+        "name",
         "items.qty",
         "items.rate",
         "items.stock"
@@ -414,6 +448,7 @@
       "title": "Contract",
       "status": "Draft",
       "total": "2.80",
+      "name": null,
       "children": {
         "items": [
           {
@@ -526,6 +561,7 @@
     "title": "Contract",
     "status": "Draft",
     "total": "2.80",
+    "name": null,
     "children": {
       "items": [
         {
@@ -543,5 +579,5 @@
       ]
     }
   },
-  "etag": "\"7a6bd5e311e11599561178bbb1c763ce54313bd16da097fe828e1948e127cd25\""
+  "etag": "\"e7c37c8a86dcf2ce2877cecc7d86f4efbb1766b8f0188b8e3202accb8b4b52ce\""
 }

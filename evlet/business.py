@@ -397,13 +397,16 @@ class Business:
             self.controls.custom.merge(entry, model, readable, writable)
             if entry['title_field'] not in readable:
                 entry['title_field'] = 'id'
-            # The field a naming series fills on create: the New screen says it is assigned on save.
+            # The field naming fills: the record page shows it as the document number, and until it has one,
+            # when it will ("Assigned on save", "Assigned on confirm").
             naming = self.registry.naming.get(model)
             if naming is not None and naming.field in readable:
-                entry['naming'] = {'field': naming.field}
+                placeholder = None if naming.manual else 'Assigned on save' if naming.assign_on == 'create' else \
+                    'Assigned on confirm' if naming.assign_on == 'confirm' else f'Assigned on {naming.assign_on.replace("_", " ")}'
+                entry['naming'] = {'field': naming.field, 'assign_on': naming.assign_on, 'manual': naming.manual, 'placeholder': placeholder}
                 for field in entry['fields']:
-                    if field['name'] == naming.field and not field.get('placeholder'):
-                        field['placeholder'] = 'Assigned on save'
+                    if field['name'] == naming.field and placeholder and not field.get('placeholder'):
+                        field['placeholder'] = placeholder
             entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
             from .corrections import model_schema
             flags, corrections = model_schema(self, user, model)
@@ -996,13 +999,16 @@ class Business:
         self.policy.require(user, model, 'create')
         values, children = self.split_body(body)
         from .documents import drop_empty_name, host_today
-        from .sequences import name_new
+        from .sequences import name_new, naming_rules
         drop_empty_name(self.registry, model, values)
+        rules = naming_rules(self.registry, model)
+        if rules is not None and rules.field == 'name' and rules.system and values.get('name') not in (None, ''):
+            raise ValidationError({'name': 'Assigned on save'})
         self.policy.check_values(tx, user, model, values)
         values = self.controls.custom.prepare(model, values)
         cleaned = dict(model(**values)._values)
         self.controls.custom.enforce(model, cleaned, None)
-        name = name_new(tx.connection, self.registry, model, cleaned, host_today(self), user.username)
+        name = name_new(tx.connection, self.registry, model, cleaned, host_today(self), user.username, record=model(**cleaned))
         if name:
             values[self.registry.naming[model].field] = name
         record = tx.create(model, **values)

@@ -24,12 +24,18 @@ def view_for(model):
     meta = getattr(model, 'Meta', None)
     allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments', 'effects',
-               'journal', 'naming', 'mail'}
+               'journal', 'naming', 'mail', 'title'}
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
             raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
-    # App fields only: instance fields (x_) differ per database and are added by Controls.
-    visible = {name: field for name, field in model.__app_fields__.items() if not field.hidden}
+    # App fields only: instance fields (x_) differ per database and are added by Controls. The standard
+    # name shows (first) on models whose naming fills it; the standard title follows its source and never shows.
+    from ..naming import standard
+    named = getattr(getattr(meta, 'naming', None), 'field', None) == 'name' and standard(model.__app_fields__.get('name')) == 'name'
+    visible = {name: field for name, field in model.__app_fields__.items()
+               if (standard(field) == 'name' and named) or (not standard(field) and not field.hidden)}
+    if named:
+        visible = {'name': visible.pop('name'), **visible}
     texts = [name for name, field in visible.items() if isinstance(field, Text) and not isinstance(field, LongText)]
     label = getattr(meta, 'label', label_for(model.__name__))
     plural = getattr(meta, 'plural', plural_for(label))
@@ -39,11 +45,17 @@ def view_for(model):
     title = getattr(meta, 'title_field', next((name for name in ('name', 'title', 'reference') if name in texts), texts[0] if texts else 'id'))
     if title != 'id' and title not in texts:
         raise ValueError('title_field must be a visible short text field or id')
+    if 'title' in model.__app_fields__ and (standard(model.__app_fields__['title']) or 'title' in texts):
+        # Records keep their display text in the title column; Meta.title_field is only its source.
+        title = "title"
     columns = getattr(meta, 'list_fields', tuple(name for name, field in visible.items() if not isinstance(field, LongText))[:4])
     search = getattr(meta, 'search_fields', tuple(texts[:8]))
-    for value, maximum, names in ((columns, 8, {'id', *visible}), (search, 8, {name for name, field in visible.items() if isinstance(field, Text)})):
+    standard_text = {key for key, field in model.__app_fields__.items() if standard(field)}
+    for value, maximum, names in ((columns, 8, {'id', *visible}), (search, 8, {name for name, field in visible.items() if isinstance(field, Text)} | standard_text)):
         if not isinstance(value, (tuple, list)) or len(value) > maximum or any(not isinstance(name, str) or name not in names for name in value) or len(set(value)) != len(value):
             raise ValueError('View fields must be distinct visible field names, with at most eight entries')
+    # Search also finds records by their title and name.
+    search = tuple(dict.fromkeys((*search, *(key for key in ('title', 'name') if key in standard_text))))
     layout = getattr(meta, 'layout', (('Details', tuple(visible)),))
     used = []
     groups = []

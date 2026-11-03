@@ -37,7 +37,7 @@
           "label": "Order",
           "plural": "Orders",
           "description": "",
-          "title_field": "number",
+          "title_field": "title",
           "list_fields": [
             "id",
             "number",
@@ -47,7 +47,9 @@
           "search_fields": [
             "number",
             "customer",
-            "remarks"
+            "remarks",
+            "title",
+            "name"
           ],
           "fields": [
             {
@@ -143,6 +145,68 @@
               "applies_when": null,
               "required_when": null,
               "locked_when": null
+            },
+            {
+              "name": "name",
+              "type": "text",
+              "required": false,
+              "unique": true,
+              "index": false,
+              "max_length": 140,
+              "label": "Name",
+              "help_text": "",
+              "placeholder": "",
+              "hidden": false,
+              "read_only": true,
+              "default_kind": "none",
+              "stored": true,
+              "operators": [
+                "eq",
+                "ne",
+                "in",
+                "nin",
+                "contains",
+                "icontains",
+                "nicontains",
+                "startswith",
+                "isnull"
+              ],
+              "compute": null,
+              "initial": null,
+              "applies_when": null,
+              "required_when": null,
+              "locked_when": null
+            },
+            {
+              "name": "title",
+              "type": "text",
+              "required": false,
+              "unique": false,
+              "index": false,
+              "max_length": 255,
+              "label": "Title",
+              "help_text": "",
+              "placeholder": "",
+              "hidden": false,
+              "read_only": true,
+              "default_kind": "none",
+              "stored": true,
+              "operators": [
+                "eq",
+                "ne",
+                "in",
+                "nin",
+                "contains",
+                "icontains",
+                "nicontains",
+                "startswith",
+                "isnull"
+              ],
+              "compute": null,
+              "initial": null,
+              "applies_when": null,
+              "required_when": null,
+              "locked_when": null
             }
           ],
           "document_version": 1,
@@ -150,12 +214,16 @@
           "behavior": {
             "number": {},
             "customer": {},
-            "remarks": {}
+            "remarks": {},
+            "name": {},
+            "title": {}
           },
           "order": [
             "number",
             "customer",
             "remarks",
+            "name",
+            "title",
             "lines.description",
             "lines.quantity",
             "lines.rate"
@@ -356,6 +424,8 @@
       "number": "ORD-001",
       "customer": "A",
       "remarks": null,
+      "name": null,
+      "title": "0000000000001",
       "children": {
         "lines": [
           {
@@ -400,6 +470,8 @@
       "number": "ORD-001",
       "customer": "A",
       "remarks": "Confirmed revision 1",
+      "name": null,
+      "title": "0000000000001",
       "children": {
         "lines": [
           {
@@ -446,6 +518,8 @@
         "number": "ORD-001",
         "customer": "A",
         "remarks": "Confirmed revision 1",
+        "name": null,
+        "title": "0000000000001",
         "children": {
           "lines": [
             {
@@ -477,6 +551,8 @@
       "number": "ORD-001",
       "customer": "A",
       "remarks": "Confirmed revision 1",
+      "name": null,
+      "title": "0000000000001",
       "children": {
         "lines": [
           {
@@ -517,6 +593,8 @@
       "number": "ORD-001",
       "customer": "A",
       "remarks": "Confirmed revision 1",
+      "name": null,
+      "title": "0000000000001",
       "children": {
         "lines": [
           {
@@ -557,6 +635,8 @@
       "number": "ORD-001",
       "customer": "B",
       "remarks": "Confirmed revision 1",
+      "name": null,
+      "title": "0000000000001",
       "children": {
         "lines": [
           {
@@ -600,6 +680,8 @@
       "number": "ORD-001",
       "customer": "B",
       "remarks": "Confirmed revision 2",
+      "name": null,
+      "title": "0000000000001",
       "children": {
         "lines": [
           {
@@ -671,6 +753,8 @@
         "number": "ORD-001",
         "customer": "B",
         "remarks": "Confirmed revision 2",
+        "name": null,
+        "title": "0000000000001",
         "children": {
           "lines": [
             {

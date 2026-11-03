@@ -196,7 +196,7 @@ def revise(context, model, record_id, reason):
     numbers = sequences.assign(context, model, copy, None, None)
     # So is a name from the model's naming series (the copy's unique fields start empty).
     from .documents import host_today
-    name = sequences.name_new(tx.connection, business.registry, model, copy._values, host_today(business), user.username)
+    name = sequences.name_new(tx.connection, business.registry, model, copy._values, host_today(business), user.username, record=copy, context=context)
     if name:
         copy._values[business.registry.naming[model].field] = name
     saved = write_snapshot(tx, copy)

@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 
 from evlet import (AddField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
-                   Link, LongText, Migration, Model, PostgreSQLDatabase, Registry, Select, Text)
+                   Link, LongText, Migration, Model, PostgreSQLDatabase, Registry, RenameField, RetireField, RunData, Select, Text)
 from .items import core_fields, item_fields
 from .models import Customer, registry
 
@@ -78,6 +78,25 @@ migrations.append(Migration('0005_items', CreateModel(FrozenItem), CreateModel(P
 
 # Invoice numbers from the naming series (Invoice.Meta.naming). Invoices saved before this keep an empty number.
 migrations.append(Migration('0006_invoice_number', AddField('invoice', 'number', Text(unique=True, max_length=40))))
+
+
+def invoice_numbers_become_names(session):
+    """Records have a standard name now: invoice numbers move into it and their counters follow."""
+    session.add_standard_columns(session.registry.models['invoice'])
+    session.connection.execute('UPDATE invoice SET "name" = "number" WHERE "name" IS NULL AND "number" IS NOT NULL')
+    if session.connection.execute("SELECT 1 FROM sqlite_master WHERE name = 'evlet_sequence'" if isinstance(session.connection, sqlite3.Connection)
+                                  else "SELECT to_regclass('evlet_sequence')").fetchone()[0]:
+        session.connection.execute("UPDATE evlet_sequence SET field = 'name' WHERE model = 'invoice' AND field = 'number'")
+
+
+# Record identity: `name` is the standard record name, so the customer's and project's own fields
+# move aside (the project's becomes its declared title) and invoice numbers become names.
+migrations.append(Migration('0007_record_names',
+    RenameField('customer', 'name', 'customer_name'),
+    RenameField('project', 'name', 'title'),
+    RetireField('invoice', 'number'),
+    RunData(invoice_numbers_become_names),
+))
 
 
 def legacy_registry():

@@ -10,6 +10,7 @@ import sqlite3
 
 from .fields import Field, Integer, Link, MAX_INTEGER, MISSING, Reference
 from .models import identifier, storage_name
+from .naming import standard
 
 logger = logging.getLogger(__name__)
 
@@ -108,8 +109,14 @@ def _tables(connection):
 
 def app_fields(model):
     """Stored fields from the app files. Instance fields (x_) are added and removed by Controls, so
-    schema checks and app migrations leave their columns alone."""
-    return model.__app_stored__
+    schema checks and app migrations leave their columns alone. The standard name and title columns
+    belong to the framework (evlet/naming.py), like id."""
+    return {key: field for key, field in model.__app_stored__.items() if not standard(field)}
+
+
+def standard_fields(model):
+    """The framework's name and title fields of a model, as {name: field}."""
+    return {key: field for key, field in model.__app_stored__.items() if standard(field)}
 
 
 def instance_columns(connection, postgres=False):
@@ -132,8 +139,14 @@ def _check(connection, registry, *, rows=False):
         names = [row['name'] for row in columns]
         skip = added.get(name, set()) | {column for field in retired.get(name, ()) for column in stored_columns(names, field)}
         actual = {row['name']: (row['type'].upper(), bool(row['notnull']), row['pk']) for row in columns if row['name'] not in skip}
+        # A table made before records had standard columns gets them from framework step 0003 (evlet migrate).
+        framework = standard_fields(model)
+        present = {key for key in framework if key in names}
+        if present and present != set(framework):
+            raise SchemaError(f'{name}: the standard name and title columns are incomplete; run evlet migrate')
         expected = {'id': ('INTEGER', False, 1), **{
-            column: (sql_type, field.required, 0) for key, field in app_fields(model).items() for column, sql_type in field.columns(key)}}
+            column: (sql_type, field.required, 0) for key, field in app_fields(model).items() for column, sql_type in field.columns(key)},
+            **({key: ('TEXT', False, 0) for key in framework} if present else {})}
         if actual != expected:
             raise SchemaError(f'{name}: database columns differ from models; run explicit migrations')
         links = {(row['from'], row['table'], row['to'], row['on_delete'])
@@ -154,7 +167,7 @@ def _check(connection, registry, *, rows=False):
             indexed.add(fields)
             if index['unique']:
                 unique.add(fields)
-        if unique != {(key,) for key, field in model.__fields__.items() if field.unique}:
+        if unique != {(key,) for key, field in model.__fields__.items() if field.unique and (key in present or not standard(field))}:
             raise SchemaError(f'{name}: unique constraints differ from models')
         if any(index_columns(key, field) not in indexed for key, field in model.__fields__.items() if field.index):
             raise SchemaError(f'{name}: an explicit index migration is required')
