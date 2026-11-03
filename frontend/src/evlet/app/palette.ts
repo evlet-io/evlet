@@ -7,6 +7,7 @@ import { cell, derive, effect, untrack } from '../reactive';
 import { Icon, SegmentedControl, Button } from '../ui/base';
 import { tint as safeTint, type Tint } from '../ui/core';
 import { openModal } from '../ui/layers';
+import { resolveTheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { identity, rootModels, titleOf, type ScreenModel } from './meta';
 
@@ -88,6 +89,8 @@ function paletteBody(ctx: AppContext, close: () => void) {
   const preferences = (): Item[] => [
     ...(ctx.me.peek() ? [{ icon: 'settings', tint: 'slate' as const, label: 'Open settings', run: () => void goSettings(ctx.router, ctx.me.peek()!.last_page || 'profile') }] : []),
     { icon: 'panel-left', tint: 'slate', label: 'Toggle sidebar', hint: '[', run: () => ctx.toggleSidebar() },
+    ...(ctx.me.peek() && !ctx.me.peek()!.portal ? [{ icon: resolveTheme(ctx.me.peek()!.prefs.theme) === 'dark' ? 'sun' : 'moon', tint: 'slate' as const,
+      label: resolveTheme(ctx.me.peek()!.prefs.theme) === 'dark' ? 'Switch to light theme' : 'Switch to dark theme', run: () => ctx.toggleTheme() }] : []),
   ];
   // Rows in the order arrow keys visit them.
   const groups = derive(() => {

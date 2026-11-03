@@ -30,7 +30,7 @@ def legacy_served(app, path):
 PATHS = (
     '/', '/login', '/docs', '/docs/', '/docs/components', '/settings/accounts', '/demo/projects', '/demo/layouts',
     '/app/customer', '/app/customer/new', '/app/customer/12', '/app/customer/12/view', '/app/project/3',
-    '/reports/tickets', '/assets/evlet.svg',
+    '/reports/tickets', '/assets/evlet-icon-blue.svg',
     '/missing', '/app', '/app/', '/app/unknown', '/app/customer/0', '/app/customer/abc', '/app/customer/12/edit',
     '/APP/customer', '/Login', '/login/x', '/Docs', '/docsx', '/settings', '/settings/other', '/controls',
     '/controls/users', '/assets', '/assets/missing.js', '/assets/../app.py', '/reports', '/reports/unknown',

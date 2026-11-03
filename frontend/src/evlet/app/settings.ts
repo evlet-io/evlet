@@ -10,6 +10,7 @@ import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Checkbox, Icon, Switch } from '../ui/base';
 import { DialogFooter, copyText, openModal, toast } from '../ui/layers';
 import { Dropdown } from '../ui/pickers';
+import { applyTheme, type Theme } from '../ui/theme';
 import { humanize, InputError, kindOf } from '../ui/kinds';
 import './settings.css';
 
@@ -22,7 +23,7 @@ export interface Me {
   controls: boolean;
   development: boolean;
   profile: { full_name: string; short_name: string; title: string; phone: string; email: string; signature: string; photo: boolean };
-  prefs: { theme: string; density: 'comfortable' | 'compact'; text: 'default' | 'large'; start: string; counts: boolean; lang: string; tz: string; date: DateFormat; num: NumberFormat; week: string };
+  prefs: { theme: Theme; density: 'comfortable' | 'compact'; text: 'default' | 'large'; start: string; counts: boolean; lang: string; tz: string; date: DateFormat; num: NumberFormat; week: string };
   notifications: { events: Array<{ group: string; items: Array<{ key: string; label: string; locked: boolean; channels: [boolean, boolean] }> }>; quiet: { on: boolean; from: string; to: string } };
   security: {
     password_min: number;
@@ -72,8 +73,10 @@ export async function loadMe(api: ApiClient): Promise<Me | null> {
   catch { return null; }
 }
 
-/** Apply the region and language everywhere: lists, forms and the page direction. */
+/** Apply the theme, region and language everywhere: lists, forms and the page direction. Without a
+ * person (signed out) the theme stays as it is, so the sign-in page keeps this device's theme. */
 export function applyMe(me: Me | null) {
+  if (me) applyTheme(me.prefs.theme);
   setRegion(me ? { date: me.prefs.date, number: me.prefs.num, zone: me.prefs.tz } : {});
   const root = document.documentElement;
   root.lang = me?.prefs.lang ?? 'en';
@@ -86,6 +89,21 @@ export const photoUrl = (version: number) => `/api/_settings/me/photo?v=${versio
 /** The person's photo, or their initials. */
 export function PersonMark(name: () => string, photo: () => boolean, version: Cell<number>, size: 'md' | 'lg' | 'xl' = 'md'): Node {
   return html`${() => photo() ? html`<img class=${`avatar ${size === 'md' ? '' : size} set-photo`} alt="" src=${photoUrl(version.get())}>` : Avatar({ name: name(), size })}`;
+}
+
+/** Choose a theme from the account menu, the sidebar or the palette: it shows at once and is saved like
+ * the Appearance page saves it. A refused save puts the earlier theme back. */
+export async function chooseTheme(api: ApiClient, me: Cell<Me | null>, theme: Theme) {
+  const before = me.peek();
+  if (!before || before.prefs.theme === theme) return;
+  const next = { ...before, prefs: { ...before.prefs, theme } };
+  applyMe(next);
+  me.set(next);
+  try { await api.request('PATCH', '/api/_settings/me/prefs', { body: { theme } }); }
+  catch (failure) {
+    if (me.peek() === next) { applyMe(before); me.set(before); }
+    fail(failure);
+  }
 }
 
 const fail = (failure: unknown, fallback = 'That did not save. Try again.') =>
@@ -106,9 +124,9 @@ function select(value: string, options: Array<[string, string]>, onChange: (valu
   return Dropdown({ label, ariaLabel: label, className: 'set-select', value: () => chosen.get(), choices: () => options.map(([key, text]) => ({ value: key, label: text })),
     onChange: next => { if (next === null) return; chosen.set(next); onChange(next); } });
 }
-const choice = (on: () => boolean, title: string, text: string, pick: () => void, disabled = false) =>
+const choice = (on: () => boolean, title: string, text: string, pick: () => void, disabled = false, preview: Child = null) =>
   html`<button type="button" class="set-choice" class:on=${on} aria-pressed=${() => String(on())} disabled=${disabled} on:click=${pick}>
-    <strong>${title}</strong>${text ? html`<span>${text}</span>` : null}${when(on, () => html`<span class="tick">${Icon('check', { size: 'xs' })}</span>`)}</button>`;
+    ${preview}<strong>${title}</strong>${text ? html`<span>${text}</span>` : null}${when(on, () => html`<span class="tick">${Icon('check', { size: 'xs' })}</span>`)}</button>`;
 
 /** Save a part of the person's settings at once and keep the page in step. */
 async function savePrefs(ctx: SettingsContext, changes: Record<string, unknown>, quiet = false) {
@@ -328,11 +346,15 @@ function AppearancePage(ctx: SettingsContext): Node {
   };
   const today = new Date().toISOString().slice(0, 10);
   const sample = (format: DateFormat) => { setRegion({ date: format }); const text = formatDate(today); applyMe(ctx.me.peek()); return text; };
-  const pick = (key: keyof Me['prefs'], value: string, title: string, text: string, disabled = false) =>
-    choice(() => prefs.get()[key] === value, title, text, () => set(key, value), disabled);
+  const pick = (key: keyof Me['prefs'], value: string, title: string, text: string, disabled = false, preview: Child = null) =>
+    choice(() => prefs.get()[key] === value, title, text, () => set(key, value), disabled, preview);
+  // A small picture of each theme, drawn in that theme's colours whatever the page shows now.
+  const thumb = (scheme: Theme): Node => scheme === 'system'
+    ? html`<span class="set-thumb system" aria-hidden="true">${thumb('light')}${thumb('dark')}</span>` as Node
+    : html`<span class=${`set-thumb ${scheme}`} aria-hidden="true"><i></i><i></i></span>` as Node;
   return html`${head('Appearance & region', 'How Evlet looks and shows dates and numbers for you. Other people are not affected.')}
-    ${section('Theme', '', html`<div class="set-choices">${pick('theme', 'light', 'Light', '')}${pick('theme', 'system', 'Match my device', 'Dark theme is not ready yet, so this stays light for now.', true)}
-      ${pick('theme', 'dark', 'Dark', 'Coming in a later release.', true)}</div>`, true)}
+    ${section('Theme', '', html`<div class="set-choices">${pick('theme', 'light', 'Light', '', false, thumb('light'))}
+      ${pick('theme', 'system', 'Match my device', 'Changes when your device does.', false, thumb('system'))}${pick('theme', 'dark', 'Dark', '', false, thumb('dark'))}</div>`, true)}
     ${section('Layout', '', html`<div class="set-choices c2">${pick('density', 'comfortable', 'Comfortable', 'More space between rows.')}${pick('density', 'compact', 'Compact', 'Fits more rows on screen.')}</div>
       <div class="set-choices c2">${pick('text', 'default', 'Default text size', '')}${pick('text', 'large', 'Larger text', 'Everything 10% bigger.')}</div>`, true)}
     ${section('Workspace', '', [
