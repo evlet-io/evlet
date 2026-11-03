@@ -189,9 +189,10 @@ def test_catalog_and_schema_list_designs_by_permission(app):
     assert [entry['name'] for entry in editor('GET', '/api/_prints')[1]['models']] == ['TaxInvoicePrint', 'ShortPrint']
     assert viewer('GET', '/api/_prints')[1]['models'] == []
     entry = next(item for item in viewer('GET', '/api/schema')[1]['models'] if item['name'] == 'salesinvoice')
-    assert entry['permissions']['print'] is False and entry['prints'] == []
+    assert 'prints' not in entry
     entry = next(item for item in admin('GET', '/api/schema')[1]['models'] if item['name'] == 'salesinvoice')
-    assert entry['permissions']['print'] is True and entry['prints'][0] == {'name': 'TaxInvoicePrint', 'title': 'Tax invoice', 'default': True}
+    assert entry['prints'][0] == {'name': 'TaxInvoicePrint', 'title': 'Tax invoice', 'default': True}
+    assert 'print' not in entry['permissions']
     report = next(item for item in editor('GET', '/api/schema')[1]['reports'] if item['name'] == 'InvoiceTotals')
     assert report['prints'] == [{'name': 'ReportPrint', 'title': 'ReportPrint', 'default': False}]
 

@@ -160,8 +160,8 @@ the roles in the design's `roles` that the report also allows.
 PDF responses use `application/pdf` and `nosniff`. An inline PDF carries
 `Content-Security-Policy: default-src 'none'; frame-ancestors 'self'`, so only the application's own pages can
 frame it (browsers do not show a sandboxed PDF); a download keeps `default-src 'none'; sandbox`.
-The schema lists each model's designs under `prints` and adds `permissions.print`; each report entry
-has `prints`. From trusted code, `context.print(TaxInvoicePrint, record_id)` returns the PDF bytes
+The schema lists each model's designs the person may print under `prints` (left out when there are none),
+and each report entry the same way. From trusted code, `context.print(TaxInvoicePrint, record_id)` returns the PDF bytes
 with that context's user and permissions.
 
 The Playground prints its invoices (`InvoicePrint`, with a DRAFT watermark on drafts) and the

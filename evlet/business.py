@@ -325,7 +325,9 @@ class Business:
             result['reports'] = self.forms.catalog(user)
             if getattr(self, 'prints', None) is not None:
                 for entry in result['reports']:
-                    entry['prints'] = self.prints.for_report(user, self.forms.reports[entry['name']])
+                    designs = self.prints.for_report(user, self.forms.reports[entry['name']])
+                    if designs:
+                        entry['prints'] = designs
         if getattr(self, 'prints', None) is not None and self.prints.designs:
             from .printing import available
             result['printing'] = {'available': available()}
@@ -409,9 +411,11 @@ class Business:
                 for field in entry['fields']:
                     if field['name'] == naming.field and not field.get('placeholder'):
                         field['placeholder'] = 'Assigned on save'
-            entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete', 'print')}
-            if getattr(self, 'prints', None) is not None:
-                entry['prints'] = self.prints.for_model(user, model)
+            entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
+            # The designs this role may print the model with; absent when there are none.
+            designs = self.prints.for_model(user, model) if getattr(self, 'prints', None) is not None else []
+            if designs:
+                entry['prints'] = designs
             from .corrections import model_schema
             flags, corrections = model_schema(self, user, model)
             entry.update(flags)

@@ -506,6 +506,13 @@
         "update": true,
         "delete": true
       },
+      "prints": [
+        {
+          "name": "InvoicePrint",
+          "title": "Invoice",
+          "default": true
+        }
+      ],
       "child_only": false,
       "children": [],
       "actions": [],
@@ -8809,6 +8816,84 @@
       "attachments": false
     }
   ],
+  "reports": [
+    {
+      "name": "InvoicesByStatus",
+      "label": "Invoices by status",
+      "fields": [
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "draft",
+            "sent"
+          ],
+          "label": "Status",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "sent"
+        }
+      ],
+      "behavior": {
+        "status": {}
+      },
+      "children": [],
+      "sources": {},
+      "source_fields": [],
+      "autorun": false,
+      "columns": [
+        {
+          "name": "number",
+          "type": "text",
+          "label": "Invoice",
+          "link": null,
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "reference",
+          "type": "text",
+          "label": null,
+          "link": null,
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "posting_date",
+          "type": "date",
+          "label": "Date",
+          "link": null,
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "total",
+          "type": "decimal",
+          "label": null,
+          "link": null,
+          "total": true,
+          "unit": "mixed currencies"
+        }
+      ],
+      "prints": [
+        {
+          "name": "InvoicesByStatusPrint",
+          "title": "Invoices by status",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "printing": {
+    "available": true
+  },
   "slips": [
     {
       "name": "estimate_project",
