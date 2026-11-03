@@ -181,9 +181,11 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     from examples.playground.models import registry as playground
     import test_states
 
-    def table(registry):
+    def table(registry, skip=()):
         policy, result = Policy(registry), {}
         for name, model in sorted(registry.models.items()):
+            if name in skip:
+                continue
             for role in ('admin', 'editor', 'viewer'):
                 user = User(1, 'x', role)
                 result[f'{role}:{name}'] = [[op for op in ('read', 'create', 'update', 'delete') if policy.allows(user, model, op)],
@@ -193,7 +195,9 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     # Recorded before void and revise existed: every create, read, update, delete and field permission is the same.
     # Re-recorded when the Playground added Customer.currency and Payment.currency (0004_currencies); without
     # those two fields the table hashes to the earlier 58ecf53f... value.
-    data = {'playground': table(playground), 'states': table(Registry(*test_states.MODELS))}
+    # The Playground's Item and its tables (0005_items) came later with permissions of their own; left out, the
+    # models above keep exactly the recorded table.
+    data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes')), 'states': table(Registry(*test_states.MODELS))}
     assert hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest() == \
         'cf1f61c2c32a69d23612c029ae4375329672951a600ec3ad047ff5b07bff3ec1'
     policy = Policy(Registry(*MODELS))

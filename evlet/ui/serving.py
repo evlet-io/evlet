@@ -28,6 +28,7 @@ FRONTEND_TYPES = {
     ".map": "application/json",
 }
 HEAD = re.compile(rb"<head(?:\s[^>]*)?>", re.IGNORECASE)
+HTML = re.compile(rb"<html(?=[\s>])", re.IGNORECASE)
 EXISTING = re.compile(rb'<script id="evlet-config" type="application/json">.*?</script>', re.DOTALL)
 
 
@@ -61,7 +62,8 @@ def page(content, content_type, csp=CSP):
     return 200, Download(content), [(b"content-type", content_type.encode()), (b"content-security-policy", csp.encode())]
 
 
-def static_response(path, config=None):
+def static_response(path, config=None, theme=None):
+    """A built asset, or index.html with the config block and the page's theme (light or dark) on <html>."""
     if path.startswith("/assets/"):
         relative = path.lstrip("/")
         if ".." in Path(relative).parts or "\\" in relative:
@@ -76,6 +78,10 @@ def static_response(path, config=None):
     content = target.read_bytes()
     if config is not None and target.suffix == ".html":
         content = with_config(content, config)
+    theme = theme or (config or {}).get("theme")
+    if theme in ("light", "dark") and target.suffix == ".html":
+        # The chosen theme is on <html> before the first paint; "system" leaves it to the stylesheet.
+        content = HTML.sub(b'<html data-theme="' + theme.encode() + b'"', content, count=1)
     return page(content, TYPES[target.suffix])
 
 

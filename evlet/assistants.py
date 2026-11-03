@@ -177,8 +177,13 @@ class Assistants:
                          'authorization_response_iss_parameter_supported': True}, []
         self.prune()
         if path == '/_/oauth/authorize':
+            from .ui.routes import page_theme
             from .ui.serving import static_response
-            response = static_response('/')
+            try:
+                user = self.business.auth.session(scope)[0]
+            except AccessError:
+                user = None
+            response = static_response('/', theme=page_theme(self.business, scope, user))
             if response is None:
                 raise AccessError(404, 'UI assets are not built. Run the frontend production build.')
             return response

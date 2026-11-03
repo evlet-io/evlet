@@ -11,6 +11,7 @@ Status: implemented foundation, not a production business application framework.
 | `Registry` | Your models. Pass it to `Database`; there is no global registry. |
 | `AppDefinition` | The registration object in `hooks.py` for the nested app layout (`evlet app NAME --legacy`). Flat apps are discovered without it. |
 | `Instance` | One customer's isolated data directory, set in `instances/NAME/config.py` and served by `evlet serve NAME`. |
+| `DevSignIn` | Development only: wraps an `Application` so it serves one-time sign-in links at `/_dev/signin` to loopback clients. `evlet dev` and `evlet playground` use it; never wrap an application you serve. See [cli.md](cli.md#development-sign-in-links). |
 | `Tenant`, `TenantRegistry`, `TenantApplication` | Host-routed serving of several customers from Python. `TenantRegistry` is the catalog, `Tenant` is one customer in it, and `TenantApplication` picks the tenant from the Host header and builds its own `Application`. |
 
 ## Milestone 1 baseline (historical)

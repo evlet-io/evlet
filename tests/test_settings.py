@@ -2,6 +2,7 @@
 
 import base64
 import json
+import re
 import time
 
 import pytest
@@ -28,7 +29,7 @@ def test_personal_pages_save_and_the_last_page_is_remembered(secured):
     c = client(secured, 'editor')
     me = c('GET', '/api/_settings/me')[1]
     assert me['pages'] == ['profile', 'appearance', 'security', 'notifications', 'email', 'ai', 'keys'] and not me['portal'] and not me['controls']
-    assert me['prefs'] == {'theme': 'light', 'density': 'comfortable', 'text': 'default', 'start': '', 'counts': False, 'lang': 'en',
+    assert me['prefs'] == {'theme': 'system', 'density': 'comfortable', 'text': 'default', 'start': '', 'counts': False, 'lang': 'en',
                            'tz': 'Asia/Dubai', 'date': 'dd-MM-yyyy', 'num': '1,234.56', 'week': 'mon'}
     assert c('PATCH', '/api/_settings/me/profile', {'full_name': 'Sara Khan', 'short_name': 'Sara', 'title': 'Sales', 'phone': '+971 50 123 4567', 'signature': 'Sara\nAcme'})[0] == 200
     status, payload, _ = c('PATCH', '/api/_settings/me/profile', {'short_name': '  ', 'phone': 'call me'})
@@ -37,8 +38,8 @@ def test_personal_pages_save_and_the_last_page_is_remembered(secured):
                'num': '1.234,56', 'week': 'sun', 'notify.assigned': [False, True], 'notify.new_device': [False, False],
                'quiet': {'on': True, 'from': '21:00', 'to': '08:00'}, 'last_page': 'notifications'}
     assert c('PATCH', '/api/_settings/me/prefs', changes)[0] == 200
-    status, payload, _ = c('PATCH', '/api/_settings/me/prefs', {'theme': 'dark', 'tz': 'Mars/Base', 'date': 'yy', 'last_page': 'billing', 'other': 1})
-    assert status == 422 and payload['fields'] == {'theme': 'Dark theme is coming in a later release.', 'tz': 'Choose a time zone.',
+    status, payload, _ = c('PATCH', '/api/_settings/me/prefs', {'theme': 'sepia', 'tz': 'Mars/Base', 'date': 'yy', 'last_page': 'billing', 'other': 1})
+    assert status == 422 and payload['fields'] == {'theme': 'Choose one of the options.', 'tz': 'Choose a time zone.',
                                                    'date': 'Choose one of the options.', 'last_page': 'Choose a settings page.', 'other': 'Choose a known preference.'}
     me = c('GET', '/api/_settings/me')[1]
     assert me['profile'] | {'photo': None} == {'full_name': 'Sara Khan', 'short_name': 'Sara', 'title': 'Sales', 'phone': '+971 50 123 4567',
@@ -55,6 +56,39 @@ def test_personal_pages_save_and_the_last_page_is_remembered(secured):
     assert status == 302 and headers[b'location'] == b'/login?next=/settings/profile'
     # Other people never see someone else's settings.
     assert client(secured, 'viewer')('GET', '/api/_settings/me')[1]['profile']['full_name'] == ''
+
+
+def test_the_theme_is_saved_per_person_and_painted_before_any_script_runs(secured, tmp_path, monkeypatch):
+    # A stand-in for the built index.html, so this runs without the frontend build.
+    (tmp_path / 'index.html').write_text('<!doctype html><html lang="en"><head><title>Evlet</title></head><body></body></html>')
+    monkeypatch.setattr('evlet.ui.serving.STATIC', tmp_path)
+    c = client(secured, 'editor')
+
+    def painted(response):
+        status, page, _ = response
+        assert status == 200
+        found = re.search(rb'<html[^>]*>', page)[0]
+        theme = re.search(rb'data-theme="([a-z]+)"', found)
+        return (theme[1].decode() if theme else None), json.loads(re.search(rb'<script id="evlet-config" type="application/json">(.*?)</script>', page)[1])['theme']
+
+    assert painted(c('GET', '/docs')) == (None, 'system')
+    for theme in ('light', 'dark', 'system'):
+        assert c('PATCH', '/api/_settings/me/prefs', {'theme': theme})[0] == 200
+        assert c('GET', '/api/_settings/me')[1]['prefs']['theme'] == theme
+        # Docs, a model screen and Settings all open in the chosen theme; "system" is left to the stylesheet.
+        for path in ('/docs', '/app/customer', '/settings/appearance'):
+            assert painted(c('GET', path)) == (None if theme == 'system' else theme, theme)
+    assert c('PATCH', '/api/_settings/me/prefs', {'theme': 'dark'})[0] == 200
+    # Each person has their own theme.
+    assert client(secured, 'viewer')('GET', '/api/_settings/me')[1]['prefs']['theme'] == 'system'
+    assert c('PATCH', '/api/_settings/me/prefs', {'theme': 'Dark'})[0] == 422
+    # Signed out, the sign-in page follows the theme this browser last showed, from the app's cookie.
+    assert painted(http(secured, 'GET', '/login', cookie='evlet_theme=dark')) == ('dark', 'dark')
+    assert painted(http(secured, 'GET', '/login', cookie='evlet_theme=light')) == ('light', 'light')
+    for cookie in ('', 'evlet_theme=sepia', 'evlet_theme="><script>', 'evlet_theme=system'):
+        assert painted(http(secured, 'GET', '/login', cookie=cookie)) == (None, 'system')
+    # The signed-in person's choice wins over the cookie.
+    assert painted(http(secured, 'GET', '/docs', cookie=c.cookie + '; evlet_theme=light')) == ('dark', 'dark')
 
 
 def test_app_settings_respect_editors_audit_and_the_config_version(secured):
