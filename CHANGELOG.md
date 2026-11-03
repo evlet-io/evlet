@@ -5,6 +5,12 @@ say what to change. Evlet is not production ready.
 
 ## Unreleased
 
+- **Migration plans.** `evlet migrate <instance> --plan` and `database.plan(migrations)` show the
+  pending migrations and each model, field and property that differs from the models, with a
+  suggested migration; nothing is written. `evlet makemigration <app> --instance <instance>`
+  writes that suggestion into a flat app. A mismatch error now lists the same differences.
+  `AddTable(parent, name, ChildClass)` adds a child table without hand-written owner and position
+  fields, and `CreateModel` no longer compares the Python class name ([docs/model-engine.md](docs/model-engine.md#planning-a-migration)).
 - **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
   lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
   duration fields keep their typed input and add a calendar or steppers. List pages filter
