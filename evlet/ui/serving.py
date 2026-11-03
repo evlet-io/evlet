@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath
 import re
 from ..business import Download
 
-CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 STATIC = Path(__file__).with_name("static")
 TYPES = {
     ".html": "text/html; charset=utf-8",

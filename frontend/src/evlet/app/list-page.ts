@@ -13,13 +13,14 @@ import { Button, CountBadge, EmptyState, IconButton, SearchInput, SegmentedContr
 import { currencyIn, displayValue, localField, stateTint } from '../ui/fields';
 import { formatMoney } from '../model/format';
 import { humanize } from '../ui/kinds';
-import { closeDialogs, DialogFooter, openModal, toast } from '../ui/layers';
+import { closeDialogs, DialogFooter, MenuButton, openModal, toast } from '../ui/layers';
 import { Board, BoardCard, BulkBar, PageHeader, Toolbar, type BoardColumn, type BoardTotal } from '../ui/list';
 import { Tabs } from '../ui/doc';
 import { DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel } from './filters';
+import { REPORT_ICON, reportsFor } from './report-page';
 import { fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, screenModel, sources, titleOf, type ScreenModel } from './meta';
 
 export const PAGE_SIZE = 50;
@@ -175,6 +176,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     state ? SegmentedControl({ options: [{ value: 'list', label: 'List', icon: 'list' }, { value: 'board', label: 'Board', icon: 'kanban' }], value: view, label: 'View',
       onChange: next => batch(() => { view.set(next); selection.set(new Set()); }) }) : null,
     filters.fields.length ? filterButton : null,
+    // Reports declared for this model (Report.model) open from here.
+    reportsFor(ctx, name).length ? MenuButton({ label: 'Reports', icon: REPORT_ICON, hideLabelOnPhone: true, menuLabel: `${model.label} reports`,
+      items: reportsFor(ctx, name).map(report => ({ label: report.label, icon: REPORT_ICON, tint: 'rose' as const, onSelect: () => void router.go('report', { report: report.name }) })) }) : null,
     canCreate ? Button({ label: `New ${model.label.toLowerCase()}`, icon: 'plus', variant: 'primary', hideLabelOnPhone: true, onClick: create }) : null,
   ].filter(Boolean) as Child[] });
 

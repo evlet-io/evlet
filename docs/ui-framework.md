@@ -565,6 +565,7 @@ not part of the build.
 | `list-page.ts` | List page and board per model |
 | `record-page.ts` | Record (doc) view, new records, action, void, revise, unpost and repost dialogs |
 | `slips.ts` | Slips ([slips.md](slips.md)): `presentSlip()`, the slip modal and what follows a hand-in |
+| `report-page.ts` | Reports ([reports.md](reports.md)): the index, one report's filters, rows, totals, chart, Export and Print |
 | `palette.ts` | Command palette (Cmd or Ctrl K) |
 | `client.ts` | The API client plus the routes the screens use, and the last detail per record |
 | `meta.ts` | What the screens read from the schema, with the optional keys of later phases |
@@ -581,8 +582,8 @@ values.
 Routes are the paths the Python server serves (`evlet/ui/routes.py`): `/docs` and
 `/docs/:topic`, `/app/:model` (list), `/app/:model/new` (a new record; field values in the query
 fill it, `?customer=4`), `/app/:model/:id` (a record; `?tab=` keeps the tab) and the older
-`/app/:model/:id/view`, which opens the record. `/reports/:report` says that screen is not part
-of this interface; `/controls` loads Controls as its own chunk (`frontend/src/evlet/controls/`,
+`/app/:model/:id/view`, which opens the record. `/reports` and `/reports/:report` are reports
+([reports.md](reports.md)); `/controls` loads Controls as its own chunk (`frontend/src/evlet/controls/`,
 see [controls.md](controls.md)); any other address opens Docs. The earlier
 development paths `/ui/...` and `/m/:model` are gone. A list keeps its search, sort, page, view, saved view and filters in the query, so
 a link opens the same list. A record with unsaved changes asks before the page changes or the
@@ -659,7 +660,7 @@ record store replay the shared finite-v1 scenarios (`finite-fixtures.json`).
 
 ## Limits of this phase
 
-- Home, accounts, reports, form dialogs, the notification panel, the layout control and Doc
+- Home, accounts, form dialogs, the notification panel, the layout control and Doc
   layout page are not built. Python pages (`evlet.ui` PageView), native panels and custom
   components are not rendered (owner decision); their Python APIs remain.
 - Bulk moves and deletes read each record first, one request per record.

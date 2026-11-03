@@ -33,15 +33,33 @@ class Column:
     link: str | None = None
     total: bool = False
     unit: str | None = None
+    # 'model.field' (the model's route name): the column is left out for anyone who cannot read that field.
+    source: str | None = None
 
     def __post_init__(self):
         from .models import identifier
         identifier(self.name)
+        if self.source is not None and (not isinstance(self.source, str) or self.source.count('.') != 1):
+            raise ValueError("A column source is 'model.field'")
         if self.type not in ('text', 'integer', 'decimal', 'currency', 'date', 'boolean', 'link'):
             raise ValueError('Unknown report column type')
         if self.total and self.type not in ('integer', 'decimal', 'currency'):
             raise ValueError('Only numeric columns can declare totals')
         if self.total and not self.unit: raise ValueError('Totals require an explicit common unit or currency')
+
+
+@dataclass(frozen=True)
+class Chart:
+    """A bar or line chart of a report's rows: one label column and up to four number columns."""
+    type: str
+    x: str
+    y: tuple = ()
+    label: str | None = None
+
+    def __post_init__(self):
+        if self.type not in ('bar', 'line'): raise ValueError('A report chart is bar or line')
+        object.__setattr__(self, 'y', (self.y,) if isinstance(self.y, str) else tuple(self.y))
+        if not 1 <= len(self.y) <= 4: raise ValueError('A report chart shows one to four columns')
 
 
 class Report(Model):
@@ -50,6 +68,11 @@ class Report(Model):
     permissions = ()  # Alias for roles, kept for existing reports.
     autorun = False
     columns = ()
+    group = ''  # The sidebar heading the report is listed under.
+    model = None  # The model whose list offers the report.
+    sortable = ()  # Columns people may sort by; run() reads the choice as context.sort, e.g. ('-total',).
+    chart = None
+    export = True
     __transient__ = True
 
     def __init_subclass__(cls, **kwargs):
@@ -144,6 +167,7 @@ class Forms:
             if not report.columns or any(not isinstance(column, Column) for column in report.columns):
                 raise ValueError('Reports require typed columns')
             if len({column.name for column in report.columns}) != len(report.columns): raise ValueError('Duplicate report column')
+            self.check(report)
             self.reports[name] = report
         for model in business.registry.models.values():
             for value in vars(model).values():
@@ -162,10 +186,99 @@ class Forms:
         with self.business.database.transaction() as tx:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_operations (key TEXT PRIMARY KEY, actor INTEGER NOT NULL, request TEXT NOT NULL, result TEXT NOT NULL)')
 
+    def check(self, report):
+        registry, columns = self.business.registry, {column.name: column for column in report.columns}
+        numbers = ('integer', 'decimal', 'currency')
+        if not isinstance(report.group, str): raise ValueError('Report group is text')
+        if type(report.export) is not bool: raise ValueError('Report export is True or False')
+        if report.model is not None: registry.resolve(report.model)
+        if not isinstance(report.sortable, (tuple, list)) or set(report.sortable) - set(columns):
+            raise ValueError('Report sortable names declared columns')
+        for column in report.columns:
+            if column.link is not None: registry.resolve(column.link)
+            if column.source is not None:
+                model, field = column.source.split('.')
+                if field not in registry.resolve(model).__declared_fields__: raise ValueError('Unknown column source: ' + column.source)
+        chart = report.chart
+        if chart is not None and (not isinstance(chart, Chart) or chart.x not in columns
+                                  or any(columns.get(name) is None or columns[name].type not in numbers for name in chart.y)):
+            raise ValueError('A report chart names a declared column and number columns')
+
+    def hidden(self, user, report):
+        """Columns whose source field this person cannot read."""
+        hidden = set()
+        for column in report.columns:
+            if column.source is not None:
+                name, field = column.source.split('.')
+                model = self.business.registry.resolve(name)
+                if not self.business.policy.allows(user, model, 'read') or field not in self.business.policy.fields(user, model):
+                    hidden.add(column.name)
+        return hidden
+
     def catalog(self, user):
-        return [{**metadata(report, name), 'autorun': report.autorun,
-                 'columns': [vars(column) for column in report.columns]}
-                for name, report in self.reports.items() if user.role in report.roles]
+        result = []
+        for name, report in self.reports.items():
+            if user.role not in report.roles: continue
+            hidden, chart = self.hidden(user, report), report.chart
+            if chart is not None and (chart.x in hidden or set(chart.y) <= hidden): chart = None
+            descriptor = metadata(report, name)
+            for field in descriptor['fields']:
+                declared = report.__declared_fields__[field['name']]
+                if declared.compute is not None or declared.query is not None: field['calculated'] = True
+            result.append({**descriptor, 'autorun': report.autorun,
+                           'columns': [self.column(column) for column in report.columns if column.name not in hidden],
+                           'group': report.group, 'model': None if report.model is None else self.business.registry.name_for(self.business.registry.resolve(report.model)),
+                           'sortable': [column for column in report.sortable if column not in hidden], 'export': report.export,
+                           'chart': None if chart is None else {**vars(chart), 'y': [column for column in chart.y if column not in hidden]}})
+        return result
+
+    def column(self, column):
+        registry = self.business.registry
+        entry = {key: value for key, value in vars(column).items() if key != 'source'}
+        if column.link is not None: entry['link'] = registry.name_for(registry.resolve(column.link))
+        return entry
+
+    def page(self, context, report, draft, limit, offset, sort):
+        """One page of a report as the browser gets it: cleaned cells, readable columns and totals."""
+        # run() passes context.sort straight to context.list(order_by=...).
+        context.limit, context.offset, context.sort = limit, offset, None if sort is None else (sort,)
+        result = draft.run()
+        if not isinstance(result, dict) or not isinstance(result.get('rows'), list) or len(result['rows']) > limit:
+            raise ValueError('Reports return a bounded rows/total result from context.list')
+        if type(result.get('total')) is not int or result['total'] < len(result['rows']): raise ValueError('Report total must be a nonnegative row count')
+        allowed = {column.name for column in report.columns}
+        if any(not isinstance(row, dict) or set(row) - allowed for row in result['rows']): raise ValueError('Report rows must match declared columns')
+        from .fields import Text, Integer, Decimal, Currency, Date, Boolean
+        from decimal import Decimal as Number
+        types = {'text': Text, 'integer': Integer, 'decimal': Decimal, 'currency': Currency, 'date': Date, 'boolean': Boolean, 'link': Integer}
+        hidden = self.hidden(context.user, report)
+        given = result.get('totals')
+        if given is not None and (not isinstance(given, dict) or set(given) - {column.name for column in report.columns if column.total}):
+            raise ValueError('Report totals name columns that declare total')
+        rows = [{} for _ in result['rows']]
+        totals = {}
+        for column in report.columns:
+            if column.name in hidden: continue
+            field = types[column.type]()
+            for row, source in zip(rows, result['rows']):
+                row[column.name] = field.serialize(field.clean(source.get(column.name)))
+            if not column.total: continue
+            if given is not None:
+                value = field.serialize(field.clean(given.get(column.name)))
+                totals[column.name] = None if value is None else str(value)
+            else:
+                totals[column.name] = str(sum((Number(str(row[column.name])) for row in rows if row[column.name] is not None), Number(0)))
+        page = {'rows': rows, 'total': result['total']}
+        if totals: page['totals'] = {'scope': 'page' if given is None else 'all', 'values': totals}
+        return page
+
+    def sort(self, report, user, value):
+        """The sort a person asked for: a sortable column name, '-' first for descending."""
+        if value is None: return None
+        name = value[1:] if isinstance(value, str) and value.startswith('-') else value
+        if not isinstance(name, str) or name not in report.sortable or name in self.hidden(user, report):
+            raise ValidationError({'sort': 'This report cannot be sorted by that column'})
+        return value
 
     def permission(self, context, definition, owner, record_id):
         permission = definition.permission or (owner, 'update')
@@ -182,39 +295,28 @@ class Forms:
             return 200, {'reports': self.catalog(user)}, []
         if path.startswith('/api/_reports/'):
             name = path.removeprefix('/api/_reports/')
-            evaluate_only = name.endswith('/evaluate')
-            if evaluate_only: name = name.removesuffix('/evaluate')
+            operation = 'run'
+            for suffix in ('evaluate', 'export.csv'):
+                if name.endswith('/' + suffix): name, operation = name.removesuffix('/' + suffix), suffix
             report = self.reports.get(name)
             if method != 'POST' or report is None or user.role not in report.roles: raise AccessError(403, 'Report is unavailable')
-            if set(body) - {'filters', 'revision', 'limit', 'offset'}: raise ValidationError({'_form': 'Unknown report argument'})
+            if operation == 'export.csv': return self.export(report, body, user)
+            if set(body) - {'filters', 'revision', 'limit', 'offset', 'sort'}: raise ValidationError({'_form': 'Unknown report argument'})
             limit, offset = body.get('limit', 50), body.get('offset', 0)
             if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 2**53-1:
                 raise ValidationError({'page': 'Invalid report page'})
+            sort = self.sort(report, user, body.get('sort'))
             with self.business.context(user, readonly=True) as context:
-                context.limit, context.offset = limit, offset
+                context.limit, context.offset, context.sort = limit, offset, None if sort is None else (sort,)
                 draft = form_draft(report, context, body.get('filters', {}))
-                errors, states = settle(context, draft, complete=not evaluate_only)
+                errors, states = settle(context, draft, complete=operation == 'run')
                 filters = draft_values(draft)
-                if evaluate_only: return 200, {'values': filters, 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
+                if operation == 'evaluate':
+                    from .slips import rules
+                    return 200, {'values': filters, 'errors': errors, 'states': states, 'rules': rules(draft), 'revision': body.get('revision')}, []
                 object.__setattr__(draft, '_readonly', True)
-                result = draft.run()
-                if not isinstance(result, dict) or not isinstance(result.get('rows'), list) or len(result['rows']) > limit:
-                    raise ValueError('Reports return a bounded rows/total result from context.list')
-                if type(result.get('total')) is not int or result['total'] < len(result['rows']): raise ValueError('Report total must be a nonnegative row count')
-                allowed = {column.name for column in report.columns}
-                if any(not isinstance(row, dict) or set(row) - allowed for row in result['rows']): raise ValueError('Report rows must match declared columns')
-                from .fields import Text, Integer, Decimal, Currency, Date, Boolean
-                types = {'text': Text, 'integer': Integer, 'decimal': Decimal, 'currency': Currency, 'date': Date, 'boolean': Boolean, 'link': Integer}
-                totals = {}
-                for column in report.columns:
-                    field = types[column.type]()
-                    for row in result['rows']:
-                        row[column.name] = field.serialize(field.clean(row.get(column.name)))
-                    if column.total:
-                        from decimal import Decimal as Number
-                        totals[column.name] = str(sum((Number(str(row[column.name])) for row in result['rows'] if row[column.name] is not None), Number(0)))
-                if totals: result = {**result, 'totals': {'scope': 'page', 'values': totals}}
-                return 200, {**result, 'filters': filters, 'revision': body.get('revision'), 'limit': limit, 'offset': offset}, []
+                result = self.page(context, report, draft, limit, offset, sort)
+                return 200, {**result, 'filters': filters, 'revision': body.get('revision'), 'limit': limit, 'offset': offset, 'sort': sort}, []
         if path.startswith('/api/_dialogs/'):
             parts = path.removeprefix('/api/_dialogs/').split('/')
             if len(parts) != 4 or method != 'POST' or parts[3] not in ('load', 'submit', 'evaluate'):
@@ -266,3 +368,49 @@ class Forms:
                 context._tx.connection.execute('INSERT INTO evlet_operations(key,actor,request,result) VALUES (?,?,?,?)', (key, user.id, signature, encoded))
                 return 200, outcome, []
         return None
+
+    def export(self, report, body, user):
+        """Every row (up to EXPORT_ROWS) as CSV, run with the same filters, sort and checks as the view."""
+        import csv, io
+        from urllib.parse import quote
+        from .business import Download
+        if not report.export: raise AccessError(403, 'This report cannot be exported')
+        if set(body) - {'filters', 'sort'}: raise ValidationError({'_form': 'Unknown report argument'})
+        sort = self.sort(report, user, body.get('sort'))
+        rows, offset, total = [], 0, None
+        with self.business.context(user, readonly=True) as context:
+            context.limit, context.offset, context.sort = 100, 0, None if sort is None else (sort,)
+            draft = form_draft(report, context, body.get('filters', {}))
+            settle(context, draft, complete=True)
+            object.__setattr__(draft, '_readonly', True)
+            hidden = self.hidden(user, report)
+            while total is None or offset < min(total, EXPORT_ROWS):
+                page = self.page(context, report, draft, min(100, EXPORT_ROWS - offset), offset, sort)
+                total = page['total']
+                if not page['rows']: break
+                rows.extend(page['rows'])
+                offset += len(page['rows'])
+        columns = [column for column in report.columns if column.name not in hidden]
+        out = io.StringIO()
+        writer = csv.writer(out, lineterminator='\r\n')
+        writer.writerow([column.label or column.name.replace('_', ' ').capitalize() for column in columns])
+        for row in rows:
+            writer.writerow([csv_cell(row.get(column.name), column.type) for column in columns])
+        if (total or 0) > len(rows):
+            writer.writerow([f'{total - len(rows)} more rows were left out. Narrow the filters to export them.'])
+        filename = quote((report.title or report.__name__) + '.csv', safe='')
+        return 200, Download(('\ufeff' + out.getvalue()).encode()), [
+            (b'content-type', b'text/csv; charset=utf-8'), (b'content-disposition', f"attachment; filename*=UTF-8''{filename}".encode()),
+            (b'content-security-policy', b"default-src 'none'; sandbox")]
+
+
+EXPORT_ROWS = 5000
+
+
+def csv_cell(value, kind='text'):
+    """A cell as text. Text a spreadsheet would read as a formula starts with an apostrophe; numbers,
+    negative ones included, are written as they are."""
+    if value is None: return ''
+    if value is True or value is False: return 'Yes' if value else 'No'
+    text = str(value)
+    return "'" + text if kind == 'text' and text[:1] in ('=', '+', '-', '@', '\t', '\r') else text

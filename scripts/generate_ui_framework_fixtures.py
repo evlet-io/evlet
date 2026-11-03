@@ -15,7 +15,8 @@ from tempfile import TemporaryDirectory
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
-                   Move, MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome)
+                   Move, MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome,
+                   Report, Column, Chart)
 from evlet.calc import D, F, round, days
 
 PASSWORD = 'a sufficiently long fixture password'
@@ -533,10 +534,64 @@ def record_slips(folder):
     return out
 
 
+class CustomerRates(Report):
+    """A report for the report view tests: filters, a link column, a sortable total and a chart."""
+    title = 'Customer rates'
+    roles = ('admin', 'editor', 'viewer')
+    group = 'Sales'
+    model = Customer
+    sortable = ('name', 'rate')
+    chart = Chart('bar', x='name', y=('rate',))
+    min_days = Integer(default=0, label='Credit days from')
+    search = Text(default='', label='Name contains')
+    columns = (Column('id', type='link', link='customer', label='Customer'), Column('name'),
+               Column('credit_days', type='integer', label='Credit days'),
+               Column('rate', type='currency', total=True, unit='AED', source='customer.rate'))
+
+    def run(self):
+        filters = {'credit_days__gte': self.min_days or 0}
+        if self.search: filters['name__contains'] = self.search
+        page = self.context.list(Customer, filters=filters, order_by=self.context.sort or ('name',), limit=self.context.limit, offset=self.context.offset)
+        everything = self.context.aggregate(Customer, measures={'rate': Sum('rate')}, filters=filters)
+        return {'rows': [{key: row.get(key) for key in ('id', 'name', 'credit_days', 'rate')} for row in page['rows']],
+                'total': page['total'], 'totals': {'rate': everything[0]['rate'] or 0}}
+
+
+def record_reports(folder):
+    """Reports: the schema that lists one, a filter check, a run, a sorted run and a run with an unfinished filter."""
+    database = Database(folder / 'reports.sqlite3', Registry(Customer))
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    app = Application(database, auth=auth, reports=(CustomerRates,))
+    app.initialize()
+    out = {}
+
+    def keep(name, response):
+        status, payload, headers = response
+        if isinstance(payload, dict) and isinstance(payload.get('csrf'), str):
+            payload['csrf'] = 'fixture-csrf-token'
+        out[name] = {'status': status, 'body': payload, 'etag': headers.get(b'etag', b'').decode() or None}
+        return payload
+
+    assert http(app, 'POST', '/api/auth/setup', {'username': 'owner', 'password': PASSWORD})[0] == 201
+    status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'owner', 'password': PASSWORD})
+    cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
+    admin = lambda method, path, body=None, **kwargs: http(app, method, path, body, cookie=cookie, csrf=csrf, **kwargs)
+    for name, rate, days in (('Corniche Foods', '1250.00', 30), ('Al Noor Trading', '480.50', 45), ('Blue Dune Interiors', '2100.00', 15)):
+        assert admin('POST', '/api/customer', {'name': name, 'rate': rate, 'credit_days': days})[0] == 201
+    keep('report_session', admin('GET', '/api/auth/session'))
+    keep('report_schema', admin('GET', '/api/schema'))
+    keep('report_evaluate', admin('POST', '/api/_reports/CustomerRates/evaluate', {'filters': {'min_days': 20, 'search': ''}, 'revision': 1}))
+    keep('report_evaluate_invalid', admin('POST', '/api/_reports/CustomerRates/evaluate', {'filters': {'min_days': 'many', 'search': ''}, 'revision': 1}))
+    keep('report_run', admin('POST', '/api/_reports/CustomerRates', {'filters': {'min_days': 20, 'search': ''}, 'limit': 50, 'offset': 0, 'sort': None, 'revision': 1}))
+    keep('report_run_sorted', admin('POST', '/api/_reports/CustomerRates', {'filters': {'min_days': 20, 'search': ''}, 'limit': 50, 'offset': 0, 'sort': '-rate', 'revision': 2}))
+    database.close()
+    return out
+
+
 def generate():
     """Both fixtures, recorded from fresh databases."""
     with TemporaryDirectory() as directory:
-        return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_slips(Path(directory))}}
+        return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_slips(Path(directory)), **record_reports(Path(directory))}}
 
 
 def main():

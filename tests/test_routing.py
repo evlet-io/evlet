@@ -22,6 +22,8 @@ def legacy_served(app, path):
     builtin = path in ('/', '/login', '/docs') or path.startswith('/docs/') or path.startswith('/assets/')
     generated = re.fullmatch(r'/app/([a-z][a-z0-9_]*)(?:/(new|[1-9][0-9]{0,15})(/view)?)?', path)
     known_report = path.startswith('/reports/') and path.removeprefix('/reports/') in app.business.forms.reports
+    # The report index came with the report view; it is served when the application has reports.
+    known_report = known_report or (path == '/reports' and bool(app.business.forms.reports))
     custom = any(view.route and route_pattern(view.route).fullmatch(path) for view in app.ui.views.values())
     allowed = builtin or (generated and generated[1] in app.registry.models) or known_report or custom
     return bool(allowed) and static_response(path) is not None

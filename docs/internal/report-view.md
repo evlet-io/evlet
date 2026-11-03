@@ -1,6 +1,19 @@
 # Report view
 
-Status: plan only, waiting for owner approval (03-11-2026). No framework code yet.
+Status: built on 03-11-2026 with the recommended decisions below (the owner approved the view).
+The public description is [docs/reports.md](../reports.md).
+
+What landed, against the phases in section 5:
+
+- Phase 1 and 2: the index and sidebar group, the filter bar, the table, paging, URL state, server
+  sorting, totals over every row, CSV export, `Column.source`, the column chooser, and Print through
+  Print Design's report route.
+- From phase 3: the chart (`Report.chart`, drawn from the current page).
+- Not built: group subtotals (`group_by`), named presets, and the list print source.
+- Print shows only once Print Design adds `prints` to each report entry and `printing` to the schema.
+  The page fetches the PDF with POST and shows it from a `blob:` address, so the page CSP adds
+  `frame-src 'self' blob:`.
+- Link columns still clean values as integers; the record identity change moves them to text ids.
 
 This plans a browser view for Python reports in Evlet's own UI framework, and how it prints
 through Print Design. Everything here is framework-level and generic.

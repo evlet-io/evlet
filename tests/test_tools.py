@@ -66,6 +66,7 @@ def test_api_calls_run_as_the_key_and_are_logged(app):
     # Reports run with POST but only read.
     report = execute(reader, 'run_report', report='Tickets', filters={'term': 'Le'})
     assert report[0] == 200 and report[1]['result']['total'] == 1
+    assert report[1]['result']['view'] == '/reports/Tickets?term=Le'
     assert execute(reader, 'list_reports')[1]['result']['reports'][0]['name'] == 'Tickets'
     # The API asks no approval: the key is the person's own program. Changes still need a current revision.
     assert execute(writer, 'update_record', model='ticket', id=1, values={'name': 'Fixed'})[1]['result']['name'] == 'Fixed'

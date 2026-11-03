@@ -6,6 +6,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Report view.** Reports show in the browser at `/reports/<name>`, listed in the sidebar and
+  at `/reports`: the filter bar, typed rows, totals, an optional chart, Export (CSV) and Print.
+  New, all optional: `Report.group`, `model`, `sortable`, `chart` (`evlet.Chart`, a new root
+  export) and `export`; `Column(source=...)` hides a column from people who cannot read that field;
+  `run()` may return `totals` for every row and reads the sort as `context.sort`. New route
+  `POST /api/_reports/<name>/export.csv`. The evaluate route adds `rules`. Existing reports need no
+  change; a report with a filter field named `group`, `model`, `sortable`, `chart` or `export` must
+  rename it ([docs/reports.md](docs/reports.md)).
 - **API stability for apps.** [docs/api-stability.md](docs/api-stability.md) names the
   surface apps can rely on (the root exports, field keywords, lifecycle decorators and the
   `evlet.ui` names in the app docs), the deprecation rule and what stays internal.
