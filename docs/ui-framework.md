@@ -146,7 +146,8 @@ router.confirmLeave(() => record.dirty.get(), () => confirmDialog('Discard your 
   modifier key, `target`, `download` or `rel="external"`, and links to paths the table does
   not know (such as `/api/...`), stay ordinary links.
 - `guard(fn)` can stop any navigation (sync or async). `confirmLeave` asks only while its
-  condition is true and also asks before the tab closes. A refused back or forward step
+  condition is true and also asks before the tab closes. A navigation that changes only the
+  query, such as switching record tabs (`?tab=`), stays on the page and never asks. A refused back or forward step
   returns to the page the user was on. The latest of two concurrent navigations wins.
 - `router.signal` is aborted when the route changes. Pass `() => router.signal` to the API
   client so requests of the old page stop.
