@@ -1,6 +1,7 @@
 # Working on Evlet
 
-Read `docs/internal/specification.md` and `docs/architecture.md` before changing the public API.
+Read `docs/internal/specification.md`, `docs/architecture.md` and `docs/api-stability.md`
+before changing the public API.
 The browser interface is Evlet's own UI framework (`frontend/src/evlet/`); SolidJS,
 the Vue harness, the Projects demo and the Python page renderer were removed from it.
 Preserve the completed backend milestones and the Python UI contracts (`/api/ui`,

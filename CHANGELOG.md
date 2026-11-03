@@ -1,9 +1,19 @@
 # Changelog
 
-Evlet is pre-1.0. A minor version (0.2, 0.3) may change public APIs; the notes below
-say what to change. Evlet is not production ready.
+Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument that is
+removed or changed keeps working with a `DeprecationWarning` for at least one minor release
+first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## Unreleased (0.3.0.dev0)
+
+- **API stability for apps.** [docs/api-stability.md](docs/api-stability.md) names the
+  surface apps can rely on (the root exports, field keywords, lifecycle decorators and the
+  `evlet.ui` names in the app docs), the deprecation rule and what stays internal.
+  `tests/test_public_api.py` pins those names and signatures. A change needs a regenerated
+  snapshot and an entry here.
+- **Version 0.3.0.dev0.** Generated apps and the examples now require
+  `evlet>=0.3.0.dev0,<0.4`, because a `<0.3` range does not match 0.3 pre-releases. Apps
+  that declare `evlet>=0.2.0,<0.3` must widen the range to install on `main`.
 
 - **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
   lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
