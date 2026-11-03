@@ -804,6 +804,7 @@ def test_postgres_maintenance_data_steps_are_opt_in_and_audited(pg_dsn):
     from tests.test_migration_plan import check_maintenance_steps, maker
     check_maintenance_steps(maker(pg_dsn, PostgreSQLDatabase))
 
+
 def test_dev_signin_link_on_postgresql(pg_dsn):
     from evlet import DevSignIn
     from evlet.devlink import issue
