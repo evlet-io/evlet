@@ -4,8 +4,8 @@ set -euo pipefail
 
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
-if [[ $# -gt 1 || ( $# -eq 1 && "$1" != "--setup" ) ]]; then
-  echo 'Usage: bash scripts/playground.sh [--setup]' >&2
+if [[ $# -gt 1 || ( $# -eq 1 && "$1" != "--setup" && "$1" != "--link" ) ]]; then
+  echo 'Usage: bash scripts/playground.sh [--setup | --link]' >&2
   exit 2
 fi
 
@@ -32,7 +32,34 @@ node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if
 export EVLET_BACKEND_PORT="${EVLET_BACKEND_PORT:-8000}"
 export EVLET_FRONTEND_PORT="${EVLET_FRONTEND_PORT:-5173}"
 export EVLET_PLAYGROUND_HOST="${EVLET_PLAYGROUND_HOST:-127.0.0.1}"
-application="${EVLET_APPLICATION:-examples.playground.app:create_app}"
+application="${EVLET_APPLICATION:-examples.playground.app:create_dev_app}"
+
+# A one-time sign-in link for the running Playground: it works once, for 10 minutes. On an empty
+# database it first creates demo-admin with a random password that is never shown. EVLET_DEV_USER
+# picks another account. Set EVLET_DEV_LINK=0 to skip the link at startup.
+print_link() {
+  .venv/bin/python - <<'PY' || true
+import os
+from evlet.devlink import MINUTES, issue, link
+from examples.playground.migrate import configured_database
+try:
+    token, username = issue(configured_database(), os.environ.get('EVLET_DEV_USER') or None, create_admin=True)
+except ValueError as exc:
+    print(f'No sign-in link: {exc}')
+else:
+    origin = f"http://{os.environ['EVLET_PLAYGROUND_HOST']}:{os.environ['EVLET_FRONTEND_PORT']}"
+    print(f'Sign in as {username} (works once, for {MINUTES} minutes):\n  {link(origin, token)}')
+PY
+}
+
+if [[ "${1:-}" == '--link' ]]; then
+  if [[ "$application" != 'examples.playground.app:create_dev_app' ]]; then
+    echo 'Sign-in links need the default Playground application.' >&2
+    exit 1
+  fi
+  print_link
+  exit 0
+fi
 
 # Check before installing or launching anything. Never stop another process to
 # free a port, and never start a second instance over a running Playground.
@@ -134,6 +161,11 @@ PY
 then
   tail -n 30 "$log_directory/backend.log" "$log_directory/frontend.log" >&2
   exit 1
+fi
+
+if [[ "${EVLET_DEV_LINK:-1}" == '1' && "$application" == 'examples.playground.app:create_dev_app' ]]; then
+  print_link
+  echo 'For a fresh link later: bash scripts/playground.sh --link'
 fi
 
 if [[ "${EVLET_RUN_JOBS:-1}" == '1' ]]; then

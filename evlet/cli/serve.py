@@ -137,8 +137,11 @@ def development_factory():
     root = Path(os.environ['EVLET_CLI_PROJECT'])
     name = os.environ['EVLET_CLI_INSTANCE']
     port = int(os.environ['EVLET_CLI_PORT'])
-    return ManagedRuntime(lambda: load_runtime(root, name, port=port, development=True),
-                          lambda: instance_guard(child(root, 'instances', name), serving=True), jobs=True, debug=os.environ.get('EVLET_CLI_DEBUG') == '1')
+    from ..devlink import DevSignIn
+    runtime = ManagedRuntime(lambda: load_runtime(root, name, port=port, development=True),
+                             lambda: instance_guard(child(root, 'instances', name), serving=True), jobs=True, debug=os.environ.get('EVLET_CLI_DEBUG') == '1')
+    # Development only: one-time sign-in links at /_dev/signin. serve() below never adds them.
+    return DevSignIn(runtime, announce=os.environ.get('EVLET_CLI_LINK') == '1', user=os.environ.get('EVLET_CLI_LINK_USER') or None)
 
 
 def declares_primary(path):
@@ -154,7 +157,7 @@ def declares_primary(path):
     return False
 
 
-def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=False, debug=False):
+def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=False, debug=False, link=True, user=None):
     from ..instances import read_instance
     path = child(root, 'instances', name)
     config = read_instance(path)
@@ -165,7 +168,8 @@ def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=Fa
     if public and not config.domain and not primary:
         raise ValueError('Configure an HTTPS domain before binding an instance beyond loopback')
     if development:
-        values = {'EVLET_CLI_PROJECT': str(root), 'EVLET_CLI_INSTANCE': name, 'EVLET_CLI_PORT': str(port), 'EVLET_CLI_DEBUG': '1' if debug else '0'}
+        values = {'EVLET_CLI_PROJECT': str(root), 'EVLET_CLI_INSTANCE': name, 'EVLET_CLI_PORT': str(port), 'EVLET_CLI_DEBUG': '1' if debug else '0',
+                  'EVLET_CLI_LINK': '1' if link else '0', 'EVLET_CLI_LINK_USER': user or ''}
         previous = {key: os.environ.get(key) for key in values}
         os.environ.update(values)
         try:

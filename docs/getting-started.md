@@ -63,7 +63,9 @@ as labels and `Meta.list_fields` live beside its fields. Use:
 evlet dev --instance acme
 ```
 
-Python changes reload while you work. A database field change also needs an
+Python changes reload while you work. At startup it prints a one-time sign-in link
+for your account; open it to skip the sign-in form, and run `evlet dev-link` for a
+fresh one ([details](cli.md#development-sign-in-links)). A database field change also needs an
 explicit migration. Follow [What you can customize](customizing.md) for a complete
 example, then stop the server and run `evlet migrate acme` before restarting.
 

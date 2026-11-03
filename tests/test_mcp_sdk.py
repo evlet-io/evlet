@@ -13,7 +13,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from jsonschema import Draft202012Validator
 
-from tests.test_connector import live_connector, signed
+from tests.test_connector import approve, live_connector, signed
 from tests.test_business import hashed
 
 
@@ -26,7 +26,9 @@ def test_official_client_can_discover_read_write_and_receive_validation(live_con
                 initialized = await session.initialize()
                 assert initialized.protocolVersion == '2025-11-25'
                 tools = await session.list_tools()
-                assert {tool.name for tool in tools.tools} == {'discover_models', 'describe_model', 'get_record', 'list_records', 'create_record', 'update_record', 'delete_record', 'run_action', 'job_status'}
+                names = {tool.name for tool in tools.tools}
+                assert {'discover_models', 'describe_model', 'get_record', 'list_records', 'create_record', 'update_record', 'delete_record', 'run_action', 'job_status',
+                        'aggregate_records'} <= names
                 for tool in tools.tools:
                     Draft202012Validator.check_schema(tool.inputSchema)
                 description = await session.call_tool('describe_model', {'model': 'project'})
@@ -45,10 +47,16 @@ def test_official_client_can_discover_read_write_and_receive_validation(live_con
                 invalid = await session.call_tool('update_record', {'model': 'project', 'id': record['id'], 'values': {'progress': 101}})
                 assert invalid.isError and invalid.structuredContent['status'] == 422
                 assert 'progress' in invalid.structuredContent['fields']
+                # Actions and deletes wait for the person's approval in Evlet; the same call then runs.
+                waiting = await session.call_tool('run_action', {'model': 'project', 'id': record['id'], 'action': 'start'})
+                assert waiting.isError and 'approval' in waiting.structuredContent['error']
+                approve(live_connector)
                 action = await session.call_tool('run_action', {'model': 'project', 'id': record['id'], 'action': 'start'})
                 assert action.structuredContent['status'] == 'active'
                 selected = await session.call_tool('list_records', {'model': 'project', 'filters': {'id': record['id']}})
                 assert selected.structuredContent['total'] == 1
+                assert (await session.call_tool('delete_record', {'model': 'project', 'id': record['id']})).isError
+                approve(live_connector)
                 deleted = await session.call_tool('delete_record', {'model': 'project', 'id': record['id']})
                 assert deleted.structuredContent == {'deleted': True}
                 # Revocation of this exact session is observed on the next tool call.
@@ -79,7 +87,7 @@ def remote_server(tmp_path, monkeypatch, hashed):
     monkeypatch.setenv('EVLET_TEST_PORT', str(port))
     app = remote_app(); app.initialize()
     with app.database.transaction() as tx:
-        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', ('editor', hashed, 'editor'))
+        tx.connection.execute('INSERT INTO evlet_users(username,password,role,allow_mcp) VALUES (?,?,?,1)', ('editor', hashed, 'editor'))
     app.database.close()
     with (tmp_path / 'server.log').open('w') as log:
         process = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'tests.test_mcp_sdk:remote_app', '--factory', '--no-proxy-headers', '--host', '127.0.0.1', '--port', str(port)],

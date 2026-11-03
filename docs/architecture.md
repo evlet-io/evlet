@@ -11,6 +11,7 @@ Status: implemented foundation, not a production business application framework.
 | `Registry` | Your models. Pass it to `Database`; there is no global registry. |
 | `AppDefinition` | The registration object in `hooks.py` for the nested app layout (`evlet app NAME --legacy`). Flat apps are discovered without it. |
 | `Instance` | One customer's isolated data directory, set in `instances/NAME/config.py` and served by `evlet serve NAME`. |
+| `DevSignIn` | Development only: wraps an `Application` so it serves one-time sign-in links at `/_dev/signin` to loopback clients. `evlet dev` and `evlet playground` use it; never wrap an application you serve. See [cli.md](cli.md#development-sign-in-links). |
 | `Tenant`, `TenantRegistry`, `TenantApplication` | Host-routed serving of several customers from Python. `TenantRegistry` is the catalog, `Tenant` is one customer in it, and `TenantApplication` picks the tenant from the Host header and builds its own `Application`. |
 
 ## Milestone 1 baseline (historical)
@@ -300,3 +301,19 @@ Confirmable models now use decorator validators/actions, same-identity revisions
 immutable snapshots and unified history. See [document lifecycle](document-lifecycle.md)
 for the APIs, permission and transaction contract, approval boundaries and adoption
 from existing State/Move applications.
+
+## The Tool Engine
+
+One Tool Engine (`evlet.tools`) serves MCP clients and the API, and will serve Eva. Each tool is
+a call to an existing authenticated route, dispatched in process as the person, so there is no
+second permission system and no AI-specific business code. The engine adds argument checks,
+approvals bound to the exact call and record revision, and one log of every call. See
+[the Tool Engine](tools.md).
+
+## Eva
+
+Eva (`evlet.eva`) runs on the Tool Engine. It adds the provider adapter (standard library,
+OpenAI first), conversations, runs streamed over SSE from stored events, files, usage,
+allowances held atomically before each request, and scheduled tasks on the existing jobs
+system. Eva is off unless config.py turns it on, and then Controls and each person's Allow
+Eva must too. See [Eva](eva.md).

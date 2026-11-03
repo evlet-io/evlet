@@ -165,7 +165,7 @@ def read_package(path):
         raise ValueError('project.dependencies must be an array of requirement strings')
     requirements = tuple(Requirement(item) for item in dependencies)
     if not any(canonicalize_name(item.name) == 'evlet' and not item.url and (not item.marker or item.marker.evaluate()) for item in requirements):
-        raise ValueError('Apps must declare an active Evlet dependency, such as evlet>=0.2.0')
+        raise ValueError('Apps must declare an active Evlet dependency, such as evlet>=0.3.0.dev0')
     for requirement in requirements:
         if requirement.url:
             raise ValueError('Direct URL dependencies are not supported; fetch apps separately and declare version constraints')

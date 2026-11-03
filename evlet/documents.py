@@ -174,10 +174,10 @@ class Context:
         model = self._model(model)
         business, tx = self._business, self._tx
         business.policy.require(self.user, model, 'read')
-        business.policy.query_fields(self.user, model, filters, order_by)
+        business.policy.query_fields(self.user, model, filters, order_by, children=business.children.values())
         if type(limit) is not int or not 1 <= limit <= ROW_LIMIT or type(offset) is not int or not 0 <= offset <= 2**63-1:
             raise ValidationError({'page': f'Use a page of 1 to {ROW_LIMIT} rows and a nonnegative offset'})
-        query = SqlQuery(business.registry, model)
+        query = SqlQuery(business.registry, model, children=business.children.values())
         where, values = query.where(filters)
         scoped, scope_values = business.policy.scope_sql(self.user, model)
         if scoped:

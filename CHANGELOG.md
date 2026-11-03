@@ -1,16 +1,63 @@
 # Changelog
 
-Evlet is pre-1.0. A minor version (0.2, 0.3) may change public APIs; the notes below
-say what to change. Evlet is not production ready.
+Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument that is
+removed or changed keeps working with a `DeprecationWarning` for at least one minor release
+first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## Unreleased (0.3.0.dev0)
 
+- **API stability for apps.** [docs/api-stability.md](docs/api-stability.md) names the
+  surface apps can rely on (the root exports, field keywords, lifecycle decorators and the
+  `evlet.ui` names in the app docs), the deprecation rule and what stays internal.
+  `tests/test_public_api.py` pins those names and signatures. A change needs a regenerated
+  snapshot and an entry here.
+- **Tool Engine and Eva exports.** The root exports gain `AI` (Eva's model settings),
+  `Application(ai=...)` turns Eva on for an application, and `@api(..., tool=True)` offers an
+  app service as a tool to Eva and MCP clients ([docs/eva.md](docs/eva.md),
+  [docs/tools.md](docs/tools.md)). These are additions; existing apps need no change.
+- **Version 0.3.0.dev0.** Generated apps and the examples now require
+  `evlet>=0.3.0.dev0,<0.4`, because a `<0.3` range does not match 0.3 pre-releases. Apps
+  that declare `evlet>=0.2.0,<0.3` must widen the range to install on `main`.
+- **`DevSignIn` export.** The root exports gain `DevSignIn`, which serves the one-time
+  development sign-in links of `evlet dev` and `evlet playground` ([docs/cli.md](docs/cli.md#development-sign-in-links)).
+  Never wrap an application you serve with it.
+- **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
+  follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
+  the default). The server writes the theme on `<html>` before the page paints, so nothing
+  flashes, and the sign-in page keeps the browser's last theme. The sidebar, account menu,
+  palette and Docs switch it. The config block gains `"theme"`. Components use colour tokens
+  only, and a test checks WCAG AA contrast of the token pairs in both themes
+  ([docs/ui-framework.md](docs/ui-framework.md#themes)).
+- **List filters like Frappe's.** The Filter button opens rows of field, condition and value,
+  any number of them, combined with AND. The field picker searches hundreds of fields and each
+  child table's fields; conditions follow the field type (like, in, between, timespan and more);
+  values use the form's own pickers; active filters show as chips and stay in the address
+  ([docs/ui.md](docs/ui.md#filters)). Links in the old `?f={"field": value}` form still open.
+- **Filter lists and child table filters.** `filters` also takes a list of `[field, operator, value]`
+  conditions and child groups `{"child": "prices", "match": "any" | "none", "where": [...]}`,
+  compiled to `EXISTS` / `NOT EXISTS`, in Python queries and the list, aggregate and measures
+  routes ([docs/model-engine.md](docs/model-engine.md#filter-lists-and-child-tables)). New
+  operators: `between`, `nin`, `nicontains`. Each field kind now takes only its own operators
+  (a `gt` on a Boolean or `icontains` on a number is a 422), and the schema sends them as each
+  field's `operators`; child tables in the schema say whether they are `filterable`. A query
+  takes up to 50 conditions (was 20 filters). Filtering on a field or child table the role
+  cannot read is a 403, the same as an unknown one.
+- **Playground items.** A new Item model has about 200 fields and two child tables (prices,
+  barcodes), to try filters at scale. Run `.venv/bin/python -m examples.playground.migrate` (migration `0005_items`) on an
+  existing Playground database.
+- **Playground invoice numbers.** New Playground invoices are named by a naming series,
+  `INV-{YYYY}-{#####}` dated by the posting date (`INV-2026-00001`), in a new `number` field
+  (migration `0006_invoice_number`; run `python -m examples.playground.migrate`). `reference` is now
+  labelled Customer reference. `/api/schema` marks a naming series field with `naming: {"field": ...}`
+  and the placeholder `Assigned on save`, and the New screen shows that field read only
+  ([docs/sequences.md](docs/sequences.md#naming-series)).
 - **Migration plans.** `evlet migrate <instance> --plan` and `database.plan(migrations)` show the
   pending migrations and each model, field and property that differs from the models, with a
   suggested migration; nothing is written. `evlet makemigration <app> --instance <instance>`
   writes that suggestion into a flat app. A mismatch error now lists the same differences.
   `AddTable(parent, name, ChildClass)` adds a child table without hand-written owner and position
   fields, and `CreateModel` no longer compares the Python class name ([docs/model-engine.md](docs/model-engine.md#planning-a-migration)).
+  `AddTable` and `MigrationPlan` (what `database.plan()` returns) are new root exports.
 - **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
   lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
   duration fields keep their typed input and add a calendar or steppers. List pages filter

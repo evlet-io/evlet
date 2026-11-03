@@ -123,7 +123,7 @@ so an explicit choice wins in both directions.
 | `--shadow-sm` | `0 1px 2px rgba(16,24,40,.05)` | `0 1px 2px rgba(0,0,0,.3)` |
 | `--shadow-md` | `0 1px 2px rgba(16,24,40,.04),0 4px 12px rgba(16,24,40,.06)` | `0 1px 2px rgba(0,0,0,.3),0 4px 12px rgba(0,0,0,.25)` |
 | `--shadow-lg` | `0 2px 6px rgba(16,24,40,.06),0 18px 48px rgba(16,24,40,.16)` | `0 2px 6px rgba(0,0,0,.3),0 18px 48px rgba(0,0,0,.5)` |
-| `--font` | `"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif` | `same` |
+| `--font` | `"Inter Variable",Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif` | `same` |
 | `--mono` | `"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace` | `same` |
 | `--r-sm` | `6px` | `same` |
 | `--r` | `8px` | `same` |
@@ -212,8 +212,9 @@ icon only (`.c-*`), not the background. The full subset used:
   A 24px round button on the sidebar's right edge, just above the account card,
   collapses and expands it (chevron left or right, also `[`). Under 760px the
   sidebar becomes a drawer opened from the top bar's menu button.
-- **Row 1, brand** (white, 52px, grey line under it): the Evlet mark (three bars
-  on the accent square, 26px) and the `evlet` wordmark. Collapsed, the mark only.
+- **Row 1, brand** (white, 52px, grey line under it): the evlet.io horizontal
+  logo (folded leaf mark and `evlet` wordmark, 26px high), with a white wordmark
+  in the dark theme. Collapsed, the mark only.
 - **App switcher** (top of the sidebar body): a white card, radius 9px, hairline
   border, no shadow, with the app's tinted tile, the app name and its workspace
   under it, and up-down arrows. It opens a small grid of the apps in this

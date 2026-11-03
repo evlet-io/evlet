@@ -170,14 +170,55 @@ count = database.count(Invoice, filters={"customer": customer.id})
 
 Filter keys contain a field path and an optional operator separated by `__`.
 A plain key means equality, including a field named `gt` or `contains`. Supported operators are `eq`, `ne`, `gt`, `gte`,
-`lt`, `lte`, `in`, `isnull`, `contains`, `icontains`, and `startswith`. Filters
+`lt`, `lte`, `between`, `in`, `nin`, `isnull`, `contains`, `icontains`, `nicontains` and `startswith`.
 `ne` uses SQL inequality: it excludes NULL rows when compared with a non-NULL
-value. Use `isnull` explicitly for NULL values. Filters combine with AND. Link paths allow up to three relationship hops, for example
+value. `nin` (not in) and `nicontains` (not like) also match NULL, as "is not one of these" reads.
+`between` takes `[first, last]`, both included. Use `isnull` explicitly for NULL values. Filters combine with AND. Link paths allow up to three relationship hops, for example
 `invoice__customer__name`. Ordering accepts the same paths and a leading `-`
 for descending order. IDs break ties when no ID order is supplied.
 
-Queries allow at most 20 filters, 100 values in an `in` filter, four order fields,
-and 100 returned rows. Empty `in` lists match nothing. Use `isnull` for nulls
+### Filter lists and child tables
+
+Filters can also be a list. A list can name the same field twice and can match rows of a
+child table (a `Table` declaration or a `ChildTable`):
+
+```python
+database.list(Item, filters=[
+    ["disabled", "eq", False],
+    ["standard_rate", "between", ["50.00", "900.00"]],
+    # One price row must be wholesale and above 100.
+    {"child": "prices", "match": "any", "where": [["price_list", "eq", "wholesale"], ["rate", "gt", "100.00"]]},
+    # No barcode row may be a UPC.
+    {"child": "barcodes", "match": "none", "where": [["barcode_type", "eq", "UPC"]]},
+    # Shorthand for a group of one condition that any row meets.
+    ["prices.customer", "eq", customer.id],
+])
+```
+
+Each entry is `[field, operator, value]` or a child group. A group compiles to a correlated
+`EXISTS` (`"match": "any"`, the default) or `NOT EXISTS` (`"none"`) on the child table's
+indexed parent link, so a parent appears once however many rows match, and one row must meet
+every condition of its group. Two groups on the same table are independent: each may be met by
+a different row. Groups do not nest. There is no OR between conditions.
+
+Each field kind takes these operators (the schema sends them as each field's `operators`):
+
+| Kind | Operators |
+|---|---|
+| Text, LongText, Email, URL, Phone, Sequence | `eq` `ne` `in` `nin` `contains` `icontains` `nicontains` `startswith` `isnull` |
+| Select, State, Link | `eq` `ne` `in` `nin` `isnull` |
+| Integer, Decimal, Currency, Percent, Duration | `eq` `ne` `gt` `gte` `lt` `lte` `between` `in` `nin` `isnull` |
+| Date, DateTime, Time | `eq` `ne` `gt` `gte` `lt` `lte` `between` `isnull` |
+| Boolean | `eq` `ne` `isnull` |
+| Tags, MultiSelect | `contains` `isnull` |
+| Reference | `eq` `isnull`, and `ne` with null |
+
+Any other operator for a field is refused with 422. `evlet.query.operators_for(model, name)`
+returns the same list.
+
+Queries allow at most 50 conditions (counting those inside child groups), 100 values in an `in`
+or `nin` filter, four order fields,
+and 100 returned rows. Empty `in` lists match nothing; empty `nin` lists match everything. Use `isnull` for nulls
 inside membership queries. Text matching treats `%` and `_` literally;
 `icontains` uses SQLite's built-in ASCII case folding, not full Unicode folding.
 Values are parameterized. Field paths and operators are checked against the
@@ -193,7 +234,8 @@ The existing create, list, detail, health, and schema endpoints remain available
 - `DELETE /api/{model}/{id}` returns 204 with an empty body. A missing record
   returns 404; a linked-record constraint returns 409.
 - `GET /api/{model}` accepts `limit`, `offset`, `filters` (a URL-encoded JSON
-  object), and `order_by` (comma-separated fields). The result keeps the existing
+  object or list, as above), and `order_by` (comma-separated fields). The aggregate and
+  measures routes take the same `filters`. The result keeps the existing
   `items`, `limit`, and `offset` shape. Query strings are limited to 8 KiB.
 - Document POST and PATCH accept owned rows as full lists or as change sets
   (`{"create": [...], "update": [...], "delete": [...], "order": [...]}`). A detail embeds
@@ -368,11 +410,11 @@ bash scripts/playground.sh
 `EVLET_DATABASE` selects the file for both commands. The migration command creates
 a timestamped SQLite backup beside an existing database using SQLite's backup API,
 validates the frozen Milestone 1 definitions when necessary, and applies
-`0001_model_engine` and `0002_projects`. IDs, original values, and links stay intact. Fresh installations
+the pending migrations, from `0001_model_engine` to `0006_invoice_number`. IDs, original values, and links stay intact. Fresh installations
 can still use `bash scripts/playground.sh --setup` directly.
 
-The Playground demonstrates active flags and notes on customers, dates/statuses
-and exact tax rates on invoices, and timezone-aware timestamps on payments. Its
+The Playground demonstrates active flags and notes on customers, dates/statuses,
+exact tax rates and naming series numbers (`INV-2026-00001`, [sequences.md](sequences.md#naming-series)) on invoices, and timezone-aware timestamps on payments. Its
 edit, confirmed delete, search, and ordering controls use the public HTTP API.
 Tax rate and status are stored example fields; they do not calculate tax, settle
 invoices, post a ledger, or trigger workflow actions. Existing email remains Text

@@ -20,11 +20,15 @@ import { ListPage } from './list-page';
 import { Connecting, LoginScreen, TwoStepScreen, type Challenge } from './login';
 import { rootModels } from './meta';
 import { openPalette } from './palette';
-import { applyTheme, Prefs } from './prefs';
+import { Prefs } from './prefs';
+import { resolveTheme } from '../ui/theme';
 import { RecordPage } from './record-page';
-import { applyMe, loadMe, PAGES as SETTINGS_PAGES, SettingsView, showCodes, type Me } from './settings';
+import { applyMe, chooseTheme, loadMe, PAGES as SETTINGS_PAGES, SettingsView, showCodes, type Me } from './settings';
 import { Shell } from './shell';
 import { useSlips } from './slips';
+import { evaStatus, type EvaStatus } from '../eva/client';
+import { EvaPage } from '../eva/chat';
+import { TasksPage } from '../eva/tasks';
 
 export interface AppOptions {
   router: AppRouter;
@@ -50,21 +54,21 @@ export function App(options: AppOptions): Node {
   onCleanup(() => { alive = false; context.peek()?.prefs.dispose(); });
 
   const enter = async (current: Session) => {
-    const [schemaData, settings] = await Promise.all([api.schema<AppSchema>(), loadMe(api)]);
+    const [schemaData, settings, eva] = await Promise.all([api.schema<AppSchema>(), loadMe(api), evaStatus(api).catch(() => null)]);
     const schema = new SchemaIndex(schemaData);
     if (!alive) return;
     context.peek()?.prefs.dispose();
     const prefs = options.storage === undefined ? new Prefs(current.user!.username) : new Prefs(current.user!.username, options.storage);
-    applyTheme('light');
     applyMe(settings);
     const links = apiLinks(api, schema);
     setLinkSource(links);
     const ctx: AppContext = {
       api, router, schema, session: current, user: current.user!, prefs, links, dev: Boolean(options.dev), libraryHref: options.libraryHref ?? '/evlet.html',
-      me: cell<Me | null>(settings, { name: 'app.me' }), photo: cell(0),
+      me: cell<Me | null>(settings, { name: 'app.me' }), photo: cell(0), eva: cell<EvaStatus | null>(eva, { name: 'app.eva' }),
       ...newPageState(),
       openPalette: () => openPalette(ctx),
       toggleSidebar: () => prefs.collapsed.set(!prefs.collapsed.peek()),
+      toggleTheme: () => void chooseTheme(api, ctx.me, resolveTheme(ctx.me.peek()?.prefs.theme ?? 'system') === 'dark' ? 'light' : 'dark'),
       signOut,
     };
     session.set(current);
@@ -166,8 +170,7 @@ export function App(options: AppOptions): Node {
     context.peek()?.prefs.dispose();
     context.set(null);
     api.forget();
-    // The sign-in screen does not keep the last user's region or language.
-    applyTheme('system');
+    // The sign-in screen does not keep the last user's region or language; it keeps this device's theme.
     applyMe(null);
     error.set(message);
     session.set({ ...(session.peek() ?? { user: null }), user: null, setup: false });
@@ -224,6 +227,12 @@ function page(ctx: AppContext): Child {
       return html`<div class="page wide">${SettingsView({ api: ctx.api, me: ctx.me as any, photo: ctx.photo, href: page => settingsHref(ctx.router, page), go: page => void goSettings(ctx.router, page),
         starts: [...(docsOn(ctx.session) ? [['docs', 'Docs'] as [string, string]] : []), ...models.map(model => [model.name, model.plural] as [string, string])],
         changed: () => { const next = ctx.me.peek(); if (next) ctx.prefs.density.set(next.prefs.density); } }, target)}</div>`;
+    }
+    case 'eva': return ctx.eva.peek() ? EvaPage(ctx, ctx.eva) : unavailable(ctx);
+    case 'evaTasks': return ctx.eva.peek()?.tasks ? TasksPage(ctx, ctx.eva) : unavailable(ctx);
+    case 'evaChat': {
+      const id = Number(route.params.conversation);
+      return ctx.eva.peek() && Number.isSafeInteger(id) && id > 0 ? EvaPage(ctx, ctx.eva, id) : unavailable(ctx);
     }
     case 'report': return notHere(ctx, 'Reports', 'Reports are not shown in this interface',
       'Python reports keep their API and permissions. Model lists, boards and measures cover the data in this interface.');

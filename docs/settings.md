@@ -17,11 +17,11 @@ person used, kept on the server: `GET /settings` redirects to `/settings/<last p
 | Path | What it holds | Saves |
 | --- | --- | --- |
 | `/settings/profile` | Photo, full name, short name, job title, mobile, email signature, email (through a link) and the read-only username | Instantly |
-| `/settings/appearance` | Theme (light; dark is shown as coming later), density, text size, start page, sidebar counts, language (Arabic is right-to-left), time zone, date format, number format, first day of the week | Instantly |
+| `/settings/appearance` | Theme (light, dark or match my device), density, text size, start page, sidebar counts, language (Arabic is right-to-left), time zone, date format, number format, first day of the week | Instantly |
 | `/settings/security` | Password, two-step sign-in, where you are signed in | On submit |
 | `/settings/notifications` | Event by channel (in Evlet, email), quiet hours | Instantly |
 | `/settings/email` | Your own mailbox: connect Microsoft 365, Google or another mailbox, send from it, link replies to records, sync and disconnect ([controls.md](controls.md#personal-mailboxes)). Desk only | Instantly |
-| `/settings/ai` | Remote AI assistants: the `/_/mcp` address, your connected assistants with "Can make changes" and Disconnect, the apps they can use and your recent requests ([controls.md](controls.md#mcp-and-ai)); and, under On this computer, the command line steps (`evlet login`, then `evlet mcp`) with the sessions signed in that way. Desk only | Instantly |
+| `/settings/ai` | Eva, when it is on for you: your allowance and scheduled tasks ([eva.md](eva.md)). The changes outside assistants are waiting for you to approve ([tools.md](tools.md#approvals)). Remote AI assistants: the `/_/mcp` address, your connected assistants with "Can make changes" and Disconnect, the apps they can use and your recent requests ([controls.md](controls.md#mcp-and-ai)); and, under On this computer, the command line steps (`evlet login`, then `evlet mcp`) with the sessions signed in that way. Desk only | Instantly |
 | `/settings/keys` | Your API keys for scripts: create (shown once), scope and revoke ([controls.md](controls.md#api-keys)). Desk only | Instantly |
 | `/settings/app/<app>` | An app's settings: "For everyone" and "Just for you" | Save bar; instantly |
 
@@ -52,8 +52,18 @@ sign-in lockout (`security.lockout`, 5 unless config.py's `Security(...)` sets i
 
 **Start page.** Only Docs or a model the person can read.
 
-**Theme.** The dark theme's styles and `applyTheme` stay in the frontend; only the choice is
-hidden until it is ready, so everyone sees the light theme.
+**Theme.** `theme` is `"light"`, `"dark"` or `"system"` (the default, which follows the
+device and changes with it). It is kept per person like the other appearance settings, so it
+follows them to every browser. Portal people have no Appearance page and get `"system"`. The
+server paints each page in the person's theme before any script runs: every page it serves
+carries `data-theme="light"` or `"dark"` on `<html>` (nothing for `"system"`) and
+`"theme"` in the config block. Signed out, the sign-in page uses the `evlet_theme` cookie the
+app leaves in the browser (light, dark or system only; anything else counts as system), so
+it opens in the theme that browser last showed. Besides Settings, the sun or moon button
+beside the account, the account menu, the search palette and the Docs Customization page
+switch between light and dark; a refused save puts the earlier theme back. The theme is
+presentation only: models and the API know nothing of it
+([ui-framework.md](ui-framework.md#themes)).
 
 **Notifications.** Only the choices are stored for now. Security emails (a new device, a
 changed password) can't be turned off.
@@ -238,5 +248,5 @@ two-step sign-in. SQLite and PostgreSQL both create these tables on start.
 
 ## Not built yet
 
-The QR code for the authenticator key (the key is shown as text), the dark theme, personal
+The QR code for the authenticator key (the key is shown as text), personal
 API keys, personal mailboxes, remote MCP with request counts, and sending notifications.

@@ -69,6 +69,8 @@ class KeyAccess:
     key_id: int | None = None
     # Set for AI assistants: the evlet_mcp_clients row, or 0 for a local (stdio) connector.
     assistant: int | None = None
+    # Set for Eva: 'eva' in a chat, 'schedule' in a scheduled task. Eva acts as the person, like an assistant.
+    origin: str | None = None
 
 
 @dataclass(frozen=True)
@@ -243,6 +245,14 @@ class LocalAuth:
     def initialize(self):
         with self.database.transaction() as tx:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)')
+            # Allow Eva and Allow MCP (Controls, Users): both off for new people. They open Eva or MCP and grant no record access.
+            users = self.database.columns(tx.connection, 'evlet_users')
+            for name in ('allow_eva', 'allow_mcp'):
+                if name not in users:
+                    tx.connection.execute(f'ALTER TABLE evlet_users ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0')
+            if 'allow_mcp' not in users and self.database.columns(tx.connection, 'evlet_mcp_clients'):
+                # On upgrade, people with a connected assistant keep MCP; everyone else starts without it.
+                tx.connection.execute('UPDATE evlet_users SET allow_mcp=1 WHERE id IN (SELECT user_id FROM evlet_mcp_clients WHERE revoked_at IS NULL)')
             tx.connection.execute("CREATE TABLE IF NOT EXISTS evlet_sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, csrf TEXT NOT NULL, expires INTEGER NOT NULL, realm TEXT NOT NULL DEFAULT 'desk')")
             columns = self.database.columns(tx.connection, 'evlet_sessions')
             if 'realm' not in columns:
@@ -273,10 +283,6 @@ class LocalAuth:
                 "CREATE TABLE IF NOT EXISTS evlet_mcp_tokens (hash TEXT PRIMARY KEY, client_id INTEGER NOT NULL REFERENCES evlet_mcp_clients(id) ON DELETE CASCADE, "
                 "kind TEXT NOT NULL CHECK(kind IN ('access','refresh')), expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0)",
                 'CREATE INDEX IF NOT EXISTS evlet_mcp_token_client ON evlet_mcp_tokens(client_id)',
-                "CREATE TABLE IF NOT EXISTS evlet_mcp_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER NOT NULL REFERENCES evlet_mcp_clients(id) ON DELETE CASCADE, "
-                "at INTEGER NOT NULL, tool TEXT NOT NULL, model TEXT, kind TEXT NOT NULL CHECK(kind IN ('read','write')), outcome TEXT NOT NULL CHECK(outcome IN ('ok','denied','failed')))",
-                'CREATE INDEX IF NOT EXISTS evlet_mcp_call_client ON evlet_mcp_calls(client_id, at)',
-                'CREATE INDEX IF NOT EXISTS evlet_mcp_call_at ON evlet_mcp_calls(at)',
             ):
                 tx.connection.execute(statement)
             tx.connection.execute("CREATE TABLE IF NOT EXISTS evlet_roles (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('framework','custom')), base TEXT, realm TEXT NOT NULL DEFAULT 'desk' CHECK(realm IN ('desk','portal')), opens_controls INTEGER NOT NULL DEFAULT 0, description TEXT NOT NULL DEFAULT '')")

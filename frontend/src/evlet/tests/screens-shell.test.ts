@@ -31,7 +31,7 @@ describe('sign in, setup and Docs', () => {
     expect(login.headers['x-evlet-request']).toBe('1');
     // The aside lists every root model the role can read, linking to its list; Table rows are not listed.
     const links = [...host.querySelectorAll<HTMLAnchorElement>('.ev-doc-aside li a')].map(link => [text(link), link.getAttribute('href')]);
-    expect(links).toEqual([['Customers', '/app/customer'], ['Products', '/app/product'], ['Orders', '/app/order'], ['Contacts', '/app/contact']]);
+    expect(links).toEqual([['Customers', '/app/customer'], ['Products', '/app/product'], ['Orders', '/app/order'], ['Contacts', '/app/contact'], ['Quotes', '/app/quote']]);
   });
 
   it('first-run setup creates the administrator and signs in with it', async () => {
@@ -97,21 +97,23 @@ describe('app shell', () => {
     const { host } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, screen.customers_page1]], '/app/customer');
     await until(() => expect(host.querySelector('.sidebar')).not.toBeNull());
     const groups = [...host.querySelectorAll('.nav-group')].map(group => [text(group.querySelector('.nav-label')), [...group.querySelectorAll('.nav-item .lbl')].map(text)]);
-    expect(groups).toEqual([['Documents', ['Orders']], ['Records', ['Customers', 'Products', 'Contacts']]]);
+    expect(groups).toEqual([['Documents', ['Orders']], ['Records', ['Customers', 'Products', 'Contacts', 'Quotes']]]);
     expect(text(host.querySelector('.nav-item.active'))).toBe('Customers');
     expect(host.querySelector('.nav-item.active')!.getAttribute('aria-current')).toBe('page');
     // Library is a development link outside the router.
     expect(byText(host, '.side-bottom a', 'Library')!.getAttribute('rel')).toBe('external');
     click(byText(host, '.topbar button', 'New'));
-    expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['New customer', 'New product', 'New order', 'New contact']);
+    expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['New customer', 'New product', 'New order', 'New contact', 'New quote']);
   });
 
   it('shows the Evlet brand, an app switcher with its workspace, and collapses from the edge button', async () => {
     const { host } = start([...adminRoutes()]);
     await until(() => expect(host.querySelector('.app')).not.toBeNull());
     const app = host.querySelector('.app')!;
-    expect(text(host.querySelector('.sidebar .brand'))).toBe('evlet');
-    expect(host.querySelector('.sidebar .brand .ev-logo')).not.toBeNull();
+    // The evlet.io artwork: the horizontal logo for each theme, and the mark the collapsed sidebar shows.
+    const brand = [...host.querySelectorAll<HTMLImageElement>('.sidebar .brand img')].map(img => [img.className, img.getAttribute('src'), img.alt]);
+    expect(brand).toEqual([['ev-lockup-light', '/assets/evlet-logo-primary.svg', 'Evlet'],
+      ['ev-lockup-dark', '/assets/evlet-logo-white.svg', 'Evlet'], ['ev-logo', '/assets/evlet-icon-blue.svg', 'Evlet']]);
     const appSwitch = host.querySelector<HTMLElement>('.sidebar .app-switch')!;
     const appName = text(appSwitch.querySelector('.as-text b'));
     expect(appName).not.toBe('');
@@ -135,7 +137,7 @@ describe('app shell', () => {
     expect(host.querySelector('.topbar > .mobile-only .icon-btn, .topbar > .mobile-only button')).not.toBeNull();
   });
 
-  it('toggles the sidebar with [, keeps the light theme, and signs out from the account menu', async () => {
+  it('toggles the sidebar with [ and signs out from the account menu', async () => {
     let signedOut = false;
     const { host, sent } = start([
       ['GET', /\/api\/auth\/session$/, () => signedOut ? recorded.session_anonymous : recorded.session],
@@ -148,9 +150,9 @@ describe('app shell', () => {
     expect(app.classList.contains('collapsed')).toBe(true);
     press(document.body, '[');
     expect(app.classList.contains('collapsed')).toBe(false);
-    // Light only for now; the top bar has no avatar or gear and the account area has no theme button.
-    expect(document.documentElement.dataset.theme).toBe('light');
-    expect(host.querySelector('.side-foot .icon-btn')).toBeNull();
+    // Without the person's settings (an older server) the page follows the device and has no theme button.
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(host.querySelector('.side-foot .theme-btn')).toBeNull();
     expect(host.querySelector('.topbar .avatar')).toBeNull();
 
     click(host.querySelector('.me'));

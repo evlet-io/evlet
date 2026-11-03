@@ -45,6 +45,7 @@ evlet instance --list
 evlet install notes --instance acme --trust
 evlet serve acme --port 8000
 evlet dev --instance acme
+evlet dev-link
 evlet migrate acme --trust
 evlet migrate acme --plan --trust
 evlet makemigration people --instance acme --name dependents --trust
@@ -88,6 +89,48 @@ records keep their saved results. Normal
 `serve` checks locked source versions and content; run `migrate` to record an
 intentional source change. Use `serve --jobs` to enable the short-task queue in
 that process. No worker is mandatory.
+
+### Development sign-in links
+
+`evlet dev` and `evlet playground` print a one-time sign-in link at startup, like
+`bench browse --user` in Frappe:
+
+```text
+Sign in as mariam (works once, for 10 minutes):
+  http://127.0.0.1:8000/_dev/signin?token=...
+```
+
+Open the link and you are signed in, then sent to `/`. `evlet dev` prints a new
+link each time it reloads. Run `evlet dev-link` from
+another terminal for a fresh link when the first is used or expired. Inside a
+project it serves the project's instance (`--instance` picks one, `--port` matches
+`evlet dev --port`). Outside a project, or with `--playground`, it finds the running
+`evlet playground` (`--port` picks one when several run).
+
+- The link signs in the user named by `--user NAME`. Without it, the link uses
+  the only active admin, or the only active user. With several, pass `--user`.
+- On a Playground with no accounts, the first link creates the administrator
+  `demo-admin` with a random password that is never printed. `evlet dev` never
+  creates accounts: create the first admin in the browser.
+- `--no-link` on `evlet dev` or `evlet playground` skips the startup link.
+- The app itself serves `/_dev/signin` on the same host and port. The route exists
+  only under `evlet dev` and `evlet playground`. `evlet serve`, tenant applications
+  and deployments answer 404.
+- The server must be bound to loopback and the request must come from a loopback
+  client. Host, origin and cross-site checks are the same as for every request.
+- Only a SHA-256 hash of the token is stored, in `evlet_dev_links`. A token works
+  once and expires after 10 minutes.
+- Each use starts a normal session through the framework's session code, with the
+  usual cookie (HttpOnly, SameSite=Strict), CSRF token and session length. The
+  audit log records it as "Signed in with a development link".
+- The session counts as a finished two-step sign-in. Only someone with this
+  instance's files can make a link, which is as strong as a second step.
+- Every account, tenant, row, field and action check still applies to the user.
+- Passwords are never printed. The token is printed because it is single-use,
+  local and short-lived.
+
+`scripts/playground.sh` prints the same kind of link for the contributor Playground;
+`bash scripts/playground.sh --link` prints a fresh one.
 
 `journal verify` checks the hash chains of tamper-evident record journals in an
 instance's database, read only and in one snapshot. It prints one line per break and
@@ -158,7 +201,7 @@ versions and distributions. Their `pyproject.toml` uses standard Python metadata
 name = "notes"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["evlet>=0.2.0,<0.3"]
+dependencies = ["evlet>=0.3.0.dev0,<0.4"]
 
 [tool.evlet]
 app = true

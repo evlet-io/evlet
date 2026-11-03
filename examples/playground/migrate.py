@@ -7,6 +7,7 @@ import sqlite3
 
 from evlet import (AddField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
                    Link, LongText, Migration, Model, PostgreSQLDatabase, Registry, Select, Text)
+from .items import core_fields, item_fields
 from .models import Customer, registry
 
 migrations = [Migration('0001_model_engine',
@@ -46,6 +47,37 @@ migrations.append(Migration('0004_currencies',
     AddField('customer', 'currency', Select(['AED', 'SAR', 'USD', 'EUR', 'INR'], required=True, default='AED')),
     AddField('payment', 'currency', Select(['AED', 'SAR', 'USD', 'EUR', 'INR'], required=True, default='AED')),
 ))
+
+
+# Items: about 200 fields and two child tables (examples/playground/items.py), frozen here.
+FrozenItem = type('Item', (Model,), {'__module__': __name__, **core_fields(), **item_fields(), 'default_customer': Link(Customer)})
+
+
+class Price(Model):
+    storage_name = 'item_prices'
+    evlet_owner = Link(FrozenItem, required=True, index=True)
+    evlet_position = Integer(required=True, default=0)
+    price_list = Select(['standard selling', 'wholesale', 'export', 'standard buying'], required=True, default='standard selling')
+    customer = Link(Customer)
+    currency = Select(['AED', 'SAR', 'USD', 'EUR', 'INR'], required=True, default='AED')
+    rate = Currency(minimum='0', default='0.00')
+    min_qty = Integer(minimum=0, default=0)
+    valid_from = Date()
+
+
+class Barcode(Model):
+    storage_name = 'item_barcodes'
+    evlet_owner = Link(FrozenItem, required=True, index=True)
+    evlet_position = Integer(required=True, default=0)
+    barcode = Text(required=True, max_length=40)
+    barcode_type = Select(['EAN', 'UPC', 'Code 128'], default='EAN')
+
+
+migrations.append(Migration('0005_items', CreateModel(FrozenItem), CreateModel(Price), CreateModel(Barcode)))
+
+
+# Invoice numbers from the naming series (Invoice.Meta.naming). Invoices saved before this keep an empty number.
+migrations.append(Migration('0006_invoice_number', AddField('invoice', 'number', Text(unique=True, max_length=40))))
 
 
 def legacy_registry():

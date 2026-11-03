@@ -5020,7 +5020,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.836Z",
+     "at": "2026-11-03T17:06:01.231Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5032,7 +5032,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.821Z",
+     "at": "2026-11-03T17:06:01.217Z",
      "data": {
       "fields": {
        "total": {
@@ -5094,7 +5094,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.809Z",
+     "at": "2026-11-03T17:06:01.204Z",
      "data": {
       "fields": {
        "customer": {
@@ -5290,7 +5290,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-02T06:49:13.877Z",
+     "at": "2026-11-03T17:06:01.274Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5302,7 +5302,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.876Z",
+     "at": "2026-11-03T17:06:01.273Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5314,7 +5314,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.874Z",
+     "at": "2026-11-03T17:06:01.270Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -5324,7 +5324,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.872Z",
+     "at": "2026-11-03T17:06:01.268Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -5336,7 +5336,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.870Z",
+     "at": "2026-11-03T17:06:01.266Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5345,7 +5345,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.853Z",
+     "at": "2026-11-03T17:06:01.249Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5360,7 +5360,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.845Z",
+     "at": "2026-11-03T17:06:01.241Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5370,7 +5370,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.845Z",
+     "at": "2026-11-03T17:06:01.241Z",
      "data": {
       "targets": [
        {
@@ -5386,7 +5386,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.845Z",
+     "at": "2026-11-03T17:06:01.241Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5403,7 +5403,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.836Z",
+     "at": "2026-11-03T17:06:01.231Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5415,7 +5415,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.821Z",
+     "at": "2026-11-03T17:06:01.217Z",
      "data": {
       "fields": {
        "total": {
@@ -5477,7 +5477,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.809Z",
+     "at": "2026-11-03T17:06:01.204Z",
      "data": {
       "fields": {
        "customer": {
@@ -5527,7 +5527,7 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-02T06:49:13.872Z",
+   "at": "2026-11-03T17:06:01.268Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5543,7 +5543,7 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-02T06:49:13.874Z",
+   "at": "2026-11-03T17:06:01.270Z",
    "data": {
     "follow_up": 19,
     "text": "Balance due by the end of the month"
@@ -5557,7 +5557,7 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-02T06:49:13.870Z",
+   "at": "2026-11-03T17:06:01.266Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -5976,6 +5976,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -5998,6 +6009,18 @@
        "maximum": null,
        "minimum": null,
        "name": "rate",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -6021,6 +6044,18 @@
        "maximum": null,
        "minimum": null,
        "name": "credit_days",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -6118,6 +6153,13 @@
        "maximum": null,
        "minimum": 1,
        "name": "customer",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -6141,6 +6183,18 @@
        "maximum": null,
        "minimum": null,
        "name": "debit",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -6164,6 +6218,18 @@
        "maximum": null,
        "minimum": null,
        "name": "credit",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -6186,6 +6252,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "memo",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -6205,6 +6282,11 @@
        "label": "Source",
        "locked_when": null,
        "name": "source",
+       "operators": [
+        "eq",
+        "ne",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -6225,6 +6307,11 @@
        "label": "Reversal",
        "locked_when": null,
        "name": "reversal",
+       "operators": [
+        "eq",
+        "ne",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -6657,6 +6744,7 @@
      "child_only": false,
      "children": [
       {
+       "filterable": true,
        "label": "Lines",
        "link": "evlet_owner",
        "max_rows": 1000,
@@ -6698,6 +6786,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "number",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -6726,6 +6825,13 @@
        "maximum": null,
        "minimum": 1,
        "name": "customer",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": true,
@@ -6746,6 +6852,16 @@
        "label": "Posting date",
        "locked_when": null,
        "name": "posting_date",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": true,
@@ -6765,6 +6881,16 @@
        "label": "Due on",
        "locked_when": null,
        "name": "due_on",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -6792,6 +6918,13 @@
        "locked_when": null,
        "max_length": 255,
        "name": "status",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": true,
@@ -6820,6 +6953,18 @@
        "maximum": null,
        "minimum": null,
        "name": "total",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -6843,6 +6988,18 @@
        "maximum": null,
        "minimum": null,
        "name": "outstanding",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -6866,6 +7023,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "remarks",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -6887,6 +7055,13 @@
        "maximum": null,
        "minimum": 1,
        "name": "revises",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -7142,6 +7317,13 @@
        "maximum": null,
        "minimum": 1,
        "name": "invoice",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": true,
@@ -7165,6 +7347,18 @@
        "maximum": null,
        "minimum": null,
        "name": "amount",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -7185,6 +7379,16 @@
        "label": "Paid on",
        "locked_when": null,
        "name": "paid_on",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -7257,6 +7461,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "item",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -7279,6 +7494,18 @@
        "maximum": null,
        "minimum": "0",
        "name": "qty",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -7302,6 +7529,18 @@
        "maximum": null,
        "minimum": null,
        "name": "rate",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -7348,6 +7587,18 @@
        "maximum": null,
        "minimum": null,
        "name": "amount",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -7710,7 +7961,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-02T06:49:13.877Z",
+     "at": "2026-11-03T17:06:01.274Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -7722,7 +7973,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.876Z",
+     "at": "2026-11-03T17:06:01.273Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -7734,7 +7985,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.874Z",
+     "at": "2026-11-03T17:06:01.270Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -7744,7 +7995,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.872Z",
+     "at": "2026-11-03T17:06:01.268Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -7756,7 +8007,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.870Z",
+     "at": "2026-11-03T17:06:01.266Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -7765,7 +8016,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.853Z",
+     "at": "2026-11-03T17:06:01.249Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -7780,7 +8031,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.845Z",
+     "at": "2026-11-03T17:06:01.241Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -7790,7 +8041,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.845Z",
+     "at": "2026-11-03T17:06:01.241Z",
      "data": {},
      "id": 15,
      "kind": "changed",
@@ -7798,7 +8049,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.845Z",
+     "at": "2026-11-03T17:06:01.241Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -7815,7 +8066,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.836Z",
+     "at": "2026-11-03T17:06:01.231Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -7827,7 +8078,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.821Z",
+     "at": "2026-11-03T17:06:01.217Z",
      "data": {
       "fields": {
        "total": {
@@ -7889,7 +8140,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-02T06:49:13.809Z",
+     "at": "2026-11-03T17:06:01.204Z",
      "data": {
       "fields": {
        "customer": {
@@ -7972,6 +8223,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -7994,6 +8256,18 @@
        "maximum": null,
        "minimum": null,
        "name": "rate",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -8017,6 +8291,18 @@
        "maximum": null,
        "minimum": null,
        "name": "credit_days",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -8386,6 +8672,7 @@
      "child_only": false,
      "children": [
       {
+       "filterable": true,
        "label": "Lines",
        "link": "evlet_owner",
        "max_rows": 1000,
@@ -8411,6 +8698,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "number",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -8439,6 +8737,13 @@
        "maximum": null,
        "minimum": 1,
        "name": "customer",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": true,
@@ -8459,6 +8764,16 @@
        "label": "Posting date",
        "locked_when": null,
        "name": "posting_date",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": true,
@@ -8478,6 +8793,16 @@
        "label": "Due on",
        "locked_when": null,
        "name": "due_on",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -8505,6 +8830,13 @@
        "locked_when": null,
        "max_length": 255,
        "name": "status",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": true,
@@ -8533,6 +8865,18 @@
        "maximum": null,
        "minimum": null,
        "name": "total",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -8556,6 +8900,18 @@
        "maximum": null,
        "minimum": null,
        "name": "outstanding",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -8579,6 +8935,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "remarks",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -8600,6 +8967,13 @@
        "maximum": null,
        "minimum": 1,
        "name": "revises",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -8849,6 +9223,13 @@
        "maximum": null,
        "minimum": 1,
        "name": "invoice",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": true,
@@ -8872,6 +9253,18 @@
        "maximum": null,
        "minimum": null,
        "name": "amount",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -8892,6 +9285,16 @@
        "label": "Paid on",
        "locked_when": null,
        "name": "paid_on",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -8964,6 +9367,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "item",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -8986,6 +9400,18 @@
        "maximum": null,
        "minimum": "0",
        "name": "qty",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -9009,6 +9435,18 @@
        "maximum": null,
        "minimum": null,
        "name": "rate",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -9055,6 +9493,18 @@
        "maximum": null,
        "minimum": null,
        "name": "amount",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -9859,6 +10309,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -9881,6 +10342,18 @@
        "maximum": null,
        "minimum": null,
        "name": "rate",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -9904,6 +10377,18 @@
        "maximum": null,
        "minimum": null,
        "name": "credit_days",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -9986,6 +10471,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -10008,6 +10504,18 @@
        "maximum": null,
        "minimum": null,
        "name": "price",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -10627,6 +11135,7 @@
      "child_only": false,
      "children": [
       {
+       "filterable": true,
        "label": "Lines",
        "link": "evlet_owner",
        "max_rows": 1000,
@@ -10652,6 +11161,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -10673,6 +11193,13 @@
        "maximum": null,
        "minimum": 1,
        "name": "customer",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -10700,6 +11227,13 @@
        "locked_when": null,
        "max_length": 255,
        "name": "stage",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -10719,6 +11253,16 @@
        "label": "Issued",
        "locked_when": null,
        "name": "issued",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -10758,6 +11302,16 @@
        "label": "Due",
        "locked_when": null,
        "name": "due",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -10792,6 +11346,17 @@
        "locked_when": null,
        "max_length": 255,
        "name": "reason",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -10840,6 +11405,17 @@
        },
        "max_length": 255,
        "name": "remark",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -10867,6 +11443,18 @@
        "maximum": null,
        "minimum": null,
        "name": "total",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -10895,6 +11483,18 @@
        "maximum": null,
        "minimum": null,
        "name": "line_count",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -10974,6 +11574,7 @@
      "child_only": true,
      "children": [
       {
+       "filterable": true,
        "label": "Parts",
        "link": "evlet_owner",
        "max_rows": 9,
@@ -10999,6 +11600,13 @@
        "maximum": null,
        "minimum": 1,
        "name": "product",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -11022,6 +11630,18 @@
        "maximum": null,
        "minimum": "0",
        "name": "qty",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -11054,6 +11674,18 @@
        "maximum": null,
        "minimum": null,
        "name": "rate",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,
@@ -11100,6 +11732,18 @@
        "maximum": null,
        "minimum": null,
        "name": "amount",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": true,
        "required": false,
@@ -11163,6 +11807,18 @@
        "maximum": null,
        "minimum": "0",
        "name": "hours",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
        "placeholder": "",
        "read_only": false,
        "required": false,

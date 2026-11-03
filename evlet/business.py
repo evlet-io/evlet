@@ -17,7 +17,7 @@ from .fields import Link
 from .ui.metadata import view_for
 from .models import ValidationError, identifier
 from .permissions import CORRECTIONS, Policy
-from .query import SqlQuery
+from .query import SqlQuery, operators_for
 from .storage import SQLiteStorage
 from .jobs import JobReceipt
 from .discovery import Discovery
@@ -127,6 +127,10 @@ class Business:
         # instances/<name>/secret.key for evlet.secrets; None keeps two-step sign-in off.
         self.secret_key = None
         self.assistants = Assistants(self)
+        from .tools import Tools
+        self.tools = Tools(self)
+        # Eva, when config.py turns AI on (Application(ai=AI(...))); None keeps every Eva route and table away.
+        self.eva = None
         self.actions, self.children, self.child_models = {}, {}, set()
         self.attachments = set(attachments)
         self.storage = storage if storage is not None else SQLiteStorage()
@@ -195,6 +199,9 @@ class Business:
         self.controls.initialize()
         self.connectors.initialize()
         self.assistants.initialize()
+        self.tools.initialize()
+        if self.eva is not None:
+            self.eva.initialize()
         self.mailboxes.initialize()
         self.storage.initialize(self.database)
         self.settings.initialize()
@@ -377,8 +384,9 @@ class Business:
                     return self.policy.fields(user, child) if child is not None and self.policy.allows(user, child, 'read') else None
                 entry['order'] = [key for key in entry.get('order', []) if ordered(key)]
             expressions = self.field_expressions(user, model)
+            # operators: what a list filter may use on the field (evlet.query); none when it is not stored.
             entry['fields'] = [{**field, 'read_only': field['name'] not in writable, 'stored': model.__declared_fields__[field['name']].stored,
-                                **expressions.get(field['name'], EMPTY_EXPRESSIONS)}
+                                'operators': operators_for(model, field['name']), **expressions.get(field['name'], EMPTY_EXPRESSIONS)}
                                for field in entry['fields'] if field['name'] in readable]
             entry['fields'] = [self.currency_for(user, model, field, readable) for field in entry['fields']]
             entry['list_fields'] = [name for name in entry['list_fields'] if name == 'id' or name in readable]
@@ -388,6 +396,13 @@ class Business:
             self.controls.custom.merge(entry, model, readable, writable)
             if entry['title_field'] not in readable:
                 entry['title_field'] = 'id'
+            # The field a naming series fills on create: the New screen says it is assigned on save.
+            naming = self.registry.naming.get(model)
+            if naming is not None and naming.field in readable:
+                entry['naming'] = {'field': naming.field}
+                for field in entry['fields']:
+                    if field['name'] == naming.field and not field.get('placeholder'):
+                        field['placeholder'] = 'Assigned on save'
             entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
             from .corrections import model_schema
             flags, corrections = model_schema(self, user, model)
@@ -399,6 +414,8 @@ class Business:
             # otherwise it takes only full row lists without _key (legacy ChildTable on a plain model).
             entry['children'] = [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label,
                                   'row_changes': bool(getattr(model, '__declaration_mode__', False)),
+                                  # Whether list filters may match the parent on these rows (no row scope of their own).
+                                  'filterable': self.policy.rule(user, child.model).scope is None,
                                   **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child)))}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
             from .states import action_schema, state_schema
@@ -495,11 +512,20 @@ class Business:
             # The local MCP connector: the same narrowing as a remote assistant.
             user = self.assistants.narrow(user)
         if user.access is not None:
-            assistant = user.access.assistant is not None
-            if path.startswith(('/api/auth/', '/api/_settings/', '/api/_oauth/')):
+            assistant = user.access.assistant is not None or user.access.origin is not None
+            if path.startswith(('/api/auth/', '/api/_settings/', '/api/_oauth/', '/api/_eva', '/api/_tools/approvals', '/api/_tools/calls')):
                 raise AccessError(403, 'AI assistants cannot use this.' if assistant else 'API keys cannot be used here. Sign in instead.')
-            if method not in ('GET', 'HEAD') and not user.access.write:
+            # Tool calls are POST; the Tool Engine checks each write itself, and its run_report only reads.
+            inner = scope.get('evlet.assistant') is not None
+            reading = path == '/api/_tools/execute' or (inner and path.startswith('/api/_reports/') and not path.endswith('/evaluate'))
+            if method not in ('GET', 'HEAD') and not user.access.write and not reading:
                 raise AccessError(403, 'AI assistants can only read here.' if assistant else 'This key can only read.')
+        if path == '/api/_tools' or path.startswith('/api/_tools/'):
+            return self.tools.api(scope, body, user)
+        if path == '/api/_eva' or path.startswith('/api/_eva/'):
+            if self.eva is None:
+                raise AccessError(404, 'Route not found')
+            return self.eva.api(scope, body, user)
         if path == '/api/_settings/me/ai' or path.startswith(('/api/_settings/me/ai/', '/api/_oauth/')):
             return self.assistants.api(scope, body, user)
         if path == '/api/_settings/me/keys' or path.startswith('/api/_settings/me/keys/'):
@@ -516,7 +542,7 @@ class Business:
             return dispatch(self, scope, body, user)
         if getattr(self, 'slips', None) and path.startswith('/api/_slips/'):
             return self.slips.dispatch(scope, body, user)
-        if getattr(self, 'forms', None) and path.startswith(('/api/_reports/', '/api/_dialogs/')):
+        if getattr(self, 'forms', None) and (path == '/api/_reports' or path.startswith(('/api/_reports/', '/api/_dialogs/'))):
             return self.forms.dispatch(scope, body, user)
         if path.startswith('/api/_draft/') and method == 'POST':
             from .documents import load_draft, settle, source_values, walk
@@ -1206,12 +1232,13 @@ class Business:
             filters = json.loads(query.get('filters', ['{}'])[0])
             order = query.get('order_by', [self.controls.custom.default_order(self.policy, user, model)])[0].split(',')
             limit, offset = int(query.get('limit', ['50'])[0]), int(query.get('offset', ['0'])[0])
-            if not isinstance(filters, dict) or not 1 <= limit <= ROW_LIMIT or not 0 <= offset <= 2**63-1:
+            if not isinstance(filters, (dict, list)) or not 1 <= limit <= ROW_LIMIT or not 0 <= offset <= 2**63-1:
                 raise ValueError()
         except (ValueError, UnicodeError, RecursionError):
             raise ValidationError({'query': 'Invalid query parameters'})
-        self.policy.query_fields(user, model, filters, order, database=self.database)
-        compiler = SqlQuery(self.registry, model)
+        children = self.children.values()
+        self.policy.query_fields(user, model, filters, order, database=self.database, children=children)
+        compiler = SqlQuery(self.registry, model, children=children)
         readable = self.policy.fields(user, model)
         search_fields = [name for name in view_for(model)['search_fields'] if name in readable]
         where, values = compiler.where(filters, query.get('q', [''])[0], search_fields=search_fields)
