@@ -69,7 +69,7 @@ class Connection:
             converted.append(token)
         sql = ''.join(converted)
         match = re.match(r'INSERT INTO ("?[A-Za-z_][A-Za-z_0-9]*"?)', sql)
-        generated = set(self.database.registry.models) | {'evlet_users', 'evlet_attachments', 'evlet_events', 'evlet_jobs', 'evlet_mcp_clients', 'evlet_tool_calls', 'evlet_tool_approvals'}
+        generated = set(self.database.registry.models) | {'evlet_users', 'evlet_attachments', 'evlet_events', 'evlet_jobs', 'evlet_mcp_clients', 'evlet_tool_calls', 'evlet_tool_approvals', 'evlet_eva_conversations', 'evlet_eva_messages', 'evlet_eva_runs', 'evlet_eva_events', 'evlet_eva_files', 'evlet_eva_usage', 'evlet_eva_reservations', 'evlet_eva_tasks', 'evlet_eva_task_runs'}
         returning = match and match[1].strip('"') in generated and ' RETURNING ' not in sql.upper()
         if returning:
             sql += ' RETURNING id'
@@ -215,6 +215,13 @@ class PostgreSQLDatabase(Database):
         from .postgres_schema import initialize
         initialize(self)
 
-    def migrate(self, migrations, *, recompute_posted=False):
+    def migrate(self, migrations, *, recompute_posted=False, allow_destructive=False, allow_maintenance=False):
         from .postgres_schema import migrate
-        return migrate(self, migrations, recompute_posted=recompute_posted)
+        return migrate(self, migrations, recompute_posted=recompute_posted, allow_destructive=allow_destructive,
+                       allow_maintenance=allow_maintenance)
+
+    def plan(self, migrations):
+        """What migrate(migrations) would do, without writing: a MigrationPlan whose text() lists the pending
+        migrations and any difference between them and the models."""
+        from .postgres_schema import plan
+        return plan(self, migrations)

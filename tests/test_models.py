@@ -54,8 +54,9 @@ def test_registry_is_explicit_and_schema_is_renderer_neutral():
     schema = registry.schema()
     assert schema["version"] == 1
     invoice = next(model for model in schema["models"] if model["name"] == "invoice")
-    assert invoice["fields"][0]["target"] == "customer"
-    assert invoice["fields"][2]["type"] == "currency"
+    fields = {field["name"]: field for field in invoice["fields"]}
+    assert fields["customer"]["target"] == "customer"
+    assert fields["total"]["type"] == "currency"
     assert "primevue" not in str(schema).lower()
     assert Registry(Customer).schema()["models"] == [schema["models"][0]]
     with pytest.raises(ValueError, match="not registered"):

@@ -59,6 +59,7 @@ For virtual environment setup and each step explained, read
 - [UI guide](docs/ui.md): the browser interface, its routes and the Python page API.
 - [Slips](docs/slips.md): forms presented from code that save nothing until handed in.
 - [Routing](docs/routing.md): frontends, reserved paths, `routes.py` and `evlet routes`.
+- [API stability](docs/api-stability.md): the names apps can rely on, deprecations and what is internal.
 - [UI framework](docs/ui-framework.md): Evlet's own browser framework and components.
 
 `evlet dev --instance acme` reloads Python changes while you work. At startup it
@@ -93,7 +94,7 @@ link. Links exist only under `evlet playground` and `evlet dev`, never under
 
 PostgreSQL and S3 are available as `evlet[postgres]` and `evlet[s3]`. The existing
 [tenant deployment](docs/tenancy-deployment.md), [jobs and live updates](docs/jobs-realtime.md),
-[connector](docs/connector.md), [Tool Engine](docs/tools.md), [PostgreSQL](docs/postgresql.md) and
+[connector](docs/connector.md), [Tool Engine](docs/tools.md), [Eva](docs/eva.md), [PostgreSQL](docs/postgresql.md) and
 [operations](docs/production-operations.md) guides describe their limits.
 No database server, Redis, Docker or worker is required for a local SQLite app.
 

@@ -39,6 +39,8 @@ class Instance:
     trusted_proxies: tuple = ()
     # `security = Security(...)` beside `instance` in config.py; read_instance fills it in.
     security: object = field(default=None, init=False, compare=False, repr=False)
+    # `ai = AI(...)` beside `instance` in config.py: Eva's hard gate. None keeps Eva off.
+    ai: object = field(default=None, init=False, compare=False, repr=False)
 
     def __post_init__(self):
         from .cli.project import valid_name
@@ -134,6 +136,11 @@ def read_instance(path):
     if not isinstance(security, Security):
         raise ValueError('config.py security must be security = Security(session_hours=..., lockout=..., password_min=...)')
     object.__setattr__(value, 'security', security)
+    from .eva import AI
+    ai = namespace.get('ai')
+    if ai is not None and not isinstance(ai, AI):
+        raise ValueError('config.py ai must be ai = AI(enabled=..., models={...})')
+    object.__setattr__(value, 'ai', ai)
     return value
 
 
@@ -152,8 +159,13 @@ def read_lock(path):
         value = json.loads((path / 'apps.lock').read_text())
     except (OSError, ValueError) as exc:
         raise ValueError(f'Cannot read {path.name}/apps.lock: {exc}') from None
-    if not isinstance(value, dict) or set(value) != {'apps'} or not isinstance(value['apps'], dict):
+    if not isinstance(value, dict) or set(value) - {'evlet'} != {'apps'} or not isinstance(value['apps'], dict):
         raise ValueError('Invalid apps.lock; expected an apps object')
+    # Locks written before framework versioning have no evlet entry; serving then asks for evlet migrate.
+    framework = value.get('evlet')
+    if 'evlet' in value and (not isinstance(framework, dict) or set(framework) != {'version', 'schema'}
+                             or any(not isinstance(item, str) or not item for item in framework.values())):
+        raise ValueError('Invalid evlet entry in apps.lock')
     from .cli.project import valid_name
     for name, entry in value['apps'].items():
         valid_name(name)
@@ -376,7 +388,8 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     app = Application(database, auth=auth, policy=policy, ui=views, events=events, jobs=jobs,
                       reports=tuple(report for _, definition in definitions for report in definition.reports),
                       apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
-                      storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, **options)
+                      storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, ai=config.ai, **options)
+    app.managed_framework = True
     app.business.timezone = config.timezone
     # One key for connector secrets, two-step secrets and backup codes (evlet.secrets).
     from .secrets import SecretKey
@@ -402,7 +415,8 @@ def register_schedules(app, schedules):
     calendar_names = {schedule.name for schedule in schedules if isinstance(schedule, CalendarSchedule)}
     with app.database.transaction() as tx:
         for row in tx.connection.execute('SELECT name FROM evlet_calendar_schedules').fetchall():
-            if row['name'] not in calendar_names:
+            # Eva's scheduled tasks belong to people, not to an app release (evlet.eva).
+            if row['name'] not in calendar_names and not row['name'].startswith('eva_task_'):
                 # Only an active schedule is retired, so an operator-disabled one stays disabled when restored.
                 tx.connection.execute('UPDATE evlet_calendar_schedules SET retired=1 WHERE name=? AND retired=0 AND EXISTS (SELECT 1 FROM evlet_schedules WHERE name=? AND enabled=1)', (row['name'], row['name']))
                 tx.connection.execute('UPDATE evlet_schedules SET enabled=0 WHERE name=?', (row['name'],))
@@ -446,6 +460,11 @@ def load_runtime(root, name, *, port=8000, development=False, public=False):
     locked = require_consistent(path)
     if not locked['apps']:
         raise ValueError('Instance has no installed apps. Run evlet install APP --instance ' + name)
+    from .framework import state
+    if locked.get('evlet') != state():
+        recorded = locked.get('evlet', {}).get('version', 'a release before framework versioning')
+        raise ValueError(f'Evlet {state()["version"]} is installed but instance {name} was migrated with Evlet {recorded}; '
+                         f'stop serving and run evlet migrate {name}')
     packages = resolve_packages(root, sorted(locked['apps']))
     if {package.name for package in packages} != set(locked['apps']):
         raise ValueError('App dependencies changed; run evlet migrate before serving')

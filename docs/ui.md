@@ -85,6 +85,7 @@ Docs off it starts on the first list the role can open and hides the Docs links.
 | `/app/<model>/<id>/view` | Older record link; opens the record view |
 | `/settings/<page>`, `/settings/app/<app>` | Settings ([settings.md](settings.md)); `/settings` opens the last page |
 | `/settings/accounts` | Redirects to `/controls/users` |
+| `/eva`, `/eva/<chat>`, `/eva/tasks` | Eva's chat and scheduled tasks ([eva.md](eva.md)). Served only when config.py turns Eva on; the page asks `/api/_eva` and shows nothing of Eva to people without it |
 | `/reports/<name>` | Notice: reports are not shown in this interface |
 | Registered Python page routes | Served, then open Docs |
 

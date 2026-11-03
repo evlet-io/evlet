@@ -55,6 +55,17 @@ def parser():
     migrate.add_argument('--trust', action='store_true', help='Trust changed app source without prompting')
     migrate.add_argument('--recompute-posted', action='store_true',
                          help='Let Recompute operations recalculate posted records too; each changed one gets a journal entry')
+    migrate.add_argument('--allow-destructive', action='store_true',
+                         help='Let DropField delete the columns and values of retired fields; a backup is written first')
+    migrate.add_argument('--allow-maintenance', action='store_true',
+                         help='Let RunData steps declared with maintenance=True write confirmed, tracked and posted records; each is audited')
+    migrate.add_argument('--plan', action='store_true',
+                         help='Print the pending migrations and how they differ from the models; write nothing')
+    makemigration = commands.add_parser('makemigration', help="Write the migration --plan suggests into a flat app's migrations folder")
+    makemigration.add_argument('app')
+    makemigration.add_argument('--instance', required=True, help='The instance whose database the migration starts from')
+    makemigration.add_argument('--name', default='changes', help='Migration name after its number (default: changes)')
+    makemigration.add_argument('--trust', action='store_true', help='Trust changed app source without prompting')
     for name in ('serve', 'dev'):
         command = commands.add_parser(name, help='Serve an instance' if name == 'serve' else 'Develop with Python reloads and the bundled UI')
         if name == 'serve':
@@ -211,13 +222,43 @@ def main(argv=None):
                 print(f'Instance created: {create_instance(root, args.name)}')
             else:
                 raise ValueError('Provide an instance name or --list')
+        elif args.command == 'migrate' and args.plan:
+            from .install import plan
+            if args.recompute_posted or args.allow_destructive or args.allow_maintenance:
+                raise ValueError('--plan writes nothing; run migrate without --plan to use --recompute-posted, '
+                                 '--allow-destructive or --allow-maintenance')
+            result, suggestions, packages, steps = plan(root, args.instance, trust=args.trust, confirm=confirm)
+            print(f'Instance {args.instance}: plan only; nothing was written')
+            print(result.text(suggestion=False))
+            if steps:
+                print('Pending framework migrations (run after a backup):')
+                print('\n'.join(f'  {step.name}\n    {step.summary}' for step in steps))
+            for package in packages:
+                migration, code = suggestions[package.name]
+                if not code:
+                    continue
+                where = f'apps/{package.path.name}/migrations/m{migration}.py' if package.layout == 'flat' \
+                    else f'the migrations tuple in apps/{package.path.name}/{package.name}/migrations/__init__.py'
+                print(f'Suggested migration for {package.name} (save as {where}; review it and fill in any ...):')
+                print('\n'.join(('    ' + line).rstrip() for line in code.splitlines()))
+                if package.layout == 'flat':
+                    print(f'Or write it with: evlet makemigration {package.name} --instance {args.instance}')
+        elif args.command == 'makemigration':
+            from .install import makemigration
+            target, review = makemigration(root, args.app, args.instance, name=args.name, trust=args.trust, confirm=confirm)
+            print(f'Wrote {target}')
+            print('Edit the lines marked with ... or # before running evlet migrate.' if review else
+                  f'Review it, then run evlet migrate {args.instance}.')
         elif args.command in ('install', 'migrate'):
             from .install import install
             posted = args.command == 'migrate' and args.recompute_posted
             result = install(root, args.instance, app_name=args.name if args.command == 'install' else None, trust=args.trust, confirm=confirm,
-                             recompute_posted=posted)
+                             recompute_posted=posted, allow_destructive=args.command == 'migrate' and args.allow_destructive,
+                             allow_maintenance=args.command == 'migrate' and args.allow_maintenance)
             print(f'Instance {args.instance}: installed ' + ', '.join(result['apps']))
             print('Applied migrations: ' + (', '.join(result['migrations']) or 'none; schema is current'))
+            if result.get('framework'):
+                print('Framework migrations: ' + ', '.join(result['framework']))
             if posted:
                 print(f'Posted records recalculated: {result.get("posted", 0)}')
             if result['backup']:

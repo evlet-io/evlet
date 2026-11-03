@@ -34,6 +34,17 @@ ORIGINS = ('eva', 'schedule', 'mcp', 'api')
 GROUPS = ('create', 'update', 'confirm', 'action', 'destructive')
 OUTCOMES = ('ok', 'denied', 'failed', 'approval')
 KEEP_CALLS, KEEP_APPROVALS, APPROVAL_SECONDS = 90 * 86400, 30 * 86400, 86400
+# The call log. Framework step 0002_tool_calls creates it too, before moving the old MCP log in.
+CALLS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS evlet_tool_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, user_id INTEGER NOT NULL, "
+    "origin TEXT NOT NULL CHECK(origin IN ('eva','schedule','mcp','api')), client TEXT, client_id INTEGER, key_id INTEGER, run_id INTEGER, "
+    "tool TEXT NOT NULL, model TEXT, record_id INTEGER, kind TEXT NOT NULL CHECK(kind IN ('read','write')), "
+    "outcome TEXT NOT NULL CHECK(outcome IN ('ok','denied','failed','approval')), duration_ms INTEGER, inputs TEXT, error TEXT)",
+    'CREATE INDEX IF NOT EXISTS evlet_tool_call_at ON evlet_tool_calls(at)',
+    'CREATE INDEX IF NOT EXISTS evlet_tool_call_user ON evlet_tool_calls(user_id, at)',
+    'CREATE INDEX IF NOT EXISTS evlet_tool_call_client ON evlet_tool_calls(client_id, at)',
+    'CREATE INDEX IF NOT EXISTS evlet_tool_call_run ON evlet_tool_calls(run_id)',
+)
 # Text a file tool returns at most, and the largest file it reads.
 TEXT_LIMIT, FILE_LIMIT = 60_000, 2 * 1024 * 1024
 LOCAL_CLIENT = 'Local MCP connector'
@@ -217,14 +228,7 @@ class Tools:
         with self.database.transaction() as tx:
             connection = tx.connection
             for statement in (
-                "CREATE TABLE IF NOT EXISTS evlet_tool_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, user_id INTEGER NOT NULL, "
-                "origin TEXT NOT NULL CHECK(origin IN ('eva','schedule','mcp','api')), client TEXT, client_id INTEGER, key_id INTEGER, run_id INTEGER, "
-                "tool TEXT NOT NULL, model TEXT, record_id INTEGER, kind TEXT NOT NULL CHECK(kind IN ('read','write')), "
-                "outcome TEXT NOT NULL CHECK(outcome IN ('ok','denied','failed','approval')), duration_ms INTEGER, inputs TEXT, error TEXT)",
-                'CREATE INDEX IF NOT EXISTS evlet_tool_call_at ON evlet_tool_calls(at)',
-                'CREATE INDEX IF NOT EXISTS evlet_tool_call_user ON evlet_tool_calls(user_id, at)',
-                'CREATE INDEX IF NOT EXISTS evlet_tool_call_client ON evlet_tool_calls(client_id, at)',
-                'CREATE INDEX IF NOT EXISTS evlet_tool_call_run ON evlet_tool_calls(run_id)',
+                *CALLS_TABLE,
                 "CREATE TABLE IF NOT EXISTS evlet_tool_approvals (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, "
                 "origin TEXT NOT NULL, client TEXT, run_id INTEGER, tool TEXT NOT NULL, arguments TEXT NOT NULL, digest TEXT NOT NULL, summary TEXT NOT NULL, "
                 "status TEXT NOT NULL CHECK(status IN ('pending','approved','declined','used','expired')), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, decided_at INTEGER)",
@@ -232,12 +236,6 @@ class Tools:
                 'CREATE INDEX IF NOT EXISTS evlet_tool_approval_digest ON evlet_tool_approvals(digest)',
             ):
                 connection.execute(statement)
-            # The MCP call log before the Tool Engine: kept rows move over once, then the old table goes.
-            if self.database.columns(connection, 'evlet_mcp_calls'):
-                connection.execute("INSERT INTO evlet_tool_calls(at,user_id,origin,client,client_id,tool,model,kind,outcome) "
-                                   "SELECT k.at, m.user_id, 'mcp', m.client_name, k.client_id, k.tool, k.model, k.kind, k.outcome "
-                                   'FROM evlet_mcp_calls k JOIN evlet_mcp_clients m ON m.id=k.client_id ORDER BY k.id')
-                connection.execute('DROP TABLE evlet_mcp_calls')
         self.prune()
 
     def prune(self):

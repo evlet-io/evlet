@@ -1,7 +1,7 @@
 """A small consumer of Evlet's public API, not an accounting system."""
 
-from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Registry, Rule,
-                   Select, Text)
+from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Registry,
+                   Rule, Select, Series, Text)
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
 CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
@@ -23,11 +23,20 @@ class Customer(Model):
 class Invoice(Model):
     class Meta:
         description = "Keep each piece of work connected to a customer."
-        list_fields = ('reference', 'customer', 'total', 'status', 'posting_date')
+        title_field = 'number'
+        list_fields = ('number', 'reference', 'customer', 'total', 'status', 'posting_date')
+        search_fields = ('number', 'reference', 'status')
+        # The server names each new invoice INV-2026-00001, INV-2026-00002, ... in its create transaction.
+        # The year comes from the posting date, or the creation day without one. Controls, Naming can
+        # add series and set the counter.
+        naming = Naming('number', Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date')
 
+    # The invoice number. It is empty until the invoice is saved and read only after that.
+    number = Text(unique=True, max_length=40, label='Invoice number', help_text='Given by the naming series when the invoice is saved.')
     customer = Link(Customer, required=True)
     # help_text reads under the input; tooltip sits behind a ? icon at its right end.
-    reference = Text(required=True, unique=True, max_length=40, help_text="The number printed on the invoice.",
+    reference = Text(required=True, unique=True, max_length=40, label='Customer reference',
+                     help_text="The customer's reference for this invoice.",
                      tooltip="Use the customer's purchase order number if they ask for one.")
     # The currency comes from the customer the invoice is for.
     total = Currency(required=True, minimum="0.01", currency='customer.currency')

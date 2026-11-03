@@ -126,7 +126,9 @@ entry. `CalendarSchedule` (or `@cron`) takes a five-field numeric cron expressio
 default; nonexistent local times are skipped and ambiguous ones run once. Each
 release reconciles declared calendar schedules: a changed expression, zone, or task
 is applied, a removed schedule is disabled, and declaring it again re-enables it
-with a fresh due time. There is no separate scheduler service. Disable a schedule
+with a fresh due time. There is no separate scheduler service. Eva's scheduled tasks are
+calendar schedules named `eva_task_<id>` that belong to people, so releases leave them alone
+([eva.md](eva.md#scheduled-tasks)). Disable a schedule
 with `set_schedule_active(name, False)`; this does not cancel jobs already queued,
 and reconciliation never re-enables a schedule an operator disabled.
 

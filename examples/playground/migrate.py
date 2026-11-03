@@ -75,6 +75,11 @@ class Barcode(Model):
 
 migrations.append(Migration('0005_items', CreateModel(FrozenItem), CreateModel(Price), CreateModel(Barcode)))
 
+
+# Invoice numbers from the naming series (Invoice.Meta.naming). Invoices saved before this keep an empty number.
+migrations.append(Migration('0006_invoice_number', AddField('invoice', 'number', Text(unique=True, max_length=40))))
+
+
 class Employee(Model):
     """Frozen creation schema for the team demo."""
     name = Text(required=True, max_length=120)
@@ -84,7 +89,7 @@ class Employee(Model):
 
 # The frozen model is in no registry, so its Link to itself names the class directly.
 Employee.__fields__['reports_to'].target = Employee
-migrations.append(Migration('0006_employees', CreateModel(Employee)))
+migrations.append(Migration('0007_employees', CreateModel(Employee)))
 
 def legacy_registry():
     """Frozen Milestone 1 definitions used only to validate a legacy baseline."""
