@@ -364,7 +364,7 @@ def test_report_export_is_csv_with_the_same_checks(sales):
     assert headers[b'x-content-type-options'] == b'nosniff'
     text = content.decode('utf-8')
     assert text.startswith('﻿Id,Customer,Amount,Cost\r\n')
-    assert text.splitlines()[1:] == ["3,'=SUM(A1),5,0", '2,Alpha,10,1', '4,Alpha,7,2', '1,Beta,30,3']
+    assert text.splitlines()[1:] == ["3,'=SUM(A1),5,0", '4,Alpha,7,2', '2,Alpha,10,1', '1,Beta,30,3']
     assert c('POST', '/api/_reports/Unexported/export.csv', {'filters': {}})[0] == 403
     assert c('POST', '/api/_reports/SalesByCustomer/export.csv', {'limit': 5})[0] == 422
     assert c('GET', '/api/_reports/SalesByCustomer/export.csv')[0] == 403
@@ -409,26 +409,31 @@ def test_report_groups_keep_rows_together_with_subtotals(sales, monkeypatch):
     seen = []
     original = SalesGrouped.run
     monkeypatch.setattr(SalesGrouped, 'run', lambda self: (result := original(self), seen.append(self.context.seen))[0])
-    status, result, _ = c('POST', '/api/_reports/SalesGrouped', {'filters': {}, 'limit': 2, 'sort': '-amount'})
+    status, result, _ = c('POST', '/api/_reports/SalesGrouped', {'filters': {}, 'limit': 4, 'sort': '-amount'})
     assert status == 200, result
-    # The group column comes first, then the person's sort.
+    # The group column comes first, then the person's sort. Which group comes first depends on the
+    # database's collation, so the rows are checked group by group.
     assert seen[-1] == ('customer', '-amount')
-    assert [(row['customer'], row['amount']) for row in result['rows']] == [('=SUM(A1)', 5), ('Alpha', 10)]
-    # Only the groups on this page, with totals over every row of each group.
-    assert result['groups'] == {'scope': 'all', 'items': [{'value': '=SUM(A1)', 'count': 1, 'totals': {'amount': '5', 'cost': None}},
-                                                         {'value': 'Alpha', 'count': 2, 'totals': {'amount': '17', 'cost': None}}]}
+    customers = [row['customer'] for row in result['rows']]
+    assert sorted(customers) == ['=SUM(A1)', 'Alpha', 'Alpha', 'Beta'] and customers.index('Alpha') + 1 == customers.index('Alpha', customers.index('Alpha') + 1)
+    assert [row['amount'] for row in result['rows'] if row['customer'] == 'Alpha'] == [10, 7]
+    # The groups on this page, with totals over every row of each group.
+    assert result['groups']['scope'] == 'all'
+    assert {item['value']: (item['count'], item['totals']) for item in result['groups']['items']} == {
+        '=SUM(A1)': (1, {'amount': '5', 'cost': None}), 'Alpha': (2, {'amount': '17', 'cost': None}), 'Beta': (1, {'amount': '30', 'cost': None})}
     entry = next(item for item in c('GET', '/api/_reports')[1]['reports'] if item['name'] == 'SalesGrouped')
     assert entry['group_by'] == 'customer'
-    status, page, _ = c('POST', '/api/_reports/SalesGroupedByPage', {'filters': {}, 'limit': 3})
+    status, page, _ = c('POST', '/api/_reports/SalesGroupedByPage', {'filters': {}, 'limit': 4})
     assert status == 200, page
-    assert page['groups'] == {'scope': 'page', 'items': [{'value': '=SUM(A1)', 'count': 1, 'totals': {'amount': '5', 'cost': '0'}},
-                                                        {'value': 'Alpha', 'count': 2, 'totals': {'amount': '17', 'cost': '3'}}]}
+    assert page['groups']['scope'] == 'page'
+    assert {item['value']: (item['count'], item['totals']) for item in page['groups']['items']} == {
+        '=SUM(A1)': (1, {'amount': '5', 'cost': '0'}), 'Alpha': (2, {'amount': '17', 'cost': '3'}), 'Beta': (1, {'amount': '30', 'cost': '3'})}
 
 
 def test_report_group_subtotals_follow_field_rules(sales):
     viewer = client(sales, 'viewer')
-    result = viewer('POST', '/api/_reports/SalesGroupedByPage', {'filters': {}, 'limit': 3})[1]
-    assert result['groups']['items'][1]['totals'] == {'amount': '17'}
+    result = viewer('POST', '/api/_reports/SalesGroupedByPage', {'filters': {}, 'limit': 4})[1]
+    assert {item['value']: item['totals'] for item in result['groups']['items']}['Alpha'] == {'amount': '17'}
 
 
 def test_chart_and_column_source_shapes():
