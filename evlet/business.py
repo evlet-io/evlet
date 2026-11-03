@@ -129,6 +129,8 @@ class Business:
         self.assistants = Assistants(self)
         from .tools import Tools
         self.tools = Tools(self)
+        # Eva, when config.py turns AI on (Application(ai=AI(...))); None keeps every Eva route and table away.
+        self.eva = None
         self.actions, self.children, self.child_models = {}, {}, set()
         self.attachments = set(attachments)
         self.storage = storage if storage is not None else SQLiteStorage()
@@ -198,6 +200,8 @@ class Business:
         self.connectors.initialize()
         self.assistants.initialize()
         self.tools.initialize()
+        if self.eva is not None:
+            self.eva.initialize()
         self.mailboxes.initialize()
         self.storage.initialize(self.database)
         self.settings.initialize()
@@ -502,7 +506,7 @@ class Business:
             user = self.assistants.narrow(user)
         if user.access is not None:
             assistant = user.access.assistant is not None or user.access.origin is not None
-            if path.startswith(('/api/auth/', '/api/_settings/', '/api/_oauth/', '/api/_tools/approvals', '/api/_tools/calls')):
+            if path.startswith(('/api/auth/', '/api/_settings/', '/api/_oauth/', '/api/_eva', '/api/_tools/approvals', '/api/_tools/calls')):
                 raise AccessError(403, 'AI assistants cannot use this.' if assistant else 'API keys cannot be used here. Sign in instead.')
             # Tool calls are POST; the Tool Engine checks each write itself, and its run_report only reads.
             inner = scope.get('evlet.assistant') is not None
@@ -511,6 +515,10 @@ class Business:
                 raise AccessError(403, 'AI assistants can only read here.' if assistant else 'This key can only read.')
         if path == '/api/_tools' or path.startswith('/api/_tools/'):
             return self.tools.api(scope, body, user)
+        if path == '/api/_eva' or path.startswith('/api/_eva/'):
+            if self.eva is None:
+                raise AccessError(404, 'Route not found')
+            return self.eva.api(scope, body, user)
         if path == '/api/_settings/me/ai' or path.startswith(('/api/_settings/me/ai/', '/api/_oauth/')):
             return self.assistants.api(scope, body, user)
         if path == '/api/_settings/me/keys' or path.startswith('/api/_settings/me/keys/'):
