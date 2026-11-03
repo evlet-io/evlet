@@ -16,10 +16,12 @@ export interface RuntimeConfig {
   version: string;
   /** Where Docs are served on this host, or null when they are off. */
   docs: string | null;
+  /** The theme the server painted the page in (also on <html data-theme>): light, dark or system. */
+  theme: 'light' | 'dark' | 'system';
 }
 
 /** What the desk shell uses when a page has no block, such as the Vite development server. */
-const FALLBACK: RuntimeConfig = { frontend: 'evlet.desk', base: '/app', api: '/api', realm: 'desk', host: '', version: '', docs: '/docs' };
+const FALLBACK: RuntimeConfig = { frontend: 'evlet.desk', base: '/app', api: '/api', realm: 'desk', host: '', version: '', docs: '/docs', theme: 'system' };
 const PATH = /^\/(?:[a-z0-9][a-z0-9_-]*)?$/;
 
 export function readConfig(doc: Document = document): RuntimeConfig {
@@ -29,5 +31,6 @@ export function readConfig(doc: Document = document): RuntimeConfig {
   // Only one-segment paths are accepted, so the block cannot point the app at another origin.
   for (const key of ['base', 'api'] as const) if (!PATH.test(config[key])) config[key] = FALLBACK[key];
   if (config.docs !== null && !PATH.test(config.docs)) config.docs = FALLBACK.docs;
+  if (!['light', 'dark', 'system'].includes(config.theme)) config.theme = FALLBACK.theme;
   return config;
 }

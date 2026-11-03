@@ -20,9 +20,10 @@ import { ListPage } from './list-page';
 import { Connecting, LoginScreen, TwoStepScreen, type Challenge } from './login';
 import { rootModels } from './meta';
 import { openPalette } from './palette';
-import { applyTheme, Prefs } from './prefs';
+import { Prefs } from './prefs';
+import { resolveTheme } from '../ui/theme';
 import { RecordPage } from './record-page';
-import { applyMe, loadMe, PAGES as SETTINGS_PAGES, SettingsView, showCodes, type Me } from './settings';
+import { applyMe, chooseTheme, loadMe, PAGES as SETTINGS_PAGES, SettingsView, showCodes, type Me } from './settings';
 import { Shell } from './shell';
 import { useSlips } from './slips';
 
@@ -55,7 +56,6 @@ export function App(options: AppOptions): Node {
     if (!alive) return;
     context.peek()?.prefs.dispose();
     const prefs = options.storage === undefined ? new Prefs(current.user!.username) : new Prefs(current.user!.username, options.storage);
-    applyTheme('light');
     applyMe(settings);
     const links = apiLinks(api, schema);
     setLinkSource(links);
@@ -65,6 +65,7 @@ export function App(options: AppOptions): Node {
       ...newPageState(),
       openPalette: () => openPalette(ctx),
       toggleSidebar: () => prefs.collapsed.set(!prefs.collapsed.peek()),
+      toggleTheme: () => void chooseTheme(api, ctx.me, resolveTheme(ctx.me.peek()?.prefs.theme ?? 'system') === 'dark' ? 'light' : 'dark'),
       signOut,
     };
     session.set(current);
@@ -166,8 +167,7 @@ export function App(options: AppOptions): Node {
     context.peek()?.prefs.dispose();
     context.set(null);
     api.forget();
-    // The sign-in screen does not keep the last user's region or language.
-    applyTheme('system');
+    // The sign-in screen does not keep the last user's region or language; it keeps this device's theme.
     applyMe(null);
     error.set(message);
     session.set({ ...(session.peek() ?? { user: null }), user: null, setup: false });

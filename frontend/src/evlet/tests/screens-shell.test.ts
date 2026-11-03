@@ -110,8 +110,10 @@ describe('app shell', () => {
     const { host } = start([...adminRoutes()]);
     await until(() => expect(host.querySelector('.app')).not.toBeNull());
     const app = host.querySelector('.app')!;
-    expect(text(host.querySelector('.sidebar .brand'))).toBe('evlet');
-    expect(host.querySelector('.sidebar .brand .ev-logo')).not.toBeNull();
+    // The evlet.io artwork: the horizontal logo for each theme, and the mark the collapsed sidebar shows.
+    const brand = [...host.querySelectorAll<HTMLImageElement>('.sidebar .brand img')].map(img => [img.className, img.getAttribute('src'), img.alt]);
+    expect(brand).toEqual([['ev-lockup-light', '/assets/evlet-logo-primary.svg', 'Evlet'],
+      ['ev-lockup-dark', '/assets/evlet-logo-white.svg', 'Evlet'], ['ev-logo', '/assets/evlet-icon-blue.svg', 'Evlet']]);
     const appSwitch = host.querySelector<HTMLElement>('.sidebar .app-switch')!;
     const appName = text(appSwitch.querySelector('.as-text b'));
     expect(appName).not.toBe('');
@@ -135,7 +137,7 @@ describe('app shell', () => {
     expect(host.querySelector('.topbar > .mobile-only .icon-btn, .topbar > .mobile-only button')).not.toBeNull();
   });
 
-  it('toggles the sidebar with [, keeps the light theme, and signs out from the account menu', async () => {
+  it('toggles the sidebar with [ and signs out from the account menu', async () => {
     let signedOut = false;
     const { host, sent } = start([
       ['GET', /\/api\/auth\/session$/, () => signedOut ? recorded.session_anonymous : recorded.session],
@@ -148,9 +150,9 @@ describe('app shell', () => {
     expect(app.classList.contains('collapsed')).toBe(true);
     press(document.body, '[');
     expect(app.classList.contains('collapsed')).toBe(false);
-    // Light only for now; the top bar has no avatar or gear and the account area has no theme button.
-    expect(document.documentElement.dataset.theme).toBe('light');
-    expect(host.querySelector('.side-foot .icon-btn')).toBeNull();
+    // Without the person's settings (an older server) the page follows the device and has no theme button.
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(host.querySelector('.side-foot .theme-btn')).toBeNull();
     expect(host.querySelector('.topbar .avatar')).toBeNull();
 
     click(host.querySelector('.me'));

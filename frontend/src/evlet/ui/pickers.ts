@@ -180,6 +180,84 @@ export function Dropdown(props: DropdownProps): HTMLButtonElement & { open(typed
   return button;
 }
 
+// ---------- grouped search (field picker) ----------
+
+export interface GroupedChoice { value: string; label: string; group: string; hint?: string }
+
+export interface GroupedChoiceListProps {
+  choices: GroupedChoice[];
+  current: () => string | null;
+  onPick: (value: string) => void;
+  label: string;
+  /** At most this many matches are shown (default 100); typing narrows the rest. */
+  limit?: number;
+}
+
+/**
+ * A search box over a long list of choices in groups, such as a model's fields and then each
+ * child table's. Every word typed must appear in the choice's group, label or value. Only the
+ * first `limit` matches are drawn, so hundreds of choices stay quick. Arrows move, Enter picks.
+ */
+export function GroupedChoiceList(props: GroupedChoiceListProps): HTMLElement {
+  const listId = uid('gl'), optionId = (index: number) => `${listId}-${index}`, limit = props.limit ?? 100;
+  const haystacks = props.choices.map(choice => `${choice.group} ${choice.label} ${choice.value} ${choice.hint ?? ''}`.toLowerCase());
+  const query = cell('');
+  const found = derive(() => {
+    const words = query.get().toLowerCase().split(/\s+/).filter(Boolean);
+    return props.choices.filter((_, index) => words.every(word => haystacks[index].includes(word)));
+  });
+  const shown = derive(() => found.get().slice(0, limit));
+  const start = Math.max(0, props.choices.findIndex(choice => choice.value === untrack(props.current)));
+  const active = cell(start < limit ? start : 0);
+  const move = (to: number) => {
+    const count = shown.peek().length;
+    if (!count) return;
+    active.set((to + count) % count);
+    document.getElementById(optionId(active.peek()))?.scrollIntoView?.({ block: 'nearest' });
+  };
+  const pick = (index: number) => { const choice = shown.peek()[index]; if (choice) props.onPick(choice.value); };
+  const keys = (event: KeyboardEvent) => {
+    if (event.key === 'ArrowDown') { event.preventDefault(); move(active.peek() + 1); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); move(active.peek() - 1); }
+    else if (event.key === 'Enter') { event.preventDefault(); pick(active.peek()); }
+  };
+  const groups = () => {
+    const result: Array<{ group: string; items: Array<{ choice: GroupedChoice; index: number }> }> = [];
+    shown.get().forEach((choice, index) => {
+      if (result[result.length - 1]?.group !== choice.group) result.push({ group: choice.group, items: [] });
+      result[result.length - 1].items.push({ choice, index });
+    });
+    return result;
+  };
+  const input = html`<input class="input" role="combobox" aria-expanded="true" aria-controls=${listId} aria-autocomplete="list" autocomplete="off"
+    placeholder="Search fields" aria-label=${`Search ${props.label}`} aria-activedescendant=${() => shown.get().length ? optionId(active.get()) : null}
+    on:input=${(event: Event) => { query.set((event.target as HTMLInputElement).value); active.set(0); }} on:keydown=${keys}>` as HTMLInputElement;
+  const list = html`<div class="choice-list grouped" role="listbox" id=${listId} aria-label=${props.label}>${() => groups().map(entry => html`<div role="group"
+    aria-label=${entry.group}><div class="mh" aria-hidden="true">${entry.group}</div>${entry.items.map(({ choice, index }) => html`<div class="mi"
+      class:on=${() => active.get() === index} role="option" id=${optionId(index)} data-value=${choice.value} aria-selected=${() => String(props.current() === choice.value)}
+      on:pointerdown=${(event: Event) => event.preventDefault()} on:click=${() => pick(index)} on:mouseenter=${() => active.set(index)}>
+      <span class="ck">${() => props.current() === choice.value ? Icon('check', { size: 'sm' }) : null}</span><span class="grow">${choice.label}</span>${choice.hint
+        ? html`<span class="hint muted">${choice.hint}</span>` : null}</div>`)}</div>`)}</div>` as HTMLElement;
+  queueMicrotask(() => { input.focus(); document.getElementById(optionId(active.peek()))?.scrollIntoView?.({ block: 'nearest' }); });
+  return html`<div class="choice-pick">${input}${list}<div class="muted link-status" role="status">${() => !found.get().length ? 'No matches'
+    : found.get().length > shown.get().length ? `${found.get().length - shown.get().length} more: type to narrow` : ''}</div></div>` as HTMLElement;
+}
+
+/** A button showing the chosen choice that opens a GroupedChoiceList: the field of a filter row. */
+export function GroupedPicker(props: { value: () => string | null; choices: GroupedChoice[]; onChange: (value: string) => void; label: string;
+  placeholder?: string; className?: string }): HTMLButtonElement & { open(): void } {
+  const labelOf = (value: string) => props.choices.find(choice => choice.value === value)?.label ?? value;
+  const button = html`<button type="button" class=${`in-select input${props.className ? ` ${props.className}` : ''}`} aria-haspopup="listbox" aria-expanded="false"
+    aria-label=${() => props.value() === null ? props.label : `${props.label}: ${labelOf(props.value()!)}`}>${() => props.value() === null
+      ? html`<span class="tx muted">${props.placeholder ?? 'Choose one'}</span>` : html`<span class="tx">${labelOf(props.value()!)}</span>`}${Icon('chevron-down', { size: 'sm' })}</button>` as HTMLButtonElement & { open(): void };
+  button.open = () => openPopover(button, close => GroupedChoiceList({ choices: props.choices, current: props.value, label: props.label,
+    onPick: value => { close(); if (value !== untrack(props.value)) props.onChange(value); } }),
+  { role: 'dialog', label: props.label, className: 'select-pop field-pop', align: 'left' });
+  button.addEventListener('click', () => button.open());
+  button.addEventListener('keydown', event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); button.open(); } });
+  return button;
+}
+
 // ---------- calendar ----------
 
 export interface CalendarProps {

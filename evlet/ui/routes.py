@@ -2,6 +2,7 @@
 
 import ipaddress
 import re
+from http.cookies import CookieError, SimpleCookie
 from urllib.parse import parse_qs, parse_qsl, quote
 
 from ..business import Download
@@ -106,7 +107,29 @@ def _config(application, scope, host, frontend, base):
         docs = application.business.docs_path(scope, _user(application, scope) if routes.docs_roles else None)
     else:
         docs = routes.docs_path if routes.docs and name not in routes.sub_hosts() else None
-    return {'frontend': frontend, 'base': base, 'api': '/api', 'realm': routes.realm(host), 'host': name, 'docs': docs}
+    return {'frontend': frontend, 'base': base, 'api': '/api', 'realm': routes.realm(host), 'host': name, 'docs': docs,
+            'theme': _theme(application, scope)}
+
+
+THEMES = ('light', 'dark', 'system')
+
+
+def _theme(application, scope):
+    return page_theme(application.business, scope, _user(application, scope))
+
+
+def page_theme(business, scope, user):
+    """The theme a page is painted in before any script runs: the signed-in person's Settings choice,
+    else this browser's last one from the evlet_theme cookie the app leaves. Presentation only."""
+    if business is not None and user is not None:
+        return business.settings.theme(user)
+    cookie = SimpleCookie()
+    try:
+        cookie.load(dict(scope.get('headers', [])).get(b'cookie', b'').decode('latin1'))
+    except CookieError:
+        return 'system'
+    value = cookie['evlet_theme'].value if 'evlet_theme' in cookie else 'system'
+    return value if value in THEMES else 'system'
 
 
 def _user(application, scope):
