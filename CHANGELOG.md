@@ -5,6 +5,13 @@ say what to change. Evlet is not production ready.
 
 ## Unreleased
 
+- **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
+  follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
+  the default). The server writes the theme on `<html>` before the page paints, so nothing
+  flashes, and the sign-in page keeps the browser's last theme. The sidebar, account menu,
+  palette and Docs switch it. The config block gains `"theme"`. Components use colour tokens
+  only, and a test checks WCAG AA contrast of the token pairs in both themes
+  ([docs/ui-framework.md](docs/ui-framework.md#themes)).
 - **List filters like Frappe's.** The Filter button opens rows of field, condition and value,
   any number of them, combined with AND. The field picker searches hundreds of fields and each
   child table's fields; conditions follow the field type (like, in, between, timespan and more);

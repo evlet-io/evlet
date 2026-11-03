@@ -143,13 +143,16 @@ export class ApiClient {
       headers['X-Evlet-Request'] = '1';
       if (this.csrf) headers['X-CSRF-Token'] = this.csrf;
     }
-    if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+    // The server takes writes only as JSON (evlet/app.py answers 415 otherwise), so a write
+    // without a body (sign-out, mailbox sync) sends an empty object.
+    const body = options.body === undefined && ['POST', 'PATCH', 'PUT'].includes(method) ? {} : options.body;
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (options.ifMatch) headers['If-Match'] = options.ifMatch;
     const query = Object.entries(options.query ?? {}).filter(([, value]) => value !== undefined && value !== '');
     const url = this.url(path) + (query.length ? '?' + new URLSearchParams(query.map(([key, value]) => [key, String(value)])) : '');
     const { signal, release } = anySignal([options.signal, this.options.signal?.()]);
     try {
-      return await this.send<T>(method, path, url, headers, options, signal);
+      return await this.send<T>(method, path, url, headers, { ...options, body }, signal);
     } finally {
       release();
     }
