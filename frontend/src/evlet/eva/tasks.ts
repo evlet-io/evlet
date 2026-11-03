@@ -40,9 +40,9 @@ export function TasksPage(ctx: AppContext, status: Cell<EvaStatus | null>): HTML
           on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') openTask(ctx, eva, task.id, load); }}>
           <td><b>${task.name}</b>${task.allow_changes ? html` <span class="chip">Can make changes</span>` : null}</td>
           <td><code class="eva-code">${task.cron}</code> <span class="muted">${task.timezone}</span></td>
-          <td class="num">${task.active ? stamp(task.next_run_at) : html`<span class="muted">Paused</span>`}</td>
+          <td class="num">${task.active ? stamp(task.next_run_at) : html`<span class="muted">${task.paused_by_admin ? 'Paused by an administrator' : 'Paused'}</span>`}</td>
           <td>${task.last_status ? StatusPill({ label: `${RUN[task.last_status]?.[0] ?? task.last_status} ${stamp(task.last_run_at).slice(0, 5)}`, tint: RUN[task.last_status]?.[1] ?? 'slate' }) : html`<span class="muted">Not yet</span>`}</td>
-          <td>${Switch({ on: task.active, ariaLabel: `${task.name} on`, onChange: next => void toggle(task, next) })}</td></tr>`)}</tbody></table></div>`}
+          <td>${Switch({ on: task.active, ariaLabel: `${task.name} on`, disabled: Boolean(task.paused_by_admin), onChange: next => void toggle(task, next) })}</td></tr>`)}</tbody></table></div>`}
     ${when(() => !status.get()?.tasks, () => html`<p class="muted eva-small">This workspace doesn't run background jobs, so tasks can't run yet.</p>`)}
   </div>` as HTMLElement;
 }
@@ -57,9 +57,10 @@ function openTask(ctx: AppContext, eva: Eva, id: number, changed: () => Promise<
   openDrawer({ title: () => task.get()?.name ?? 'Task', icon: 'clock', tint: 'violet', className: 'eva-task-drawer',
     body: close => html`${() => { const t = task.get(); if (!t) return html`<p class="eva-none">Loading…</p>`;
       return html`<div class="eva-task">
-        <div class="eva-task-actions">${Button({ label: t.active ? 'Pause' : 'Resume', icon: t.active ? 'circle' : 'arrow-right', size: 'small',
+        ${t.paused_by_admin ? html`<p class="eva-quota eva-small">An administrator paused this task in Controls, under Jobs. Only they can resume it.</p>` : null}
+        <div class="eva-task-actions">${t.paused_by_admin ? null : Button({ label: t.active ? 'Pause' : 'Resume', icon: t.active ? 'circle' : 'arrow-right', size: 'small',
           onClick: () => void act(() => eva.changeTask(t.id, { active: !t.active }), t.active ? 'Paused' : 'Resumed') })}
-          ${Button({ label: 'Run now', icon: 'zap', size: 'small', onClick: () => void act(() => eva.runTask(t.id), 'Queued. The result shows up below when it has run.') })}
+          ${t.paused_by_admin ? null : Button({ label: 'Run now', icon: 'zap', size: 'small', onClick: () => void act(() => eva.runTask(t.id), 'Queued. The result shows up below when it has run.') })}
           ${Button({ label: 'Delete', icon: 'trash-2', size: 'small', variant: 'soft-danger', onClick: () => openModal({ title: `Delete ${t.name}?`, narrow: true, icon: 'trash-2', tint: 'rose',
             body: () => html`<p class="muted">It stops running. Chats from earlier runs stay.</p>`,
             footer: done => DialogFooter({ cancel: done, submit: { label: 'Delete task', variant: 'danger', onClick: async () => { done(); await act(() => eva.deleteTask(t.id), 'Task deleted'); close(); } } }) }) })}</div>

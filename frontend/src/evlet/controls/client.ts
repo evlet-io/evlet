@@ -127,6 +127,8 @@ export interface McpOverview { address: string; clients: AssistantRow[]; totals:
 export interface EvaConfig {
   configured: boolean; active_users: number; allowed_users: number; jobs: boolean; settings: Record<string, unknown>;
   provider?: string; models?: string[]; connector?: { saved: boolean; status: string | null } | null; tools?: Array<{ name: string; kind: string }>;
+  /** Models with no rate: an AED allowance refuses their requests until one is set. */
+  missing_rates?: string[];
 }
 export interface EvaUsage {
   period: string; from: string; to: string; note: string; limit: { amount: string | number | null; unit: string; period: string };

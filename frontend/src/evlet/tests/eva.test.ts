@@ -115,6 +115,14 @@ describe('Eva', () => {
     expect(requests(sent, 'POST', /\/api\/_eva\/tasks$/)[0].body).toMatchObject({ cron: '0 9 * * 1', allow_changes: false, name: 'Review my overdue invoices' });
     await until(() => expect(text(host)).toContain('Review my overdue invoices'));
   });
+
+  it("shows an administrator's pause and offers no way around it", async () => {
+    const task = { id: 2, name: 'Weekly', instructions: 'Summarise.', cron: '0 9 * * 1', timezone: 'Asia/Dubai', active: false, paused_by_admin: true,
+      allow_changes: false, created_at: 1, last_run_at: null, last_status: null, next_run_at: null };
+    const { host } = start(evaRoutes([['GET', /\/api\/_eva\/tasks$/, reply({ items: [task], limit: 10, jobs: true })]]), '/eva/tasks');
+    await until(() => expect(text(host)).toContain('Paused by an administrator'));
+    expect((host.querySelector('[aria-label="Weekly on"]') as HTMLButtonElement).disabled).toBe(true);
+  });
 });
 
 describe('Eva Markdown', () => {

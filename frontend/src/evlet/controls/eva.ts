@@ -70,6 +70,7 @@ export function EvaSettingsPage(ctx: ControlsContext): HTMLElement {
           ${row('choose_model', 'Let people choose a model', 'Off: everyone uses the default model.', Switch({ on: () => get<boolean>('choose_model'), ariaLabel: 'Let people choose a model', onChange: next => set('choose_model', next) }))}
           ${c.connector ? row(null, 'API key', 'Stored encrypted with your other connector secrets and never shown again. Test or replace it under Connectors.',
             html`<span class="ctl-icode">${c.connector.saved ? 'sk-••••••••••••' : 'Not set'}</span><a class="btn sm" href=${ctx.router.href('connectors', {})}>Open Connectors</a>`) : null}</section>
+        ${c.missing_rates?.length ? Callout('warn', 'info', `No rate yet for ${c.missing_rates.join(', ')}. While an allowance is in AED, Eva refuses requests to a model without a rate, because their cost can't be counted. Set the rates below.`) : null}
         <section class="ctl-card"><div class="ctl-card-head"><div><h2>Allowances</h2><p>Eva stops before a new request would go over a limit. Amounts are estimates from the rates below.</p></div></div>
           ${row('instance_limit', 'Whole instance', 'Shared by everyone, scheduled tasks included.', limit('instance_limit', 'Instance limit'))}
           ${row('user_limit', 'Each person', 'The default for everyone. Days, weeks and months follow the instance time zone; weeks start on Monday.', limit('user_limit', 'Per person limit'))}

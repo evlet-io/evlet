@@ -30,6 +30,8 @@ export interface RunEvent { id: number; type: string; at: number; [key: string]:
 export interface Library { records: Array<{ model: string; record_id: number; file_id: number; name: string; size: number }>; chats: Array<{ id: number; name: string; size: number; conversation: string | null }> }
 export interface Task {
   id: number; name: string; instructions: string; cron: string; timezone: string; active: boolean; allow_changes: boolean; created_at: number;
+  /** Paused by an administrator in Controls, under Jobs: only they can resume it. */
+  paused_by_admin?: boolean;
   last_run_at: number | null; last_status: string | null; next_run_at: number | null;
   runs?: Array<{ id: number; at: number; status: 'running' | 'done' | 'failed' | 'skipped'; conversation_id: number | null; error: string | null; cost: string }>;
 }
