@@ -1,5 +1,7 @@
 """Finite-v1 documents through the authenticated HTTP routes on real SQLite."""
 
+import re
+
 import pytest
 
 from evlet import (AddField, Migration, Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Text, Integer, Rule,
@@ -642,5 +644,6 @@ def test_link_lookups_query_each_record_once_per_settle(tmp_path):
         resolve_lookups(context, mixed)
         snap = mixed.snapshot()
         assert snap['grace'] == '4' and snap['_states']['other_grace']['code'] == 'COMPUTE_INPUT_MISSING'
-        assert len(statements) == 2 and '999' not in str(statements[1:])
+        # Ids are partly random, so match 999 as a whole number, not a digit run inside another id.
+        assert len(statements) == 2 and not re.search(r'\b999\b', str(statements[1:]))
         context._tx.connection.set_trace_callback(None)
