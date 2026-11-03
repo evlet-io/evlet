@@ -87,6 +87,12 @@ class Database:
         from .migrations import migrate
         return migrate(self, migrations, recompute_posted=recompute_posted)
 
+    def plan(self, migrations):
+        """What migrate(migrations) would do, without writing: a MigrationPlan whose text() lists the pending
+        migrations and any difference between them and the models."""
+        from .migrations import plan
+        return plan(self, migrations)
+
     @contextmanager
     def transaction(self):
         with self._connection() as connection:

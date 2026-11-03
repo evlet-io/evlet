@@ -47,6 +47,8 @@ evlet serve acme --port 8000
 evlet dev --instance acme
 evlet dev-link
 evlet migrate acme --trust
+evlet migrate acme --plan --trust
+evlet makemigration people --instance acme --name dependents --trust
 evlet effects check acme
 evlet journal verify acme
 evlet routes acme
@@ -72,6 +74,14 @@ asks in a terminal; automation must pass `--instance`. Development rebuilds/relo
 Python, TS/JS and configuration changes, including file additions/deletions, and
 runs the existing queue. It never applies model migrations
 implicitly. Stop the server and run `migrate` after adding a migration.
+`migrate --plan` writes nothing: it builds the apps against a temporary copy of the
+instance database and prints the pending migrations, each model, field and property that
+differs from the migrations, and for each app a suggested migration to review
+([model-engine.md](model-engine.md#planning-a-migration)). `evlet makemigration <app>
+--instance <instance>` writes that suggestion into a flat app's `migrations/` folder as
+`m<number>_<name>.py` (`--name` sets the name, default `changes`). It refuses when nothing
+changed and never overwrites a file. Review the file, fill in any `...` or `#` note, then run
+`migrate`. Like `migrate`, both import the apps, so changed sources need `--trust`.
 `migrate --recompute-posted` lets the `Recompute` operations of that run recalculate posted
 records too; it prints how many changed, and each one gets a journal entry
 ([model-engine.md](model-engine.md#recalculating-stored-values)). Without the flag, posted

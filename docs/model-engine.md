@@ -278,6 +278,53 @@ The current model definitions must describe the target schema, including
 `AddIndex(..., unique=True)` adds a uniqueness constraint. Keep historical field
 and model definitions in migration files unchanged. Do not point an old
 `CreateModel` operation at a model definition that will keep changing.
+Migrations compare stored fields only, so a frozen class may have any Python name:
+`CreateModel` uses its `storage_name` (or lowercased class name) and its fields.
+
+### Adding a child table
+
+`AddTable(parent, name, ChildClass)` adds an owned table to an existing model. `parent`
+is the owning model's storage name, `name` the `Table` attribute and `ChildClass` a frozen
+copy of the row model. The engine adds the hidden owner Link and row position itself, the
+same way the registry does for `Table(ChildClass)`, so the migration never declares
+`evlet_owner` or `evlet_position`.
+
+```python
+from evlet import AddTable, Child, Integer, Migration, Text
+
+
+class Dependent(Child):          # frozen copy of Employee.Dependent
+    full_name = Text(required=True, max_length=120)
+    age = Integer()
+
+
+migration = Migration("0002_dependents", AddTable("employee", "dependents", Dependent))
+```
+
+Pass `storage_name=` or `owner_field=` when the live `Table(...)` sets them. A nested
+table (a table inside the new row model) is its own `AddTable` whose parent is the new
+table's storage name, such as `AddTable("employee_dependents", "documents", Document)`.
+
+### Planning a migration
+
+`database.plan(migrations)` reports what `migrate(migrations)` would do without writing
+anything. On SQLite it opens the file read-only; on PostgreSQL it only reads.
+
+```python
+plan = database.plan(migrations)
+print(plan.text())
+```
+
+`MigrationPlan.pending` lists the migrations not yet applied. `differences` lists each
+`(model, field, text)` that still separates the schema those migrations produce from the
+current models, for example `employee.days: type is 'integer' after the migrations and
+'decimal' in the models`. `suggestion` is Python for one migration covering what can be
+inferred: new models (`CreateModel` with a frozen class), new child tables (`AddTable`),
+new fields (`AddField` with a frozen copy of the field), a single renamed field
+(`RenameField`) and new indexes (`AddIndex`). A required field without a fixed default gets
+`backfill=...`, and changes it cannot write become `#` comments; fill both in by hand.
+`migrate()` refuses a mismatch with the same list of differences, so the error names the
+model, field and property that differs.
 
 Migrations run under one SQLite write transaction. The complete pending batch,
 its history entries, and the schema snapshot commit together after structure,
@@ -299,7 +346,7 @@ also create or adopt the current baseline explicitly. Without a declared list,
 A legacy database without schema metadata must first be initialized with its
 original models, then explicitly upgraded.
 
-Supported operations are deliberately bounded: add a model, add a field, rename
+Supported operations are deliberately bounded: add a model, add a child table, add a field, rename
 a field, add an index, and recalculate stored values. Fixed backfills are validated; required added fields
 need a value. Callable or NUL-containing backfills, non-null Link backfills, removals, arbitrary
 type changes, decimal scale changes, and reverse migrations are not supported.

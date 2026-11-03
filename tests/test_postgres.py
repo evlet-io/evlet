@@ -825,3 +825,13 @@ def test_framework_ledger_and_steps_match_sqlite(pg_dsn, monkeypatch):
     with db.transaction() as tx:
         assert tx.connection.execute('SELECT count(*) FROM evlet_framework_migrations').fetchone()[0] == 2
         assert tx.connection.execute("SELECT to_regclass('evlet_moved_calls')").fetchone()[0] is not None
+def test_postgres_plan_and_add_table_with_confirmed_documents(pg_dsn):
+    from tests.test_migration_plan import check_plan_and_add_table
+
+    def make(registry, migrations, migrate=False, plan=False):
+        database = PostgreSQLDatabase(pg_dsn, registry, migrations=migrations)
+        if plan:
+            return database.plan(migrations)
+        database.migrate(migrations) if migrate else database.initialize()
+        return database
+    check_plan_and_add_table(make)
