@@ -9,7 +9,7 @@ native panels), which stay tested but are not rendered. Keep login, Docs after s
 and generated model screens working. Read `docs/ui.md`, `docs/ui-framework.md` and `docs/routing.md` for
 the routes, the public UI API and its boundaries. Read
 `docs/business-capabilities.md`, `docs/finite-calculations.md`, `docs/tenancy-deployment.md`,
-`docs/jobs-realtime.md`, and `docs/connector.md` for public APIs and permission
+`docs/jobs-realtime.md`, `docs/connector.md`, `docs/tools.md`, and `docs/eva.md` for public APIs and permission
 boundaries. Read `docs/postgresql.md`, `docs/performance.md`, and
 `docs/production-operations.md` for adapter limits and validation. Connector writes must use the existing
 authenticated HTTP routes;

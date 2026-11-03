@@ -94,7 +94,7 @@ link. Links exist only under `evlet playground` and `evlet dev`, never under
 
 PostgreSQL and S3 are available as `evlet[postgres]` and `evlet[s3]`. The existing
 [tenant deployment](docs/tenancy-deployment.md), [jobs and live updates](docs/jobs-realtime.md),
-[connector](docs/connector.md), [PostgreSQL](docs/postgresql.md) and
+[connector](docs/connector.md), [Tool Engine](docs/tools.md), [Eva](docs/eva.md), [PostgreSQL](docs/postgresql.md) and
 [operations](docs/production-operations.md) guides describe their limits.
 No database server, Redis, Docker or worker is required for a local SQLite app.
 
