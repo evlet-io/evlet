@@ -31,6 +31,7 @@
     "DateTime": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False, tracking='value')",
     "Day": "class(field)",
     "Decimal": "class(*, scale=4, minimum=None, maximum=None, rounding=None, **kwargs)",
+    "DevSignIn": "class(app, *, announce=False, user=None, create_admin=False)",
     "Dialog": "class(**values)",
     "Docs": "class(enabled: bool = True, path: str = '/docs', roles: tuple = ()) -> None",
     "Duration": "class(*, minimum=0, **kwargs)",

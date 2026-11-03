@@ -14,7 +14,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Version 0.3.0.dev0.** Generated apps and the examples now require
   `evlet>=0.3.0.dev0,<0.4`, because a `<0.3` range does not match 0.3 pre-releases. Apps
   that declare `evlet>=0.2.0,<0.3` must widen the range to install on `main`.
-
+- **`DevSignIn` export.** The root exports gain `DevSignIn`, which serves the one-time
+  development sign-in links of `evlet dev` and `evlet playground` ([docs/cli.md](docs/cli.md#development-sign-in-links)).
+  Never wrap an application you serve with it.
 - **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
   follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
   the default). The server writes the theme on `<html>` before the page paints, so nothing
