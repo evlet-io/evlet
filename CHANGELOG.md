@@ -21,6 +21,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **`DevSignIn` export.** The root exports gain `DevSignIn`, which serves the one-time
   development sign-in links of `evlet dev` and `evlet playground` ([docs/cli.md](docs/cli.md#development-sign-in-links)).
   Never wrap an application you serve with it.
+- **Team and hierarchy row scopes.** New root exports `Hierarchy` and `any_of`. `Hierarchy(model, parent=...)` declares a reporting tree, and
+  `Hierarchy.team(field)` is a row scope over the user's linked record and everyone below it at any
+  depth, resolved in SQL with a recursive query on SQLite and PostgreSQL. `any_of(...)` combines
+  row scopes and filter objects with OR. They apply on every surface a row scope covers
+  ([docs/business-capabilities.md](docs/business-capabilities.md#team-and-hierarchy-scopes)). List pages
+  now check Link values for the whole page at once instead of per row.
+- **Account links are audited.** `LocalAuth.link_user` and `unlink_user` take an `actor` and write
+  each change to the Controls audit log (area Users); `evlet link-user` records `cli`.
 - **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
   follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
   the default). The server writes the theme on `<html>` before the page paints, so nothing

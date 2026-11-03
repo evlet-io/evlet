@@ -199,6 +199,59 @@ though its statement count does not. At 1,000 rows that is about 75 ms on this m
 A detail reads every readable row to compute its ETag, then embeds the first 100.
 These are local measurements of one workload, not capacity guarantees.
 
+## Team row scopes
+
+A `Hierarchy.team` scope (see [business-capabilities.md](business-capabilities.md#team-and-hierarchy-scopes))
+is one non-correlated `IN (WITH RECURSIVE ...)` subquery. The database computes the team once
+per statement, not once per row: SQLite materializes it (`MATERIALIZE evlet_team`) and finds
+each level with the parent index; PostgreSQL plans a `Recursive Union` without a per-row
+`SubPlan`. The recursive step joins on `parent >= id AND parent <= id`. PostgreSQL cannot hash
+that join, so it walks the parent index level by level. With a plain `=` join it guessed ten
+rows per level, chose a hash join and scanned the whole employee table at every level: 840 ms
+for a 500-level chain of 10,000 employees, against 1.8 ms with the range join. SQLite plans
+both forms the same. Declare the parent Link with `index=True`; without it each level scans
+the table on both databases.
+
+Each statement that applies the scope recomputes the team, so its cost grows with the team
+size. A list page applies it to the page, the count and one batched Link check per target
+model (list pages serialize their rows in one batch). A single-record check (detail, write,
+action, attachment) also computes the whole team. `tests/test_hierarchy_scopes.py` asserts the
+SQLite plan; `tests/test_postgres.py` asserts the PostgreSQL plan and that a manager with 150
+indirect reports sees exactly their team in lists and aggregates.
+
+Reproduce from the checkout (a temporary SQLite file, or an empty PostgreSQL database named
+by `EVLET_BENCHMARK_DSN`; authenticated ASGI requests, no socket):
+
+```sh
+.venv/bin/python scripts/benchmark_hierarchy.py
+.venv/bin/python scripts/benchmark_hierarchy.py --postgres
+```
+
+The data set has 10,000 employees with 10 leave rows each (100,000 rows): a manager over a
+chain 500 levels deep, a manager over 5,000 reports in a ten-way tree four levels deep, and
+4,498 others reporting to the chief. A leaf sees one employee. Each case checks the
+returned total against the expected team.
+
+### Local results, 3 November 2026
+
+Apple M3, 8 CPU cores, 16 GiB RAM, macOS 27.0.1, Python 3.12.16, SQLite 3.54.1, PostgreSQL
+14.18 on the same machine with default settings. 20 runs per case, wall time per request
+including the session check, median and p95.
+
+| Case | SQLite median | SQLite p95 | PostgreSQL median | PostgreSQL p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Deep chain (501 people): leave page of 50 and count | 10.0 ms | 17.0 ms | 14.9 ms | 22.1 ms |
+| Deep chain: leave aggregate (count, sum) | 7.5 ms | 20.2 ms | 6.9 ms | 26.8 ms |
+| Deep chain: employee page | 7.8 ms | 19.7 ms | 10.0 ms | 18.4 ms |
+| Wide tree (5,001 people, 50,010 leave rows): leave page and count | 25.8 ms | 57.1 ms | 56.9 ms | 146.0 ms |
+| Wide tree: leave aggregate | 17.9 ms | 31.2 ms | 28.1 ms | 83.9 ms |
+| Wide tree: employee page | 21.3 ms | 23.0 ms | 32.8 ms | 41.0 ms |
+| Leaf (1 person): leave page and count | 5.6 ms | 7.3 ms | 7.1 ms | 11.6 ms |
+
+Before list pages serialized their rows in one batch, each row's Link check recomputed the
+team: the wide tree's leave page took 315 ms on SQLite (50 team computations). These are
+local measurements of one synthetic workload, not capacity guarantees.
+
 ## Unpost dependents
 
 Before an unpost, the engine looks for live records that depend on the record
