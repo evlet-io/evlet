@@ -19,7 +19,8 @@ from .auth import AccessError, KeyAccess, User, client_network
 from .connector import ConnectorError, strict_json
 from .controls import ADMIN_ONLY, NOT_FOUND, audit
 from .database import ConflictError, NotFoundError
-from .mcp import BY_NAME, SUPPORTED, MCPServer
+from .mcp import SUPPORTED, MCPServer
+from .tools import Dispatch
 from .models import ValidationError
 
 ACCESS_SECONDS, REFRESH_SECONDS, CODE_SECONDS, KEEP = 3600, 30 * 86400, 300, 30 * 86400
@@ -28,6 +29,7 @@ ACCESS = re.compile(r'evm_[A-Za-z0-9_-]{43}')
 VERIFIER = re.compile(r'[A-Za-z0-9._~-]{43,128}')
 CHALLENGE = re.compile(r'[A-Za-z0-9_-]{43}')
 OFF = 'AI access is turned off for this workspace.'
+NOT_ALLOWED = "Your administrator hasn't allowed you to connect AI assistants. Ask them to turn on Allow MCP for you in Controls."
 AREA = 'MCP'
 
 
@@ -60,66 +62,30 @@ def redirect_uri_ok(value):
 
 
 class LocalClient:
-    """The tools' API client inside the application: each request goes through Business.dispatch as the assistant's user."""
+    """The MCP server's API client inside the application: each request goes through Business.dispatch as the assistant's user."""
 
     def __init__(self, business, scope, user):
-        self.business, self.scope, self.user = business, scope, user
-        self.host = dict(scope.get('headers', [])).get(b'host', b'')
+        self.dispatch = Dispatch(business, scope, user)
 
     def get(self, path):
-        return self.request('GET', path)[0]
+        return self.dispatch.get(path)
 
     def request(self, method, path, body=None):
-        from .app import HTTPError
-        route, _, query = path.partition('?')
-        inner = {**self.scope, 'method': method, 'path': route, 'query_string': query.encode('ascii'),
-                 'headers': [(b'host', self.host), (b'x-evlet-request', b'1')], 'evlet.assistant': self.user}
-        try:
-            status, payload, _ = self.business.dispatch(inner, None if method in ('GET', 'DELETE') else json.loads(json.dumps(body or {})))
-        except (AccessError, HTTPError) as exc:
-            raise ConnectorError(exc.status, exc.message) from None
-        except ValidationError as exc:
-            raise ConnectorError(422, 'Validation failed', exc.errors) from None
-        except NotFoundError:
-            raise ConnectorError(404, 'Record not found') from None
-        except ConflictError as exc:
-            raise ConnectorError(409, str(exc)) from None
-        if status >= 400:
-            raise ConnectorError(status, payload.get('error', 'Request failed') if isinstance(payload, dict) else 'Request failed')
-        return (None if status == 204 else payload), None
+        return self.dispatch(method, path, body)[0], None
 
 
 class RemoteServer(MCPServer):
-    """One HTTP request of a connected assistant. Settings come from Controls; calls are counted per client."""
-    no_writes = "This assistant can't make changes. You can allow it in Settings, under AI assistants."
+    """One HTTP request of a connected assistant. The Tool Engine applies Controls and counts calls per client."""
+    no_writes = "This assistant can't make changes. You can allow it in Settings, under AI."
     instructions = 'Each call acts as the person who approved this assistant.'
 
-    def __init__(self, assistants, client, row):
+    def __init__(self, client, row):
         super().__init__(client, allow_writes=bool(row['allow_changes']))
-        settings = assistants.settings()
-        self.assistants, self.row, self.call_id = assistants, row, None
-        self.policy = {'writes': settings['mcp.allow_writes'], 'rate': settings['mcp.rate'], 'disabled_tools': settings['mcp.disabled_tools']}
         # Streamable HTTP without sessions: every request after initialize stands on its own.
         self.state = 'ready'
 
-    def assistant(self, capabilities=None):
-        return self.policy
-
-    def limit(self, name, values, rate):
-        self.call_id = self.assistants.count(self.row['id'], name, values.get('model'), rate)
-
-    def call(self, name, values):
-        self.call_id = None
-        try:
-            return super().call(name, values)
-        except Exception as exc:
-            denied = getattr(exc, 'status', None) == 403
-            if self.call_id is not None:
-                self.assistants.outcome(self.call_id, 'denied' if denied else 'failed')
-            elif denied and name in BY_NAME:
-                # Refused by the workspace settings (a disabled tool, writes off) before it was admitted.
-                self.assistants.count(self.row['id'], name, values.get('model') if isinstance(values, dict) else None, None, 'denied')
-            raise
+    def limit(self):
+        pass
 
 
 class Assistants:
@@ -134,7 +100,7 @@ class Assistants:
         self.prune()
 
     def prune(self):
-        """Remove calls and signed-out connections after 30 days, and registrations nobody connected within a day.
+        """Remove signed-out connections after 30 days, and registrations nobody connected within a day (calls: evlet.tools).
         Runs at start and at most once an hour after that, whether or not assistants are used."""
         now = time.time()
         if now - getattr(self, 'pruned', 0.0) < 3600:
@@ -143,18 +109,25 @@ class Assistants:
         now = int(now)
         with self.database.transaction() as tx:
             connection = tx.connection
-            connection.execute('DELETE FROM evlet_mcp_calls WHERE at<?', (now - KEEP,))
             connection.execute('DELETE FROM evlet_mcp_clients WHERE revoked_at<?', (now - KEEP,))
             connection.execute('DELETE FROM evlet_oauth_codes WHERE expires<=?', (now,))
             connection.execute('DELETE FROM evlet_mcp_tokens WHERE expires<=?', (now,))
             connection.execute('DELETE FROM evlet_oauth_clients WHERE created_at<? AND NOT EXISTS '
                                '(SELECT 1 FROM evlet_mcp_clients c WHERE c.oauth_client=evlet_oauth_clients.id)', (now - 86400,))
 
+    def allowed(self, user_id):
+        """Allow MCP on the person (Controls, Users)."""
+        with self.database._connection() as connection:
+            row = connection.execute('SELECT allow_mcp FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+        return row is not None and bool(row[0])
+
     def narrow(self, user, row=None):
         """The user an assistant acts as: never more than the person, minus hidden models and apps left out."""
         settings = self.settings()
         if not settings['mcp.enabled']:
             raise AccessError(403, OFF)
+        if not self.allowed(user.id):
+            raise AccessError(403, NOT_ALLOWED)
         hidden = set(settings['mcp.hidden_models'])
         apps = None if row is None or row['apps'] is None else set(json.loads(row['apps']))
         app_of = self.business.controls.app_of
@@ -204,8 +177,13 @@ class Assistants:
                          'authorization_response_iss_parameter_supported': True}, []
         self.prune()
         if path == '/_/oauth/authorize':
+            from .ui.routes import page_theme
             from .ui.serving import static_response
-            response = static_response('/')
+            try:
+                user = self.business.auth.session(scope)[0]
+            except AccessError:
+                user = None
+            response = static_response('/', theme=page_theme(self.business, scope, user))
             if response is None:
                 raise AccessError(404, 'UI assets are not built. Run the frontend production build.')
             return response
@@ -414,27 +392,11 @@ class Assistants:
             return 202, None  # A client's reply; this server sends no requests, so there is nothing to match it with.
         if isinstance(message, dict) and message.get('method') != 'tools/call' and not self.auth._count(f"mcp:{row['id']}", LIGHT_RATE):
             return 429, MCPServer.error(message.get('id') if type(message.get('id')) in (str, int) else None, -32000, 'Too many requests. Try again in a minute.')
-        server = RemoteServer(self, LocalClient(self.business, scope, user), row)
+        server = RemoteServer(LocalClient(self.business, scope, user), row)
         if isinstance(message, dict) and message.get('method') == 'initialize':
             server.state = 'new'
         output = server.message(message)
         return (202, None) if output is None else (200, output)
-
-    def count(self, client_id, tool, model, rate, outcome='ok'):
-        """Admit one tool call within the per-client rate (None: record a refusal), and record it. Returns the call's row."""
-        now = int(time.time())
-        with self.database.transaction() as tx:
-            connection = tx.connection
-            if rate is not None and connection.execute('SELECT count(*) FROM evlet_mcp_calls WHERE client_id=? AND at>?', (client_id, now - 60)).fetchone()[0] >= rate:
-                raise ConnectorError(429, f'Use at most {rate} tool calls per minute.')
-            connection.execute('UPDATE evlet_mcp_clients SET calls=calls+1, last_used=? WHERE id=?', (now, client_id))
-            kind = 'read' if BY_NAME[tool]['annotations']['readOnlyHint'] else 'write'
-            return connection.execute('INSERT INTO evlet_mcp_calls(client_id,at,tool,model,kind,outcome) VALUES (?,?,?,?,?,?)',
-                                      (client_id, now, tool, model if isinstance(model, str) else None, kind, outcome)).lastrowid
-
-    def outcome(self, call_id, outcome):
-        with self.database.transaction() as tx:
-            tx.connection.execute('UPDATE evlet_mcp_calls SET outcome=? WHERE id=?', (outcome, call_id))
 
     # ---------- consent, the personal page and Controls ----------
 
@@ -469,6 +431,8 @@ class Assistants:
                 or type(body.get('approve')) is not bool or type(body.get('allow_changes', False)) is not bool:
             raise ValidationError({'_form': 'Send query, approve and allow_changes'})
         client, params = self.request(body['query'].encode('ascii', 'replace'), origin)
+        if body['approve'] and not self.allowed(user.id):
+            raise AccessError(403, NOT_ALLOWED)
         if not body['approve']:
             return {'redirect': self.back(params, origin, error='access_denied')}
         with self.database._connection() as connection:
@@ -494,11 +458,12 @@ class Assistants:
         with self.database._connection() as connection:
             clients = [dict(row) for row in connection.execute('SELECT id, client_name, created_at, last_used, calls, allow_changes, apps FROM evlet_mcp_clients '
                                                                 'WHERE user_id=? AND revoked_at IS NULL ORDER BY id DESC', (user.id,))]
-            requests = [dict(row) for row in connection.execute('SELECT k.at, m.client_name, k.tool, k.model, k.kind, k.outcome FROM evlet_mcp_calls k '
-                                                                 'JOIN evlet_mcp_clients m ON m.id=k.client_id WHERE m.user_id=? AND k.at>? ORDER BY k.id DESC LIMIT 50', (user.id, int(time.time()) - KEEP))]
+            requests = [dict(row) for row in connection.execute("SELECT at, client AS client_name, tool, model, kind, outcome FROM evlet_tool_calls "
+                                                                 "WHERE user_id=? AND origin IN ('mcp','eva','schedule') AND at>? ORDER BY id DESC LIMIT 50",
+                                                                 (user.id, int(time.time()) - KEEP))]
         for item in clients:
             item['allow_changes'], item['apps'] = bool(item['allow_changes']), None if item['apps'] is None else json.loads(item['apps'])
-        return {'enabled': settings['mcp.enabled'], 'writes': settings['mcp.allow_writes'], 'address': origin + '/_/mcp',
+        return {'enabled': settings['mcp.enabled'], 'allowed': self.allowed(user.id), 'writes': settings['mcp.allow_writes'], 'address': origin + '/_/mcp',
                 'clients': clients, 'requests': requests, 'apps': self.visible_apps(user), 'chosen': clients[0]['apps'] if clients else None}
 
     def mine_row(self, connection, user, client_id):
@@ -543,10 +508,16 @@ class Assistants:
         with self.database._connection() as connection:
             clients = [dict(row) for row in connection.execute('SELECT m.id, m.client_name, u.username, u.role, m.created_at, m.last_used, m.calls FROM evlet_mcp_clients m '
                                                                 'JOIN evlet_users u ON u.id=m.user_id WHERE m.revoked_at IS NULL ORDER BY m.id DESC LIMIT 500')]
-            counts = connection.execute('SELECT kind, outcome, count(*) AS n FROM evlet_mcp_calls WHERE at>? GROUP BY kind, outcome', (int(time.time()) - 86400,)).fetchall()
+            counts = connection.execute("SELECT kind, outcome, count(*) AS n FROM evlet_tool_calls WHERE origin='mcp' AND at>? GROUP BY kind, outcome", (int(time.time()) - 86400,)).fetchall()
+            # Calls in the last 24 hours per connected client, for the clients table.
+            recent = {row['client_id']: row['n'] for row in connection.execute(
+                "SELECT client_id, count(*) AS n FROM evlet_tool_calls WHERE origin='mcp' AND at>? GROUP BY client_id", (int(time.time()) - 86400,))}
         totals = {'reads': 0, 'writes': 0, 'denied': 0}
         for row in counts:
-            totals['denied' if row['outcome'] == 'denied' else row['kind'] + 's'] += row['n']
+            if row['outcome'] != 'approval':
+                totals['denied' if row['outcome'] == 'denied' else row['kind'] + 's'] += row['n']
+        for item in clients:
+            item['recent'] = recent.get(item['id'], 0)
         return {'address': (self.origin(scope) or '') + '/_/mcp', 'clients': clients, 'totals': totals}
 
     def api(self, scope, body, user):
@@ -562,6 +533,8 @@ class Assistants:
                 raise AccessError(403, OFF)
             if method == 'GET':
                 client, params = self.request(scope.get('query_string', b''), origin)
+                if not self.allowed(user.id):
+                    raise AccessError(403, NOT_ALLOWED)
                 return 200, {'client': client['name'], 'returns_to': urlsplit(params['redirect_uri']).netloc or urlsplit(params['redirect_uri']).scheme,
                              'user': user.username, 'writes': self.settings()['mcp.allow_writes']}, []
             if method == 'POST':

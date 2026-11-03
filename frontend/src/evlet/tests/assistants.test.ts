@@ -66,6 +66,75 @@ describe('Controls MCP & AI', () => {
   });
 });
 
+function openAt(path: string, routes: any[]) {
+  window.history.replaceState(null, '', path);
+  const stub = server([
+    ['GET', /\/api\/auth\/session$/, () => reply({ user: { id: 1, username: 'owner', role: 'admin' }, csrf: 'token' })],
+    ['GET', /\/api\/_controls\/state$/, () => reply(state())],
+    ['GET', /\/api\/_controls\/overrides$/, () => reply({ ...overrides, items: [...overrides.items, setting('eva.enabled', false), setting('eva.model', ''), setting('eva.choose_model', false),
+      setting('eva.disabled_tools', []), setting('eva.confirm', { create: 'never', update: 'never', confirm: 'ask', action: 'ask' }),
+      setting('eva.instance_limit', { amount: null, unit: 'aed', period: 'month' }), setting('eva.user_limit', { amount: null, unit: 'aed', period: 'week' }),
+      setting('eva.task_reserve', 10), setting('eva.max_steps', 12), setting('eva.max_tools', 30), setting('eva.max_seconds', 120), setting('eva.rates', {})] })],
+    ...routes,
+  ] as any);
+  const router = controlsRouter();
+  const stop = router.start();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const dispose = mount(host, () => Controls({ router, api: new ControlsClient({ fetch: stub.fetch }) }));
+  running.push(() => { dispose(); stop(); });
+  return { host, sent: stub.sent };
+}
+
+describe('Controls AI', () => {
+  it('says when config.py keeps Eva off, and nothing else applies', async () => {
+    const { host } = openAt('/controls/eva', [['GET', /\/api\/_controls\/eva$/, () => reply({ configured: false, active_users: 4, allowed_users: 0, jobs: true, settings: {} })]]);
+    await until(() => expect(text(host)).toContain("Turned off in the application's configuration."));
+    expect(host.querySelector('[aria-label="Eva"]')).toBeNull();
+    expect(text(byText(host, '.ctl-nav-label', 'AI'))).toBe('AI');
+  });
+
+  it('turns Eva on and asks before confirming documents, as drafts behind the change bar', async () => {
+    const { host } = openAt('/controls/eva', [['GET', /\/api\/_controls\/eva$/, () => reply({ configured: true, active_users: 4, allowed_users: 2, jobs: true, settings: {},
+      provider: 'OpenAI', models: ['Standard'], connector: { saved: false, status: null }, tools: [{ name: 'list_records', kind: 'read' }, { name: 'delete_record', kind: 'destructive' }] })]]);
+    await until(() => expect(text(host)).toContain('Now: 2 of 4 active users.'));
+    expect(text(host)).toContain('No key yet');
+    click(host.querySelector('[aria-label="Eva"]'));
+    await until(() => expect(text(host)).toContain('1 unsaved change'));
+    const select = host.querySelector<HTMLSelectElement>('[aria-label="Eva: Change a record"]')!;
+    select.value = 'ask';
+    select.dispatchEvent(new Event('change'));
+    await until(() => expect(text(host)).toContain('2 unsaved changes'));
+  });
+
+  it('shows usage by person without conversation titles', async () => {
+    const usage = { period: 'month', from: '01-11-2026', to: '30-11-2026', note: 'Costs are estimates from your rates.', limit: { amount: '1500.00', unit: 'aed', period: 'month' },
+      totals: { cost: '1128.40', input_tokens: 14900000, cached_tokens: 6200000, output_tokens: 3500000, reasoning_tokens: 0, tokens: 18400000, requests: 2316, runs: 641, tool_calls: 9842, denied: 207 },
+      days: [{ day: '01-11-2026', chats: '40.10', tasks: '3.00' }, { day: '02-11-2026', chats: '22.00', tasks: '0.00' }],
+      people: [{ user_id: 2, username: 'sara', requests: 914, input_tokens: 6210400, output_tokens: 1402900, cost: '462.15', allowance: { limit: '25.00', unit: 'aed', period: 'week', used: '6.80', exhausted: false } }],
+      conversations: [{ id: 1207, task: false, username: 'sara', messages: 58, tokens: 1204600, cost: '71.90' }] };
+    const { host } = openAt('/controls/usage', [['GET', /\/api\/_controls\/eva\/usage/, () => reply(usage)]]);
+    await until(() => expect(text(host)).toContain('AED 1128.40'));
+    expect(text(host)).toContain('75%');
+    expect(text(byText(host, 'tr', /sara/))).toContain('462.15');
+    expect(text(byText(host, 'tr', /Conversation 1207/))).toContain('71.90');
+    expect(host.querySelectorAll('.eva-chart rect.bar').length).toBe(3);
+  });
+
+  it('lists tool calls from every origin and opens one for its redacted inputs', async () => {
+    const call = { id: 9, at: 1793600000, username: 'sara', origin: 'mcp', client: 'Claude', run_id: null, tool: 'update_record', model: 'customer', record_id: 58,
+      kind: 'write', outcome: 'ok', duration_ms: 22, error: null, inputs: { model: 'customer', id: 58, values: ['name'] } };
+    const { host, sent } = openAt('/controls/log', [['GET', /\/api\/_controls\/tools/, () => reply({ items: [call], next: null })]]);
+    await until(() => expect(text(host)).toContain('MCP · Claude'));
+    click(byText(host, 'tr', /update_record/));
+    await until(() => expect(text(host)).toContain('{"model":"customer","id":58,"values":["name"]}'));
+    const origin = host.querySelector<HTMLSelectElement>('[aria-label="Through"]')!;
+    origin.value = 'eva';
+    origin.dispatchEvent(new Event('change'));
+    await until(() => expect(sent.some(item => /tools\?origin=eva/.test(item.url))).toBe(true));
+  });
+});
+
 const mine = (writes: boolean, clients = [{ id: 3, client_name: 'Claude', created_at: 1790000000, last_used: null, calls: 0, allow_changes: false, apps: null }]) => ({
   enabled: true, writes, address: 'https://erp.acme.com/_/mcp', clients, apps: ['crm', 'billing'], chosen: null,
   requests: [{ at: 1790000600, client_name: 'Claude', tool: 'list_records', model: 'customer', kind: 'read', outcome: 'denied' }],

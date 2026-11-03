@@ -7,11 +7,14 @@ Portal users sign in there only, and see the customer they are linked to and its
     app.business.auth.link_user(user.id, Customer, customer_id)
 """
 
+import os
 from pathlib import Path
 
-from evlet import (Action, ApiScope, AppDefinition, Application, ChildTable, EventStore, Frontend, Host, JobQueue, LocalAuth,
+from evlet import (AI, Action, ApiScope, AppDefinition, Application, ChildTable, DevSignIn, EventStore, Frontend, Host, JobQueue, LocalAuth,
                    Policy, Rule, Security, Task, ValidationError, own_customer)
+from evlet import api
 from evlet.routing import resolve_routes
+from evlet.services import Endpoint
 from .models import Customer, Invoice, Project, ProjectTask, registry
 from .migrate import configured_database
 from .settings import ProjectPreferences, ProjectSettings
@@ -55,7 +58,19 @@ def create_app():
                      realms=routes.realms(), secure_cookies=False, allow_setup=True,
                      # The sign-in rules this instance starts from (the defaults); Controls can only make them stricter.
                      security=Security(session_hours=12, lockout=5, password_min=15))
-    return build_app(database, auth, routes=routes)
+    return build_app(database, auth, routes=routes, ai=playground_ai())
+
+
+def playground_ai():
+    """Eva, when EVLET_EVA_MODEL names an OpenAI model (for example gpt-4.1-mini). Then turn Eva on in Controls,
+    add the OpenAI key under Connectors and give people Allow Eva in Users. Without it, Eva doesn't exist here."""
+    model = os.environ.get('EVLET_EVA_MODEL')
+    return AI(enabled=True, models={'Standard': model}) if model else None
+
+
+def create_dev_app():
+    """scripts/playground.sh: create_app with one-time development sign-in links at /_dev/signin. Never serve this."""
+    return DevSignIn(create_app())
 
 
 def refresh_progress(tx, job, payload):
@@ -65,7 +80,20 @@ def refresh_progress(tx, job, payload):
     tx.update(Project, project.id, progress=progress)
 
 
-def build_app(database, auth, *, storage=None, tenant='local', routes=None):
+@api(method='GET', permission=(Project, 'read'), tool=True)
+def project_overview(context, project: int):
+    """One project at a glance: its status, progress, budget and how many of its tasks are done."""
+    record = context.get(Project, project)
+    tasks = getattr(record, 'tasks', ())
+    return {'project': record.name, 'status': record.status, 'progress': record.progress, 'budget': getattr(record, 'budget', None),
+            'tasks': len(tasks), 'done': sum(1 for task in tasks if task.done)}
+
+
+# Business services offered to AI assistants through the Tool Engine (list_services and call_service).
+SERVICES = (Endpoint('playground.project_overview', project_overview, 'GET', (Project, 'read'), tool=True),)
+
+
+def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=None):
     events = EventStore(database)
     policy = Policy(registry, rules=PORTAL_RULES)
     jobs = JobQueue(database, (Task('project_progress', refresh_progress),), tenant=tenant, events=events, policy=policy)
@@ -76,7 +104,7 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None):
                       actions=(Action(Project, 'start', 'Start project', start_project),
                                Action(Project, 'complete', 'Complete project', complete_project),
                                Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress)),
-                      attachments=(Project,), slips=SLIPS)
+                      attachments=(Project,), slips=SLIPS, apis=SERVICES, ai=ai)
     # Settings > Projects: people who can read projects see it; editors and admins change it.
     app.business.settings.register('projects', ProjectSettings, ProjectPreferences, (Project,))
     return app

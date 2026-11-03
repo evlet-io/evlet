@@ -8,6 +8,7 @@
 
 import { html, match, when, type Child } from '../dom';
 import { ApiError } from '../api';
+import { Lockup } from '../app/login';
 import { cell, derive, onCleanup, type Cell } from '../reactive';
 import { createRouter, type Router } from '../router';
 import { Avatar, Button, EmptyState, Icon, StatusPill } from '../ui/base';
@@ -24,6 +25,8 @@ import { AppsPage, AuditPage, AuditRows, JobsPage, OverridesPage, RoutingPage } 
 import { ConnectorsPage, EmailPage } from './connections';
 import { ApiKeysPage } from './keys';
 import { McpPage } from './ai';
+import { EvaSettingsPage, UsagePage } from './eva';
+import { ToolLogPage } from './log';
 
 export const ROUTES = {
   overview: '/controls', users: '/controls/users', roles: '/controls/roles',
@@ -31,6 +34,7 @@ export const ROUTES = {
   models: '/controls/models', naming: '/controls/naming', apps: '/controls/apps', routing: '/controls/routing',
   jobs: '/controls/jobs', overrides: '/controls/overrides', audit: '/controls/audit',
   connectors: '/controls/connectors', email: '/controls/email', mcp: '/controls/mcp', keys: '/controls/keys',
+  eva: '/controls/eva', usage: '/controls/usage', log: '/controls/log',
 } as const;
 export type ControlsRouter = Router<typeof ROUTES>;
 export const controlsRouter = (options: { window?: Window } = {}): ControlsRouter => createRouter(ROUTES, options);
@@ -49,7 +53,8 @@ const NAV: Array<[string, Array<[keyof typeof ROUTES, string, string]>]> = [
   ['', [['overview', 'Overview', 'layout-grid']]],
   ['People', [['users', 'Users', 'users'], ['roles', 'Roles', 'user-cog']]],
   ['Access', [['permissions', 'Permissions', 'list-checks'], ['security', 'Security', 'lock']]],
-  ['Connections', [['connectors', 'Connectors', 'link'], ['email', 'Email', 'mail'], ['mcp', 'MCP & AI', 'sparkles'], ['keys', 'API keys', 'hash']]],
+  ['Connections', [['connectors', 'Connectors', 'link'], ['email', 'Email', 'mail'], ['keys', 'API keys', 'hash']]],
+  ['AI', [['eva', 'Eva', 'sparkles'], ['mcp', 'MCP', 'link'], ['usage', 'Usage', 'chart-column'], ['log', 'Tool log', 'activity']]],
   ['Build', [['apps', 'Apps', 'package'], ['models', 'Models', 'layers'], ['naming', 'Naming', 'hash'], ['routing', 'Routing', 'globe']]],
   ['System', [['jobs', 'Jobs', 'clock'], ['overrides', 'Overrides', 'file-text'], ['audit', 'Audit log', 'activity']]],
 ];
@@ -195,7 +200,7 @@ function Shell(ctx: ControlsContext): HTMLElement {
   };
   const s = state.peek();
   const side = html`<aside class="ctl-side" class:open=${open} aria-label="Controls navigation">
-    <div class="ctl-brand"><span class="ev-logo">${Icon('lock', { size: 'sm' })}</span>evlet<small>Controls</small></div>
+    <div class="ctl-brand">${Lockup()}<small>Controls</small></div>
     <div class="ctl-ws"><span class="ctl-ws-letter">${(s.instance.name || 'E').slice(0, 1).toUpperCase()}</span>
       <span><strong>${s.instance.name}</strong><small>${s.instance.host}</small></span></div>
     <nav class="ctl-nav">${NAV.map(([group, items]) => [group ? html`<div class="ctl-nav-label">${group}</div>` : null,
@@ -229,6 +234,9 @@ function Shell(ctx: ControlsContext): HTMLElement {
       case 'connectors': return ConnectorsPage(ctx);
       case 'email': return EmailPage(ctx);
       case 'mcp': return McpPage(ctx);
+      case 'eva': return EvaSettingsPage(ctx);
+      case 'usage': return UsagePage(ctx);
+      case 'log': return ToolLogPage(ctx);
       case 'keys': return ApiKeysPage(ctx);
       default: return Overview(ctx);
     }

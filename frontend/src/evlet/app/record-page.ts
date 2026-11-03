@@ -25,6 +25,7 @@ import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFie
 import { cellView } from './list-page';
 import { Revisions } from './revisions';
 import { presentSlip, takePrefill } from './slips';
+import { openEvaPanel } from '../eva/chat';
 
 const RESERVED = new Set(['tab', 'slip']);
 // A reactive part inside a list of children (arrays are read once; a template hole stays live).
@@ -357,7 +358,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null,
       variant: 'primary', onMove: () => lifecycleAction(operation),
     }));
-    return [...lifecycleButtons, ...moveButtons, ...actionButtons, ...slipButtons, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items: moreItems, menuLabel: 'More actions' })];
+    // Ask Eva, when Eva is on for this person: a chat about this record, in a side panel.
+    const askEva = ctx.eva.get() ? Button({ label: 'Ask Eva', icon: 'sparkles', iconTint: 'violet', hideLabelOnPhone: true,
+      onClick: () => openEvaPanel(ctx, ctx.eva, { name, label: model.label }, store.id!, titleText.peek()) }) : null;
+    return [...lifecycleButtons, ...moveButtons, ...actionButtons, ...slipButtons, askEva, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items: moreItems, menuLabel: 'More actions' })];
   };
 
   // ---------- header ----------

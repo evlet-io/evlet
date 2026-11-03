@@ -69,7 +69,8 @@ export type RecordData = Record<string, unknown> & {
   _row_ids?: Record<string, number>;
 };
 export interface DraftResult { values: Record<string, unknown>; errors: FieldErrors; states: Record<string, string>; revision: unknown }
-export interface ListQuery { limit?: number; offset?: number; filters?: Record<string, unknown>; orderBy?: string; q?: string }
+/** filters: an object of "field__operator" keys, or a list of [field, operator, value] conditions and child groups (docs/ui.md, Filters). */
+export interface ListQuery { limit?: number; offset?: number; filters?: Record<string, unknown> | unknown[]; orderBy?: string; q?: string }
 
 const NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
 const SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
@@ -142,13 +143,16 @@ export class ApiClient {
       headers['X-Evlet-Request'] = '1';
       if (this.csrf) headers['X-CSRF-Token'] = this.csrf;
     }
-    if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+    // The server takes writes only as JSON (evlet/app.py answers 415 otherwise), so a write
+    // without a body (sign-out, mailbox sync) sends an empty object.
+    const body = options.body === undefined && ['POST', 'PATCH', 'PUT'].includes(method) ? {} : options.body;
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (options.ifMatch) headers['If-Match'] = options.ifMatch;
     const query = Object.entries(options.query ?? {}).filter(([, value]) => value !== undefined && value !== '');
     const url = this.url(path) + (query.length ? '?' + new URLSearchParams(query.map(([key, value]) => [key, String(value)])) : '');
     const { signal, release } = anySignal([options.signal, this.options.signal?.()]);
     try {
-      return await this.send<T>(method, path, url, headers, options, signal);
+      return await this.send<T>(method, path, url, headers, { ...options, body }, signal);
     } finally {
       release();
     }

@@ -45,8 +45,9 @@ __all__ += ["LambdaHTTP", "S3Storage"]
 
 from .connector import ConnectorError, HTTPClient
 from .mcp import MCPServer
+from .eva import AI
 
-__all__ += ["ConnectorError", "HTTPClient", "MCPServer"]
+__all__ += ["AI", "ConnectorError", "HTTPClient", "MCPServer"]
 
 from .postgres import PostgreSQLDatabase
 
@@ -91,3 +92,5 @@ __all__ += ["ConnectionFailed", "Connector", "ConnectorField"]
 from .mailboxes import Mail
 
 __all__ += ["Mail"]
+from .devlink import DevSignIn
+__all__ += ["DevSignIn"]

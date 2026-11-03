@@ -84,4 +84,8 @@ class ProjectTask(Model):
     done = Boolean(required=True, default=False)
 
 
-registry = Registry(Customer, Invoice, Payment, Project, ProjectTask)
+# Items have about 200 fields and two child tables: the list filters at scale. Imported here so the
+# registry lists every Playground model; items.py links to customers by name, not by import.
+from .items import Item  # noqa: E402
+
+registry = Registry(Customer, Invoice, Payment, Project, ProjectTask, Item)

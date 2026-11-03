@@ -274,7 +274,7 @@ does not give its name back.
 
 **The Playground.** `Invoice` is named `INV-{YYYY}-{#####}`, dated by its posting date, so the
 first invoice of 2026 is `INV-2026-00001`. The name goes into the `number` field, which migration
-`0005_invoice_number` adds; invoices saved before it keep an empty number. `reference` stays the
+`0006_invoice_number` adds; invoices saved before it keep an empty number. `reference` stays the
 customer's own reference, such as their purchase order number.
 
 ```python

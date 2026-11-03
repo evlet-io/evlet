@@ -85,6 +85,7 @@ Docs off it starts on the first list the role can open and hides the Docs links.
 | `/app/<model>/<id>/view` | Older record link; opens the record view |
 | `/settings/<page>`, `/settings/app/<app>` | Settings ([settings.md](settings.md)); `/settings` opens the last page |
 | `/settings/accounts` | Redirects to `/controls/users` |
+| `/eva`, `/eva/<chat>`, `/eva/tasks` | Eva's chat and scheduled tasks ([eva.md](eva.md)). Served only when config.py turns Eva on; the page asks `/api/_eva` and shows nothing of Eva to people without it |
 | `/reports/<name>` | Notice: reports are not shown in this interface |
 | Registered Python page routes | Served, then open Docs |
 
@@ -124,8 +125,37 @@ inside the same transaction as the mutation and includes permitted child rows.
 Currency and decimal values stay exact strings. A Currency field shows its code from
 `currency=` on the field: a fixed code, a field of the record, a field of a linked record or an
 app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)).
-Selects, dates, date-times, times and durations open Evlet's own pickers, and list pages filter
-dates by range ([ui-framework.md](ui-framework.md#pickers)).
+Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-framework.md](ui-framework.md#pickers)).
+
+### Filters
+
+A list's Filter button (with a count of active filters) opens a panel of filter rows under the
+toolbar, as in Frappe. Each row is a field, a condition and a value, with a remove button; Add
+filter adds rows, and every row must match (AND). The field picker searches the model's fields
+and then each child table's ("Prices → Rate"), by any words of the label, and shows each field's
+type; it draws at most 100 matches at a time, so a model with hundreds of fields stays quick.
+Arrows and Enter pick a field.
+
+Conditions follow the field type: text has equals, not equals, like, not like, is set, is not
+set, in and not in; numbers and currency have =, ≠, >, ≥, <, ≤ and between; dates have on,
+before, after, between and a timespan (today, this week, last month and so on, in GST); links
+have equals, not equals and in, with the record picker, which lists only records the person can
+read; selects have in and not in, as ticked choices; checks have is yes and is no. Not equals,
+not in and not like also match empty values. The value inputs are the form's own controls (the
+custom select, date pickers, currency input).
+
+Rows on one child table form a group with a choice: "Any Prices row meets all of these" (one row
+must meet every condition) or "No Prices row meets all of these". Active filters show as
+removable chips above the list, with Clear filters. The rows are kept in the address (`?f=` as
+the server's filter list, with a timespan kept by name), so a filtered list can be shared and
+survives a reload; links from before the builder (`?f={"stage":"open"}`) still open. A row that
+has no value yet is not sent. The server checks every field, condition and value again and
+refuses fields the role cannot read. The Playground's Items list (about 200 fields, with
+prices and barcodes tables) shows the builder at scale.
+
+There is no OR group between rows, because the server combines filters only with AND; and there
+are no saved filters yet, because Evlet has no place to keep them. The saved views of a model's
+State stay as tabs.
 
 ## Python page API
 

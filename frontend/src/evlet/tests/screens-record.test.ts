@@ -81,6 +81,45 @@ describe('generated record view', () => {
     expect(location.search).toBe('?tab=t-lines');
   });
 
+  it('switching tabs with unsaved edits asks nothing and keeps every edit for one save', async () => {
+    const { host, sent } = start(orderRoutes(), '/app/order/1?tab=t-lines');
+    await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
+    const qty = cellOf(rowsIn(host)[1], 'qty');
+    click(qty);
+    const input = qty.querySelector('input')!;
+    input.value = '3';
+    press(input, 'Enter');
+    press(document.activeElement!, 'Escape');
+    await until(() => expect(text(host.querySelector('.ev-savebar'))).toContain('Unsaved changes'));
+    click(byText(host, '.doc-tabs [role="tab"]', 'Details'));
+    await until(() => expect(location.search).toBe(''));
+    expect(document.querySelector('.modal')).toBeNull();
+    expect(text(host.querySelector('.ev-savebar'))).toContain('Unsaved changes');
+    click(byText(host, '.doc-tabs [role="tab"]', 'Lines120'));
+    await until(() => expect(location.search).toBe('?tab=t-lines'));
+    expect(document.querySelector('.modal')).toBeNull();
+    await until(() => expect(text(cellOf(rowsIn(host)[1], 'qty'))).toContain('3'));
+    press(host.querySelector('.doc')!, 'Enter', { metaKey: true });
+    await until(() => expect(requests(sent, 'PATCH', /order\/1$/)).toHaveLength(1));
+    expect(requests(sent, 'PATCH', /order\/1$/)[0].body.children.lines.update).toEqual([{ id: recorded.detail.body.children.lines[1].id, qty: '3.0000' }]);
+  });
+
+  it('still asks before opening another record with unsaved edits', async () => {
+    const { host, router } = start(orderRoutes(), '/app/order/1?tab=t-lines');
+    await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
+    const qty = cellOf(rowsIn(host)[0], 'qty');
+    click(qty);
+    const input = qty.querySelector('input')!;
+    input.value = '7';
+    press(input, 'Enter');
+    press(document.activeElement!, 'Escape');
+    const leaving = router.go('record', { model: 'order', id: '2' });
+    await until(() => expect(text(document.querySelector('.modal h2'))).toBe('Discard unsaved changes?'));
+    click(byText(document.body, '.modal-f button', 'Cancel'));
+    expect(await leaving).toBe(false);
+    expect(location.pathname).toBe('/app/order/1');
+  });
+
   it('asks before leaving with unsaved lines, and stays when asked to keep editing', async () => {
     const { host, router } = start(orderRoutes(), '/app/order/1?tab=t-lines');
     await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
