@@ -11,8 +11,9 @@ not add one without a written justification.
 development page and is not built. The app's routes must match the paths
 `evlet/ui/routes.py` serves.
 
-Keep login, the Docs landing page and generated screens working. Python pages,
-native panels, reports and account management are not rendered here; do not
+Keep login, the Docs landing page and generated screens working. Reports render at
+`/reports` (`app/report-page.ts`, owner decision of 03-11-2026; see `docs/reports.md`).
+Python pages, native panels and account management are not rendered here; do not
 reintroduce a renderer for them without an owner decision. UI changes must continue
 to enforce backend permissions and consume Python JSON contracts rather than
 importing business rules into the browser.
