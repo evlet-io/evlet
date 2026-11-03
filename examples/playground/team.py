@@ -11,6 +11,8 @@ themselves. Admins and editors (HR) see everyone.
 
 import getpass
 
+from evlet import User
+
 from .models import Employee
 
 TEAM = (
@@ -26,13 +28,14 @@ TEAM = (
 def seed_team(app, password):
     """Create the demo employees and the three viewer accounts linked to them; returns {account: employee id}."""
     ids, accounts = {}, {}
-    with app.database.transaction() as tx:
+    # Employee keeps its history (track_changes), so records are written through a Context, as the demo.
+    with app.business.context(User(0, 'team-demo', 'admin')) as context:
         for name, manager, _ in TEAM:
-            ids[name] = tx.create(Employee, name=name, reports_to=ids.get(manager)).id
+            ids[name] = context.create(Employee, name=name, reports_to=ids.get(manager))['id']
     for name, _, account in TEAM:
         if account is not None:
             user = app.business.auth.create_user(username=account, password=password, role='viewer')
-            app.business.auth.link_user(user.id, Employee, ids[name])
+            app.business.auth.link_user(user.id, Employee, ids[name], actor='team-demo')
             accounts[account] = ids[name]
     return accounts
 

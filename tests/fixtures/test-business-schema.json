@@ -8407,6 +8407,16 @@
       "children": [],
       "actions": [],
       "attachments": false,
+      "journal": {
+        "tamper_evident": true,
+        "kinds": [
+          "note",
+          "message",
+          "call",
+          "follow_up",
+          "follow_up_done"
+        ]
+      },
       "relations": [
         {
           "name": "employee.reports_to",

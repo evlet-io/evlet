@@ -87,6 +87,8 @@ class Employee(Model):
         list_fields = ('name', 'email', 'reports_to')
         search_fields = ('name', 'email')
 
+    # Moving someone changes every team above them, so each save keeps who changed reports_to and when.
+    track_changes = True
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete')),
                    'viewer': Rule(('read',), scope=TEAM.team())}
     name = Text(required=True, max_length=120)

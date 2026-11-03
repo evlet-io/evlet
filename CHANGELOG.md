@@ -11,6 +11,8 @@ say what to change. Evlet is not production ready.
   row scopes and filter objects with OR. They apply on every surface a row scope covers
   ([docs/business-capabilities.md](docs/business-capabilities.md#team-and-hierarchy-scopes)). List pages
   now check Link values for the whole page at once instead of per row.
+- **Account links are audited.** `LocalAuth.link_user` and `unlink_user` take an `actor` and write
+  each change to the Controls audit log (area Users); `evlet link-user` records `cli`.
 - **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
   follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
   the default). The server writes the theme on `<html>` before the page paints, so nothing

@@ -155,6 +155,11 @@ every row. Controls offers an app-registered team or `any_of` scope for every mo
 for. The Playground's Employees show a manager, a team member and an outsider
 (`examples/playground/team.py`).
 
+A link decides what a team scope shows, so `LocalAuth.link_user` and `unlink_user` write each
+change to the Controls audit log (area Users, with an `actor` argument; `evlet link-user` records
+`cli`). A move in the tree is an ordinary edit of the parent Link: declare the hierarchy model with
+`track_changes = True` to keep who moved whom and when, as the Playground's Employee does.
+
 Operations may also name `void`, `revise`, `unpost` and `repost` on models that support them.
 Admin always has them; naming one in a Rule adds that role. See the "Void and revise" and
 "Unpost and repost" sections of [states-actions.md](states-actions.md).

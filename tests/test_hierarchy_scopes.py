@@ -137,6 +137,15 @@ def check_team_scopes(app):
     # Serialized Links to employees outside the scope are empty.
     public = listed(outsider, 'leave', {'public': True})['items'][0]
     assert public['employee'] is None
+    # Eva and MCP tools run the same routes in process (Tool Engine), so they see the same team.
+    def tool(c, name, **values):
+        status, body, _ = c('POST', '/api/_tools/execute', {'tool': name, 'arguments': values})
+        return status, body.get('result')
+    assert tool(manager, 'list_records', model='employee')[1]['total'] == 151
+    assert tool(manager, 'aggregate_records', model='payslip', measures='n:count')[1]['items'] == [{'n': 150}]
+    assert tool(manager, 'get_record', model='employee', id=found['outsider'])[0] == 404
+    assert tool(outsider, 'record_history', model='leave', id=rows[found['deep']])[0] == 404
+    assert tool(outsider, 'list_records', model='leave')[1]['total'] == 2
     # Moving the outsider into the manager's team changes what the manager sees at once.
     with app.database.transaction() as tx:
         tx.connection.execute('UPDATE employee SET reports_to = ? WHERE id = ?', (found['deep'], found['outsider']))
