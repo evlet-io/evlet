@@ -10638,6 +10638,7 @@
         "name",
         "email"
       ],
+      "open_in": "page",
       "fields": [
         {
           "name": "name",
@@ -10876,6 +10877,7 @@
         "reference",
         "status"
       ],
+      "open_in": "panel",
       "fields": [
         {
           "name": "number",
@@ -11160,6 +11162,7 @@
         "reference",
         "currency"
       ],
+      "open_in": "page",
       "fields": [
         {
           "name": "invoice",
@@ -11374,6 +11377,7 @@
         "name",
         "status"
       ],
+      "open_in": "panel",
       "fields": [
         {
           "name": "name",
@@ -11662,6 +11666,7 @@
       "search_fields": [
         "title"
       ],
+      "open_in": "page",
       "fields": [
         {
           "name": "project",
@@ -12013,6 +12018,7 @@
         "item_code",
         "item_name"
       ],
+      "open_in": "page",
       "fields": [
         {
           "name": "item_code",
@@ -18941,6 +18947,7 @@
         "price_list",
         "currency"
       ],
+      "open_in": "page",
       "fields": [
         {
           "name": "price_list",
@@ -19176,6 +19183,7 @@
         "barcode",
         "barcode_type"
       ],
+      "open_in": "page",
       "fields": [
         {
           "name": "barcode",
