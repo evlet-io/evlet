@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
-                   Move, MultiSelect, Reference, Related, Sequence, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome)
+                   Move, MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome)
 from evlet.calc import D, F, round, days
 from evlet.identity import sequential_ids
 
@@ -380,10 +380,22 @@ def settings_shape(payload):
     return payload
 
 
+class Quote(Model):
+    """For the screens: a naming series names each quote when it is saved."""
+    permissions = ALL
+    number = Text(unique=True, max_length=40)
+    customer = Link(Customer)
+    issued = Date()
+
+    class Meta:
+        title_field = 'number'
+        naming = Naming('number', Series('QT-{YYYY}-{#####}'), date_field='issued')
+
+
 def record_screens(folder):
     """Responses the generated screens consume: first-run setup, list paging, search, sorting and
     filters, field permissions per role, and attachments."""
-    database = Database(folder / 'screens.sqlite3', Registry(Customer, Product, Order, Contact))
+    database = Database(folder / 'screens.sqlite3', Registry(Customer, Product, Order, Contact, Quote))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
     app = Application(database, auth=auth, attachments=(Contact,))
     app.business.settings.register('sales', SalesSettings, SalesPreferences, (Order,))
@@ -433,6 +445,8 @@ def record_screens(folder):
     # One byte over the framework maximum of 1 MiB: the record view shows why it was refused.
     keep('attachment_refused', admin('POST', f'{url}/attachments', {'name': 'scan.pdf', 'content': base64.b64encode(bytes(2**20 + 1)).decode()}))
     keep('contacts', admin('GET', '/api/contact?limit=20&offset=0'))
+    quote = keep('quote_create', admin('POST', '/api/quote', {'customer': 1, 'issued': '2026-10-20'}))
+    keep('quote_detail', admin('GET', f"/api/quote/{quote['id']}"))
     assert admin('PATCH', '/api/_settings/me/profile', {'full_name': 'Owner Admin', 'short_name': 'Owner', 'title': 'Managing Director'})[0] == 200
     out['settings_me'] = {'status': 200, 'body': settings_shape(admin('GET', '/api/_settings/me')[1]), 'etag': None}
     keep('settings_prefs', admin('PATCH', '/api/_settings/me/prefs', {'date': 'd MMM yyyy'}))

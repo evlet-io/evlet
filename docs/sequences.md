@@ -256,6 +256,40 @@ How it differs from a Sequence: a Sequence is a field type, fixed in code, with 
 `assign_on`; a naming series is a `Meta` declaration on a plain unique field, assigned on create
 only, whose series and counters an instance can change in Controls.
 
+**In the browser.** The model's `/api/schema` entry has `naming: {"field": "number"}` when the role
+can read the field. The field is `read_only: true` and, unless the app sets its own, has the
+placeholder `Assigned on save`. The New screen shows it disabled with that placeholder and never
+sends it; after the save, a record whose `title_field` is the named field shows the name as its
+title, in a monospaced font, not editable in place.
+
+**Edits, reopening and revisions.** A name never changes once it is issued. Editing the record,
+including moving its date field into another year, keeps it. A confirmable document keeps the same
+name through confirm, cancel, reopen and confirm again; Evlet does not add `-1`, `-2` suffixes
+([lifecycle-specification.md](lifecycle-specification.md)). A revision (`revise`) is a new record
+and gets the next name of its series; the voided original keeps its own.
+
+**Gaps.** Issuing happens in the create transaction, so a create that fails and rolls back also
+rolls back its counter step, and the next committed record gets that number. Deleting a record
+does not give its name back.
+
+**The Playground.** `Invoice` is named `INV-{YYYY}-{#####}`, dated by its posting date, so the
+first invoice of 2026 is `INV-2026-00001`. The name goes into the `number` field, which migration
+`0006_invoice_number` adds; invoices saved before it keep an empty number. `reference` stays the
+customer's own reference, such as their purchase order number.
+
+```python
+class Invoice(Model):
+    class Meta:
+        title_field = 'number'
+        naming = Naming('number', Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date')
+
+    number = Text(unique=True, max_length=40, label='Invoice number')
+```
+
+A naming field must be optional (`required=False`), because the form does not ask for it. Evlet
+has no migration that makes a required column optional, so an existing required field cannot
+become the naming field; add a new field with `AddField`, as the Playground does.
+
 ## For later phases
 
 * `evlet.sequences.clear_for_copy(model, values)` returns a copy of `values` with every
