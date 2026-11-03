@@ -15,8 +15,11 @@ export interface LoginProps {
   onRetry: () => void;
 }
 
-/** The Evlet mark: three bars on the accent square. Shared by sign-in and the sidebar. */
-export const Logo = () => html`<span class="ev-logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6h12M6 12h9M6 18h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span>`;
+/** The Evlet mark, the folded leaf from evlet.io, served from /assets (frontend/public/assets). Shared by sign-in, the sidebar and Controls. */
+export const Logo = (label = '') => html`<img class="ev-logo" src="/assets/evlet-icon-blue.svg" alt=${label} width="351" height="351">`;
+/** The evlet.io horizontal logo, and the same artwork with a white wordmark that dark themes show instead. */
+export const Lockup = () => html`<span class="ev-lockup"><img class="ev-lockup-light" src="/assets/evlet-logo-primary.svg" alt="Evlet" width="1126" height="351"><img
+  class="ev-lockup-dark" src="/assets/evlet-logo-white.svg" alt="Evlet" width="1126" height="351"></span>`;
 
 export function LoginScreen(props: LoginProps): HTMLElement {
   const application = props.session?.application ?? {};
@@ -31,7 +34,7 @@ export function LoginScreen(props: LoginProps): HTMLElement {
   };
   const label = () => props.busy.get() ? (setup ? 'Creating…' : 'Signing in…') : setup ? 'Create administrator' : 'Sign in';
   return html`<div class="ev-login">
-    <div class="ev-login-brand">${Logo()}<strong>evlet</strong>
+    <div class="ev-login-brand">${Lockup()}
       <span>${application.playground ? 'Playground' : application.name || 'Your workspace'}</span></div>
     <main class="ev-login-card" aria-labelledby="ev-login-title">
       <span class="pill b-blue">${tenant || 'Your workspace'}</span>
@@ -74,7 +77,7 @@ export function TwoStepScreen(props: { session: Session | null; challenge: Chall
   };
   const message = () => local.get() || props.error.get();
   return html`<div class="ev-login">
-    <div class="ev-login-brand">${Logo()}<strong>evlet</strong><span>${props.session?.application?.name || 'Your workspace'}</span></div>
+    <div class="ev-login-brand">${Lockup()}<span>${props.session?.application?.name || 'Your workspace'}</span></div>
     <main class="ev-login-card" aria-labelledby="ev-login-title">
       <h1 id="ev-login-title">${setup ? 'Set up two-step sign-in' : 'Two-step sign-in'}</h1>
       <p>${setup ? 'Your role needs a code from an authenticator app, on top of your password.' : 'Enter the 6-digit code from your authenticator app, or one of your backup codes.'}</p>

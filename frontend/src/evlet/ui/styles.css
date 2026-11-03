@@ -3,9 +3,11 @@
    framework components are at the end. Import this file once per page. A few token values are
    darker or lighter than the mockup so small text meets WCAG AA contrast; docs/ui-framework.md
    lists them under "Deviations from the mockup". */
-/* Fonts bundled from frontend/fonts (SIL OFL 1.1, license files beside them): Inter 4.1 variable and
-   JetBrains Mono 2.304 regular and medium. Served from /assets; the system fonts stand in until they load. */
-@font-face{font-family:"Inter";font-style:normal;font-weight:100 900;font-display:swap;src:url("../../../fonts/InterVariable.woff2") format("woff2")}
+/* Fonts bundled from frontend/fonts (SIL OFL 1.1, license files beside them): Inter 4.1 variable, roman and
+   italic, and JetBrains Mono 2.304 regular and medium. Served from /assets; the system fonts stand in until they
+   load. The Inter faces, family name and fallback stack match the evlet.io brand tokens (brand/spec/brand.css). */
+@font-face{font-family:"Inter Variable";font-style:normal;font-weight:100 900;font-display:swap;src:url("../../../fonts/InterVariable.woff2") format("woff2")}
+@font-face{font-family:"Inter Variable";font-style:italic;font-weight:100 900;font-display:swap;src:url("../../../fonts/InterVariable-Italic.woff2") format("woff2")}
 @font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:400;font-display:swap;src:url("../../../fonts/JetBrainsMono-Regular.woff2") format("woff2")}
 @font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:500;font-display:swap;src:url("../../../fonts/JetBrainsMono-Medium.woff2") format("woff2")}
 /* Layout: fixed sidebar + topbar shell, one scrolling view region. White ground, cool slate neutrals, one blue accent, soft tinted icons. */
@@ -25,7 +27,7 @@
   --shadow-sm:0 1px 2px rgba(16,24,40,.05);
   --shadow-md:0 1px 2px rgba(16,24,40,.04),0 4px 12px rgba(16,24,40,.06);
   --shadow-lg:0 2px 6px rgba(16,24,40,.06),0 18px 48px rgba(16,24,40,.16);
-  --font:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font:"Inter Variable",Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   --r-sm:6px; --r:8px; --r-lg:12px;
   --sidebar-w:248px; --topbar-h:52px;
@@ -523,9 +525,8 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .side-body{flex:1;display:flex;flex-direction:column;min-height:0;background:var(--side-bg)}
 /* Sidebar top: the Evlet brand, then the app switcher (current app over its workspace). */
 .brand{display:flex;align-items:center;gap:9px;height:var(--topbar-h);padding:0 16px;border-bottom:1px solid var(--border);background:var(--bg);flex:none}
-.brand .ev-logo{width:26px;height:26px;border-radius:7px}
-.brand .ev-logo svg{width:15px;height:15px}
-.brand-name{font-size:16px;font-weight:650;letter-spacing:-.03em}
+.brand .ev-lockup{height:26px}
+.brand .ev-logo{display:none;width:26px;height:26px}
 .app-switch{display:flex;align-items:center;gap:10px;margin:12px 8px 4px;padding:6px 8px;border:1px solid var(--border);border-radius:9px;background:var(--surface);text-align:left;flex:none}
 .app-switch:hover{border-color:var(--border-strong)}
 .as-text{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
@@ -539,7 +540,8 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .app-tile:hover{background:var(--bg-muted)}
 .app-tile.on{background:var(--accent-soft);color:var(--accent);font-weight:550}
 .app.collapsed .brand{justify-content:center;padding:0}
-.app.collapsed .brand-name,.app.collapsed .as-text,.app.collapsed .as-chev{display:none}
+.app.collapsed .brand .ev-lockup,.app.collapsed .as-text,.app.collapsed .as-chev{display:none}
+.app.collapsed .brand .ev-logo{display:block}
 .app.collapsed .app-switch{justify-content:center;margin:12px 8px 4px;padding:5px;border-color:transparent;background:none}
 /* Collapse and expand: a round button on the sidebar's edge, just above the account card. */
 .app{position:relative}

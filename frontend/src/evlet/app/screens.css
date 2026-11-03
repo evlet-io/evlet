@@ -5,11 +5,18 @@
 
 /* ---------- sign in ---------- */
 .ev-connecting{height:100%;display:grid;place-content:center;justify-items:center;gap:10px;color:var(--fg-3)}
-.ev-logo{width:30px;height:30px;border-radius:8px;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center;flex:none}
-.ev-logo svg{width:18px;height:18px}
+/* The evlet.io artwork as served. Dark themes show the lockup with the white wordmark instead. */
+.ev-logo{display:block;width:32px;height:32px;flex:none}
+.ev-lockup{display:block;flex:none;line-height:0}
+.ev-lockup img{height:100%;width:auto}
+.ev-lockup-light{display:block}
+.ev-lockup-dark{display:none}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .ev-lockup-light{display:none}:root:not([data-theme="light"]) .ev-lockup-dark{display:block}}
+:root[data-theme="dark"] .ev-lockup-light{display:none}
+:root[data-theme="dark"] .ev-lockup-dark{display:block}
 .ev-login{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:32px 16px;background:var(--bg-subtle)}
-.ev-login-brand{display:flex;align-items:center;gap:10px;font-size:15px}
-.ev-login-brand strong{font-weight:650;letter-spacing:-.02em}
+.ev-login-brand{display:flex;align-items:center;gap:12px;font-size:15px}
+.ev-login-brand .ev-lockup{height:30px}
 .ev-login-brand span{color:var(--fg-3)}
 .ev-login-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-md);padding:28px}
 .ev-login-card h1{font-size:21px;font-weight:650;letter-spacing:-.02em;margin:14px 0 4px}
