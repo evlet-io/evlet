@@ -11,6 +11,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `evlet.ui` names in the app docs), the deprecation rule and what stays internal.
   `tests/test_public_api.py` pins those names and signatures. A change needs a regenerated
   snapshot and an entry here.
+- **Tool Engine and Eva exports.** The root exports gain `AI` (Eva's model settings),
+  `Application(ai=...)` turns Eva on for an application, and `@api(..., tool=True)` offers an
+  app service as a tool to Eva and MCP clients ([docs/eva.md](docs/eva.md),
+  [docs/tools.md](docs/tools.md)). These are additions; existing apps need no change.
 - **Version 0.3.0.dev0.** Generated apps and the examples now require
   `evlet>=0.3.0.dev0,<0.4`, because a `<0.3` range does not match 0.3 pre-releases. Apps
   that declare `evlet>=0.2.0,<0.3` must widen the range to install on `main`.
