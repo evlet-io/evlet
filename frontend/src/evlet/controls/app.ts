@@ -8,6 +8,7 @@
 
 import { html, match, when, type Child } from '../dom';
 import { ApiError } from '../api';
+import { Lockup } from '../app/login';
 import { cell, derive, onCleanup, type Cell } from '../reactive';
 import { createRouter, type Router } from '../router';
 import { Avatar, Button, EmptyState, Icon, StatusPill } from '../ui/base';
@@ -199,7 +200,7 @@ function Shell(ctx: ControlsContext): HTMLElement {
   };
   const s = state.peek();
   const side = html`<aside class="ctl-side" class:open=${open} aria-label="Controls navigation">
-    <div class="ctl-brand"><span class="ev-logo">${Icon('lock', { size: 'sm' })}</span>evlet<small>Controls</small></div>
+    <div class="ctl-brand">${Lockup()}<small>Controls</small></div>
     <div class="ctl-ws"><span class="ctl-ws-letter">${(s.instance.name || 'E').slice(0, 1).toUpperCase()}</span>
       <span><strong>${s.instance.name}</strong><small>${s.instance.host}</small></span></div>
     <nav class="ctl-nav">${NAV.map(([group, items]) => [group ? html`<div class="ctl-nav-label">${group}</div>` : null,

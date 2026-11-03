@@ -491,13 +491,13 @@ def aggregate(tx, model, measures, group_by=(), filters=None):
     return execute(tx.connection, tx.registry, model, compiled, groups, where, values)
 
 
-def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, zone='UTC', search=('', None)):
+def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, zone='UTC', search=('', None), children=()):
     """Declared measure values: model-level over the filtered (and searched) records, or per record over related
     rows. `search` is the list search text and the fields it looks in (None: the model's search fields)."""
     scope_for = scope_for or (lambda target: ('', ()))
     if record_id is None:
         # Filters are checked even when no measure is available.
-        where, values = SqlQuery(tx.registry, model).where(filters, search[0], search_fields=search[1])
+        where, values = SqlQuery(tx.registry, model, children=children).where(filters, search[0], search_fields=search[1])
         if not items:
             return {}
         where, values = combine(where, values, *scope_for(model))
@@ -589,9 +589,10 @@ def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=N
     compiled, groups = prepare(registry, model, measures, group_by)
     if any(not allowed(policy, user, item) for item in compiled):
         raise AccessError(403, UNAVAILABLE)
-    policy.query_fields(user, model, filters, ())
+    children = getattr(business, 'children', {}).values()
+    policy.query_fields(user, model, filters, (), children=children)
     text, fields = searched(business, user, model, search)
-    where, values = SqlQuery(registry, model).where(filters, text, search_fields=fields)
+    where, values = SqlQuery(registry, model, children=children).where(filters, text, search_fields=fields)
     where, values = combine(where, values, *policy.scope_sql(user, model))
     return execute(tx.connection, registry, model, compiled, groups, where, values, getattr(business, 'timezone', None) or 'UTC')
 
@@ -607,11 +608,11 @@ def scoped_measures(business, tx, user, model, record_id=None, filters=None, sea
     policy.require(user, model, 'read')
     items = available(business, user, model, record_id is not None)
     if record_id is None:
-        policy.query_fields(user, model, filters, ())
+        policy.query_fields(user, model, filters, (), children=getattr(business, 'children', {}).values())
     else:
         policy.record(tx, user, model, record_id)
     return values_for(tx, model, items, record_id, filters, lambda target: policy.scope_sql(user, target),
-                      getattr(business, 'timezone', None) or 'UTC', searched(business, user, model, search))
+                      getattr(business, 'timezone', None) or 'UTC', searched(business, user, model, search), getattr(business, 'children', {}).values())
 
 
 def schema(business, user, model):
@@ -638,7 +639,7 @@ def parameters(scope, allowed_keys):
             raise ValueError()
         query = {key: items[0] for key, items in query.items()}
         filters = json.loads(query.get('filters', '{}'))
-        if not isinstance(filters, dict):
+        if not isinstance(filters, (dict, list)):
             raise ValueError()
     except (ValueError, UnicodeError, RecursionError):
         raise ValidationError({'query': 'Invalid query parameters'}) from None

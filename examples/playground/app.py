@@ -10,7 +10,7 @@ Portal users sign in there only, and see the customer they are linked to and its
 import os
 from pathlib import Path
 
-from evlet import (AI, Action, ApiScope, AppDefinition, Application, ChildTable, EventStore, Frontend, Host, JobQueue, LocalAuth,
+from evlet import (AI, Action, ApiScope, AppDefinition, Application, ChildTable, DevSignIn, EventStore, Frontend, Host, JobQueue, LocalAuth,
                    Policy, Rule, Security, Task, ValidationError, own_customer)
 from evlet import api
 from evlet.routing import resolve_routes
@@ -66,6 +66,11 @@ def playground_ai():
     add the OpenAI key under Connectors and give people Allow Eva in Users. Without it, Eva doesn't exist here."""
     model = os.environ.get('EVLET_EVA_MODEL')
     return AI(enabled=True, models={'Standard': model}) if model else None
+
+
+def create_dev_app():
+    """scripts/playground.sh: create_app with one-time development sign-in links at /_dev/signin. Never serve this."""
+    return DevSignIn(create_app())
 
 
 def refresh_progress(tx, job, payload):

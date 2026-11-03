@@ -1,0 +1,210 @@
+"""One-time development sign-in links, like `bench browse --user`: development servers only, loopback only."""
+
+import asyncio
+import hashlib
+import hmac
+import ipaddress
+import json
+import os
+from pathlib import Path
+import secrets
+import stat
+import tempfile
+import time
+from urllib.parse import parse_qs
+
+PATH = '/_dev/signin'
+MINUTES = 10
+# The account `evlet playground` creates on an empty database. Its random password is never shown.
+DEMO_ADMIN = 'demo-admin'
+UNAVAILABLE = 'This sign-in link has expired or was already used. Run evlet dev-link for a new one.'
+
+
+def ensure(connection):
+    connection.execute('CREATE TABLE IF NOT EXISTS evlet_dev_links (hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
+                       'expires INTEGER NOT NULL)')
+
+
+def _digest(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _choose(connection, username):
+    """The account a link signs in: username, else the only active admin, else the only active user."""
+    rows = connection.execute("SELECT u.id, u.username, u.role FROM evlet_users u JOIN evlet_roles r ON r.id=u.role "
+                              "WHERE u.active=1 AND r.realm='desk' ORDER BY u.id").fetchall()
+    names = ', '.join(row['username'] for row in rows[:10]) or 'none'
+    if username is not None:
+        found = [row for row in rows if row['username'] == username.lower()]
+        if not found:
+            raise ValueError(f'No active desk user named {username}. Users here: {names}')
+        return found[0]
+    admins = [row for row in rows if row['role'] == 'admin']
+    if len(admins) == 1:
+        return admins[0]
+    if len(rows) == 1:
+        return rows[0]
+    raise ValueError(f'Choose a user with --user NAME. Users here: {names}')
+
+
+def issue(database, user=None, *, create_admin=False, minutes=MINUTES):
+    """Store the hash of a new single-use token for user and return (token, username).
+
+    create_admin=True adds the demo-admin administrator when the database has no accounts yet;
+    only the Playground asks for it. The token itself is never stored."""
+    from .auth import password_hash
+    with database.transaction() as tx:
+        connection = tx.connection
+        ensure(connection)
+        now = int(time.time())
+        connection.execute('DELETE FROM evlet_dev_links WHERE expires<=?', (now,))
+        if create_admin and user is None and not connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone():
+            connection.execute("INSERT INTO evlet_users(username,password,role) VALUES (?,?,'admin')",
+                               (DEMO_ADMIN, password_hash(secrets.token_urlsafe(32))))
+            if database.columns(connection, 'evlet_audit'):
+                from .controls import audit
+                audit(connection, 'cli', 'Users', DEMO_ADMIN, 'Development administrator created for a sign-in link · Random password, never shown')
+        elif not connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone():
+            raise ValueError('This app has no users yet. Open it in a browser and create the first admin.')
+        account = _choose(connection, user)
+        token = secrets.token_urlsafe(32)
+        connection.execute('INSERT INTO evlet_dev_links(hash,user_id,expires) VALUES (?,?,?)', (_digest(token), account['id'], now + minutes * 60))
+    return token, account['username']
+
+
+def local_origin(auth):
+    """The desk origin a printed link uses: 127.0.0.1 first, then localhost."""
+    from urllib.parse import urlsplit
+    from .routing import authority
+    desk = [origin for origin in auth.origins if authority(origin).encode() not in auth.realms]
+    for host in ('127.0.0.1', 'localhost'):
+        for origin in sorted(desk):
+            if urlsplit(origin).hostname == host:
+                return origin
+    raise ValueError('No loopback origin for a development sign-in link')
+
+
+def link(origin, token):
+    return f'{origin}{PATH}?token={token}'
+
+
+def _loopback(address):
+    try:
+        ip = ipaddress.ip_address(address)
+    except (TypeError, ValueError):
+        return False
+    return (ip.ipv4_mapped or ip).is_loopback if ip.version == 6 else ip.is_loopback
+
+
+def sign_in(business, scope):
+    """GET /_dev/signin?token=...: use the token once and start a normal session. Returns (status, body, headers)."""
+    from .auth import AccessError
+    from .controls import audit
+    auth = business.auth
+    peer = (scope.get('client') or (None,))[0]
+    bound = (scope.get('server') or (None,))[0]
+    if scope['method'] != 'GET' or not _loopback(peer) or not _loopback(auth.client_address(scope)) or not (bound is None or _loopback(bound)):
+        return 404, b'Not found', []
+    try:
+        auth.guard(scope)
+    except AccessError as exc:
+        return exc.status, exc.message.encode(), []
+    values = parse_qs(scope.get('query_string', b'').decode('latin1')).get('token', [])
+    token = values[0] if len(values) == 1 else ''
+    realm = auth.realm(scope)
+    with business.database.transaction() as tx:
+        connection = tx.connection
+        ensure(connection)
+        now = int(time.time())
+        connection.execute('DELETE FROM evlet_dev_links WHERE expires<=?', (now,))
+        digest = _digest(token)
+        row = connection.execute('SELECT hash, user_id FROM evlet_dev_links WHERE hash=?', (digest,)).fetchone() if token else None
+        if row is None or not hmac.compare_digest(row['hash'], digest):
+            return 403, UNAVAILABLE.encode(), []
+        connection.execute('DELETE FROM evlet_dev_links WHERE hash=?', (row['hash'],))
+        account = connection.execute('SELECT u.*, r.realm AS role_realm FROM evlet_users u LEFT JOIN evlet_roles r ON r.id=u.role WHERE u.id=?',
+                                     (row['user_id'],)).fetchone()
+        if account is None or not account['active'] or account['role_realm'] != realm:
+            return 403, UNAVAILABLE.encode(), []
+        # The link comes from someone with this development instance's files, as strong as a finished second step.
+        _, headers = auth.start_session(tx, scope, account, realm, verified=True)
+        audit(connection, account['username'], 'Users', account['username'], 'Signed in with a development link')
+    return 302, b'', [*headers, (b'location', b'/')]
+
+
+def announce(application, user=None, *, create_admin=False):
+    """Print a fresh link for a started development application; problems are printed, not raised."""
+    try:
+        token, username = issue(application.database, user, create_admin=create_admin)
+        print(f'Sign in as {username} (works once, for {MINUTES} minutes):\n  {link(local_origin(application.business.auth), token)}', flush=True)
+    except ValueError as exc:
+        print(f'No sign-in link: {exc}', flush=True)
+
+
+class DevSignIn:
+    """Serve one-time sign-in links at /_dev/signin. Wrap development applications only, never one you serve.
+
+    Other requests and the lifespan pass through unchanged. With announce=True a link is printed once startup completes."""
+
+    def __init__(self, app, *, announce=False, user=None, create_admin=False):
+        self.app, self.announce, self.user, self.create_admin = app, announce, user, create_admin
+
+    def application(self):
+        target = self.app
+        while target is not None and getattr(target, 'business', None) is None:
+            target = getattr(target, 'app', None)
+        return target
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] == 'http' and scope['path'] == PATH:
+            application = self.application()
+            if application is None:
+                status, body, headers = 404, b'Not found', []
+            else:
+                status, body, headers = await asyncio.to_thread(sign_in, application.business, scope)
+            response = [(b'content-type', b'text/plain; charset=utf-8'), (b'cache-control', b'no-store'), (b'referrer-policy', b'no-referrer'),
+                        (b'x-content-type-options', b'nosniff'), (b'content-length', str(len(body)).encode()), *headers]
+            await send({'type': 'http.response.start', 'status': status, 'headers': response})
+            await send({'type': 'http.response.body', 'body': body})
+            return
+        if scope['type'] == 'lifespan' and self.announce:
+            async def started(message):
+                if message['type'] == 'lifespan.startup.complete':
+                    application = self.application()
+                    if application is not None:
+                        await asyncio.to_thread(announce, application, self.user, create_admin=self.create_admin)
+                await send(message)
+            await self.app(scope, receive, started)
+            return
+        await self.app(scope, receive, send)
+
+
+# ---------- finding a running `evlet playground` ----------
+
+def _owned(path):
+    """A folder of this user that no one else can write, so another account cannot plant a Playground."""
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISDIR(info.st_mode) and (not hasattr(os, 'getuid') or info.st_uid == os.getuid()) and not info.st_mode & 0o022
+
+
+def write_marker(directory, port):
+    target = Path(directory) / 'server.json'
+    target.write_text(json.dumps({'port': port, 'pid': os.getpid()}), encoding='utf-8')
+
+
+def running_playgrounds():
+    """(port, directory) of each `evlet playground` of this user still running, newest first."""
+    found = []
+    for marker in Path(tempfile.gettempdir()).glob('evlet-playground-*/server.json'):
+        if not _owned(marker.parent):
+            continue
+        try:
+            data = json.loads(marker.read_text(encoding='utf-8'))
+            os.kill(int(data['pid']), 0)
+            found.append((marker.stat().st_mtime, int(data['port']), marker.parent))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return [(port, directory) for _, port, directory in sorted(found, reverse=True)]
