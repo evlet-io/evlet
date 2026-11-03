@@ -44,6 +44,8 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   /** The record has a journal (Phase 8): whether entries are hash chained and the kinds this role may post. */
   journal?: { tamper_evident: boolean; kinds: string[] };
   lifecycle?: { confirmable: true; labels: Record<string, string>; permissions: Record<string, boolean> };
+  /** The field a naming series fills when the record is created (docs/sequences.md). */
+  naming?: { field: string };
 }
 
 /** Availability keys a detail may carry (outside the ETag). */
@@ -76,6 +78,8 @@ export const rootModels = (index: SchemaIndex): ScreenModel[] => index.schema.mo
 export const fieldOf = (model: ScreenModel, name: string): FieldSchema | undefined => model.fields.find(field => field.name === name);
 export const isStateField = (model: ScreenModel, field: FieldSchema) => model.state?.field === field.name || (field as any).state === true;
 export const sequenceField = (model: ScreenModel): FieldSchema | undefined => model.fields.find(field => field.type === 'sequence');
+/** The document number the server assigns: a Sequence field, or the field a naming series fills. */
+export const numberField = (model: ScreenModel): FieldSchema | undefined => sequenceField(model) ?? (model.naming ? fieldOf(model, model.naming.field) : undefined);
 export const sources = (move: MoveSchema): string[] => Array.isArray(move.from) ? move.from : [move.from];
 
 // ---------- identity ----------
