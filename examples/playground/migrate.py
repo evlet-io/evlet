@@ -48,6 +48,10 @@ migrations.append(Migration('0004_currencies',
 ))
 
 
+# Invoice numbers from the naming series (Invoice.Meta.naming). Invoices saved before this keep an empty number.
+migrations.append(Migration('0005_invoice_number', AddField('invoice', 'number', Text(unique=True, max_length=40))))
+
+
 def legacy_registry():
     """Frozen Milestone 1 definitions used only to validate a legacy baseline."""
     class Customer(Model):

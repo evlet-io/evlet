@@ -5,6 +5,12 @@ say what to change. Evlet is not production ready.
 
 ## Unreleased
 
+- **Playground invoice numbers.** New Playground invoices are named by a naming series,
+  `INV-{YYYY}-{#####}` dated by the posting date (`INV-2026-00001`), in a new `number` field
+  (migration `0005_invoice_number`; run `python -m examples.playground.migrate`). `reference` is now
+  labelled Customer reference. `/api/schema` marks a naming series field with `naming: {"field": ...}`
+  and the placeholder `Assigned on save`, and the New screen shows that field read only
+  ([docs/sequences.md](docs/sequences.md#naming-series)).
 - **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
   lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
   duration fields keep their typed input and add a calendar or steppers. List pages filter

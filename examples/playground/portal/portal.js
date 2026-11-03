@@ -29,7 +29,7 @@ async function show(session) {
   document.getElementById('who').textContent = session.user.username;
   const [customers, invoices] = await Promise.all([call('GET', '/customer'), call('GET', '/invoice')]);
   document.getElementById('customers').replaceChildren(...customers.items.map(item => Object.assign(document.createElement('li'), { textContent: item.name })));
-  document.getElementById('invoices').replaceChildren(...invoices.items.map(item => row([item.reference, item.status, item.total])));
+  document.getElementById('invoices').replaceChildren(...invoices.items.map(item => row([item.number || item.reference, item.status, item.total])));
 }
 
 document.getElementById('sign-in').addEventListener('submit', async event => {

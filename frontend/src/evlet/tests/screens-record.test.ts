@@ -132,6 +132,26 @@ describe('generated record view', () => {
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toContain('Acme Trading'));
     expect(lastToast()).toContain('Customer created');
   });
+
+  it('a naming series field says it is assigned on save, is never sent, and titles the saved record', async () => {
+    const created = screen.quote_create, id = created.body.id;
+    const { host, sent } = start([...adminRoutes(),
+      ['POST', /\/api\/quote$/, created],
+      ['GET', new RegExp(`/api/quote/${id}$`), screen.quote_detail],
+      ['GET', /\/api\/customer\/1$/, { ...recorded.customer, status: 200 }],
+    ], '/app/quote/new');
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New quote'));
+    const number = host.querySelector<HTMLInputElement>('.fld[data-field="number"] input')!;
+    expect(number.disabled).toBe(true);
+    expect(number.placeholder).toBe('Assigned on save');
+    typeInto(host.querySelector<HTMLInputElement>('.fld[data-field="issued"] input')!, '20-10-2026');
+    click(byText(host, '.ev-savebar button', 'Create quote'));
+    await until(() => expect(location.pathname).toBe(`/app/quote/${id}`));
+    expect(requests(sent, 'POST', /quote$/)[0].body).not.toHaveProperty('number');
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('QT-2026-00001'));
+    expect(host.querySelector('.doc-head h1')!.classList.contains('mono')).toBe(true);
+    expect(text(field(host, 'number'))).toContain('QT-2026-00001');
+  });
 });
 
 describe('permission-driven screens', () => {

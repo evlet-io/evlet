@@ -388,6 +388,13 @@ class Business:
             self.controls.custom.merge(entry, model, readable, writable)
             if entry['title_field'] not in readable:
                 entry['title_field'] = 'id'
+            # The field a naming series fills on create: the New screen says it is assigned on save.
+            naming = self.registry.naming.get(model)
+            if naming is not None and naming.field in readable:
+                entry['naming'] = {'field': naming.field}
+                for field in entry['fields']:
+                    if field['name'] == naming.field and not field.get('placeholder'):
+                        field['placeholder'] = 'Assigned on save'
             entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
             from .corrections import model_schema
             flags, corrections = model_schema(self, user, model)

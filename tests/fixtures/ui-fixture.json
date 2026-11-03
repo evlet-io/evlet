@@ -327,6 +327,17 @@
                     {
                       "bindings": {},
                       "events": {},
+                      "id": "number",
+                      "props": {
+                        "field": "number"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
                       "id": "customer",
                       "props": {
                         "field": "customer"
@@ -434,6 +445,17 @@
                 },
                 "slots": {
                   "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "number",
+                      "props": {
+                        "field": "number"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
                     {
                       "bindings": {},
                       "events": {},
@@ -545,6 +567,17 @@
                 },
                 "slots": {
                   "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "number",
+                      "props": {
+                        "field": "number"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
                     {
                       "bindings": {},
                       "events": {},
@@ -3671,6 +3704,7 @@
         {
           "label": "Details",
           "fields": [
+            "number",
             "customer",
             "reference",
             "total",
@@ -3683,9 +3717,10 @@
       "label": "Invoice",
       "plural": "Invoices",
       "description": "Keep each piece of work connected to a customer.",
-      "title_field": "reference",
+      "title_field": "number",
       "list_fields": [
         "id",
+        "number",
         "reference",
         "customer",
         "total",
@@ -3693,10 +3728,31 @@
         "posting_date"
       ],
       "search_fields": [
+        "number",
         "reference",
         "status"
       ],
       "fields": [
+        {
+          "name": "number",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 40,
+          "label": "Invoice number",
+          "help_text": "Given by the naming series when the invoice is saved.",
+          "placeholder": "Assigned on save",
+          "hidden": false,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
         {
           "name": "customer",
           "type": "link",
@@ -3726,8 +3782,8 @@
           "unique": true,
           "index": false,
           "max_length": 40,
-          "label": "Reference",
-          "help_text": "The number printed on the invoice.",
+          "label": "Customer reference",
+          "help_text": "The customer's reference for this invoice.",
           "tooltip": "Use the customer's purchase order number if they ask for one.",
           "placeholder": "",
           "hidden": false,
@@ -3836,6 +3892,9 @@
           "locked_when": null
         }
       ],
+      "naming": {
+        "field": "number"
+      },
       "permissions": {
         "create": true,
         "update": true,

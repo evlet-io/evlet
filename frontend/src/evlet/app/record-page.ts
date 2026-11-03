@@ -20,7 +20,7 @@ import { DataTable, emptyPrefs, type Column } from '../ui/table';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { JournalEntry, JournalPage } from './client';
-import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, screenModel, sections, sequenceField,
+import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, numberField, screenModel, sections, sequenceField,
   summaryFields, titleOf, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { Revisions } from './revisions';
@@ -135,7 +135,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return found;
   };
   const has = (field: string) => store.root.fields.has(field);
-  const sequence = sequenceField(model);
+  const sequence = sequenceField(model), numbered = numberField(model);
   const stateValue = state ? () => String(store.field(state.field).value.get() ?? '') : () => '';
   const recordId = () => store.id;
 
@@ -363,7 +363,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // ---------- header ----------
 
   // The title is edited in place, except a new record's and a document number.
-  const titleProp = isNew || !has(model.title_field) || (sequence && model.title_field === sequence.name) ? () => titleText.get() : view(model.title_field);
+  const titleProp = isNew || !has(model.title_field) || (numbered && model.title_field === numbered.name) ? () => titleText.get() : view(model.title_field);
   const markName = () => titleText.get();
   const mark = look.person ? Avatar({ name: markName, size: 'xl' }) : RecordMark({ name: markName, size: 'lg', tint: look.tint });
   const metaFacts = keyFields(model).filter(meta => meta.name !== model.title_field && has(meta.name) && !isStateField(model, meta)).slice(0, 3)
@@ -373,7 +373,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const header = DocHeader({
     type: model.label, icon: look.icon, mark,
     title: titleProp,
-    mono: () => Boolean(sequence && model.title_field === sequence.name && has(sequence.name) && store.field(sequence.name).value.get()),
+    mono: () => Boolean(numbered && model.title_field === numbered.name && has(numbered.name) && store.field(numbered.name).value.get()),
     meta: [...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
       const current = extras.get()._lifecycle;
       return current ? Chip({ label: `${model.lifecycle!.labels[current.state]} · Revision ${current.revision}`, tone: current.state === 'confirmed' ? 'green' : 'slate' }) : null;
@@ -482,8 +482,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         <span class="grow"><b>${() => { const count = table.rows.get().length; return count ? `${count} ${count === 1 ? 'row' : 'rows'}` : `No ${child.label.toLowerCase()} yet`; }}</b>
         <span class="muted">${() => sums.map(meta => `${meta.label} ${formatOf(meta, store.field(meta.name).value.get())}`).join(' · ') || child.label}</span></span>${Icon('chevron-right', { size: 'sm', className: 'muted' })}</button>`;
     }) : null;
+    // A new record shows the fields it can fill in, and the naming series field saying it is assigned on save.
     if (isNew) return html`<div class="ev-new-form">${groups.map(section => html`<section class="fs" aria-label=${section.label}><div class="fs-h"><h3>${section.label}</h3></div>
-      <div class="fs-g">${section.fields.filter(meta => !meta.read_only && !meta.compute && !isStateField(model, meta)).map(meta => fieldFor({ field: view(meta.name), links: ctx.links }))}</div></section>`)}</div>`;
+      <div class="fs-g">${section.fields.filter(meta => (!meta.read_only || meta.name === model.naming?.field) && !meta.compute && !isStateField(model, meta)).map(meta => fieldFor({ field: view(meta.name), links: ctx.links }))}</div></section>`)}</div>`;
     return groups.map((section, index) => FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
       extra: index === groups.length - 1 ? childLinks : null }));
   };

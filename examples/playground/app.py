@@ -21,7 +21,7 @@ from .ui import playground_ui
 portal = Frontend('portal', kind='static', dist='portal', path='/portal', title='Customer portal', auth='portal', api=('playground.portal',))
 PORTAL_RULES = {
     ('portal', Customer): Rule(('read',), read_fields=('name', 'email'), scope=own_customer('id')),
-    ('portal', Invoice): Rule(('read',), read_fields=('customer', 'reference', 'total', 'status', 'posting_date'), scope=own_customer()),
+    ('portal', Invoice): Rule(('read',), read_fields=('customer', 'number', 'reference', 'total', 'status', 'posting_date'), scope=own_customer()),
 }
 
 

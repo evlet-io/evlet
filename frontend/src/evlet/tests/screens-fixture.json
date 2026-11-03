@@ -799,6 +799,26 @@
   "etag": null,
   "status": 200
  },
+ "quote_create": {
+  "body": {
+   "customer": 1,
+   "id": 1,
+   "issued": "2026-10-20",
+   "number": "QT-2026-00001"
+  },
+  "etag": "\"6abd9eb19139032d26cd28bc148631d48d4c3f7ec1016ace0259dcba8d36d1e9\"",
+  "status": 201
+ },
+ "quote_detail": {
+  "body": {
+   "customer": 1,
+   "id": 1,
+   "issued": "2026-10-20",
+   "number": "QT-2026-00001"
+  },
+  "etag": "\"6abd9eb19139032d26cd28bc148631d48d4c3f7ec1016ace0259dcba8d36d1e9\"",
+  "status": 200
+ },
  "schema": {
   "body": {
    "models": [
@@ -918,6 +938,16 @@
        "link": "customer",
        "model": "order",
        "name": "order.customer",
+       "order": [
+        "-id"
+       ]
+      },
+      {
+       "label": "Quotes",
+       "limit": 10,
+       "link": "customer",
+       "model": "quote",
+       "name": "quote.customer",
        "order": [
         "-id"
        ]
@@ -2087,6 +2117,120 @@
      ],
      "sources": {},
      "title_field": "name"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "customer": {},
+      "issued": {},
+      "number": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Number",
+       "locked_when": null,
+       "max_length": 40,
+       "name": "number",
+       "placeholder": "Assigned on save",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Customer",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": 1,
+       "name": "customer",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "target": "customer",
+       "type": "link",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Issued",
+       "locked_when": null,
+       "name": "issued",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "date",
+       "unique": false
+      }
+     ],
+     "label": "Quote",
+     "layout": [
+      {
+       "fields": [
+        "number",
+        "customer",
+        "issued"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "number",
+      "customer",
+      "issued"
+     ],
+     "name": "quote",
+     "naming": {
+      "field": "number"
+     },
+     "order": [
+      "number",
+      "customer",
+      "issued"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Quotes",
+     "resource": "quote",
+     "search_fields": [
+      "number"
+     ],
+     "sources": {},
+     "title_field": "number"
     },
     {
      "actions": [],
@@ -4027,6 +4171,16 @@
        "order": [
         "-id"
        ]
+      },
+      {
+       "label": "Quotes",
+       "limit": 10,
+       "link": "customer",
+       "model": "quote",
+       "name": "quote.customer",
+       "order": [
+        "-id"
+       ]
       }
      ],
      "resource": "customer",
@@ -5105,6 +5259,120 @@
      ],
      "sources": {},
      "title_field": "name"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "customer": {},
+      "issued": {},
+      "number": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Number",
+       "locked_when": null,
+       "max_length": 40,
+       "name": "number",
+       "placeholder": "Assigned on save",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Customer",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": 1,
+       "name": "customer",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "target": "customer",
+       "type": "link",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Issued",
+       "locked_when": null,
+       "name": "issued",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "date",
+       "unique": false
+      }
+     ],
+     "label": "Quote",
+     "layout": [
+      {
+       "fields": [
+        "number",
+        "customer",
+        "issued"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "number",
+      "customer",
+      "issued"
+     ],
+     "name": "quote",
+     "naming": {
+      "field": "number"
+     },
+     "order": [
+      "number",
+      "customer",
+      "issued"
+     ],
+     "permissions": {
+      "create": false,
+      "delete": false,
+      "update": false
+     },
+     "plural": "Quotes",
+     "resource": "quote",
+     "search_fields": [
+      "number"
+     ],
+     "sources": {},
+     "title_field": "number"
     },
     {
      "actions": [],
