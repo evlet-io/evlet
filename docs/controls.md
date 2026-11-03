@@ -577,7 +577,8 @@ whole key are stored in `evlet_api_keys`.
 - **Never more than the user.** A key acts as its user with that user's current role, row
   scopes and field rules, narrowed by its scope:
   `{"access": "read" | "write", "models": null | ["Customer", ...]}`. A read key refuses
-  every request that isn't GET, including reports and draft evaluation, which are POST. A key
+  every request that isn't GET, including reports and draft evaluation, which are POST. Through
+  the Tool Engine it may still call read tools, `run_report` included ([tools.md](tools.md)). A key
   with models sees only those models and their child rows. A key with `models: null` covers
   whatever its user's role can read today, so it grows and shrinks with the role. When the
   user loses access or is deactivated, so does the key. Creating a key for a model the user
@@ -615,10 +616,18 @@ The personal page is `/settings/keys` in the Settings shell (the `MyKeysPage` co
 
 ## MCP and AI
 
+The AI group has two pages: **MCP** and **Tool log**. Each person needs **Allow MCP**, set in
+Users, to connect an assistant; it is off for new people and grants no record access. On
+upgrade, people who had a connected assistant keep it. Turning it off signs out the person's
+assistants at once. Changes are audited under Users. **Tool log** lists every tool call from
+MCP clients and the API, with redacted inputs, for 90 days ([tools.md](tools.md)).
+
+### MCP
+
 People connect AI assistants (MCP clients such as Claude) to the instance. Remote clients
 use `https://<primary host>/_/mcp` and sign in with OAuth; local ones run `evlet mcp`
 ([connector.md](connector.md)). Both act as the person who signed in and go through the same
-API routes and permission checks as the browser.
+Tool Engine, API routes and permission checks as the browser.
 
 | Key | File value | Rule |
 |---|---|---|
@@ -690,6 +699,8 @@ newest first, 50 rows at a time.
 | `GET/PUT/DELETE /api/_controls/connectors/<id>` | One connector (`whatsapp`) or account (`smtp:accounts`): read, save `{"settings", "secrets"}`, disconnect |
 | `POST /api/_controls/connectors/<id>/test`, `POST .../default` | Test within 10 seconds; make an outgoing account the default |
 | `GET /api/_controls/mcp`, `DELETE /api/_controls/mcp/<id>` | MCP address, connected clients, 24-hour totals; sign a client out |
+| `GET /api/_controls/tools?origin=&outcome=&tool=&q=&before=` | The Tool log, newest first, 50 rows a page |
+| `PATCH /api/_controls/users/<id>` with `{"allow_mcp"}` | Allow MCP, on its own, saved at once |
 | `GET/POST /api/_controls/keys`, `DELETE /api/_controls/keys/<id>` | API keys: list, create `{"name", "user", "scope"}` (the key is in this reply only), revoke |
 | `GET/POST/PATCH/DELETE /api/_settings/me/mailbox` | The person's own mailbox: read, connect with a password, change options, disconnect. Sessions only |
 | `POST /api/_settings/me/mailbox/oauth`, `POST .../sync` | Start a Microsoft 365 or Google sign-in (`{"provider"}`, answers `{"url"}`); sync now |

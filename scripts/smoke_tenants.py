@@ -9,6 +9,7 @@ from pathlib import Path
 import secrets
 import shutil
 import socket
+import sqlite3
 import ssl
 import subprocess
 import sys
@@ -60,6 +61,9 @@ def main():
         for slug in ('alpha', 'beta'):
             catalog.create_tenant(slug, slug.title(), slug + suffix)
             provision(catalog, slug, 'smoke', password)
+            # The stdio MCP check below acts for this person, who needs Allow MCP (Controls, Users).
+            with sqlite3.connect(catalog.get(slug).database_path) as connection:
+                connection.execute("UPDATE evlet_users SET allow_mcp=1 WHERE username='smoke'")
         environment = {**os.environ, 'EVLET_TENANT_ROOT': str(catalog.root), 'EVLET_BACKEND_PORT': str(backend_port)}
         context = None
         target_port = public_port if args.frontend or args.caddy else backend_port
