@@ -331,7 +331,8 @@ def test_report_column_source_hides_unreadable_fields(sales):
 
 def test_report_export_is_csv_with_the_same_checks(sales):
     c = client(sales)
-    status, content, headers = c('POST', '/api/_reports/SalesByCustomer/export.csv', {'filters': {}, 'sort': 'customer'})
+    # Sorted by a number: text order depends on the database's collation.
+    status, content, headers = c('POST', '/api/_reports/SalesByCustomer/export.csv', {'filters': {}, 'sort': 'amount'})
     assert status == 200
     assert headers[b'content-type'] == b'text/csv; charset=utf-8'
     assert headers[b'content-disposition'] == b"attachment; filename*=UTF-8''Sales%20by%20customer.csv"
