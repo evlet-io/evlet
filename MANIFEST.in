@@ -11,5 +11,5 @@ recursive-include frontend/public *.svg
 recursive-include frontend/fonts *.woff2 *.txt
 recursive-include evlet/ui/static *.html *.js *.css *.svg *.woff2 *-OFL.txt
 recursive-include evlet *.pyi py.typed
-recursive-include evlet/resources *.tpl
+recursive-include evlet/resources *.tpl *.woff2 *-OFL.txt
 prune tests

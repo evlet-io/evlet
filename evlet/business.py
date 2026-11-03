@@ -323,6 +323,12 @@ class Business:
         result = self.registry.ui_schema()
         if getattr(self, 'forms', None) and self.forms.reports:
             result['reports'] = self.forms.catalog(user)
+            if getattr(self, 'prints', None) is not None:
+                for entry in result['reports']:
+                    entry['prints'] = self.prints.for_report(user, self.forms.reports[entry['name']])
+        if getattr(self, 'prints', None) is not None and self.prints.designs:
+            from .printing import available
+            result['printing'] = {'available': available()}
         if getattr(self, 'slips', None) and self.slips.slips:
             result['slips'] = self.slips.schema(user)
         if getattr(self, 'build_manifest', None) and self.build_manifest.get('native', {}).get('panels'):
@@ -403,7 +409,9 @@ class Business:
                 for field in entry['fields']:
                     if field['name'] == naming.field and not field.get('placeholder'):
                         field['placeholder'] = 'Assigned on save'
-            entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
+            entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete', 'print')}
+            if getattr(self, 'prints', None) is not None:
+                entry['prints'] = self.prints.for_model(user, model)
             from .corrections import model_schema
             flags, corrections = model_schema(self, user, model)
             entry.update(flags)
@@ -542,6 +550,14 @@ class Business:
             return dispatch(self, scope, body, user)
         if getattr(self, 'slips', None) and path.startswith('/api/_slips/'):
             return self.slips.dispatch(scope, body, user)
+        prints = getattr(self, 'prints', None)
+        if prints is not None and path == '/api/_prints':
+            if method != 'GET': raise AccessError(405, 'Method not allowed')
+            return 200, prints.catalog(user), []
+        if prints is not None and path.startswith('/api/_reports/') and path.count('/') == 5 and path.split('/')[4] == 'prints':
+            if method != 'POST': raise AccessError(405, 'Method not allowed')
+            _, _, _, report, _, design = path.split('/')
+            return prints.report_pdf(report, design, body, user)
         if getattr(self, 'forms', None) and (path == '/api/_reports' or path.startswith(('/api/_reports/', '/api/_dialogs/'))):
             return self.forms.dispatch(scope, body, user)
         if path.startswith('/api/_draft/') and method == 'POST':
@@ -689,7 +705,7 @@ class Business:
         # Legacy Action registrations keep their own route on document models.
         legacy_action = len(parts) == 6 and parts[4] == 'actions' and not hasattr(getattr(model, parts[5], None), '__action__')
         # Attachments and line pages have their own routes on every model.
-        own_route = len(parts) >= 5 and parts[4] in ('attachments', 'lines', 'related')
+        own_route = len(parts) >= 5 and parts[4] in ('attachments', 'lines', 'related', 'prints')
         if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH') and not legacy_action and not own_route:
             from .documents import Context
             record_id = None
@@ -747,6 +763,8 @@ class Business:
             return self.related(scope, user, model, record_id, parts[5:])
         if len(parts) >= 5 and parts[4] == 'attachments':
             return self.files(user, model, record_id, parts[5:], method, body)
+        if len(parts) >= 6 and parts[4] == 'prints' and getattr(self, 'prints', None) is not None:
+            return self.prints.record_pdf(scope, user, model, record_id, parts[5:], method)
         if len(parts) == 6 and parts[4] == 'actions' and method == 'POST':
             action = self.actions.get((model, parts[5]))
             if action is None or user.role not in action.roles:

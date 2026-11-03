@@ -28,7 +28,7 @@ class Application:
     # build_instance sets this: an instance's framework steps run only inside evlet migrate.
     managed_framework = False
 
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None, prints=()):
         from .ui import ViewRegistry
         from .routing import RouteTable, resolve_routes
         if routes is not None and not isinstance(routes, RouteTable):
@@ -60,6 +60,8 @@ class Application:
             self.business.forms = Forms(self.business, reports)
             from .slips import Slips
             self.business.slips = Slips(self.business, slips)
+            from .printing import Prints
+            self.business.prints = Prints(self.business, prints)
             self.business.apis = tuple(apis)
             self.business.ui = self.ui
             self.business.controls.routes = self.routes
@@ -78,8 +80,8 @@ class Application:
                     raise ValueError('Pass ai=AI(...)')
                 if ai.enabled:
                     self.business.eva = Eva(self.business, ai)
-        elif reports or apis or connectors or slips or ai is not None:
-            raise ValueError('Reports, slips, APIs, connectors and AI require authentication')
+        elif reports or apis or connectors or slips or prints or ai is not None:
+            raise ValueError('Reports, slips, print designs, APIs, connectors and AI require authentication')
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -211,7 +213,7 @@ class Application:
             need = ('action', parts[5])
         elif len(parts) == 5 and parts[4] in ('history', 'revisions', 'snapshot', 'diff'):
             need = ('extra', 'history' if parts[4] == 'history' else 'revisions')
-        elif len(parts) >= 5 and parts[4] in ('related', 'lines', 'attachments'):
+        elif len(parts) >= 5 and parts[4] in ('related', 'lines', 'attachments', 'prints'):
             need = ('extra', parts[4])
         else:
             raise HTTPError(404, 'Route not found')

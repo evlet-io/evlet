@@ -17,7 +17,7 @@ from .fields import Link
 from .models import ValidationError
 from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
 
-OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', *CORRECTIONS)
+OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
 PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({

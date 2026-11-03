@@ -170,6 +170,18 @@ class Context:
         children = value.pop('children', {})
         return Snapshot({**value, **children})
 
+    def print(self, design, record_id):
+        """PDF bytes of a record printed with a PrintDesign, with this context's user and permissions."""
+        from .printing import INSTALL, available, document_context, render
+        model = self._model(design.model)
+        if design not in self._business.prints.designs.values():
+            raise ValueError('Register the print design with Application(prints=...)')
+        if not available():
+            raise AccessError(503, INSTALL)
+        record = self._business.policy.record(self._tx, self.user, model, record_id)
+        self._business.policy.require(self.user, model, 'print')
+        return render(design, document_context(self._business, self._tx, self.user, model, record), self._business)
+
     def list(self, model, *, filters=None, order_by=('id',), limit=50, offset=0):
         model = self._model(model)
         business, tx = self._business, self._tx
