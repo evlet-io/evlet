@@ -820,3 +820,79 @@ def test_postgres_run_data_order_maintenance_and_retired_links(pg_dsn):
 def test_postgres_maintenance_data_steps_are_opt_in_and_audited(pg_dsn):
     from tests.test_migration_plan import check_maintenance_steps, maker
     check_maintenance_steps(maker(pg_dsn, PostgreSQLDatabase))
+
+
+def test_framework_ledger_and_steps_match_sqlite(pg_dsn, monkeypatch):
+    from evlet import Application, framework
+    seen = []
+
+    def move(connection, postgres):
+        seen.append(postgres)
+        connection.execute('CREATE TABLE evlet_moved_calls (id INTEGER PRIMARY KEY, tool TEXT NOT NULL)')
+        connection.execute('INSERT INTO evlet_moved_calls (id, tool) SELECT id, username FROM evlet_users')
+        connection.execute('DROP TABLE evlet_legacy_calls')
+
+    db = PostgreSQLDatabase(pg_dsn, registry)
+    app = build_app(db, LocalAuth(db, origins=['http://127.0.0.1:8000'], secure_cookies=False))
+    app.initialize()
+    with db.transaction() as tx:
+        assert [tuple(row) for row in tx.connection.execute('SELECT position, name, checksum FROM evlet_framework_migrations ORDER BY position')] == \
+            [(i + 1, step.name, step.checksum()) for i, step in enumerate(framework.STEPS)]
+        tx.connection.execute('CREATE TABLE evlet_legacy_calls (id INTEGER PRIMARY KEY)')
+        tx.connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('owner','x','admin')")
+    monkeypatch.setattr(framework, 'STEPS', (*framework.STEPS, framework.FrameworkStep('0099_move', 'Move rows, drop a table.', move)))
+    app.managed_framework = True
+    with pytest.raises(SchemaError, match='framework migrations are pending'):
+        app.initialize()
+    app.managed_framework = False
+    assert framework.upgrade(db) == ['0099_move'] and seen == [True]
+    with db.transaction() as tx:
+        assert [row[0] for row in tx.connection.execute('SELECT tool FROM evlet_moved_calls')] == ['owner']
+        assert tx.connection.execute("SELECT to_regclass('evlet_legacy_calls')").fetchone()[0] is None
+    # A failing step rolls back its own changes and leaves the ledger as it was.
+    def fail(connection, postgres):
+        connection.execute('DROP TABLE evlet_moved_calls')
+        raise RuntimeError('simulated framework step failure')
+    monkeypatch.setattr(framework, 'STEPS', (*framework.STEPS, framework.FrameworkStep('0100_fail', 'Fails.', fail)))
+    with pytest.raises(RuntimeError):
+        framework.upgrade(db)
+    with db.transaction() as tx:
+        assert tx.connection.execute('SELECT count(*) FROM evlet_framework_migrations').fetchone()[0] == len(framework.STEPS) - 1
+        assert tx.connection.execute("SELECT to_regclass('evlet_moved_calls')").fetchone()[0] is not None
+
+
+def slow_step(connection, postgres):
+    import time
+    time.sleep(0.5)
+
+
+def test_framework_steps_move_mcp_calls_and_serialize_concurrent_starts(pg_dsn, monkeypatch):
+    import time
+    from evlet import framework
+    db = PostgreSQLDatabase(pg_dsn, registry)
+    app = build_app(db, LocalAuth(db, origins=['http://127.0.0.1:8000'], secure_cookies=False))
+    app.initialize()
+    now = int(time.time())
+    with db.transaction() as tx:
+        # Evlet 0.2.0's MCP call log, with one recorded call, and no ledger yet.
+        tx.connection.execute('DROP TABLE evlet_framework_migrations')
+        tx.connection.execute('DROP TABLE evlet_tool_approvals')
+        tx.connection.execute('DROP TABLE evlet_tool_calls')
+        tx.connection.execute("CREATE TABLE evlet_mcp_calls (id INTEGER PRIMARY KEY, client_id INTEGER NOT NULL REFERENCES evlet_mcp_clients(id) ON DELETE CASCADE, "
+                              "at INTEGER NOT NULL, tool TEXT NOT NULL, model TEXT, kind TEXT NOT NULL, outcome TEXT NOT NULL)")
+        user = tx.connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('owner','x','admin')").lastrowid
+        tx.connection.execute("INSERT INTO evlet_oauth_clients (id, name, redirect_uris, created_at) VALUES ('oc', 'Desktop client', '[]', 0)")
+        tx.connection.execute("INSERT INTO evlet_mcp_clients (id, user_id, oauth_client, client_name, created_at) VALUES (3, ?, 'oc', 'Desktop client', 0)", (user,))
+        tx.connection.execute("INSERT INTO evlet_mcp_calls VALUES (1, 3, ?, 'list_records', 'project', 'read', 'ok')", (now,))
+    # Several processes starting at once take turns: one applies the steps, the others find nothing pending.
+    # A slow last step keeps the first transaction open while the others start.
+    monkeypatch.setattr(framework, 'STEPS', (*framework.STEPS, framework.FrameworkStep('0099_slow', 'Wait.', slow_step)))
+    others = [PostgreSQLDatabase(pg_dsn, registry) for _ in range(4)]
+    with ThreadPoolExecutor(4) as pool:
+        results = list(pool.map(framework.upgrade, others))
+    assert sorted(results, key=len) == [[], [], [], [step.name for step in framework.STEPS]]
+    with db.transaction() as tx:
+        assert [tuple(row) for row in tx.connection.execute('SELECT at, user_id, origin, client, client_id, tool, kind, outcome FROM evlet_tool_calls')] == \
+            [(now, user, 'mcp', 'Desktop client', 3, 'list_records', 'read', 'ok')]
+        assert tx.connection.execute("SELECT to_regclass('evlet_mcp_calls')").fetchone()[0] is None
+    app.initialize()
