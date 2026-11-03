@@ -1,7 +1,19 @@
 # Opening a record in a side panel from a list — plan
 
-Status: proposal, waiting for the owner. Nothing is implemented. The clickable mockup is
-published as an Artifact (link in the PR and the session report).
+Status: approved by the owner on 03-11-2026 with every proposed decision, and implemented. The
+clickable mockup is published as an Artifact (link in the PR). The user guide is "Side panel"
+in [ui-framework.md](../ui-framework.md).
+
+What the implementation does differently from this plan, for the owner to review:
+
+- Tabs that do not fit in the panel scroll sideways; there is no "More" tab menu yet.
+- Up and Down move between rows; J and K are not bound, and moving past the last row does not
+  turn the page.
+- The switch prompt keeps today's Cancel and Discard (decision 4). The mockup's "Save and
+  continue" was not added.
+- Text ids (PR 92) are not on main yet, so `?open=` carries today's numeric ids. The list matches
+  the open row by its id as text; the row refresh after a save reads the record's detail by
+  number, like the record page, and moves to text ids with it when PR 92 lands.
 
 ## What exists today
 

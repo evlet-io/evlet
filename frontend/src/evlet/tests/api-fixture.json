@@ -5020,7 +5020,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.231Z",
+     "at": "2026-11-03T19:02:01.608Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5032,7 +5032,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.217Z",
+     "at": "2026-11-03T19:02:01.402Z",
      "data": {
       "fields": {
        "total": {
@@ -5094,7 +5094,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.204Z",
+     "at": "2026-11-03T19:02:01.295Z",
      "data": {
       "fields": {
        "customer": {
@@ -5290,7 +5290,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-03T17:06:01.274Z",
+     "at": "2026-11-03T19:02:02.872Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5302,7 +5302,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.273Z",
+     "at": "2026-11-03T19:02:02.857Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5314,7 +5314,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.270Z",
+     "at": "2026-11-03T19:02:02.830Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -5324,7 +5324,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.268Z",
+     "at": "2026-11-03T19:02:02.673Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -5336,7 +5336,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.266Z",
+     "at": "2026-11-03T19:02:02.637Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5345,7 +5345,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.249Z",
+     "at": "2026-11-03T19:02:02.327Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5360,7 +5360,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.241Z",
+     "at": "2026-11-03T19:02:02.054Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5370,7 +5370,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.241Z",
+     "at": "2026-11-03T19:02:02.052Z",
      "data": {
       "targets": [
        {
@@ -5386,7 +5386,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.241Z",
+     "at": "2026-11-03T19:02:02.049Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5403,7 +5403,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.231Z",
+     "at": "2026-11-03T19:02:01.608Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5415,7 +5415,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.217Z",
+     "at": "2026-11-03T19:02:01.402Z",
      "data": {
       "fields": {
        "total": {
@@ -5477,7 +5477,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.204Z",
+     "at": "2026-11-03T19:02:01.295Z",
      "data": {
       "fields": {
        "customer": {
@@ -5527,7 +5527,7 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-03T17:06:01.268Z",
+   "at": "2026-11-03T19:02:02.673Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5543,7 +5543,7 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-03T17:06:01.270Z",
+   "at": "2026-11-03T19:02:02.830Z",
    "data": {
     "follow_up": 19,
     "text": "Balance due by the end of the month"
@@ -5557,7 +5557,7 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-03T17:06:01.266Z",
+   "at": "2026-11-03T19:02:02.637Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -6083,6 +6083,7 @@
       "credit_days"
      ],
      "name": "customer",
+     "open_in": "page",
      "order": [
       "name",
       "rate",
@@ -6343,6 +6344,7 @@
       "memo"
      ],
      "name": "ledgerentry",
+     "open_in": "page",
      "order": [
       "customer",
       "debit",
@@ -7171,6 +7173,7 @@
       }
      ],
      "name": "invoice",
+     "open_in": "page",
      "order": [
       "number",
       "customer",
@@ -7416,6 +7419,7 @@
       "paid_on"
      ],
      "name": "payment",
+     "open_in": "page",
      "order": [
       "invoice",
       "amount",
@@ -7629,6 +7633,7 @@
       "amount"
      ],
      "name": "invoice_lines",
+     "open_in": "page",
      "order": [],
      "permissions": {
       "create": true,
@@ -7961,7 +7966,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-03T17:06:01.274Z",
+     "at": "2026-11-03T19:02:02.872Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -7973,7 +7978,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.273Z",
+     "at": "2026-11-03T19:02:02.857Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -7985,7 +7990,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.270Z",
+     "at": "2026-11-03T19:02:02.830Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -7995,7 +8000,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.268Z",
+     "at": "2026-11-03T19:02:02.673Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -8007,7 +8012,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.266Z",
+     "at": "2026-11-03T19:02:02.637Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -8016,7 +8021,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.249Z",
+     "at": "2026-11-03T19:02:02.327Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8031,7 +8036,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.241Z",
+     "at": "2026-11-03T19:02:02.054Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -8041,7 +8046,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.241Z",
+     "at": "2026-11-03T19:02:02.052Z",
      "data": {},
      "id": 15,
      "kind": "changed",
@@ -8049,7 +8054,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.241Z",
+     "at": "2026-11-03T19:02:02.049Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8066,7 +8071,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.231Z",
+     "at": "2026-11-03T19:02:01.608Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -8078,7 +8083,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.217Z",
+     "at": "2026-11-03T19:02:01.402Z",
      "data": {
       "fields": {
        "total": {
@@ -8140,7 +8145,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T17:06:01.204Z",
+     "at": "2026-11-03T19:02:01.295Z",
      "data": {
       "fields": {
        "customer": {
@@ -8330,6 +8335,7 @@
       "credit_days"
      ],
      "name": "customer",
+     "open_in": "page",
      "order": [
       "name",
       "rate",
@@ -9077,6 +9083,7 @@
       }
      ],
      "name": "invoice",
+     "open_in": "page",
      "order": [
       "number",
       "customer",
@@ -9322,6 +9329,7 @@
       "paid_on"
      ],
      "name": "payment",
+     "open_in": "page",
      "order": [
       "invoice",
       "amount",
@@ -9535,6 +9543,7 @@
       "amount"
      ],
      "name": "invoice_lines",
+     "open_in": "page",
      "order": [],
      "permissions": {
       "create": false,
@@ -10416,6 +10425,7 @@
       "credit_days"
      ],
      "name": "customer",
+     "open_in": "page",
      "order": [
       "name",
       "rate",
@@ -10542,6 +10552,7 @@
       "price"
      ],
      "name": "product",
+     "open_in": "page",
      "order": [
       "name",
       "price"
@@ -11529,6 +11540,7 @@
       "issued"
      ],
      "name": "order",
+     "open_in": "page",
      "order": [
       "title",
       "customer",
@@ -11774,6 +11786,7 @@
       "amount"
      ],
      "name": "order_lines",
+     "open_in": "page",
      "order": [],
      "permissions": {
       "create": true,
@@ -11843,6 +11856,7 @@
       "hours"
      ],
      "name": "order_lines_parts",
+     "open_in": "page",
      "permissions": {
       "create": true,
       "delete": true,

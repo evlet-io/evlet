@@ -49,6 +49,7 @@
             "customer",
             "remarks"
           ],
+          "open_in": "page",
           "fields": [
             {
               "name": "number",
@@ -233,6 +234,7 @@
           "search_fields": [
             "description"
           ],
+          "open_in": "page",
           "fields": [
             {
               "name": "description",

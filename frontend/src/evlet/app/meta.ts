@@ -77,6 +77,9 @@ export const rootModels = (index: SchemaIndex): ScreenModel[] => index.schema.mo
 
 export const fieldOf = (model: ScreenModel, name: string): FieldSchema | undefined => model.fields.find(field => field.name === name);
 export const isStateField = (model: ScreenModel, field: FieldSchema) => model.state?.field === field.name || (field as any).state === true;
+/** Query keys of a list's address: search, sort, page, view, saved view, filters, and the side panel's record and tab. */
+export const LIST_KEYS = ['q', 'sort', 'page', 'view', 'tab', 'f', 'open', 'rtab'];
+
 export const sequenceField = (model: ScreenModel): FieldSchema | undefined => model.fields.find(field => field.type === 'sequence');
 /** The document number the server assigns: a Sequence field, or the field a naming series fills. */
 export const numberField = (model: ScreenModel): FieldSchema | undefined => sequenceField(model) ?? (model.naming ? fieldOf(model, model.naming.field) : undefined);

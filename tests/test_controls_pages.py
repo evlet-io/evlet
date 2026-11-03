@@ -277,7 +277,7 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
                               ('field', 'Lead.value', {'required': True, 'label': 'Expected value'}),
                               ('field', 'Lead.source', {'options_add': ['exhibition'], 'default': 'web'}),
                               ('field', 'Lead.x_lpo', {'help_text': 'From the purchase order', 'tooltip': 'Ask the customer if it is missing'}),
-                              ('layout', 'Lead', sections), ('list', 'Lead', {'columns': ['title', 'value'], 'page_size': 25, 'sort': 'title'}),
+                              ('layout', 'Lead', sections), ('list', 'Lead', {'columns': ['title', 'value'], 'page_size': 25, 'sort': 'title', 'open_in': 'panel'}),
                               ('naming', 'Invoice', series), ('setting', 'security.controls_ips', ['127.0.0.0/8']), ('setting', 'security.lockout', 4))
     assert status == 200, payload
     exported = {item['file']: item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1]}
@@ -310,7 +310,7 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     schema = admin('GET', '/api/schema')[1]
     compiled = {view['name']: view for view in ViewRegistry([views['lead_form'], views['lead_list']]).compile(schema)['views']}
     assert layouts(compiled['lead.form']) == [(section['title'], [item['name'] for item in section['fields']]) for section in sections]
-    assert compiled['lead.list']['options'] == {'columns': ['title', 'value'], 'page_size': 25, 'order_by': 'title'}
+    assert compiled['lead.list']['options'] == {'columns': ['title', 'value'], 'page_size': 25, 'order_by': 'title', 'open_in': 'panel'}
 
     routes = {}
     exec(exported['instances/<name>/routes.py'], names, routes)
@@ -319,7 +319,7 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
 
     one = admin('GET', '/api/_controls/overrides/export?kind=list&key=Lead')[1]
     assert one == [{'file': f'{folder}/views/__init__.py',
-                    'code': "lead_list = ListView(model=Lead, columns=['title', 'value'], page_size=25, order_by='title')\n"}]
+                    'code': "lead_list = ListView(model=Lead, columns=['title', 'value'], page_size=25, order_by='title', open_in='panel')\n"}]
     custom = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'custom')
     assert custom['key'] == 'Lead' and custom['value'][0]['name'] == 'x_lpo' and custom['changed_by'] == 'admin'
     assert admin('GET', '/api/_controls/overrides/export?kind=perm')[0] == 200

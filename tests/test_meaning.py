@@ -138,6 +138,7 @@ def test_revisions_relation_is_labelled():
     ({'relations': (Related('note', 'owner', order='missing'),)}, 'stored fields'),
     ({'attachments': (1, 2)}, 'Attachments'),
     ({'unknown': 1}, 'Model.Meta supports'),
+    ({'open_in': 'drawer'}, 'open_in must be "page" or "panel"'),
 ])
 def test_meaning_metadata_is_validated_at_registration(meta, message):
     class Row(Child):
@@ -154,6 +155,22 @@ def test_meaning_metadata_is_validated_at_registration(meta, message):
 
     with pytest.raises(ValueError, match=message):
         Registry(Owner, Note)
+
+
+def test_open_in_says_how_a_list_opens_records():
+    from evlet.ui.metadata import view_for
+
+    class Ticket(Model):
+        title = Text(default='')
+
+        class Meta:
+            open_in = 'panel'
+
+    class Plain(Model):
+        title = Text(default='')
+
+    assert view_for(Ticket)['open_in'] == 'panel'
+    assert view_for(Plain)['open_in'] == 'page'
 
 
 @pytest.mark.parametrize('arguments', [

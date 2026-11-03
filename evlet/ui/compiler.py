@@ -145,6 +145,8 @@ class SchemaCompiler:
             size = view.options.get("page_size", 25)
             if type(size) is not int or not 1 <= size <= 100:
                 raise ValueError("page_size must be from 1 to 100")
+            if view.options.get("open_in", "page") not in ("page", "panel"):
+                raise ValueError('open_in must be "page" or "panel"')
             if "columns" in view.options and (
                 not isinstance(view.options["columns"], (list, tuple))
                 or not all(isinstance(value, str) for value in view.options["columns"])

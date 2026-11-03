@@ -408,6 +408,8 @@ function ListTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
         ${field('Rows per page', 'ctl-l-size', Select({ id: 'ctl-l-size', value: () => String(value().page_size), options: () => [['25', '25'], ['50', '50'], ['100', '100']],
           onChange: next => set({ page_size: Number(next) }) }))}
         ${field('Default sort', 'ctl-l-sort', Select({ id: 'ctl-l-sort', value: () => value().sort, options: sorts, onChange: next => set({ sort: next }) }))}
+        ${field('Open records in', 'ctl-l-open', Select({ id: 'ctl-l-open', value: () => value().open_in ?? 'page', options: () => [['page', 'Full page'], ['panel', 'Side panel beside the list']],
+          onChange: next => set({ open_in: next as 'page' | 'panel' }) }))}
         ${when(() => ctx.drafts.errors.get().has(id), () => html`<span class="ctl-err">${() => ctx.drafts.errors.get().get(id)}</span>`)}</div></section>
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Preview</h2><p>${() => ctx.drafts.overridden(id) ? 'Changed on this instance' : 'Same as the app'}</p></div></div>
         <div class="table-wrap"><table class="dt ctl-table"><thead><tr>${() => value().columns.map(name => html`<th>${label(name)}</th>`)}</tr></thead>

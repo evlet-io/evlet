@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cell } from '../reactive';
-import { ChildTable } from '../ui/childtable';
+import { ChildRows, ChildTable } from '../ui/childtable';
 import { emptyPrefs } from '../ui/table';
 import { backend, bigOrder, change, cleanup, key, render, watch } from './ui-helpers';
 
@@ -237,5 +237,40 @@ describe('ChildTable over a record store', () => {
     await store.loadAll();
     cellOf(rowsIn(host)[0], 'qty').click();
     expect(host.querySelector('td.editing')).not.toBeNull();
+  });
+});
+
+describe('ChildRows: a child table in a narrow column', () => {
+  it('shows a line per row with its amount, edits a row in place, adds rows and opens the full table', async () => {
+    const { store } = await bigOrder(3);
+    const full = vi.fn();
+    const host = render(() => ChildRows({ table: store.table('lines'), title: 'Lines', onOpenFull: full, totals: [{ label: 'Total', value: 'AED 15.00' }] }));
+    const lines = () => [...host.querySelectorAll<HTMLElement>('.crow')];
+    expect(lines()).toHaveLength(3);
+    expect(host.querySelector('.crows-h h3')!.textContent).toBe('3 rows');
+    expect(lines()[1].querySelector('.crow-amt')!.textContent!.trim()).toBe('AED 5.00');
+    expect(lines()[1].querySelector('.crow-sub')!.textContent).toContain('Qty');
+    const head = lines()[0].querySelector<HTMLButtonElement>('.crow-h')!;
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+    head.click();
+    expect(head.getAttribute('aria-expanded')).toBe('true');
+    expect(lines()[0].querySelectorAll('.crow-ed .ff, .crow-ed .field, .crow-ed input').length).toBeGreaterThan(0);
+    [...host.querySelectorAll<HTMLButtonElement>('.crows-h button')].find(button => button.textContent!.includes('Add row'))!.click();
+    expect(lines()).toHaveLength(4);
+    expect(lines()[3].classList.contains('open')).toBe(true);
+    expect(store.dirty.peek()).toBe(true);
+    [...host.querySelectorAll<HTMLButtonElement>('.crows-h button')].find(button => button.textContent!.includes('Open full table'))!.click();
+    expect(full).toHaveBeenCalledOnce();
+    expect(host.querySelector('.crows-t')!.textContent).toBe('TotalAED 15.00');
+  });
+
+  it('shows values without inputs or Add row while locked', async () => {
+    const { store } = await bigOrder(2);
+    const host = render(() => ChildRows({ table: store.table('lines'), title: 'Lines', locked: true, lockedText: 'Locked. Lines can’t change now.' }));
+    expect([...host.querySelectorAll('.crows-h button')].some(button => button.textContent!.includes('Add row'))).toBe(false);
+    expect(host.querySelector('.crows-lock')!.textContent).toBe('Locked. Lines can’t change now.');
+    host.querySelector<HTMLButtonElement>('.crow-h')!.click();
+    expect(host.querySelector('.crow-ed dl.fields')).not.toBeNull();
+    expect(host.querySelector('.crow-ed input')).toBeNull();
   });
 });

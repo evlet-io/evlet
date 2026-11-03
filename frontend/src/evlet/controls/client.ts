@@ -30,7 +30,7 @@ export interface FieldOverride {
   default?: unknown; options_add?: string[]; options_hidden?: string[];
 }
 export interface LayoutSection { title: string; fields: Array<{ name: string; width: 6 | 12 }> }
-export interface ListValue { columns: string[]; page_size: number; sort: string }
+export interface ListValue { columns: string[]; page_size: number; sort: string; /** How the list opens a record (absent in list views saved before it existed). */ open_in?: 'page' | 'panel' }
 export interface SeriesValue { id: string; label: string; format: string; when: string }
 export interface FieldInfo {
   name: string; type: string; custom: boolean; editable: boolean; stored: boolean; unique: boolean; target: string | null; width: 6 | 12;

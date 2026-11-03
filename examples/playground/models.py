@@ -29,6 +29,8 @@ class Invoice(Model):
         # The year comes from the posting date, or the creation day without one. Controls, Naming can
         # add series and set the counter.
         naming = Naming('number', Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date')
+        # The list opens an invoice in a side panel beside it. People can switch back to the full page.
+        open_in = 'panel'
 
     # The invoice number. It is empty until the invoice is saved and read only after that.
     number = Text(unique=True, max_length=40, label='Invoice number', help_text='Given by the naming series when the invoice is saved.')
@@ -62,6 +64,7 @@ class Project(Model):
         description = "Track a small project and its customer."
         list_fields = ('name', 'customer', 'status', 'budget')
         layout = (('Project', ('name', 'customer', 'status')), ('Planning', ('budget', 'progress', 'starts_on')), ('Notes', ('notes',)))
+        open_in = 'panel'
 
     name = Text(required=True, max_length=120)
     customer = Link(Customer)
