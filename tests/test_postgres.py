@@ -761,6 +761,23 @@ def test_postgres_remote_mcp_oauth_and_assistant_tables(secured):
     assert rpc(secured, fresh['access_token'], 'ping')[0] == 401
 
 
+def test_dev_signin_link_on_postgresql(pg_dsn):
+    from evlet import DevSignIn
+    from evlet.devlink import issue
+    from tests.test_devlink import call, session_cookie
+    db = PostgreSQLDatabase(pg_dsn, registry)
+    app = build_app(db, LocalAuth(db, origins=['http://127.0.0.1:8000'], secure_cookies=False, allow_setup=True))
+    app.initialize()
+    token, username = issue(db, create_admin=True)
+    assert username == 'demo-admin'
+    wrapped = DevSignIn(app)
+    status, headers, _ = call(wrapped, 'GET', f'/_dev/signin?token={token}')
+    assert status == 302
+    status, _, body = call(wrapped, 'GET', '/api/auth/session', cookie=session_cookie(headers))
+    assert b'demo-admin' in body
+    assert call(wrapped, 'GET', f'/_dev/signin?token={token}')[0] == 403
+
+
 def test_framework_ledger_and_steps_match_sqlite(pg_dsn, monkeypatch):
     from evlet import Application, framework
     seen = []
