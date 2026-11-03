@@ -174,7 +174,7 @@ class Context:
         """PDF bytes of a record printed with a PrintDesign, with this context's user and permissions."""
         from .printing import INSTALL, available, document_context, render
         model = self._model(design.model)
-        if design not in self._business.prints.designs.values():
+        if design not in self._business.prints.current().values():
             raise ValueError('Register the print design with Application(prints=...)')
         if not available():
             raise AccessError(503, INSTALL)

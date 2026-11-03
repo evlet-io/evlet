@@ -372,6 +372,7 @@ class Prints:
 
     def __init__(self, business, designs=()):
         self.business = business
+        # The app's designs; Controls adds stored designs on top (current()).
         self.designs = {}
         defaults = set()
         for design in designs:
@@ -386,16 +387,56 @@ class Prints:
                     raise ValueError(f'{design.__name__}: another design is already the default for {owner.__name__}')
                 defaults.add(owner)
             self.designs[design.__name__] = design
+        self.stored, self.version = {}, None
+        self.designer = Designer(self)
+
+    def initialize(self):
+        with self.business.database.transaction() as tx:
+            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_print_designs (name TEXT PRIMARY KEY, definition TEXT NOT NULL, '
+                                  'changed_by TEXT, changed_at INTEGER)')
+        self.reload()
+
+    def stored_rows(self):
+        try:
+            with self.business.database._connection() as connection:
+                rows = connection.execute('SELECT name, definition, changed_by, changed_at FROM evlet_print_designs ORDER BY name').fetchall()
+        except Exception:
+            return {}
+        return {row['name']: {'definition': row['definition'], 'changed_by': row['changed_by'], 'changed_at': row['changed_at']} for row in rows}
+
+    def reload(self):
+        """Read the stored designs again. A stored design that no longer fits the app is left out and logged."""
+        import json, logging
+        stored = {}
+        for name, row in self.stored_rows().items():
+            if name in self.designs:
+                continue
+            try:
+                stored[name] = design_from(name, json.loads(row['definition']), self.business)
+            except (ValueError, TypeError):
+                logging.getLogger('evlet.printing').warning('Stored print design %s no longer fits the app and is not offered', name)
+        self.stored = stored
+        self.version = getattr(getattr(self.business, 'controls', None), 'version', None)
+
+    def current(self):
+        """The app's designs and the stored ones, read again when Controls saved a change in any process."""
+        version = getattr(getattr(self.business, 'controls', None), 'version', None)
+        if version != self.version:
+            self.reload()
+        stored = {name: design for name, design in self.stored.items()
+                  if not (design.default and any(other.default and (other.model or other.report) is (design.model or design.report)
+                                                  for other in self.designs.values()))}
+        return {**self.designs, **stored}
 
     def for_model(self, user, model):
         policy = self.business.policy
         if not policy.allows(user, model, 'print'):
             return []
-        return self._listed(design for design in self.designs.values() if design.model is not None
+        return self._listed(design for design in self.current().values() if design.model is not None
                             and self.business.registry.resolve(design.model) is model)
 
     def for_report(self, user, report):
-        return self._listed(design for design in self.designs.values()
+        return self._listed(design for design in self.current().values()
                             if design.report is report and user.role in design.roles and user.role in report.roles)
 
     @staticmethod
@@ -413,7 +454,7 @@ class Prints:
     # ---- routes ----------------------------------------------------------------------------
 
     def design(self, name, *, model=None, report=None):
-        design = self.designs.get(name)
+        design = self.current().get(name)
         if design is None or (model is not None and (design.model is None or self.business.registry.resolve(design.model) is not model)) \
                 or (report is not None and design.report is not report):
             raise AccessError(404, 'Print design not found')
@@ -1038,3 +1079,278 @@ def document(design, context, business):
 
 def render(design, context, business):
     return document(design, context, business).write_pdf()
+
+
+# ---- stored designs (Controls) ---------------------------------------------------------------
+
+BLOCKS = {'heading': Heading, 'text': Text, 'fields': Fields, 'table': Table, 'totals': Totals, 'image': Image,
+          'spacer': Spacer, 'pagebreak': PageBreak, 'pagenumber': PageNumber}
+COMMON = ('html', 'show_if', 'align', 'size', 'weight', 'space_before', 'space_after', 'break_before')
+NAME = re.compile(r'[A-Z][A-Za-z0-9]{0,63}')
+# A stored design's data: URIs and HTML are kept small; the whole definition at most 256 KiB.
+MAX_DEFINITION = 262144
+
+
+def block_to(block):
+    """A block as JSON: {"type": ..., its own options, the shared options that are set}."""
+    data = {'type': type(block).__name__.lower()}
+    if isinstance(block, (Heading, Text)):
+        data['text'] = block.text
+    elif isinstance(block, (Fields, Totals)):
+        data['names'] = [[name, label] for name, label in block.names]
+        if isinstance(block, Fields):
+            data['columns'] = block.columns
+    elif isinstance(block, Table):
+        data['source'] = block.source
+        data['columns'] = [{key: value for key, value in vars(column).items() if value is not None} for column in block.columns]
+    elif isinstance(block, Image):
+        data.update(src=block.src, **({'width': block.width} if block.width else {}))
+    elif isinstance(block, Spacer):
+        data['height'] = block.height
+    elif isinstance(block, PageNumber):
+        data['format'] = block.format
+    data.update({key: getattr(block, key) for key in COMMON if getattr(block, key) is not None})
+    return data
+
+
+def block_from(data):
+    if not isinstance(data, dict) or data.get('type') not in BLOCKS:
+        raise ValueError('Each block has a type: ' + ', '.join(BLOCKS))
+    kind = BLOCKS[data['type']]
+    options = {key: data[key] for key in COMMON if data.get(key) not in (None, '')}
+    own = set(data) - set(COMMON) - {'type'}
+    allowed = {Heading: {'text'}, Text: {'text'}, Fields: {'names', 'columns'}, Totals: {'names'}, Table: {'source', 'columns'},
+               Image: {'src', 'width'}, Spacer: {'height'}, PageBreak: set(), PageNumber: {'format'}}[kind]
+    if own - allowed:
+        raise ValueError(f'A {data["type"]} block does not take ' + ', '.join(sorted(own - allowed)))
+    def pairs(values):
+        if not isinstance(values, list):
+            raise ValueError('names is a list')
+        return [value if isinstance(value, str) else tuple(value) if isinstance(value, list) and len(value) == 2 else value for value in values]
+    if kind in (Heading, Text):
+        if not isinstance(data.get('text', ''), str) or len(data.get('text', '')) > 20000:
+            raise ValueError('text is at most 20000 characters')
+        return kind(data.get('text', ''), **options)
+    if kind is Fields:
+        return Fields(*pairs(data.get('names', [])), columns=data.get('columns', 2), **options)
+    if kind is Totals:
+        return Totals(*pairs(data.get('names', [])), **options)
+    if kind is Table:
+        columns = data.get('columns', [])
+        if not isinstance(columns, list) or any(not isinstance(column, dict) or set(column) - {'name', 'label', 'width', 'align', 'wrap'} for column in columns):
+            raise ValueError('Table columns take name, label, width, align and wrap')
+        return Table(data.get('source', ''), columns=tuple(Column(**column) for column in columns), **options)
+    if kind is Image:
+        if not str(data.get('src', '')).startswith('data:image/'):
+            raise ValueError('A stored design takes images as data:image/... URIs')
+        return Image(data['src'], width=data.get('width'), **options)
+    if kind is Spacer:
+        return Spacer(data.get('height', '6mm'), **options)
+    if kind is PageNumber:
+        return PageNumber(data.get('format', 'Page {page} of {pages}'), **options)
+    return PageBreak(**options)
+
+
+def design_to(design, registry):
+    """A design as JSON, the shape stored designs keep and the designer edits."""
+    footnote, watermark = design.footnote, design.watermark
+    return {
+        'title': design.title, 'default': design.default,
+        **({'model': registry.name_for(registry.resolve(design.model))} if design.model is not None else {'report': getattr(design.report, '__resource_id__', design.report.__name__)}),
+        **({'roles': list(design.roles)} if design.report is not None else {}),
+        'page': {'size': design.size if isinstance(design.size, str) else list(design.size), 'orientation': design.orientation,
+                 'margins': list(design.margins), 'first_margin_top': design.first_margin_top, 'font_size': design.font_size,
+                 'currency': design.currency, 'date_format': design.date_format},
+        'header': [block_to(block) for block in design.header],
+        'header_first': None if design.header_first is None else [block_to(block) for block in design.header_first],
+        'main': [block_to(block) for block in design.main],
+        'footer': [block_to(block) for block in design.footer],
+        'footnote': None if footnote is None else {'place': footnote.place, 'height': footnote.height, 'blocks': [block_to(block) for block in footnote.blocks]},
+        'watermark': None if watermark is None else {key: value for key, value in vars(watermark).items() if value is not None},
+    }
+
+
+def design_from(name, data, business):
+    """Build and check a PrintDesign class from stored JSON; ValueError names the problem."""
+    if not isinstance(name, str) or not NAME.fullmatch(name):
+        raise ValueError('A design name starts with a capital letter and uses letters and digits, such as TaxInvoicePrint')
+    if not isinstance(data, dict):
+        raise ValueError('Send the design as an object')
+    import json
+    if len(json.dumps(data)) > MAX_DEFINITION:
+        raise ValueError('A design is at most 256 KiB, images included')
+    known = {'title', 'default', 'model', 'report', 'roles', 'page', 'header', 'header_first', 'main', 'footer', 'footnote', 'watermark'}
+    if set(data) - known:
+        raise ValueError('Unknown design option: ' + ', '.join(sorted(set(data) - known)))
+    attributes = {'title': data.get('title', ''), 'default': data.get('default', False), '__module__': __name__, '__stored__': True}
+    if data.get('model') is not None:
+        if data['model'] not in business.registry.models:
+            raise ValueError('Choose a model of this application')
+        attributes['model'] = business.registry.models[data['model']]
+    if data.get('report') is not None:
+        reports = getattr(getattr(business, 'forms', None), 'reports', {})
+        if data['report'] not in reports:
+            raise ValueError('Choose a report of this application')
+        attributes['report'] = reports[data['report']]
+        attributes['roles'] = tuple(data.get('roles') or attributes['report'].roles)
+    page = data.get('page') or {}
+    if not isinstance(page, dict) or set(page) - {'size', 'orientation', 'margins', 'first_margin_top', 'font_size', 'currency', 'date_format'}:
+        raise ValueError('page takes size, orientation, margins, first_margin_top, font_size, currency and date_format')
+    for key, value in page.items():
+        if value is not None:
+            attributes[key] = tuple(value) if key in ('margins', 'size') and isinstance(value, list) else value
+    def blocks(key):
+        value = data.get(key)
+        if value is None:
+            return None
+        if not isinstance(value, list) or len(value) > 200:
+            raise ValueError(f'{key} is a list of at most 200 blocks')
+        return tuple(block_from(item) for item in value)
+    for key in ('header', 'main', 'footer'):
+        attributes[key] = blocks(key) or ()
+    attributes['header_first'] = blocks('header_first')
+    footnote = data.get('footnote')
+    if footnote is not None:
+        if not isinstance(footnote, dict) or set(footnote) - {'place', 'height', 'blocks'}:
+            raise ValueError('footnote takes place, height and blocks')
+        attributes['footnote'] = Footnote(*(block_from(item) for item in footnote.get('blocks') or []),
+                                          place=footnote.get('place', 'last_page'), height=footnote.get('height'))
+    watermark = data.get('watermark')
+    if watermark is not None:
+        if not isinstance(watermark, dict) or set(watermark) - {'text', 'image', 'html', 'size', 'opacity', 'rotate', 'show_if'}:
+            raise ValueError('watermark takes text, image, html, size, opacity, rotate and show_if')
+        if watermark.get('image') is not None and not str(watermark['image']).startswith('data:image/'):
+            raise ValueError('A stored design takes images as data:image/... URIs')
+        attributes['watermark'] = Watermark(**watermark)
+    design = type(name, (PrintDesign,), attributes)
+    design.check(business.registry, business)
+    return design
+
+
+class Designer:
+    """Controls routes for print designs: list, save and remove stored designs, and preview any definition."""
+
+    def __init__(self, prints):
+        self.prints = prints
+        self.previews = {}
+
+    def listing(self, user):
+        business = self.prints.business
+        registry = business.registry
+        from .ui.metadata import label_for
+        def fields(model):
+            return [{'name': name, 'label': field.label or label_for(name), 'kind': field.kind}
+                    for name, field in model.__declared_fields__.items() if not name.startswith('evlet_')]
+        models = []
+        for name, model in registry.models.items():
+            if model in business.child_models:
+                continue
+            tables = [{'name': child.name, 'label': child.label or label_for(child.name), 'fields': fields(child.model)}
+                      for child in business.children.values() if child.parent is model]
+            models.append({'name': name, 'label': label_for(model.__name__), 'fields': fields(model), 'tables': tables,
+                           'attachments': model in business.attachments})
+        reports = [{'name': name, 'title': report.title or name, 'roles': list(report.roles), 'fields': fields(report),
+                    'columns': [{'name': column.name, 'label': column.label or label_for(column.name), 'kind': column.type} for column in report.columns]}
+                   for name, report in getattr(getattr(business, 'forms', None), 'reports', {}).items()]
+        stored = self.prints.stored_rows()
+        designs = [{'name': design.__name__, 'source': 'stored' if getattr(design, '__stored__', False) else 'app',
+                    'definition': design_to(design, registry), **stored.get(design.__name__, {'changed_by': None, 'changed_at': None})}
+                   for design in self.prints.current().values()]
+        return {'available': available(), 'designs': designs, 'models': models, 'reports': reports, 'blocks': list(BLOCKS)}
+
+    def save(self, user, name, body):
+        from .controls import audit, bump
+        if not isinstance(body, dict) or set(body) != {'definition'}:
+            raise ValidationError({'_form': 'Send the definition.'})
+        current = self.prints.current()
+        if name in current and not getattr(current[name], '__stored__', False):
+            raise ValidationError({'name': 'An app defines this design. Save a copy under another name.'})
+        try:
+            design = design_from(name, body['definition'], self.prints.business)
+            owner = design.model or design.report
+            if design.default and any(other.default and (other.model or other.report) is owner and other.__name__ != name for other in current.values()):
+                raise ValueError(f'Another design is already the default for {owner.__name__}')
+        except (ValueError, TypeError) as exc:
+            raise ValidationError({'definition': str(exc)}) from None
+        import json, time
+        definition = design_to(design, self.prints.business.registry)
+        with self.prints.business.database.transaction() as tx:
+            before = tx.connection.execute('SELECT definition FROM evlet_print_designs WHERE name=?', (name,)).fetchone()
+            tx.connection.execute('INSERT INTO evlet_print_designs(name, definition, changed_by, changed_at) VALUES (?,?,?,?) '
+                                  'ON CONFLICT (name) DO UPDATE SET definition=excluded.definition, changed_by=excluded.changed_by, changed_at=excluded.changed_at',
+                                  (name, json.dumps(definition, sort_keys=True), user.username, int(time.time())))
+            audit(tx.connection, user.username, 'Print designs', name, 'Changed' if before else 'Added',
+                  None if before is None else json.loads(before[0]), definition)
+            bump(tx.connection)
+        self.prints.reload()
+        return {'name': name, 'source': 'stored', 'definition': definition}
+
+    def remove(self, user, name):
+        from .controls import audit, bump
+        import json
+        with self.prints.business.database.transaction() as tx:
+            row = tx.connection.execute('SELECT definition FROM evlet_print_designs WHERE name=?', (name,)).fetchone()
+            if row is None:
+                raise AccessError(404, 'Print design not found')
+            tx.connection.execute('DELETE FROM evlet_print_designs WHERE name=?', (name,))
+            audit(tx.connection, user.username, 'Print designs', name, 'Removed', json.loads(row[0]), None)
+            bump(tx.connection)
+        self.prints.reload()
+
+    def preview(self, user, body):
+        """Render an unsaved definition against a record (or a report's filters); the PDF waits under a token."""
+        import secrets, time
+        if not isinstance(body, dict) or set(body) - {'definition', 'record', 'filters'} or 'definition' not in body:
+            raise ValidationError({'_form': 'Send the definition, and a record or report filters.'})
+        if not available():
+            raise AccessError(503, INSTALL)
+        try:
+            design = design_from('PreviewPrint', body['definition'], self.prints.business)
+        except (ValueError, TypeError) as exc:
+            raise ValidationError({'definition': str(exc)}) from None
+        business = self.prints.business
+        if design.model is not None:
+            record_id = body.get('record')
+            if type(record_id) is not int or not 0 < record_id < 2**63:
+                raise ValidationError({'record': 'Choose a record to preview with.'})
+            model = business.registry.resolve(design.model)
+            with business.database.transaction() as tx:
+                record = business.policy.record(tx, user, model, record_id)
+                content = render(design, document_context(business, tx, user, model, record), business)
+        else:
+            if user.role not in design.report.roles:
+                raise AccessError(403, 'Report is unavailable')
+            with business.context(user, readonly=True) as context:
+                data = report_context(context, design.report, body.get('filters') or {})
+            content = render(design, data, business)
+        now = time.time()
+        for token in [token for token, (_, _, expires) in self.previews.items() if expires < now]:
+            self.previews.pop(token, None)
+        while len(self.previews) >= 20:
+            self.previews.pop(next(iter(self.previews)))
+        token = secrets.token_urlsafe(18)
+        self.previews[token] = (user.id, content, now + 600)
+        return {'url': f'/api/_controls/prints/preview/{token}.pdf', 'size': len(content)}
+
+    def preview_pdf(self, user, token):
+        found = self.previews.get(token)
+        import time
+        if found is None or found[0] != user.id or found[2] < time.time():
+            raise AccessError(404, 'The preview has expired; change the design to render it again')
+        return pdf_response(found[1], 'Preview.pdf', 'inline')
+
+    def dispatch(self, path, method, body, user):
+        if path == '/prints' and method == 'GET':
+            return 200, self.listing(user), []
+        if path == '/prints/preview' and method == 'POST':
+            return 200, self.preview(user, body), []
+        match = re.fullmatch(r'/prints/preview/([A-Za-z0-9_-]{24})\.pdf', path)
+        if match and method == 'GET':
+            return self.preview_pdf(user, match[1])
+        match = re.fullmatch(r'/prints/([A-Za-z][A-Za-z0-9]{0,63})', path)
+        if match and method == 'PUT':
+            return 200, self.save(user, match[1], body), []
+        if match and method == 'DELETE':
+            self.remove(user, match[1])
+            return 204, None, []
+        return None
