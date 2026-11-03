@@ -134,17 +134,32 @@ MCP protocol `2025-11-25`, initialization, ping, `tools/list`, and `tools/call`.
 It advertises tools only. Resources, prompts, sampling, tasks and provider-specific
 installation are not supported.
 
+The tools are the Tool Engine's ([tools.md](tools.md)).
+The connector lists them with `GET /api/_tools` and calls them with `POST /api/_tools/execute`,
+so the application decides what this person may call and logs every call.
+
 | Tool | Purpose |
 | --- | --- |
 | `discover_models` | Paginated permitted model catalog |
 | `describe_model` | Fields, constraints, schemas, children, actions, and query options |
 | `list_records` | Bounded search, filters, sorting, and pagination |
 | `get_record` | Read one record with accessible children |
+| `aggregate_records` | Totals, counts, minimums and maximums, grouped, through the measures API |
+| `record_history` | A record's journal, when the model keeps one |
+| `list_reports`, `run_report` | Permitted reports and one page of their rows |
+| `list_files`, `read_file` | Files on a record, and the text of one |
+| `list_services`, `call_service` | Business services an app offers to assistants (`@api(..., tool=True)`) |
 | `job_status` | Read a permitted queued action's status when jobs are configured |
 | `create_record` | Create with backend validation |
 | `update_record` | Apply partial values and any supplied child replacements |
-| `delete_record` | Delete a permitted record and owned children |
+| `change_state` | Confirm, cancel or reopen a document |
 | `run_action` | Invoke a registered action, including queued actions |
+| `delete_record` | Delete a permitted record and owned children |
+
+`change_state` to confirm, `run_action`, `call_service`, and every cancel, reopen and delete
+wait for the person's approval in Evlet. The tool answers with an error naming the request;
+the person approves it in Settings, under AI, and the client calls the same tool again with
+the same arguments. The approval covers that one call on that revision of the record.
 
 By default only read tools are available, even for an administrator. To permit
 write tools, append `--allow-writes` to the process arguments. This is an operator
@@ -154,11 +169,11 @@ checks. The flag does not grant additional account permissions.
 
 The connector follows the instance's MCP settings in Controls ([controls.md](controls.md#mcp-and-ai)).
 It marks its requests with `X-Evlet-Client: mcp`, and the server then narrows the session the
-way it narrows a remote client: nothing while `mcp.enabled` is off, no writes while
-`mcp.allow_writes` is off (even with `--allow-writes`), and no hidden models. Discovery
-reports `capabilities.assistant` (`writes`, `rate`, `disabled_tools`), which the connector
-reads at most once a minute to drop disabled tools and lower its rate. These two are applied
-by the connector itself; a client that leaves out the header is an ordinary session.
+way it narrows a remote client: nothing while `mcp.enabled` is off or the person lacks Allow MCP,
+no writes while `mcp.allow_writes` is off (even with `--allow-writes`), no disabled tools and
+no hidden models. The rate (`mcp.rate`) is counted on the server per person and connector. A
+client that leaves out the header is an ordinary session, and its tool calls are logged as API
+calls.
 
 Configure the client to ask for approval before writes, deletion, or business
 actions. The connector cannot enforce a client's user-approval UI. Tool annotations
@@ -179,7 +194,8 @@ signing in again and restarting the connector with the new private session.
 People add `https://<primary host>/_/mcp` as a custom connector in their AI assistant and
 sign in with their Evlet account. The endpoint speaks MCP Streamable HTTP without sessions:
 one JSON-RPC message per `POST`, answered with JSON (`202` for notifications). It offers the
-same nine tools. Each call runs in process through `Business.dispatch` as the person who
+same tools as the local connector, through the same Tool Engine. The person needs Allow MCP
+(Controls, Users); without it the consent page and the endpoint refuse. Each call runs in process through `Business.dispatch` as the person who
 approved the client, narrowed like an API key: reads only unless `mcp.allow_writes` is on
 and the person turned on "Can make changes" for that client, hidden models removed, and the
 apps the person chose. Account, tenant, row, field and action checks are the browser's.
@@ -229,10 +245,10 @@ OAuth 2.1, served on the primary host only (any other host gets 404):
 - **Clients and calls.** `evlet_oauth_clients` holds registrations, `evlet_mcp_clients(id,
   user_id, oauth_client, client_name, created_at, last_used, calls, allow_changes, apps,
   revoked_at)` each person's connected clients, `evlet_oauth_codes` and `evlet_mcp_tokens`
-  the hashed codes and tokens, and `evlet_mcp_calls` one row per tool call (tool, model,
-  read or write, outcome), including calls refused by the settings. Calls and signed-out
-  connections are deleted after 30 days, at start and hourly. Connecting the same client again
-  replaces the earlier connection. The rate limit counts these rows, so it holds across processes.
+  the hashed codes and tokens, and `evlet_tool_calls` (the Tool log) one row per tool call,
+  including calls refused by the settings. Signed-out connections are deleted after 30 days and
+  tool calls after 90, at start and hourly. Connecting the same client again replaces the
+  earlier connection. The rate limit counts the log's rows, so it holds across processes.
 - **Ending access.** A password change in Settings, "Sign out everywhere" in Controls, a
   two-step reset, deactivation and the break-glass grant all sign out the person's assistants and
   delete their unused codes, through `LocalAuth.end_sessions`. The last three always revoke the

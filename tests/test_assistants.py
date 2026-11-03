@@ -53,8 +53,15 @@ def authorize_query(client_id, challenge, redirect=CALLBACK, **extra):
                       'code_challenge_method': 'S256', 'state': 'xyz', 'resource': ORIGIN + '/_/mcp', **extra})
 
 
+def allow(app, value=True):
+    """Allow MCP (Controls, Users) for everyone in the test database."""
+    with app.database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_users SET allow_mcp=?', (int(value),))
+
+
 def connect(app, role='editor', allow_changes=True):
     """Register, approve on the consent page as role, and exchange the code. Returns (client_id, tokens, person)."""
+    allow(app)
     status, registered, _ = register(app)
     assert status == 201, registered
     verifier, challenge = pkce()
@@ -71,6 +78,14 @@ def connect(app, role='editor', allow_changes=True):
                                                           'client_id': registered['client_id'], 'code_verifier': verifier})
     assert status == 200 and tokens['token_type'] == 'Bearer' and headers[b'cache-control'] == b'no-store', tokens
     return registered['client_id'], tokens, person
+
+
+def approve(person, answer=True):
+    """Answer every pending approval of this person, as they would in Settings, under AI."""
+    pending = [item for item in person('GET', '/api/_tools/approvals')[1]['items'] if item['status'] == 'pending']
+    assert pending
+    for item in pending:
+        assert person('POST', f"/api/_tools/approvals/{item['id']}", {'approve': answer})[0] == 200
 
 
 def rpc(app, token, method, params=None, id=1):
@@ -139,6 +154,7 @@ def test_full_flow_with_pkce_refresh_rotation_and_revocation(secured):
 
 
 def test_codes_are_single_use_bound_to_client_redirect_and_verifier(secured):
+    allow(secured)
     _, registered, _ = register(secured)
     verifier, challenge = pkce()
     person = client(secured, 'editor')
@@ -167,6 +183,7 @@ def test_registration_rejects_unsafe_redirect_uris(secured, uri):
 
 
 def test_authorize_never_redirects_to_unregistered_addresses(secured):
+    allow(secured)
     _, registered, _ = register(secured, (CALLBACK, 'http://127.0.0.1:33418/callback', 'com.example.app:/cb'))
     _, challenge = pkce()
     person = client(secured, 'editor')
@@ -331,6 +348,7 @@ def test_personal_page_shows_only_my_assistants_and_requests(secured):
 
 
 def test_settings_are_validated_and_stdio_follows_them(secured):
+    allow(secured)
     admin = client(secured)
     for key, value in (('mcp.rate', 61), ('mcp.rate', 0), ('mcp.allow_writes', 'yes'), ('mcp.hidden_models', ['Nope']), ('mcp.disabled_tools', ['drop_table'])):
         assert admin('POST', '/api/_controls/overrides', {'changes': [{'kind': 'setting', 'key': key, 'value': value}]})[0] == 422
@@ -364,8 +382,13 @@ def test_jobs_queued_by_an_assistant_keep_its_narrowing(secured, monkeypatch):
     from examples.playground.models import Customer
     seen, project = queue(secured, monkeypatch)
     settings(secured, hidden_models=['Customer'], allow_writes=True)
-    _, tokens, _ = connect(secured, 'admin')
-    assert not tool(secured, tokens['access_token'], 'run_action', {'model': 'project', 'id': project['id'], 'action': 'refresh_progress'})['isError']
+    _, tokens, person = connect(secured, 'admin')
+    arguments = {'model': 'project', 'id': project['id'], 'action': 'refresh_progress'}
+    # Actions from an outside assistant wait for the person's approval in Evlet, then the same call runs.
+    waiting = tool(secured, tokens['access_token'], 'run_action', arguments)
+    assert waiting['isError'] and waiting['structuredContent']['status'] == 403 and 'approval' in waiting['structuredContent']['error']
+    approve(person)
+    assert not tool(secured, tokens['access_token'], 'run_action', arguments)['isError']
     assert secured.business.jobs.run_one()
     user = seen[0]
     assert user.access is not None and user.access.assistant > 0
@@ -376,6 +399,8 @@ def test_jobs_of_a_disconnected_assistant_fail_plainly(secured, monkeypatch):
     seen, project = queue(secured, monkeypatch)
     settings(secured, allow_writes=True)
     _, tokens, person = connect(secured, 'admin')
+    tool(secured, tokens['access_token'], 'run_action', {'model': 'project', 'id': project['id'], 'action': 'refresh_progress'})
+    approve(person)
     result = tool(secured, tokens['access_token'], 'run_action', {'model': 'project', 'id': project['id'], 'action': 'refresh_progress'})
     job = result['structuredContent']['job']['id']
     person('DELETE', f"/api/_settings/me/ai/{person('GET', '/api/_settings/me/ai')[1]['clients'][0]['id']}")
@@ -414,6 +439,7 @@ def test_people_have_at_most_twenty_connected_assistants(secured, monkeypatch):
 
 
 def code_for(secured, role='editor'):
+    allow(secured)
     _, registered, _ = register(secured)
     verifier, challenge = pkce()
     approved = client(secured, role)('POST', '/api/_oauth/authorize', {'query': authorize_query(registered['client_id'], challenge), 'approve': True})[1]
@@ -442,12 +468,19 @@ def test_calls_older_than_thirty_days_are_pruned_without_new_calls(secured):
     _, tokens, person = connect(secured, 'editor')
     tool(secured, tokens['access_token'], 'discover_models', {})
     with secured.database.transaction() as tx:
-        tx.connection.execute('UPDATE evlet_mcp_calls SET at=at-31*86400')
+        tx.connection.execute('UPDATE evlet_tool_calls SET at=at-31*86400')
+    # The personal page shows 30 days; the Tool log keeps calls for 90.
     assert person('GET', '/api/_settings/me/ai')[1]['requests'] == []
-    secured.business.assistants.pruned = 0
+    secured.business.tools.pruned = 0
     secured.business.initialize()
     with secured.database._connection() as connection:
-        assert connection.execute('SELECT count(*) FROM evlet_mcp_calls').fetchone()[0] == 0
+        assert connection.execute('SELECT count(*) FROM evlet_tool_calls').fetchone()[0] == 1
+    with secured.database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_tool_calls SET at=at-60*86400')
+    secured.business.tools.pruned = 0
+    secured.business.initialize()
+    with secured.database._connection() as connection:
+        assert connection.execute('SELECT count(*) FROM evlet_tool_calls').fetchone()[0] == 0
 
 
 def test_refusals_from_settings_count_as_denied(secured):
@@ -520,3 +553,17 @@ def test_portal_roles_lose_their_assistants(secured):
     assert rpc(secured, tokens['access_token'], 'tools/list')[0] == 401
     status, payload, _ = form(secured, '/_/oauth/token', {'grant_type': 'refresh_token', 'refresh_token': tokens['refresh_token'], 'client_id': client_id})
     assert status == 400 and payload['error'] == 'invalid_grant'
+
+
+def test_an_approval_belongs_to_the_assistant_that_asked(secured, monkeypatch):
+    seen, project = queue(secured, monkeypatch)
+    settings(secured, allow_writes=True)
+    _, first, person = connect(secured, 'admin')
+    _, second, _ = connect(secured, 'admin')
+    arguments = {'model': 'project', 'id': project['id'], 'action': 'refresh_progress'}
+    assert tool(secured, first['access_token'], 'run_action', arguments)['isError']
+    approve(person)
+    # The other assistant asking the same thing gets its own approval request, not the first one's.
+    other = tool(secured, second['access_token'], 'run_action', arguments)
+    assert other['isError'] and 'approval' in other['structuredContent']['error']
+    assert not tool(secured, first['access_token'], 'run_action', arguments)['isError']

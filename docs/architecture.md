@@ -301,3 +301,11 @@ Confirmable models now use decorator validators/actions, same-identity revisions
 immutable snapshots and unified history. See [document lifecycle](document-lifecycle.md)
 for the APIs, permission and transaction contract, approval boundaries and adoption
 from existing State/Move applications.
+
+## The Tool Engine
+
+One Tool Engine (`evlet.tools`) serves MCP clients and the API, and will serve Eva. Each tool is
+a call to an existing authenticated route, dispatched in process as the person, so there is no
+second permission system and no AI-specific business code. The engine adds argument checks,
+approvals bound to the exact call and record revision, and one log of every call. See
+[the Tool Engine](tools.md).

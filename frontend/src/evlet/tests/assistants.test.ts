@@ -66,6 +66,38 @@ describe('Controls MCP & AI', () => {
   });
 });
 
+function openAt(path: string, routes: any[]) {
+  window.history.replaceState(null, '', path);
+  const stub = server([
+    ['GET', /\/api\/auth\/session$/, () => reply({ user: { id: 1, username: 'owner', role: 'admin' }, csrf: 'token' })],
+    ['GET', /\/api\/_controls\/state$/, () => reply(state())],
+    ['GET', /\/api\/_controls\/overrides$/, () => reply(overrides)],
+    ...routes,
+  ] as any);
+  const router = controlsRouter();
+  const stop = router.start();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const dispose = mount(host, () => Controls({ router, api: new ControlsClient({ fetch: stub.fetch }) }));
+  running.push(() => { dispose(); stop(); });
+  return { host, sent: stub.sent };
+}
+
+describe('Controls AI', () => {
+  it('lists tool calls from every origin and opens one for its redacted inputs', async () => {
+    const call = { id: 9, at: 1793600000, username: 'sara', origin: 'mcp', client: 'Claude', run_id: null, tool: 'update_record', model: 'customer', record_id: 58,
+      kind: 'write', outcome: 'ok', duration_ms: 22, error: null, inputs: { model: 'customer', id: 58, values: ['name'] } };
+    const { host, sent } = openAt('/controls/log', [['GET', /\/api\/_controls\/tools/, () => reply({ items: [call], next: null })]]);
+    await until(() => expect(text(host)).toContain('MCP · Claude'));
+    click(byText(host, 'tr', /update_record/));
+    await until(() => expect(text(host)).toContain('{"model":"customer","id":58,"values":["name"]}'));
+    const origin = host.querySelector<HTMLSelectElement>('[aria-label="Through"]')!;
+    origin.value = 'eva';
+    origin.dispatchEvent(new Event('change'));
+    await until(() => expect(sent.some(item => /tools\?origin=eva/.test(item.url))).toBe(true));
+  });
+});
+
 const mine = (writes: boolean, clients = [{ id: 3, client_name: 'Claude', created_at: 1790000000, last_used: null, calls: 0, allow_changes: false, apps: null }]) => ({
   enabled: true, writes, address: 'https://erp.acme.com/_/mcp', clients, apps: ['crm', 'billing'], chosen: null,
   requests: [{ at: 1790000600, client_name: 'Claude', tool: 'list_records', model: 'customer', kind: 'read', outcome: 'denied' }],

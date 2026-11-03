@@ -61,16 +61,17 @@ export function UsersPage(ctx: ControlsContext): HTMLElement {
     <div class="toolbar"><label class="ctl-search">${Icon('search', { size: 'sm' })}<input class="input" placeholder="Search users…" aria-label="Search users"
       prop:value=${query} on:input=${(event: Event) => query.set((event.target as HTMLInputElement).value)}></label>
       ${Select({ id: 'ctl-user-role', label: 'Filter by role', value: () => role.get(), options: () => [['', 'All roles'], ...ctx.state.get().roles.map(item => [item.id, item.id] as [string, string])], onChange: value => role.set(value) })}</div>
-    <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>User</th><th>Role</th><th>Two-step sign-in</th><th>Sessions</th><th>Status</th><th></th></tr></thead>
+    <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>User</th><th>Role</th><th>Two-step sign-in</th><th>Sessions</th><th>AI</th><th>Status</th><th></th></tr></thead>
       <tbody>${() => shown.get().length ? shown.get().map(user => html`<tr class="ctl-click" tabindex="0" on:click=${() => openUser(ctx, user, refresh)}
         on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') openUser(ctx, user, refresh); }}>
         <td><span class="ctl-user">${Avatar({ name: user.username, size: 'sm' })}<strong>${user.username}</strong></span></td>
         <td>${RoleChip(user.role)}</td>
         <td>${required().includes(user.role) ? StatusPill({ label: 'Off · required', tint: 'rose' }) : html`<span class="muted">Off</span>`}</td>
         <td class="muted num">${sessionText(user) || 'None'}</td>
+        <td>${user.allow_mcp ? StatusPill({ label: 'MCP', tint: 'blue' }) : html`<span class="muted">No</span>`}</td>
         <td>${user.active ? StatusPill({ label: 'Active', tint: 'green' }) : StatusPill({ label: 'Inactive', tint: 'slate' })}</td>
         <td class="r">${Icon('chevron-right', { size: 'sm' })}</td></tr>`)
-        : html`<tr><td colspan="6"><div class="ctl-empty">${() => loaded.get() ? 'No users match.' : 'Loading users…'}</div></td></tr>`}</tbody></table>
+        : html`<tr><td colspan="7"><div class="ctl-empty">${() => loaded.get() ? 'No users match.' : 'Loading users…'}</div></td></tr>`}</tbody></table>
       <div class="ctl-tfoot"><span>${() => `${shown.get().length} of ${total.get()}`}</span><span>Accounts are stored in this instance</span></div></div>
   </div>` as HTMLElement;
 }
@@ -118,6 +119,16 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
         } catch (failure) { error.set(message(failure)); }
       } } }) });
   };
+  // Allow MCP saves at once, apart from the form: it lets the person connect assistants and grants no record access.
+  const mcp = cell(Boolean(user.allow_mcp));
+  const allow = async (key: 'allow_mcp', next: boolean, target: typeof mcp) => {
+    target.set(next);
+    try {
+      await ctx.api.changeUser(user.id, { [key]: next });
+      toast(`MCP ${next ? 'allowed' : 'turned off'} for ${user.username}`);
+      await refresh();
+    } catch (failure) { target.set(!next); error.set(message(failure)); }
+  };
   openDrawer({ title: user.username, icon: 'user', tint: 'blue', className: 'ctl-drawer',
     body: () => html`<div class="ctl-form">
       ${locked ? Callout('info', 'lock', 'Only an admin can change an admin account.') : null}
@@ -131,6 +142,9 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
           ctx.state.peek().me.role === 'admin' ? Button({ label: 'Reset two-step', size: 'small', onClick: () => void resetTwoStep() }) : null]
         : [required.includes(user.role) ? StatusPill({ label: 'Required, not set up', tint: 'rose' }) : StatusPill({ label: 'Not set up', tint: 'slate' }),
           html`<span class="muted ctl-small">${required.includes(user.role) ? 'They set it up at their next sign-in.' : 'People set it up in Settings, under Sign-in & security.'}</span>`]}</div></section>
+      <section class="ctl-section"><h3>AI access</h3>
+        <div class="ctl-field">${Switch({ on: mcp, disabled: locked, label: 'Allow MCP', onChange: next => void allow('allow_mcp', next, mcp) })}
+          <span class="muted ctl-small">${user.assistants ? `Connect outside assistants. Turning it off signs out their ${user.assistants} connected assistant${user.assistants === 1 ? '' : 's'}.` : 'Connect outside assistants such as Claude.'}</span></div></section>
       <section class="ctl-section"><h3>Sessions</h3><div class="ctl-line"><span class="grow">${sessionText(user) || 'No active sessions.'}</span>
         ${(user.sessions || user.assistants || user.keys) && !locked ? Button({ label: 'Sign out everywhere', size: 'small', icon: 'log-out', onClick: signOut }) : null}</div></section>
       ${locked ? null : html`<section class="ctl-section"><h3>Password</h3>

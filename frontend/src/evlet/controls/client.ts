@@ -17,7 +17,9 @@ export interface RoleRow {
   id: string; kind: 'framework' | 'custom'; base: string | null; realm: 'desk' | 'portal'; opens_controls: boolean;
   description: string; users: number; app: string | null; declared: boolean;
 }
-export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; assistants?: number; keys?: number; two_step?: { since: number | null; agent: string } | null }
+export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; assistants?: number; keys?: number; two_step?: { since: number | null; agent: string } | null;
+  /** Allow MCP: the person may connect AI assistants. It grants no record access. */
+  allow_mcp?: boolean }
 /** A field as models.py declares it: the props Controls can override. */
 export interface FieldProps {
   label: string; help_text: string; tooltip: string; placeholder: string; hidden: boolean; required: boolean; read_only: boolean;
@@ -121,6 +123,10 @@ export interface KeysApi {
 /** A connected AI assistant, as Controls lists it. Per-request detail stays on each person's own page. */
 export interface AssistantRow { id: number; client_name: string; username: string; role: string; created_at: number; last_used: number | null; calls: number }
 export interface McpOverview { address: string; clients: AssistantRow[]; totals: { reads: number; writes: number; denied: number } }
+export interface ToolCall {
+  id: number; at: number; username: string | null; origin: 'eva' | 'schedule' | 'mcp' | 'api'; client: string | null; run_id: number | null; tool: string;
+  model: string | null; record_id: number | null; kind: 'read' | 'write'; outcome: 'ok' | 'denied' | 'failed' | 'approval'; duration_ms: number | null; error: string | null; inputs: unknown;
+}
 
 /** The server's answer when a change in Controls needs a fresh two-step code. */
 export const VERIFY = 'VERIFY_TWO_STEP';
@@ -212,6 +218,9 @@ export class ControlsClient extends ApiClient implements KeysApi {
   async createKey(body: { name: string; scope: KeyScope; user?: string }) { return (await this.request<CreatedKey>('POST', '/api/_controls/keys', { body })).data; }
   async revokeKey(id: number) { return (await this.request<{ items: ApiKeyRow[] }>('DELETE', `/api/_controls/keys/${id}`)).data; }
   async mcp() { return (await this.request<McpOverview>('GET', '/api/_controls/mcp')).data; }
+  async toolCalls(query: { origin?: string; outcome?: string; q?: string; before?: number }) {
+    return (await this.request<{ items: ToolCall[]; next: number | null }>('GET', '/api/_controls/tools', { query })).data;
+  }
   async signOutAssistant(id: number) { return (await this.request<McpOverview>('DELETE', `/api/_controls/mcp/${id}`)).data; }
   async deleteRole(id: string) {
     return (await this.request<{ items: RoleRow[] }>('DELETE', `/api/_controls/roles/${encodeURIComponent(id)}`)).data.items;

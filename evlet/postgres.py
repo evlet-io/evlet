@@ -69,7 +69,7 @@ class Connection:
             converted.append(token)
         sql = ''.join(converted)
         match = re.match(r'INSERT INTO ("?[A-Za-z_][A-Za-z_0-9]*"?)', sql)
-        generated = set(self.database.registry.models) | {'evlet_users', 'evlet_attachments', 'evlet_events', 'evlet_jobs', 'evlet_mcp_clients', 'evlet_mcp_calls'}
+        generated = set(self.database.registry.models) | {'evlet_users', 'evlet_attachments', 'evlet_events', 'evlet_jobs', 'evlet_mcp_clients', 'evlet_tool_calls', 'evlet_tool_approvals'}
         returning = match and match[1].strip('"') in generated and ' RETURNING ' not in sql.upper()
         if returning:
             sql += ' RETURNING id'
