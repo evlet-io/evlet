@@ -59,6 +59,7 @@ For virtual environment setup and each step explained, read
 - [UI guide](docs/ui.md): the browser interface, its routes and the Python page API.
 - [Slips](docs/slips.md): forms presented from code that save nothing until handed in.
 - [Routing](docs/routing.md): frontends, reserved paths, `routes.py` and `evlet routes`.
+- [API stability](docs/api-stability.md): the names apps can rely on, deprecations and what is internal.
 - [UI framework](docs/ui-framework.md): Evlet's own browser framework and components.
 
 `evlet dev --instance acme` reloads Python changes while you work. At startup it
