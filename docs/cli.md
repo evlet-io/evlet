@@ -162,7 +162,9 @@ it to that file instead; nothing else is written and no service is reloaded.
 exits with status 1 when one does not; pass `--ip` when the public address cannot
 be detected.
 `link-user` links an account to a record, such as a portal user to their customer,
-for row scopes like `own_customer`. `--remove` removes the link.
+for row scopes like `own_customer`, or a staff user to their employee record for a
+team scope (`Hierarchy.team`). `--remove` removes the link. Both are written to the Controls
+audit log as `cli`.
 
 ## App package
 

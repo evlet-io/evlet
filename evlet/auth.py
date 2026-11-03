@@ -663,20 +663,34 @@ class LocalAuth:
             raise ValidationError({'record_id': 'Use a record ID'})
         return name
 
-    def link_user(self, user_id, model, record_id):
-        """Link an account to a record, such as a portal user to their customer. Row scopes read these links."""
+    def link_user(self, user_id, model, record_id, *, actor='system'):
+        """Link an account to a record, such as a portal user to their customer. Row scopes read these links.
+
+        A link widens what the account's row scopes allow, so it is written to the audit log as actor.
+        """
         name = self._link_target(model, record_id)
         with self.database.transaction() as tx:
-            if not tx.connection.execute('SELECT 1 FROM evlet_users WHERE id=?', (user_id,)).fetchone():
+            account = tx.connection.execute('SELECT username FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            if not account:
                 raise AccessError(404, 'Account not found')
             if not tx.connection.execute(f'SELECT 1 FROM {identifier(name)} WHERE id=?', (record_id,)).fetchone():
                 raise AccessError(404, 'Record not found')
-            tx.connection.execute('INSERT INTO evlet_user_links(user_id,model,record_id) VALUES (?,?,?) ON CONFLICT DO NOTHING', (user_id, name, record_id))
+            if tx.connection.execute('INSERT INTO evlet_user_links(user_id,model,record_id) VALUES (?,?,?) ON CONFLICT DO NOTHING', (user_id, name, record_id)).rowcount:
+                self._audit_link(tx.connection, actor, account['username'], f'Linked to {name} {record_id}')
 
-    def unlink_user(self, user_id, model, record_id):
+    def unlink_user(self, user_id, model, record_id, *, actor='system'):
         name = self._link_target(model, record_id)
         with self.database.transaction() as tx:
-            tx.connection.execute('DELETE FROM evlet_user_links WHERE user_id=? AND model=? AND record_id=?', (user_id, name, record_id))
+            account = tx.connection.execute('SELECT username FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            if account and tx.connection.execute('DELETE FROM evlet_user_links WHERE user_id=? AND model=? AND record_id=?', (user_id, name, record_id)).rowcount:
+                self._audit_link(tx.connection, actor, account['username'], f'Unlinked from {name} {record_id}')
+
+    @staticmethod
+    def _audit_link(connection, actor, username, detail):
+        from .controls import audit, ensure_schema
+        # LocalAuth also runs without Business (which creates the Controls tables), so make sure the log exists.
+        ensure_schema(connection)
+        audit(connection, actor, 'Users', username, detail)
 
     def user_links(self, user_id):
         with self.database._connection() as connection:
