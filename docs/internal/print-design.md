@@ -1,10 +1,11 @@
 # Print output: design
 
-Status: proposal, waiting for the owner. Nothing in the framework is built yet. The spike below was
+Status: proposal. The owner chose the name Print Design on 03-11-2026; the other decisions in
+section 9 are open. Nothing in the framework is built yet. The spike below was
 run on 03-11-2026 against WeasyPrint 70.0 (Python 3.12, pango 1.56.3, Apple M3).
 
-Evlet prints records to PDF through WeasyPrint. A **Paper** describes how one model prints. People
-design papers from ordered blocks; developers can write the same paper as an HTML template and CSS.
+Evlet prints records to PDF through WeasyPrint. A **Print Design** describes how one model prints. People
+build print designs from ordered blocks; developers can write the same design as an HTML template and CSS.
 Both go through one renderer, and the preview is the real PDF from the server.
 
 ## 1. Spike results
@@ -61,8 +62,8 @@ The footnote approach needs two details, both found in the spike:
 </section>
 ```
 
-When a paper has a forced break after the totals (terms on the next page), the sign-off stays at the
-bottom of the totals page, which is what a signed invoice needs. Papers that put content after the
+When a print design has a forced break after the totals (terms on the next page), the sign-off stays at the
+bottom of the totals page, which is what a signed invoice needs. Designs that put content after the
 totals can choose "last page of the document" instead; that uses the two-pass method (c2).
 
 ### Other findings
@@ -80,7 +81,7 @@ totals can choose "last page of the document" instead; that uses the two-pass me
   digits after Arabic letters become Arabic numbers and the hyphens between them stay neutral.
   `<bdi dir="ltr">03-11-2026</bdi>` fixes it. The date, money and number helpers always isolate.
 - **Fonts differ by machine.** macOS has Geeza Pro and Helvetica Neue; a Linux server usually has
-  neither, and fontconfig falls back silently. Arial's Arabic rendered noticeably smaller. Papers
+  neither, and fontconfig falls back silently. Arial's Arabic rendered noticeably smaller. Print designs
   should name bundled fonts loaded with `@font-face`, so output is the same everywhere.
 - **Layout can be measured.** WeasyPrint's `document.pages[n]._page_box` gives every box's position.
   The spike used it to check the sign-off automatically. The same idea powers the print check in
@@ -89,24 +90,16 @@ totals can choose "last page of the document" instead; that uses the two-pass me
 
 ## 2. Naming
 
-Evlet's own words are short everyday nouns with plain verbs: a Slip is presented, filled and handed
-in; records have an `id`, a `name` (the document number, `INV-2026-00042`) and a `title` (the
-display text). Print should read the same way.
-
-| Option | Python | Parts | Notes |
-|---|---|---|---|
-| **Paper** (recommended) | `class TaxInvoicePaper(Paper)` | Letterhead, Header, Body, Lines, Totals, Footer, Sign-off | A paper is what you hand someone. "Print this on the tax invoice paper" reads naturally. No clash with existing names. |
-| Copy | `class TaxInvoiceCopy(Copy)` | same | Matches "customer copy, office copy", but "copy" already means duplicating a record. |
-| Sheet | `class TaxInvoiceSheet(Sheet)` | same | Short, but suggests a spreadsheet, and Evlet already has tables and sheets of rows. |
-
-Not chosen: "Layout" (already used by Slips and layout metadata), "Template" (the HTML file inside
-a paper), "Print Format" (Frappe's term).
-
-Vocabulary with Paper:
+Decided by the owner: the concept is a **Print Design**. The base class is `PrintDesign`, and each
+design is named after the document it prints with a `Print` suffix: `class TaxInvoicePrint(PrintDesign)`,
+`class DeliveryNotePrint(PrintDesign)`. In prose it is "a print design"; the shorter "print" is used
+where the context is clear (`prints=[...]`, the `prints` routes). "Print Format" (Frappe's term),
+"Layout" (already used by Slips and layout metadata) and "Template" (the HTML file inside a code-mode
+design) were avoided.
 
 | Term | Meaning |
 |---|---|
-| Paper | How one model prints: blocks or a template, page size, margins, letterhead |
+| Print design | How one model prints: blocks or a template, page size, margins, letterhead |
 | Letterhead | The company block on page 1 (and a compact header on later pages) |
 | Header / Footer | Running content on every page: document `name`, page X of Y, TRN |
 | Body | The blocks between header and footer, in order |
@@ -138,7 +131,7 @@ as a cheque or a pre-printed stationery overlay. It breaks when content varies:
 
 ### Flow-based blocks
 
-The paper is an ordered list of blocks. Each block has spacing, alignment, font size and weight,
+A print design is an ordered list of blocks. Each block has spacing, alignment, font size and weight,
 column widths, a visibility condition and break options (keep with next, start on a new page). The
 blocks compile to the HTML template and CSS that the spike proved. Because the result is normal
 flow, every block pushes the next one down, tables break between rows with repeated headers, and
@@ -157,8 +150,8 @@ escaping or the numeric wrap are easy to make. Good for apps and for unusual lay
 
 The expectation holds: **flow blocks for clients, an HTML and CSS code mode for developers, one
 renderer, and a server-rendered PDF preview.** Blocks are stored as data and compile to a template;
-"Convert to code" turns a block paper into an editable template (one way, with a warning). Python
-apps can define papers either way.
+"Convert to code" turns a block design into an editable template (one way, with a warning). Python
+apps can define print designs either way.
 
 ## 4. Designer
 
@@ -196,13 +189,13 @@ It is only installed with WeasyPrint, so Evlet's core stays free of dependencies
 
 Rules:
 
-- **Escaped by default.** Autoescape on; there is no `|safe` in the sandbox for stored papers.
+- **Escaped by default.** Autoescape on; there is no `|safe` in the sandbox for stored designs.
 - **CSS outside the template**, passed as a stylesheet (section 1).
 - **Permissions.** The template context is built for the person printing, with the same field set
   as an HTTP read (`presented` fields), the same row scope and the same Link checks. A hidden or
   restricted field is not in `doc`; it prints empty, and the print check names it. Links resolve one
   level (`doc.customer.title`) only when the person can read the target.
-- **No network or file access.** WeasyPrint's `url_fetcher` refuses everything except the paper's
+- **No network or file access.** WeasyPrint's `url_fetcher` refuses everything except the design's
   own assets (letterhead images, bundled fonts). Otherwise `url(file:///...)` or an internal URL in
   CSS could read server files or call internal services.
 - **Helpers**, all isolating direction so they read correctly inside Arabic text:
@@ -224,7 +217,7 @@ The README says so, and start-up logs one line when the extra or pango is missin
 
 Without the extra:
 
-- Paper definitions still import and are checked at start-up, so an app does not fail to start.
+- Print design definitions still import and are checked at start-up, so an app does not fail to start.
 - The schema reports `print: false`; the browser hides Print and the designer shows how to install.
 - The print routes answer `503 Printing is not installed on this server (pip install evlet[print])`.
 - Tests that render skip with that reason; CI installs the extra and runs them.
@@ -232,20 +225,20 @@ Without the extra:
 The version is pinned to one major release because the print check reads WeasyPrint's layout boxes.
 
 Fonts: ship Noto Sans and Noto Sans Arabic (SIL Open Font License, about 1 MB together) in
-`evlet/resources/print/fonts`, used by the default papers, so a paper prints the same on a Mac and
-a Linux server. Apps can add their own fonts as paper assets.
+`evlet/resources/print/fonts`, used by the default designs, so a design prints the same on a Mac and
+a Linux server. Apps can add their own fonts as design assets.
 
 ## 7. API and integration
 
 ### Python
 
 ```python
-from evlet import Paper, Blocks, Letterhead, Heading, Fields, Lines, Column, Totals, Words, SignOff, Signature, Stamp, ReceivedBy
+from evlet import PrintDesign, Blocks, Letterhead, Heading, Fields, Lines, Column, Totals, Words, SignOff, Signature, Stamp, ReceivedBy
 
-class TaxInvoicePaper(Paper):
+class TaxInvoicePrint(PrintDesign):
     model = SalesInvoice
     title = "Tax invoice"
-    default = True                    # one default paper per model
+    default = True                    # one default design per model
     size = "A4"                       # A4, A5, Letter, Legal, or ("210mm", "297mm")
     margins = ("24mm", "14mm", "18mm", "14mm")
     letterhead_by = "company"         # pick the Letterhead whose match is this Link value
@@ -265,49 +258,49 @@ class TaxInvoicePaper(Paper):
         SignOff(Signature("Prepared by"), Stamp("Authorised signatory and stamp"), ReceivedBy()),
     )
 
-class DeliveryNotePaper(Paper):          # code mode in an app
+class DeliveryNotePrint(PrintDesign):   # code mode in an app
     model = SalesInvoice
     title = "Delivery note"
-    template = "papers/delivery_note.html"
-    stylesheet = "papers/delivery_note.css"
+    template = "prints/delivery_note.html"
+    stylesheet = "prints/delivery_note.css"
 
-app = Application(database, auth=auth, papers=[TaxInvoicePaper, DeliveryNotePaper])
+app = Application(database, auth=auth, prints=[TaxInvoicePrint, DeliveryNotePrint])
 ```
 
-A paper sets `blocks` or `template`, not both. `SignOff(place="totals")` is the default (footnote
+A print design sets `blocks` or `template`, not both. `SignOff(place="totals")` is the default (footnote
 area); `place="end"` keeps it at the bottom of the document's last page with the two-pass method;
 `place="every_page"` uses a page margin.
 
-From trusted code: `context.print(TaxInvoicePaper, record_id)` returns PDF bytes, and
-`context.file_paper(TaxInvoicePaper, record_id)` stores it as an attachment.
+From trusted code: `context.print(TaxInvoicePrint, record_id)` returns PDF bytes, and
+`context.file_print(TaxInvoicePrint, record_id)` stores it as an attachment.
 
 ### Routes
 
 | Route | Does | Checks |
 |---|---|---|
-| `GET /api/{model}/{id}/papers` | Papers this person can print for this record, default first | read on the record (row scope), paper roles |
-| `GET /api/{model}/{id}/papers/{paper}.pdf` | The PDF, inline for preview; `?download=1` for an attachment named `{name}.pdf`; `?letterhead=` to choose | as above; fields filtered for this person |
-| `POST /api/{model}/{id}/papers/{paper}/file` | Render and keep as an attachment | update on the record, attachments enabled, `If-Match` |
-| `POST /api/_papers/preview` | Designer preview of an unsaved paper against a sample record | designer role, read on the sample |
-| `GET /api/_papers/{paper}/check?record=` | The print check as JSON | as preview |
+| `GET /api/{model}/{id}/prints` | Print designs this person can use for this record, default first | read on the record (row scope), design roles |
+| `GET /api/{model}/{id}/prints/{design}.pdf` | The PDF, inline for preview; `?download=1` for an attachment named `{name}.pdf`; `?letterhead=` to choose | as above; fields filtered for this person |
+| `POST /api/{model}/{id}/prints/{design}/file` | Render and keep as an attachment | update on the record, attachments enabled, `If-Match` |
+| `POST /api/_prints/preview` | Designer preview of an unsaved design against a sample record | designer role, read on the sample |
+| `GET /api/_prints/{design}/check?record=` | The print check as JSON | as preview |
 
 PDF responses use `application/pdf`, `nosniff` and a restrictive content security policy, like
-attachment downloads. Each render writes a journal entry (who printed what, and which paper), so a
+attachment downloads. Each render writes a journal entry (who printed what, and which design), so a
 reprint of a tax invoice can be traced. Documents over a set page count render as a background job
 with progress, through the existing jobs module.
 
 ### In the browser
 
-- A **Print** button on the record page: the default paper opens in a preview drawer; a menu lists
-  the other papers. Ctrl+P on a record page opens the same preview.
-- The drawer has: paper, letterhead, Download, File a copy, and the print check for people who may
-  edit the paper.
-- Settings gain **Papers** (list, designer, default per model) and **Letterheads**.
+- A **Print** button on the record page: the default design opens in a preview drawer; a menu lists
+  the other designs. Ctrl+P on a record page opens the same preview.
+- The drawer has: design, letterhead, Download, File a copy, and the print check for people who may
+  edit the design.
+- Settings gain **Print designs** (list, designer, default per model) and **Letterheads**.
 
-### Stored papers and letterheads
+### Stored print designs and letterheads
 
-Papers designed in the browser are stored as data (blocks or template, CSS, options) next to the
-app's other customizations, with history. A Python paper can be copied into a stored paper to
+Print designs made in the browser are stored as data (blocks or template, CSS, options) next to the
+app's other customizations, with history. A Python design can be copied into a stored design to
 change it; the Python one stays as the fallback. **Letterhead** is a framework model: title, logo
 image, address lines in English and Arabic, compact header, footer text, and an optional match on a
 Link value. `letterhead_by = "company"` picks the letterhead whose match equals the record's
@@ -315,14 +308,14 @@ company, else the default letterhead. Evlet has no Company model of its own, so 
 
 ## 8. Scope
 
-Generic only. The framework provides Paper, the blocks, Letterhead, the renderer, routes, the
+Generic only. The framework provides PrintDesign, the blocks, Letterhead, the renderer, routes, the
 designer and the print check. Tax invoices, payslips, delivery notes and every other document are
-papers that apps define. Not in this design: bulk printing many records into one PDF, barcodes and
+print designs that apps define. Not in this design: bulk printing many records into one PDF, barcodes and
 QR codes, PDF/A, digital signatures, and receipt printers with continuous paper.
 
 ## 9. Decisions for the owner
 
-1. Name: **Paper** (recommended), Copy or Sheet.
+1. Name: decided, **Print Design** (`PrintDesign`).
 2. Designer: flow blocks plus code mode, server PDF preview (recommended), as above.
 3. Templates: Jinja2 sandboxed inside `evlet[print]` (recommended), or an own template language.
 4. Sign-off default: bottom of the totals page through the footnote area (recommended), with
@@ -332,9 +325,9 @@ QR codes, PDF/A, digital signatures, and receipt printers with continuous paper.
 
 ## 10. Build order after approval
 
-1. Renderer and code mode: `Paper` with `template`, helpers, sandbox, URL fetcher, routes, Print
+1. Renderer and code mode: `PrintDesign` with `template`, helpers, sandbox, URL fetcher, routes, Print
    button and preview drawer, `evlet[print]`, tests on real SQLite records.
 2. Blocks compiled to templates, and the Sign-off block.
 3. Print check from measured layout.
-4. Stored papers, Letterhead records, the designer screen.
+4. Stored print designs, Letterhead records, the designer screen.
 5. Filing copies, journal entries, background rendering for long documents.
