@@ -387,13 +387,17 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const naming = model.naming?.field === 'name' && model.title_field !== 'name' && has('name') ? model.naming : null;
   const nameFact = naming ? live(() => {
     const value = store.field('name').value.get();
+    // A title that falls back to the name already shows it as the heading.
+    if (value && String(value) === titleText.get()) return null;
     return value ? html`<span class="ev-fact mono" title="Name">${String(value)}</span>`
       : naming.placeholder ? html`<span class="muted">${naming.placeholder}</span>` : null;
   }) : null;
   const header = DocHeader({
     type: model.label, icon: look.icon, mark,
     title: titleProp,
-    mono: () => Boolean(numbered && model.title_field === numbered.name && has(numbered.name) && store.field(numbered.name).value.get()),
+    mono: () => Boolean(numbered && model.title_field === numbered.name && has(numbered.name) && store.field(numbered.name).value.get())
+      // A title that is the record's name (no other title source) reads as a document number too.
+      || Boolean(naming && store.field('name').value.get() && String(store.field('name').value.get()) === titleText.get()),
     meta: [nameFact, ...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
       const current = extras.get()._lifecycle;
       return current ? Chip({ label: `${model.lifecycle!.labels[current.state]} · Revision ${current.revision}`, tone: current.state === 'confirmed' ? 'green' : 'slate' }) : null;

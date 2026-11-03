@@ -30,9 +30,9 @@
                     {
                       "bindings": {},
                       "events": {},
-                      "id": "name",
+                      "id": "customer_name",
                       "props": {
-                        "field": "name"
+                        "field": "customer_name"
                       },
                       "slots": {},
                       "type": "Field",
@@ -129,9 +129,9 @@
                     {
                       "bindings": {},
                       "events": {},
-                      "id": "name",
+                      "id": "customer_name",
                       "props": {
-                        "field": "name"
+                        "field": "customer_name"
                       },
                       "slots": {},
                       "type": "Field",
@@ -228,9 +228,9 @@
                     {
                       "bindings": {},
                       "events": {},
-                      "id": "name",
+                      "id": "customer_name",
                       "props": {
-                        "field": "name"
+                        "field": "customer_name"
                       },
                       "slots": {},
                       "type": "Field",
@@ -327,9 +327,9 @@
                     {
                       "bindings": {},
                       "events": {},
-                      "id": "number",
+                      "id": "name",
                       "props": {
-                        "field": "number"
+                        "field": "name"
                       },
                       "slots": {},
                       "type": "Field",
@@ -448,9 +448,9 @@
                     {
                       "bindings": {},
                       "events": {},
-                      "id": "number",
+                      "id": "name",
                       "props": {
-                        "field": "number"
+                        "field": "name"
                       },
                       "slots": {},
                       "type": "Field",
@@ -570,9 +570,9 @@
                     {
                       "bindings": {},
                       "events": {},
-                      "id": "number",
+                      "id": "name",
                       "props": {
-                        "field": "number"
+                        "field": "name"
                       },
                       "slots": {},
                       "type": "Field",
@@ -989,9 +989,9 @@
                     {
                       "bindings": {},
                       "events": {},
-                      "id": "name",
+                      "id": "title",
                       "props": {
-                        "field": "name"
+                        "field": "title"
                       },
                       "slots": {},
                       "type": "Field",
@@ -1140,9 +1140,9 @@
                     {
                       "bindings": {},
                       "events": {},
-                      "id": "name",
+                      "id": "title",
                       "props": {
-                        "field": "name"
+                        "field": "title"
                       },
                       "slots": {},
                       "type": "Field",
@@ -1292,9 +1292,9 @@
                     {
                       "bindings": {},
                       "events": {},
-                      "id": "name",
+                      "id": "title",
                       "props": {
-                        "field": "name"
+                        "field": "title"
                       },
                       "slots": {},
                       "type": "Field",
@@ -10616,7 +10616,7 @@
         {
           "label": "Details",
           "fields": [
-            "name",
+            "customer_name",
             "email",
             "active",
             "currency",
@@ -10627,26 +10627,28 @@
       "label": "Customer",
       "plural": "Customers",
       "description": "Good work starts with good relationships.",
-      "title_field": "name",
+      "title_field": "customer_name",
       "list_fields": [
         "id",
-        "name",
+        "customer_name",
         "email",
         "active"
       ],
       "search_fields": [
-        "name",
-        "email"
+        "customer_name",
+        "email",
+        "title",
+        "name"
       ],
       "fields": [
         {
-          "name": "name",
+          "name": "customer_name",
           "type": "text",
           "required": true,
           "unique": false,
           "index": false,
           "max_length": 120,
-          "label": "Name",
+          "label": "Customer name",
           "help_text": "",
           "placeholder": "",
           "hidden": false,
@@ -10791,6 +10793,68 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "permissions": {
@@ -10848,7 +10912,7 @@
         {
           "label": "Details",
           "fields": [
-            "number",
+            "name",
             "customer",
             "reference",
             "total",
@@ -10861,10 +10925,10 @@
       "label": "Invoice",
       "plural": "Invoices",
       "description": "Keep each piece of work connected to a customer.",
-      "title_field": "number",
+      "title_field": "title",
       "list_fields": [
         "id",
-        "number",
+        "name",
         "reference",
         "customer",
         "total",
@@ -10872,42 +10936,12 @@
         "posting_date"
       ],
       "search_fields": [
-        "number",
+        "name",
         "reference",
-        "status"
+        "status",
+        "title"
       ],
       "fields": [
-        {
-          "name": "number",
-          "type": "text",
-          "required": false,
-          "unique": true,
-          "index": false,
-          "max_length": 40,
-          "label": "Invoice number",
-          "help_text": "Given by the naming series when the invoice is saved.",
-          "placeholder": "Assigned on save",
-          "hidden": false,
-          "read_only": true,
-          "default_kind": "none",
-          "stored": true,
-          "operators": [
-            "eq",
-            "ne",
-            "in",
-            "nin",
-            "contains",
-            "icontains",
-            "nicontains",
-            "startswith",
-            "isnull"
-          ],
-          "compute": null,
-          "initial": null,
-          "applies_when": null,
-          "required_when": null,
-          "locked_when": null
-        },
         {
           "name": "customer",
           "type": "link",
@@ -11104,10 +11138,75 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "Assigned on save",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "naming": {
-        "field": "number"
+        "field": "name",
+        "assign_on": "create",
+        "manual": false,
+        "placeholder": "Assigned on save"
       },
       "permissions": {
         "create": true,
@@ -11148,7 +11247,7 @@
       "label": "Payment",
       "plural": "Payments",
       "description": "Record payments and the invoices they belong to.",
-      "title_field": "reference",
+      "title_field": "title",
       "list_fields": [
         "id",
         "invoice",
@@ -11158,7 +11257,9 @@
       ],
       "search_fields": [
         "reference",
-        "currency"
+        "currency",
+        "title",
+        "name"
       ],
       "fields": [
         {
@@ -11321,6 +11422,68 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "permissions": {
@@ -11339,7 +11502,7 @@
         {
           "label": "Project",
           "fields": [
-            "name",
+            "title",
             "customer",
             "status"
           ]
@@ -11362,27 +11525,28 @@
       "label": "Project",
       "plural": "Projects",
       "description": "Track a small project and its customer.",
-      "title_field": "name",
+      "title_field": "title",
       "list_fields": [
         "id",
-        "name",
+        "title",
         "customer",
         "status",
         "budget"
       ],
       "search_fields": [
-        "name",
-        "status"
+        "title",
+        "status",
+        "name"
       ],
       "fields": [
         {
-          "name": "name",
+          "name": "title",
           "type": "text",
           "required": true,
           "unique": false,
           "index": false,
           "max_length": 120,
-          "label": "Name",
+          "label": "Project",
           "help_text": "",
           "placeholder": "",
           "hidden": false,
@@ -11598,6 +11762,37 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "permissions": {
@@ -11660,7 +11855,8 @@
         "done"
       ],
       "search_fields": [
-        "title"
+        "title",
+        "name"
       ],
       "fields": [
         {
@@ -11740,6 +11936,37 @@
           "operators": [
             "eq",
             "ne",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
             "isnull"
           ],
           "compute": null,
@@ -12000,7 +12227,7 @@
       "label": "Item",
       "plural": "Items",
       "description": "Items with about 200 fields, prices and barcodes: a list to try filters on.",
-      "title_field": "item_code",
+      "title_field": "title",
       "list_fields": [
         "id",
         "item_code",
@@ -12011,7 +12238,9 @@
       ],
       "search_fields": [
         "item_code",
-        "item_name"
+        "item_name",
+        "title",
+        "name"
       ],
       "fields": [
         {
@@ -18455,6 +18684,68 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
         }
       ],
       "document_version": 1,
@@ -18663,7 +18954,9 @@
         "density": {},
         "flavour": {},
         "fragrance": {},
-        "gauge": {}
+        "gauge": {},
+        "name": {},
+        "title": {}
       },
       "order": [
         "item_code",
@@ -18870,6 +19163,8 @@
         "flavour",
         "fragrance",
         "gauge",
+        "name",
+        "title",
         "prices.price_list",
         "prices.customer",
         "prices.currency",

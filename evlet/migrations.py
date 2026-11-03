@@ -10,7 +10,8 @@ import sqlite3
 
 from .fields import Field, Integer, Link, MAX_INTEGER, MISSING, Reference
 from .models import identifier, storage_name
-from .naming import standard
+from .identity import RecordId
+from .naming import declared_name, standard
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +72,15 @@ def _sequence_index(connection, table, name, field):
 
 
 def _create(connection, table, model):
+    """A table for a model, with the standard name and title columns unless the model declares its own
+    `name`: such a model describes the schema from before records had them (a frozen class in migration
+    history, a legacy registry), and framework step 0003 adds them once later migrations have run."""
+    framework = not declared_name(model)
+    fields = {name: field for name, field in model.__fields__.items() if framework or not standard(field)}
     columns = ['"id" INTEGER PRIMARY KEY AUTOINCREMENT']
-    columns.extend(sql for name, field in model.__fields__.items() for sql in _column(name, field))
+    columns.extend(sql for name, field in fields.items() for sql in _column(name, field))
     connection.execute(f'CREATE TABLE {identifier(table)} ({", ".join(columns)})')
-    for name, field in model.__fields__.items():
+    for name, field in fields.items():
         if field.index or field.unique:
             _index(connection, table, name, unique=field.unique, columns=index_columns(name, field))
         if field.kind == 'sequence':
@@ -114,6 +120,14 @@ def app_fields(model):
     return {key: field for key, field in model.__app_stored__.items() if not standard(field)}
 
 
+def leftover_standard(model, nullable):
+    """Standard name and title columns a row table kept from when it was a record table (a legacy child
+    table converted to Table rows): unused, nullable, and left in place rather than dropped."""
+    if 'evlet_position' not in model.__fields__:
+        return set()
+    return {key for key in ('name', 'title') if nullable.get(key) and key not in model.__fields__}
+
+
 def standard_fields(model):
     """The framework's name and title fields of a model, as {name: field}."""
     return {key: field for key, field in model.__app_stored__.items() if standard(field)}
@@ -137,7 +151,8 @@ def _check(connection, registry, *, rows=False):
         table = identifier(name)
         columns = connection.execute(f'PRAGMA table_info({table})').fetchall()
         names = [row['name'] for row in columns]
-        skip = added.get(name, set()) | {column for field in retired.get(name, ()) for column in stored_columns(names, field)}
+        skip = added.get(name, set()) | {column for field in retired.get(name, ()) for column in stored_columns(names, field)} \
+            | leftover_standard(model, {row['name']: not row['notnull'] for row in columns})
         actual = {row['name']: (row['type'].upper(), bool(row['notnull']), row['pk']) for row in columns if row['name'] not in skip}
         # A table made before records had standard columns gets them from framework step 0003 (evlet migrate).
         framework = standard_fields(model)
@@ -178,7 +193,7 @@ def _check(connection, registry, *, rows=False):
                 try:
                     model._from_row(row)
                 except (ValueError, TypeError, OverflowError) as exc:
-                    raise SchemaError(f'{name} #{row["id"]}: stored data fails validation: {exc}') from exc
+                    raise SchemaError(f'{name} #{RecordId(row["id"])}: stored data fails validation: {exc}') from exc
     if connection.execute('PRAGMA foreign_key_check').fetchone() is not None:
         raise SchemaError('Stored data contains a broken foreign key')
 
@@ -330,7 +345,7 @@ class CreateModel:
 
     def signature(self):
         return {'operation': 'create_model', 'name': storage_name(self.model),
-                'fields': [field.metadata() for field in self.model.__fields__.values()]}
+                'fields': [field.metadata() for field in self.model.__fields__.values() if not standard(field)]}
 
     def apply(self, connection):
         _create(connection, storage_name(self.model), self.model)
@@ -565,7 +580,7 @@ class AlterField:
             row = connection.execute(f'SELECT "id" FROM {table} WHERE {column} > ? OR {column} < ? ORDER BY "id" LIMIT 1',
                                      (limit, -limit)).fetchone()
             if row is not None:
-                raise SchemaError(f'{self.table} #{row[0]}.{self.name}: the value is too large for the new scale')
+                raise SchemaError(f'{self.table} #{RecordId(row[0])}.{self.name}: the value is too large for the new scale')
             connection.execute(f'UPDATE {table} SET {column} = {column} * ? WHERE {column} IS NOT NULL', (factor,))
         # Every stored value must pass the new definition (bounds, length, choices), not only its type.
         after = 0
@@ -578,7 +593,7 @@ class AlterField:
                     try:
                         self.field.validate(self.field.from_storage(stored))
                     except (ValueError, TypeError) as exc:
-                        raise SchemaError(f'{self.table} #{record_id}.{self.name}: stored data fails validation: {exc}') from exc
+                        raise SchemaError(f'{self.table} #{RecordId(record_id)}.{self.name}: stored data fails validation: {exc}') from exc
             after = rows[-1][0]
 
 
@@ -864,7 +879,7 @@ def _planned_definition(saved, pending, steps=None):
                 if isinstance(operation, AddTable) and operation.parent not in models:
                     raise SchemaError(f'AddTable {name}: unknown parent model {operation.parent}')
                 models[name] = {'name': name, 'label': model.__name__,
-                                'fields': [field.metadata() for field in model.__fields__.values()]}
+                                'fields': [field.metadata() for field in model.__fields__.values() if not standard(field)]}
                 continue
             if operation.table not in models:
                 raise SchemaError(f'Unknown migration table: {operation.table}')
@@ -1058,6 +1073,12 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                 applied.skipped, applied.posted = _recompute(connection, database.registry, recomputes(pending), lambda db: db.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='evlet_calculation_versions'").fetchone() is not None,
                     include_posted=recompute_posted)
+            # The batch ends with the models' standard name and title columns (framework step 0003 does
+            # the same for instances that have no app migration to run).
+            from .naming import add_columns, fill_titles
+            for table, model in database.registry.models.items():
+                add_columns(connection, False, table, model)
+                fill_titles(connection, table, model)
             _check(connection, database.registry, rows=True)
             _save_definition(connection, database.registry)
             connection.commit()
@@ -1191,7 +1212,7 @@ def suggest(registry, planned, name='0002_changes', tables=None):
         child = children.get(table)
         if child is None:
             storage = table if table != model.__name__.lower() else None
-            lines, used = _frozen_class(model, 'Model', dict(model.__app_stored__), storage)
+            lines, used = _frozen_class(model, 'Model', dict(app_fields(model)), storage)
             operations.append(f'CreateModel({model.__name__})')
             names |= used | {'CreateModel'}
         else:

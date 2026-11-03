@@ -179,6 +179,45 @@ Writes also take a JSON integer for a Link or a row id, so older clients keep wo
 responses only ever send text ids. Framework rows that are not records (accounts, journal
 entries, jobs, attachments) keep their own number ids.
 
+## Name and title
+
+Every record model also has two standard columns, next to `id`. Table rows have neither.
+
+- **`name`** is the human identifier, such as `INV-2026-00001`: optional and unique per model.
+  `Meta.naming` decides how it is filled ([sequences.md](sequences.md#naming-series)): a naming
+  series, the model's `autoname(self, context)` method, or people typing it
+  (`Naming(manual=True)`). Without naming it stays empty and read only. A series or autoname
+  assigns it on create, on confirm, or when the record enters a state (`assign_on`); until then
+  forms show "Assigned on save" or "Assigned on confirm". Once a record has a name, anyone who may
+  write the `name` field can change it through the normal edit; a taken name is refused. Links
+  point to the id, so changing a name updates one row and breaks no link or bookmark.
+- **`title`** is the display text that Link pickers, lists, search, breadcrumbs and Eva show. Declare
+  a `title` Text field and that field is the title. Otherwise the framework fills it on every
+  write from `Meta.title_field = "customer_name"` or a template
+  `Meta.title = "{first_name} {last_name}"`, and falls back to the name, then the text id. It is not
+  unique. A role reads it only when it may read its source fields.
+
+```python
+class Customer(Model):
+    customer_name = Text(required=True)
+
+    class Meta:
+        title_field = 'customer_name'
+        naming = Naming(Series('CUST-{#####}'))
+```
+
+`name` is reserved: an `Application` refuses a model that declares its own `name` field. Rename
+it with `RenameField('customer', 'name', 'customer_name')` in an app migration. Frozen classes in
+older migrations may keep their `name` field, because they describe the schema of that time.
+
+Tables made before these columns existed get them at the end of the next app migration batch, or
+from framework migration `0003_record_names`, which `evlet migrate` runs
+([app-upgrades.md](app-upgrades.md#upgrade-evlet)). Every title is filled; existing rows keep an
+empty name unless the app fills them. A data migration that moves an older number into `name` calls
+`session.add_standard_columns(Model)` first, as the Playground's `0007_record_names` does for
+invoice numbers. A model that declares its own `name` (a frozen class in older migrations) has
+neither standard column, as its table had neither then.
+
 ## Queries
 
 ```python

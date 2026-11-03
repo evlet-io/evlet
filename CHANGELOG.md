@@ -6,6 +6,24 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Breaking: every record has a standard name and title.** Record models (not Table rows) gain
+  two framework columns next to `id`. `name` is the human identifier, unique per model, filled by
+  `Meta.naming`: a naming series (which now fills `name` by default), the model's
+  `autoname(self, context)` method (`Naming()`), or people typing it (`Naming(manual=True)`), on
+  create, on confirm (`assign_on="confirm"`, gap-free numbers for confirmable documents) or on
+  entering a state. Once assigned, people who may write the field can change it with a normal
+  edit; Links point to the id, so nothing else changes. `title` is the display text Link pickers,
+  lists, search and Eva show: a declared `title` field, or kept in sync from `Meta.title_field` or a
+  `Meta.title = "{first_name} {last_name}"` template, falling back to the name, then the text id.
+  Record pages show the title as the heading and the name in mono next to it
+  ([docs/model-engine.md](docs/model-engine.md#name-and-title)).
+  What to change: an `Application` refuses a model that declares its own `name` field; rename it in
+  an app migration, such as `RenameField('customer', 'name', 'customer_name')`, and point
+  `Meta.title_field` at it (or rename it to `title`). Then run `evlet migrate`: framework migration
+  `0003_record_names` adds the columns to existing tables and fills every title. API responses and
+  the schema now include `name` and `title`; the schema's `title_field` is `title`.
+  The Playground's `Customer.name` is now `customer_name`, `Project.name` is `title`, and invoice
+  numbers moved from `number` into `name` (migration `0007_record_names`).
 - **Breaking: record ids are text.** New records get a 63-bit, time-ordered id (milliseconds since
   01-01-2026 and 21 random bits), stored as before in the `INTEGER` primary key. Outside the
   database an id is always 13 lowercase Crockford base32 characters, such as `01hc1sd9vc1ye`: JSON

@@ -135,7 +135,7 @@
           "label": "Name",
           "help_text": "",
           "placeholder": "",
-          "hidden": false,
+          "hidden": true,
           "read_only": true,
           "default_kind": "none",
           "stored": true,

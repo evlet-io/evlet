@@ -31,7 +31,7 @@ def test_complete_customer_invoice_payment_api(application):
     status, schema, _ = request(application, "GET", "/api/schema")
     # Customer, Invoice, Payment, Project, ProjectTask, and Item with its two tables.
     assert status == 200 and len(schema["models"]) == 8
-    status, customer, headers = request(application, "POST", "/api/customer", {"name": "Studio"})
+    status, customer, headers = request(application, "POST", "/api/customer", {"customer_name": "Studio"})
     assert status == 201
     assert headers[b"location"] == f'/api/customer/{customer["id"]}'.encode()
     status, invoice, _ = request(application, "POST", "/api/invoice", {
@@ -55,7 +55,7 @@ def test_complete_customer_invoice_payment_api(application):
     ("PUT", "/api/customer", None, 405),
     ("POST", "/health", {}, 405),
     ("POST", "/api/customer", {}, 422),
-    ("POST", "/api/customer", {"name": "A", "model": "fake"}, 422),
+    ("POST", "/api/customer", {"customer_name": "A", "model": "fake"}, 422),
     ("POST", "/api/customer", [], 422),
     ("POST", "/api/invoice", {"customer": 99, "reference": "A", "total": "1.00"}, 409),
     ("GET", "/api/customer?limit=0", None, 422),
@@ -75,14 +75,14 @@ def test_error_responses(application, method, path, data, status):
 
 
 def test_request_bounds_validation_and_chunks(application):
-    status, error, _ = request(application, "POST", "/api/customer", {"name": ""})
-    assert status == 422 and "name" in error["fields"]
-    for raw in (b"{", b'{"name": NaN}', b'\xff', b'[' * 2000):
+    status, error, _ = request(application, "POST", "/api/customer", {"customer_name": ""})
+    assert status == 422 and "customer_name" in error["fields"]
+    for raw in (b"{", b'{"customer_name": NaN}', b'\xff', b'[' * 2000):
         assert request(application, "POST", "/api/customer", body=raw)[0] == 400
     assert request(application, "POST", "/api/customer", body=b"x" * 65537)[0] == 413
     assert request(application, "POST", "/api/customer", {}, content_type=b"text/plain")[0] == 415
-    status, record, _ = request(application, "POST", "/api/customer", chunks=[b'{"name":', b'"Chunked"}'])
-    assert status == 201 and record["name"] == "Chunked"
+    status, record, _ = request(application, "POST", "/api/customer", chunks=[b'{"customer_name":', b'"Chunked"}'])
+    assert status == 201 and record["customer_name"] == "Chunked"
 
 
 def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
@@ -101,8 +101,8 @@ def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
     assert asyncio.run(run()) == [{"type": "lifespan.startup.complete"}, {"type": "lifespan.shutdown.complete"}]
     assert path.is_file()
     from test_business import http
-    assert http(app, "POST", "/api/customer", {"name": "Ready"})[0] == 401
-    ready = app.database.create(Customer, name="Ready")
+    assert http(app, "POST", "/api/customer", {"customer_name": "Ready"})[0] == 401
+    ready = app.database.create(Customer, customer_name="Ready")
 
     from evlet import CreateModel, Migration, Model, Registry, Text
     from examples.playground.migrate import migrations
@@ -115,7 +115,7 @@ def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
     owned = {child.model for child in registry.children}
     target = Database(path, Registry(*(model for model in registry.models.values() if model not in owned), Note))
     assert target.migrate([*migrations, next_migration]) == ['0004_notes']
-    assert target.get(Customer, ready.id).name == 'Ready'
+    assert target.get(Customer, ready.id).customer_name == 'Ready'
 
 
 def test_database_failure_returns_service_unavailable(tmp_path):

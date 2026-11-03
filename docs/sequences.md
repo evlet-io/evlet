@@ -201,39 +201,55 @@ existing rows should get the lower numbers.
 
 ## Naming series
 
-A naming series names a record when it is created, with rules an instance can change in
-Controls. It runs on the same counters as a Sequence.
+A naming series fills a record's standard `name` ([model-engine.md](model-engine.md#name-and-title)),
+with rules an instance can change in Controls. It runs on the same counters as a Sequence.
 
 ```python
-from evlet import Date, Decimal, Model, Naming, Select, Series, Text
+from evlet import Date, Decimal, Model, Naming, Select, Series
 
 
 class Invoice(Model):
-    reference = Text(unique=True)
     total = Decimal(scale=2)
     status = Select(("draft", "sent"), default="draft")
     posting_date = Date()
 
     class Meta:
-        naming = Naming("reference",
-                        Series("LC-{YYYY}-{####}", when='total >= 250000 and status == "sent"', label="Large contracts"),
+        naming = Naming(Series("LC-{YYYY}-{####}", when='total >= 250000 and status == "sent"', label="Large contracts"),
                         Series("INV-{YYYY}-{####}", label="Invoices"),
                         date_field="posting_date")
 ```
 
-* The target field is a stored `Text` field with `unique=True` that is not required. The server
-  fills it on create; it is read only for every role in the API and forms.
 * Series are checked from the top; the first whose condition matches is used. The last series has
   no condition, and only the last, so every record gets a name.
 * A trusted `Session.create` may pass a name (imports); it is kept. Without one the series names it,
-  dated in the instance timezone. Sending `null` for the field on create is the same as leaving it out.
-  A revision's copy gets a new name.
+  dated in the instance timezone. Sending `null` for `name` on create is the same as leaving it out;
+  a client that sends a name before the series has given one gets `name: Assigned on save`.
+
+**Other ways to name.** `Naming()` with no series calls the model's `autoname(self, context)` method
+in the write transaction; it returns the name, which must be free and at most 140 characters.
+`Naming(manual=True)` lets people type the name. Without `Meta.naming` the name stays empty.
+
+```python
+class Ticket(Model):
+    subject = Text(required=True)
+
+    class Meta:
+        naming = Naming()
+
+    def autoname(self, context):
+        return 'T-' + self.subject.upper().replace(' ', '-')
+```
+
+**When.** `assign_on="create"` (the default), `"confirm"` for a confirmable model, or a state of the
+model. A confirm-time name is taken in the confirm transaction, so drafts never use a number and the
+numbers of confirmed documents have no gaps, as UAE tax invoices need. Until then the name is
+empty and the form shows "Assigned on confirm".
 
 **Format.** `{YYYY}`, `{YY}`, `{MM}`, `{DD}`, exactly one counter `{###}` to `{########}` (the `#`
 count is the zero padding) and `{field}`, the value of a short text field of the model with `/` and
 spaces replaced by `-`. Names are 40 characters at most after expansion: a format whose fixed part
 is longer is refused when saved, and a field value that makes a name longer is refused on create. Date tokens use
-`date_field`, or the creation day in the instance timezone.
+`date_field`, or the day the name is assigned in the instance timezone.
 
 **Conditions** are text, parsed by `evlet/expressions.py`: `field op value`, `field in (a, b)`,
 `and`, `or`, `not` and brackets, with `==`, `!=`, `>`, `>=`, `<`, `<=`. Values are quoted text,
@@ -246,49 +262,50 @@ and `A quote is not closed.`
 
 **Counters.** One counter per model and resolved prefix, the expanded text before the counter
 token. A new year or month gives a new prefix, so it starts at 1. A counter is a row of
-`evlet_sequence` with `field` the target field, `scope_key` the prefix and an empty `period`; the
+`evlet_sequence` with `field` the target field (`name`), `scope_key` the prefix and an empty `period`; the
 table also keeps the last name, how it last changed (`issued` or `set`), the note, who and when.
-Issuing is one insert-or-increment statement in the create transaction, as for a Sequence, so
+Issuing is one insert-or-increment statement in the write transaction, as for a Sequence, so
 writers never get the same name. A name that is already taken is skipped, up to 1000 times.
 Controls can set a counter with a reason, never below the number in the last issued name.
 
-How it differs from a Sequence: a Sequence is a field type, fixed in code, with scope fields and
-`assign_on`; a naming series is a `Meta` declaration on a plain unique field, assigned on create
-only, whose series and counters an instance can change in Controls.
+How it differs from a Sequence: a Sequence is a field type, fixed in code, with scope fields; a
+naming series is a `Meta` declaration that fills the standard name, whose series and counters an
+instance can change in Controls.
 
-**In the browser.** The model's `/api/schema` entry has `naming: {"field": "number"}` when the role
-can read the field. The field is `read_only: true` and, unless the app sets its own, has the
-placeholder `Assigned on save`. The New screen shows it disabled with that placeholder and never
-sends it; after the save, a record whose `title_field` is the named field shows the name as its
-title, in a monospaced font, not editable in place.
+**In the browser.** The model's `/api/schema` entry has
+`naming: {"field": "name", "assign_on": "create", "manual": false, "placeholder": "Assigned on save"}`
+when the role can read the name. The New screen shows the name disabled with that placeholder and
+never sends it. The record page shows the title as its heading and the name next to it in a
+monospaced font.
 
-**Edits, reopening and revisions.** A name never changes once it is issued. Editing the record,
-including moving its date field into another year, keeps it. A confirmable document keeps the same
-name through confirm, cancel, reopen and confirm again; Evlet does not add `-1`, `-2` suffixes
-([lifecycle-specification.md](lifecycle-specification.md)). A revision (`revise`) is a new record
-and gets the next name of its series; the voided original keeps its own.
+**Edits, reopening and revisions.** Once a record has a name, anyone who may write the `name`
+field can change it through the normal edit; the change is journaled like any field and a taken name
+is refused. Links point to the id, so nothing else changes. A confirmable document keeps its name
+through confirm, cancel, reopen and confirm again, and its name cannot change after its first
+confirmation; Evlet does not add `-1`, `-2` suffixes ([lifecycle-specification.md](lifecycle-specification.md)).
+A revision (`revise`) is a new record and gets a new name by the same rules; the voided original
+keeps its own.
 
-**Gaps.** Issuing happens in the create transaction, so a create that fails and rolls back also
+**Gaps.** Issuing happens in the write transaction, so a write that fails and rolls back also
 rolls back its counter step, and the next committed record gets that number. Deleting a record
 does not give its name back.
 
 **The Playground.** `Invoice` is named `INV-{YYYY}-{#####}`, dated by its posting date, so the
-first invoice of 2026 is `INV-2026-00001`. The name goes into the `number` field, which migration
-`0006_invoice_number` adds; invoices saved before it keep an empty number. `reference` stays the
+first invoice of 2026 is `INV-2026-00001`. Migration `0007_record_names` moved the earlier `number`
+field into `name` and retired `number`; the counters moved with it. `reference` stays the
 customer's own reference, such as their purchase order number.
 
 ```python
 class Invoice(Model):
     class Meta:
-        title_field = 'number'
-        naming = Naming('number', Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date')
-
-    number = Text(unique=True, max_length=40, label='Invoice number')
+        naming = Naming(Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date')
 ```
 
-A naming field must be optional (`required=False`), because the form does not ask for it. Evlet
-has no migration that makes a required column optional, so an existing required field cannot
-become the naming field; add a new field with `AddField`, as the Playground does.
+**Older targets.** `Naming("reference", Series(...))` still names another unique, optional Text
+field instead, on create only, and keeps that field read only. To move such a field into `name`, add
+a migration like the Playground's: `RetireField` the old field and a `RunData` step that calls
+`session.add_standard_columns(Model)`, copies the values and moves the counters
+(`UPDATE evlet_sequence SET field = 'name' WHERE model = ... AND field = '<old>'`).
 
 ## For later phases
 

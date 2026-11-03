@@ -28,6 +28,7 @@ from types import MappingProxyType
 
 from .auth import AccessError, User
 from .identity import RecordId, jsonable
+from .naming import standard
 from .fields import Boolean, Link, Reference
 from .models import Model, ValidationError, identifier
 from .permissions import CHUNK, Policy, Rule
@@ -457,7 +458,8 @@ def prepare(engine, bound, values, record_id, index, *, reversal=False):
 
 
 def normalized(draft):
-    return {name: draft._values.get(name) for name in draft._definition.__fields__}
+    # A posted row's name and title are its own (the title falls back to its id), not part of the effect.
+    return {name: draft._values.get(name) for name, field in draft._definition.__fields__.items() if not standard(field)}
 
 
 def totals(bound, rows):
@@ -642,11 +644,16 @@ def cycles(rows):
     return result
 
 
+def effect_values(row):
+    """A saved posted row's values as an effect compares them: without its own name and title."""
+    return {name: value for name, value in row._values.items() if not standard(row.__fields__.get(name))}
+
+
 def mirror_values(bound, values):
     """The source values of a reversal row: the original's, with `reverse` applied."""
     fields = bound.target.__declared_fields__
     result = {name: value for name, value in values.items()
-              if name not in (SOURCE, REVERSAL) and fields[name].compute is None and fields[name].query is None}
+              if name not in (SOURCE, REVERSAL) and fields[name].compute is None and fields[name].query is None and not standard(fields[name])}
     bound.reverse.mirror(result)
     return result
 
@@ -794,7 +801,7 @@ def orphans(tx, registry, bound, name, table):
 
 def difference(bound, model_name, record_id, kind, reversal, *, expected=None, actual=None, message=None):
     def shown(values):
-        return {name: field.serialize(values.get(name)) for name, field in bound.target.__fields__.items()}
+        return {name: field.serialize(values.get(name)) for name, field in bound.target.__fields__.items() if not standard(field)}
     result = {'model': model_name, 'record': RecordId(record_id), 'target': target_name(bound), 'kind': kind, 'reversal': bool(reversal)}
     if expected is not None:
         result['expected'] = shown(expected)
@@ -874,7 +881,7 @@ def match(bound, model_name, record_id, expected, actual, reversal):
     remaining = list(actual)
     unmatched = []
     for values in expected:
-        found = next((row for row in remaining if dict(row._values) == values), None)
+        found = next((row for row in remaining if effect_values(row) == values), None)
         if found is None:
             unmatched.append(values)
         else:

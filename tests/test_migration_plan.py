@@ -24,7 +24,7 @@ LIFECYCLE = {{'admin': Rule(('read', 'create', 'update', 'delete', 'confirm', 'c
 
 class Employee(Model):
     permissions = RULES
-    name = Text(required=True, max_length=120)
+    full_name = Text(required=True, max_length=120)
 {employee}
 
 class LeaveApplication(Model):
@@ -83,7 +83,7 @@ def seed(root):
     app = runtime(root)
     try:
         with app.business.context(ADMIN) as context:
-            employee = context.create(app.registry.models['employee'], name='Mariam')['id']
+            employee = context.create(app.registry.models['employee'], full_name='Mariam')['id']
             document = context.document(app.registry.models['leaveapplication'], employee='Mariam', days=3, reason='Annual')
             document.save()
             document.confirm()
@@ -258,7 +258,7 @@ def test_mismatch_names_the_changed_property(tmp_path):
 def hr_models(*, dependents=False, nationality=False):
     from evlet import Journal, Rule
     lifecycle = {'admin': Rule(('read', 'create', 'update', 'delete', 'confirm', 'cancel', 'reopen'))}
-    employee = {'__module__': __name__, 'name': Text(required=True), 'permissions': {'admin': Rule(('read', 'create', 'update', 'delete'))}}
+    employee = {'__module__': __name__, 'full_name': Text(required=True), 'permissions': {'admin': Rule(('read', 'create', 'update', 'delete'))}}
     if nationality:
         employee['nationality'] = Text(default='AE')
     if dependents:
@@ -280,7 +280,7 @@ def confirmed_leave(database):
     """An employee and a leave application confirmed once (revision 1, hashed journal entries)."""
     app = application(database)
     with app.business.context(ADMIN) as context:
-        employee = context.create(database.registry.models['employee'], name='Mariam')['id']
+        employee = context.create(database.registry.models['employee'], full_name='Mariam')['id']
         document = context.document(database.registry.models['leaveapplication'], employee='Mariam', days=3, reason='Annual')
         document.save()
         document.confirm()
@@ -329,11 +329,11 @@ def test_sqlite_plan_and_add_table_with_confirmed_documents(tmp_path):
 
 
 def people_models(*, days=None, split=False):
-    """hr_models() with Leave.days possibly changed and Employee.name possibly split into two fields."""
+    """hr_models() with Leave.days possibly changed and Employee.full_name possibly split into two fields."""
     registry = hr_models()
     Employee, Leave = registry.models['employee'], registry.models['leaveapplication']
     employee = {key: value for key, value in vars(Employee).items() if key in ('permissions', '__module__')}
-    employee.update({'first_name': Text(default=''), 'last_name': Text(default='')} if split else {'name': Text(required=True)})
+    employee.update({'first_name': Text(default=''), 'last_name': Text(default='')} if split else {'full_name': Text(required=True)})
     leave = {key: value for key, value in vars(Leave).items()
              if key in ('confirmable', 'track_changes', 'permissions', '__module__', 'Meta')}
     leave.update({'employee': Text(required=True), 'days': days or Integer(default=0), 'reason': Text()})
@@ -343,8 +343,8 @@ def people_models(*, days=None, split=False):
 def split_names(session):
     """Move each employee's full name into first and last name (a RunData step)."""
     Employee = session.registry.models['employee']
-    for record_id, name in session.connection.execute('SELECT "id", "name" FROM "employee" ORDER BY "id"').fetchall():
-        first, _, last = name.partition(' ')
+    for record_id, full_name in session.connection.execute('SELECT "id", "full_name" FROM "employee" ORDER BY "id"').fetchall():
+        first, _, last = full_name.partition(' ')
         session.update(Employee, record_id, first_name=first, last_name=last)
 
 
@@ -365,8 +365,8 @@ def check_retire_alter_and_run_data(make):
     database = make(people_models(), [])
     app = application(database)
     with app.business.context(ADMIN) as context:
-        context.update(database.registry.models['employee'], context.create(database.registry.models['employee'], name='x')['id'],
-                       name='Mariam Khan')
+        khan = context.create(database.registry.models['employee'], full_name='x')['id']
+        context.update(database.registry.models['employee'], khan, full_name='Mariam Khan')
     employee, leave = confirmed_leave(database)
 
     # Integer to Decimal: a failing batch changes nothing.
@@ -392,35 +392,35 @@ def check_retire_alter_and_run_data(make):
     # Split one field into two and retire the old one; its column and values stay.
     split = people_models(days=Decimal(scale=1, default='0'), split=True)
     plan = make(split, history, plan=True)
-    assert "RetireField('employee', 'name')" in plan.suggestion
+    assert "RetireField('employee', 'full_name')" in plan.suggestion
     history = history + [Migration('0002_split_name', AddField('employee', 'first_name', Text(default='')),
                                    AddField('employee', 'last_name', Text(default='')),
-                                   RetireField('employee', 'name'), RunData(split_names))]
+                                   RetireField('employee', 'full_name'), RunData(split_names))]
     database = make(split, history, migrate=True)
     database = make(split, history)
     assert make(split, history, plan=True).text().endswith('The migrations produce the current models.')
     app = application(database)
     Employee = split.models['employee']
     with app.business.context(ADMIN) as context:
-        record = context.get(Employee, 1)
+        record = context.get(Employee, khan)
         assert (record.first_name, record.last_name) == ('Mariam', 'Khan')
-        assert not hasattr(record, 'name')
+        assert not hasattr(record, 'full_name')
         added = context.create(Employee, first_name='Omar')['id']
-    assert raw(database, f'SELECT name FROM employee WHERE id IN (1, {added}) ORDER BY id') == [('Mariam Khan',), (None,)]
+    assert raw(database, f'SELECT full_name FROM employee WHERE id IN ({int(khan)}, {int(added)}) ORDER BY id') == [('Mariam Khan',), (None,)]
     checked, breaks = verify(database)
     assert checked and not breaks
 
     # Dropping the retired field needs an explicit choice.
-    later = history + [Migration('0003_drop_name', DropField('employee', 'name'))]
+    later = history + [Migration('0003_drop_name', DropField('employee', 'full_name'))]
     with pytest.raises(SchemaError, match='allow_destructive'):
         make(split, later, migrate=True)
-    assert raw(database, 'SELECT name FROM employee WHERE id = 1') == [('Mariam Khan',)]
+    assert raw(database, f'SELECT full_name FROM employee WHERE id = {int(khan)}') == [('Mariam Khan',)]
     database = make(split, later, migrate=True, allow_destructive=True)
     database = make(split, later)
     with pytest.raises(sqlite3.OperationalError):
-        raw(database, 'SELECT name FROM employee')
+        raw(database, 'SELECT full_name FROM employee')
     with application(database).business.context(ADMIN) as context:
-        assert context.get(Employee, 1).first_name == 'Mariam'
+        assert context.get(Employee, khan).first_name == 'Mariam'
 
 
 def sqlite_maker(path):
@@ -473,8 +473,8 @@ def test_alter_field_refuses_values_that_overflow_and_rows_that_fail(tmp_path):
     path = tmp_path / 'leave.sqlite3'
     database = Database(path, leave_registry(Integer()), migrations=[])
     database.initialize()
-    database.create(database.registry.models['leave'], days=2**62)
-    with pytest.raises(SchemaError, match=r'leave #1.days: the value is too large'):
+    record = database.create(database.registry.models['leave'], days=2**62)
+    with pytest.raises(SchemaError, match=rf'leave #{record.id}.days: the value is too large'):
         Database(path, leave_registry(Decimal(scale=9))).migrate([Migration('0001', AlterField('leave', 'days', Decimal(scale=9)))])
     with pytest.raises(SchemaError, match='stored data fails validation'):
         Database(path, leave_registry(Integer(maximum=5))).migrate([Migration('0001', AlterField('leave', 'days', Integer(maximum=5)))])
@@ -541,7 +541,7 @@ def shorten_reason(session):
 
 def contacts(*fields):
     from evlet import Link
-    attributes = {'__module__': __name__, 'name': Text()}
+    attributes = {'__module__': __name__, 'full_name': Text()}
     for name in fields:
         attributes[name] = {'phone': Text(required=True), 'contact_phone': Text(default=''),
                             'manager': Link('contact')}[name]
@@ -554,8 +554,8 @@ def check_run_data_order_and_maintenance(make):
 
     # A run that spans releases copies values before a later migration drops their column.
     database = make(contacts('phone', 'manager'), [])
-    database.create(database.registry.models['contact'], name='Boss', phone='+971 4 000 0000')
-    database.create(database.registry.models['contact'], name='Mariam', phone='+971 50 123 4567', manager=1)
+    boss = database.create(database.registry.models['contact'], full_name='Boss', phone='+971 4 000 0000').id
+    database.create(database.registry.models['contact'], full_name='Mariam', phone='+971 50 123 4567', manager=boss)
     release = [Migration('0001_contact_phone', AddField('contact', 'contact_phone', Text(default='')),
                          RetireField('contact', 'phone'), RetireField('contact', 'manager'), RunData(copy_phone)),
                Migration('0002_drop_phone', DropField('contact', 'phone'))]
@@ -563,8 +563,8 @@ def check_run_data_order_and_maintenance(make):
     Contact = database.registry.models['contact']
     assert sorted(record.contact_phone for record in database.list(Contact)) == ['+971 4 000 0000', '+971 50 123 4567']
     # The retired manager Link no longer guards the record it pointed at.
-    database.delete(Contact, 1)
-    assert raw(database, 'SELECT manager FROM contact') == [(1,)]
+    database.delete(Contact, boss)
+    assert raw(database, 'SELECT manager FROM contact') == [(boss,)]
 
 
 def check_maintenance_steps(make):

@@ -96,9 +96,15 @@ A permitted edit records `post_confirmation_edit` and preserves the original
 snapshot. Confirmed calculations keep their saved results. A never-confirmed
 draft can be deleted. Once confirmed, a document is retained even after reopening
 so its snapshots and downstream references remain accessible.
-The naming field (or a field named `number`) stays fixed after the first
-confirmation. Use `document_number_field = "reference"` when another stored field
-is the application's permanent document number.
+The naming field (the standard `name`, or a field named `number`) stays fixed after
+the first confirmation. Use `document_number_field = "reference"` when another stored
+field is the application's permanent document number.
+
+**Numbering on confirm.** `Meta.naming = Naming(Series("INV-{YYYY}-{#####}"), assign_on="confirm")`
+names a document in its first confirm transaction, so drafts never take a number and confirmed
+documents are numbered without gaps. Until then the record page shows "Assigned on confirm". A
+reopened and reconfirmed document keeps its name; a revision copy gets a new one
+([sequences.md](sequences.md#naming-series)).
 
 ## Transactions, permissions and business effects
 

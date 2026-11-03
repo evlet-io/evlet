@@ -5,6 +5,8 @@ import re
 from ..fields import CurrentUser, LongText, MISSING, Text
 from ..declarations import Ref
 
+from ..naming import form_hidden, standard
+
 
 def label_for(name):
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name).replace("_", " ").capitalize()
@@ -45,8 +47,9 @@ def view_for(model):
     title = getattr(meta, 'title_field', next((name for name in ('name', 'title', 'reference') if name in texts), texts[0] if texts else 'id'))
     if title != 'id' and title not in texts:
         raise ValueError('title_field must be a visible short text field or id')
-    if 'title' in model.__app_fields__ and (standard(model.__app_fields__['title']) or 'title' in texts):
-        # Records keep their display text in the title column; Meta.title_field is only its source.
+    if not hasattr(meta, 'title_field') and 'title' in model.__app_fields__ and (standard(model.__app_fields__['title']) or 'title' in texts):
+        # Without Meta.title_field, records show their title column (a template, the name or the text
+        # id). With it, that field holds the same text the title does.
         title = "title"
     columns = getattr(meta, 'list_fields', tuple(name for name, field in visible.items() if not isinstance(field, LongText))[:4])
     search = getattr(meta, 'search_fields', tuple(texts[:8]))
@@ -92,7 +95,8 @@ def field_schema(field):
     result = {**field.metadata(), 'label': field.label or label_for(field.name),
               'help_text': field.help_text, **({'tooltip': field.tooltip} if field.tooltip else {}), 'placeholder': field.placeholder,
               **({'suffix': field.suffix} if field.suffix else {}),
-              'hidden': field.hidden, 'read_only': field.read_only,
+              # Forms leave out the standard title and a name no naming fills (evlet/naming.py); responses keep them.
+              'hidden': field.hidden or form_hidden(field), 'read_only': field.read_only,
               **({'stored': field.stored} if field.compute is not None or field.query is not None or not field.stored else {}),
               **currency_schema(field),
               **({'editable_when_locked': True} if getattr(field, 'editable_when_locked', False) else {}),

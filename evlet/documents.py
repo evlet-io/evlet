@@ -14,6 +14,7 @@ from .database import ConflictError, ROW_LIMIT
 from .declarations import Ref
 from .fields import CurrentUser, MISSING, Link
 from .identity import RecordId
+from .naming import drop_echoes
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
@@ -408,6 +409,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
     state_write(model, scalars, current)
     sequence_write(model, scalars, current, business.policy.fields(user, model))
     computed_write(business, model, scalars, '')
+    drop_echoes(model, scalars, current._values if current else None)
     business.policy.check_values(tx, user, model, scalars)
     # A new record takes the defaults Controls set on this instance for fields the caller left out.
     values = business.controls.custom.prepare(model, scalars) if current is None else scalars
@@ -734,6 +736,8 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             keys_seen.add(temporary) if temporary is not None and fresh else None
             value, nested = business.split_body(value)
             computed_write(business, child.model, value, prefix + child.name + '.')
+            original = originals.get(row_id) if row_id is not None else None
+            drop_echoes(child.model, value, getattr(original, '_values', None))
             business.policy.check_values(tx, user, child.model, value, targets=targets)
             if row_id is not None:
                 if not isinstance(row_id, RecordId) or row_id not in originals or row_id in kept or row_id in hidden:

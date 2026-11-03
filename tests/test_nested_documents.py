@@ -516,9 +516,9 @@ def test_link_paths_and_today_settle_on_the_server_and_withhold_unreadable_paths
 
     class Account(Model):
         # Editors cannot read rates; viewers see only accounts in their own scope.
-        permissions = {'admin': full, 'editor': Rule(('read',), read_fields=('name', 'credit_days', 'region')),
-                       'viewer': Rule(('read',), scope=lambda user: {'name': 'mine'})}
-        name = Text(default='')
+        permissions = {'admin': full, 'editor': Rule(('read',), read_fields=('title', 'credit_days', 'region')),
+                       'viewer': Rule(('read',), scope=lambda user: {'title': 'mine'})}
+        title = Text(default='')
         credit_days = Integer(default=30)
         rate = Decimal(scale=2, default=0)
         vip = Boolean(default=False)
@@ -540,7 +540,7 @@ def test_link_paths_and_today_settle_on_the_server_and_withhold_unreadable_paths
     admin, editor = users(app)
     viewer = client(app, 'viewer')
     _, region, _ = admin('POST', '/api/region', {'grace': 5})
-    _, account, _ = admin('POST', '/api/account', {'name': 'acme', 'credit_days': 30, 'rate': '2.50', 'region': region['id']})
+    _, account, _ = admin('POST', '/api/account', {'title': 'acme', 'credit_days': 30, 'rate': '2.50', 'region': region['id']})
     before = date.fromisoformat(host_today(app.business))
     status, bill, _ = admin('POST', '/api/bill', {'account': account['id'], 'issued': '2026-10-01', 'amount': '100.05'})
     after = date.fromisoformat(host_today(app.business))
@@ -571,12 +571,12 @@ def test_link_paths_and_today_settle_on_the_server_and_withhold_unreadable_paths
     assert 'plan' not in schemas['editor']
 
     # A changed link value is looked up again; the server never keeps stale path values.
-    _, other, _ = admin('POST', '/api/account', {'name': 'other', 'credit_days': 7, 'vip': True, 'rate': '10', 'region': region['id']})
+    _, other, _ = admin('POST', '/api/account', {'title': 'other', 'credit_days': 7, 'vip': True, 'rate': '10', 'region': region['id']})
     _, loaded, headers = admin('GET', f"/api/bill/{bill['id']}")
     status, moved, _ = admin('PATCH', f"/api/bill/{bill['id']}", {'account': other['id']}, headers={b'if-match': headers[b'etag']})
     assert status == 200 and (moved['due'], moved['discount'], moved['net']) == ('2026-10-08', '10.01', '90.04')
     # Without a region the second hop is a ready null; date arithmetic with it stays pending, so the stored result blocks the save.
-    _, plain, _ = admin('POST', '/api/account', {'name': 'plain'})
+    _, plain, _ = admin('POST', '/api/account', {'title': 'plain'})
     status, result, _ = admin('POST', '/api/bill', {'account': plain['id'], 'issued': '2026-10-01'})
     assert status == 422 and result['fields']['grace_due'].startswith('COMPUTE_INPUT_MISSING')
     status, result, _ = admin('POST', '/api/bill', {'issued': '2026-10-01'})

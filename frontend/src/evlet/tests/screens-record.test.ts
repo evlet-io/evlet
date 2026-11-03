@@ -155,19 +155,19 @@ describe('generated record view', () => {
   });
 
   it('creates a record from a form with initial values from the address, then opens it', async () => {
-    const created = { status: 201, etag: '"new"', body: { id: id(56), name: 'Acme Trading', rate: '0.00', credit_days: 30 } };
+    const created = { status: 201, etag: '"new"', body: { id: id(56), title: 'Acme Trading', rate: '0.00', credit_days: 30 } };
     const { host, sent } = start([...adminRoutes(),
       ['POST', /\/api\/customer$/, created],
       ['GET', /\/api\/customer\/000000000001r$/, { ...created, status: 200 }],
-    ], '/app/customer/new?name=Acme%20Trading');
+    ], '/app/customer/new?title=Acme%20Trading');
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New customer'));
-    const name = host.querySelector<HTMLInputElement>('.fld[data-field="name"] input')!;
+    const name = host.querySelector<HTMLInputElement>('.fld[data-field="title"] input')!;
     expect(name.value).toBe('Acme Trading');
     expect(host.querySelector('.doc-side')).toBeNull();
     typeInto(host.querySelector<HTMLInputElement>('.fld[data-field="credit_days"] input')!, '30');
     click(byText(host, '.ev-savebar button', 'Create customer'));
     await until(() => expect(location.pathname).toBe('/app/customer/000000000001r'));
-    expect(requests(sent, 'POST', /customer$/)[0].body).toMatchObject({ name: 'Acme Trading', credit_days: 30 });
+    expect(requests(sent, 'POST', /customer$/)[0].body).toMatchObject({ title: 'Acme Trading', credit_days: 30 });
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toContain('Acme Trading'));
     expect(lastToast()).toContain('Customer created');
   });
@@ -204,14 +204,14 @@ describe('permission-driven screens', () => {
 
   it('a viewer sees only readable fields, no New, no actions, and nothing editable', async () => {
     const { host } = start(viewer(), '/app/contact');
-    await until(() => expect([...host.querySelectorAll('thead th')].map(text)).toEqual(['Name', 'Email']));
+    await until(() => expect([...host.querySelectorAll('thead th')].map(text)).toEqual(['Full name', 'Email']));
     expect(byText(host, '.ph-actions button', /New contact/)).toBeNull();
     expect(host.querySelector('.topbar .btn.primary')).toBeNull();
     // No delete and no State: rows are not selectable.
     expect(host.querySelector('tbody [role="checkbox"]')).toBeNull();
     click(host.querySelector('a.ev-row-link'));
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('Mariam Haddad'));
-    expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['name', 'email']);
+    expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['title', 'email']);
     expect(host.querySelector('.fs button.fval')).toBeNull();
     expect(byText(host, '.doc-head button', 'Mark contacted')).toBeNull();
     // The viewer reads the file an administrator attached, and cannot add one.
@@ -230,7 +230,7 @@ describe('permission-driven screens', () => {
         return copy(screen.attachment_upload);
       }],
     ], '/app/contact/0000000000001');
-    await until(() => expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['name', 'email', 'phone', 'notes']));
+    await until(() => expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['title', 'email', 'phone', 'notes']));
     expect(host.querySelectorAll('.fs button.fval').length).toBe(4);
     expect(byText(host, '.doc-head button', 'Mark contacted')).not.toBeNull();
     const upload = host.querySelector<HTMLInputElement>('.ev-upload input')!;

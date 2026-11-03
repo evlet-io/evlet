@@ -12,7 +12,8 @@ import re
 from urllib.parse import parse_qs, quote
 
 from .auth import AccessError
-from .identity import RecordId, path_id
+from .identity import RecordId, checked as item_id, path_id
+from .naming import drop_echoes
 from .database import ROW_LIMIT, Session, using
 from .fields import Link
 from .ui.metadata import view_for
@@ -792,6 +793,7 @@ class Business:
                 return 204, None, []
             if method == 'PATCH':
                 values, children = self.split_body(body)
+                drop_echoes(model, values, record._values)
                 self.policy.check_values(tx, user, model, values)
                 self.controls.custom.enforce(model, dict(model(**{**record._values, **values})._values), record._values)
                 record = tx.update(model, record_id, **values)
@@ -1004,6 +1006,7 @@ class Business:
         rules = naming_rules(self.registry, model)
         if rules is not None and rules.field == 'name' and rules.system and values.get('name') not in (None, ''):
             raise ValidationError({'name': 'Assigned on save'})
+        drop_echoes(model, values)
         self.policy.check_values(tx, user, model, values)
         values = self.controls.custom.prepare(model, values)
         cleaned = dict(model(**values)._values)
@@ -1059,6 +1062,8 @@ class Business:
                 row_id = values.pop('id', None)
                 if child.link in values:
                     raise AccessError(403, 'The parent link is managed by the collection')
+                original = existing.get(item_id(row_id)) if row_id is not None else None
+                drop_echoes(child.model, values, original._values if original else None)
                 self.policy.check_values(tx, user, child.model, values)
                 if row_id is not None:
                     try:

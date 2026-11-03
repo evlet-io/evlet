@@ -24,14 +24,14 @@ def test_description_permissions_required_defaults_and_child_contract(secured):
     c = client(secured)
     item = c('GET', '/api/_discovery/project')[1]
     create, update = item['schemas']['create'], item['schemas']['update']
-    assert 'name' in create['required'] and 'progress' not in create['required']
+    assert 'title' in create['required'] and 'progress' not in create['required']
     assert update['required'] == [] and 'status' not in create['properties']
     assert create['properties']['progress']['default'] == 0
     child = create['properties']['children']['properties']['tasks']['items']['oneOf'][0]
     assert child['required'] == ['title'] and 'project' not in child['properties'] and 'id' not in child['properties']
     variants = update['properties']['children']['properties']['tasks']['items']['oneOf']
     assert variants[1]['required'] == ['id']
-    assert c('POST', '/api/project', {'name': 'From discovery', 'children': {'tasks': [{'title': 'Task'}]}})[0] == 201
+    assert c('POST', '/api/project', {'title': 'From discovery', 'children': {'tasks': [{'title': 'Task'}]}})[0] == 201
     viewer = client(secured, 'viewer')
     item = viewer('GET', '/api/_discovery/project')[1]
     assert item['operations'] == ['read'] and set(item['schemas']) == {'read'} and item['actions'] == []
@@ -40,12 +40,12 @@ def test_description_permissions_required_defaults_and_child_contract(secured):
 
 def test_discovery_does_not_leak_denied_models_fields_or_scoped_links(secured):
     secured.business.policy = Policy(secured.registry, rules={
-        ('viewer', Customer): Rule(read_fields=('name',), scope=lambda user: {'active': True}),
-        ('viewer', Project): Rule(read_fields=('name', 'customer')),
+        ('viewer', Customer): Rule(read_fields=('customer_name',), scope=lambda user: {'active': True}),
+        ('viewer', Project): Rule(read_fields=('title', 'customer')),
     })
     c = client(secured, 'viewer')
     customer = c('GET', '/api/_discovery/customer')[1]
-    assert [field['name'] for field in customer['fields']] == ['name']
+    assert [field['name'] for field in customer['fields']] == ['customer_name']
     assert 'email' not in json.dumps(customer)
     project = c('GET', '/api/_discovery/project')[1]
     assert 'customer' not in project['query']['fields']
@@ -72,7 +72,7 @@ def test_child_schema_allows_only_the_callers_permitted_row_operations(secured):
 def test_describing_does_not_evaluate_callable_defaults_or_reveal_link_default(tmp_path):
     calls = []
     class Person(Model):
-        name = Text(required=True)
+        full_name = Text(required=True)
     class Note(Model):
         sequence = Integer(default=lambda: calls.append(1) or 9)
         person = Link(Person, default=42)

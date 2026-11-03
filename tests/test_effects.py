@@ -16,7 +16,7 @@ from test_rules_types import ALL, add_user, start
 
 class Account(Model):
     permissions = ALL
-    name = Text(default='')
+    title = Text(default='')
 
 
 class LedgerEntry(Model):
@@ -62,7 +62,7 @@ class Invoice(Model):
     Meta = InvoiceMeta
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'void', 'revise')),
                    'editor': Rule(('read', 'create', 'update', 'void')), 'viewer': Rule(('read',))}
-    name = Text(default='')
+    title = Text(default='')
     account = Link(Account)
     # Takes this much off the credit row, so a test can post an unbalanced batch.
     skew = Currency(default=0)
@@ -89,7 +89,7 @@ def books(tmp_path):
 
 def seed(app):
     c = client(app)
-    account = c('POST', '/api/account', {'name': 'Sales'})[1]['id']
+    account = c('POST', '/api/account', {'title': 'Sales'})[1]['id']
     return app, c, account
 
 
@@ -98,7 +98,7 @@ def etag(c, url):
 
 
 def invoice(c, account, lines=(('a', '1', '0.10'), ('b', '2', '0.10')), **values):
-    body = {'name': 'Invoice', 'account': account, **values,
+    body = {'title': 'Invoice', 'account': account, **values,
             'children': {'lines': [{'item': item, 'qty': qty, 'rate': rate} for item, qty, rate in lines]}}
     status, record, _ = c('POST', '/api/invoice', body)
     assert status == 201, record
@@ -248,7 +248,7 @@ def test_rows_may_not_set_engine_or_unknown_fields(tmp_path):
             return [{'account': self.account, self.bad: {'model': 'account', 'id': 1}}]
     app = start(Database(tmp_path / 'db.sqlite3', Registry(Account, LedgerEntry, Rogue)))
     c = client(app)
-    account = c('POST', '/api/account', {'name': 'A'})[1]['id']
+    account = c('POST', '/api/account', {'title': 'A'})[1]['id']
     for bad in ('source', 'reversal', 'unknown'):
         url = f"/api/rogue/{c('POST', '/api/rogue', {'account': account, 'bad': bad})[1]['id']}"
         assert move(c, url, 'issued')[1]['fields'] == {'_effects': f'LedgerEntry row 1 is not valid: {bad}: Not a field the rows may set'}
@@ -261,14 +261,14 @@ def test_rows_see_the_saved_document_read_only(tmp_path):
     class Probe(Model):
         Meta = type('Meta', (FiniteMeta,), {'effects': (Effect(StockMove, rows='rows', on='issued'),)})
         permissions = ALL
-        name = Text(default='')
+        title = Text(default='')
         lines = Table(InvoiceLine)
         total = Currency(compute=lines.sum('amount'))
         status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'),), locked=('issued',))
 
         def rows(self):
             seen.append((self.status, str(self.total), [line.item for line in self.lines]))
-            self.name = 'changed'
+            self.title = 'changed'
     app = start(Database(tmp_path / 'db.sqlite3', Registry(StockMove, Probe)))
     c = client(app)
     url = f"/api/probe/{c('POST', '/api/probe', {'children': {'lines': [{'item': 'x', 'qty': '2', 'rate': '3'}]}})[1]['id']}"
@@ -489,14 +489,14 @@ def test_check_command_exit_codes(books, tmp_path, monkeypatch, capsys):
 # Review findings
 
 def main_branch(user):
-    return {'name': 'main'}
+    return {'title': 'main'}
 
 
 class Branch(Model):
     # The admin role sees only the main branch; editors see every branch.
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete'), scope=main_branch),
                    'editor': Rule(('read', 'create', 'update', 'delete'))}
-    name = Text(default='')
+    title = Text(default='')
     open = Boolean(default=True)
 
 
@@ -541,14 +541,14 @@ def branches(tmp_path):
 
 def test_rows_are_validated_without_any_role(branches):
     app, editor = branches
-    branch = editor('POST', '/api/branch', {'name': 'dubai'})[1]['id']
+    branch = editor('POST', '/api/branch', {'title': 'dubai'})[1]['id']
     url = f"/api/branchorder/{editor('POST', '/api/branchorder', {'branch': branch})[1]['id']}"
     # Admin cannot read the dubai branch, yet the engine posts rows linking to it.
     status, body, _ = move(editor, url, 'done')
     assert status == 200, body
     assert [row['branch'] for row in entries(app, 'branchentry')] == [RecordId(branch)] and len(entries(app, 'plainentry')) == 1
     # Link filters are decided on the stored record.
-    closed = editor('POST', '/api/branch', {'name': 'closed', 'open': False})[1]['id']
+    closed = editor('POST', '/api/branch', {'title': 'closed', 'open': False})[1]['id']
     url = f"/api/branchorder/{editor('POST', '/api/branchorder', {'branch': closed})[1]['id']}"
     assert move(editor, url, 'done')[1]['fields'] == {
         '_effects': 'BranchEntry row 1 is not valid: branch: The selected record does not match the current filters'}
@@ -556,7 +556,7 @@ def test_rows_are_validated_without_any_role(branches):
 
 def test_links_to_missing_records_are_field_errors(branches):
     app, editor = branches
-    branch = editor('POST', '/api/branch', {'name': 'main'})[1]['id']
+    branch = editor('POST', '/api/branch', {'title': 'main'})[1]['id']
     url = f"/api/branchorder/{editor('POST', '/api/branchorder', {'branch': branch, 'missing': 999})[1]['id']}"
     assert move(editor, url, 'done')[1]['fields'] == {'_effects': 'BranchEntry row 1 is not valid: branch: The linked record does not exist'}
     # A plain target gives the same 422, not a 409 from the foreign key.
@@ -715,7 +715,7 @@ def test_posting_many_rows_costs_one_statement_per_row(tmp_path):
             return [{'account': self.account, 'debit': '1'}, {'account': self.account, 'credit': '1'}] * 250
     app = start(Counting(tmp_path / 'db.sqlite3', Registry(Account, LedgerEntry, Big)))
     c = client(app)
-    account = c('POST', '/api/account', {'name': 'A'})[1]['id']
+    account = c('POST', '/api/account', {'title': 'A'})[1]['id']
     url = f"/api/big/{c('POST', '/api/big', {'account': account})[1]['id']}"
     headers = etag(c, url)
     log.clear()
@@ -731,7 +731,7 @@ def test_posting_many_rows_costs_one_statement_per_row(tmp_path):
 
 class Office(Model):
     permissions = ALL
-    name = Text(default='')
+    title = Text(default='')
 
     class Meta:
         # Per record: the postings of an office, read with the caller's row scope on Posting.
@@ -792,7 +792,7 @@ STACKED = (Office, Posting, Audit, Bill)
 def stacked_books(database):
     app = start(database)
     c = client(app)
-    return app, c, c('POST', '/api/office', {'name': 'North'})[1]['id']
+    return app, c, c('POST', '/api/office', {'title': 'North'})[1]['id']
 
 
 def bill(c, office, amount='10.00', owner='editor'):

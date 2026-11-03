@@ -16,6 +16,7 @@ import time
 from types import MappingProxyType
 
 from .auth import AccessError
+from .naming import form_hidden
 from .declarations import Ref
 from .fields import (ACTIVE, MISSING, Boolean, Currency, CurrentUser, Date, Decimal, Integer, Layer, Link, LongText, Select,
                      State, Text, active_layer)
@@ -425,7 +426,8 @@ class Customization:
         override = self.layouts.get(model)
         sections = override or self.file_value('layout', model)
         fields = self.fields(model)
-        placeable = [name for name, field in fields.items() if not field.hidden]
+        # The standard title and a name no naming fills are not form fields (evlet/naming.py).
+        placeable = [name for name, field in fields.items() if not field.hidden and not form_hidden(field)]
         placed = {item['name'] for section in sections for item in section['fields']}
         result = [{'title': section['title'], 'fields': [item for item in section['fields'] if item['name'] in placeable]} for section in sections]
         rest = [{'name': name, 'width': width(fields[name])} for name in placeable if name not in placed]

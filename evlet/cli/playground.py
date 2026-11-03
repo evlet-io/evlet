@@ -32,8 +32,8 @@ def playground_app(directory, port=8000):
     auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=False, allow_setup=True)
     app = app_module.build_app(database, auth, routes=routes)
     app.initialize()
-    customer = database.create(models.Customer, name='Example customer', email='hello@example.test')
-    project = database.create(models.Project, name='Explore Evlet', customer=customer.id)
+    customer = database.create(models.Customer, customer_name='Example customer', email='hello@example.test')
+    project = database.create(models.Project, title='Explore Evlet', customer=customer.id)
     database.create(models.ProjectTask, project=project.id, title='Try models, actions and private files')
     return app
 

@@ -190,9 +190,11 @@ def storage_columns(model, values, names):
 def insert(connection, table, names, values, *, id_title=False):
     """Insert one row under a new record id and return the id. A taken id (a collision of the 21 random
     bits within one millisecond) inserts nothing, so another id is drawn; other constraints still raise.
-    With id_title, a standard title with nothing else to show takes the text id (evlet/naming.py)."""
-    record_id = _insert(connection, table, names, values)
-    if id_title and values[names.index('title')] is None:
+    With id_title, a standard title with nothing else to show takes the text id (evlet/naming.py), in the
+    same statement."""
+    position = names.index('title') if id_title and values[names.index('title')] is None else None
+    record_id = _insert(connection, table, names, values, position)
+    if position is not None and sequential():
         connection.execute(f'UPDATE {table} SET "title" = ? WHERE "id" = ?', (str(record_id), record_id))
     return record_id
 
@@ -204,7 +206,7 @@ def stored_values(model, values, record_id=None):
     return {**values, 'title': title_of(model, values, record_id)}
 
 
-def _insert(connection, table, names, values):
+def _insert(connection, table, names, values, title_position=None):
     if sequential():
         # Recorded fixtures: the table's own autoincrement numbers rows 1, 2, 3 and never reuses one.
         sql = f'INSERT INTO {table} ({", ".join(identifier(name) for name in names)}) VALUES ({", ".join("?" for _ in names)})' \
@@ -214,6 +216,8 @@ def _insert(connection, table, names, values):
     placeholders = ', '.join('?' for _ in range(len(names) + 1))
     for _ in range(8):
         record_id = new_id()
+        if title_position is not None:
+            values = [*values[:title_position], str(record_id), *values[title_position + 1:]]
         cursor = connection.execute(f'INSERT INTO {table} ({columns}) VALUES ({placeholders}) ON CONFLICT ("id") DO NOTHING',
                                     [record_id, *values])
         if cursor.rowcount == 1:

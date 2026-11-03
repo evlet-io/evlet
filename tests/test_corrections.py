@@ -21,7 +21,7 @@ CHANGES = []
 
 class Account(Model):
     permissions = ALL
-    name = Text(default='')
+    title = Text(default='')
     limit = Currency(default=0)
 
 
@@ -52,14 +52,14 @@ class Quote(Model):
     Meta = RevisableMeta
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'void', 'revise')),
                    'editor': Rule(('read', 'create', 'update', 'void', 'revise'), scope=lambda user: {'owner': user.id}),
-                   'viewer': Rule(('read',), read_fields=('name', 'total'))}
-    name = Text(default='')
+                   'viewer': Rule(('read',), read_fields=('title', 'total'))}
+    title = Text(default='')
     # Unique values are cleared on a revision.
     code = Text(unique=True)
     owner = Integer(default=0)
     account = Link(Account)
     # Suggested from the account; a revision keeps the value the original had.
-    heading = Text(initial=F('account.name'))
+    heading = Text(initial=F('account.title'))
     # A stored result over a linked record: a locked or voided quote keeps it, a revision recalculates it.
     cap = Currency(compute=F('account.limit'))
     lines = Table(QuoteLine)
@@ -74,14 +74,14 @@ class Order(Model):
     """Voidable but not revisable; no Rule names void, so only admin may void it."""
     Meta = FiniteMeta
     permissions = ALL
-    name = Text(default='')
+    title = Text(default='')
     status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),),
                    locked=('issued', 'void'), final=('void',), voidable=('issued',))
 
 
 class Ticket(Model):
     """Ungoverned (no permissions, tables or sources): every role keeps its default operations."""
-    name = Text(default='')
+    title = Text(default='')
     status = State(('open', 'closed', 'void'), moves=(Move('open', 'closed', 'Close'),),
                    locked=('closed', 'void'), final=('void',), voidable=('closed',))
 
@@ -96,7 +96,7 @@ def quotes(tmp_path):
 
 def seed(app):
     c = client(app)
-    account = c('POST', '/api/account', {'name': 'Acme', 'limit': '50'})[1]['id']
+    account = c('POST', '/api/account', {'title': 'Acme', 'limit': '50'})[1]['id']
     return app, c, account
 
 
@@ -109,7 +109,7 @@ def post(c, url, operation, body, headers=None):
 
 
 def new_quote(c, account, **values):
-    body = {'name': 'Quote', 'account': account, 'children': {'lines': [
+    body = {'title': 'Quote', 'account': account, 'children': {'lines': [
         {'_key': 'a', 'qty': '2', 'rate': '5', 'memo': 'first', 'children': {'notes': [{'_key': 'n1', 'text': 'x'}, {'_key': 'n2', 'text': 'y'}]}},
         {'_key': 'b', 'qty': '1', 'rate': '3'}]}, **values}
     status, record, _ = c('POST', '/api/quote', body)
@@ -200,9 +200,13 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     # the earlier cf1f61c2... value.
     # The Playground's Item and its tables (0005_items) came later with permissions of their own; left out, the
     # models above keep exactly the recorded table.
+    # Re-recorded for the standard record name and title (0007_record_names): every record model gains a
+    # readable `name` and `title`; Customer.name became customer_name, Project.name the declared title,
+    # Invoice.number moved into the named (and so writable) standard name, and test_states renamed its
+    # own name fields to title. Before this the table hashed to b1bb34ff....
     data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes')), 'states': table(Registry(*test_states.MODELS))}
     assert hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest() == \
-        'b1bb34ff00fa23337e52bf04f0d030a50b8f2316159271bdd0f128fd3b74f1c4'
+        '19b87059b740d3707ec07dd4dad1146f78825b984ea394a0844b6340abd76c1a'
     policy = Policy(Registry(*MODELS))
     assert dict(policy.corrections) == {(Quote, 'void'): {'admin', 'editor'}, (Quote, 'revise'): {'admin', 'editor'},
                                         (Order, 'void'): {'admin'}, (Ticket, 'void'): {'admin'}}
@@ -251,7 +255,7 @@ def check_void(app):
                                      (RecordId(issued['id']), 'quote')).fetchone()[0] == version
     assert post(c, url, 'void', {'reason': 'Again'})[1] == {'error': 'This record is void, which cannot be voided'}
     # A voided record is locked and final: no ordinary write, delete or move.
-    assert c('PATCH', url, {'name': 'x'}, headers=etag(c, url))[1]['fields'] == {'name': 'This record is void, so it is locked'}
+    assert c('PATCH', url, {'title': 'x'}, headers=etag(c, url))[1]['fields'] == {'title': 'This record is void, so it is locked'}
     assert c('DELETE', url, headers=etag(c, url))[0] == 409
     assert c('POST', f'{url}/moves/paid', {}, headers=etag(c, url))[0] == 409
 
@@ -271,7 +275,7 @@ def test_void_and_revise_routes_and_non_correctable_models(quotes):
     assert c('POST', f'/api/account/{account}/void', {'extra': 1}, headers={b'if-match': b'"x"'})[0] == 404
     assert c('POST', f'/api/account/{account}/void', {'reason': 'x'}, headers=etag(c, f'/api/account/{account}'))[1] == \
         {'error': 'This record cannot be voided'}
-    order = c('POST', '/api/order', {'name': 'O'})[1]
+    order = c('POST', '/api/order', {'title': 'O'})[1]
     order_url = f"/api/order/{order['id']}"
     assert c('POST', f'{order_url}/moves/issued', {}, headers=etag(c, order_url))[0] == 200
     assert post(c, order_url, 'revise', {'reason': 'x'})[1] == {'error': 'This record cannot be revised'}
@@ -288,7 +292,7 @@ def check_revise(app):
       headers=etag(c, url))
     original = c('GET', url)[1]
     # The account changes after the quote was issued.
-    c('PATCH', f'/api/account/{account}', {'name': 'Renamed', 'limit': '80'}, headers=etag(c, f'/api/account/{account}'))
+    c('PATCH', f'/api/account/{account}', {'title': 'Renamed', 'limit': '80'}, headers=etag(c, f'/api/account/{account}'))
     assert post(c, url, 'revise', {'reason': ''})[1]['fields'] == {'reason': 'Give a reason'}
     status, copy, headers = post(c, url, 'revise', {'reason': 'Price change'})
     assert status == 201, copy
@@ -296,7 +300,7 @@ def check_revise(app):
     assert copy['id'] != issued['id'] and copy['status'] == 'draft' and copy['revises'] == issued['id'] and copy['code'] is None
     assert copy['revised_by'] is None and not copy['_locked'] and copy['_void']['allowed'] is False
     # Source values are copied; the initial suggestion keeps the original's value; results are recalculated.
-    assert (copy['name'], copy['heading'], copy['account'], copy['total'], copy['cap']) == ('Quote', 'Acme', account, '13.00', '80.00')
+    assert (copy['title'], copy['heading'], copy['account'], copy['total'], copy['cap']) == ('Quote', 'Acme', account, '13.00', '80.00')
 
     def shape(lines):
         return [(row['qty'], row['rate'], row['amount'], row['memo'], [note['text'] for note in row['children']['notes']]) for row in lines]
@@ -318,15 +322,15 @@ def check_revise(app):
     assert voided['_revise'] == {'allowed': False, 'reason': 'This record already has a revision'}
     # The copy is an ordinary draft: editable, and it can be issued and revised in turn.
     copy_url = f"/api/quote/{copy['id']}"
-    edited = c('PATCH', copy_url, {'name': 'Quote v2', 'children': {'lines': {'delete': [copy['children']['lines'][1]['id']]}}},
+    edited = c('PATCH', copy_url, {'title': 'Quote v2', 'children': {'lines': {'delete': [copy['children']['lines'][1]['id']]}}},
                headers=etag(c, copy_url))[1]
-    assert edited['name'] == 'Quote v2' and edited['total'] == '10.00'
+    assert edited['title'] == 'Quote v2' and edited['total'] == '10.00'
     assert c('PATCH', copy_url, {'revises': None}, headers=etag(c, copy_url))[0] == 403
     assert c('POST', f'{copy_url}/moves/issued', {}, headers=etag(c, copy_url))[1]['status'] == 'issued'
     third = post(c, copy_url, 'revise', {'reason': 'Second change'})[1]
     assert third['revises'] == copy['id'] and c('GET', copy_url)[1]['revised_by'] == third['id']
     # Ordinary creates cannot set the link.
-    assert c('POST', '/api/quote', {'name': 'x', 'revises': issued['id']})[0] == 403
+    assert c('POST', '/api/quote', {'title': 'x', 'revises': issued['id']})[0] == 403
     # When the revision draft is deleted, the void original may be revised again; it stays void.
     third_url = f"/api/quote/{third['id']}"
     assert c('DELETE', third_url, headers=etag(c, third_url))[0] == 204
@@ -380,27 +384,27 @@ def check_permissions(app):
     copy = post(editor, mine, 'revise', {'reason': 'Mine'})
     assert copy[0] == 201 and copy[1]['owner'] == editor_id
     # Order: no Rule names void, so only admin may void it.
-    order = c('POST', '/api/order', {'name': 'O'})[1]
+    order = c('POST', '/api/order', {'title': 'O'})[1]
     order_url = f"/api/order/{order['id']}"
     c('POST', f'{order_url}/moves/issued', {}, headers=etag(c, order_url))
     assert post(editor, order_url, 'void', {'reason': 'x'})[1] == {'error': 'You do not have permission for this operation'}
     assert editor('GET', order_url)[1]['_void'] == {'allowed': False, 'reason': 'Your role cannot void this record'}
     assert c('GET', order_url)[1]['_void'] == {'allowed': True}
     # Ungoverned models: editors keep create, update and delete; void is still admin only.
-    ticket = editor('POST', '/api/ticket', {'name': 'T'})[1]
+    ticket = editor('POST', '/api/ticket', {'title': 'T'})[1]
     ticket_url = f"/api/ticket/{ticket['id']}"
     editor('POST', f'{ticket_url}/moves/closed', {}, headers=etag(editor, ticket_url))
     assert post(editor, ticket_url, 'void', {'reason': 'x'})[0] == 403
     assert post(c, ticket_url, 'void', {'reason': 'x'})[1]['status'] == 'void'
     # A role that may void but cannot read the State gets messages without state names, and no availability.
     business = app.business
-    business.policy = Policy(business.registry, rules={('editor', Order): Rule(('read', 'update', 'void'), read_fields=('name',))})
-    draft = c('POST', '/api/order', {'name': 'D'})[1]
+    business.policy = Policy(business.registry, rules={('editor', Order): Rule(('read', 'update', 'void'), read_fields=('title',))})
+    draft = c('POST', '/api/order', {'title': 'D'})[1]
     draft_url = f"/api/order/{draft['id']}"
     assert post(editor, draft_url, 'void', {'reason': 'x'})[1] == {'error': 'This record cannot be voided now'}
     assert '_void' not in editor('GET', draft_url)[1]
     assert post(editor, order_url, 'void', {'reason': 'x'})[0] == 200
-    second = c('POST', '/api/order', {'name': 'S'})[1]
+    second = c('POST', '/api/order', {'title': 'S'})[1]
     second_url = f"/api/order/{second['id']}"
     c('POST', f'{second_url}/moves/issued', {}, headers=etag(c, second_url))
     assert post(c, second_url, 'void', {'reason': 'x'})[0] == 200  # admin keeps void
@@ -439,7 +443,7 @@ def test_python_context_void_and_revise(quotes):
     assert error.value.errors == {'reason': 'Give a reason'}
     with pytest.raises(AccessError):
         with app.business.context(User(1, 'admin', 'admin')) as context:
-            context.create(Quote, name='x', revises=issued['id'])
+            context.create(Quote, title='x', revises=issued['id'])
     with pytest.raises(AccessError, match='read only'):
         with app.business.context(User(1, 'admin', 'admin'), readonly=True) as context:
             context.void(Quote, issued['id'], 'x')
@@ -474,8 +478,8 @@ def check_rollback(app, monkeypatch):
         assert {table: len(rows(app, table)) for table in counts} == counts
     # A copy that fails validation rolls the void back too.
     with monkeypatch.context() as patch:
-        patch.setattr(Quote, 'validate', lambda self: (_ for _ in ()).throw(ValidationError({'name': 'Rejected'})), raising=False)
-        assert post(c, url, 'revise', {'reason': 'x'})[1] == {'error': 'Validation failed', 'fields': {'name': 'Rejected'}}
+        patch.setattr(Quote, 'validate', lambda self: (_ for _ in ()).throw(ValidationError({'title': 'Rejected'})), raising=False)
+        assert post(c, url, 'revise', {'reason': 'x'})[1] == {'error': 'Validation failed', 'fields': {'title': 'Rejected'}}
     assert c('GET', url)[1]['status'] == 'issued' and {table: len(rows(app, table)) for table in counts} == counts
 
 
@@ -522,7 +526,7 @@ FULL = ('read', 'create', 'update', 'delete')
 
 class Vendor(Model):
     permissions = {'admin': Rule(FULL), 'editor': Rule(('read',), scope=lambda user: {'public': True}), 'viewer': Rule(('read',))}
-    name = Text(default='')
+    title = Text(default='')
     public = Boolean(default=True)
 
 
@@ -536,7 +540,7 @@ class Bill(Model):
         revisable = True
     permissions = {'admin': Rule((*FULL, 'void', 'revise')), 'editor': Rule(('read', 'create', 'update', 'revise')),
                    'viewer': Rule(('read',))}
-    name = Text(default='')
+    title = Text(default='')
     vendor = Link(Vendor)
     parts = Table(Part)
     status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),),
@@ -546,11 +550,11 @@ class Bill(Model):
 def check_revise_is_predicted(app):
     app, c = app
     editor = add_user(app, 'editor')
-    public = c('POST', '/api/vendor', {'name': 'Open'})[1]['id']
-    private = c('POST', '/api/vendor', {'name': 'Closed', 'public': False})[1]['id']
+    public = c('POST', '/api/vendor', {'title': 'Open'})[1]['id']
+    private = c('POST', '/api/vendor', {'title': 'Closed', 'public': False})[1]['id']
 
     def bill(vendor, regions):
-        record = c('POST', '/api/bill', {'name': 'B', 'vendor': vendor, 'children': {'parts': [{'region': region} for region in regions]}})[1]
+        record = c('POST', '/api/bill', {'title': 'B', 'vendor': vendor, 'children': {'parts': [{'region': region} for region in regions]}})[1]
         url = f"/api/bill/{record['id']}"
         assert c('POST', f'{url}/moves/issued', {}, headers=etag(c, url))[0] == 200
         return url

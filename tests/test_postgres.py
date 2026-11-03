@@ -153,7 +153,7 @@ def test_postgres_migrations_history_and_rollback(pg_dsn):
 
 def test_postgres_actions_children_attachments_jobs_events_and_revocation(secured):
     c = client(secured)
-    status, project, _ = c('POST', '/api/project', {'name': 'PG project'})
+    status, project, _ = c('POST', '/api/project', {'title': 'PG project'})
     assert status == 201, project
     path = f'/api/project/{project["id"]}'
     assert c('PATCH', path, {'children': {'tasks': [{'title': 'One', 'done': True}]}})[0] == 200
@@ -395,7 +395,7 @@ def test_playground_migration_cli_uses_postgres_and_preserves_sqlite(pg_dsn, tmp
         assert result.returncode == 0, result.stderr
         assert expected in result.stdout
     app = create_app(); app.initialize()
-    assert app.database.get(Customer, kept).name == 'Keep PostgreSQL record'
+    assert app.database.get(Customer, kept).customer_name == 'Keep PostgreSQL record'
     assert sqlite_path.read_bytes() == before
     assert not list(tmp_path.glob('*.backup'))
 
@@ -751,7 +751,7 @@ def test_postgres_connectors_secrets_and_api_keys(secured, monkeypatch):
     assert status == 201
     token = created['token']
     bearer = {b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b''}
-    assert http(secured, 'POST', '/api/project', {'name': 'By key'}, headers=bearer)[0] == 201
+    assert http(secured, 'POST', '/api/project', {'title': 'By key'}, headers=bearer)[0] == 201
     assert http(secured, 'GET', '/api/customer', headers=bearer)[0] in (403, 404)
     with secured.database._connection() as connection:
         assert connection.execute('SELECT hash FROM evlet_api_keys').fetchone()[0] == hashlib.sha256(token.encode()).hexdigest()
@@ -766,7 +766,7 @@ def test_postgres_remote_mcp_oauth_and_assistant_tables(secured):
     client_id, tokens, person = connect(secured, 'editor')
     assert tool(secured, tokens['access_token'], 'discover_models', {})['structuredContent']['total'] >= 1
     settings(secured, allow_writes=True)
-    assert tool(secured, tokens['access_token'], 'create_record', {'model': 'project', 'values': {'name': 'From an assistant'}})['structuredContent']['name'] == 'From an assistant'
+    assert tool(secured, tokens['access_token'], 'create_record', {'model': 'project', 'values': {'title': 'From an assistant'}})['structuredContent']['title'] == 'From an assistant'
     status, fresh, _ = form(secured, '/_/oauth/token', {'grant_type': 'refresh_token', 'refresh_token': tokens['refresh_token'], 'client_id': client_id})
     assert status == 200
     page = person('GET', '/api/_settings/me/ai')[1]
@@ -833,7 +833,7 @@ def test_postgres_record_ids_match_sqlite(pg_dsn, monkeypatch):
     from examples.playground.models import Customer
     db = PostgreSQLDatabase(pg_dsn, registry)
     db.initialize()
-    first = db.create(Customer, name='First')
+    first = db.create(Customer, customer_name='First')
     assert isinstance(first.id, RecordId) and first.id > 2**41
     with db.transaction() as tx:
         assert tx.connection.execute('SELECT id FROM customer').fetchone()[0] == first.id
@@ -841,17 +841,17 @@ def test_postgres_record_ids_match_sqlite(pg_dsn, monkeypatch):
     drawn = iter([first.id, RecordId(first.id + 1)])
     monkeypatch.setattr('evlet.database.new_id', lambda: next(drawn))
     with db.transaction() as tx:
-        second = tx.create(Customer, name='Second')
-        assert second.id == first.id + 1 and tx.get(Customer, str(second.id)).name == 'Second'
+        second = tx.create(Customer, customer_name='Second')
+        assert second.id == first.id + 1 and tx.get(Customer, str(second.id)).customer_name == 'Second'
     assert [record.id for record in db.list(Customer, order_by='id')] == [first.id, second.id]
 
 
 def test_postgres_http_sends_text_ids(secured):
     c = client(secured)
-    status, customer, _ = c('POST', '/api/customer', {'name': 'Acme'})
+    status, customer, _ = c('POST', '/api/customer', {'customer_name': 'Acme'})
     assert status == 201 and isinstance(customer['id'], str) and len(customer['id']) == 13
     status, invoice, _ = c('POST', '/api/invoice', {'customer': customer['id'].upper(), 'reference': 'PG-1', 'total': '1.00'})
-    assert status == 201 and invoice['customer'] == customer['id']
+    assert status == 201 and invoice['customer'] == customer['id'] and customer['title'] == 'Acme'
     assert c('GET', f"/api/invoice/{invoice['id']}")[1]['id'] == invoice['id']
 
 

@@ -84,8 +84,9 @@ def invoice_numbers_become_names(session):
     """Records have a standard name now: invoice numbers move into it and their counters follow."""
     session.add_standard_columns(session.registry.models['invoice'])
     session.connection.execute('UPDATE invoice SET "name" = "number" WHERE "name" IS NULL AND "number" IS NOT NULL')
-    if session.connection.execute("SELECT 1 FROM sqlite_master WHERE name = 'evlet_sequence'" if isinstance(session.connection, sqlite3.Connection)
-                                  else "SELECT to_regclass('evlet_sequence')").fetchone()[0]:
+    found = session.connection.execute("SELECT 1 FROM sqlite_master WHERE name = 'evlet_sequence'" if isinstance(session.connection, sqlite3.Connection)
+                                       else "SELECT to_regclass('evlet_sequence')").fetchone()
+    if found and found[0]:
         session.connection.execute("UPDATE evlet_sequence SET field = 'name' WHERE model = 'invoice' AND field = 'number'")
 
 
