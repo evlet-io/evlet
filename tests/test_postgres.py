@@ -19,6 +19,16 @@ from tests.test_business import (
     test_viewer_cannot_mutate_any_business_surface,
     test_model_field_row_rules_apply_to_list_count_search_detail_writes_and_links,
 )
+from tests.test_filters import (  # noqa: F401  (the items fixture and filter tests, run here on PostgreSQL)
+    items,
+    test_every_operator_by_field_type,
+    test_link_filters_and_operators_a_type_does_not_take,
+    test_child_groups_match_one_row_without_repeating_parents,
+    test_many_conditions_and_the_limit,
+    test_hidden_fields_and_tables_are_refused_not_answered,
+    test_row_scope_still_applies_to_filtered_lists,
+    test_injection_attempts_are_values_or_refused,
+)
 
 
 @pytest.fixture
@@ -759,3 +769,20 @@ def test_postgres_remote_mcp_oauth_and_assistant_tables(secured):
     assert overview['totals'] == {'reads': 1, 'writes': 1, 'denied': 0} and overview['clients'][0]['username'] == 'editor'
     assert form(secured, '/_/oauth/token', {'grant_type': 'refresh_token', 'refresh_token': tokens['refresh_token'], 'client_id': client_id})[1]['error'] == 'invalid_grant'
     assert rpc(secured, fresh['access_token'], 'ping')[0] == 401
+
+
+def test_dev_signin_link_on_postgresql(pg_dsn):
+    from evlet import DevSignIn
+    from evlet.devlink import issue
+    from tests.test_devlink import call, session_cookie
+    db = PostgreSQLDatabase(pg_dsn, registry)
+    app = build_app(db, LocalAuth(db, origins=['http://127.0.0.1:8000'], secure_cookies=False, allow_setup=True))
+    app.initialize()
+    token, username = issue(db, create_admin=True)
+    assert username == 'demo-admin'
+    wrapped = DevSignIn(app)
+    status, headers, _ = call(wrapped, 'GET', f'/_dev/signin?token={token}')
+    assert status == 302
+    status, _, body = call(wrapped, 'GET', '/api/auth/session', cookie=session_cookie(headers))
+    assert b'demo-admin' in body
+    assert call(wrapped, 'GET', f'/_dev/signin?token={token}')[0] == 403

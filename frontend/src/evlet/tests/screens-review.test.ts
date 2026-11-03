@@ -48,7 +48,7 @@ describe('signing out', () => {
 });
 
 describe('preferences hold no record data', () => {
-  it('keeps recent records and searches in memory only, drops them on sign-out and resets the theme', async () => {
+  it('keeps recent records and searches in memory only, drops them on sign-out and keeps the theme', async () => {
     // Left by an earlier build that stored titles and searches.
     localStorage.setItem('evlet.admin.recents', JSON.stringify([{ model: 'order', id: 9, title: 'Old secret' }]));
     localStorage.setItem('evlet.admin.recentQ', JSON.stringify(['old search']));
@@ -56,7 +56,7 @@ describe('preferences hold no record data', () => {
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toContain('Big order'));
     await until(() => expect(text(byText(host, '.nav-group', /^Recent/))).toContain('Big order'));
     expect(text(host.querySelector('.side'))).not.toContain('Old secret');
-    expect(document.documentElement.dataset.theme).toBe('light');
+    document.documentElement.dataset.theme = 'dark';
 
     const stored = () => Object.fromEntries(Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)!).map(key => [key, localStorage.getItem(key)]));
     expect(JSON.stringify(stored())).not.toContain('Big order');
@@ -65,8 +65,8 @@ describe('preferences hold no record data', () => {
 
     signOut(host);
     await until(() => expect(host.querySelector('.ev-login')).not.toBeNull());
-    // The sign-in screen does not keep the previous user's theme.
-    expect(document.documentElement.dataset.theme).toBeUndefined();
+    // The sign-in screen keeps this device's theme; the theme holds no record data.
+    expect(document.documentElement.dataset.theme).toBe('dark');
     expect(JSON.stringify(stored())).not.toContain('Big order');
   });
 });

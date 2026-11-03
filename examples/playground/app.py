@@ -9,7 +9,7 @@ Portal users sign in there only, and see the customer they are linked to and its
 
 from pathlib import Path
 
-from evlet import (Action, ApiScope, AppDefinition, Application, ChildTable, EventStore, Frontend, Host, JobQueue, LocalAuth,
+from evlet import (Action, ApiScope, AppDefinition, Application, ChildTable, DevSignIn, EventStore, Frontend, Host, JobQueue, LocalAuth,
                    Policy, Rule, Security, Task, ValidationError, own_customer)
 from evlet import api
 from evlet.routing import resolve_routes
@@ -58,6 +58,11 @@ def create_app():
                      # The sign-in rules this instance starts from (the defaults); Controls can only make them stricter.
                      security=Security(session_hours=12, lockout=5, password_min=15))
     return build_app(database, auth, routes=routes)
+
+
+def create_dev_app():
+    """scripts/playground.sh: create_app with one-time development sign-in links at /_dev/signin. Never serve this."""
+    return DevSignIn(create_app())
 
 
 def refresh_progress(tx, job, payload):

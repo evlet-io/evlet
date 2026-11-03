@@ -49,7 +49,22 @@ describe('session', () => {
     api.csrf = 'fixture-csrf-token';
     await api.logout();
     expect(sent[0].headers['x-csrf-token']).toBe('fixture-csrf-token');
+    // The server refuses a write that is not JSON (415), so sign-out sends an empty object.
+    expect(sent[0].headers['content-type']).toBe('application/json');
+    expect(sent[0].body).toEqual({});
     expect(api.csrf).toBe('');
+  });
+
+  it('sends every write as JSON, with an empty object when it has no body', async () => {
+    const { fetch, sent } = server([['POST', /sync$/, 'logout'], ['GET', /\/api\/order\?/, 'list']]);
+    const api = createClient({ fetch });
+    await api.request('POST', '/api/_settings/me/mailbox/sync');
+    await api.request('GET', '/api/order', { query: { limit: 1 } });
+    expect(sent[0].headers['content-type']).toBe('application/json');
+    expect(sent[0].body).toEqual({});
+    // Reads carry no body.
+    expect(sent[1].headers['content-type']).toBeUndefined();
+    expect(sent[1].body).toBeUndefined();
   });
 });
 

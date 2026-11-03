@@ -59,7 +59,7 @@ def test_a_sub_host_serves_its_root_frontend_with_the_config_block(portal):
     status, page, headers = http(portal, 'GET', '/', headers={b'host': PORTAL})
     assert status == 200 and headers[b'content-type'] == b'text/html; charset=utf-8'
     assert config(page) == {'frontend': 'playground.portal', 'base': '/', 'api': '/api', 'realm': 'portal',
-                            'host': 'portal.localhost', 'docs': None, 'version': config(page)['version']}
+                            'host': 'portal.localhost', 'docs': None, 'theme': 'system', 'version': config(page)['version']}
     assert b'<base href="/">' in page and b"frame-ancestors 'none'" in headers[b'content-security-policy']
     assert http(portal, 'GET', '/invoices/12', headers={b'host': PORTAL})[1] == page
     status, script, headers = http(portal, 'GET', '/portal.js', headers={b'host': PORTAL})
@@ -252,7 +252,7 @@ def test_desk_shell_reads_its_base_from_the_config_block(portal):
         pytest.skip('Build browser assets before checking the desk shell')
     status, page, _ = http(portal, 'GET', '/app/customer')
     assert status == 200 and config(page) == {'frontend': 'evlet.desk', 'base': '/app', 'api': '/api', 'realm': 'desk',
-                                               'host': '127.0.0.1', 'docs': '/docs', 'version': config(page)['version']}
+                                               'host': '127.0.0.1', 'docs': '/docs', 'theme': 'system', 'version': config(page)['version']}
 
 
 @built
