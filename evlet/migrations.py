@@ -430,6 +430,10 @@ def _relax(connection, table, columns, *, references=False):
     try:
         connection.execute("UPDATE sqlite_master SET sql = ? WHERE type = 'table' AND name = ?", (edited, table))
         connection.execute(f'PRAGMA schema_version = {int(version) + 1}')
+    except sqlite3.DatabaseError as exc:
+        # SQLite builds in defensive mode (SQLITE_DBCONFIG_DEFENSIVE) refuse schema edits.
+        raise SchemaError(f'{table}: this SQLite build does not allow changing column constraints in place ({exc}); '
+                          'retiring a required field and dropping a Link field need it') from exc
     finally:
         connection.execute('PRAGMA writable_schema = OFF')
 
@@ -442,8 +446,9 @@ def _column_names(connection, table):
 class RetireField:
     """Take a field out of the models and the API while keeping its column and stored values.
 
-    The column becomes nullable, so new records leave it empty; schema checks skip it from then on.
-    A later migration may delete it with DropField."""
+    The column becomes nullable, so new records leave it empty, and a retired Link loses its foreign key,
+    so the records it pointed at can be deleted; schema checks skip it from then on. A later migration may
+    delete it with DropField."""
     table: str
     name: str
 
@@ -456,7 +461,7 @@ class RetireField:
 
     def apply(self, connection, definition=None):
         columns = stored_columns(_column_names(connection, self.table), self.name)
-        _relax(connection, self.table, columns)
+        _relax(connection, self.table, columns, references=True)
         _retired_table(connection)
         connection.execute('INSERT INTO evlet_retired_fields (model, name, definition) VALUES (?, ?, ?)',
                            (self.table, self.name, json.dumps(definition or {}, sort_keys=True)))
@@ -568,13 +573,17 @@ class AlterField:
 class RunData:
     """A trusted Python step that moves or fills values: function(session).
 
-    It runs after the batch's structural changes, in declaration order, inside the migration transaction.
-    `session` is a trusted Session over the target models, already in maintenance mode, so it can write
-    confirmed and tracked records (their revisions and journal stay as they were). Columns of retired
-    fields are read through `session.connection`. The checksum covers the function's source, so an
-    applied step cannot change silently. Any exception rolls back the whole batch."""
+    It runs right after its own migration's structural operations, in declaration order, inside the
+    migration transaction, so a later pending migration (a DropField, say) cannot remove what it reads.
+    `session` is a trusted Session over the target models. Its writes refuse confirmed, tracked, posted
+    and finite-v1 documents unless the step is declared with `maintenance=True` and the run allows it
+    (`allow_maintenance=True`, `evlet migrate --allow-maintenance`); each such step then writes a
+    Controls audit row. Columns of retired fields are read through `session.connection`. The checksum
+    covers the function's source, so an applied step cannot change silently. Any exception rolls back
+    the whole batch."""
     function: object
     name: str = None
+    maintenance: bool = False
 
     def signature(self):
         import inspect
@@ -584,11 +593,16 @@ class RunData:
             source = inspect.getsource(self.function)
         except (OSError, TypeError) as exc:
             raise SchemaError('RunData needs a function defined in a source file') from exc
-        return {'operation': 'run_data', 'name': self.name or getattr(self.function, '__qualname__', 'step'),
-                'source': hashlib.sha256(source.encode()).hexdigest()}
+        if type(self.maintenance) is not bool:
+            raise SchemaError('RunData maintenance is True or False')
+        return {'operation': 'run_data', 'name': self.label(), 'source': hashlib.sha256(source.encode()).hexdigest(),
+                **({'maintenance': True} if self.maintenance else {})}
+
+    def label(self):
+        return self.name or getattr(self.function, '__qualname__', 'step')
 
     def apply(self, connection):
-        """No structural change; migrate() calls the function after the batch's other operations."""
+        """No structural change; migrate() calls the function after its migration's other operations."""
 
 
 class Applied(list):
@@ -823,9 +837,9 @@ def _planned_definition(saved, pending, steps=None):
     what applying needs per operation: AlterField's value factor and RetireField's old field metadata."""
     schema = copy.deepcopy(json.loads(saved))
     models = {model['name']: model for model in schema['models']}
-    retired = set()
     steps = {} if steps is None else steps
     for migration in pending:
+        retired = set()  # Fields this migration retires; a later one may drop them after its data steps ran.
         for operation in migration.operations:
             if isinstance(operation, RunData):
                 continue
@@ -947,26 +961,46 @@ def step_arguments(operation, steps):
     return (steps[id(operation)],) if isinstance(operation, (AlterField, RetireField)) else ()
 
 
-def run_data(connection, registry, migrations):
-    """Call the RunData steps of `migrations` in order with a trusted maintenance session over the models."""
+def maintenance_steps(migrations, allow_maintenance):
+    """Refuse RunData(maintenance=True) unless the caller allowed writes to locked and posted records."""
+    named = [f'{migration.name}: {operation.label()}' for migration in migrations for operation in migration.operations
+             if isinstance(operation, RunData) and operation.maintenance]
+    if named and not allow_maintenance:
+        raise SchemaError('These data steps write confirmed, tracked or posted records (' + ', '.join(named) + '); review them, '
+                          'then migrate with allow_maintenance=True (evlet migrate --allow-maintenance)')
+
+
+def run_data(connection, registry, migration):
+    """Call one migration's RunData steps in order, with a trusted session over the models. A maintenance
+    step may write locked and posted records; each one leaves a Controls audit row (actor cli)."""
     from .database import Session
-    for migration in migrations:
-        for operation in migration.operations:
-            if isinstance(operation, RunData):
-                session = Session(connection, registry)
-                try:
-                    with session.maintenance():
-                        operation.function(session)
-                except SchemaError:
-                    raise
-                except Exception as exc:
-                    raise SchemaError(f'{migration.name}: RunData {operation.name or operation.function.__name__} failed: {exc}') from exc
+    for operation in migration.operations:
+        if not isinstance(operation, RunData):
+            continue
+        session = Session(connection, registry)
+        try:
+            if operation.maintenance:
+                with session.maintenance():
+                    operation.function(session)
+            else:
+                operation.function(session)
+        except SchemaError:
+            raise
+        except Exception as exc:
+            raise SchemaError(f'{migration.name}: RunData {operation.label()} failed: {exc}') from exc
+        if operation.maintenance:
+            from .controls import audit, ensure_schema
+            ensure_schema(connection)
+            audit(connection, 'cli', 'Records', migration.name,
+                  f'Data step {operation.label()} ran with access to confirmed, tracked and posted records, as asked')
+            logger.warning('Data step %s of %s ran with maintenance access', operation.label(), migration.name)
 
 
-def migrate(database, migrations, *, recompute_posted=False, allow_destructive=False):
+def migrate(database, migrations, *, recompute_posted=False, allow_destructive=False, allow_maintenance=False):
     """Apply pending migrations in one transaction. `recompute_posted=True`, an admin's explicit choice (the
     `--recompute-posted` flag of `evlet migrate`), lets Recompute recalculate posted records too.
-    `allow_destructive=True` (`--allow-destructive`) permits DropField."""
+    `allow_destructive=True` (`--allow-destructive`) permits DropField, and `allow_maintenance=True`
+    (`--allow-maintenance`) RunData steps declared with maintenance=True."""
     migrations, checksums = _migration_plan(migrations)
     database.path.parent.mkdir(parents=True, exist_ok=True)
     with database._connection() as connection:
@@ -986,6 +1020,7 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                 if _comparable(planned) != _comparable(database.registry.schema()):
                     raise mismatch(planned, database.registry.schema())
                 destructive(pending, allow_destructive)
+                maintenance_steps(pending, allow_maintenance)
             # A new database initialized directly from current models already has
             # the target schema. Explicit migration adopts that verified baseline.
             baseline = not history and saved and _same(saved[0], database.registry)
@@ -999,6 +1034,7 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                 if not fresh and not baseline:
                     for operation in migration.operations:
                         operation.apply(connection, *step_arguments(operation, steps))
+                    run_data(connection, database.registry, migration)
                 connection.execute('INSERT INTO evlet_migrations (position, name, checksum) VALUES (?, ?, ?)',
                                    (position, migration.name, checksums[position - 1]))
             if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
@@ -1006,7 +1042,6 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                 ensure_tables(connection)
             applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
-                run_data(connection, database.registry, pending)
                 applied.skipped, applied.posted = _recompute(connection, database.registry, recomputes(pending), lambda db: db.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='evlet_calculation_versions'").fetchone() is not None,
                     include_posted=recompute_posted)

@@ -84,7 +84,9 @@ changed and never overwrites a file. Review the file, fill in any `...` or `#` n
 `migrate`. Like `migrate`, both import the apps, so changed sources need `--trust`.
 `migrate --allow-destructive` lets `DropField` delete the columns and values of retired
 fields; without it such a migration is refused. The backup `migrate` writes before every change
-holds the deleted values.
+holds the deleted values. `migrate --allow-maintenance` lets `RunData` steps declared with
+`maintenance=True` write confirmed, tracked and posted records; each one is recorded in the Controls
+audit log ([model-engine.md](model-engine.md#data-steps)).
 `migrate --recompute-posted` lets the `Recompute` operations of that run recalculate posted
 records too; it prints how many changed, and each one gets a journal entry
 ([model-engine.md](model-engine.md#recalculating-stored-values)). Without the flag, posted

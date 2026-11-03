@@ -322,13 +322,17 @@ not touched. Use it whenever a field stops being used; nothing is lost.
 
 `DropField(model, name)` later deletes the column and its values. It needs a field an earlier
 migration retired (not one retired in the same migration, so the values can be checked or moved
-first), and it destroys data, so `migrate()` refuses it unless called with
+first; a later migration in the same run is fine, since data steps run with their own migration), and it destroys data, so `migrate()` refuses it unless called with
 `allow_destructive=True`. From the CLI, `evlet migrate <instance> --allow-destructive` runs it
 after writing the usual backup to `data/backups/`.
 
-On SQLite, retiring a required field and dropping a Link field edit the table's stored
-definition with SQLite's documented in-place procedure for constraint changes (`writable_schema`
-with a schema version bump), inside the migration transaction. Stored rows are not rewritten.
+A retired Link loses its foreign key, so the records it pointed at can be deleted later; its
+stored ids stay as they were.
+
+On SQLite, retiring a field and dropping a Link field edit the table's stored definition with
+SQLite's documented in-place procedure for constraint changes (`writable_schema` with a schema
+version bump), inside the migration transaction. Stored rows are not rewritten. A SQLite build in
+defensive mode refuses this, and the migration then fails with a message saying so.
 
 ### Changing a field's type
 
@@ -377,13 +381,24 @@ migration = Migration(
 )
 ```
 
-Data steps run after the batch's structural operations and before `Recompute`, in declaration
-order. `session` is a trusted Session over the current models in maintenance mode, so it can
-update confirmed or tracked records (their revisions and Journal stay as they were). Read
-retired columns through `session.connection` with parameterized SQL. The migration checksum
-covers the function's source, so keep the function in the migration file and never change it
-once applied. Any exception rolls back the whole batch, structural changes included. Like
-`Recompute`, data steps do not run when a database adopts its baseline.
+Each data step runs right after its own migration's structural operations, in declaration
+order, so a later migration in the same run (a `DropField`, say) cannot remove what it reads.
+`Recompute` still runs once, after every pending migration. `session` is a trusted Session over
+the current models, so a step that runs before a later migration adds a field should not read or
+write that model through the session; use `session.connection` with parameterized SQL instead.
+Read retired columns the same way.
+
+By default the session refuses writes to confirmed, tracked, posted and finite-v1 documents, as any
+trusted session does. A step that must change them is declared `RunData(function, maintenance=True)`
+and runs only when the admin allows it for that run: `evlet migrate <instance> --allow-maintenance`,
+or `migrate(migrations, allow_maintenance=True)` from Python. Each such step writes a Controls
+audit row (actor `cli`, area `Records`, the migration's name) and logs a warning. Their revisions
+and Journal entries stay as they were; the step writes no Journal entries of its own.
+
+The migration checksum covers the function's source and `maintenance`, so keep the function in
+the migration file and never change it once applied. Any exception rolls back the whole run,
+structural changes included. Like `Recompute`, data steps do not run when a database adopts its
+baseline.
 
 ### Recalculating stored values
 

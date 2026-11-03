@@ -10,7 +10,9 @@ say what to change. Evlet is not production ready.
   only with `allow_destructive=True` (`evlet migrate --allow-destructive`, which keeps a backup).
   `AlterField` converts Integer to Decimal, widens a decimal scale, lengthens text and adds Select
   choices, validating every stored row in the migration transaction. `RunData(function)` runs a
-  trusted data step with a maintenance session. `--plan` suggests RetireField and AlterField
+  trusted data step right after its own migration; `RunData(..., maintenance=True)` may write
+  confirmed and posted records only with `--allow-maintenance`, and each such step is audited. A
+  retired Link drops its foreign key. `--plan` suggests RetireField and AlterField
   ([docs/model-engine.md](docs/model-engine.md#retiring-and-dropping-fields)).
 - **Migration plans.** `evlet migrate <instance> --plan` and `database.plan(migrations)` show the
   pending migrations and each model, field and property that differs from the models, with a

@@ -7,7 +7,7 @@ import sqlite3
 from .fields import Link, Reference, Text
 from .models import identifier, storage_name
 from .migrations import (Applied, SchemaError, AddField, AddIndex, AddTable, AlterField, CreateModel, DropField, RenameField,
-                         Recompute, RetireField, RunData, retired_columns, step_arguments, destructive, run_data,
+                         Recompute, RetireField, RunData, retired_columns, step_arguments, destructive, maintenance_steps, run_data,
                          _metadata, _definition, _migration_plan, _history, _same, _comparable, mismatch, link_target, plan_from,
                          _planned_definition, _recompute, recomputes, index_columns, stored_columns, app_fields, instance_columns)
 
@@ -181,6 +181,11 @@ def apply(db, op, *arguments):
     if isinstance(op, RetireField):
         for name in stored_columns(columns_of(db, op.table), op.name):
             db.execute(f'ALTER TABLE {identifier(op.table)} ALTER COLUMN {identifier(name)} DROP NOT NULL')
+            # A retired Link stops guarding its target: drop the column's foreign key, as SQLite does.
+            for row in db.execute("SELECT c.conname FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid "
+                                  "JOIN pg_namespace n ON n.oid=t.relnamespace JOIN pg_attribute a ON a.attrelid=t.oid AND a.attnum=ANY(c.conkey) "
+                                  "WHERE n.nspname='public' AND t.relname=? AND c.contype='f' AND a.attname=?", (op.table, name)).fetchall():
+                db.execute(f'ALTER TABLE {identifier(op.table)} DROP CONSTRAINT {identifier(row[0])}')
         db.execute('CREATE TABLE IF NOT EXISTS evlet_retired_fields (model TEXT NOT NULL, name TEXT NOT NULL, '
                    'definition TEXT NOT NULL, PRIMARY KEY (model, name))')
         db.execute('INSERT INTO evlet_retired_fields (model, name, definition) VALUES (?, ?, ?)',
@@ -219,7 +224,7 @@ def apply(db, op, *arguments):
         if op.field.kind == 'sequence': sequence_index(db, op.table, op.name, op.field)
 
 
-def migrate(database, migrations, *, recompute_posted=False, allow_destructive=False):
+def migrate(database, migrations, *, recompute_posted=False, allow_destructive=False, allow_maintenance=False):
     validate_indexes(database.registry)
     migrations, checksums = _migration_plan(migrations)
     try:
@@ -238,6 +243,7 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                 if _comparable(planned) != _comparable(database.registry.schema()):
                     raise mismatch(planned, database.registry.schema())
                 destructive(pending, allow_destructive)
+                maintenance_steps(pending, allow_maintenance)
             baseline = not history and saved and _same(saved[0], database.registry)
             if fresh:
                 bootstrap(db, database.registry)
@@ -249,13 +255,13 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             for position, migration in enumerate(pending, len(history)+1):
                 if not fresh and not baseline:
                     for operation in migration.operations: apply(db, operation, *step_arguments(operation, steps))
+                    run_data(db, database.registry, migration)
                 db.execute('INSERT INTO evlet_migrations(position,name,checksum) VALUES(?,?,?)', (position, migration.name, checksums[position-1]))
             if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
                 from .lifecycle import ensure_tables
                 ensure_tables(db, postgres=True)
             applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
-                run_data(db, database.registry, pending)
                 applied.skipped, applied.posted = _recompute(db, database.registry, recomputes(pending), lambda connection: connection.execute(
                     "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_calculation_versions'").fetchone() is not None,
                     postgres=True, include_posted=recompute_posted)

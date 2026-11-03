@@ -526,3 +526,91 @@ def test_cli_migrate_allow_destructive_keeps_a_backup(project, capsys):
         assert connection.execute('SELECT reason FROM leaveapplication').fetchall() == [('Annual',)]
     with sqlite3.connect(project / 'instances/acme/data/database.sqlite3') as connection:
         assert 'reason' not in {row[1] for row in connection.execute('PRAGMA table_info(leaveapplication)')}
+
+
+def copy_phone(session):
+    for record_id, phone in session.connection.execute('SELECT "id", "phone" FROM "contact" ORDER BY "id"').fetchall():
+        session.update(session.registry.models['contact'], record_id, contact_phone=phone)
+
+
+def shorten_reason(session):
+    Leave = session.registry.models['leaveapplication']
+    for (record_id,) in session.connection.execute('SELECT "id" FROM "leaveapplication"').fetchall():
+        session.update(Leave, record_id, reason='Annual leave')
+
+
+def contacts(*fields):
+    from evlet import Link
+    attributes = {'__module__': __name__, 'name': Text()}
+    for name in fields:
+        attributes[name] = {'phone': Text(required=True), 'contact_phone': Text(default=''),
+                            'manager': Link('contact')}[name]
+    return Registry(type('Contact', (Model,), attributes))
+
+
+def check_run_data_order_and_maintenance(make):
+    """make(registry, migrations, migrate=False, plan=False, allow_destructive=False, allow_maintenance=False)."""
+    from evlet import AddField, DropField, RetireField, RunData
+
+    # A run that spans releases copies values before a later migration drops their column.
+    database = make(contacts('phone', 'manager'), [])
+    database.create(database.registry.models['contact'], name='Boss', phone='+971 4 000 0000')
+    database.create(database.registry.models['contact'], name='Mariam', phone='+971 50 123 4567', manager=1)
+    release = [Migration('0001_contact_phone', AddField('contact', 'contact_phone', Text(default='')),
+                         RetireField('contact', 'phone'), RetireField('contact', 'manager'), RunData(copy_phone)),
+               Migration('0002_drop_phone', DropField('contact', 'phone'))]
+    database = make(contacts('contact_phone'), release, migrate=True, allow_destructive=True)
+    Contact = database.registry.models['contact']
+    assert sorted(record.contact_phone for record in database.list(Contact)) == ['+971 4 000 0000', '+971 50 123 4567']
+    # The retired manager Link no longer guards the record it pointed at.
+    database.delete(Contact, 1)
+    assert raw(database, 'SELECT manager FROM contact') == [(1,)]
+
+
+def check_maintenance_steps(make):
+    """Data steps cannot write confirmed records unless declared and allowed, and then they are audited."""
+    from evlet import AddField, RunData
+    database = make(hr_models(), [])
+    confirmed_leave(database)
+    target = hr_models(nationality=True)
+    base = AddField('employee', 'nationality', Text(default='AE'))
+    with pytest.raises(SchemaError, match='write it through Context'):
+        make(target, [Migration('0001', base, RunData(shorten_reason))], migrate=True)
+    steps = [Migration('0001', base, RunData(shorten_reason, maintenance=True))]
+    with pytest.raises(SchemaError, match='--allow-maintenance'):
+        make(target, steps, migrate=True)
+    database = make(target, steps, migrate=True, allow_maintenance=True)
+    assert raw(database, 'SELECT reason FROM leaveapplication') == [('Annual leave',)]
+    assert raw(database, "SELECT actor, area, target FROM evlet_audit WHERE detail LIKE 'Data step shorten_reason%'") == [('cli', 'Records', '0001')]
+
+
+def maker(path, cls=Database):
+    def make(registry, migrations, migrate=False, plan=False, allow_destructive=False, allow_maintenance=False):
+        database = cls(path, registry, migrations=migrations)
+        if plan:
+            return database.plan(migrations)
+        if migrate:
+            database.migrate(migrations, allow_destructive=allow_destructive, allow_maintenance=allow_maintenance)
+        else:
+            database.initialize()
+        return database
+    return make
+
+
+def test_sqlite_run_data_runs_with_its_own_migration(tmp_path):
+    check_run_data_order_and_maintenance(maker(tmp_path / 'contacts.sqlite3'))
+
+
+def test_sqlite_maintenance_data_steps_are_opt_in_and_audited(tmp_path):
+    check_maintenance_steps(maker(tmp_path / 'hr.sqlite3'))
+
+
+def test_relax_explains_a_defensive_sqlite_build(monkeypatch):
+    from evlet.migrations import _relax
+    connection = sqlite3.connect(':memory:')
+    connection.execute('CREATE TABLE "t" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "a" TEXT NOT NULL)')
+    if not hasattr(sqlite3, 'SQLITE_DBCONFIG_DEFENSIVE'):
+        pytest.skip('This Python cannot switch SQLite to defensive mode')
+    connection.setconfig(sqlite3.SQLITE_DBCONFIG_DEFENSIVE, True)
+    with pytest.raises(SchemaError, match='does not allow changing column constraints'):
+        _relax(connection, 't', ('a',))
