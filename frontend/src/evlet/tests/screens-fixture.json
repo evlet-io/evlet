@@ -801,8 +801,8 @@
  },
  "quote_create": {
   "body": {
-   "customer": 1,
-   "id": 1,
+   "customer": "0000000000001",
+   "id": "0000000000001",
    "issued": "2026-10-20",
    "number": "QT-2026-00001"
   },
@@ -811,8 +811,8 @@
  },
  "quote_detail": {
   "body": {
-   "customer": 1,
-   "id": 1,
+   "customer": "0000000000001",
+   "id": "0000000000001",
    "issued": "2026-10-20",
    "number": "QT-2026-00001"
   },
