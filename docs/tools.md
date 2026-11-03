@@ -86,7 +86,9 @@ its write tools are refused. Called directly, `POST /api/_reports/<name>` still 
 later `eva` and `schedule`), client, tool, record, read or write, outcome (`ok`, `denied`,
 `failed`, `approval`), time, redacted inputs and the error. Inputs keep identifiers as they
 are and only the names of the fields sent in values and filters, never their values. It
-replaces `evlet_mcp_calls`, whose rows move over on upgrade. Record changes still go to each
+replaces `evlet_mcp_calls`. The framework migration `0002_tool_calls` moves its rows over and
+drops it when `evlet migrate` runs after the upgrade, after the backup
+([app-upgrades.md](app-upgrades.md#upgrade-evlet)). Record changes still go to each
 record's journal, and settings changes and approval answers to the audit log.
 
 Controls → AI → Tool log lists it with filters. People see their own requests in Settings.

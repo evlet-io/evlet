@@ -34,6 +34,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **`DevSignIn` export.** The root exports gain `DevSignIn`, which serves the one-time
   development sign-in links of `evlet dev` and `evlet playground` ([docs/cli.md](docs/cli.md#development-sign-in-links)).
   Never wrap an application you serve with it.
+- **Evlet upgrades go through `evlet migrate`.** `apps.lock` and the installed manifest
+  now record the Evlet version and its last framework migration. An instance migrated
+  with another Evlet version refuses to serve and asks for `evlet migrate`, which backs
+  up the database and runs ordered, checksummed framework migrations
+  (`evlet_framework_migrations`) on the staged copy. Existing instances need one
+  `evlet migrate` after upgrading; it adopts today's startup tables with no other change
+  ([docs/app-upgrades.md](docs/app-upgrades.md#upgrade-evlet)).
 - **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
   follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
   the default). The server writes the theme on `<html>` before the page paints, so nothing
@@ -58,6 +65,12 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Playground items.** A new Item model has about 200 fields and two child tables (prices,
   barcodes), to try filters at scale. Run `.venv/bin/python -m examples.playground.migrate` (migration `0005_items`) on an
   existing Playground database.
+- **Migration plans.** `evlet migrate <instance> --plan` and `database.plan(migrations)` show the
+  pending migrations and each model, field and property that differs from the models, with a
+  suggested migration; nothing is written. `evlet makemigration <app> --instance <instance>`
+  writes that suggestion into a flat app. A mismatch error now lists the same differences.
+  `AddTable(parent, name, ChildClass)` adds a child table without hand-written owner and position
+  fields, and `CreateModel` no longer compares the Python class name ([docs/model-engine.md](docs/model-engine.md#planning-a-migration)).
 - **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
   lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
   duration fields keep their typed input and add a calendar or steppers. List pages filter

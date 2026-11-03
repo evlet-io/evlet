@@ -47,6 +47,8 @@ evlet serve acme --port 8000
 evlet dev --instance acme
 evlet dev-link
 evlet migrate acme --trust
+evlet migrate acme --plan --trust
+evlet makemigration people --instance acme --name dependents --trust
 evlet effects check acme
 evlet journal verify acme
 evlet routes acme
@@ -72,6 +74,15 @@ asks in a terminal; automation must pass `--instance`. Development rebuilds/relo
 Python, TS/JS and configuration changes, including file additions/deletions, and
 runs the existing queue. It never applies model migrations
 implicitly. Stop the server and run `migrate` after adding a migration.
+`migrate --plan` writes nothing: it builds the apps against a temporary copy of the
+instance database and prints the pending migrations, the pending Evlet framework migrations
+([app-upgrades.md](app-upgrades.md#upgrade-evlet)), each model, field and property that
+differs from the migrations, and for each app a suggested migration to review
+([model-engine.md](model-engine.md#planning-a-migration)). `evlet makemigration <app>
+--instance <instance>` writes that suggestion into a flat app's `migrations/` folder as
+`m<number>_<name>.py` (`--name` sets the name, default `changes`). It refuses when nothing
+changed and never overwrites a file. Review the file, fill in any `...` or `#` note, then run
+`migrate`. Like `migrate`, both import the apps, so changed sources need `--trust`.
 `migrate --recompute-posted` lets the `Recompute` operations of that run recalculate posted
 records too; it prints how many changed, and each one gets a journal entry
 ([model-engine.md](model-engine.md#recalculating-stored-values)). Without the flag, posted
@@ -387,7 +398,8 @@ A later release of one app can append migrations after another app's history.
 Checksums reject changed, removed or reordered applied migrations.
 
 A changed installation validates contributions, creates a SQLite backup, and runs the
-migration batch against a staged copy. It initializes the existing services and
+migration batch against a staged copy, followed by any pending Evlet framework
+migrations. It initializes the existing services and
 registers schedules there. Only after validation does it publish the database,
 record the installed manifest and atomically replace `apps.lock`. A failed staged
 migration leaves the active database, lock and private files intact. Backups stay
@@ -396,7 +408,9 @@ of your backup policy. SQL backups alone do not include uploaded file bytes, and
 restored without its `secret.key` can't open two-step sign-in secrets; keep the key with it.
 
 The lock records each app's version, source, full Git commit when available, and
-SHA-256 of included source files. Flat apps include their package root; legacy apps
+SHA-256 of included source files. Its `evlet` entry records the Evlet version and
+last framework migration; an instance with a different entry refuses to serve until
+`evlet migrate` runs (see docs/app-upgrades.md). Flat apps include their package root; legacy apps
 include `pyproject.toml` and the nested package. Legacy apps skip only
 `__pycache__` and `.pyc` files, so existing locks stay valid. Flat apps also skip
 dotfiles and dot-folders (such as `.env` and `.git`), `node_modules`, `*.egg-info`,

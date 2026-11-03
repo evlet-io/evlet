@@ -5,9 +5,9 @@ import sqlite3
 
 from .fields import Link, Reference, Text
 from .models import identifier, storage_name
-from .migrations import (Applied, SchemaError, AddField, AddIndex, CreateModel, RenameField, Recompute,
-                         _metadata, _definition, _migration_plan, _history,
-                         _normalized, _planned_definition, _recompute, recomputes, index_columns, stored_columns, app_fields, instance_columns)
+from .migrations import (Applied, SchemaError, AddField, AddIndex, AddTable, CreateModel, RenameField, Recompute,
+                         _metadata, _definition, _migration_plan, _history, _same, _comparable, mismatch, link_target, plan_from,
+                         _planned_definition, _recompute, recomputes, index_columns, stored_columns, app_fields, instance_columns)
 
 
 def validate_indexes(registry):
@@ -51,7 +51,7 @@ def sequence_index(db, table, name, field):
 def links(db, table, model):
     for name, field in model.__fields__.items():
         if isinstance(field, Link):
-            db.execute(f'ALTER TABLE {identifier(table)} ADD FOREIGN KEY ({identifier(name)}) REFERENCES {identifier(storage_name(field.target))}(id)')
+            db.execute(f'ALTER TABLE {identifier(table)} ADD FOREIGN KEY ({identifier(name)}) REFERENCES {identifier(link_target(field))}(id)')
 
 
 def reserve_id_names(db, table):
@@ -149,7 +149,7 @@ def initialize(database):
         fresh = not tables(db)
         _metadata(db)
         saved = db.execute('SELECT definition FROM evlet_schema WHERE id=1').fetchone()
-        if saved and saved[0] != _definition(database.registry):
+        if saved and not _same(saved[0], database.registry):
             raise SchemaError('Model definitions changed; run explicit migrations before startup')
         baseline = False
         if plan is not None:
@@ -170,10 +170,11 @@ def initialize(database):
 
 
 def apply(db, op):
-    if isinstance(op, CreateModel):
-        table = storage_name(op.model)
-        create(db, table, op.model)
-        links(db, table, op.model)
+    if isinstance(op, (CreateModel, AddTable)):
+        model = op.model() if isinstance(op, AddTable) else op.model
+        table = storage_name(model)
+        create(db, table, model)
+        links(db, table, model)
     elif isinstance(op, AddIndex):
         columns = {row[0] for row in db.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?", (op.table,))}
         index(db, op.table, op.field, op.unique, stored_columns(columns, op.field))
@@ -190,7 +191,7 @@ def apply(db, op):
             literal = db.database.driver.sql.Literal(value).as_string(db.raw)
             db.execute(f'ALTER TABLE {identifier(op.table)} ADD COLUMN {sql} DEFAULT {literal}')
         if isinstance(op.field, Link):
-            db.execute(f'ALTER TABLE {identifier(op.table)} ADD FOREIGN KEY ({identifier(op.name)}) REFERENCES {identifier(storage_name(op.field.target))}(id)')
+            db.execute(f'ALTER TABLE {identifier(op.table)} ADD FOREIGN KEY ({identifier(op.name)}) REFERENCES {identifier(link_target(op.field))}(id)')
         if op.field.index or op.field.unique: index(db, op.table, op.name, op.field.unique, index_columns(op.name, op.field))
         if op.field.kind == 'sequence': sequence_index(db, op.table, op.name, op.field)
 
@@ -208,10 +209,11 @@ def migrate(database, migrations, *, recompute_posted=False):
             if not fresh and not saved:
                 raise SchemaError('Initialize the legacy database with its original models before migrating')
             pending = migrations[len(history):]
-            if saved and (history or saved[0] != _definition(database.registry)):
-                if _normalized(_planned_definition(saved[0], pending)) != _normalized(database.registry.schema()):
-                    raise SchemaError('Migrations do not match model changes')
-            baseline = not history and saved and saved[0] == _definition(database.registry)
+            if saved and (history or not _same(saved[0], database.registry)):
+                planned = _planned_definition(saved[0], pending)
+                if _comparable(planned) != _comparable(database.registry.schema()):
+                    raise mismatch(planned, database.registry.schema())
+            baseline = not history and saved and _same(saved[0], database.registry)
             if fresh:
                 bootstrap(db, database.registry)
             else:
@@ -237,3 +239,16 @@ def migrate(database, migrations, *, recompute_posted=False):
     except (sqlite3.Error, ValueError, TypeError) as exc:
         if isinstance(exc, SchemaError): raise
         raise SchemaError('Migration rolled back') from exc
+
+
+def plan(database, migrations):
+    """What migrate(database, migrations) would do. Only reads, in a transaction that changes nothing."""
+    validate_indexes(database.registry)
+    with database.transaction() as tx:
+        db = tx.connection
+        def exists(name):
+            return db.execute("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename=?", (name,)).fetchone() is not None
+        saved = db.execute('SELECT definition FROM evlet_schema WHERE id=1').fetchone() if exists('evlet_schema') else None
+        history = [(row[0], row[1]) for row in db.execute('SELECT name,checksum FROM evlet_migrations ORDER BY position')] \
+            if exists('evlet_migrations') else []
+        return plan_from(saved and saved[0], history, migrations, database.registry, tables=bool(tables(db)))

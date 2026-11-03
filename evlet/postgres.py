@@ -219,3 +219,9 @@ class PostgreSQLDatabase(Database):
     def migrate(self, migrations, *, recompute_posted=False):
         from .postgres_schema import migrate
         return migrate(self, migrations, recompute_posted=recompute_posted)
+
+    def plan(self, migrations):
+        """What migrate(migrations) would do, without writing: a MigrationPlan whose text() lists the pending
+        migrations and any difference between them and the models."""
+        from .postgres_schema import plan
+        return plan(self, migrations)
