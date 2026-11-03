@@ -11,9 +11,8 @@ What the implementation does differently from this plan, for the owner to review
   turn the page.
 - The switch prompt keeps today's Cancel and Discard (decision 4). The mockup's "Save and
   continue" was not added.
-- Text ids (PR 92) are not on main yet, so `?open=` carries today's numeric ids. The list matches
-  the open row by its id as text; the row refresh after a save reads the record's detail by
-  number, like the record page, and moves to text ids with it when PR 92 lands.
+- `?open=` carries the 13-character text id (PR 92). An older decimal id in `?open=` opens the
+  same record, as the record page does.
 
 ## What exists today
 
