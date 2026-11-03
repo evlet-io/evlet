@@ -67,6 +67,10 @@ from .forms import Dialog, Report, Column
 from .effects import Effect, Negate, Swap
 __all__ += ["Effect", "Negate", "Swap"]
 __all__ += ["Dialog", "Report", "Column"]
+
+from .slips import Outcome, Slip, present
+
+__all__ += ["Outcome", "Slip", "present"]
 from .services import api, cron
 __all__ += ["api", "cron"]
 from .measures import Count, CountDistinct, Day, Max, Min, Month, Sum, Year
@@ -87,3 +91,5 @@ __all__ += ["ConnectionFailed", "Connector", "ConnectorField"]
 from .mailboxes import Mail
 
 __all__ += ["Mail"]
+from .devlink import DevSignIn
+__all__ += ["DevSignIn"]

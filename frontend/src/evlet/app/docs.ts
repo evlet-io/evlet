@@ -48,6 +48,22 @@ class Deal(Model):
             available_when=F("stage") == "won")
     def record_payment(self, amount): ...`;
 
+const slipCode = `from evlet import Child, Date, Decimal, Link, Slip, Table, Text
+
+class Task(Child):
+    title = Text(required=True)
+    hours = Decimal(minimum="0")
+
+class PlanProject(Slip):
+    title = "Plan a project"
+    source = Customer          # a button on each customer
+    becomes = Project          # handing it in creates a project
+    name = Text(required=True)
+    starts_on = Date(required=True)
+    tasks = Table(Task, required=True)
+
+app = Application(database, auth=auth, slips=[PlanProject])`;
+
 const pageCode = `from evlet.ui import PageView, Column, Card, Text, Button, Navigate
 
 welcome = PageView(
@@ -121,6 +137,7 @@ const TOPICS: Topic[] = [
     ${section('The model decides; the screen explains', p('Calculated values show their rule. Rules hide and clear fields, make them required, or lock them, and say why in place. The browser evaluates the same finite rules as the server, and the server checks every write again.'), code(rulesCode))}
     ${section('Moves and actions', p('A State changes only through its moves. A move that is not allowed stays visible, dims and says why. Actions with inputs open a small dialog that checks its values before it runs. Server actions keep their normal role, record and field checks.'))}
     ${section('Saving', p('Values save one at a time when you leave them, with Undo. Lines are saved together with Save. If the record changed since you opened it, your draft stays and you can reload.'))}
+    ${section('Slips', p('A slip is a form with the fields of a model that saves nothing by itself. It opens from a record, the New menu, an action or browser code. The server checks every change. When it is handed in, its values go to the slip\'s hand_in() method, or become a record through the normal create path. See docs/slips.md.'), code(slipCode))}
   </article>` },
   { id: 'extensions', title: 'Customization', render: ctx => html`<article class="ev-doc-article">
     ${section('Change a screen through the model', table([['Meta.list_fields', 'List columns, up to eight.'], ['Meta.layout', 'Sections of the Details tab.'],

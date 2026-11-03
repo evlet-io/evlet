@@ -57,6 +57,13 @@ function compile(name: string, path: string): Compiled {
   return { name, pattern: new RegExp(`^${source || '/'}/?$`), keys, parts };
 }
 
+/** Same route name and parameters: only the query differs, so the page stays. */
+function samePage(a: { name: string; params: Record<string, string> } | null, b: { name: string; params: Record<string, string> } | null) {
+  if (!a || !b || a.name !== b.name) return false;
+  const keys = Object.keys(a.params);
+  return keys.length === Object.keys(b.params).length && keys.every(key => a.params[key] === b.params[key]);
+}
+
 export class Router<R extends Record<string, string>> {
   private readonly table: Compiled[];
   private readonly current = cell<Route<R> | null>(null, { name: 'router.route', equals: (a, b) => a?.url === b?.url && a?.name === b?.name });
@@ -128,11 +135,12 @@ export class Router<R extends Record<string, string>> {
    * Ask before leaving while `when()` is true, for example a record with unsaved changes.
    * `ask` shows an in-page confirmation and resolves to true to leave. While `when()` is
    * true, closing or reloading the tab also asks (the browser shows its own prompt there).
+   * A change of query only, such as the record tab in `?tab=`, stays on the page and never asks.
    */
   confirmLeave(when: () => boolean, ask: (to: Route<R> | null) => boolean | Promise<boolean>): () => void {
     const unload = (event: BeforeUnloadEvent) => { if (when()) { event.preventDefault(); event.returnValue = ''; } };
     this.window.addEventListener('beforeunload', unload);
-    const remove = this.guard(to => !when() || ask(to));
+    const remove = this.guard((to, from) => samePage(to, from) || !when() || ask(to));
     const stop = () => { remove(); this.window.removeEventListener('beforeunload', unload); };
     onCleanup(stop);
     return stop;

@@ -146,7 +146,8 @@ router.confirmLeave(() => record.dirty.get(), () => confirmDialog('Discard your 
   modifier key, `target`, `download` or `rel="external"`, and links to paths the table does
   not know (such as `/api/...`), stay ordinary links.
 - `guard(fn)` can stop any navigation (sync or async). `confirmLeave` asks only while its
-  condition is true and also asks before the tab closes. A refused back or forward step
+  condition is true and also asks before the tab closes. A navigation that changes only the
+  query, such as switching record tabs (`?tab=`), stays on the page and never asks. A refused back or forward step
   returns to the page the user was on. The latest of two concurrent navigations wins.
 - `router.signal` is aborted when the route changes. Pass `() => router.signal` to the API
   client so requests of the old page stop.
@@ -229,7 +230,9 @@ await record.save();                       // the server's answer replaces the d
   the next edit; `reload()` reads them again.
 - `save()` sends only changes for a saved record: changed fields, and each Table as
   `{create, update, delete, order}` (with `order` only when rows moved), nested for rows of
-  rows. A new record sends everything with full row lists. A plan's hash goes along as
+  rows. A new record sends everything with full row lists. A collection whose schema entry has
+  `row_changes: false` (a `ChildTable` on a plain model) is always sent as a full list:
+  saved rows as `{id, ...changed values}`, new rows without `_key`. A plan's hash goes along as
   `_calculation`. Conflicts land in `conflict`, field errors on their fields (by row id or
   `_key`, at any depth) and the rest in `formError`. `revert()` and `reload()` discard the
   draft. `runAction()` and `move()` require a clean record. `preview()` asks the server to
@@ -251,12 +254,22 @@ plain value is set once, a reactive one updates only the node bound to it. Impor
 class names.
 
 The fonts are bundled, so pages load nothing from another host and the CSP stays
-`default-src 'self'`. `frontend/fonts` holds Inter 4.1 (`InterVariable.woff2`, weights 100 to 900)
-and JetBrains Mono 2.304 (`JetBrainsMono-Regular.woff2` and `-Medium.woff2`), taken from the
-official GitHub releases (`rsms/inter`, `JetBrains/JetBrainsMono`), with their SIL Open Font
-License 1.1 files beside them. The build copies them to `/assets` with a content hash (538,228
-bytes of woff2 in all); the server sends them as `font/woff2`. `font-display: swap` shows the
-system fonts (`system-ui`, `ui-monospace` and the rest of the stack) until they load.
+`default-src 'self'`. `frontend/fonts` holds Inter 4.1 (`InterVariable.woff2` and
+`InterVariable-Italic.woff2`, weights 100 to 900) and JetBrains Mono 2.304
+(`JetBrainsMono-Regular.woff2` and `-Medium.woff2`), taken from the official GitHub releases
+(`rsms/inter`, `JetBrains/JetBrainsMono`), with their SIL Open Font License 1.1 files beside them.
+The Inter files are byte for byte the ones evlet.io serves, and the family name
+(`"Inter Variable"`) and fallback stack match the site's brand tokens. The build copies them to
+`/assets` with a content hash (926,204 bytes of woff2 in all); the server sends them as
+`font/woff2`. `font-display: swap` shows the system fonts (`system-ui`, `ui-monospace` and the
+rest of the stack) until they load. The italic file downloads only when italic text shows.
+
+The Evlet logo is the evlet.io artwork as the site serves it, in `frontend/public/assets`:
+`evlet-logo-primary.svg` (the horizontal logo), `evlet-icon-blue.svg` (the folded leaf mark, also
+the favicon) and `evlet-logo-white.svg`, the primary logo with its wordmark filled white for dark
+themes (the site publishes no dark variant; only the fill changes). `Lockup()` and `Logo()` in
+`app/login.ts` place them in the sidebar, sign-in and Controls; the collapsed sidebar shows the
+mark only.
 
 | Module | Components |
 |---|---|
@@ -546,6 +559,7 @@ not part of the build.
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
 | `record-page.ts` | Record (doc) view, new records, action, void, revise, unpost and repost dialogs |
+| `slips.ts` | Slips ([slips.md](slips.md)): `presentSlip()`, the slip modal and what follows a hand-in |
 | `palette.ts` | Command palette (Cmd or Ctrl K) |
 | `client.ts` | The API client plus the routes the screens use, and the last detail per record |
 | `meta.ts` | What the screens read from the schema, with the optional keys of later phases |
@@ -581,7 +595,8 @@ tab closes. Signing in keeps the address the user opened.
 | `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other |
 | `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
-| `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. Form dialog actions (`dialog: true`) are not shown: these screens cannot open them yet |
+| `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |
+| `Slip` with `source` or `menu` ([slips.md](slips.md)) | A header button on the source model's records, or an entry in New; `?slip=name` on a record opens it. A slip that becomes a record for review opens New filled in, with a note |
 | `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board, the status flow, move buttons; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
 | Locked states, `editable_when_locked` | Lock banner; only the declared fields stay editable; lines lock |
 | Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |

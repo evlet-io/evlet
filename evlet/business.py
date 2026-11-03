@@ -226,6 +226,8 @@ class Business:
                              hashed=[self.registry.name_for(model) for model, journal in self.journals.items() if journal.tamper_evident])
         if getattr(self, 'forms', None) and (self.forms.dialogs or self.forms.reports):
             self.forms.initialize()
+        if getattr(self, 'slips', None) and self.slips.slips:
+            self.slips.initialize()
         if self.events:
             self.events.initialize()
         if getattr(self, 'ui', None):
@@ -314,6 +316,8 @@ class Business:
         result = self.registry.ui_schema()
         if getattr(self, 'forms', None) and self.forms.reports:
             result['reports'] = self.forms.catalog(user)
+        if getattr(self, 'slips', None) and self.slips.slips:
+            result['slips'] = self.slips.schema(user)
         if getattr(self, 'build_manifest', None) and self.build_manifest.get('native', {}).get('panels'):
             result['native_panels'] = []
             from .native import can_access
@@ -391,7 +395,10 @@ class Business:
             entry['permissions'].update(corrections)
             entry['child_only'] = model in self.child_models
             from .documents import row_bounds
+            # row_changes: the parent's save takes {create, update, delete, order} change sets (document route);
+            # otherwise it takes only full row lists without _key (legacy ChildTable on a plain model).
             entry['children'] = [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label,
+                                  'row_changes': bool(getattr(model, '__declaration_mode__', False)),
                                   **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child)))}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
             from .states import action_schema, state_schema
@@ -429,6 +436,9 @@ class Business:
                 for (owner, name), definition in self.forms.dialogs.items():
                     if owner is model and self.policy.allows(user, model, 'update'):
                         entry['actions'].append({'name': name, 'label': definition.title or name, 'dialog': True})
+            slips = self.slips.schema(user, model) if getattr(self, 'slips', None) and self.slips.slips else []
+            if slips:
+                entry['slips'] = slips
         return result
 
     def docs_path(self, scope, user):
@@ -504,6 +514,8 @@ class Business:
         if path.startswith('/api/_services/'):
             from .services import dispatch
             return dispatch(self, scope, body, user)
+        if getattr(self, 'slips', None) and path.startswith('/api/_slips/'):
+            return self.slips.dispatch(scope, body, user)
         if getattr(self, 'forms', None) and path.startswith(('/api/_reports/', '/api/_dialogs/')):
             return self.forms.dispatch(scope, body, user)
         if path.startswith('/api/_draft/') and method == 'POST':
@@ -691,24 +703,7 @@ class Business:
             return self.page(scope, user, model)
         if len(parts) == 3 and method == 'POST':
             with self.database.transaction() as tx:
-                self.policy.require(user, model, 'create')
-                values, children = self.split_body(body)
-                from .documents import drop_empty_name
-                drop_empty_name(self.registry, model, values)
-                self.policy.check_values(tx, user, model, values)
-                values = self.controls.custom.prepare(model, values)
-                cleaned = dict(model(**values)._values)
-                self.controls.custom.enforce(model, cleaned, None)
-                from .documents import host_today
-                from .sequences import name_new
-                name = name_new(tx.connection, self.registry, model, cleaned, host_today(self), user.username)
-                if name:
-                    values[self.registry.naming[model].field] = name
-                record = tx.create(model, **values)
-                self.policy.record(tx, user, model, record.id, 'create')
-                self.save_children(tx, user, record, children)
-                self.changed(tx, model, record.id)
-                result = self.detail(tx, user, record)
+                record, result = self.create_plain(tx, user, model, body)
             return 201, result, [(b'location', f'/api/{parts[2]}/{record.id}'.encode())]
         if len(parts) == 4 and parts[3] in ('aggregate', 'measures') or len(parts) == 5 and parts[4] == 'measures':
             from .measures import route
@@ -965,6 +960,26 @@ class Business:
             self.controls.change_user(user, int(match[1]), body)
             return 204, None, []
         raise AccessError(405, 'Method not allowed')
+
+    def create_plain(self, tx, user, model, body):
+        """POST /api/{model} for a model that is not declarative: permissions, Controls, naming, child rows."""
+        self.policy.require(user, model, 'create')
+        values, children = self.split_body(body)
+        from .documents import drop_empty_name, host_today
+        from .sequences import name_new
+        drop_empty_name(self.registry, model, values)
+        self.policy.check_values(tx, user, model, values)
+        values = self.controls.custom.prepare(model, values)
+        cleaned = dict(model(**values)._values)
+        self.controls.custom.enforce(model, cleaned, None)
+        name = name_new(tx.connection, self.registry, model, cleaned, host_today(self), user.username)
+        if name:
+            values[self.registry.naming[model].field] = name
+        record = tx.create(model, **values)
+        self.policy.record(tx, user, model, record.id, 'create')
+        self.save_children(tx, user, record, children)
+        self.changed(tx, model, record.id)
+        return record, self.detail(tx, user, record)
 
     @staticmethod
     def split_body(body):

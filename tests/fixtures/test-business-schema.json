@@ -170,6 +170,13 @@
             "-id"
           ]
         }
+      ],
+      "slips": [
+        {
+          "name": "plan_project",
+          "label": "Plan a project",
+          "hand_in_label": "Create project"
+        }
       ]
     },
     {
@@ -729,6 +736,7 @@
           "model": "projecttask",
           "link": "project",
           "label": "Tasks",
+          "row_changes": false,
           "min_rows": 0,
           "max_rows": 100
         }
@@ -850,6 +858,18 @@
       "children": [],
       "actions": [],
       "attachments": false
+    }
+  ],
+  "slips": [
+    {
+      "name": "estimate_project",
+      "label": "Estimate a project",
+      "hand_in_label": "Estimate"
+    },
+    {
+      "name": "quick_invoice",
+      "label": "Quick invoice",
+      "hand_in_label": "Review invoice"
     }
   ],
   "capabilities": {

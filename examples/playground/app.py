@@ -9,12 +9,13 @@ Portal users sign in there only, and see the customer they are linked to and its
 
 from pathlib import Path
 
-from evlet import (Action, ApiScope, AppDefinition, Application, ChildTable, EventStore, Frontend, Host, JobQueue, LocalAuth,
+from evlet import (Action, ApiScope, AppDefinition, Application, ChildTable, DevSignIn, EventStore, Frontend, Host, JobQueue, LocalAuth,
                    Policy, Rule, Security, Task, ValidationError, own_customer)
 from evlet.routing import resolve_routes
 from .models import Customer, Invoice, Project, ProjectTask, registry
 from .migrate import configured_database
 from .settings import ProjectPreferences, ProjectSettings
+from .slips import SLIPS
 from .ui import playground_ui
 
 portal = Frontend('portal', kind='static', dist='portal', path='/portal', title='Customer portal', auth='portal', api=('playground.portal',))
@@ -57,6 +58,11 @@ def create_app():
     return build_app(database, auth, routes=routes)
 
 
+def create_dev_app():
+    """scripts/playground.sh: create_app with one-time development sign-in links at /_dev/signin. Never serve this."""
+    return DevSignIn(create_app())
+
+
 def refresh_progress(tx, job, payload):
     project = tx.get(Project, payload['project_id'])
     tasks = tx.list(ProjectTask, filters={'project': project.id}, limit=100)
@@ -75,7 +81,7 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None):
                       actions=(Action(Project, 'start', 'Start project', start_project),
                                Action(Project, 'complete', 'Complete project', complete_project),
                                Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress)),
-                      attachments=(Project,))
+                      attachments=(Project,), slips=SLIPS)
     # Settings > Projects: people who can read projects see it; editors and admins change it.
     app.business.settings.register('projects', ProjectSettings, ProjectPreferences, (Project,))
     return app

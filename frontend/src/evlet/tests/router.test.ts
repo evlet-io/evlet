@@ -85,6 +85,19 @@ describe('router', () => {
     expect(ask).toHaveBeenCalledTimes(1);
   });
 
+  it('confirmLeave does not ask when only the query changes, such as a record tab', async () => {
+    const router = started();
+    await router.go('record', { model: 'deal', id: '1' });
+    const ask = vi.fn(async () => false);
+    stops.push(router.confirmLeave(() => true, ask));
+    expect(await router.go('record', { model: 'deal', id: '1' }, { tab: 'lines' }, { replace: true })).toBe(true);
+    expect(location.search).toBe('?tab=lines');
+    expect(ask).not.toHaveBeenCalled();
+    expect(await router.go('record', { model: 'deal', id: '2' })).toBe(false);
+    expect(await router.go('list', { model: 'deal' })).toBe(false);
+    expect(ask).toHaveBeenCalledTimes(2);
+  });
+
   it('confirmLeave blocks closing the tab while dirty', () => {
     const router = started();
     stops.push(router.confirmLeave(() => true, () => false));

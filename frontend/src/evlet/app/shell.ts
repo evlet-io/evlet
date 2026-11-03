@@ -8,10 +8,11 @@ import { cell, derive, effect } from '../reactive';
 import { Icon, IconButton, IconTile, Key } from '../ui/base';
 import { tooltip } from '../ui/tooltip';
 import { MenuButton, mountToasts, openModal, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
-import { Logo } from './login';
+import { Lockup, Logo } from './login';
 import { resolveTheme, systemScheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { displayName, PersonMark } from './settings';
+import { presentSlip } from './slips';
 import { groupOf, identity, rootModels, type ScreenModel } from './meta';
 
 const PHONE = '(max-width: 760px)';
@@ -94,7 +95,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     <span class="as-text"><b>${appName}</b><small>${workspace}</small></span>${Icon('chevrons-up-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
 
   const sidebar = html`<aside class="sidebar" id="ev-sidebar" aria-label="Main navigation">
-    <div class="brand">${Logo()}<span class="brand-name">evlet</span></div>
+    <div class="brand">${Lockup()}${Logo('Evlet')}</div>
     <div class="side-body">
       ${appSwitch}
       <nav class="nav">
@@ -114,6 +115,8 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     </div></aside>` as HTMLElement;
 
   const creatable = models.filter(model => model.permissions?.create !== false);
+  // Slips declared with menu = True open from New too; they save nothing until handed in.
+  const menuSlips = ctx.schema.schema.slips ?? [];
   const crumbs = () => ctx.crumbs.get().map((crumb, index, all) => index === all.length - 1
     ? html`<span class="cur" aria-current="page">${crumb.label}</span>`
     : [html`<a class="hide-sm" href=${crumb.href ?? '#'}>${crumb.label}</a>`, Icon('chevron-right', { size: 'xs', className: 'hide-sm' })]);
@@ -124,9 +127,10 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
       <button type="button" class="top-search desktop-only" on:click=${() => ctx.openPalette()}>${Icon('search', { size: 'sm' })}<span>Search</span>${Key('⌘K')}</button>
       <span class="mobile-only">${IconButton({ icon: 'search', tip: 'Search', onClick: () => ctx.openPalette() })}</span>
       <span class="desktop-only">${IconButton({ icon: 'circle-help', tip: 'Shortcuts  ?', onClick: () => openShortcuts(docsOn(ctx.session)) })}</span>
-      ${creatable.length ? [html`<span class="sep desktop-only"></span>`, MenuButton({ label: 'New', icon: 'plus', variant: 'primary', size: 'small', hideLabelOnPhone: true, menuLabel: 'New',
-        items: () => creatable.map(model => ({ label: `New ${model.label.toLowerCase()}`, icon: identity(model).icon, tint: identity(model).tint,
-          onSelect: () => void router.go('create', { model: model.name }) })) })] : null}
+      ${creatable.length || menuSlips.length ? [html`<span class="sep desktop-only"></span>`, MenuButton({ label: 'New', icon: 'plus', variant: 'primary', size: 'small', hideLabelOnPhone: true, menuLabel: 'New',
+        items: (): MenuItem[] => [...creatable.map(model => ({ label: `New ${model.label.toLowerCase()}`, icon: identity(model).icon, tint: identity(model).tint,
+          onSelect: () => void router.go('create', { model: model.name }) })), ...(creatable.length && menuSlips.length ? ['separator' as const] : []),
+          ...menuSlips.map(slip => ({ label: slip.label, icon: 'file-text', onSelect: () => void presentSlip(slip.name) }))] })] : null}
     </div></header>` as HTMLElement;
 
   // Collapse and expand from a small button on the sidebar's edge, just above the account card.
