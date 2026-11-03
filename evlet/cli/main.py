@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 
+from ..identity import from_argument, text as text_id
 from .project import project_root
 
 
@@ -83,7 +84,7 @@ def parser():
     link.add_argument('instance')
     link.add_argument('username')
     link.add_argument('model')
-    link.add_argument('record_id', type=int)
+    link.add_argument('record_id', type=from_argument)
     link.add_argument('--remove', action='store_true', help='Remove the link instead')
     controls = commands.add_parser('controls', help='Restore access to Controls from the server shell')
     controls_commands = controls.add_subparsers(dest='controls_command', required=True)
@@ -313,7 +314,7 @@ def main(argv=None):
             from .journal import verify_instance
             checked, breaks = verify_instance(root, args.instance)
             for entry, model, record_id, message in breaks:
-                print(f'Entry {entry} ({model} {record_id}): {message}')
+                print(f'Entry {entry} ({model} {text_id(record_id)}): {message}')
             if breaks:
                 print(f'{len(breaks)} break{"s" if len(breaks) > 1 else ""} in {checked} hashed entries', file=sys.stderr)
                 raise SystemExit(1)

@@ -7,6 +7,7 @@ import threading
 import sqlite3
 
 from .database import Database, Session, ConflictError, using
+from .identity import RecordId
 from .models import identifier, ValidationError
 
 # Tokenize quoted text before adapting framework SQL. Values remain parameters.
@@ -75,7 +76,7 @@ class Connection:
             sql += ' RETURNING id'
         if any(isinstance(value, str) and '\x00' in value for value in values):
             raise ValidationError({'_form': 'PostgreSQL text cannot contain NUL characters'})
-        cursor = self.raw.execute(sql, tuple(int(v) if type(v) is bool else v for v in values))
+        cursor = self.raw.execute(sql, tuple(int(v) if type(v) in (bool, RecordId) else v for v in values))
         return Cursor(cursor, returning)
 
     def executemany(self, sql, rows):

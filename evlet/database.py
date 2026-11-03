@@ -5,6 +5,7 @@ from pathlib import Path
 import sqlite3
 
 from .fields import ACTIVE, EMPTY_LAYER, Link, MISSING, Reference
+from .identity import RecordId, new_id, sequential
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .sequences import name_new, raw_write
@@ -178,6 +179,25 @@ def storage_columns(model, values, names):
     return columns, stored
 
 
+def insert(connection, table, names, values):
+    """Insert one row under a new record id and return the id. A taken id (a collision of the 21 random
+    bits within one millisecond) inserts nothing, so another id is drawn; other constraints still raise."""
+    if sequential():
+        # Recorded fixtures: the table's own autoincrement numbers rows 1, 2, 3 and never reuses one.
+        sql = f'INSERT INTO {table} ({", ".join(identifier(name) for name in names)}) VALUES ({", ".join("?" for _ in names)})' \
+            if names else f'INSERT INTO {table} DEFAULT VALUES'
+        return RecordId(connection.execute(sql, values).lastrowid)
+    columns = ', '.join(['"id"', *(identifier(name) for name in names)])
+    placeholders = ', '.join('?' for _ in range(len(names) + 1))
+    for _ in range(8):
+        record_id = new_id()
+        cursor = connection.execute(f'INSERT INTO {table} ({columns}) VALUES ({placeholders}) ON CONFLICT ("id") DO NOTHING',
+                                    [record_id, *values])
+        if cursor.rowcount == 1:
+            return record_id
+    raise ConflictError('Could not find a free record id')
+
+
 class Session:
     """Available inside Database.transaction(); do not retain it afterwards."""
 
@@ -233,18 +253,13 @@ class Session:
             record = model(**{**record._values, **numbers})
         self.check_references(model, record._values)
         names, stored = storage_columns(model, record._values, model.__fields__)
-        if names:
-            columns = ", ".join(identifier(name) for name in names)
-            placeholders = ", ".join("?" for _ in names)
-            cursor = self.connection.execute(
-                f"INSERT INTO {table} ({columns}) VALUES ({placeholders})", stored)
-        else:
-            cursor = self.connection.execute(f"INSERT INTO {table} DEFAULT VALUES")
-        return self.get(model, cursor.lastrowid)
+        return self.get(model, insert(self.connection, table, names, stored))
 
     def get(self, model, record_id):
-        if type(record_id) is not int or not 1 <= record_id <= 2**63 - 1:
-            raise ValidationError({"id": "Expected a positive 64-bit integer"})
+        try:
+            record_id = RecordId(record_id)
+        except ValueError:
+            raise ValidationError({"id": "Use a record id"}) from None
         table = identifier(self.registry.name_for(model))
         row = self.connection.execute(
             f'SELECT * FROM {table} WHERE "id" = ?', (record_id,)
@@ -279,8 +294,8 @@ class Session:
             table = identifier(self.registry.name_for(model))
             names, stored = storage_columns(model, record._values, changes)
             assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
-            self.connection.execute(f'UPDATE {table} SET {assignments} WHERE "id" = ?', stored + [record_id])
-        return self.get(model, record_id)
+            self.connection.execute(f'UPDATE {table} SET {assignments} WHERE "id" = ?', stored + [current.id])
+        return self.get(model, current.id)
 
     def check_references(self, model, values):
         """Reference fields have no SQL foreign key, so each write checks that the record exists."""
@@ -294,7 +309,7 @@ class Session:
 
     def delete(self, model, record_id):
         self._guard(model)
-        self.get(model, record_id)
+        record_id = self.get(model, record_id).id
         table = identifier(self.registry.name_for(model))
         self.connection.execute(f'DELETE FROM {table} WHERE "id" = ?', (record_id,))
 

@@ -63,7 +63,7 @@ describe('testCRM: a deal and its lines', () => {
     expect(saved.method).toBe('PATCH');
     const lines = saved.body.children.lines;
     expect(lines.update).toEqual([expect.objectContaining({ qty: '15.00' })]);
-    expect(lines.create).toEqual([expect.objectContaining({ product: expect.any(Number) })]);
+    expect(lines.create).toEqual([expect.objectContaining({ product: expect.stringMatching(/^[0-9a-z]{13}$/) })]);
     expect(lines.order).toHaveLength(3);
     expect(saved.body.subtotal).toBeUndefined();
     await until(() => expect(sums(host)).toBe('SubtotalAED 95,400.00Vat totalAED 4,770.00TotalAED 100,170.00'));
@@ -220,7 +220,7 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
     const instant = sums(host);
     click(byText(host, 'button', 'Save'));
     await until(() => expect(run.writes).toHaveLength(1));
-    expect(run.writes[0].body).toMatchObject({ children: { lines: { update: [{ id: expect.any(Number), qty: '10.00' }] } } });
+    expect(run.writes[0].body).toMatchObject({ children: { lines: { update: [{ id: expect.stringMatching(/^[0-9a-z]{13}$/), qty: '10.00' }] } } });
     expect(Object.keys(run.writes[0].body.children.lines)).toEqual(['update']);
     await until(() => expect(host.querySelector('.save-bar, [aria-label="Unsaved changes"]')).toBeNull());
     expect(sums(host)).toBe(instant);

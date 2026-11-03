@@ -91,7 +91,7 @@ def test_key_requests_keep_row_scopes_and_field_rules(secured):
     secured.business.policy = Policy(registry, rules={('editor', Customer): rule})
     token = create(client(secured), 'Editor key', {'access': 'write', 'models': None}, user='editor')[1]['token']
     page = with_key(secured, token, 'GET', '/api/customer')[1]
-    assert page['total'] == 1 and page['items'] == [{'id': visible.id, 'name': 'Visible', 'active': True}]
+    assert page['total'] == 1 and page['items'] == [{'id': str(visible.id), 'name': 'Visible', 'active': True}]
     assert with_key(secured, token, 'GET', f'/api/customer/{hidden.id}')[0] == 404
     assert with_key(secured, token, 'GET', '/api/customer?' + urlencode({'filters': json.dumps({'notes': 'secretphrase'})}))[0] == 403
     assert with_key(secured, token, 'PATCH', f'/api/customer/{visible.id}', {'notes': 'changed'})[0] == 403

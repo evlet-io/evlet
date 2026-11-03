@@ -6,7 +6,8 @@ import { RecordStore } from '../model/record';
 import type { AppSchema } from '../model/schema';
 import { closeDialogs, closePopover } from '../ui/layers';
 import { hideTip } from '../ui/tooltip';
-import { responses, server } from './server';
+import { id, responses, server } from './server';
+export { id };
 
 const disposers: Array<() => void> = [];
 const stores: RecordStore[] = [];
@@ -86,12 +87,12 @@ export function backend(overrides: Array<[string, RegExp, any]> = []) {
   let saved = false;
   const stub = server([
     ...overrides,
-    ['GET', /\/api\/order\/1$/, 'detail'],
-    ['GET', /\/api\/order\/1\/lines\/lines\?limit=100&offset=100$/, () => responses[saved ? 'lines_page_after_update' : 'lines_page']],
-    ['GET', /\/api\/customer\/1$/, { ...responses.customer, status: 200 }],
-    ['GET', /\/api\/product\/1$/, { ...responses.product, status: 200 }],
-    ['GET', /\/api\/product(\?.*)?$/, { status: 200, etag: null, body: { items: [{ id: 1, name: 'Support hours', price: '250.00' }, { id: 2, name: 'Licence <b>bold</b>', price: '90.00' }], total: 2, limit: 8, offset: 0 } }],
-    ['PATCH', /\/api\/order\/1$/, () => { saved = true; return responses.update; }],
+    ['GET', /\/api\/order\/0000000000001$/, 'detail'],
+    ['GET', /\/api\/order\/0000000000001\/lines\/lines\?limit=100&offset=100$/, () => responses[saved ? 'lines_page_after_update' : 'lines_page']],
+    ['GET', /\/api\/customer\/0000000000001$/, { ...responses.customer, status: 200 }],
+    ['GET', /\/api\/product\/0000000000001$/, { ...responses.product, status: 200 }],
+    ['GET', /\/api\/product(\?.*)?$/, { status: 200, etag: null, body: { items: [{ id: id(1), name: 'Support hours', price: '250.00' }, { id: id(2), name: 'Licence <b>bold</b>', price: '90.00' }], total: 2, limit: 8, offset: 0 } }],
+    ['PATCH', /\/api\/order\/0000000000001$/, () => { saved = true; return responses.update; }],
   ]);
   const api = createClient({ fetch: stub.fetch });
   const store = new RecordStore({ api, schema, model: 'order', today: () => '2026-11-01' });

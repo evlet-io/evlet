@@ -5,6 +5,18 @@ say what to change. Evlet is not production ready.
 
 ## Unreleased
 
+- **Breaking: record ids are text.** New records get a 63-bit, time-ordered id (milliseconds since
+  01-01-2026 and 21 random bits), stored as before in the `INTEGER` primary key. Outside the
+  database an id is always 13 lowercase Crockford base32 characters, such as `01hc1sd9vc1ye`: JSON
+  bodies, Link values, `{"model", "id"}` References, row ids, the journal, events, Slips' `source`,
+  Eva and MCP tool arguments, and URLs (`/api/invoice/01hc1sd9vc1ye`, `/app/invoice/01hc1sd9vc1ye`).
+  Ids are never JSON numbers, because a browser cannot hold 63 bits in a number. Existing rows keep
+  their ids (42 shows as `000000000001a`); nothing is rewritten.
+  What to change: clients read ids as strings and build URLs from them. A decimal id in an API path
+  is now a 404 (the browser turns an old `/app/invoice/42` bookmark into the text id). Writes still
+  take a JSON integer for a Link or a row id. In Python, `record.id` and Link values are
+  `evlet.identity.RecordId`, an `int` whose `str()` is the text id; `Database.get` takes either form
+  ([docs/model-engine.md](docs/model-engine.md#record-ids)).
 - **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
   follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
   the default). The server writes the theme on `<html>` before the page paints, so nothing

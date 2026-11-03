@@ -49,8 +49,8 @@ def test_ui_schema_defaults_labels_and_storage_snapshot_are_separate(tmp_path):
     status, saved, _ = request(app, 'POST', '/api/thing', {'name': 'Saved'})
     assert status == 201 and saved['amount'] == '12.50' and saved['when'] == '2026-10-28'
     assert calls == [1]
-    assert request(app, 'PATCH', '/api/thing/1', {'amount': '2.00'})[0] == 422
-    assert db.get(Thing, 1).to_dict()['amount'] == '12.50'
+    assert request(app, 'PATCH', f"/api/thing/{saved['id']}", {'amount': '2.00'})[0] == 422
+    assert db.get(Thing, saved['id']).to_dict()['amount'] == '12.50'
 
 
 def test_unfamiliar_model_supports_every_field_and_standard_api(tmp_path):
@@ -76,10 +76,10 @@ def test_unfamiliar_model_supports_every_field_and_standard_api(tmp_path):
     }
     status, saved, _ = request(app, 'POST', '/api/device', {'name': 'Sensor', 'email': 'test@example.test', 'website': 'https://example.test'})
     assert status == 201 and saved['rate'] == '1.2345' and saved['enabled'] is False
-    assert request(app, 'PATCH', '/api/device/1', {'notes': 'Updated'})[1]['name'] == 'Sensor'
+    assert request(app, 'PATCH', f"/api/device/{saved['id']}", {'notes': 'Updated'})[1]['name'] == 'Sensor'
     result = request(app, 'GET', '/api/device?q=example&limit=1')[1]
     assert result['total'] == 1 and len(result['items']) == 1
-    assert request(app, 'DELETE', '/api/device/1')[0] == 204
+    assert request(app, 'DELETE', f"/api/device/{saved['id']}")[0] == 204
 
 
 @pytest.mark.parametrize('options', [
@@ -119,9 +119,9 @@ def test_relationship_search_reaches_records_beyond_first_hundred(database, appl
         for i in range(105): tx.create(Customer, name=f'Recent customer {i}')
     invoice = database.create(Invoice, customer=first.id, reference='OLD', total='12.50')
     page = request(application, 'GET', '/api/customer?q=Old&limit=20')[1]
-    assert page['total'] == 1 and page['items'][0]['id'] == first.id
+    assert page['total'] == 1 and page['items'][0]['id'] == str(first.id)
     assert request(application, 'GET', f'/api/customer/{first.id}')[1]['name'] == 'Old customer'
-    assert request(application, 'GET', f'/api/invoice/{invoice.id}')[1]['customer'] == first.id
+    assert request(application, 'GET', f'/api/invoice/{invoice.id}')[1]['customer'] == str(first.id)
 
 
 def milestone_registry(projects):
@@ -163,7 +163,7 @@ def test_project_migration_preserves_existing_records(tmp_path, installation):
         db.initialize()
         customer = db.create(old_registry.models['customer'], name='Keep')
         invoice = db.create(old_registry.models['invoice'], customer=customer.id, reference='KEEP', total='123.45')
-        db.create(old_registry.models['payment'], invoice=invoice.id, reference='KEEP', amount='123.45')
+        payment = db.create(old_registry.models['payment'], invoice=invoice.id, reference='KEEP', amount='123.45')
     target = Database(path, registry, migrations=migrations)
     applied = target.migrate(migrations)
     assert applied == ([m.name for m in migrations][2 if installation == 'milestone3' else 1 if installation == 'milestone2' else 0:])
@@ -174,6 +174,6 @@ def test_project_migration_preserves_existing_records(tmp_path, installation):
     if installation != 'fresh':
         assert target.get(Customer, customer.id).name == 'Keep'
         assert target.get(Invoice, invoice.id).to_dict()['total'] == '123.45'
-        assert target.get(Payment, 1).invoice == invoice.id
+        assert target.get(Payment, payment.id).invoice == invoice.id
     with sqlite3.connect(path) as connection:
         assert connection.execute('PRAGMA foreign_key_check').fetchall() == []

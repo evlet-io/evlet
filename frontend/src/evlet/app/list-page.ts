@@ -239,7 +239,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     if (move.asks?.length) return `Open ${titleOf(model, row)} to use ${move.label}: it asks for ${move.asks.map(field => fieldOf(model, field)?.label.toLowerCase() ?? field).join(' and ')}`;
     return null;
   };
-  const setRow = (id: number, next: RecordData) => rows.set(rows.peek().map(item => item.id === id ? next : item));
+  const setRow = (id: string, next: RecordData) => rows.set(rows.peek().map(item => item.id === id ? next : item));
   const moveRecord = async (row: RecordData, to: string): Promise<boolean> => {
     try {
       const { etag } = await api.get(name, row.id);
@@ -258,7 +258,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     cards: rows, key: row => row.id, group: row => String(row[state.field]),
     totals: () => boardTotals.get(), amounts: Boolean(valueField),
     card: row => BoardCard({ title: () => titleOf(model, row()), tint,
-      company: linkField ? () => { const id = row()[linkField.name]; return id ? ctx.links.title(linkField.target!, Number(id)).get() ?? '' : ''; } : undefined,
+      company: linkField ? () => { const id = row()[linkField.name]; return id ? ctx.links.title(linkField.target!, String(id)).get() ?? '' : ''; } : undefined,
       value: valueField ? () => formatOf(valueField, row()[valueField.name]) : undefined,
       date: dateField ? () => formatOf(dateField, row()[dateField.name]) : undefined,
       onOpen: () => open(row()) }),

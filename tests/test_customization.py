@@ -576,9 +576,10 @@ def test_a_revision_gets_a_new_name(tmp_path, hashed):
     admin = client(app)
     status, record, headers = admin('POST', '/api/quote', {})
     assert (status, record['reference']) == (201, 'Q-001')
-    status, record, headers = admin('POST', '/api/quote/1/moves/issued', {}, headers={b'if-match': headers[b'etag']})
+    quote = f"/api/quote/{record['id']}"
+    status, record, headers = admin('POST', quote + '/moves/issued', {}, headers={b'if-match': headers[b'etag']})
     assert status == 200, record
-    status, copy, _ = admin('POST', '/api/quote/1/revise', {'reason': 'Wrong price'}, headers={b'if-match': headers[b'etag']})
+    status, copy, _ = admin('POST', quote + '/revise', {'reason': 'Wrong price'}, headers={b'if-match': headers[b'etag']})
     assert status == 201 and copy['reference'] == 'Q-002', copy
 
 
@@ -919,25 +920,27 @@ def test_instance_fields_follow_the_record_for_roles_whose_rules_list_fields(tmp
         add_user(app, role, role)
     admin, editor, viewer = client(app), client(app, 'editor'), client(app, 'viewer')
     assert admin('POST', '/api/_controls/fields/Deal', {'name': 'region', 'type': 'Text', 'label': 'Region'})[0] == 201
-    assert admin('POST', '/api/deal', {'title': 'Payroll', 'amount': '10.00', 'notes': 'n', 'x_region': 'dxb'})[0] == 201
+    status, created, _ = admin('POST', '/api/deal', {'title': 'Payroll', 'amount': '10.00', 'notes': 'n', 'x_region': 'dxb'})
+    assert status == 201
+    deal = f"/api/deal/{created['id']}"
     # Read: the record, the list, the generated screen's schema, an API key and the local MCP connector.
-    seen = viewer('GET', '/api/deal/1')[1]
+    seen = viewer('GET', deal)[1]
     assert seen['x_region'] == 'dxb' and 'amount' not in seen and 'notes' not in seen
     assert viewer('GET', '/api/deal')[1]['items'][0]['x_region'] == 'dxb'
     assert field_of(schema_of(viewer, 'deal'), 'x_region')['label'] == 'Region'
     assert field_of(schema_of(editor, 'deal'), 'x_region')['read_only'] is False and field_of(schema_of(editor, 'deal'), 'amount')['read_only'] is True
     viewer_id = next(row['id'] for row in admin('GET', '/api/_controls/users')[1]['items'] if row['username'] == 'viewer')
     _, key = app.business.auth.create_key(viewer_id, 'Script', {'access': 'read', 'models': None})
-    assert http(app, 'GET', '/api/deal/1', headers={b'authorization': f'Bearer {key}'.encode(), b'x-evlet-request': b''})[1]['x_region'] == 'dxb'
+    assert http(app, 'GET', deal, headers={b'authorization': f'Bearer {key}'.encode(), b'x-evlet-request': b''})[1]['x_region'] == 'dxb'
     with app.database.transaction() as tx:
         # The local MCP connector acts for people with Allow MCP.
         tx.connection.execute("UPDATE evlet_users SET allow_mcp=1 WHERE username='viewer'")
-    assert viewer('GET', '/api/deal/1', headers={b'x-evlet-client': b'mcp'})[1]['x_region'] == 'dxb'
+    assert viewer('GET', deal, headers={b'x-evlet-client': b'mcp'})[1]['x_region'] == 'dxb'
     # Write: a role that updates the record writes the field; fields the app keeps from it stay closed.
-    assert editor('PATCH', '/api/deal/1', {'x_region': 'auh'})[0] == 200
-    assert editor('GET', '/api/deal/1')[1]['x_region'] == 'auh'
-    assert editor('PATCH', '/api/deal/1', {'amount': '1.00'})[0] in (403, 422)
-    assert viewer('PATCH', '/api/deal/1', {'x_region': 'shj'})[0] == 403
+    assert editor('PATCH', deal, {'x_region': 'auh'})[0] == 200
+    assert editor('GET', deal)[1]['x_region'] == 'auh'
+    assert editor('PATCH', deal, {'amount': '1.00'})[0] in (403, 422)
+    assert viewer('PATCH', deal, {'x_region': 'shj'})[0] == 403
     # The override page shows the field in the file value, so an admin can hide it or make it read only per role.
     overrides = {item['key']: item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'perm'}
     assert overrides['viewer|Deal']['file']['read'] == ['title', 'x_region']
@@ -945,14 +948,14 @@ def test_instance_fields_follow_the_record_for_roles_whose_rules_list_fields(tmp
     status, data, _ = save(admin, ('perm', 'viewer|Deal', {'ops': ['read'], 'read': ['title'], 'write': None, 'scope': None}),
                            ('perm', 'editor|Deal', {'ops': ['read', 'create', 'update'], 'read': ['title', 'amount', 'x_region'], 'write': ['title'], 'scope': None}))
     assert status == 200, data
-    assert 'x_region' not in viewer('GET', '/api/deal/1')[1] and 'x_region' not in viewer('GET', '/api/deal')[1]['items'][0]
+    assert 'x_region' not in viewer('GET', deal)[1] and 'x_region' not in viewer('GET', '/api/deal')[1]['items'][0]
     assert not any(field['name'] == 'x_region' for field in schema_of(viewer, 'deal')['fields'])
-    assert editor('GET', '/api/deal/1')[1]['x_region'] == 'auh' and editor('PATCH', '/api/deal/1', {'x_region': 'x'})[0] in (403, 422)
+    assert editor('GET', deal)[1]['x_region'] == 'auh' and editor('PATCH', deal, {'x_region': 'x'})[0] in (403, 422)
     # A field added later reaches roles whose overrides list fields too, until an admin unticks it there.
     assert admin('POST', '/api/_controls/fields/Deal', {'name': 'zone', 'type': 'Text', 'label': 'Zone'})[0] == 201
-    assert admin('PATCH', '/api/deal/1', {'x_zone': 'north'})[0] == 200
-    assert viewer('GET', '/api/deal/1')[1]['x_zone'] == 'north' and 'x_region' not in viewer('GET', '/api/deal/1')[1]
-    assert editor('PATCH', '/api/deal/1', {'x_zone': 'south'})[0] == 200
+    assert admin('PATCH', deal, {'x_zone': 'north'})[0] == 200
+    assert viewer('GET', deal)[1]['x_zone'] == 'north' and 'x_region' not in viewer('GET', deal)[1]
+    assert editor('PATCH', deal, {'x_zone': 'south'})[0] == 200
     # Customers in the portal get instance fields only when an admin grants them, and later fields stay hidden from them.
     from evlet.auth import User
     customer = User(99, 'buyer', 'portal')

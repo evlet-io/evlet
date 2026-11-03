@@ -102,7 +102,7 @@ def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
     assert path.is_file()
     from test_business import http
     assert http(app, "POST", "/api/customer", {"name": "Ready"})[0] == 401
-    app.database.create(Customer, name="Ready")
+    ready = app.database.create(Customer, name="Ready")
 
     from evlet import CreateModel, Migration, Model, Registry, Text
     from examples.playground.migrate import migrations
@@ -115,7 +115,7 @@ def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
     owned = {child.model for child in registry.children}
     target = Database(path, Registry(*(model for model in registry.models.values() if model not in owned), Note))
     assert target.migrate([*migrations, next_migration]) == ['0004_notes']
-    assert target.get(Customer, 1).name == 'Ready'
+    assert target.get(Customer, ready.id).name == 'Ready'
 
 
 def test_database_failure_returns_service_unavailable(tmp_path):

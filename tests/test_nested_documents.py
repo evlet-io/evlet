@@ -6,6 +6,7 @@ from evlet import (AddField, Migration, Application, Database, LocalAuth, Regist
                    Policy, Action, ValidationError, action)
 from evlet.calc import round, parent
 from evlet.business import Business
+from evlet.identity import RecordId, sequential_ids
 from test_business import http, client, PASSWORD
 from finite_fixtures import FiniteMeta, Invoice
 
@@ -70,7 +71,8 @@ def test_nested_document_create_reload_update_and_delete(tmp_path):
         stage_model = next(child.model for child in app.registry.children if child.name == 'stages')
         task_model = next(child.model for child in app.registry.children if child.name == 'tasks')
         owners = {row.id: row.evlet_owner for row in tx.list(task_model)}
-        assert owners[task_ids['a1']] == created['_row_ids']['A'] and owners[task_ids['b1']] == created['_row_ids']['B']
+        assert owners[RecordId(task_ids['a1'])] == RecordId(created['_row_ids']['A'])
+        assert owners[RecordId(task_ids['b1'])] == RecordId(created['_row_ids']['B'])
 
     stage_a = loaded['children']['stages'][0]
     body = {'hourly_rate': '120', 'children': {'stages': [
@@ -270,7 +272,9 @@ def test_nested_review_regressions(tmp_path):
     with app.database.transaction() as tx:
         tx.connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('editor',?,'editor')", (password_hash(PASSWORD),))
     c = client(app)
-    status, created, headers = c('POST', '/api/plan', {'children': {'stages': stages()}})
+    # Sequential ids give the first stage and the first task the same id, so their keys collide below.
+    with sequential_ids():
+        status, created, headers = c('POST', '/api/plan', {'children': {'stages': stages()}})
     assert status == 201
     status, result, _ = c('POST', '/api/plan', {'children': {'stages': [{'_key': 'x', 'children': {'tasks': [{'_key': 'x'}]}}]}})
     assert status == 422 and 'within the document' in str(result)

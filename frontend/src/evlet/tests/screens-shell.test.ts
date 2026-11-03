@@ -71,11 +71,11 @@ describe('sign in, setup and Docs', () => {
 describe('addresses the Python server serves', () => {
   it('opens a record from the older /app/model/id/view link', async () => {
     const { host } = start([...adminRoutes(),
-      ['GET', /\/api\/contact\/1$/, screen.contact_detail],
-      ['GET', /\/api\/contact\/1\/attachments$/, screen.attachments_empty],
-    ], '/app/contact/1/view');
+      ['GET', /\/api\/contact\/0000000000001$/, screen.contact_detail],
+      ['GET', /\/api\/contact\/0000000000001\/attachments$/, screen.attachments_empty],
+    ], '/app/contact/0000000000001/view');
     await until(() => expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['name', 'email', 'phone', 'notes']));
-    expect(location.pathname).toBe('/app/contact/1/view');
+    expect(location.pathname).toBe('/app/contact/0000000000001/view');
   });
 
   it.each([['/reports/sales', 'Reports are not shown in this interface']])(

@@ -10,6 +10,7 @@ from evlet import (AddField, Boolean, Child, Currency, Database, Decimal, Intege
 from evlet import corrections
 from evlet.auth import AccessError, User
 from evlet.calc import F
+from evlet.identity import RecordId
 from evlet.permissions import Policy
 from finite_fixtures import FiniteMeta
 from test_business import client
@@ -232,7 +233,7 @@ def check_void(app):
     before = c('GET', url)
     with app.database.transaction() as tx:
         version = tx.connection.execute('SELECT plan_hash FROM evlet_calculation_versions WHERE record_id=? AND resource=?',
-                                        (issued['id'], 'quote')).fetchone()[0]
+                                        (RecordId(issued['id']), 'quote')).fetchone()[0]
     status, voided, headers = post(c, url, 'void', {'reason': '  Duplicate  '})
     assert status == 200 and voided['status'] == 'void' and headers[b'etag'] != before[2][b'etag']
     assert {key: value for key, value in voided.items() if not key.startswith('_') and key != 'status'} == \
@@ -245,7 +246,7 @@ def check_void(app):
     assert c('GET', url)[2][b'etag'] == headers[b'etag']
     with app.database.transaction() as tx:
         assert tx.connection.execute('SELECT plan_hash FROM evlet_calculation_versions WHERE record_id=? AND resource=?',
-                                     (issued['id'], 'quote')).fetchone()[0] == version
+                                     (RecordId(issued['id']), 'quote')).fetchone()[0] == version
     assert post(c, url, 'void', {'reason': 'Again'})[1] == {'error': 'This record is void, which cannot be voided'}
     # A voided record is locked and final: no ordinary write, delete or move.
     assert c('PATCH', url, {'name': 'x'}, headers=etag(c, url))[1]['fields'] == {'name': 'This record is void, so it is locked'}
@@ -305,8 +306,8 @@ def check_revise(app):
     with app.database.transaction() as tx:
         positions = {owner: [row[0] for row in tx.connection.execute(
             'SELECT evlet_position FROM quote_lines WHERE evlet_owner=? ORDER BY evlet_position, id', (owner,)).fetchall()]
-            for owner in (issued['id'], copy['id'])}
-    assert positions[issued['id']] == positions[copy['id']]
+            for owner in (RecordId(issued['id']), RecordId(copy['id']))}
+    assert positions[RecordId(issued['id'])] == positions[RecordId(copy['id'])] and positions[RecordId(copy['id'])]
     # The original is void and links to its revision; it is otherwise unchanged.
     voided = c('GET', url)[1]
     assert voided['status'] == 'void' and voided['revised_by'] == copy['id'] and voided['code'] == 'Q-1'
@@ -444,11 +445,11 @@ def test_python_context_void_and_revise(quotes):
     with app.business.context(User(1, 'admin', 'admin')) as context:
         copy = context.revise('quote', issued['id'], 'From Python')
         assert context.get(Quote, issued['id']).revised_by == copy['id']
-    assert CHANGES == [('void', issued['id'], 'void'), ('revise', copy['id'], 'draft')]
-    assert copy['revises'] == issued['id'] and len(copy['children']['lines']) == 2
+    assert CHANGES == [('void', RecordId(issued['id']), 'void'), ('revise', copy['id'], 'draft')]
+    assert copy['revises'] == RecordId(issued['id']) and len(copy['children']['lines']) == 2
     _, second = issued_quote(c, account)
     with app.business.context(User(1, 'admin', 'admin')) as context:
-        voided = context.void(Quote, int(second.rsplit('/', 1)[1]), 'From Python')
+        voided = context.void(Quote, RecordId(second.rsplit('/', 1)[1]), 'From Python')
     assert voided['status'] == 'void' and voided['revised_by'] is None
 
 

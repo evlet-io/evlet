@@ -1,6 +1,6 @@
 import json
 
-from evlet import Application, Database, Integer, Link, LocalAuth, Model, Policy, Registry, Rule, Text
+from evlet import Application, Database, Integer, Link, LocalAuth, Model, Policy, Registry, Rule, Text, identity
 from tests.test_business import client, hashed, http, secured
 from examples.playground.models import Customer, Project, ProjectTask
 
@@ -61,7 +61,7 @@ def test_child_schema_allows_only_the_callers_permitted_row_operations(secured):
     item = c('GET', '/api/_discovery/project')[1]
     variants = item['schemas']['update']['properties']['children']['properties']['tasks']['items']['oneOf']
     assert 'title' in variants[0]['properties']
-    assert variants[1]['properties'] == {'id': {'type': 'integer', 'minimum': 1, 'maximum': 2**63 - 1}}
+    assert variants[1]['properties'] == {'id': {'type': 'string', 'pattern': identity.PATTERN}}
     secured.business.policy = Policy(secured.registry, rules={('editor', ProjectTask): Rule(operations=('read', 'update'))})
     item = c('GET', '/api/_discovery/project')[1]
     assert 'children' not in item['schemas']['create']['properties']

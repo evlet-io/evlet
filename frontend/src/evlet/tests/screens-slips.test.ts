@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, lastToast, press, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
-import { copy } from './server';
+import { copy, id } from './server';
 import { choose } from './ui-helpers';
 
 afterEach(() => stopAll());
@@ -9,7 +9,7 @@ afterEach(() => stopAll());
 const routes = (extra: Route[] = []): Route[] => [
   ['GET', /\/api\/auth\/session$/, screen.slip_session],
   ['GET', /\/api\/schema$/, screen.slip_schema],
-  ['GET', /\/api\/customer\/1$/, screen.slip_customer],
+  ['GET', /\/api\/customer\/0000000000001$/, screen.slip_customer],
   ['POST', /\/api\/_slips\/plan_visit\/present$/, screen.slip_present],
   ['POST', /\/api\/_slips\/plan_visit\/check$/, screen.slip_check],
   ['POST', /\/api\/_slips\/quick_customer\/present$/, screen.slip_quick_present],
@@ -20,7 +20,7 @@ const sheet = () => document.querySelector<HTMLElement>('.modal.slip');
 const field = (name: string) => sheet()!.querySelector<HTMLElement>(`.fld[data-field="${name}"]`);
 
 async function openVisit(extra: Route[] = []) {
-  const started = start(routes(extra), '/app/customer/1');
+  const started = start(routes(extra), '/app/customer/0000000000001');
   await until(() => expect(byText(started.host, '.doc-head button', 'Plan a visit')).not.toBeNull());
   click(byText(started.host, '.doc-head button', 'Plan a visit'));
   await until(() => expect(sheet()).not.toBeNull());
@@ -31,7 +31,7 @@ describe('slips', () => {
   it('presents a slip from its record with the server schema, layout and conditions', async () => {
     const { sent } = await openVisit();
     const present = requests(sent, 'POST', /plan_visit\/present$/)[0];
-    expect(present.body.source).toEqual({ model: 'customer', id: 1 });
+    expect(present.body.source).toEqual({ model: 'customer', id: id(1) });
     expect(text(sheet()!.querySelector('.modal-h h2'))).toBe('Plan a visit · Corniche Foods');
     expect([...sheet()!.querySelectorAll('.slip-group')].map(text)).toEqual(['Visit', 'Stops']);
     // The source fills the customer and keeps it read only; the rate applies only to installs.
@@ -51,7 +51,7 @@ describe('slips', () => {
     expect(check.body.values.kind).toBe('install');
     expect(check.body.values).not.toHaveProperty('customer');
     expect(check.body.values).not.toHaveProperty('hours');
-    expect(check.body.source).toEqual({ model: 'customer', id: 1 });
+    expect(check.body.source).toEqual({ model: 'customer', id: id(1) });
     expect(text(field('rate')!.querySelector('label'))).toContain('*');
   });
 
@@ -96,16 +96,16 @@ describe('slips', () => {
     const schema = copy(screen.slip_schema);
     schema.body.models.find((model: any) => model.name === 'customer').actions = [{ name: 'plan', label: 'Plan' }];
     const answer = { status: 200, etag: screen.slip_customer.etag, body: { ...copy(screen.slip_customer.body),
-      _outcome: { present: { slip: 'plan_visit', source: { model: 'customer', id: 1 }, values: { kind: 'install' } } } } };
-    const { host, sent } = start([['GET', /\/api\/schema$/, schema], ['POST', /\/api\/customer\/1\/actions\/plan$/, answer], ...routes()], '/app/customer/1');
+      _outcome: { present: { slip: 'plan_visit', source: { model: 'customer', id: id(1) }, values: { kind: 'install' } } } } };
+    const { host, sent } = start([['GET', /\/api\/schema$/, schema], ['POST', /\/api\/customer\/0000000000001\/actions\/plan$/, answer], ...routes()], '/app/customer/0000000000001');
     await until(() => expect(byText(host, '.doc-head button', 'Plan')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Plan'));
     await until(() => expect(sheet()).not.toBeNull());
-    expect(requests(sent, 'POST', /plan_visit\/present$/)[0].body).toEqual({ source: { model: 'customer', id: 1 }, values: { kind: 'install' } });
+    expect(requests(sent, 'POST', /plan_visit\/present$/)[0].body).toEqual({ source: { model: 'customer', id: id(1) }, values: { kind: 'install' } });
   });
 
   it('opens a New menu slip and turns it into a new record to review, saving nothing', async () => {
-    const { host, router, sent } = start(routes(), '/app/customer/1');
+    const { host, router, sent } = start(routes(), '/app/customer/0000000000001');
     await until(() => expect(byText(host, '.top-actions button', 'New')).not.toBeNull());
     click(byText(host, '.top-actions button', 'New'));
     await until(() => expect(byText(document.body, '[role="menuitem"]', 'Quick customer')).not.toBeNull());

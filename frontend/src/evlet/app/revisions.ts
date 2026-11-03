@@ -40,7 +40,7 @@ function snapshotView(ctx: AppContext, model: ScreenModel, data: Record<string, 
     ${(model.children ?? []).map(child => html`<section><h4>${child.label}</h4>${(children?.[child.name] ?? []).map(row => html`<article><b>${`Row #${row.id}`}</b>${snapshotView(ctx, screenModel(ctx.schema, child.model), row)}</article>`)}</section>`)}</div>`;
 }
 
-export function Revisions(ctx: AppContext, model: ScreenModel, id: number): Child {
+export function Revisions(ctx: AppContext, model: ScreenModel, id: string): Child {
   const total = cell(0), from = cell(1), to = cell(1), problem = cell(''), busy = cell(false);
   const snapshot = cell<Record<string, unknown> | null>(null), differences = cell<RevisionChange[] | null>(null);
   let alive = true;

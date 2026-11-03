@@ -79,6 +79,12 @@ def signed(live_connector, slug='alpha', role='admin'):
     return HTTPClient(f'http://{slug}.localhost:{live_connector[2]}').login(role, PASSWORD)
 
 
+def project_path(live_connector, slug='alpha'):
+    """The API path of the project the fixture made in that tenant, named after the tenant."""
+    project, = live_connector[1][slug].database.list(Project, filters={'name': slug})
+    return f'/api/project/{project.id}'
+
+
 def approve(live_connector, role='admin', slug='alpha'):
     """The person approves the changes an assistant asked for, from their own browser session."""
     person = signed(live_connector, slug, role)
@@ -99,7 +105,8 @@ def approved(live_connector, server, name, arguments, role='admin'):
 def test_live_tools_use_tenant_authentication_permissions_actions_and_validation(live_connector, tmp_path):
     client = signed(live_connector)
     server = MCPServer(client, allow_writes=True); initialize(server)
-    assert invoke(server, 'get_record', {'model': 'project', 'id': 1})['result']['structuredContent']['name'] == 'alpha'
+    alpha_project, beta_project = project_path(live_connector), project_path(live_connector, 'beta')
+    assert invoke(server, 'get_record', {'model': 'project', 'id': alpha_project.rsplit('/', 1)[1]})['result']['structuredContent']['name'] == 'alpha'
     created = invoke(server, 'create_record', {'model': 'project', 'values': {'name': 'Connector', 'children': {'tasks': [{'title': 'Complete', 'done': True}]}}})['result']['structuredContent']
     record_id = created['id']
     rejected = invoke(server, 'update_record', {'model': 'project', 'id': record_id, 'values': {'status': 'done'}})['result']
@@ -113,11 +120,11 @@ def test_live_tools_use_tenant_authentication_permissions_actions_and_validation
     assert invoke(server, 'job_status', {'id': job['id']})['result']['structuredContent']['state'] == 'succeeded'
     assert invoke(server, 'get_record', {'model': 'project', 'id': record_id})['result']['structuredContent']['progress'] == 100
     assert approved(live_connector, server, 'delete_record', {'model': 'project', 'id': record_id})['result']['structuredContent'] == {'deleted': True}
-    assert signed(live_connector, 'beta').get('/api/project/1')['name'] == 'beta'
+    assert signed(live_connector, 'beta').get(beta_project)['name'] == 'beta'
     assert live_connector[1]['beta'].database.count(Project) == 1
     file = tmp_path / 'session.json'; client.save(file)
     assert file.stat().st_mode & 0o777 == 0o600 and PASSWORD not in file.read_text()
-    assert HTTPClient.load(file).get('/api/project/1')['name'] == 'alpha'
+    assert HTTPClient.load(file).get(alpha_project)['name'] == 'alpha'
     with pytest.raises(FileExistsError): client.save(file)
 
 
@@ -132,7 +139,7 @@ def test_read_only_connector_and_viewer_cannot_dispatch_mutations(live_connector
     result = invoke(viewer, 'create_record', {'model': 'customer', 'values': {'name': 'Blocked'}})['result']
     assert result['isError'] and result['structuredContent']['status'] == 403
     for value in ('../auth/users', 'customer/1', '_jobs', 'project?limit=100', 'project%2F1'):
-        assert invoke(viewer, 'get_record', {'model': value, 'id': 1})['result']['structuredContent']['status'] == 422
+        assert invoke(viewer, 'get_record', {'model': value, 'id': '0000000000001'})['result']['structuredContent']['status'] == 422
     assert invoke(viewer, 'get_record', {'model': 'project', 'id': True})['result']['isError']
     assert invoke(viewer, 'discover_models', {'url': 'https://other.test'})['result']['isError']
 
@@ -144,7 +151,7 @@ def test_sessions_cannot_replay_across_tenants_or_survive_revocation(live_connec
     with pytest.raises(ConnectorError) as failure: beta.get('/api/_discovery')
     assert failure.value.status == 401
     apps['alpha'].business.auth.update_user(1, {'password': 'replacement long test password'})
-    with pytest.raises(ConnectorError) as failure: alpha.get('/api/project/1')
+    with pytest.raises(ConnectorError) as failure: alpha.get(project_path(live_connector))
     assert failure.value.status == 401
     beta = signed(live_connector, 'beta')
     catalog.set_active('beta', False)

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { adminRoutes, byText, click, press, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
-import { copy, type Sent } from './server';
+import { copy, id, type Sent } from './server';
 
 afterEach(stopAll);
 
@@ -8,7 +8,7 @@ const empty = { status: 200, etag: null, body: { items: [], total: 0, limit: 5, 
 const search = (sent: Sent) => new URL(sent.url, 'http://x').searchParams.get('q') === 'medical' ? copy(screen.customers_search) : copy(empty);
 const routes = (): Route[] => [...adminRoutes(),
   ['GET', /\/api\/customer\?/, search], ['GET', /\/api\/(product|order|contact)\?/, empty],
-  ['GET', /\/api\/customer\/25$/, { status: 200, etag: '"c25"', body: { id: 25, name: 'Zayed Medical Supplies', rate: '34.50', credit_days: 39 } }]];
+  ['GET', /\/api\/customer\/000000000000s$/, { status: 200, etag: '"c25"', body: { id: id(25), name: 'Zayed Medical Supplies', rate: '34.50', credit_days: 39 } }]];
 const palette = () => document.querySelector<HTMLElement>('.modal.palette');
 const input = () => palette()!.querySelector<HTMLInputElement>('.pal-in input')!;
 
@@ -41,7 +41,7 @@ describe('command palette', () => {
     expect(searched.map(url => url.pathname).sort()).toEqual(['/api/contact', '/api/customer', '/api/order', '/api/product']);
     expect(searched.every(url => url.searchParams.get('limit') === '5')).toBe(true);
     press(input(), 'Enter');
-    await until(() => expect(location.pathname).toBe('/app/customer/25'));
+    await until(() => expect(location.pathname).toBe('/app/customer/000000000000s'));
 
     press(document.body, 'k', { metaKey: true });
     expect([...palette()!.querySelectorAll('.pal-sec')][0].querySelector('.pal-sh')!.textContent).toContain('Recent');

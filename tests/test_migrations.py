@@ -58,7 +58,7 @@ def test_failed_migration_rolls_back_ddl_data_and_history(tmp_path):
 
 def test_changed_history_and_unplanned_type_changes_are_rejected(tmp_path):
     Old = old_model(); path = tmp_path / 'history.sqlite3'
-    db = Database(path, Registry(Old)); db.initialize(); db.create(Old, name='Kept')
+    db = Database(path, Registry(Old)); db.initialize(); kept = db.create(Old, name='Kept')
     New = type('Contact', (Model,), {'name': Text(required=True), 'active': Boolean(default=True)})
     target = Database(path, Registry(New))
     plan = [Migration('one', AddField('contact', 'active', Boolean(default=True)))]
@@ -70,7 +70,7 @@ def test_changed_history_and_unplanned_type_changes_are_rejected(tmp_path):
     Changed = type('Contact', (Model,), {'name': Text(required=True, max_length=1), 'active': Boolean(default=True)})
     with pytest.raises(SchemaError):
         Database(path, Registry(Changed)).migrate(plan)
-    assert target.get(New, 1).name == 'Kept'
+    assert target.get(New, kept.id).name == 'Kept'
 
 
 def test_legacy_baseline_and_fresh_database(tmp_path):
@@ -120,23 +120,23 @@ def test_create_model_and_atomic_batch(tmp_path):
 def test_currency_scale_change_cannot_silently_reinterpret_values(tmp_path):
     Old = type('Price', (Model,), {'amount': Currency()})
     path = tmp_path / 'currency.sqlite3'
-    db = Database(path, Registry(Old)); db.initialize(); db.create(Old, amount='123.45')
+    db = Database(path, Registry(Old)); db.initialize(); price = db.create(Old, amount='123.45')
     New = type('Price', (Model,), {'amount': Decimal(scale=4, index=True)})
     with pytest.raises(SchemaError, match='type changes'):
         Database(path, Registry(New)).migrate([Migration('index', AddIndex('price', 'amount'))])
-    assert db.get(Old, 1).to_dict()['amount'] == '123.45'
+    assert db.get(Old, price.id).to_dict()['amount'] == '123.45'
 
 
 def test_backfill_preserves_quotes_and_rejects_nul(tmp_path):
     Old = old_model(); path = tmp_path / 'quoted.sqlite3'
-    db = Database(path, Registry(Old)); db.initialize(); db.create(Old, name='Keep')
+    db = Database(path, Registry(Old)); db.initialize(); kept = db.create(Old, name='Keep')
     New = type('Contact', (Model,), {'name': Text(required=True), 'notes': Text()})
     value = "O'Reilly'); DROP TABLE contact;--"
     target = Database(path, Registry(New))
     with pytest.raises(SchemaError, match='NUL'):
         target.migrate([Migration('notes', AddField('contact', 'notes', Text(), backfill='a\x00b'))])
     target.migrate([Migration('notes', AddField('contact', 'notes', Text(), backfill=value))])
-    assert target.get(New, 1).notes == value
+    assert target.get(New, kept.id).notes == value
 
 
 def test_multiple_pending_migrations_roll_back_together(tmp_path):
@@ -248,7 +248,7 @@ def test_playground_migration_cli_keeps_sqlite_selection_and_backup(tmp_path, mo
     path = tmp_path / 'playground.sqlite3'
     old_registry = legacy_registry()
     old = Database(path, old_registry); old.initialize()
-    old.create(old_registry.models['customer'], name='Preserved')
+    preserved = old.create(old_registry.models['customer'], name='Preserved')
     monkeypatch.setenv('EVLET_DATABASE', str(path))
     if dsn is None:
         monkeypatch.delenv('EVLET_POSTGRES_DSN', raising=False)
@@ -259,6 +259,6 @@ def test_playground_migration_cli_keeps_sqlite_selection_and_backup(tmp_path, mo
     assert result.returncode == 0, result.stderr
     assert 'Backup:' in result.stdout and 'Applied:' in result.stdout
     backup, = tmp_path.glob('*.backup')
-    assert Database(backup, old_registry).get(old_registry.models['customer'], 1).name == 'Preserved'
+    assert Database(backup, old_registry).get(old_registry.models['customer'], preserved.id).name == 'Preserved'
     app = create_app(); app.initialize()
-    assert app.database.get(Customer, 1).name == 'Preserved'
+    assert app.database.get(Customer, preserved.id).name == 'Preserved'
