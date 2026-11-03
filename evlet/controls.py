@@ -15,7 +15,7 @@ from .customization import Customization, activated, instance_fields
 from .fields import Layer
 from .fields import Link
 from .models import ValidationError
-from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer
+from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
@@ -398,6 +398,10 @@ class Controls:
             try:
                 probe = scope(_Probe())
                 if isinstance(probe, dict) and all(name.split('__')[0] in {'id', *fields} for name in probe):
+                    found.append(key)
+                elif not isinstance(probe, dict):
+                    # A team or any_of scope fits when it compiles for this model.
+                    scope_condition(self.registry, model, probe)
                     found.append(key)
             except Exception:
                 continue

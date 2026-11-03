@@ -20,10 +20,10 @@ __all__ = [
 ]
 
 from .auth import LocalAuth, User
-from .permissions import Policy, Rule, own_customer
+from .permissions import Hierarchy, Policy, Rule, any_of, own_customer
 from .business import Action, ChildTable
 
-__all__ += ["Action", "ChildTable", "LocalAuth", "Policy", "Rule", "User", "own_customer"]
+__all__ += ["Action", "ChildTable", "Hierarchy", "LocalAuth", "Policy", "Rule", "User", "any_of", "own_customer"]
 
 from .storage import LocalFileStorage, SQLiteStorage, StorageError
 

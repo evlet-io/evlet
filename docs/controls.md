@@ -154,7 +154,10 @@ A row scope set in the app file can't be changed. The `own_customer` preset is
 `permissions.own_customer` (with `field="id"` on the customer model itself): it reads the
 user's links (`evlet_user_links`) that the session loads with each request, so a user with
 no customer links sees no records. Link users with `evlet link-user` or
-`LocalAuth.link_user`.
+`LocalAuth.link_user`. An app scope may be a team scope (`Hierarchy(...).team(...)`) or an
+`any_of(...)` scope; Controls offers it on every model it compiles for, that is, where its
+fields and Links lead to the hierarchy model
+([business-capabilities.md](business-capabilities.md#team-and-hierarchy-scopes)).
 
 **Security** (kind `setting`). The file value of the first three comes from the instance's
 `config.py`, beside `instance = Instance(...)`, or from `LocalAuth(security=...)` in an application

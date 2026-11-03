@@ -759,3 +759,16 @@ def test_postgres_remote_mcp_oauth_and_assistant_tables(secured):
     assert overview['totals'] == {'reads': 1, 'writes': 1, 'denied': 0} and overview['clients'][0]['username'] == 'editor'
     assert form(secured, '/_/oauth/token', {'grant_type': 'refresh_token', 'refresh_token': tokens['refresh_token'], 'client_id': client_id})[1]['error'] == 'invalid_grant'
     assert rpc(secured, fresh['access_token'], 'ping')[0] == 401
+
+
+def test_team_scopes_on_postgresql(pg_dsn):
+    from tests.test_hierarchy_scopes import MODELS, Payslip, check_team_scopes
+    from tests.test_meaning import serve
+    from evlet import User
+    app = serve(PostgreSQLDatabase(pg_dsn, Registry(*MODELS)))
+    found = check_team_scopes(app)
+    # The recursive team is planned as one hashed or indexed lookup, not a query per payslip row.
+    where, values = app.business.policy.scope_sql(User(99, 'manager', 'viewer', (('employee', found['manager']),)), Payslip)
+    with app.database.transaction() as tx:
+        plan = '\n'.join(row[0] for row in tx.connection.execute(f'EXPLAIN SELECT count(*) FROM payslip AS record{where}', values).fetchall())
+    assert 'Recursive Union' in plan and 'SubPlan' not in plan, plan

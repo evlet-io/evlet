@@ -48,6 +48,18 @@ migrations.append(Migration('0004_currencies',
 ))
 
 
+
+class Employee(Model):
+    """Frozen creation schema for the team demo."""
+    name = Text(required=True, max_length=120)
+    email = Text(max_length=254)
+    reports_to = Link('employee', index=True)
+
+
+# The frozen model is in no registry, so its Link to itself names the class directly.
+Employee.__fields__['reports_to'].target = Employee
+migrations.append(Migration('0005_employees', CreateModel(Employee)))
+
 def legacy_registry():
     """Frozen Milestone 1 definitions used only to validate a legacy baseline."""
     class Customer(Model):

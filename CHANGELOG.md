@@ -5,6 +5,12 @@ say what to change. Evlet is not production ready.
 
 ## Unreleased
 
+- **Team and hierarchy row scopes.** `Hierarchy(model, parent=...)` declares a reporting tree, and
+  `Hierarchy.team(field)` is a row scope over the user's linked record and everyone below it at any
+  depth, resolved in SQL with a recursive query on SQLite and PostgreSQL. `any_of(...)` combines
+  row scopes and filter objects with OR. They apply on every surface a row scope covers
+  ([docs/business-capabilities.md](docs/business-capabilities.md#team-and-hierarchy-scopes)). List pages
+  now check Link values for the whole page at once instead of per row.
 - **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
   lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
   duration fields keep their typed input and add a calendar or steppers. List pages filter

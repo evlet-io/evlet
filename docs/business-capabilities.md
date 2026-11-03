@@ -102,12 +102,57 @@ policy = Policy(registry, rules={
 app = Application(database, auth=auth, policy=policy)
 ```
 
-A scope returns the same bounded typed filter object as an ordinary query. It is
+A scope returns the same bounded typed filter object as an ordinary query, or one of
+the team forms below. It is
 combined with client filters using AND in SQL, before pagination and counting.
 The same scope checks record reads, writes, actions, attachments, and referenced
 Link values. Creates and updates that leave the allowed scope roll back. Write
 permissions require read access. Omitted field sets mean all fields; empty tuples
 mean no fields. `read_only` fields also reject HTTP writes.
+
+### Team and hierarchy scopes
+
+A filter object combines its filters with AND. Two scope forms cover "own records or the
+team's" rules, such as employees, managers and HR on leave and payslips:
+
+```python
+from evlet import Boolean, Hierarchy, Link, Model, Rule, any_of
+
+TEAM = Hierarchy('people.Employee', parent='reports_to')
+
+class Employee(Model):
+    permissions = {'viewer': Rule(('read',), scope=TEAM.team())}
+    reports_to = Link('people.Employee', index=True)
+
+class Leave(Model):
+    permissions = {'viewer': Rule(('read', 'update'),
+                                  scope=any_of(TEAM.team('employee'), {'public': True}))}
+    employee = Link(Employee, index=True)
+    public = Boolean(default=False)
+```
+
+- `Hierarchy(model, parent=...)` declares a tree of records of one model through a Link to
+  the same model. `team(field='id', include_self=True)` is a row scope: rows whose `field`
+  names the user's linked record of that model (`LocalAuth.link_user`), or any record below
+  it at any depth. `field` is `id` on the hierarchy model or a Link (or Link path, such as
+  `employee__reports_to`) to it. `include_self=False` keeps only the records below, such as a
+  manager's reports' payslips without their own. A user with no linked record sees no rows.
+- `any_of(*scopes)` allows a row when any of its scopes or filter objects allows it. An empty
+  filter object among them allows every row.
+
+The team is resolved inside one SQL statement with a recursive query (`WITH RECURSIVE`) on
+SQLite and PostgreSQL, so it has no size limit and needs no Python lookups. The values bound
+are the user's linked record IDs only. `UNION` stops at a cycle in the data. Policies check
+each declared team when they are built: the parent must be a Link to the same model, and the
+field must lead to it. Declare the parent Link with `index=True` so each level is an index
+lookup; see [performance.md](performance.md#team-row-scopes) for plans and measurements.
+
+These scopes apply wherever a filter-object scope does: lists, counts, search, detail, writes,
+actions, attachments, related records, measures and aggregates, journal reads, realtime
+events, Link values in responses and the Link filter guard. HR roles without a scope see
+every row. Controls offers an app-registered team or `any_of` scope for every model it compiles
+for. The Playground's Employees show a manager, a team member and an outsider
+(`examples/playground/team.py`).
 
 Operations may also name `void`, `revise`, `unpost` and `repost` on models that support them.
 Admin always has them; naming one in a Rule adds that role. See the "Void and revise" and
