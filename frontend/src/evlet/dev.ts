@@ -41,7 +41,7 @@ const api = sampleApi();
 setLinkSource(apiLinks(api, new SchemaIndex(schema)));
 mountToasts();
 const record = new RecordStore({ api, schema, model: 'order' });
-void record.open(1);
+void record.open('0000000000001');
 
 const theme = cell<Theme>('system');
 effect(() => applyTheme(theme.get()));

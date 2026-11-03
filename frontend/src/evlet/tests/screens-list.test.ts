@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adminRoutes, byText, click, invoice, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until } from './screens-helpers';
-import { copy, type Sent } from './server';
+import { copy, id, type Sent } from './server';
 
 afterEach(() => { vi.useRealTimers(); stopAll(); });
 
@@ -22,7 +22,7 @@ describe('generated list page', () => {
     expect([...host.querySelectorAll('thead th')].map(text)).toEqual(['', 'Name', 'Rate', 'Credit days']);
     expect(host.querySelector('thead th[data-key="name"]')!.classList.contains('stk')).toBe(true);
     expect(rowTitles(host)[0]).toBe('Al Sahra Trading');
-    expect(host.querySelector<HTMLAnchorElement>('tbody tr[data-key="1"] a.ev-row-link')!.getAttribute('href')).toBe('/app/customer/1');
+    expect(host.querySelector<HTMLAnchorElement>(`tbody tr[data-key="${id(1)}"] a.ev-row-link`)!.getAttribute('href')).toBe('/app/customer/0000000000001');
     expect(text(host.querySelector('.ev-pager span'))).toBe('1–50 of 55');
     expect(listCalls(sent, 'customer')[0]).toMatchObject({ limit: '50', offset: '0' });
 
@@ -87,25 +87,25 @@ describe('generated list page', () => {
   });
 
   it('selects rows and deletes them through the bulk bar, each with its current revision', async () => {
-    let deleted: number[] = [];
+    let deleted: string[] = [];
     const { host, sent } = start([...adminRoutes(),
       ['GET', /\/api\/customer\?/, customers],
       // The current detail still shows what the list showed, so each record is deleted.
-      ['GET', /\/api\/customer\/\d+$/, sent => ({ status: 200, etag: `"rev-${sent.url.split('/').pop()}"`,
-        body: screen.customers_page1.body.items.find((row: { id: number }) => row.id === Number(sent.url.split('/').pop())) })],
-      ['DELETE', /\/api\/customer\/\d+$/, sent => { deleted.push(Number(sent.url.split('/').pop())); return { status: 204, etag: null, body: null }; }],
+      ['GET', /\/api\/customer\/[0-9a-z]{13}$/, sent => ({ status: 200, etag: `"rev-${sent.url.split('/').pop()}"`,
+        body: screen.customers_page1.body.items.find((row: { id: string }) => row.id === sent.url.split('/').pop()) })],
+      ['DELETE', /\/api\/customer\/[0-9a-z]{13}$/, sent => { deleted.push(sent.url.split('/').pop()!); return { status: 204, etag: null, body: null }; }],
     ], '/app/customer');
     await until(() => expect(rowTitles(host).length).toBeGreaterThan(0));
-    click(host.querySelector('tbody tr[data-key="1"] [role="checkbox"]'));
-    click(host.querySelector('tbody tr[data-key="2"] [role="checkbox"]'));
+    click(host.querySelector(`tbody tr[data-key="${id(1)}"] [role="checkbox"]`));
+    click(host.querySelector(`tbody tr[data-key="${id(2)}"] [role="checkbox"]`));
     const bulk = host.querySelector('.bulk')!;
     expect(bulk.classList.contains('show')).toBe(true);
     expect(text(bulk.querySelector('.n'))).toBe('2 selected');
     click(byText(bulk, 'button', 'Delete'));
     expect(text(document.querySelector('.modal h2'))).toBe('Delete 2 customers?');
     click(byText(document.body, '.modal-f button', 'Delete'));
-    await until(() => expect(deleted.sort()).toEqual([1, 2]));
-    expect(requests(sent, 'DELETE', /customer/).map(item => item.headers['if-match']).sort()).toEqual(['"rev-1"', '"rev-2"']);
+    await until(() => expect(deleted.sort()).toEqual([id(1), id(2)]));
+    expect(requests(sent, 'DELETE', /customer/).map(item => item.headers['if-match']).sort()).toEqual([`"rev-${id(1)}"`, `"rev-${id(2)}"`]);
     await until(() => expect(document.querySelector('.toast')?.textContent).toContain('Deleted 2 customers'));
   });
 });

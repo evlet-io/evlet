@@ -230,7 +230,7 @@ def test_tools_respect_permissions_writes_hidden_models_disabled_tools_and_rate(
     assert 'list_records' not in tools(secured, admin['access_token'])
     assert tool(secured, admin['access_token'], 'list_records', {'model': 'project'})['structuredContent']['status'] == 403
     for _ in range(2):  # the refused call above counts toward the rate too
-        assert tool(secured, admin['access_token'], 'get_record', {'model': 'project', 'id': 999999})['structuredContent']['status'] == 404
+        assert tool(secured, admin['access_token'], 'get_record', {'model': 'project', 'id': '7zzzzzzzzzzzz'})['structuredContent']['status'] == 404
     assert tool(secured, admin['access_token'], 'discover_models', {})['structuredContent']['status'] == 429
     assert not tool(secured, write, 'discover_models', {})['isError']  # the rate is per client
     # Turning MCP off stops every client and hides the metadata.
@@ -298,7 +298,7 @@ def test_controls_shows_totals_and_clients_and_signs_one_out(secured):
     _, viewer, _ = connect(secured, 'viewer', allow_changes=False)
     tool(secured, tokens['access_token'], 'discover_models', {})
     tool(secured, tokens['access_token'], 'create_record', {'model': 'customer', 'values': {'name': 'Made'}})
-    tool(secured, tokens['access_token'], 'update_record', {'model': 'customer', 'id': 999999, 'values': {'name': 'Gone'}})
+    tool(secured, tokens['access_token'], 'update_record', {'model': 'customer', 'id': '7zzzzzzzzzzzz', 'values': {'name': 'Gone'}})
     tool(secured, viewer['access_token'], 'list_records', {'model': 'customer'})
     with secured.database._connection() as connection:
         viewer_client = connection.execute("SELECT m.id FROM evlet_mcp_clients m JOIN evlet_users u ON u.id=m.user_id WHERE u.username='viewer'").fetchone()[0]
@@ -327,7 +327,7 @@ def test_controls_shows_totals_and_clients_and_signs_one_out(secured):
 def test_personal_page_shows_only_my_assistants_and_requests(secured):
     _, tokens, person = connect(secured, 'editor')
     _, other, _ = connect(secured, 'viewer')
-    tool(secured, tokens['access_token'], 'get_record', {'model': 'project', 'id': 999999})
+    tool(secured, tokens['access_token'], 'get_record', {'model': 'project', 'id': '7zzzzzzzzzzzz'})
     tool(secured, other['access_token'], 'discover_models', {})
     page = person('GET', '/api/_settings/me/ai')[1]
     assert page['address'] == ORIGIN + '/_/mcp' and page['enabled'] is True and page['writes'] is False

@@ -351,9 +351,9 @@ removed, as before) or as a change set that names only what changed:
 ```json
 {"children": {"lines": {
   "create": [{"_key": "n1", "qty": "2"}],
-  "update": [{"id": 7, "qty": "3", "children": {"parts": {"delete": [41]}}}],
-  "delete": [9],
-  "order": ["n1", 12, 7]
+  "update": [{"id": "01hc1sd9vc1ye", "qty": "3", "children": {"parts": {"delete": ["01hc1sdb0j8m4"]}}}],
+  "delete": ["01hc1sd9vc1yf"],
+  "order": ["n1", "01hc1sd9vc1yg", "01hc1sd9vc1ye"]
 }}}
 ```
 
@@ -401,7 +401,7 @@ rows, and the record gains `children_pages`:
 `GET /api/{model}/{id}/lines/{name}?limit=&offset=` returns one page of a collection in
 position order: `{"items": [...], "total": n, "limit": l, "offset": o}`. `limit` is 1 to
 100 (default 100). Nested collections alternate names and row IDs:
-`/api/project/5/lines/phases/12/tasks`. Every row on the path must be readable and belong
+`/api/project/01hc1sd9vc1ye/lines/phases/01hc1sdb0j8m4/tasks`. Every row on the path must be readable and belong
 to the row before it. Items have the same shape as embedded rows (readable fields only,
 no `evlet_owner` or `evlet_position`) and embed their own collections. `total` counts the
 rows this user can read. `Context.get` in Python returns every readable row.

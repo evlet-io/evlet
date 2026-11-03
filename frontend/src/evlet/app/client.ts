@@ -17,7 +17,7 @@ export class AppClient extends ApiClient {
   constructor(options: ClientOptions = {}) { super(options); }
 
   /** The last detail the server sent for a record (from a read, save, move, action, void or revise). */
-  detail(model: string, id: number): Cell<RecordData | null> {
+  detail(model: string, id: string): Cell<RecordData | null> {
     const key = `${model}:${id}`;
     let found = this.details.get(key);
     if (!found) this.details.set(key, found = cell<RecordData | null>(null, { name: `detail ${key}` }));
@@ -25,7 +25,7 @@ export class AppClient extends ApiClient {
   }
 
   /** A read of a record that is in flight now (GET /api/{model}/{id}), to share instead of asking again. */
-  reading(model: string, id: number): Promise<ApiResponse<RecordData>> | undefined {
+  reading(model: string, id: string): Promise<ApiResponse<RecordData>> | undefined {
     return this.inflight.get(`/api/${model}/${id}`);
   }
 
@@ -44,7 +44,7 @@ export class AppClient extends ApiClient {
     const data = response.data as any;
     if (found && data && typeof data === 'object') {
       const record = 'job' in data && 'record' in data ? data.record : data;
-      if (record && typeof record.id === 'number') this.detail(found[1], record.id).set(record);
+      if (record && typeof record.id === 'string') this.detail(found[1], record.id).set(record);
     }
     return response;
   }
@@ -70,7 +70,7 @@ export class AppClient extends ApiClient {
   }
 
   /** Declared per-record measures (Phase 9). */
-  async recordMeasures(model: string, id: number) {
+  async recordMeasures(model: string, id: string) {
     return (await this.request<{ measures: Record<string, unknown> }>('GET', `/api/${model}/${id}/measures`)).data.measures;
   }
 
@@ -83,71 +83,71 @@ export class AppClient extends ApiClient {
   }
 
   /** One page of a relation (Phase 10): records of another model that link to this one. */
-  async related(model: string, id: number, relation: string, page: { limit?: number; offset?: number } = {}) {
+  async related(model: string, id: string, relation: string, page: { limit?: number; offset?: number } = {}) {
     if (!NAME.test(relation)) throw new Error(`Unknown relation ${relation}`);
     return (await this.request<Page<RecordData>>('GET', `/api/${model}/${id}/related/${relation}`, { query: page })).data;
   }
 
   /** One page of the record's journal, newest first (docs/journal.md), with the names of its actors and assignees. */
-  async journal(model: string, id: number, page: { limit?: number; offset?: number } = {}) {
+  async journal(model: string, id: string, page: { limit?: number; offset?: number } = {}) {
     return (await this.request<JournalPage>('GET', `/api/${model}/${id}/journal`, { query: page })).data;
   }
 
   /** Add a note to the record's journal; answers the entry as the caller sees it. */
-  async addNote(model: string, id: number, text: string) {
+  async addNote(model: string, id: string, text: string) {
     return (await this.request<JournalEntry>('POST', `/api/${model}/${id}/journal`, { body: { kind: 'note', text } })).data;
   }
 
-  async lifecycle(model: string, id: number, operation: 'confirm' | 'cancel' | 'reopen', etag: string | null, reason?: string) {
+  async lifecycle(model: string, id: string, operation: 'confirm' | 'cancel' | 'reopen', etag: string | null, reason?: string) {
     return this.request<RecordData>('POST', `/api/${model}/${id}/${operation}`, {
       body: operation === 'cancel' ? { reason } : {}, ifMatch: etag,
     });
   }
 
-  async revisions(model: string, id: number, page: { limit?: number; offset?: number } = {}) {
+  async revisions(model: string, id: string, page: { limit?: number; offset?: number } = {}) {
     return (await this.request<{ items: Array<{ revision: number; execution_id: string; at: string; actor: string; hash: string }>; total: number }>(
       'GET', `/api/${model}/${id}/revisions`, { query: page })).data;
   }
 
-  async snapshot(model: string, id: number, revision: number) {
+  async snapshot(model: string, id: string, revision: number) {
     return (await this.request<{ revision: number; at: string; document: Record<string, unknown> }>(
       'GET', `/api/${model}/${id}/snapshot`, { query: { revision } })).data;
   }
 
-  async revisionDiff(model: string, id: number, from: number, to: number) {
+  async revisionDiff(model: string, id: string, from: number, to: number) {
     return (await this.request<{ from: number; to: number; changes: Record<string, any> }>(
       'GET', `/api/${model}/${id}/diff`, { query: { from, to } })).data;
   }
 
-  async attachments(model: string, id: number) {
+  async attachments(model: string, id: string) {
     return (await this.request<{ items: Attachment[] }>('GET', `/api/${model}/${id}/attachments`)).data.items;
   }
 
-  async upload(model: string, id: number, name: string, content: string) {
+  async upload(model: string, id: string, name: string, content: string) {
     return (await this.request<Attachment>('POST', `/api/${model}/${id}/attachments`, { body: { name, content } })).data;
   }
 
-  async removeAttachment(model: string, id: number, file: number) {
+  async removeAttachment(model: string, id: string, file: number) {
     await this.request('DELETE', `/api/${model}/${id}/attachments/${file}`);
   }
 
   /** Void a record (Phase 5) with a reason. */
-  async voidRecord(model: string, id: number, reason: string, etag: string | null) {
+  async voidRecord(model: string, id: string, reason: string, etag: string | null) {
     return this.request<RecordData>('POST', `/api/${model}/${id}/void`, { body: { reason }, ifMatch: etag });
   }
 
   /** Void and copy a record into a new draft (Phase 5). Answers the copy, with _original. */
-  async revise(model: string, id: number, reason: string, etag: string | null) {
+  async revise(model: string, id: string, reason: string, etag: string | null) {
     return this.request<RecordData>('POST', `/api/${model}/${id}/revise`, { body: { reason }, ifMatch: etag });
   }
 
   /** Take a posted record back to the state it posted from, cancelling what it posted. Admin by default. */
-  async unpost(model: string, id: number, reason: string, etag: string | null) {
+  async unpost(model: string, id: string, reason: string, etag: string | null) {
     return this.request<RecordData>('POST', `/api/${model}/${id}/unpost`, { body: { reason }, ifMatch: etag });
   }
 
   /** Post an unposted record again through its posting move; the reason is optional. */
-  async repost(model: string, id: number, reason: string, etag: string | null) {
+  async repost(model: string, id: string, reason: string, etag: string | null) {
     return this.request<RecordData>('POST', `/api/${model}/${id}/repost`, { body: reason ? { reason } : {}, ifMatch: etag });
   }
 }

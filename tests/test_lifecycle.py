@@ -104,6 +104,7 @@ def test_identity_revisions_snapshots_and_history(app):
     with app.business.context(ADMIN, source='Integration', correlation_id='request-1') as context:
         document = context.document(Invoice, number='INV-001', customer='A')
         document.save()
+        original = document.id
         assert document.revision == 0
         document.confirm()
         assert document.lifecycle_state == 'confirmed'
@@ -112,7 +113,7 @@ def test_identity_revisions_snapshots_and_history(app):
         assert document.revision == 1
         document.customer = 'B'
         document.save().confirm()
-        assert document.id == 1 and document.number == 'INV-001' and document.revision == 2
+        assert document.id == original and document.number == 'INV-001' and document.revision == 2
         assert document.snapshot(revision=1)['document']['customer'] == 'A'
         assert document.diff(1, 2)['changes']['fields']['customer'] == {'old': 'A', 'new': 'B'}
         assert document.revisions()['total'] == 2
@@ -245,7 +246,7 @@ def test_http_permissions_etags_and_read_only_history(app):
     c = client(app)
     status, doc, headers = c('POST', '/api/invoice', {'number': 'INV-001', 'customer': 'A'})
     assert status == 201, doc
-    path = '/api/invoice/1'
+    path = f"/api/invoice/{doc['id']}"
     assert c('POST', path + '/confirm', {})[0] == 428
     status, confirmed, posted = c('POST', path + '/confirm', {}, headers={b'if-match': headers[b'etag']})
     assert status == 200, confirmed
@@ -566,7 +567,7 @@ def test_recompute_audit_applies_tracking_policies_before_storage(tmp_path):
     database = Database(path, Registry(Old), migrations=(base,))
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',)))
     app.initialize()
-    with app.business.context(ADMIN) as context: context.create(Old)
+    with app.business.context(ADMIN) as context: created = context.create(Old)['id']
     New = definition(4)
     upgraded = Database(path, Registry(New))
     upgraded.migrate((base, Migration('0001_recompute', Recompute('migrating', ('masked', 'excluded')))))
@@ -575,14 +576,15 @@ def test_recompute_audit_applies_tracking_policies_before_storage(tmp_path):
         assert event['fields']['masked'] == {'old': '[masked]', 'new': '[masked]'}
         assert 'excluded' not in event['fields']
         assert event['source'] == 'System' and event['revision'] == 0
-    assert upgraded.get(New, 1).masked == 68
+    assert upgraded.get(New, created).masked == 68
 
 
 def test_journal_can_filter_native_lifecycle_events(app):
     c = client(app)
     _, record, headers = c('POST', '/api/invoice', {'number': 'INV-001', 'customer': 'A'})
-    assert c('POST', '/api/invoice/1/confirm', {}, headers={b'if-match': headers[b'etag']})[0] == 200
-    status, page, _ = c('GET', '/api/invoice/1/journal?kind=confirmed')
+    path = f"/api/invoice/{record['id']}"
+    assert c('POST', path + '/confirm', {}, headers={b'if-match': headers[b'etag']})[0] == 200
+    status, page, _ = c('GET', path + '/journal?kind=confirmed')
     assert status == 200, page
     assert page['total'] == 1 and page['items'][0]['kind'] == 'confirmed'
-    assert c('GET', '/api/invoice/1/journal?kind=unknown')[0] == 422
+    assert c('GET', path + '/journal?kind=unknown')[0] == 422

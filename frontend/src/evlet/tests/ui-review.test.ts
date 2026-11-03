@@ -9,7 +9,7 @@ import { InlineValue } from '../ui/inline';
 import { Menu, mountToasts, openPopover, toast } from '../ui/layers';
 import { Button } from '../ui/base';
 import { DataTable } from '../ui/table';
-import { backend, bigOrder, cleanup, key, render, schema } from './ui-helpers';
+import { backend, id, bigOrder, cleanup, key, render, schema } from './ui-helpers';
 
 afterEach(() => { vi.useRealTimers(); cleanup(); });
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -93,8 +93,8 @@ describe('InlineValue focus and conflicts', () => {
   });
 
   it('a conflict says so and offers Reload, keeping the typed value to save again', async () => {
-    const { store, sent } = backend([['PATCH', /\/api\/order\/1$/, 'stale_if_match']]);
-    await store.open(1);
+    const { store, sent } = backend([['PATCH', /\/api\/order\/0000000000001$/, 'stale_if_match']]);
+    await store.open(id(1));
     const host = render(() => InlineValue({ field: store.field('title') }));
     host.querySelector<HTMLButtonElement>('button.fval')!.click();
     const input = host.querySelector('input')!;
@@ -103,10 +103,10 @@ describe('InlineValue focus and conflicts', () => {
     await flush(); await flush();
     expect(host.querySelector('[role="alert"]')!.textContent).toBe('Someone else changed this record. Reload to see their changes.');
     const reload = [...host.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Reload')!;
-    const reads = sent.filter(item => item.method === 'GET' && item.url.endsWith('/api/order/1')).length;
+    const reads = sent.filter(item => item.method === 'GET' && item.url.endsWith('/api/order/0000000000001')).length;
     reload.click();
     await flush(); await flush();
-    expect(sent.filter(item => item.method === 'GET' && item.url.endsWith('/api/order/1')).length).toBe(reads + 1);
+    expect(sent.filter(item => item.method === 'GET' && item.url.endsWith('/api/order/0000000000001')).length).toBe(reads + 1);
     expect(store.conflict.peek()).toBeNull();
     expect(host.querySelector('input')!.value).toBe('Other');
     expect(store.field('title').value.peek()).toBe('Other');
@@ -114,7 +114,7 @@ describe('InlineValue focus and conflicts', () => {
 
   it('exposes the record of a field through a typed accessor', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     expect(recordOf(store.field('title'))).toBe(store);
     expect(recordOf(localField({ name: 'x', type: 'text', label: 'X' }))).toBeNull();
   });
@@ -123,7 +123,7 @@ describe('InlineValue focus and conflicts', () => {
 describe('ChildTable undo, duplicate and nested rows', () => {
   it('Undo restores a saved line with its id and nested rows, leaving no change to save', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const lines = store.table('lines');
     const first = lines.rows.peek()[0];
     const host = render(() => ChildTable({ table: lines, columns: ['qty', 'rate', 'amount'] }));
@@ -133,7 +133,7 @@ describe('ChildTable undo, duplicate and nested rows', () => {
     lastToast().querySelector('button')!.click();
     const restored = lines.rows.peek()[0];
     expect(restored).toBe(first);
-    expect(restored.id).toBe(1);
+    expect(restored.id).toBe(id(1));
     expect(restored.table('parts').rows.peek()).toHaveLength(2);
     expect(store.field('line_count').value.peek()).toBe(120);
     expect(buildChanges(store.root)).toEqual({});
@@ -142,7 +142,7 @@ describe('ChildTable undo, duplicate and nested rows', () => {
 
   it('Duplicate copies nested rows as new rows', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const lines = store.table('lines');
     const host = render(() => ChildTable({ table: lines, columns: ['qty', 'amount'] }));
     rowsIn(host)[0].querySelector<HTMLButtonElement>('[role="checkbox"]')!.click();
@@ -154,7 +154,7 @@ describe('ChildTable undo, duplicate and nested rows', () => {
 
   it('an opened row shows its nested tables', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'amount'] }));
     rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
     const nested = host.querySelector('.g-x .grid[data-table="parts"]')!;
@@ -242,10 +242,10 @@ describe('layers and links', () => {
   it('forgets link titles when the session ends', async () => {
     const { api } = backend();
     const links = apiLinks(api, new SchemaIndex(schema));
-    links.remember!('product', 1, 'Old title');
-    expect(links.title('product', 1).peek()).toBe('Old title');
+    links.remember!('product', id(1), 'Old title');
+    expect(links.title('product', id(1)).peek()).toBe('Old title');
     window.dispatchEvent(new Event('evlet-session-ended'));
-    const title = links.title('product', 1);
+    const title = links.title('product', id(1));
     expect(title.peek()).toBeNull();
     await flush();
     expect(title.peek()).toBe('Support hours');

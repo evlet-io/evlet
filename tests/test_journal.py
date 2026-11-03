@@ -10,6 +10,7 @@ from evlet import (Application, Attachments, Boolean, Child, ConflictError, Curr
 from evlet import journal as journal_module
 from evlet.auth import User
 from evlet.calc import F
+from evlet.identity import RecordId
 from evlet.permissions import Policy
 from finite_fixtures import FiniteMeta
 from test_business import PASSWORD, client, http
@@ -109,13 +110,19 @@ def app(tmp_path):
     return seed(start(Database(tmp_path / 'db.sqlite3', Registry(*MODELS))))
 
 
+# The text ids of the accounts the latest seed() created, by name.
+ACCOUNTS = {}
+
+
 def seed(app):
     """Users admin (1), editor (2) and viewer (3); a public and a private account."""
     add_user(app, 'editor')
     add_user(app, 'viewer')
     c = client(app)
-    assert c('POST', '/api/account', {'name': 'Public'})[0] == 201
-    assert c('POST', '/api/account', {'name': 'Private', 'public': False})[0] == 201
+    for name, public in (('Public', True), ('Private', False)):
+        status, account, _ = c('POST', '/api/account', {'name': name, 'public': public})
+        assert status == 201, account
+        ACCOUNTS[name] = account['id']
     return app
 
 
@@ -138,7 +145,7 @@ def history(c, url, query=''):
 
 
 def new_invoice(c, **values):
-    body = {'name': 'First', 'cost': '5', 'owner': 2, 'account': 2, 'children': {'lines': [
+    body = {'name': 'First', 'cost': '5', 'owner': 2, 'account': ACCOUNTS['Private'], 'children': {'lines': [
         {'_key': 'a', 'qty': '2', 'rate': '5', 'secret': 's1', 'children': {'remarks': [{'_key': 'r1', 'text': 'x'}]}},
         {'_key': 'b', 'qty': '1', 'rate': '3', 'shared': False}]}, **values}
     status, record, _ = c('POST', '/api/invoice', body)
@@ -198,7 +205,7 @@ def check_engine(app):
     assert (created['kind'], created['actor']) == ('created', 1)
     fields = created['data']['fields']
     assert fields['name'] == {'old': None, 'new': 'First'} and fields['total'] == {'old': None, 'new': '13.00'}
-    assert fields['status'] == {'old': None, 'new': 'draft'} and fields['account'] == {'old': None, 'new': 2}
+    assert fields['status'] == {'old': None, 'new': 'draft'} and fields['account'] == {'old': None, 'new': ACCOUNTS['Private']}
     # Numbers have their own entries; row links and positions are not values.
     assert 'number' not in fields and 'revises' not in fields
     added = created['data']['rows']['lines']['added']
@@ -408,7 +415,7 @@ def test_user_entries_are_validated_and_append_only(app):
 def test_python_api_posts_and_reads_with_the_same_checks(app):
     c = client(app)
     _, url = new_invoice(c)
-    record_id = int(url.rsplit('/', 1)[1])
+    record_id = RecordId(url.rsplit('/', 1)[1])
     with app.business.context(User(3, 'viewer', 'viewer')) as context:
         with pytest.raises(Exception, match='cannot write'):
             journal_module.post(context, Invoice, record_id, 'note', text='Hi')
@@ -473,7 +480,7 @@ def check_append_only_and_chain(app):
     assert {(model, record_id) for _, model, record_id, _ in breaks} == {('invoice', invoice[0]['record_id'])}
     # Stripping every hash of a record of a tamper-evident model is reported too.
     _, other = new_invoice(c)
-    other_id = int(other.rsplit('/', 1)[1])
+    other_id = RecordId(other.rsplit('/', 1)[1])
     with app.database.transaction() as tx:
         tx.connection.execute('UPDATE evlet_journal SET hash=NULL, prev_hash=NULL WHERE model=? AND record_id=?', ('invoice', other_id))
     stripped = [entry for entry in journal_module.verify(app.database)[1] if entry[2] == other_id]
@@ -516,7 +523,7 @@ def test_post_runs_in_its_own_savepoint_with_the_recursion_guard(app, monkeypatc
         monkeypatch.setattr(journal_module, 'shown', real)
         journal_module.post(context, Invoice, record['id'], 'note', text='Kept')
         # Posting to the record an operation is changing is refused, like any recursive change.
-        context._active.append((Invoice, record['id']))
+        context._active.append((Invoice, RecordId(record['id'])))
         with pytest.raises(Exception, match='Recursive'):
             journal_module.post(context, Invoice, record['id'], 'note', text='Inner')
         context._active.pop()
@@ -526,7 +533,7 @@ def test_post_runs_in_its_own_savepoint_with_the_recursion_guard(app, monkeypatc
 def test_verify_command_reports_breaks(app, tmp_path, capsys):
     from evlet.cli.main import main
     c = client(app)
-    _, url = new_invoice(c)
+    record, url = new_invoice(c)
     post(c, url, 'moves/issued')
     root = tmp_path / 'project'
     (root / 'apps').mkdir(parents=True)
@@ -543,7 +550,7 @@ def test_verify_command_reports_breaks(app, tmp_path, capsys):
         main(['journal', 'verify', 'acme', '--project', str(root)])
     assert exit.value.code == 1
     output = capsys.readouterr()
-    assert output.out == 'Entry 2 (invoice 1): the hash does not match the entry\n'
+    assert output.out == f"Entry 2 (invoice {record['id']}): the hash does not match the entry\n"
     assert output.err == '1 break in 3 hashed entries\n'
     with pytest.raises(SystemExit):
         main(['journal', 'verify', 'other', '--project', str(root)])

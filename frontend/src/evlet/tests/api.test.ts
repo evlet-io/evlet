@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, ConflictError, createClient, ValidationError } from '../api';
-import { responses, server } from './server';
+import { id, responses, server } from './server';
 
 const order = responses.create.body;
 
@@ -70,7 +70,7 @@ describe('session', () => {
 
 describe('records', () => {
   it('reads the schema, a list page and a detail with its ETag', async () => {
-    const { fetch, sent } = server([['GET', /\/api\/schema$/, 'schema'], ['GET', /\/api\/order\?/, 'list'], ['GET', /\/api\/order\/1$/, 'detail']]);
+    const { fetch, sent } = server([['GET', /\/api\/schema$/, 'schema'], ['GET', /\/api\/order\?/, 'list'], ['GET', /\/api\/order\/0000000000001$/, 'detail']]);
     const api = createClient({ fetch });
     const schema = await api.schema<{ models: Array<{ name: string }> }>();
     expect(schema.models.map(model => model.name)).toContain('order');
@@ -78,7 +78,7 @@ describe('records', () => {
     expect(page).toMatchObject({ total: 1, limit: 20, offset: 0 });
     const query = new URL(sent[1].url, 'http://x').searchParams;
     expect(Object.fromEntries(query)).toEqual({ limit: '20', offset: '0', filters: '{"stage":"open"}', q: 'Big', order_by: 'title' });
-    const { data, etag } = await api.get('order', 1);
+    const { data, etag } = await api.get('order', id(1));
     expect(etag).toBe(responses.detail.etag);
     expect(data.children_pages).toEqual({ lines: { limit: 100, partial: true, total: 120 } });
     expect(sent[2].headers['x-evlet-request']).toBeUndefined();
@@ -91,67 +91,67 @@ describe('records', () => {
     const { data, etag, status } = await api.create('order', { title: 'Big order', children: { lines: [{ _key: 'l0', qty: '1' }] } });
     expect(status).toBe(201);
     expect(etag).toBe(responses.create.etag);
-    expect(data._row_ids?.l0).toBe(1);
+    expect(data._row_ids?.l0).toBe(id(1));
     expect(sent[0].headers).toMatchObject({ 'content-type': 'application/json', 'x-csrf-token': 'token', 'x-evlet-request': '1' });
   });
 
   it('updates with If-Match and a change set', async () => {
-    const { fetch, sent } = server([['PATCH', /\/api\/order\/1$/, 'update']]);
+    const { fetch, sent } = server([['PATCH', /\/api\/order\/0000000000001$/, 'update']]);
     const api = createClient({ fetch });
-    const changes = { title: 'Renamed', children: { lines: { create: [{ _key: 'n1', qty: '2', rate: '1' }], update: [{ id: 2, qty: '3' }], delete: [3] } } };
-    const { data, etag } = await api.update('order', 1, changes, responses.detail.etag);
+    const changes = { title: 'Renamed', children: { lines: { create: [{ _key: 'n1', qty: '2', rate: '1' }], update: [{ id: id(2), qty: '3' }], delete: [id(3)] } } };
+    const { data, etag } = await api.update('order', id(1), changes, responses.detail.etag);
     expect(sent[0].headers['if-match']).toBe(responses.detail.etag);
     expect(sent[0].body).toEqual(changes);
-    expect(data._row_ids).toEqual({ n1: 121 });
+    expect(data._row_ids).toEqual({ n1: id(121) });
     expect(etag).toBe(responses.update.etag);
   });
 
   it('turns 428 and 409 into conflicts and 422 into field errors', async () => {
     const { fetch } = server([
-      ['PATCH', /\/api\/order\/1$/, sent => responses[!sent.headers['if-match'] ? 'missing_if_match' : sent.headers['if-match'] === '"stale"' ? 'stale_if_match' : 'validation']],
+      ['PATCH', /\/api\/order\/0000000000001$/, sent => responses[!sent.headers['if-match'] ? 'missing_if_match' : sent.headers['if-match'] === '"stale"' ? 'stale_if_match' : 'validation']],
     ]);
     const api = createClient({ fetch });
-    const missing = await api.update('order', 1, { title: 'x' }, null).catch(error => error);
+    const missing = await api.update('order', id(1), { title: 'x' }, null).catch(error => error);
     expect(missing).toBeInstanceOf(ConflictError);
     expect(missing).toMatchObject({ status: 428, kind: 'conflict', message: 'A current If-Match revision is required' });
-    const stale = await api.update('order', 1, { title: 'x' }, '"stale"').catch(error => error);
+    const stale = await api.update('order', id(1), { title: 'x' }, '"stale"').catch(error => error);
     expect(stale).toMatchObject({ status: 409, message: 'This record changed since you opened it. Reload it before saving.' });
-    const invalid = await api.update('order', 1, {}, responses.detail.etag).catch(error => error);
+    const invalid = await api.update('order', id(1), {}, responses.detail.etag).catch(error => error);
     expect(invalid).toBeInstanceOf(ValidationError);
-    expect(invalid.fields).toEqual({ 'lines.4.qty': 'Thirteen is not allowed' });
+    expect(invalid.fields).toEqual({ [`lines.${id(4)}.qty`]: 'Thirteen is not allowed' });
   });
 
   it('treats 412 as a conflict and reads an error code prefix', async () => {
     // The 409 message the server sends for a newer calculation plan (evlet/business.py check_calculation).
     const { fetch } = server([
-      ['PATCH', /\/api\/order\/1$/, { status: 409, body: { error: 'SCHEMA_VERSION_MISMATCH: this document uses a newer calculation plan; reload it' }, etag: null }],
-      ['PATCH', /\/api\/order\/2$/, { status: 412, body: { error: 'Precondition failed' }, etag: null }],
+      ['PATCH', /\/api\/order\/0000000000001$/, { status: 409, body: { error: 'SCHEMA_VERSION_MISMATCH: this document uses a newer calculation plan; reload it' }, etag: null }],
+      ['PATCH', /\/api\/order\/0000000000002$/, { status: 412, body: { error: 'Precondition failed' }, etag: null }],
     ]);
     const api = createClient({ fetch });
-    await expect(api.update('order', 1, {}, 'x')).rejects.toMatchObject({ code: 'SCHEMA_VERSION_MISMATCH', kind: 'conflict' });
-    await expect(api.update('order', 2, {}, 'x')).rejects.toBeInstanceOf(ConflictError);
+    await expect(api.update('order', id(1), {}, 'x')).rejects.toMatchObject({ code: 'SCHEMA_VERSION_MISMATCH', kind: 'conflict' });
+    await expect(api.update('order', id(2), {}, 'x')).rejects.toBeInstanceOf(ConflictError);
   });
 
   it('pages lines, including nested tables', async () => {
-    const { fetch, sent } = server([['GET', /\/lines\/lines\?/, 'lines_page'], ['GET', /\/lines\/lines\/1\/parts/, 'nested_lines_page']]);
+    const { fetch, sent } = server([['GET', /\/lines\/lines\?/, 'lines_page'], ['GET', /\/lines\/lines\/0000000000001\/parts/, 'nested_lines_page']]);
     const api = createClient({ fetch });
-    const page = await api.lines('order', 1, ['lines'], { limit: 100, offset: 100 });
+    const page = await api.lines('order', id(1), ['lines'], { limit: 100, offset: 100 });
     expect(page).toMatchObject({ total: 120, limit: 100, offset: 100 });
-    expect(page.items[0].id).toBe(101);
-    expect(sent[0].url).toBe('/api/order/1/lines/lines?limit=100&offset=100');
-    const parts = await api.lines('order', 1, ['lines', 1, 'parts'], { limit: 5 });
-    expect(parts.items.map(item => item.id)).toEqual([1, 2]);
-    expect(sent[1].url).toBe('/api/order/1/lines/lines/1/parts?limit=5');
-    await expect(api.lines('order', 1, ['lines', 1])).rejects.toThrow('nested rows');
+    expect(page.items[0].id).toBe(id(101));
+    expect(sent[0].url).toBe(`/api/order/${id(1)}/lines/lines?limit=100&offset=100`);
+    const parts = await api.lines('order', id(1), ['lines', id(1), 'parts'], { limit: 5 });
+    expect(parts.items.map(item => item.id)).toEqual([id(1), id(2)]);
+    expect(sent[1].url).toBe(`/api/order/${id(1)}/lines/lines/${id(1)}/parts?limit=5`);
+    await expect(api.lines('order', id(1), ['lines', id(1)])).rejects.toThrow('nested rows');
   });
 
   it('posts drafts and actions with the right paths', async () => {
     const { fetch, sent } = server([['POST', /_draft\/order$/, 'draft'], ['POST', /actions\/close$/, 'action']]);
     const api = createClient({ fetch });
-    const draft = await api.draft('order', { id: 1, values: { stage: 'lost' }, revision: 3 });
+    const draft = await api.draft('order', { id: id(1), values: { stage: 'lost' }, revision: 3 });
     expect(draft.states).toEqual({ reason: 'required-input' });
     expect(draft.revision).toBe(3);
-    const done = await api.action('order', 1, 'close', { note: 'done' }, responses.update.etag);
+    const done = await api.action('order', id(1), 'close', { note: 'done' }, responses.update.etag);
     expect((done.data as any).stage).toBe('won');
     expect(sent[1].headers['if-match']).toBe(responses.update.etag);
   });
@@ -178,18 +178,18 @@ describe('records', () => {
 
   it('reports a move the record does not allow as a conflict with the reason', async () => {
     const { fetch } = server([['POST', /moves\/issued$/, 'invoice_move_refused']]);
-    await expect(createClient({ fetch }).move('invoice', 1, 'issued', '"x"')).rejects.toMatchObject({
+    await expect(createClient({ fetch }).move('invoice', id(1), 'issued', '"x"')).rejects.toMatchObject({
       kind: 'conflict', status: 409, message: 'Issue is not available: the condition for this move is not met' });
   });
 
   it('pages owned rows of a document and keeps the detail extras of later phases', async () => {
-    const { fetch, sent } = server([['GET', /\/lines\/lines\?/, 'invoice_lines_page'], ['GET', /\/api\/invoice\/\d+$/, 'invoice_revised_original']]);
+    const { fetch, sent } = server([['GET', /\/lines\/lines\?/, 'invoice_lines_page'], ['GET', /\/api\/invoice\/[0-9a-z]{13}$/, 'invoice_revised_original']]);
     const api = createClient({ fetch });
-    const page = await api.lines('invoice', 1, ['lines'], { limit: 1, offset: 1 });
-    expect(sent[0].url).toBe('/api/invoice/1/lines/lines?limit=1&offset=1');
+    const page = await api.lines('invoice', id(1), ['lines'], { limit: 1, offset: 1 });
+    expect(sent[0].url).toBe(`/api/invoice/${id(1)}/lines/lines?limit=1&offset=1`);
     expect(page).toMatchObject({ total: 2, limit: 1, offset: 1 });
     expect(page.items.map(item => item.item)).toEqual(['Licence']);
-    const { data } = await api.get('invoice', 1);
+    const { data } = await api.get('invoice', id(1));
     expect(data).toMatchObject({ status: 'void', revised_by: responses.invoice_revision.body.id, _moves: [],
       _revise: { allowed: false, reason: 'This record already has a revision' } });
     expect(data._effects).toEqual([{ target: 'ledgerentry', rows: 3, reversals: 3, balanced: true }]);
@@ -209,15 +209,18 @@ describe('records', () => {
   it('checks ids and names before sending', async () => {
     const { fetch, sent } = server([]);
     const api = createClient({ fetch });
-    await expect(api.get('order', 0)).rejects.toThrow('outside the supported browser range');
-    await expect(api.get('order', 2 ** 53)).rejects.toThrow();
+    // Ids are 13-character text; a number, a decimal string or a path segment is refused.
+    await expect(api.get('order', 1 as unknown as string)).rejects.toThrow('This is not a record id.');
+    await expect(api.get('order', '42')).rejects.toThrow('This is not a record id.');
+    await expect(api.get('order', '../auth/0000')).rejects.toThrow('This is not a record id.');
+    await expect(api.lines('order', id(1), ['lines', '1', 'parts'])).rejects.toThrow('nested rows');
     await expect(api.create('../auth', {})).rejects.toThrow('Unknown model');
     expect(sent).toEqual([]);
   });
 
   it('maps a missing record to not_found', async () => {
-    const { fetch } = server([['GET', /999999$/, 'not_found']]);
-    await expect(createClient({ fetch }).get('order', 999999)).rejects.toMatchObject({ kind: 'not_found', message: 'Record not found' });
+    const { fetch } = server([['GET', new RegExp(`${id(999999)}$`), 'not_found']]);
+    await expect(createClient({ fetch }).get('order', id(999999))).rejects.toMatchObject({ kind: 'not_found', message: 'Record not found' });
   });
 });
 
@@ -241,20 +244,20 @@ describe('failures and cancellation', () => {
       release = () => resolve(new Response(JSON.stringify(responses.detail.body), { status: 200 }));
     }));
     const api = createClient({ fetch: fetch as any, signal: () => page.signal });
-    const pending = api.get('order', 1);
+    const pending = api.get('order', id(1));
     page.abort();
     await expect(pending).rejects.toMatchObject({ kind: 'aborted', retryable: false });
     page = new AbortController();
-    const next = api.get('order', 1);
+    const next = api.get('order', id(1));
     release();
     expect((await next).data.id).toBe(order.id);
   });
 
   it('combines a request signal with the page signal', async () => {
     const own = new AbortController();
-    const { fetch } = server([['GET', /order\/1$/, 'detail']]);
+    const { fetch } = server([['GET', /order\/0000000000001$/, 'detail']]);
     const api = createClient({ fetch, signal: () => new AbortController().signal });
     own.abort();
-    await expect(api.get('order', 1, own.signal)).rejects.toMatchObject({ kind: 'aborted' });
+    await expect(api.get('order', id(1), own.signal)).rejects.toMatchObject({ kind: 'aborted' });
   });
 });

@@ -6,6 +6,7 @@ from evlet import (Application, Database, LocalAuth, Registry, Model, Text, Curr
                    Decimal, Child, Table, Query, Ref, depends, Rule, User, ValidationError,
                    Task, JobQueue)
 from evlet.auth import AccessError
+from evlet.identity import RecordId
 from test_business import http, client, PASSWORD
 
 ALL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
@@ -83,13 +84,14 @@ def test_readonly_conditions_reactions_rollback_noop_and_delete(tmp_path):
     assert app.database.count(Entry) == 0
     record = c('POST', '/api/entry', {'note': 'ok'})[1]
     reactions.clear()
-    current = c('GET', '/api/entry/1')
+    url = f"/api/entry/{record['id']}"
+    current = c('GET', url)
     headers = {b'if-match': current[2][b'etag']}
-    assert c('PATCH', '/api/entry/1', {'note': 'ok'}, headers=headers)[0] == 200
+    assert c('PATCH', url, {'note': 'ok'}, headers=headers)[0] == 200
     assert not reactions
-    assert c('PATCH', '/api/entry/1', {'state': 'Closed', 'note': 'forged'}, headers=headers)[0] == 422
-    assert c('DELETE', '/api/entry/1')[0] == 428
-    assert c('DELETE', '/api/entry/1', headers=headers)[0] == 204
+    assert c('PATCH', url, {'state': 'Closed', 'note': 'forged'}, headers=headers)[0] == 422
+    assert c('DELETE', url)[0] == 428
+    assert c('DELETE', url, headers=headers)[0] == 204
     assert reactions[-1].operation == 'delete' and reactions[-1].after is None
     assert reactions[-1].before.note == 'ok'
 
@@ -249,7 +251,7 @@ def test_legacy_child_table_under_document_parent_saves(tmp_path):
     assert status == 200, updated
     assert updated['name'] == 'q' and [row['qty'] for row in updated['children']['lines']] == [2]
     with db.transaction() as tx:
-        assert [line.owner for line in tx.list(Line)] == [created['id']]
+        assert [line.owner for line in tx.list(Line)] == [RecordId(created['id'])]
 
 
 def test_action_on_model_without_permissions_runs(tmp_path):
@@ -419,7 +421,7 @@ def test_tampered_storage_types_return_a_json_error(tmp_path):
     c = client(app)
     _, item, _ = c('POST', '/api/item', {'name': 'a', 'count': 1})
     with app.database._connection() as connection:
-        connection.execute('UPDATE item SET count=? WHERE id=?', (b'\x00raw', item['id']))
+        connection.execute('UPDATE item SET count=? WHERE id=?', (b'\x00raw', RecordId(item['id'])))
         connection.commit()
     for path in ('/api/item', f"/api/item/{item['id']}"):
         status, result, headers = c('GET', path)

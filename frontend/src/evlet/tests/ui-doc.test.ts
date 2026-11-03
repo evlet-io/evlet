@@ -5,7 +5,7 @@ import { DocFrame, DocHeader, flowFromState, LockBanner, MoveButton, SideBlock, 
 import { ENTRIES, LibraryPage, builtIds } from '../ui/library';
 import { Board, BoardCard, BulkBar, Filters, PageHeader, type ActiveFilter } from '../ui/list';
 import { tipText } from '../ui/tooltip';
-import { backend, cleanup, key, render } from './ui-helpers';
+import { backend, id, cleanup, key, render } from './ui-helpers';
 
 afterEach(() => { vi.useRealTimers(); cleanup(); });
 const lastToast = () => [...document.querySelectorAll('.toast')].pop()?.textContent ?? null;
@@ -90,7 +90,7 @@ describe('doc view blocks', () => {
 
   it('DocHeader and DocFrame lay out a record with an editable title and the type accent', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const side = cell<'left' | 'right' | 'off'>('right');
     const host = render(() => DocFrame({ tint: 'teal', sidePosition: side, main: DocHeader({ type: 'Order', icon: 'receipt', mark: RecordMark({ name: 'Big order', size: 'lg' }), title: store.field('title'), meta: ['AED 300.00'] }),
       side: SideBlock({ title: 'Tags', body: 'None yet' }) }));
@@ -188,7 +188,7 @@ describe('list blocks', () => {
 describe('Library page', () => {
   it('lists every catalog component with details, and demos the ones built here', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const host = render(() => LibraryPage({ record: store }));
     expect(ENTRIES).toHaveLength(115);
     expect(host.querySelectorAll('[data-libcard]')).toHaveLength(115);

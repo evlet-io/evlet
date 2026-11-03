@@ -24,6 +24,7 @@ from urllib.parse import parse_qs
 
 from .auth import AccessError, User
 from .fields import Link, Reference
+from .identity import RecordId, text as text_id
 from .models import ValidationError
 
 TABLE = ('CREATE TABLE IF NOT EXISTS evlet_journal (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, '
@@ -449,6 +450,8 @@ def post(context, model, record_id, kind, **values):
     if context.readonly:
         raise AccessError(403, 'This context is read only')
     model = context._model(model)
+    from .documents import known_id
+    record_id = known_id(record_id)
     # Like other document operations: refused inside an operation on the same record, and all or
     # nothing in its own savepoint even when trusted code catches a failure.
     key = (model, record_id)
@@ -463,7 +466,8 @@ def post(context, model, record_id, kind, **values):
 
 
 def add(context, model, record_id, kind, values):
-    business, tx, user = context._business, context._tx, context.user
+    from .documents import known_id
+    business, tx, user, record_id = context._business, context._tx, context.user, known_id(record_id)
     if model not in business.journals:
         raise AccessError(404, 'This record has no journal')
     business.policy.record(tx, user, model, record_id)
@@ -507,13 +511,16 @@ def shown_value(business, user, field, value, visibility):
         return None, False
     if isinstance(field, Link):
         target = field.target
-        if policy.rule(user, target).scope is not None and not visibility(target, value):
+        if policy.rule(user, target).scope is not None and not visibility(target, RecordId(value)):
             return None, True
+        # Older entries kept Link values as numbers; every entry shows the text id.
+        return text_id(value), False
     elif isinstance(field, Reference):
         target = business.registry.models.get(value.get('model')) if isinstance(value, dict) else None
         if target is None or not policy.allows(user, target, 'read') or \
-                policy.rule(user, target).scope is not None and not visibility(target, value.get('id')):
+                policy.rule(user, target).scope is not None and not visibility(target, RecordId(value.get('id'))):
             return None, True
+        return {**value, 'id': text_id(value.get('id'))}, False
     return value, False
 
 
@@ -549,19 +556,19 @@ def shown_changes(business, user, model, data, visibility):
         for part in ('added', 'updated', 'removed'):
             items = []
             for row in collection.get(part, ()):
-                if scoped and (part == 'removed' or not visibility(child.model, row['id'])):
+                if scoped and (part == 'removed' or not visibility(child.model, RecordId(row['id']))):
                     partial = True
                     continue
                 inner, hidden = shown_changes(business, user, child.model, row, visibility)
                 partial |= hidden
                 if inner or part != 'updated':
-                    items.append({'id': row['id'], **inner})
+                    items.append({'id': text_id(row['id']), **inner})
             if items:
                 shown[part] = items
         if collection.get('reordered'):
             shown['reordered'] = True
             if not scoped and 'positions' in collection:
-                shown['positions'] = collection['positions']
+                shown['positions'] = [{**item, 'id': text_id(item['id'])} for item in collection['positions']]
         if shown:
             rows[name] = shown
     if rows:
@@ -616,8 +623,10 @@ def present(business, user, model, row, visibility, done):
         shown = dict(data) if state_shown else {}
         if not state_shown:
             kind, partial = 'changed', True
-        elif kind == 'revised' and not visibility(model, data['copy']):
+        elif kind == 'revised' and not visibility(model, RecordId(data['copy'])):
             shown['copy'], partial = None, True
+        elif kind == 'revised':
+            shown['copy'] = text_id(data['copy'])
         elif kind == 'effects':
             shown, partial = shown_effects(business, user, model, data)
             if not shown['targets']:
@@ -645,13 +654,13 @@ def present(business, user, model, row, visibility, done):
                 effects = []
                 for effect in data['effects']:
                     target = business.registry.models.get(effect.get('model'))
-                    if target is not None and policy.allows(user, target, 'read') and (policy.rule(user, target).scope is None or visibility(target, effect.get('id'))):
-                        effects.append(effect)
+                    if target is not None and policy.allows(user, target, 'read') and (policy.rule(user, target).scope is None or visibility(target, RecordId(effect.get('id')))):
+                        effects.append({**effect, 'id': text_id(effect.get('id'))})
                 shown['effects'] = effects
     actor = row['actor']
     item = {'id': row['id'], 'kind': kind, 'actor': None if actor == ENGINE else int(actor), 'at': row['at'], 'data': shown}
     if data.get('event_id'):
-        item.update(event_id=data['event_id'], document_id=data.get('document_id'), model=data.get('model'),
+        item.update(event_id=data['event_id'], document_id=text_id(data.get('document_id')), model=data.get('model'),
                     operation=kind, timestamp=row['at'], source=data.get('source'), revision=data.get('revision'),
                     changes={key: shown[key] for key in ('fields', 'rows') if key in shown}, reason=shown.get('reason'),
                     correlation_id=data.get('correlation_id'))

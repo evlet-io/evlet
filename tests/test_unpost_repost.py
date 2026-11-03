@@ -6,6 +6,7 @@ from evlet import (Application, Boolean, Child, Currency, Database, Decimal, Eff
                    Registry, Rule, Sequence, State, Swap, Table, Text, effects, journal)
 from evlet.auth import AccessError, User
 from evlet.calc import F
+from evlet.identity import RecordId, encode
 from evlet.postgres import PostgreSQLDatabase
 from finite_fixtures import FiniteMeta
 from test_business import client, http
@@ -214,7 +215,7 @@ def test_unpost_cancels_postings_keeps_the_number_and_repost_posts_again(books):
 def test_unpost_is_refused_while_a_live_record_depends_on_it(books):
     app, c, account = books
     url = issued_invoice(c, account)
-    invoice_id = int(url.rsplit('/', 1)[1])
+    invoice_id = url.rsplit('/', 1)[1]
     status, payment, _ = c('POST', '/api/payment', {'invoice': invoice_id, 'amount': '0.30'})
     assert status == 201
     payment_url = f"/api/payment/{payment['id']}"
@@ -233,12 +234,14 @@ def test_unpost_is_refused_while_a_live_record_depends_on_it(books):
 def test_dependents_are_named_only_when_the_caller_can_open_them(sqlite_books):
     app, c, account = sqlite_books
     url = issued_invoice(c, account)
-    invoice_id = int(url.rsplit('/', 1)[1])
+    invoice_id = url.rsplit('/', 1)[1]
+    payments = []
     for _ in range(2):
         payment = c('POST', '/api/payment', {'invoice': invoice_id})[1]
+        payments.append(payment['id'])
         assert move(c, f"/api/payment/{payment['id']}", 'done')[0] == 200
     assert correct(c, url, 'unpost')[1]['error'] == \
-        'This record cannot be unposted while Payment 1 and Payment 2 depend on it. Void or unpost them first.'
+        f'This record cannot be unposted while Payment {payments[0]} and Payment {payments[1]} depend on it. Void or unpost them first.'
     # An editor given unpost who cannot read payments is told how many records depend on it, not which.
     from evlet.documents import Context
     rules = {('editor', Invoice): Rule(('read', 'create', 'update', 'unpost')), ('editor', Payment): Rule(())}
@@ -246,7 +249,7 @@ def test_dependents_are_named_only_when_the_caller_can_open_them(sqlite_books):
     with app.database.transaction() as tx:
         context = Context(app.business, tx, User(2, 'editor', 'editor'))
         with pytest.raises(AccessError) as caught:
-            context.unpost(Invoice, invoice_id, 'Wrong')
+            context.unpost(Invoice, RecordId(invoice_id), 'Wrong')
     assert caught.value.message == 'This record cannot be unposted while 2 records you cannot open depend on it. Void or unpost them first.'
 
 
@@ -311,7 +314,7 @@ def test_only_admin_and_roles_a_rule_names_may_unpost_or_repost(sqlite_books):
     from evlet.documents import Context
     with app.database.transaction() as tx:
         with pytest.raises(AccessError) as caught:
-            Context(app.business, tx, User(2, 'editor', 'editor')).unpost(Invoice, int(url.rsplit('/', 1)[1]), 'x')
+            Context(app.business, tx, User(2, 'editor', 'editor')).unpost(Invoice, RecordId(url.rsplit('/', 1)[1]), 'x')
     assert caught.value.status == 403
 
 
@@ -335,7 +338,7 @@ def test_a_failed_unpost_or_repost_leaves_nothing_behind(books, monkeypatch):
     from evlet import corrections
     app, c, account = books
     url = issued_invoice(c, account)
-    record_id = int(url.rsplit('/', 1)[1])
+    record_id = RecordId(url.rsplit('/', 1)[1])
     before = (ledger(app), kinds(c, url), audit_rows(app))
 
     def broken(*args, **kwargs):
@@ -419,7 +422,7 @@ def test_recompute_includes_posted_records_only_when_asked(tmp_path, caplog):
     assert entry['kind'] == 'recomputed' and entry['actor'] is None and entry['data']['posted'] is True
     assert entry['data']['fields'] == {'total': {'old': '3.00', 'new': '9.00'}}
     assert 'posted' not in c('GET', f'{unposted}/journal')[1]['items'][0]['data']
-    assert audit_rows(app) == [('admin', 'Records', f"bill {int(unposted.rsplit('/', 1)[1])}", 'Unposted from issued to draft · Wrong customer'),
+    assert audit_rows(app) == [('admin', 'Records', f"bill {unposted.rsplit('/', 1)[1]}", 'Unposted from issued to draft · Wrong customer'),
                                ('cli', 'Records', 'bill', 'Recompute changed 1 posted record, as asked')]
     # Its saved rows no longer match: the check says so, and an unpost and repost brings them in line.
     assert [item['kind'] for item in effects.check(app)] == ['changed']
@@ -493,7 +496,7 @@ def test_a_record_that_ever_posted_is_never_deleted(books):
     from evlet.documents import Context
     with app.database.transaction() as tx:
         with pytest.raises(AccessError) as caught:
-            Context(app.business, tx, User(1, 'admin', 'admin')).delete(Invoice, int(url.rsplit('/', 1)[1]))
+            Context(app.business, tx, User(1, 'admin', 'admin')).delete(Invoice, RecordId(url.rsplit('/', 1)[1]))
     assert caught.value.status == 409
     detail = c('GET', url)[1]
     assert (detail['status'], detail['number'], ledger(app)) == ('draft', 'INV-0001', before)
@@ -506,8 +509,8 @@ def test_records_linking_to_posted_entries_or_rows_block_an_unpost(books):
     url = issued_invoice(c, account)
     invoice = c('GET', url)[1]
     with app.database.transaction() as tx:
-        entry = tx.connection.execute('SELECT id FROM ledger WHERE source_id=? ORDER BY id LIMIT 1', (invoice['id'],)).fetchone()[0]
-    allocation = c('POST', '/api/allocation', {'entry': entry})[1]['id']
+        entry = tx.connection.execute('SELECT id FROM ledger WHERE source_id=? ORDER BY id LIMIT 1', (RecordId(invoice['id']),)).fetchone()[0]
+    allocation = c('POST', '/api/allocation', {'entry': encode(entry)})[1]['id']
     assert move(c, f'/api/allocation/{allocation}', 'done')[0] == 200
     message = f'This record cannot be unposted while Allocation {allocation} depends on it. Void or unpost it first.'
     assert correct(c, url, 'unpost')[1] == {'error': message}

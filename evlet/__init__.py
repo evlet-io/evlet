@@ -30,6 +30,10 @@ from .storage import LocalFileStorage, SQLiteStorage, StorageError
 
 __all__ += ["LocalFileStorage", "SQLiteStorage", "StorageError"]
 
+from .identity import RecordId
+
+__all__ += ["RecordId"]
+
 from .tenancy import Tenant, TenantApplication, TenantRegistry
 
 __all__ += ["Tenant", "TenantApplication", "TenantRegistry"]

@@ -169,8 +169,9 @@ def test_hand_in_runs_the_handler_once_against_the_current_source(app):
     assert c('POST', '/api/_slips/start_job/hand-in', body)[0] == 428
     status, outcome, _ = c('POST', '/api/_slips/start_job/hand-in', body, headers=revision)
     assert status == 200, outcome
-    assert outcome == {'message': 'Job 1 started', 'open': {'model': 'job', 'id': 1}, 'data': {'hours': '5.5000'}}
-    job = c('GET', '/api/job/1')[1]
+    job_id = c('GET', '/api/job')[1]['items'][0]['id']
+    assert outcome == {'message': f'Job {job_id} started', 'open': {'model': 'job', 'id': job_id}, 'data': {'hours': '5.5000'}}
+    job = c('GET', f'/api/job/{job_id}')[1]
     assert job['client'] == client_id and [row['title'] for row in job['children']['steps']] == ['Survey', 'Build']
     # A retry with the same key returns the same outcome without running again.
     assert c('POST', '/api/_slips/start_job/hand-in', body, headers=revision)[:2] == (200, outcome)
@@ -242,8 +243,9 @@ def test_becomes_direct_creates_through_the_normal_create_path(app):
     client_id, _ = acme(c)
     status, outcome, _ = c('POST', '/api/_slips/direct_job/hand-in', {'key': 'direct-0001', 'values': {'name': 'Garage', 'client': client_id}})
     assert status == 200, outcome
-    assert outcome == {'document': {'model': 'job', 'id': 1}, 'open': {'model': 'job', 'id': 1}}
-    assert c('GET', '/api/job/1')[1]['name'] == 'Garage'
+    job_id = c('GET', '/api/job')[1]['items'][0]['id']
+    assert outcome == {'document': {'model': 'job', 'id': job_id}, 'open': {'model': 'job', 'id': job_id}}
+    assert c('GET', f'/api/job/{job_id}')[1]['name'] == 'Garage'
     status, result, _ = c('POST', '/api/_slips/direct_job/hand-in', {'key': 'direct-0002', 'values': {'name': 'Shed', 'client': 999}})
     assert status in (403, 404, 422) and app.database.count(Job) == 1
 
@@ -290,27 +292,30 @@ def test_definitions_are_checked_when_registered(tmp_path):
 def test_playground_slips_estimate_then_plan_a_project_and_review_an_invoice(secured):
     from examples.playground.models import Invoice, Project
     c = client(secured)
-    assert c('POST', '/api/customer', {'name': 'Acme', 'active': True})[0] == 201
-    revision = {b'if-match': c('GET', '/api/customer/1')[2][b'etag']}
+    status, customer, _ = c('POST', '/api/customer', {'name': 'Acme', 'active': True})
+    assert status == 201
+    customer = customer['id']
+    revision = {b'if-match': c('GET', f'/api/customer/{customer}')[2][b'etag']}
     tasks = {'tasks': [{'title': 'Survey', 'hours': '2'}, {'title': 'Build', 'hours': '3.5'}]}
-    status, outcome, _ = c('POST', '/api/_slips/estimate_project/hand-in', {'key': 'estimate-0001', 'values': {'customer': 1, 'hourly_rate': '100', 'children': tasks}})
+    status, outcome, _ = c('POST', '/api/_slips/estimate_project/hand-in', {'key': 'estimate-0001', 'values': {'customer': customer, 'hourly_rate': '100', 'children': tasks}})
     assert status == 200, outcome
     assert outcome['message'] == 'Estimate: AED 550.00 for 5.5 hours' and outcome['data'] == {'estimate': '550.00'}
     following = outcome['present']
-    assert following['slip'] == 'plan_project' and following['source'] == {'model': 'customer', 'id': 1}
+    assert following['slip'] == 'plan_project' and following['source'] == {'model': 'customer', 'id': customer}
     status, surface, _ = c('POST', '/api/_slips/plan_project/present', {'source': following['source'], 'values': following['values']})
     assert status == 200 and surface['values']['name'] == 'Acme project' and surface['values']['total_hours'] == '5.5'
     assert surface['rules']['budget'] == {'visible': False}
     body = {'source': following['source'], 'key': 'plan-0001', 'values': {**following['values'], 'starts_on': '2099-01-01'}}
     status, outcome, _ = c('POST', '/api/_slips/plan_project/hand-in', body, headers=revision)
-    assert status == 200 and outcome == {'document': {'model': 'project', 'id': 1}, 'open': {'model': 'project', 'id': 1}}, outcome
-    project = c('GET', '/api/project/1')[1]
+    project_id = c('GET', '/api/project')[1]['items'][0]['id']
+    assert status == 200 and outcome == {'document': {'model': 'project', 'id': project_id}, 'open': {'model': 'project', 'id': project_id}}, outcome
+    project = c('GET', f'/api/project/{project_id}')[1]
     assert project['budget'] == '550.00' and [task['title'] for task in project['children']['tasks']] == ['Survey', 'Build']
-    status, outcome, _ = c('POST', '/api/_slips/quick_invoice/hand-in', {'key': 'invoice-0001', 'values': {'customer': 1, 'reference': 'INV-1', 'hours': '2'}})
+    status, outcome, _ = c('POST', '/api/_slips/quick_invoice/hand-in', {'key': 'invoice-0001', 'values': {'customer': customer, 'reference': 'INV-1', 'hours': '2'}})
     assert status == 200 and outcome['document']['values']['total'] == '700.00'
     assert secured.database.count(Invoice) == 0 and secured.database.count(Project) == 1
     # A viewer cannot create projects or invoices: no slip is offered and the routes refuse.
     viewer = client(secured, 'viewer')
     schema = viewer('GET', '/api/schema')[1]
     assert schema['slips'] == [] and 'slips' not in next(model for model in schema['models'] if model['name'] == 'customer')
-    assert viewer('POST', '/api/_slips/plan_project/present', {'source': {'model': 'customer', 'id': 1}})[0] == 403
+    assert viewer('POST', '/api/_slips/plan_project/present', {'source': {'model': 'customer', 'id': customer}})[0] == 403

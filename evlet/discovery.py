@@ -3,10 +3,12 @@
 from urllib.parse import parse_qs
 
 from .auth import AccessError
+from .identity import SCHEMA as ID_SCHEMA
 from .models import ValidationError
 from .query import OPERATORS
 
-ID = {'type': 'integer', 'minimum': 1, 'maximum': 2**63 - 1}
+# Record ids travel as their 13-character text form (evlet/identity.py).
+ID = dict(ID_SCHEMA)
 
 
 def object_schema(properties, required=()):
@@ -15,7 +17,9 @@ def object_schema(properties, required=()):
 
 def value_schema(field, *, read=False):
     kind = field['type']
-    if kind in ('integer', 'link'):
+    if kind == 'link':
+        value = dict(ID)
+    elif kind == 'integer':
         value = {'type': 'integer', 'minimum': -2**63, 'maximum': 2**63 - 1}
         value.update({key: field[key] for key in ('minimum', 'maximum') if field.get(key) is not None})
     elif kind == 'boolean':

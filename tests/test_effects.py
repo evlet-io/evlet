@@ -8,6 +8,7 @@ from evlet import (Application, Boolean, Child, Count, Currency, Database, Decim
                    Rule, Sequence, State, Sum, Swap, Table, Text, ValidationError, action, effects)
 from evlet.auth import AccessError, LocalAuth
 from evlet.calc import F
+from evlet.identity import RecordId
 from finite_fixtures import FiniteMeta
 from test_business import client
 from test_rules_types import ALL, add_user, start
@@ -186,7 +187,8 @@ def test_a_move_posts_balanced_rows_atomically(books):
     ledger = entries(app)
     # 0.10 + 0.20 debits balance the 0.30 credit exactly; amounts are stored as scaled integers.
     assert [(row['debit'], row['credit'], row['memo'], row['source_model'], row['source_id'], row['reversal']) for row in ledger] == [
-        (10, 0, 'a', 'invoice', moved['id'], 0), (20, 0, 'b', 'invoice', moved['id'], 0), (0, 30, 'revenue', 'invoice', moved['id'], 0)]
+        (10, 0, 'a', 'invoice', RecordId(moved['id']), 0), (20, 0, 'b', 'invoice', RecordId(moved['id']), 0),
+        (0, 30, 'revenue', 'invoice', RecordId(moved['id']), 0)]
     assert [(row['item'], row['qty']) for row in entries(app, 'stockmove')] == [('a', -10000), ('b', -20000)]
     assert moved['_effects'] == [{'target': 'ledgerentry', 'rows': 3, 'reversals': 0, 'balanced': True},
                                  {'target': 'stockmove', 'rows': 2, 'reversals': 0}]
@@ -201,11 +203,11 @@ def test_context_move_posts_and_failures_roll_back_the_transaction(books):
     good, bad = invoice(c, account), invoice(c, account, skew='0.05')
     admin = User(1, 'admin', 'admin')
     with app.business.context(admin) as context:
-        assert context.move(Invoice, int(good.rsplit('/', 1)[1]), 'issued')['status'] == 'issued'
+        assert context.move(Invoice, RecordId(good.rsplit('/', 1)[1]), 'issued')['status'] == 'issued'
     assert len(entries(app)) == 3
     with pytest.raises(ValidationError, match='not balanced'):
         with app.business.context(admin) as context:
-            context.move(Invoice, int(bad.rsplit('/', 1)[1]), 'issued')
+            context.move(Invoice, RecordId(bad.rsplit('/', 1)[1]), 'issued')
     assert len(entries(app)) == 3 and c('GET', bad)[1]['status'] == 'draft'
 
 
@@ -282,8 +284,8 @@ def test_effect_rows_are_read_only_on_every_write_path(books):
     app, c, account = books
     url = invoice(c, account)
     move(c, url, 'issued')
-    row = entries(app)[0]['id']
-    stock = entries(app, 'stockmove')[0]['id']
+    row = RecordId(entries(app)[0]['id'])
+    stock = RecordId(entries(app, 'stockmove')[0]['id'])
     headers = etag(c, f'/api/ledgerentry/{row}')
     assert c('POST', '/api/ledgerentry', {'account': account, 'debit': '1'})[0] == 403
     assert c('PATCH', f'/api/ledgerentry/{row}', {'memo': 'x'}, headers=headers)[0] == 403
@@ -332,7 +334,7 @@ def test_void_writes_mirror_rows_and_keeps_originals(books):
     assert ledger[:3] == before
     # Swap exchanges debit and credit; the mirrors keep the source and are marked as reversals.
     assert [(row['debit'], row['credit'], row['memo'], row['source_id'], row['reversal']) for row in ledger[3:]] == [
-        (0, 10, 'a', voided['id'], 1), (0, 20, 'b', voided['id'], 1), (30, 0, 'revenue', voided['id'], 1)]
+        (0, 10, 'a', RecordId(voided['id']), 1), (0, 20, 'b', RecordId(voided['id']), 1), (30, 0, 'revenue', RecordId(voided['id']), 1)]
     # Negate flips the quantity.
     assert [(row['qty'], row['reversal']) for row in entries(app, 'stockmove')] == [(-10000, 0), (-20000, 0), (10000, 1), (20000, 1)]
     assert c('GET', url)[1]['_effects'][0] == {'target': 'ledgerentry', 'rows': 3, 'reversals': 3, 'balanced': True}
@@ -363,7 +365,7 @@ def test_revise_reverses_the_original_and_the_copy_posts_its_own(books):
     assert copy['_effects'] == [{'target': 'ledgerentry', 'rows': 0, 'reversals': 0, 'balanced': True},
                                 {'target': 'stockmove', 'rows': 0, 'reversals': 0}]
     assert move(c, copy_url, 'issued')[0] == 200
-    sources = [(row['source_id'], row['reversal']) for row in entries(app)]
+    sources = [(str(RecordId(row['source_id'])), row['reversal']) for row in entries(app)]
     assert sources.count((original['id'], 0)) == sources.count((original['id'], 1)) == 3
     assert sources.count((copy['id'], 0)) == 3 and (copy['id'], 1) not in sources
     assert effects.check(app) == []
@@ -451,7 +453,7 @@ def test_check_reports_changed_missing_extra_and_unbalanced_rows(books):
 def test_check_reports_rows_of_records_that_have_not_posted(books):
     app, c, account = books
     url = invoice(c, account)
-    record_id = int(url.rsplit('/', 1)[1])
+    record_id = RecordId(url.rsplit('/', 1)[1])
     with app.database.transaction() as tx, tx.maintenance():
         tx.create(StockMove, item='a', qty='-1', source={'model': 'invoice', 'id': record_id})
         # A row whose source was removed: References have no SQL foreign key.
@@ -479,7 +481,7 @@ def test_check_command_exit_codes(books, tmp_path, monkeypatch, capsys):
         main(['effects', 'check', 'acme', '--project', str(root)])
     assert stopped.value.code == 1
     output = capsys.readouterr()
-    assert output.out.startswith('invoice 1 -> stockmove: missing; expected ') and output.err == '1 difference\n'
+    assert output.out.startswith(f"invoice {url.rsplit('/', 1)[1]} -> stockmove: missing; expected ") and output.err == '1 difference\n'
     # Nothing was written by the check.
     assert len(entries(app, 'stockmove')) == 1 and len(entries(app)) == 3
 
@@ -544,7 +546,7 @@ def test_rows_are_validated_without_any_role(branches):
     # Admin cannot read the dubai branch, yet the engine posts rows linking to it.
     status, body, _ = move(editor, url, 'done')
     assert status == 200, body
-    assert [row['branch'] for row in entries(app, 'branchentry')] == [branch] and len(entries(app, 'plainentry')) == 1
+    assert [row['branch'] for row in entries(app, 'branchentry')] == [RecordId(branch)] and len(entries(app, 'plainentry')) == 1
     # Link filters are decided on the stored record.
     closed = editor('POST', '/api/branch', {'name': 'closed', 'open': False})[1]['id']
     url = f"/api/branchorder/{editor('POST', '/api/branchorder', {'branch': closed})[1]['id']}"
@@ -810,8 +812,8 @@ def check_a_caught_move_failure_leaves_no_rows_or_number(books):
         with pytest.raises(ValidationError, match='Too large to audit'):
             context.move(Bill, bad, 'issued')
         assert context.move(Bill, after, 'issued')['number'] == 'B-002'
-    assert [(row['memo'], row['source_id']) for row in entries(app, 'posting')] == [('B-001', good), ('B-002', after)]
-    assert [row['source_id'] for row in entries(app, 'audit')] == [good, after]
+    assert [(row['memo'], row['source_id']) for row in entries(app, 'posting')] == [('B-001', RecordId(good)), ('B-002', RecordId(after))]
+    assert [row['source_id'] for row in entries(app, 'audit')] == [RecordId(good), RecordId(after)]
     assert c('GET', f'/api/bill/{bad}')[1]['status'] == 'draft' and effects.check(app) == []
 
 
@@ -831,7 +833,7 @@ def check_numbers_and_rows_on_one_move_and_on_revise(books):
     assert move(c, copy_url, 'issued')[1]['number'] == 'B-002'
     # The reversal keeps the original's number and source; the copy posts once more under its own number.
     assert [(row['memo'], row['amount'], row['source_id'], row['reversal']) for row in entries(app, 'posting')] == [
-        ('B-001', 1000, original['id'], 0), ('B-001', -1000, original['id'], 1), ('B-002', 1000, copy['id'], 0)]
+        ('B-001', 1000, RecordId(original['id']), 0), ('B-001', -1000, RecordId(original['id']), 1), ('B-002', 1000, RecordId(copy['id']), 0)]
     assert effects.check(app) == []
 
 
@@ -1169,7 +1171,7 @@ def test_draft_preview_of_a_locked_or_posted_record_shows_the_kept_results(tmp_p
     assert c('PATCH', f'/api/customer/{customer}', {'fee': '10'}, headers=etag(c, f'/api/customer/{customer}'))[0] == 200
     previews = {}
     for url in (approved, issued, draft):
-        status, body, _ = c('POST', '/api/_draft/bill', {'id': int(url.rsplit('/', 1)[1]), 'values': {'memo': 'x'}})
+        status, body, _ = c('POST', '/api/_draft/bill', {'id': url.rsplit('/', 1)[1], 'values': {'memo': 'x'}})
         assert status == 200, body
         previews[url] = (body['values']['fee'], body['values']['total'])
     assert previews == {approved: ('1.00', '4.00'), issued: ('1.00', '4.00'), draft: ('10.00', '13.00')}

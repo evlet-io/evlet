@@ -247,7 +247,7 @@ def test_winning_a_deal_creates_a_task_books_it_and_makes_a_customer(crm):
     # Voiding the won deal writes the reversing booking; revising starts a new copy at lead.
     revision = admin.write('POST', url + '/revise', {'reason': 'Customer added a second warehouse'})
     assert revision[0] == 201, revision
-    assert revision[1]['stage'] == 'lead' and revision[1]['revises'] == int(url.rsplit('/', 1)[1]) and revision[1]['number'] != won['number']
+    assert revision[1]['stage'] == 'lead' and revision[1]['revises'] == url.rsplit('/', 1)[1] and revision[1]['number'] != won['number']
     bookings = admin('GET', '/api/booking?limit=100&offset=0&filters=' + quote(json.dumps({'organization': deal['organization']})))[1]['items']
     assert sorted(row['amount'] for row in bookings) == sorted([won['total'], '-' + won['total']])
     assert admin('GET', url)[1]['stage'] == 'void'
@@ -310,7 +310,7 @@ def test_sales_see_only_their_deals_and_no_hidden_fields(crm):
     assert sara('GET', '/api/deal?limit=50&offset=0&q=Fleet')[1]['total'] == 0
     assert sara.write('PATCH', deal_url(sara, 'ERP rollout'), {'internal_notes': 'x'})[0] in (403, 422)
     # A deal created for someone else leaves the row scope and is refused.
-    assert sara('POST', '/api/deal', {'title': 'Not mine', 'organization': 1, 'owner': 'omar'})[0] in (403, 404, 422)
+    assert sara('POST', '/api/deal', {'title': 'Not mine', 'organization': mine[0]['organization'], 'owner': 'omar'})[0] in (403, 404, 422)
     # Viewers read every deal without internal notes and cannot write.
     seen = vera('GET', '/api/deal?limit=100&offset=0')[1]
     assert seen['total'] >= 17 and all('internal_notes' not in item and 'owner' in item for item in seen['items'])
@@ -322,7 +322,7 @@ def test_sales_see_only_their_deals_and_no_hidden_fields(crm):
     # Measures follow the row scope.
     assert sara('GET', '/api/deal/measures')[1]['measures']['deals'] == len(mine)
     # A new deal or lead belongs to whoever creates it, without typing a username.
-    created = sara('POST', '/api/deal', {'title': 'Mine without typing', 'organization': 1})
+    created = sara('POST', '/api/deal', {'title': 'Mine without typing', 'organization': mine[0]['organization']})
     assert created[0] == 201 and created[1]['owner'] == 'sara'
     assert sara('POST', '/api/lead', {'name': 'Hamad', 'company': 'Hamad Trading'})[1]['owner'] == 'sara'
 
