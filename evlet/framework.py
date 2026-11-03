@@ -20,8 +20,11 @@ from .migrations import SchemaError
 class FrameworkStep:
     """One framework schema change. A released step never changes; a correction is a new step.
 
-    `run(connection, postgres)` receives the open migration transaction. Leave it out for a step
-    that only records schema the additive startup code already creates.
+    `run(connection, postgres)` receives the open migration transaction. Steps run before the
+    additive startup tables exist, so a step creates any table it writes to. Leave `run` out for a
+    step that only records schema the additive startup code already creates. The checksum covers
+    the name, summary and the function's qualified name, not its source: release review keeps a
+    released step's code unchanged.
     """
 
     name: str
@@ -33,8 +36,27 @@ class FrameworkStep:
         return sha256(json.dumps({'name': self.name, 'summary': self.summary, 'run': target}, sort_keys=True).encode()).hexdigest()
 
 
+def _exists(connection, postgres, table):
+    if postgres:
+        return connection.execute('SELECT to_regclass(?) IS NOT NULL', (table,)).fetchone()[0]
+    return connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
+
+
+def _tool_calls(connection, postgres):
+    from .tools import CALLS_TABLE
+    for statement in CALLS_TABLE:
+        connection.execute(statement)
+    if _exists(connection, postgres, 'evlet_mcp_calls'):
+        if _exists(connection, postgres, 'evlet_mcp_clients'):
+            connection.execute("INSERT INTO evlet_tool_calls(at,user_id,origin,client,client_id,tool,model,kind,outcome) "
+                               "SELECT k.at, m.user_id, 'mcp', m.client_name, k.client_id, k.tool, k.model, k.kind, k.outcome "
+                               'FROM evlet_mcp_calls k JOIN evlet_mcp_clients m ON m.id=k.client_id ORDER BY k.id')
+        connection.execute('DROP TABLE evlet_mcp_calls')
+
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
+    FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
 )
 
 LEDGER = ('CREATE TABLE IF NOT EXISTS evlet_framework_migrations (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, '
@@ -60,9 +82,18 @@ def _applied(connection):
     return len(rows)
 
 
+def pending(database):
+    """The steps `upgrade` would run, for `evlet migrate --plan`. Call it on a copy: it creates the ledger table."""
+    with database.transaction() as tx:
+        tx.connection.execute(LEDGER)
+        return STEPS[_applied(tx.connection):]
+
+
 def upgrade(database, *, apply=True):
     """Run pending steps in one transaction and record each one, or refuse when apply is false."""
     postgres = getattr(database, 'driver', None) is not None
+    # Processes starting together take turns: write transactions hold BEGIN IMMEDIATE on SQLite
+    # and the database-wide advisory lock on PostgreSQL, so later ones find the steps applied.
     with database.transaction() as tx:
         connection = tx.connection
         connection.execute(LEDGER)

@@ -69,8 +69,10 @@ Framework migrations are ordered, checksummed steps recorded in the
 `evlet_framework_migrations` table with the Evlet version that applied them. The
 first step, `0001_startup_tables`, adopts the tables that Evlet 0.2.0 and earlier
 create at startup, so an existing instance needs no other change. Later steps are
-where Evlet makes changes that can move or drop data, such as replacing a table.
-They never run while an instance is served. If a step fails, the staged copy is
+where Evlet makes changes that can move or drop data. `0002_tool_calls` moves the
+MCP call log (`evlet_mcp_calls`) into the Tool Engine's `evlet_tool_calls` and drops
+the old table. Steps never run while an instance is served.
+`evlet migrate acme --plan` lists the pending ones without writing anything. If a step fails, the staged copy is
 discarded and the database and lock stay as they were; restore the earlier Evlet
 before restarting.
 
@@ -81,7 +83,8 @@ to force startup.
 
 Applications started outside an instance, such as `evlet playground`, tests and
 the `evlet new` starter, apply framework migrations themselves when they start, so
-a new database needs no extra step. Do not keep data you care about in those.
+a new database needs no extra step. Processes that start together take turns; the
+first applies the steps and the others find them applied. Do not keep data you care about in those.
 
 Main uses a development version between releases; a source build is not the same
 artifact as the last PyPI release.

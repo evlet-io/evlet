@@ -75,7 +75,8 @@ Python, TS/JS and configuration changes, including file additions/deletions, and
 runs the existing queue. It never applies model migrations
 implicitly. Stop the server and run `migrate` after adding a migration.
 `migrate --plan` writes nothing: it builds the apps against a temporary copy of the
-instance database and prints the pending migrations, each model, field and property that
+instance database and prints the pending migrations, the pending Evlet framework migrations
+([app-upgrades.md](app-upgrades.md#upgrade-evlet)), each model, field and property that
 differs from the migrations, and for each app a suggested migration to review
 ([model-engine.md](model-engine.md#planning-a-migration)). `evlet makemigration <app>
 --instance <instance>` writes that suggestion into a flat app's `migrations/` folder as

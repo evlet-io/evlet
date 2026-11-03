@@ -120,7 +120,8 @@ def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_p
 def plan(root, name, *, trust=False, confirm=None, label='changes'):
     """What `migrate` would do to an instance, worked out on a copy of its database.
 
-    Returns (MigrationPlan, {app: (suggested migration name, Python or '')}, packages). Nothing in the
+    Returns (MigrationPlan, {app: (suggested migration name, Python or '')}, packages, pending framework
+    steps). Nothing in the
     instance is written: the apps are built against a temporary copy that is deleted afterwards."""
     path = child(root, 'instances', name)
     if not path.is_dir():
@@ -149,6 +150,8 @@ def plan(root, name, *, trust=False, confirm=None, label='changes'):
             app, _ = build_instance(config, path, packages, database_path=stage, storage_path=Path(directory) / 'private')
             try:
                 result = app.database.plan(app.database.migrations)
+                from ..framework import pending
+                steps = pending(app.database)
             finally:
                 app.database.close()
         from ..migrations import suggest
@@ -161,7 +164,7 @@ def plan(root, name, *, trust=False, confirm=None, label='changes'):
             migration = f'{number:04d}_{label}'
             code = suggest(app.registry, result.planned, migration, tables) if result.differences and result.planned and tables else ''
             suggestions[package.name] = (migration, code)
-        return result, suggestions, packages
+        return result, suggestions, packages, steps
 
 
 def makemigration(root, app_name, instance, *, name='changes', trust=False, confirm=None):
@@ -171,7 +174,7 @@ def makemigration(root, app_name, instance, *, name='changes', trust=False, conf
     import re
     if not re.fullmatch('[a-z][a-z0-9_]{0,40}', name):
         raise ValueError('Use lowercase letters, digits and underscores for the migration name')
-    result, suggestions, packages = plan(root, instance, trust=trust, confirm=confirm, label=name)
+    result, suggestions, packages, _ = plan(root, instance, trust=trust, confirm=confirm, label=name)
     package = next((item for item in packages if item.name == app_name), None)
     if package is None:
         raise ValueError(f'{app_name} is not installed on {instance}')

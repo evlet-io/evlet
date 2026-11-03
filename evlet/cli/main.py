@@ -222,9 +222,12 @@ def main(argv=None):
             from .install import plan
             if args.recompute_posted:
                 raise ValueError('Choose --plan or --recompute-posted')
-            result, suggestions, packages = plan(root, args.instance, trust=args.trust, confirm=confirm)
+            result, suggestions, packages, steps = plan(root, args.instance, trust=args.trust, confirm=confirm)
             print(f'Instance {args.instance}: plan only; nothing was written')
             print(result.text(suggestion=False))
+            if steps:
+                print('Pending framework migrations (run after a backup):')
+                print('\n'.join(f'  {step.name}\n    {step.summary}' for step in steps))
             for package in packages:
                 migration, code = suggestions[package.name]
                 if not code:
