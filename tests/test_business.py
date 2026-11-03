@@ -98,6 +98,10 @@ def test_authentication_cookie_csrf_logout_and_expiry(secured):
     with secured.database._connection() as db:
         token = db.execute('SELECT token FROM evlet_sessions').fetchone()[0]
         assert token == hashlib.sha256(c.cookie.split('=')[1].encode()).hexdigest()
+    # Writes are JSON only: a sign-out without the JSON type is refused and the session stays
+    # (the browser client sends an empty object for writes without a body).
+    assert c('POST', '/api/auth/logout', headers={b'content-type': b''})[0] == 415
+    assert c('GET', '/api/schema')[0] == 200
     assert c('POST', '/api/auth/logout')[0] == 204
     assert c('GET', '/api/schema')[0] == 401
     c = client(secured)

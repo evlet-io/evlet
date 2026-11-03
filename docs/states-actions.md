@@ -224,6 +224,8 @@ def record_payment(self, amount): ...
   assigning a list replaces the rows, so `self.lines = [*self.lines, {"qty": "1", "rate": "2"}]`
   adds one. Rows already in the list keep their IDs; a dict is a new row, cleaned and
   calculated like submitted rows; rows left out are deleted.
+* An action may return `present(SomeSlip, source=self, values={...})`. The detail carries it as
+  `_outcome`, and the record view presents that slip next. See [slips.md](slips.md).
 * A `run` method or action that raises something other than a validation error rolls
   everything back and answers 500 `Internal server error`, without its message.
 

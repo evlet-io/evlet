@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
-                   Move, MultiSelect, Reference, Related, Sequence, State, Sum, Swap, AppSettings, UserPreferences)
+                   Move, MultiSelect, Reference, Related, Sequence, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome)
 from evlet.calc import D, F, round, days
 
 PASSWORD = 'a sufficiently long fixture password'
@@ -448,10 +448,81 @@ def record_screens(folder):
     return out
 
 
+class Stop(Child):
+    place = Text(required=True)
+    hours = Decimal(minimum='0', default='0')
+
+
+class PlanVisit(Slip):
+    title = 'Plan a visit'
+    hand_in_label = 'Plan visit'
+    source = Customer
+    layout = (('Visit', ('customer', 'visit_on', 'kind', 'rate')), ('Stops', ('stops',)))
+    customer = Link(Customer, read_only=True)
+    visit_on = Date(required=True)
+    kind = Select(['survey', 'install'], default='survey')
+    rate = Currency(visible_if="kind == 'install'", required_if="kind == 'install'")
+    stops = Table(Stop, required=True)
+    hours = Decimal(compute='sum(stops.hours)', stored=False)
+
+    def load(self, source):
+        self.customer = source.id
+
+    def hand_in(self):
+        return Outcome(f'Visit planned for {self.visit_on.isoformat()}', data={'hours': str(self.hours)})
+
+
+class QuickCustomer(Slip):
+    title = 'Quick customer'
+    menu = True
+    becomes = Customer
+    name = Text(required=True)
+    credit_days = Integer(default=30)
+
+
+def record_slips(folder):
+    """Slips: a schema that lists them, then present, check and hand-in of a slip from a record and of a
+    New menu slip that becomes a record for review."""
+    database = Database(folder / 'slips.sqlite3', Registry(Customer, Product))
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    app = Application(database, auth=auth, slips=(PlanVisit, QuickCustomer))
+    app.initialize()
+    out = {}
+
+    def keep(name, response):
+        status, payload, headers = response
+        if isinstance(payload, dict) and isinstance(payload.get('csrf'), str):
+            payload['csrf'] = 'fixture-csrf-token'
+        out[name] = {'status': status, 'body': payload, 'etag': headers.get(b'etag', b'').decode() or None}
+        return payload
+
+    assert http(app, 'POST', '/api/auth/setup', {'username': 'owner', 'password': PASSWORD})[0] == 201
+    status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'owner', 'password': PASSWORD})
+    cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
+    admin = lambda method, path, body=None, **kwargs: http(app, method, path, body, cookie=cookie, csrf=csrf, **kwargs)
+    keep('slip_session', admin('GET', '/api/auth/session'))
+    keep('slip_schema', admin('GET', '/api/schema'))
+    assert admin('POST', '/api/customer', {'name': 'Corniche Foods', 'rate': '12.50', 'credit_days': 30})[0] == 201
+    customer = keep('slip_customer', admin('GET', '/api/customer/1'))
+    source = {'model': 'customer', 'id': customer['id']}
+    keep('slip_present', admin('POST', '/api/_slips/plan_visit/present', {'source': source, 'values': {}}))
+    keep('slip_check', admin('POST', '/api/_slips/plan_visit/check', {'source': source, 'revision': 1, 'values': {
+        'visit_on': None, 'kind': 'install', 'rate': None, 'children': {'stops': [{'_key': 'row-1', 'place': 'Warehouse', 'hours': '2.5'}]}}}))
+    revision = {b'if-match': out['slip_customer']['etag'].encode()}
+    keep('slip_hand_in_invalid', admin('POST', '/api/_slips/plan_visit/hand-in', {'source': source, 'key': 'fixture-visit-1', 'values': {
+        'visit_on': None, 'kind': 'install', 'rate': None, 'children': {'stops': [{'_key': 'row-1', 'place': None, 'hours': '2.5'}]}}}, headers=revision))
+    keep('slip_hand_in', admin('POST', '/api/_slips/plan_visit/hand-in', {'source': source, 'key': 'fixture-visit-2', 'values': {
+        'visit_on': '2026-11-16', 'kind': 'install', 'rate': '350.00', 'children': {'stops': [{'_key': 'row-1', 'place': 'Warehouse', 'hours': '2.5'}]}}}, headers=revision))
+    keep('slip_quick_present', admin('POST', '/api/_slips/quick_customer/present', {'source': None, 'values': {}}))
+    keep('slip_quick_hand_in', admin('POST', '/api/_slips/quick_customer/hand-in', {'source': None, 'key': 'fixture-quick-1', 'values': {'name': 'Oasis Water', 'credit_days': 45}}))
+    database.close()
+    return out
+
+
 def generate():
     """Both fixtures, recorded from fresh databases."""
     with TemporaryDirectory() as directory:
-        return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: record_screens(Path(directory))}
+        return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_slips(Path(directory))}}
 
 
 def main():

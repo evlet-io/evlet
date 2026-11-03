@@ -146,7 +146,8 @@ router.confirmLeave(() => record.dirty.get(), () => confirmDialog('Discard your 
   modifier key, `target`, `download` or `rel="external"`, and links to paths the table does
   not know (such as `/api/...`), stay ordinary links.
 - `guard(fn)` can stop any navigation (sync or async). `confirmLeave` asks only while its
-  condition is true and also asks before the tab closes. A refused back or forward step
+  condition is true and also asks before the tab closes. A navigation that changes only the
+  query, such as switching record tabs (`?tab=`), stays on the page and never asks. A refused back or forward step
   returns to the page the user was on. The latest of two concurrent navigations wins.
 - `router.signal` is aborted when the route changes. Pass `() => router.signal` to the API
   client so requests of the old page stop.
@@ -491,6 +492,7 @@ not part of the build.
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
 | `record-page.ts` | Record (doc) view, new records, action, void, revise, unpost and repost dialogs |
+| `slips.ts` | Slips ([slips.md](slips.md)): `presentSlip()`, the slip modal and what follows a hand-in |
 | `palette.ts` | Command palette (Cmd or Ctrl K) |
 | `client.ts` | The API client plus the routes the screens use, and the last detail per record |
 | `meta.ts` | What the screens read from the schema, with the optional keys of later phases |
@@ -526,7 +528,8 @@ tab closes. Signing in keeps the address the user opened.
 | `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other |
 | `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
-| `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. Form dialog actions (`dialog: true`) are not shown: these screens cannot open them yet |
+| `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |
+| `Slip` with `source` or `menu` ([slips.md](slips.md)) | A header button on the source model's records, or an entry in New; `?slip=name` on a record opens it. A slip that becomes a record for review opens New filled in, with a note |
 | `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board, the status flow, move buttons; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
 | Locked states, `editable_when_locked` | Lock banner; only the declared fields stay editable; lines lock |
 | Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |
