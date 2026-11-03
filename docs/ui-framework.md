@@ -456,6 +456,7 @@ mount(document.querySelector('#app')!, () => DocFrame({
   arrow keys and opens with Enter. Widths, order and hidden columns live in a `TablePrefs`
   cell the screen saves per user. When the frame is wider than the columns, the last column
   takes the spare width, so the header and row rules reach the edge; the child table does the same.
+  `rowClass` gives a row a class, such as the group headings and subtotals a report puts among its rows.
 - Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
   first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
   polite live region that the app creates at mount with `mountToasts()`. A popover stays open

@@ -34,8 +34,9 @@ class InvoiceRegister(Report):
 app = Application(database, auth=auth, reports=(InvoiceRegister,))
 ```
 
-The Playground has two: **Invoice register** (a list with sorting and totals) and **Sales by
-customer** (invoices grouped by customer, with a chart, run as it opens). See
+The Playground has three: **Invoice register** (a list with sorting and totals), **Invoices by
+customer** (the register grouped by customer, with subtotals) and **Sales by customer** (one row
+per customer, with a chart, run as it opens). See
 `examples/playground/reports.py`.
 
 ## What a report declares
@@ -51,8 +52,9 @@ customer** (invoices grouped by customer, with a chart, run as it opens). See
 | `sortable` | `()` | Column names people may sort by |
 | `chart` | `None` | A `Chart` drawn above the rows |
 | `export` | `True` | Offer Export (CSV) |
+| `group_by` | `None` | A column whose rows stay together, with a heading and a subtotal for each group |
 
-These names cannot also be filter fields. Filters are the report's own fields: any field type,
+These names (and `group_by`) cannot also be filter fields. Filters are the report's own fields: any field type,
 with defaults, `required`, `Ref` filters on Links and `visible_if`, `required_if`, `read_only_if`
 and `compute` rules. The server settles them as you type; editing a filter never runs a report
 that is not `autorun`.
@@ -81,6 +83,14 @@ Totals: return `'totals': {column: value}` for every row, usually from `context.
 the response says `{"scope": "all"}`. Without it the server adds up the page (`{"scope": "page"}`),
 and the view labels the row **Total, this page** when there is more than one page.
 
+Groups: with `group_by`, `context.sort` always starts with the group column, then the person's
+sort, for example `('customer', '-total')`, so each group's rows arrive together. Return
+`'groups': [{'value': ..., 'count': n, 'totals': {column: value}}]` for every group, usually from
+`context.aggregate(..., group_by=(...))`. The response keeps the groups on the current page
+(`{"scope": "all", "items": [...]}`). Without them the server counts and totals the page's rows
+(`"scope": "page"`). A person who cannot read the group column sees the rows ungrouped. The CSV
+export stays one line per row.
+
 Read through `self.context` (`list`, `aggregate`, `get`): it applies the person's role, row scope
 and field rules. A value a report computes itself is the report author's responsibility; declare
 `source` on its column when it comes from one field.
@@ -91,7 +101,7 @@ and field rules. A value a report computes itself is the report author's respons
 | --- | --- |
 | `GET /api/_reports` | The reports this person can run: filters, columns, `group`, `model`, `sortable`, `chart`, `export` (also in `/api/schema` as `reports`) |
 | `POST /api/_reports/<name>/evaluate` | `{filters, revision}`: settles the filters without running. Returns `values`, `errors`, `states` and `rules` |
-| `POST /api/_reports/<name>` | `{filters, limit (1 to 100), offset, sort}`: one page. Returns `rows`, `total`, `totals`, `filters`, `sort` |
+| `POST /api/_reports/<name>` | `{filters, limit (1 to 100), offset, sort}`: one page. Returns `rows`, `total`, `totals`, `groups` (with `group_by`), `filters`, `sort` |
 | `POST /api/_reports/<name>/export.csv` | `{filters, sort}`: every row as CSV, up to 5,000 |
 | `POST /api/_reports/<name>/prints/<design>` | `{filters}`: the report's PDF in a print design ([printing.md](printing.md), when installed) |
 
@@ -115,6 +125,10 @@ as an attachment with `nosniff` and no caching.
 - The address holds the filters a report ran with, its sort and page:
   `/reports/InvoiceRegister?status=sent&sort=-total&page=2`. Opening it runs the report again, as
   the person opening it, so they see only their own rows. **Copy link** copies it.
+- With `group_by`, each group gets a heading (its value and row count) and a subtotal row.
+- **Save view** keeps the filters a report ran with and its sort under a name. Saved views show as
+  chips above the filters; choosing one runs it again. They are kept per person on the device,
+  up to 20 per report.
 - **Export** downloads the CSV, with the filters the report ran with and its sort.
 - **Print** shows when the person may print the report with a print design and the server has the
   print extra. The preview is the PDF from the filters the report ran with, never unsent edits.

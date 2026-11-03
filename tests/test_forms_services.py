@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from evlet import (Model, Text, Integer, Rule, Dialog, Report, Column, Chart, Sum, Registry, Database,
+from evlet import (Model, Text, Integer, Rule, Dialog, Report, Column, Chart, Count, Sum, Registry, Database,
                    Application, LocalAuth, api, cron, ValidationError)
 from evlet.forms import Forms
 from evlet.services import Calendar, Endpoint
@@ -272,18 +272,43 @@ class Unexported(SalesByCustomer):
     export = False
 
 
+class SalesGrouped(Report):
+    title = 'Sales grouped'
+    roles = ('admin', 'viewer')
+    group_by = 'customer'
+    sortable = ('amount',)
+    columns = (Column('customer'), Column('id', type='integer'),
+               Column('amount', type='integer', total=True, unit='AED'),
+               Column('cost', type='integer', total=True, unit='AED', source='sale.cost'))
+
+    def run(self):
+        self.context.seen = self.context.sort
+        page = self.context.list(Sale, order_by=self.context.sort, limit=self.context.limit, offset=self.context.offset)
+        groups = self.context.aggregate(Sale, measures={'n': Count(), 'amount': Sum('amount')}, group_by=('customer',))
+        return {'rows': [{key: row.get(key) for key in ('customer', 'id', 'amount', 'cost')} for row in page['rows']], 'total': page['total'],
+                'groups': [{'value': group['customer'], 'count': group['n'], 'totals': {'amount': group['amount']}} for group in groups]}
+
+
+class SalesGroupedByPage(SalesGrouped):
+    def run(self):
+        # run() is called on the report's draft, so the parent's run is named directly.
+        result = SalesGrouped.run(self)
+        del result['groups']
+        return result
+
+
 @pytest.fixture(params=['sqlite', 'postgresql'])
 def sales(request, tmp_path):
     # Report runs, totals, sorting and export behave the same on both databases.
     db = (Database(tmp_path / 'sales.sqlite3', Registry(Sale)) if request.param == 'sqlite'
           else PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), Registry(Sale)))
     auth = LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
-    app = Application(db, auth=auth, reports=(SalesByCustomer, Unexported))
+    app = Application(db, auth=auth, reports=(SalesByCustomer, Unexported, SalesGrouped, SalesGroupedByPage))
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     admin = client(app)
     assert admin('POST', '/api/auth/users', {'username': 'viewer', 'password': PASSWORD, 'role': 'viewer'})[0] == 201
-    for customer, amount, cost in (('Beta', 30, 3), ('Alpha', 10, 1), ('=SUM(A1)', 5, 0)):
+    for customer, amount, cost in (('Beta', 30, 3), ('Alpha', 10, 1), ('=SUM(A1)', 5, 0), ('Alpha', 7, 2)):
         assert admin('POST', '/api/sale', {'customer': customer, 'amount': amount, 'cost': cost})[0] == 201
     return app
 
@@ -302,7 +327,7 @@ def test_report_sort_and_whole_result_totals(sales):
     status, result, _ = c('POST', '/api/_reports/SalesByCustomer', {'filters': {}, 'limit': 2, 'sort': '-amount'})
     assert status == 200, result
     assert [row['amount'] for row in result['rows']] == [30, 10] and result['sort'] == '-amount'
-    assert result['totals'] == {'scope': 'all', 'values': {'amount': '45', 'cost': '0'}}
+    assert result['totals'] == {'scope': 'all', 'values': {'amount': '52', 'cost': '0'}}
     assert c('POST', '/api/_reports/SalesByCustomer', {'sort': 'cost'})[0] == 422
     assert c('POST', '/api/_reports/SalesByCustomer', {'sort': ['amount']})[0] == 422
 
@@ -338,7 +363,7 @@ def test_report_export_is_csv_with_the_same_checks(sales):
     assert headers[b'x-content-type-options'] == b'nosniff'
     text = content.decode('utf-8')
     assert text.startswith('﻿Id,Customer,Amount,Cost\r\n')
-    assert text.splitlines()[1:] == ["3,'=SUM(A1),5,0", '2,Alpha,10,1', '1,Beta,30,3']
+    assert text.splitlines()[1:] == ["3,'=SUM(A1),5,0", '2,Alpha,10,1', '4,Alpha,7,2', '1,Beta,30,3']
     assert c('POST', '/api/_reports/Unexported/export.csv', {'filters': {}})[0] == 403
     assert c('POST', '/api/_reports/SalesByCustomer/export.csv', {'limit': 5})[0] == 422
     assert c('GET', '/api/_reports/SalesByCustomer/export.csv')[0] == 403
@@ -351,7 +376,7 @@ def test_report_export_stops_at_the_row_bound(sales, monkeypatch):
     assert status == 200, content
     content = content.decode('utf-8')
     lines = content.splitlines()
-    assert len(lines) == 4 and lines[-1] == '1 more rows were left out. Narrow the filters to export them.'
+    assert len(lines) == 4 and lines[-1] == '2 more rows were left out. Narrow the filters to export them.'
 
 
 @pytest.mark.parametrize('attributes, message', [
@@ -361,6 +386,7 @@ def test_report_export_stops_at_the_row_bound(sales, monkeypatch):
     ({'columns': (Column('id', type='integer', link='Missing'),)}, 'Missing'),
     ({'export': 'yes'}, 'export'),
     ({'group': 3}, 'group'),
+    ({'group_by': 'missing'}, 'group_by'),
 ])
 def test_report_view_declarations_are_checked(tmp_path, attributes, message):
     report = type('Broken', (SalesByCustomer,), {'chart': None, 'sortable': (), **attributes})
@@ -375,6 +401,33 @@ def test_csv_cells_guard_text_but_keep_negative_numbers():
     assert csv_cell('-5.00', 'currency') == '-5.00' and csv_cell(-3, 'integer') == '-3'
     assert csv_cell('-5 rows', 'text') == "'-5 rows" and csv_cell('@SUM', 'text') == "'@SUM" and csv_cell(None) == ''
     assert csv_cell(True, 'boolean') == 'Yes'
+
+
+def test_report_groups_keep_rows_together_with_subtotals(sales, monkeypatch):
+    c = client(sales)
+    seen = []
+    original = SalesGrouped.run
+    monkeypatch.setattr(SalesGrouped, 'run', lambda self: (result := original(self), seen.append(self.context.seen))[0])
+    status, result, _ = c('POST', '/api/_reports/SalesGrouped', {'filters': {}, 'limit': 2, 'sort': '-amount'})
+    assert status == 200, result
+    # The group column comes first, then the person's sort.
+    assert seen[-1] == ('customer', '-amount')
+    assert [(row['customer'], row['amount']) for row in result['rows']] == [('=SUM(A1)', 5), ('Alpha', 10)]
+    # Only the groups on this page, with totals over every row of each group.
+    assert result['groups'] == {'scope': 'all', 'items': [{'value': '=SUM(A1)', 'count': 1, 'totals': {'amount': '5', 'cost': None}},
+                                                         {'value': 'Alpha', 'count': 2, 'totals': {'amount': '17', 'cost': None}}]}
+    entry = next(item for item in c('GET', '/api/_reports')[1]['reports'] if item['name'] == 'SalesGrouped')
+    assert entry['group_by'] == 'customer'
+    status, page, _ = c('POST', '/api/_reports/SalesGroupedByPage', {'filters': {}, 'limit': 3})
+    assert status == 200, page
+    assert page['groups'] == {'scope': 'page', 'items': [{'value': '=SUM(A1)', 'count': 1, 'totals': {'amount': '5', 'cost': '0'}},
+                                                        {'value': 'Alpha', 'count': 2, 'totals': {'amount': '17', 'cost': '3'}}]}
+
+
+def test_report_group_subtotals_follow_field_rules(sales):
+    viewer = client(sales, 'viewer')
+    result = viewer('POST', '/api/_reports/SalesGroupedByPage', {'filters': {}, 'limit': 3})[1]
+    assert result['groups']['items'][1]['totals'] == {'amount': '17'}
 
 
 def test_chart_and_column_source_shapes():

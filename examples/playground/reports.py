@@ -82,4 +82,25 @@ class SalesByCustomer(Report):
         return {'rows': groups[offset:offset + limit], 'total': len(groups), 'totals': totals}
 
 
-REPORTS = (InvoiceRegister, SalesByCustomer)
+
+class InvoicesByCustomer(InvoiceRegister):
+    """The register grouped by customer: a heading and a subtotal for each customer, over all their invoices."""
+    title = 'Invoices by customer'
+    group_by = 'customer'
+    columns = (Column('customer', type='link', link='customer'), Column('id', type='link', link='invoice', label='Invoice'),
+               Column('posting_date', type='date', label='Posted'), Column('status'),
+               Column('total', type='currency', total=True, unit='AED', source='invoice.total'))
+
+    def run(self):
+        filters = invoice_filters(self)
+        if filters is None: return {'rows': [], 'total': 0, 'totals': {'total': 0}}
+        # context.sort starts with the group column, so each customer's invoices stay together.
+        page = self.context.list(Invoice, filters=filters, order_by=self.context.sort + ('-posting_date',),
+                                 limit=self.context.limit, offset=self.context.offset)
+        groups = self.context.aggregate(Invoice, measures={'n': Count(), 'total': Sum('total')}, group_by=('customer',), filters=filters)
+        rows = [{name: row.get(name) for name in ('customer', 'id', 'posting_date', 'status', 'total')} for row in page['rows']]
+        return {'rows': rows, 'total': page['total'], 'totals': {'total': sum((group['total'] or 0 for group in groups), 0)},
+                'groups': [{'value': group['customer'], 'count': group['n'], 'totals': {'total': group['total']}} for group in groups]}
+
+
+REPORTS = (InvoiceRegister, InvoicesByCustomer, SalesByCustomer)

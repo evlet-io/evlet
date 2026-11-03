@@ -16,7 +16,7 @@ import { formatDate, formatMoney, formatNumber } from '../model/format';
 import { Button, Checkbox, EmptyState, IconButton, IconTile } from '../ui/base';
 import { fieldFor, localField } from '../ui/fields';
 import { humanize } from '../ui/kinds';
-import { copyText, openDrawer, openPopover, toast } from '../ui/layers';
+import { copyText, DialogFooter, openDrawer, openModal, openPopover, toast } from '../ui/layers';
 import { PageHeader, Toolbar } from '../ui/list';
 import { DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import type { ReportPage as Page } from './client';
@@ -27,7 +27,12 @@ const PAGE = 50;
 const NUMBERS = ['integer', 'decimal', 'currency'];
 const CODE = /^[A-Z]{3}$/;
 
-type Row = Record<string, unknown> & { _row: number };
+/** A row of the table: a report row, or a group's heading or subtotal placed among them. */
+type Row = Record<string, unknown> & { _row: number | string; _kind?: 'head' | 'sub'; _group?: GroupItem };
+type GroupItem = { value: unknown; count: number; totals: Record<string, string | null> };
+/** A saved view: the address of a report's filters and sort, under a name. Kept per person on the device. */
+type SavedView = { name: string; query: Record<string, string> };
+const MAX_VIEWS = 20;
 type Local = ReturnType<typeof localField>;
 type Rule = { visible?: boolean; required?: boolean; read_only?: boolean };
 
@@ -72,6 +77,8 @@ function fromAddress(meta: FieldSchema, text: string): unknown {
   return text;
 }
 
+/** A filter's value before anyone changes it: its declared default. */
+const initial = (meta: FieldSchema) => meta.default_kind === 'static' ? meta.default ?? null : meta.type === 'boolean' ? false : null;
 const toAddress = (value: unknown) => typeof value === 'object' ? JSON.stringify(value) : String(value);
 const blank = (value: unknown) => value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length);
 
@@ -103,7 +110,7 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
   for (const meta of report.fields) {
     const { calculated, ...rest } = meta;
     const given = start[meta.name];
-    const value = given !== undefined ? fromAddress(meta, given) : meta.default_kind === 'static' ? meta.default ?? null : meta.type === 'boolean' ? false : null;
+    const value = given !== undefined ? fromAddress(meta, given) : initial(meta);
     fields.set(meta.name, localField({ ...rest, ...(calculated ? { compute: { $expr: 'server' } } : {}) } as FieldSchema, value));
   }
   const fromLink = report.fields.some(meta => start[meta.name] !== undefined) || start.run === '1';
@@ -150,12 +157,27 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
   const sort = cell<Sort>(start.sort && report.sortable.includes(start.sort.replace(/^-/, '')) ? sortFrom(start.sort) : null, { name: `${name}.sort` });
   const page = cell(Math.max(1, Number(start.page) || 1), { name: `${name}.page` });
   const sortText = () => { const order = sort.peek(); return order ? `${order.dir === 'desc' ? '-' : ''}${order.key}` : null; };
-  const rows = derive<Row[]>(() => (result.get()?.rows ?? []).map((row, index) => ({ ...row, _row: (result.get()?.offset ?? 0) + index })));
+  const dataRows = derive<Row[]>(() => (result.get()?.rows ?? []).map((row, index) => ({ ...row, _row: (result.get()?.offset ?? 0) + index })));
+  // With group_by, each run of rows with the same group value gets a heading above and a subtotal below.
+  const grouping = report.group_by;
+  const rows = derive<Row[]>(() => {
+    const list = dataRows.get(), groups = result.get()?.groups;
+    if (!grouping || !groups) return list;
+    const items = new Map(groups.items.map(item => [JSON.stringify(item.value), item]));
+    const keyOf = (row: Row | undefined) => row ? JSON.stringify(row[grouping]) : undefined;
+    return list.flatMap((row, index) => {
+      const key = keyOf(row)!, group = items.get(key);
+      const head: Row[] = keyOf(list[index - 1]) !== key ? [{ [grouping]: row[grouping], _row: `head:${index}`, _kind: 'head', _group: group }] : [];
+      const sub: Row[] = keyOf(list[index + 1]) !== key ? [{ [grouping]: row[grouping], _row: `sub:${index}`, _kind: 'sub', _group: group }] : [];
+      return [...head, row, ...sub];
+    });
+  });
   const changed = derive(() => executed.get() !== null && JSON.stringify(executed.get()) !== edited.get());
 
   const leaving = new AbortController();
   onCleanup(() => leaving.abort());
   let runTicket = 0;
+  let quiet = false;
   const run = async (filters: Record<string, unknown>, at = 1) => {
     const mine = ++runTicket;
     busy.set(true);
@@ -182,7 +204,7 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
   // Sorting and paging run again with the filters the report ran with.
   const again = (at: number) => { const filters = executed.peek(); if (filters) void run(filters, at); };
   let first = true;
-  effect(() => { sort.get(); if (first) { first = false; return; } untrack(() => again(1)); });
+  effect(() => { sort.get(); if (first) { first = false; return; } if (!quiet) untrack(() => again(1)); });
 
   // The first check settles the defaults; an autorun report, or a shared link, then runs.
   let autoTimer: ReturnType<typeof setTimeout> | undefined;
@@ -198,14 +220,17 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
   };
 
   // The address follows the filters the report ran with, the sort and the page.
-  effect(() => {
-    const filters = executed.get();
-    if (!filters) return;
+  const addressOf = (filters: Record<string, unknown>, order: Sort) => {
     const params: Record<string, string> = {};
     for (const [key, value] of Object.entries(filters)) if (!blank(value)) params[key] = toAddress(value);
     if (!Object.keys(params).length) params.run = '1';
-    const order = sort.get();
     if (order) params.sort = `${order.dir === 'desc' ? '-' : ''}${order.key}`;
+    return params;
+  };
+  effect(() => {
+    const filters = executed.get();
+    if (!filters) return;
+    const params = addressOf(filters, sort.get());
     if (page.get() > 1) params.page = String(page.get());
     const href = router.href('report', { report: name }, params);
     untrack(() => { const now = router.route.peek(); if (now?.name === 'report' && now.params.report === name && href.endsWith(now.url)) return; void router.navigate(href, { replace: true }); });
@@ -254,10 +279,49 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
     return chips.length ? chips : html`<span class="muted">All records</span>`;
   };
 
+  // ---------- saved views ----------
+
+  const views = ctx.prefs.cell<SavedView[]>(`report.${name}.views`, []);
+  const applyView = (view: SavedView) => {
+    batch(() => {
+      for (const [key, field] of fields) {
+        if (field.calculated || field.meta.read_only) continue;
+        const given = view.query[key];
+        field.value.set(given !== undefined ? fromAddress(field.meta, given) : initial(field.meta));
+        touched.add(key);
+      }
+      quiet = true;
+      sort.set(view.query.sort && report.sortable.includes(view.query.sort.replace(/^-/, '')) ? sortFrom(view.query.sort) : null);
+      quiet = false;
+    });
+    runNow();
+  };
+  const saveView = () => {
+    const filters = executed.peek();
+    if (!filters) return;
+    const label = localField({ name: 'view_name', type: 'text', label: 'Name', required: true }, '');
+    const keep = (close: () => void) => {
+      const text = String(label.value.peek() ?? '').trim().slice(0, 60);
+      if (!text) { label.error.set('Give the view a name'); return; }
+      const query = addressOf(filters, sort.peek());
+      delete query.run;
+      views.set([...views.peek().filter(view => view.name !== text), { name: text, query }].slice(-MAX_VIEWS));
+      close();
+      toast(`Saved the view ${text}`, { icon: 'check' });
+    };
+    const close = openModal({ title: 'Save this view', icon: REPORT_ICON, tint: 'rose', narrow: true, onSubmit: () => keep(close),
+      body: () => [fieldFor({ field: label }), html`<p class="muted">It keeps the filters this report ran with and its sort, for you on this device.</p>`],
+      footer: done => DialogFooter({ cancel: done, submit: { label: 'Save view', onClick: () => keep(done) } }) });
+  };
+  const viewBar = html`<div class="ev-report-views" role="group" aria-label="Saved views">
+    ${() => views.get().map(view => html`<span class="ev-report-view"><button type="button" class="chip" on:click=${() => applyView(view)}>${view.name}</button>
+      ${IconButton({ icon: 'x', tip: `Remove ${view.name}`, onClick: () => views.set(views.peek().filter(item => item !== view)) })}</span>`)}
+    ${Button({ label: 'Save view', icon: 'plus', variant: 'ghost', size: 'small', disabled: () => !executed.get(), onClick: saveView })}</div>`;
+
   // ---------- chart ----------
 
   const chartOn = ctx.prefs.cell<boolean>(`report.${name}.chart`, true);
-  const chart = report.chart ? when(() => chartOn.get() && rows.get().length > 0, () => ReportChart(ctx, report, () => rows.get())) : null;
+  const chart = report.chart ? when(() => chartOn.get() && dataRows.get().length > 0, () => ReportChart(ctx, report, () => dataRows.get())) : null;
 
   // ---------- table ----------
 
@@ -268,6 +332,11 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
     sortable: report.sortable.includes(column.name), value: (row: Row) => row[column.name],
     render: (row: () => Row) => {
       const value = () => row()[column.name];
+      // A group heading names the group and its row count; a subtotal shows the group's totals.
+      if (row()._kind === 'head') return column.name === grouping
+        ? html`<span class="ev-report-group-name">${() => cellText(ctx, column, value()) || 'Not set'}<small class="muted">${() => { const count = row()._group?.count; return count === undefined ? '' : ` · ${count} ${count === 1 ? 'row' : 'rows'}`; }}</small></span>` : null;
+      if (row()._kind === 'sub') return column.name === grouping ? html`<span class="muted">Subtotal</span>`
+        : column.total ? html`<span class="num">${() => { const total = row()._group?.totals[column.name]; return total === undefined || total === null ? '' : cellText(ctx, column, total); }}</span>` : null;
       if (column.type === 'link' && column.link) return when(() => !blank(value()), () =>
         html`<a class="ev-row-link" href=${() => router.href('record', { model: column.link!, id: String(value()) })}>${() => cellText(ctx, column, value())}</a>`);
       return html`<span class=${NUMBERS.includes(column.type) ? 'num' : null}>${() => cellText(ctx, column, value())}</span>`;
@@ -276,8 +345,9 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
   const totals = Object.fromEntries(report.columns.filter(column => column.total).map(column =>
     [column.name, () => { const value = result.get()?.totals?.values[column.name]; return value === undefined ? '' : cellText(ctx, column, value); }]));
   const table = () => DataTable<Row>({ columns, rows, key: row => row._row, label: report.label, pinned: 1, sort, serverSort: true, prefs: tablePrefs, height: 560,
+    rowClass: row => row._kind ? `ev-report-${row._kind}` : null,
     totals: Object.keys(totals).length ? totals : undefined,
-    totalsLabel: () => result.get()?.totals?.scope === 'page' && (result.get()?.total ?? 0) > rows.get().length ? 'Total, this page' : 'Total',
+    totalsLabel: () => result.get()?.totals?.scope === 'page' && (result.get()?.total ?? 0) > dataRows.get().length ? 'Total, this page' : 'Total',
     empty: () => EmptyState({ icon: 'search', tint: 'slate', title: 'No rows match', text: 'Try different filters.' }) });
 
   const chooser = (anchor: HTMLElement) => openPopover(anchor, () => html`<div class="ev-columns" role="group" aria-label="Columns">
@@ -305,7 +375,7 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
     rows: () => [chart, table(), pager],
   });
 
-  return html`<div class="page ev-report" data-report=${name} aria-busy=${() => busy.get() ? 'true' : null}>${header}${filterBar}${status}${toolbar}${content}</div>` as HTMLElement;
+  return html`<div class="page ev-report" data-report=${name} aria-busy=${() => busy.get() ? 'true' : null}>${header}${viewBar}${filterBar}${status}${toolbar}${content}</div>` as HTMLElement;
 }
 
 /** Hand a file to the browser to save. */

@@ -16,7 +16,7 @@ from tempfile import TemporaryDirectory
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
                    Move, MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome,
-                   Report, Column, Chart)
+                   Report, Column, Chart, Count)
 from evlet.calc import D, F, round, days
 
 PASSWORD = 'a sufficiently long fixture password'
@@ -557,11 +557,28 @@ class CustomerRates(Report):
                 'total': page['total'], 'totals': {'rate': everything[0]['rate'] or 0}}
 
 
+class RatesByTerms(CustomerRates):
+    """The same rows grouped by credit days, with each group's count and total over every row."""
+    title = 'Rates by terms'
+    group_by = 'credit_days'
+    sortable = ('rate',)
+    chart = None
+    columns = (Column('credit_days', type='integer', label='Credit days'), Column('id', type='link', link='customer', label='Customer'),
+               Column('rate', type='currency', total=True, unit='AED', source='customer.rate'))
+
+    def run(self):
+        filters = {'credit_days__gte': self.min_days or 0}
+        page = self.context.list(Customer, filters=filters, order_by=self.context.sort, limit=self.context.limit, offset=self.context.offset)
+        groups = self.context.aggregate(Customer, measures={'n': Count(), 'rate': Sum('rate')}, group_by=('credit_days',), filters=filters)
+        return {'rows': [{key: row.get(key) for key in ('credit_days', 'id', 'rate')} for row in page['rows']], 'total': page['total'],
+                'groups': [{'value': group['credit_days'], 'count': group['n'], 'totals': {'rate': group['rate']}} for group in groups]}
+
+
 def record_reports(folder):
     """Reports: the schema that lists one, a filter check, a run, a sorted run and a run with an unfinished filter."""
     database = Database(folder / 'reports.sqlite3', Registry(Customer))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
-    app = Application(database, auth=auth, reports=(CustomerRates,))
+    app = Application(database, auth=auth, reports=(CustomerRates, RatesByTerms))
     app.initialize()
     out = {}
 
@@ -576,7 +593,8 @@ def record_reports(folder):
     status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'owner', 'password': PASSWORD})
     cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
     admin = lambda method, path, body=None, **kwargs: http(app, method, path, body, cookie=cookie, csrf=csrf, **kwargs)
-    for name, rate, days in (('Corniche Foods', '1250.00', 30), ('Al Noor Trading', '480.50', 45), ('Blue Dune Interiors', '2100.00', 15)):
+    for name, rate, days in (('Corniche Foods', '1250.00', 30), ('Al Noor Trading', '480.50', 45), ('Blue Dune Interiors', '2100.00', 15),
+                             ('Oasis Water', '310.00', 30)):
         assert admin('POST', '/api/customer', {'name': name, 'rate': rate, 'credit_days': days})[0] == 201
     keep('report_session', admin('GET', '/api/auth/session'))
     keep('report_schema', admin('GET', '/api/schema'))
@@ -584,6 +602,7 @@ def record_reports(folder):
     keep('report_evaluate_invalid', admin('POST', '/api/_reports/CustomerRates/evaluate', {'filters': {'min_days': 'many', 'search': ''}, 'revision': 1}))
     keep('report_run', admin('POST', '/api/_reports/CustomerRates', {'filters': {'min_days': 20, 'search': ''}, 'limit': 50, 'offset': 0, 'sort': None, 'revision': 1}))
     keep('report_run_sorted', admin('POST', '/api/_reports/CustomerRates', {'filters': {'min_days': 20, 'search': ''}, 'limit': 50, 'offset': 0, 'sort': '-rate', 'revision': 2}))
+    keep('report_grouped_run', admin('POST', '/api/_reports/RatesByTerms', {'filters': {'min_days': 20, 'search': ''}, 'limit': 50, 'offset': 0, 'sort': None, 'revision': 1}))
     database.close()
     return out
 

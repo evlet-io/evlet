@@ -35,7 +35,7 @@ def test_invoice_register_filters_sorts_and_totals_every_row(secured):
     editor = client(secured, 'editor')
     owners = seed(editor)
     catalog = {item['name']: item for item in editor('GET', '/api/_reports')[1]['reports']}
-    assert set(catalog) == {'InvoiceRegister', 'SalesByCustomer'} and catalog['InvoiceRegister']['model'] == 'invoice'
+    assert set(catalog) == {'InvoiceRegister', 'InvoicesByCustomer', 'SalesByCustomer'} and catalog['InvoiceRegister']['model'] == 'invoice'
     status, result, _ = editor('POST', '/api/_reports/InvoiceRegister', {'filters': {'from_date': '2026-10-01'}, 'limit': 1, 'sort': '-total'})
     assert status == 200, result
     # AED invoices only, posted from 1 October: two rows, the larger first, totalled over both.
@@ -56,12 +56,22 @@ def test_sales_by_customer_groups_and_is_for_editors(secured):
     everything = editor('POST', '/api/_reports/SalesByCustomer', {'filters': {'status': None}, 'sort': 'total'})[1]
     assert [row['total'] for row in everything['rows']] == ['75.00', '350.50']
     viewer = client(secured, 'viewer')
-    assert [item['name'] for item in viewer('GET', '/api/_reports')[1]['reports']] == ['InvoiceRegister']
+    assert [item['name'] for item in viewer('GET', '/api/_reports')[1]['reports']] == ['InvoiceRegister', 'InvoicesByCustomer']
     assert viewer('POST', '/api/_reports/SalesByCustomer', {'filters': {}})[0] == 403
 
 
 def test_reports_run_before_there_is_data(secured):
     editor = client(secured, 'editor')
-    for name in ('InvoiceRegister', 'SalesByCustomer'):
+    for name in ('InvoiceRegister', 'InvoicesByCustomer', 'SalesByCustomer'):
         status, result, _ = editor('POST', '/api/_reports/' + name, {'filters': {}})
         assert status == 200 and result['rows'] == [] and result['total'] == 0, result
+
+
+def test_invoices_by_customer_groups_with_subtotals_over_every_invoice(secured):
+    editor = client(secured, 'editor')
+    owners = seed(editor)
+    status, result, _ = editor('POST', '/api/_reports/InvoicesByCustomer', {'filters': {}, 'limit': 2, 'sort': '-total'})
+    assert status == 200, result
+    assert [(row['customer'], row['total']) for row in result['rows']] == [(owners['Al Sahra Trading'], '250.50'), (owners['Al Sahra Trading'], '100.00')]
+    assert result['groups'] == {'scope': 'all', 'items': [{'value': owners['Al Sahra Trading'], 'count': 2, 'totals': {'total': '350.50'}}]}
+    assert result['totals']['values'] == {'total': '425.50'}

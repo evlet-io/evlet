@@ -114,6 +114,8 @@ export interface ReportSchema {
   sortable: string[];
   export: boolean;
   chart: { type: 'bar' | 'line'; x: string; y: string[]; label: string | null } | null;
+  /** A column whose rows are kept together, with a heading and a subtotal for each group. */
+  group_by?: string | null;
   /** Print designs the role may print it with (Print Design). */
   prints?: Array<{ name: string; title: string; default: boolean }>;
 }
