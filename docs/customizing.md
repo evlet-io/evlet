@@ -116,7 +116,7 @@ the UI does not grant or remove backend permission.
 ## App identity and dependencies
 
 `apps/notes/pyproject.toml` contains the app name, version, title and Python
-dependencies. The generated app requires Evlet 0.2.0 or newer in the 0.2 series.
+dependencies. The generated app requires Evlet 0.3.0.dev0 or newer in the 0.3 series.
 Keep helpers inside the `notes/` package and import them relatively. Root-level
 Python helper files are not exposed by the app loader. Review dependency updates
 and keep an environment lock when deploying.

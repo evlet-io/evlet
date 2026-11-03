@@ -15,13 +15,15 @@ from .documents import Context, typed_arguments
 from .models import ValidationError
 
 
-def api(function=None, *, method='POST', permission=None, name=None, public=False):
+def api(function=None, *, method='POST', permission=None, name=None, public=False, tool=False):
     """public=True lets anyone call the endpoint without signing in. It runs as the 'public' role,
-    so its permission needs a Rule for ('public', Model), and each address gets 30 calls a minute, 300 an hour."""
-    if method not in ('GET', 'POST') or permission is None or type(public) is not bool:
-        raise ValueError('APIs require GET/POST and an explicit resource permission')
+    so its permission needs a Rule for ('public', Model), and each address gets 30 calls a minute, 300 an hour.
+    tool=True offers it to Eva and MCP clients through list_services and call_service, as the person, under the
+    same permission; its docstring is what they read. Public endpoints can't be tools."""
+    if method not in ('GET', 'POST') or permission is None or type(public) is not bool or type(tool) is not bool or (public and tool):
+        raise ValueError('APIs require GET/POST and an explicit resource permission; public endpoints cannot be tools')
     def decorate(callable):
-        callable.__api__ = {'method': method, 'permission': permission, 'name': name, 'public': public}
+        callable.__api__ = {'method': method, 'permission': permission, 'name': name, 'public': public, 'tool': tool}
         return callable
     return decorate(function) if function is not None else decorate
 
@@ -44,6 +46,7 @@ class Endpoint:
     method: str
     permission: tuple
     public: bool = False
+    tool: bool = False
 
 
 # Calls per window for each client address on public endpoints: (seconds, limit).
@@ -153,7 +156,8 @@ def collect_service(package, module):
                 raise ValueError('GET endpoints require a read capability')
             alias = declaration['name'] or identity.removeprefix(package.name + '.')
             if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.]*', alias): raise ValueError('Invalid endpoint name')
-            endpoints.append(Endpoint(package.name + '.' + alias, function, declaration['method'], declaration['permission'], declaration.get('public', False)))
+            endpoints.append(Endpoint(package.name + '.' + alias, function, declaration['method'], declaration['permission'], declaration.get('public', False),
+                                      declaration.get('tool', False)))
         declaration = getattr(function, '__cron__', None)
         if declaration:
             identity = package.name + '.' + declaration['name'] if declaration['name'] else identity

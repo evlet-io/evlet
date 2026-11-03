@@ -19,15 +19,21 @@ from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
-PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'keys', 'models', 'naming', 'apps', 'routing', 'jobs', 'overrides', 'audit')
+PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
     'security.password_min': 15, 'security.session_hours': 12, 'security.lockout': 5,
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
     'mcp.enabled': True, 'mcp.allow_writes': False, 'mcp.rate': 60, 'mcp.disabled_tools': [], 'mcp.hidden_models': [],
     'mail.personal': False,
+    # Eva (evlet.eva). Only used when config.py turns AI on; the switch here can only narrow that.
+    'eva.enabled': False, 'eva.model': '', 'eva.choose_model': False, 'eva.disabled_tools': [],
+    'eva.confirm': {'create': 'never', 'update': 'never', 'confirm': 'ask', 'action': 'ask'},
+    'eva.instance_limit': {'amount': None, 'unit': 'aed', 'period': 'month'},
+    'eva.user_limit': {'amount': None, 'unit': 'aed', 'period': 'week'},
+    'eva.person_limits': {}, 'eva.task_reserve': 10, 'eva.max_steps': 12, 'eva.max_tools': 30, 'eva.max_seconds': 120, 'eva.rates': {},
 })
 # Audit areas of setting overrides by key prefix; other settings are Security.
-SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email'}
+SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email', 'eva': 'Eva'}
 NOT_FOUND = 'Route not found'
 AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming'}
 # A paused schedule is a setting override: schedule.<name>.active = false.
@@ -161,10 +167,13 @@ def strictest(key, value, roles, file=None):
         return min(max(value, 1), 60) if number else 1
     if key in ('mcp.disabled_tools', 'mcp.hidden_models'):
         # Names are kept as they are; a value that is not a list turns every tool off or hides every model ('*').
-        from .mcp import BY_NAME
+        from .tools import NAMES
         if isinstance(value, list):
             return [item for item in value if isinstance(item, str)]
-        return list(BY_NAME) if key == 'mcp.disabled_tools' else ['*']
+        return list(NAMES) if key == 'mcp.disabled_tools' else ['*']
+    if key.startswith('eva.'):
+        from .eva import strictest as eva_strictest
+        return eva_strictest(key, value)
     if key == 'security.password_min':
         return min(max(value, file), 64) if number else 64
     if key == 'security.session_hours':
@@ -526,9 +535,12 @@ class Controls:
             raise ValueError('Use on or off.')
         if key == 'mcp.rate' and not (number and 1 <= value <= 60):
             raise ValueError('Use 1 to 60 tool calls a minute. The framework allows at most 60.')
+        if key.startswith('eva.'):
+            from .eva import check_setting as eva_setting
+            return eva_setting(key, value, self.business)
         if key in ('mcp.disabled_tools', 'mcp.hidden_models'):
-            from .mcp import BY_NAME
-            known = list(BY_NAME) if key == 'mcp.disabled_tools' else list(self.models())
+            from .tools import NAMES
+            known = list(NAMES) if key == 'mcp.disabled_tools' else list(self.models())
             if not isinstance(value, list) or any(item not in known for item in value) or len(set(value)) != len(value):
                 raise ValueError('Choose known tools, each once.' if key == 'mcp.disabled_tools' else 'Choose models from this instance, each once.')
             value = [item for item in known if item in value]
@@ -656,8 +668,10 @@ class Controls:
                 'SELECT user_id, two_step_since, two_step_agent FROM evlet_user_profile WHERE two_step_secret IS NOT NULL')}
             assistants = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_mcp_clients WHERE revoked_at IS NULL GROUP BY user_id')}
             keys = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_api_keys WHERE revoked_at IS NULL GROUP BY user_id')}
+            ai = {row['id']: (bool(row['allow_eva']), bool(row['allow_mcp'])) for row in connection.execute('SELECT id, allow_eva, allow_mcp FROM evlet_users')}
         for item in page['items']:
             item['active'], item['sessions'] = bool(item['active']), sessions.get(item['id'], 0)
+            item['allow_eva'], item['allow_mcp'] = ai.get(item['id'], (False, False))
             item['two_step'] = two_step.get(item['id'])
             item['assistants'] = assistants.get(item['id'], 0)
             item['keys'] = keys.get(item['id'], 0)
@@ -672,8 +686,10 @@ class Controls:
             connection, actor.username, 'Users', user.username, f'Added as {user.role}', None, {'role': user.role}))
 
     def change_user(self, actor, user_id, body):
+        if isinstance(body, dict) and body and not set(body) - {'allow_eva', 'allow_mcp'}:
+            return self.ai_access(actor, user_id, body)
         if not isinstance(body, dict) or not body or set(body) - {'role', 'active', 'password', 'sessions', 'revoke_keys', 'two_step'}:
-            raise ValidationError({'_form': 'Use role, active, password, sessions, revoke_keys or two_step'})
+            raise ValidationError({'_form': 'Use role, active, password, sessions, revoke_keys, two_step, or allow_eva and allow_mcp on their own'})
         if 'sessions' in body and body['sessions'] != 'end':
             raise ValidationError({'sessions': 'Use "end" to sign out every session'})
         revoke = body.get('revoke_keys', False)
@@ -722,6 +738,29 @@ class Controls:
             after = check(tx.connection, row, {})
             self.business.auth.end_sessions(tx.connection, user_id, keys=revoke)
             after()
+
+    def ai_access(self, actor, user_id, body):
+        """Allow Eva and Allow MCP on one person. Turning MCP off signs out their assistants at once."""
+        if any(type(value) is not bool for value in body.values()):
+            raise ValidationError({key: 'Use true or false' for key, value in body.items() if type(value) is not bool})
+        with self.database.transaction() as tx:
+            row = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            if row is None:
+                raise AccessError(404, 'Account not found')
+            if actor.role != 'admin' and row['role'] == 'admin':
+                raise AccessError(403, ADMIN_ONLY)
+            details = []
+            for key, label in (('allow_eva', 'Allow Eva'), ('allow_mcp', 'Allow MCP')):
+                if key in body and body[key] != bool(row[key]):
+                    tx.connection.execute(f'UPDATE evlet_users SET {key}=? WHERE id=?', (int(body[key]), user_id))
+                    details.append(f"{label}: {'on' if body[key] else 'off'}")
+            if body.get('allow_mcp') is False:
+                for client in tx.connection.execute('SELECT id FROM evlet_mcp_clients WHERE user_id=? AND revoked_at IS NULL', (user_id,)).fetchall():
+                    self.business.assistants.end(tx.connection, client[0])
+                tx.connection.execute('DELETE FROM evlet_oauth_codes WHERE user_id=?', (user_id,))
+            if details:
+                audit(tx.connection, actor.username, 'Users', row['username'], ' · '.join(details),
+                      {key: bool(row[key]) for key in body}, dict(body))
 
     def role_list(self):
         with self.database._connection() as connection:
@@ -1042,6 +1081,18 @@ class Controls:
                 raise AccessError(503, str(exc)) from None
         if path == '/mcp' and method == 'GET':
             return 200, self.business.assistants.overview(scope), []
+        if path == '/tools' and method == 'GET':
+            # The Tool log: every call from Eva, MCP clients and the API.
+            from .tools import query_of
+            return 200, self.business.tools.calls(query_of(scope)), []
+        if path in ('/eva', '/eva/usage') and method == 'GET':
+            from .eva import configuration, usage_report
+            eva = self.business.eva
+            if path == '/eva':
+                return 200, configuration(self.business), []
+            if eva is None:
+                raise AccessError(404, 'Eva is turned off in the application configuration.')
+            return 200, usage_report(eva, scope), []
         match = re.fullmatch(r'/mcp/([1-9][0-9]{0,18})', path)
         if match and method == 'DELETE' and int(match[1]) <= 2**63 - 1:
             self.business.assistants.revoke(user, int(match[1]), personal=False)

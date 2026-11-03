@@ -1,6 +1,6 @@
-// MCP & AI: the workspace switches for AI assistants (drafts behind the change bar), the connected
-// clients (sign one out at once) and totals for the last 24 hours. Each person sees their own
-// requests in Settings; Controls never shows them.
+// MCP: the workspace switches for outside AI assistants (drafts behind the change bar), the connected
+// clients (sign one out at once) and totals for the last 24 hours. The tools are the Tool Engine's,
+// the same ones Eva uses; every call is in the Tool log. Each person needs Allow MCP (Users).
 
 import { html, when, type Child } from '../dom';
 import { cell } from '../reactive';
@@ -16,11 +16,20 @@ export const TOOLS: Array<[string, string, boolean]> = [
   ['describe_model', 'Read one model, its fields, child collections and actions.', false],
   ['list_records', 'Query permitted records with filters and sort.', false],
   ['get_record', 'Read one record and its child collections.', false],
+  ['aggregate_records', 'Totals, counts and group-by over permitted records.', false],
+  ['record_history', "Read a record's journal.", false],
+  ['list_reports', 'List the reports this person can run.', false],
+  ['run_report', 'Run a permitted report.', false],
+  ['list_files', 'List the files on a record.', false],
+  ['read_file', 'Read the text of a file on a record.', false],
+  ['list_services', 'List business services offered to assistants.', false],
   ['job_status', 'Read the status of a queued action.', false],
   ['create_record', 'Create a record through backend validation.', true],
   ['update_record', 'Update supplied values only.', true],
-  ['delete_record', 'Delete a record and its owned children.', true],
-  ['run_action', 'Run one registered action on a record.', true],
+  ['change_state', 'Confirm, cancel or reopen a document. Approved in Evlet.', true],
+  ['run_action', 'Run one registered action on a record. Approved in Evlet.', true],
+  ['call_service', 'Call a business service. Approved in Evlet.', true],
+  ['delete_record', 'Delete a record and its owned children. Approved in Evlet.', true],
 ];
 
 export function McpPage(ctx: ControlsContext): HTMLElement {
@@ -64,7 +73,7 @@ export function McpPage(ctx: ControlsContext): HTMLElement {
   const totals = () => overview.get()?.totals ?? { reads: 0, writes: 0, denied: 0 };
 
   return html`<div>
-    ${Head('MCP & AI', 'Let AI clients such as Claude work with this instance. They sign in as a user and see only what that user is allowed to see.')}
+    ${Head('MCP', 'Let AI clients such as Claude work with this instance. They sign in as a user with Allow MCP and see only what that user is allowed to see.')}
     <div class="ctl-grid main"><div class="ctl-stack">
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Server</h2></div>
         ${() => on() ? StatusPill({ label: 'On', tint: 'green' }) : StatusPill({ label: 'Off', tint: 'slate' })}</div>
@@ -104,5 +113,6 @@ export function McpPage(ctx: ControlsContext): HTMLElement {
           : html`<div class="ctl-empty">No clients connected.</div>`}
       </section>
       ${Callout('info', 'lock', 'The connector has no database access, SQL or file tools. Every call goes through the same API and permission checks as the browser.')}
+      ${Callout('info', 'activity', html`Finalising documents, actions and deletes wait for the person's approval in Evlet, under Settings, AI. Every call is in the <a href=${ctx.router.href('log', {})}>Tool log</a>.`)}
     </div></div></div>` as HTMLElement;
 }

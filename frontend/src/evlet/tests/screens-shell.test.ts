@@ -31,7 +31,7 @@ describe('sign in, setup and Docs', () => {
     expect(login.headers['x-evlet-request']).toBe('1');
     // The aside lists every root model the role can read, linking to its list; Table rows are not listed.
     const links = [...host.querySelectorAll<HTMLAnchorElement>('.ev-doc-aside li a')].map(link => [text(link), link.getAttribute('href')]);
-    expect(links).toEqual([['Customers', '/app/customer'], ['Products', '/app/product'], ['Orders', '/app/order'], ['Contacts', '/app/contact']]);
+    expect(links).toEqual([['Customers', '/app/customer'], ['Products', '/app/product'], ['Orders', '/app/order'], ['Contacts', '/app/contact'], ['Quotes', '/app/quote']]);
   });
 
   it('first-run setup creates the administrator and signs in with it', async () => {
@@ -97,13 +97,13 @@ describe('app shell', () => {
     const { host } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, screen.customers_page1]], '/app/customer');
     await until(() => expect(host.querySelector('.sidebar')).not.toBeNull());
     const groups = [...host.querySelectorAll('.nav-group')].map(group => [text(group.querySelector('.nav-label')), [...group.querySelectorAll('.nav-item .lbl')].map(text)]);
-    expect(groups).toEqual([['Documents', ['Orders']], ['Records', ['Customers', 'Products', 'Contacts']]]);
+    expect(groups).toEqual([['Documents', ['Orders']], ['Records', ['Customers', 'Products', 'Contacts', 'Quotes']]]);
     expect(text(host.querySelector('.nav-item.active'))).toBe('Customers');
     expect(host.querySelector('.nav-item.active')!.getAttribute('aria-current')).toBe('page');
     // Library is a development link outside the router.
     expect(byText(host, '.side-bottom a', 'Library')!.getAttribute('rel')).toBe('external');
     click(byText(host, '.topbar button', 'New'));
-    expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['New customer', 'New product', 'New order', 'New contact']);
+    expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['New customer', 'New product', 'New order', 'New contact', 'New quote']);
   });
 
   it('shows the Evlet brand, an app switcher with its workspace, and collapses from the edge button', async () => {

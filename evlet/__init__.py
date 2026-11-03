@@ -46,8 +46,9 @@ __all__ += ["LambdaHTTP", "S3Storage"]
 
 from .connector import ConnectorError, HTTPClient
 from .mcp import MCPServer
+from .eva import AI
 
-__all__ += ["ConnectorError", "HTTPClient", "MCPServer"]
+__all__ += ["AI", "ConnectorError", "HTTPClient", "MCPServer"]
 
 from .postgres import PostgreSQLDatabase
 
