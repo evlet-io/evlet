@@ -122,7 +122,7 @@ def test_currency_scale_change_cannot_silently_reinterpret_values(tmp_path):
     path = tmp_path / 'currency.sqlite3'
     db = Database(path, Registry(Old)); db.initialize(); price = db.create(Old, amount='123.45')
     New = type('Price', (Model,), {'amount': Decimal(scale=4, index=True)})
-    with pytest.raises(SchemaError, match='type changes'):
+    with pytest.raises(SchemaError, match="price.amount: type is 'currency' after the migrations and 'decimal' in the models"):
         Database(path, Registry(New)).migrate([Migration('index', AddIndex('price', 'amount'))])
     assert db.get(Old, price.id).to_dict()['amount'] == '123.45'
 

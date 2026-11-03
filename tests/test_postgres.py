@@ -819,3 +819,15 @@ def test_postgres_http_sends_text_ids(secured):
     status, invoice, _ = c('POST', '/api/invoice', {'customer': customer['id'].upper(), 'reference': 'PG-1', 'total': '1.00'})
     assert status == 201 and invoice['customer'] == customer['id']
     assert c('GET', f"/api/invoice/{invoice['id']}")[1]['id'] == invoice['id']
+
+
+def test_postgres_plan_and_add_table_with_confirmed_documents(pg_dsn):
+    from tests.test_migration_plan import check_plan_and_add_table
+
+    def make(registry, migrations, migrate=False, plan=False):
+        database = PostgreSQLDatabase(pg_dsn, registry, migrations=migrations)
+        if plan:
+            return database.plan(migrations)
+        database.migrate(migrations) if migrate else database.initialize()
+        return database
+    check_plan_and_add_table(make)
