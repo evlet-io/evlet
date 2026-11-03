@@ -19,6 +19,16 @@ from tests.test_business import (
     test_viewer_cannot_mutate_any_business_surface,
     test_model_field_row_rules_apply_to_list_count_search_detail_writes_and_links,
 )
+from tests.test_filters import (  # noqa: F401  (the items fixture and filter tests, run here on PostgreSQL)
+    items,
+    test_every_operator_by_field_type,
+    test_link_filters_and_operators_a_type_does_not_take,
+    test_child_groups_match_one_row_without_repeating_parents,
+    test_many_conditions_and_the_limit,
+    test_hidden_fields_and_tables_are_refused_not_answered,
+    test_row_scope_still_applies_to_filtered_lists,
+    test_injection_attempts_are_values_or_refused,
+)
 
 
 @pytest.fixture

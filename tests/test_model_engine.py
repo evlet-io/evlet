@@ -133,7 +133,7 @@ def test_queries_use_types_relationship_paths_and_stable_order(database):
 
 
 @pytest.mark.parametrize('kwargs', [
-    {'filters': []}, {'filters': {'name; DROP TABLE customer': 'x'}},
+    {'filters': [['name']]}, {'filters': 'name'}, {'filters': {'name; DROP TABLE customer': 'x'}},
     {'filters': {'name__contains': 5}}, {'filters': {'name__gt': None}},
     {'filters': {'id__in': [None]}}, {'filters': {'id__in': list(range(101))}},
     {'filters': {'name__isnull': 1}}, {'filters': {'name__fake': 'x'}},
@@ -156,7 +156,7 @@ def test_http_update_delete_and_filters(application):
     assert request(application, 'DELETE', url)[:2] == (204, None)
     assert request(application, 'GET', url)[0] == 404
     assert request(application, 'PATCH', url, {'name': 'Missing'})[0] == 404
-    for filters in ('[]', '{"id__in": [null]}', '{"unknown": 1}', '{"id": NaN}'):
+    for filters in ('[["name"]]', '"name"', '{"id__in": [null]}', '{"unknown": 1}', '{"id": NaN}'):
         assert request(application, 'GET', '/api/customer?' + urlencode({'filters': filters}))[0] == 422
     assert request(application, 'PATCH', '/api/customer/2', body=b'bad')[0] == 400
     assert request(application, 'PATCH', '/api/customer/2', body=b'x' * 65537)[0] == 413

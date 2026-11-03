@@ -4,39 +4,28 @@
 //
 // Search, sort, page, view, saved view and filters live in the address, so a link opens the
 // same list. Everything runs on the server: the browser never filters or sorts a partial list.
+// The filter builder (rows of field, condition and value, child tables included) is filters.ts.
 
 import { html, match, when, type Child } from '../dom';
 import { ApiError, type RecordData } from '../api';
-import { batch, cell, derive, effect, onCleanup, untrack, type Cell } from '../reactive';
-import { Button, EmptyState, Icon, IconButton, SearchInput, SegmentedControl, StatusPill, SummaryStrip, type StatProps } from '../ui/base';
+import { batch, cell, derive, effect, onCleanup, untrack } from '../reactive';
+import { Button, CountBadge, EmptyState, IconButton, SearchInput, SegmentedControl, StatusPill, SummaryStrip, type StatProps } from '../ui/base';
 import { currencyIn, displayValue, localField, stateTint } from '../ui/fields';
 import { formatMoney } from '../model/format';
 import { humanize } from '../ui/kinds';
-import { closeDialogs, DialogFooter, Menu, openModal, openPopover, toast } from '../ui/layers';
-import { Board, BoardCard, BulkBar, Filters, PageHeader, Toolbar, type ActiveFilter, type BoardColumn, type BoardTotal } from '../ui/list';
+import { closeDialogs, DialogFooter, openModal, toast } from '../ui/layers';
+import { Board, BoardCard, BulkBar, PageHeader, Toolbar, type BoardColumn, type BoardTotal } from '../ui/list';
 import { Tabs } from '../ui/doc';
-import { DateRangePanel, rangeText } from '../ui/pickers';
 import { DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
+import { compact, filterBuilder, FilterChips, FilterPanel } from './filters';
 import { fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, screenModel, sources, titleOf, type ScreenModel } from './meta';
 
 export const PAGE_SIZE = 50;
 const BOARD_SIZE = 100;
 /** Bulk changes send at most this many requests at once. */
 const BULK_AT_ONCE = 4;
-
-interface Filter extends ActiveFilter { field: string; value: unknown }
-/** A date filter's value: the first and last day, both included. */
-interface DayRange { gte: string; lte: string }
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const isRange = (value: unknown): value is DayRange => typeof value === 'object' && value !== null
-  && DAY.test(String((value as DayRange).gte)) && DAY.test(String((value as DayRange).lte));
-
-/** "Status: Sent", "Active: Yes" or "Posting date: 01-11-2026 to 30-11-2026". */
-function filterLabel(meta: FieldSchema, value: unknown) {
-  return `${meta.label}: ${meta.type === 'boolean' ? (value ? 'Yes' : 'No') : isRange(value) ? rangeText([value.gte, value.lte]) : humanize(String(value))}`;
-}
 
 /** A list cell: state pill, record title for links, formatted value. */
 export function cellView(ctx: AppContext, model: ScreenModel, meta: FieldSchema, row: () => RecordData): Child {
@@ -79,23 +68,17 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const page = cell(Math.max(1, Number(start.page) || 1), { name: `${name}.page` });
   const view = cell<'list' | 'board'>(state && start.view === 'board' ? 'board' : 'list', { name: `${name}.view` });
   const tab = cell(state && start.tab && state.states.includes(start.tab) ? start.tab : 'all', { name: `${name}.tab` });
-  const filters = cell<Filter[]>(parseFilters(model, start.f), { name: `${name}.filters` });
+  const filters = filterBuilder(ctx.schema, model, start.f);
+  const filtering = cell(false, { name: `${name}.filter panel` });
   const selection = cell(new Set<string | number>(), { name: `${name}.selection` });
   const query = cell(q.peek(), { name: `${name}.q (debounced)` });
   let typing: ReturnType<typeof setTimeout> | undefined;
   changes(() => q.get(), () => { clearTimeout(typing); typing = setTimeout(() => batch(() => { query.set(q.peek()); page.set(1); }), 250); });
   onCleanup(() => clearTimeout(typing));
 
-  const serverFilters = derive(() => {
-    const result: Record<string, unknown> = {};
-    for (const filter of filters.get()) {
-      // A date range is two conditions: on or after the first day, on or before the last.
-      if (isRange(filter.value)) { result[`${filter.field}__gte`] = filter.value.gte; result[`${filter.field}__lte`] = filter.value.lte; }
-      else result[filter.field] = filter.value;
-    }
-    if (state && tab.get() !== 'all') result[state.field] = tab.get();
-    return result;
-  });
+  // The saved view's State is one more condition. Only equalities on distinct fields go as the shorter object form.
+  const serverFilters = derive(() => compact([...filters.server.get(), ...(state && tab.get() !== 'all' ? [[state.field, 'eq', tab.get()]] : [])]));
+  changes(() => filters.server.get(), () => page.set(1));
   effect(() => {
     const params: Record<string, string> = {};
     if (query.get()) params.q = query.get();
@@ -104,7 +87,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     if (page.get() > 1) params.page = String(page.get());
     if (view.get() === 'board') params.view = 'board';
     if (tab.get() !== 'all') params.tab = tab.get();
-    if (filters.get().length) params.f = JSON.stringify(Object.fromEntries(filters.get().map(filter => [filter.field, filter.value])));
+    if (filters.address.get()) params.f = filters.address.get();
     const href = router.href('list', { model: name }, params);
     untrack(() => { if (router.route.peek()?.name === 'list' && router.route.peek()?.params.model === name && href.endsWith(router.route.peek()!.url)) return; void router.navigate(href, { replace: true }); });
   });
@@ -153,8 +136,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const totalsTick = cell(0);
   let aggregateTicket = 0;
   if (state) effect(() => {
-    const others = { ...serverFilters.get() };
-    delete others[state.field];
+    // The counts per state follow every filter but the saved view.
+    const others = compact(filters.server.get());
     const text = query.get();
     reload.get();
     totalsTick.get();
@@ -182,28 +165,16 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   if (canCreate) ctx.createHere.set(create);
   onCleanup(() => { if (ctx.createHere.peek() === create) ctx.createHere.set(null); });
 
-  const filterable = model.fields.filter(field => !field.hidden && !isStateField(model, field)
-    && ((field.type === 'select' && field.choices?.length) || field.type === 'boolean' || (field.type === 'date' && field.stored !== false)));
-  const addFilter = (meta: FieldSchema, value: unknown) => {
-    batch(() => { filters.set([...filters.peek().filter(item => item.field !== meta.name), { key: meta.name, field: meta.name, value, label: filterLabel(meta, value) }]); page.set(1); });
-  };
-  const removeFilter = (meta: FieldSchema) => batch(() => { filters.set(filters.peek().filter(item => item.field !== meta.name)); page.set(1); });
-  // Dates filter by a range: a preset (This month, Last 30 days) or two days on the calendar.
-  const rangeFilter = (meta: FieldSchema, anchor: HTMLElement) => openPopover(anchor, close => DateRangePanel({
-    label: `${meta.label}: choose the first and last day`,
-    value: () => { const found = filters.peek().find(item => item.field === meta.name)?.value; return isRange(found) ? [found.gte, found.lte] : null; },
-    onApply: range => { close(); if (range) addFilter(meta, { gte: range[0], lte: range[1] }); else removeFilter(meta); },
-  }), { role: 'dialog', label: `Filter by ${meta.label.toLowerCase()}`, className: 'pick-pop' });
-  const filterMenu = (anchor: HTMLElement) => openPopover(anchor, close => Menu(filterable.flatMap(meta => [
-    { heading: meta.label },
-    ...(meta.type === 'date' ? [{ label: 'Choose dates', icon: 'calendar', onSelect: () => rangeFilter(meta, anchor) }]
-      : (meta.type === 'boolean' ? [true, false] : meta.choices!).map(value => ({ label: meta.type === 'boolean' ? (value ? 'Yes' : 'No') : humanize(String(value)), onSelect: () => addFilter(meta, value) }))),
-  ]), close), { label: 'Filter' });
+  const filterButton = Button({ label: 'Filter', icon: 'sliders-horizontal', hideLabelOnPhone: true, onClick: () => filtering.set(!filtering.peek()) });
+  filterButton.setAttribute('aria-controls', `ev-${name}-filters`);
+  effect(() => filterButton.setAttribute('aria-expanded', String(filtering.get())));
+  filterButton.append(CountBadge({ count: () => filters.active.get().length, tone: 'filled', label: 'Active filters' }));
+  effect(() => { filterButton.classList.toggle('has-filters', filters.active.get().length > 0); });
 
   const header = PageHeader({ icon, tint, title: model.plural, count: () => total.get(), actions: [
     state ? SegmentedControl({ options: [{ value: 'list', label: 'List', icon: 'list' }, { value: 'board', label: 'Board', icon: 'kanban' }], value: view, label: 'View',
       onChange: next => batch(() => { view.set(next); selection.set(new Set()); }) }) : null,
-    filterable.length ? Button({ label: 'Filter', icon: 'sliders-horizontal', hideLabelOnPhone: true, onClick: event => filterMenu(event.currentTarget as HTMLElement) }) : null,
+    filters.fields.length ? filterButton : null,
     canCreate ? Button({ label: `New ${model.label.toLowerCase()}`, icon: 'plus', variant: 'primary', hideLabelOnPhone: true, onClick: create }) : null,
   ].filter(Boolean) as Child[] });
 
@@ -218,8 +189,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     ctx.pageSearch.set(search.querySelector('input'));
     onCleanup(() => { if (ctx.pageSearch.peek()?.isConnected === false || ctx.pageSearch.peek() === search.querySelector('input')) ctx.pageSearch.set(null); });
   }
-  const clearAll = () => batch(() => { filters.set([]); q.set(''); tab.set('all'); page.set(1); });
-  const toolbar = Toolbar({ label: `${model.plural} tools`, left: [search, Filters({ filters: filters as unknown as Cell<ActiveFilter[]>, onChange: () => page.set(1) })],
+  const clearAll = () => batch(() => { filters.clear(); q.set(''); tab.set('all'); page.set(1); });
+  const toolbar = Toolbar({ label: `${model.plural} tools`, left: [search, FilterChips(filters, ctx.links)],
     right: [html`<span class="summary" aria-live="polite">${() => loading.get() ? 'Loading…' : total.get() === null ? '' : `${total.get()} ${total.get() === 1 ? model.label.toLowerCase() : model.plural.toLowerCase()}`}</span>`] });
 
   const strip = declared.length ? when(() => measures.get() !== null, () => SummaryStrip(declared.slice(0, 4).map(measure => ({
@@ -400,25 +371,13 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   };
   // The table and board are built once per view; loads only change their rows.
   const mode = derive(() => failure.get() ? 'error'
-    : !loading.get() && total.get() === 0 && !query.get() && !filters.get().length && tab.get() === 'all' ? 'empty' : view.get());
+    : !loading.get() && total.get() === 0 && !query.get() && !filters.active.get().length && tab.get() === 'all' ? 'empty' : view.get());
   const content = html`<div role=${tabs ? 'tabpanel' : null} id=${() => tabs ? `ev-${name}-views-${tab.get()}-panel` : null} aria-labelledby=${() => tabs ? `ev-${name}-views-${tab.get()}` : null}>
     ${match(mode, { error: () => body(), empty: () => body(), list: () => [table(), pager],
       board: () => [state ? html`<p class="muted ev-note ev-board-note" hidden=${() => tab.get() === 'all'}>${() => `Showing ${humanize(tab.get()).toLowerCase()} ${model.plural.toLowerCase()} only. Choose All ${model.plural.toLowerCase()} to see every column.`}</p>` : null,
         match(tab, Object.fromEntries(['all', ...state!.states].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
 
-  return html`<div class="page ev-list" data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${header}${tabs}${toolbar}${strip}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>${content}${bulk}</div>` as HTMLElement;
-}
-
-function parseFilters(model: ScreenModel, text: string | undefined): Filter[] {
-  if (!text) return [];
-  try {
-    const raw = JSON.parse(text) as Record<string, unknown>;
-    return Object.entries(raw).flatMap(([name, value]) => {
-      const meta = fieldOf(model, name);
-      if (!meta || isStateField(model, meta) || (meta.type === 'date' && !isRange(value))) return [];
-      return [{ key: name, field: name, value, label: filterLabel(meta, value) }];
-    });
-  } catch { return []; }
+  return html`<div class="page ev-list" data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${header}${tabs}${toolbar}<div id=${`ev-${name}-filters`}>${when(filtering, () => FilterPanel(filters, ctx.links, () => filtering.set(false)))}</div>${strip}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>${content}${bulk}</div>` as HTMLElement;
 }
 
 /** Run `then` when `value` changes, not on the first read. */

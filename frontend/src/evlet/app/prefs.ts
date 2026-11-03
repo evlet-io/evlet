@@ -1,15 +1,14 @@
-// Per-user preferences (docs/ui-design/README.md section 10): theme, sidebar, density, list or
+// Per-user preferences (docs/ui-design/README.md section 10): sidebar, density, list or
 // board, column widths and quick access. Recent records and recent searches belong to the
 // signed-in session: they stay in memory and go when the user signs out.
 //
-// The design keeps preferences in server-side user settings; this base has no such route yet, so
-// they live in browser storage under `evlet.<username>.`. Preferences never hold record data
+// The theme, region and other Settings live on the server (settings.ts, ui/theme.ts). These layout
+// preferences live in browser storage under `evlet.<username>.`. Preferences never hold record data
 // (titles, values or searches). Every read and write is guarded: private windows and blocked
 // storage fall back to the defaults.
 
 import { cell, effect, getOwner, runWithOwner, scope, untrack, type Cell } from '../reactive';
 
-export type Theme = 'system' | 'light' | 'dark';
 export type Density = 'comfortable' | 'compact';
 
 export class Prefs {
@@ -20,8 +19,8 @@ export class Prefs {
   constructor(readonly user: string, private readonly storage: Storage | null = safeStorage()) {
     // Saving effects belong to the preferences, not to the page that first asked for a cell.
     this.stop = runWithOwner(null, () => scope(() => { this.root = getOwner(); }, { name: 'prefs' }));
-    // Earlier builds stored recent record titles and searches; they are not kept any more.
-    for (const name of ['recents', 'recentQ']) try { this.storage?.removeItem(this.key(name)); } catch { /* blocked */ }
+    // Earlier builds stored recent record titles, searches and the theme here; they are not kept any more.
+    for (const name of ['recents', 'recentQ', 'theme']) try { this.storage?.removeItem(this.key(name)); } catch { /* blocked */ }
   }
 
   private key(name: string) { return `evlet.${this.user}.${name}`; }
@@ -61,7 +60,6 @@ export class Prefs {
     });
   }
 
-  get theme() { return this.cell<Theme>('theme', 'system'); }
   get collapsed() { return this.cell('collapsed', false); }
   get density() { return this.cell<Density>('density', 'comfortable'); }
   /** This session's recent searches (memory only). */
@@ -76,9 +74,4 @@ export class Prefs {
 
 function safeStorage(): Storage | null {
   try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
-}
-
-/** Apply a theme to the document: an explicit choice wins over the system in both directions. */
-export function applyTheme(theme: Theme, root: HTMLElement = document.documentElement) {
-  if (theme === 'system') delete root.dataset.theme; else root.dataset.theme = theme;
 }
