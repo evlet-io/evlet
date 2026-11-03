@@ -6,7 +6,7 @@ from types import MappingProxyType, SimpleNamespace
 from .auth import AccessError, PORTAL, PUBLIC, ROLES
 from .fields import Link, Reference
 from .models import Model, ValidationError, identifier
-from .query import SqlQuery, OPERATORS
+from .query import Condition, SqlQuery, child_tables, conditions
 
 
 # IDs per batched permission or row statement; well under SQLite's bound-parameter limit.
@@ -395,39 +395,53 @@ class Policy:
                         result[name] = None
         return results
 
-    def _readable_ids(self, database, user, target, key, value):
+    def _readable_ids(self, database, user, target, operator, value):
         """Whether an eq or in filter on a row-scoped Link names only records this user can read."""
-        if database is None or not (key.endswith('__in') or '__' not in key or key.endswith('__eq')):
+        if database is None or operator not in ('eq', 'in'):
             return False
-        ids = value if key.endswith('__in') else [value]
+        ids = value if operator == 'in' else [value]
         if not isinstance(ids, list) or not ids or len(ids) > 100 or any(type(item) is not int for item in ids):
             return False
         with database._connection() as connection:
             return set(ids) <= self.visible(SimpleNamespace(connection=connection), user, target, ids)
 
-    def query_fields(self, user, model, filters, order_by, *, database=None):
-        """Refuse query fields that could disclose rows or fields. With database, eq and in filters on a
-        row-scoped Link are allowed when every id is a record the user can read, such as a portal user's customer."""
+    def query_fields(self, user, model, filters, order_by, *, database=None, children=()):
+        """Refuse query fields that could disclose rows or fields: the same 403 for unknown and unreadable
+        fields and child tables, so a filter never answers about what the role cannot read. With database,
+        eq and in filters on a row-scoped Link are allowed when every id is a record the user can read,
+        such as a portal user's customer. children: ChildTables beyond the registry's Table declarations."""
+        items = conditions(filters)
         readable = {'id', *self.fields(user, model)}
-        keys = list(filters or {}) + list(order_by or ())
-        for key in keys:
+        for key in order_by or ():
             if not isinstance(key, str):
                 raise AccessError(403, 'Query field is unavailable')
-            parts = key.lstrip('-').split('__')
-            if len(parts) > 1 and parts[-1] in OPERATORS:
-                parts.pop()
-            # Cross-model query paths could disclose restricted rows or fields.
-            if len(parts) != 1 or parts[0] not in readable:
+            self._query_field(user, model, readable, key.lstrip('-'), None, None, database)
+        tables = None
+        for item in items:
+            if isinstance(item, Condition):
+                self._query_field(user, model, readable, item.path, item.operator, item.value, database)
+                continue
+            tables = child_tables(self.registry, children) if tables is None else tables
+            child = tables.get((model, item.child))
+            # A child table's rows are read through their parent; one with its own row scope is not queried.
+            if child is None or not self.allows(user, child.model, 'read') or self.rule(user, child.model).scope is not None:
                 raise AccessError(403, 'Query field is unavailable')
-            field = model.__fields__.get(parts[0])
-            if isinstance(field, Link) and self.rule(user, field.target).scope is not None:
-                if not (key in (filters or {}) and self._readable_ids(database, user, field.target, key, filters[key])):
-                    raise AccessError(403, 'Queries on this restricted relationship are unavailable')
-            if isinstance(field, Reference):
-                # Matching a reference could reveal one this role cannot follow. Equality needs a target
-                # model readable without row scope; other filters need that for every model.
-                value = (filters or {}).get(key) if key in (parts[0], parts[0] + '__eq') else None
-                named = value.get('model') if isinstance(value, dict) else None
-                targets = [self.registry.models[named]] if named in self.registry.models else self.registry.models.values()
-                if any(not self.allows(user, target, 'read') or self.rule(user, target).scope is not None for target in targets):
-                    raise AccessError(403, 'Queries on this restricted relationship are unavailable')
+            child_readable = {'id', *self.fields(user, child.model)}
+            for inner in item.where:
+                self._query_field(user, child.model, child_readable, inner.path, inner.operator, inner.value, database)
+
+    def _query_field(self, user, model, readable, path, operator, value, database):
+        # Cross-model query paths could disclose restricted rows or fields.
+        if '__' in path or path not in readable:
+            raise AccessError(403, 'Query field is unavailable')
+        field = model.__fields__.get(path)
+        if isinstance(field, Link) and self.rule(user, field.target).scope is not None:
+            if operator is None or not self._readable_ids(database, user, field.target, operator, value):
+                raise AccessError(403, 'Queries on this restricted relationship are unavailable')
+        if isinstance(field, Reference):
+            # Matching a reference could reveal one this role cannot follow. Equality needs a target
+            # model readable without row scope; other filters need that for every model.
+            named = value.get('model') if operator == 'eq' and isinstance(value, dict) else None
+            targets = [self.registry.models[named]] if named in self.registry.models else self.registry.models.values()
+            if any(not self.allows(user, target, 'read') or self.rule(user, target).scope is not None for target in targets):
+                raise AccessError(403, 'Queries on this restricted relationship are unavailable')

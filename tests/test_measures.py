@@ -520,7 +520,7 @@ def test_http_rejects_malformed_parameters(app):
         '/api/invoice/aggregate?measures=n:count&group_by=owner:month',
         '/api/invoice/aggregate?measures=n:count&group_by=a,b,c,d,e',
         '/api/invoice/aggregate?measures=n:count&group_by=status,',
-        '/api/invoice/aggregate?measures=n:count&filters=[]',
+        '/api/invoice/aggregate?measures=n:count&filters=[["status"]]',
         '/api/invoice/aggregate?measures=n:count&filters={',
         '/api/invoice/aggregate?measures=n:count&measures=m:count',
         '/api/invoice/aggregate?measures=n:count&order_by=n',

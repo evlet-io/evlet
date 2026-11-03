@@ -69,7 +69,8 @@ export type RecordData = Record<string, unknown> & {
   _row_ids?: Record<string, number>;
 };
 export interface DraftResult { values: Record<string, unknown>; errors: FieldErrors; states: Record<string, string>; revision: unknown }
-export interface ListQuery { limit?: number; offset?: number; filters?: Record<string, unknown>; orderBy?: string; q?: string }
+/** filters: an object of "field__operator" keys, or a list of [field, operator, value] conditions and child groups (docs/ui.md, Filters). */
+export interface ListQuery { limit?: number; offset?: number; filters?: Record<string, unknown> | unknown[]; orderBy?: string; q?: string }
 
 const NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
 const SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
