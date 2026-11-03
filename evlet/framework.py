@@ -59,9 +59,9 @@ def _tool_calls(connection, postgres):
 def _record_names(connection, postgres, registry):
     """Give every record table the standard name and title columns (evlet/naming.py) and fill empty titles.
 
-    Tables created from the models at startup have them already, as do tables a data migration prepared
-    with Session.add_standard_columns; tables from app migrations (CreateModel) get them here. `name` stays empty for existing rows: an app that wants names for them
-    backfills them itself (evlet.sequences.backfill or a RunData migration).
+    New tables have them from the start, and every app migration batch adds them too; this step covers
+    an instance with no app migration to run. `name` stays empty for existing rows: an app that wants
+    names for them fills them itself (evlet.sequences.backfill or a RunData migration).
     """
     from .naming import add_columns, fill_titles
     for table, model in registry.models.items():

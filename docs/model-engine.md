@@ -214,7 +214,7 @@ Tables made before these columns existed get them at the end of the next app mig
 from framework migration `0003_record_names`, which `evlet migrate` runs
 ([app-upgrades.md](app-upgrades.md#upgrade-evlet)). Every title is filled; existing rows keep an
 empty name unless the app fills them. A data migration that moves an older number into `name` calls
-`session.add_standard_columns(Model)` first, as the Playground's `0007_record_names` does for
+`session.add_standard_columns(Model)` first, as the Playground's `0008_record_names` does for
 invoice numbers. A model that declares its own `name` (a frozen class in older migrations) has
 neither standard column, as its table had neither then.
 

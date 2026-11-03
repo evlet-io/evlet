@@ -200,7 +200,7 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     # the earlier cf1f61c2... value.
     # The Playground's Item and its tables (0005_items) and Employee (0007_employees) came later with permissions of their own; left out, the
     # models above keep exactly the recorded table.
-    # Re-recorded for the standard record name and title (0007_record_names): every record model gains a
+    # Re-recorded for the standard record name and title (0008_record_names): every record model gains a
     # readable `name` and `title`; Customer.name became customer_name, Project.name the declared title,
     # Invoice.number moved into the named (and so writable) standard name, and test_states renamed its
     # own name fields to title. Before this the table hashed to b1bb34ff....

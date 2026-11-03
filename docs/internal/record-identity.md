@@ -134,7 +134,7 @@ fields, or `name` when it falls back to it), so a title never reveals a hidden f
   columns and reads treat them as empty; an instance refuses to serve while the step is pending.
 - `name` stays empty for old rows unless the app fills it. A data migration that moves an older
   number into `name` calls `session.add_standard_columns(Model)` first, because the batch adds the
-  columns only at its end. The Playground's `0007_record_names` does this for `Invoice.number`,
+  columns only at its end. The Playground's `0008_record_names` does this for `Invoice.number`,
   moves its counters, and retires the old field.
 - A record table turned into Table rows keeps its old `name` and `title` columns, unused; schema
   checks accept them as long as they are nullable.

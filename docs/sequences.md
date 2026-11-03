@@ -291,7 +291,7 @@ rolls back its counter step, and the next committed record gets that number. Del
 does not give its name back.
 
 **The Playground.** `Invoice` is named `INV-{YYYY}-{#####}`, dated by its posting date, so the
-first invoice of 2026 is `INV-2026-00001`. Migration `0007_record_names` moved the earlier `number`
+first invoice of 2026 is `INV-2026-00001`. Migration `0008_record_names` moved the earlier `number`
 field into `name` and retired `number`; the counters moved with it. `reference` stays the
 customer's own reference, such as their purchase order number.
 

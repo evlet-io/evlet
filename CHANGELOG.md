@@ -22,8 +22,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `Meta.title_field` at it (or rename it to `title`). Then run `evlet migrate`: framework migration
   `0003_record_names` adds the columns to existing tables and fills every title. API responses and
   the schema now include `name` and `title`; the schema's `title_field` is `title`.
-  The Playground's `Customer.name` is now `customer_name`, `Project.name` is `title`, and invoice
-  numbers moved from `number` into `name` (migration `0007_record_names`).
+  The Playground's `Customer.name` is now `customer_name`, `Employee.name` is `full_name`, `Project.name` is `title`, and invoice
+  numbers moved from `number` into `name` (migration `0008_record_names`).
 - **Breaking: record ids are text.** New records get a 63-bit, time-ordered id (milliseconds since
   01-01-2026 and 21 random bits), stored as before in the `INTEGER` primary key. Outside the
   database an id is always 13 lowercase Crockford base32 characters, such as `01hc1sd9vc1ye`: JSON

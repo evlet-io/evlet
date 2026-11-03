@@ -182,7 +182,7 @@ def test_an_upgraded_playground_keeps_invoice_numbers_as_names_and_continues_the
 
     # evlet migrate: app migrations first, then framework step 0003.
     current = Database(path, registry)
-    assert current.migrate(migrations) == ['0007_record_names']
+    assert current.migrate(migrations) == ['0007_employees', '0008_record_names']
     assert '0003_record_names' in framework.upgrade(current)
     assert not framework.pending(current)
     assert {'name', 'title', 'customer_name'} <= set(columns(path, 'customer')) and 'number' not in Invoice.__fields__
@@ -214,7 +214,7 @@ def test_a_database_initialized_from_milestone_models_upgrades(tmp_path):
     old.create(old.registry.models['invoice'], customer=owner.id, reference='OLD-1', total='10.00')
     old.close()
     current = Database(path, registry)
-    assert '0007_record_names' in current.migrate(migrations)
+    assert '0008_record_names' in current.migrate(migrations)
     framework.upgrade(current)
     assert current.get(Customer, owner.id).title == 'Preserved'
     created = current.create(Invoice, customer=owner.id, reference='NEW-1', total='20.00', posting_date='2026-06-01')
