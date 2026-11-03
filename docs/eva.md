@@ -90,6 +90,10 @@ transaction that also takes a lock row, so two requests cannot both take the las
 allowance. The hold is replaced by the real usage when the answer arrives, and released if the
 provider refused before answering.
 
+An AED allowance needs a rate for the model in use. While a model has none, Eva refuses its
+requests with a message saying so rather than counting them as free, and Controls lists the
+models still missing a rate. Token and request allowances work without rates.
+
 `eva.max_steps`, `eva.max_tools` and `eva.max_seconds` limit one answer.
 
 Outside assistants use their own models, so their tokens are not counted.
@@ -104,7 +108,9 @@ ten per person.
 
 Each task is a calendar schedule named `eva_task_<id>` in Evlet's jobs system, running the
 `eva_task` job as its owner. App releases leave these schedules alone, and admins can pause
-them in Controls → Jobs. Every run checks again that Eva is on, the owner is active with Allow
+them in Controls → Jobs. An administrator's pause wins: the owner can't resume the task, run it
+now or re-enable it by changing its timing until it is resumed in Controls, and jobs already
+queued for it don't run. Every run checks again that Eva is on, the owner is active with Allow
 Eva, and the allowance has room; it then runs with the owner's permissions on that day. A task
 is read only unless the person allows changes, and changes that need approval are always
 skipped because nobody is there to approve them. A run that finds the owner without Eva
@@ -140,8 +146,9 @@ person.
 Events: `run.started`, `message.delta`, `tool.started`, `tool.completed`, `tool.failed`,
 `approval.requested`, `approval.answered`, `usage.updated`, `run.completed`, `run.failed`,
 `run.cancelled`. Runs are kept with their status (`running`, `awaiting_approval`,
-`completed`, `failed`, `cancelled`). A run another process left behind for ten minutes is
-marked failed at start.
+`completed`, `failed`, `cancelled`). A run that no process is working on (not running here and
+silent for five minutes) is marked failed at start and whenever its chat is used again, so a
+restart never leaves a chat blocked. Stopping a run whose process is gone closes it at once.
 
 ## Limits of this release
 

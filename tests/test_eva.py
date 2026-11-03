@@ -330,7 +330,7 @@ def test_scheduled_tasks_run_as_their_owner_through_the_jobs_system(eva):
     result = editor('GET', f"/api/_eva/conversations/{details['runs'][0]['conversation_id']}")[1]
     assert result['conversation']['task_id'] == task[1]['id'] and result['messages'][-1]['content'] == 'No projects yet.'
     # Read only by default: the task's request offered no writing tools.
-    assert not {'create_record', 'update_record'} & {tool['function']['name'] for tool in script.requests[0]['tools']}
+    assert not {'create_record', 'update_record', 'create_file'} & {tool['function']['name'] for tool in script.requests[0]['tools']}
     assert 'scheduled task' in script.requests[0]['messages'][0]['content']
     # Pause and resume use the jobs schedule; losing Allow Eva stops the task at its next run.
     assert editor('PATCH', f"/api/_eva/tasks/{task[1]['id']}", {'active': False})[1]['active'] is False
@@ -395,3 +395,77 @@ def test_eva_gets_the_same_answers_as_every_other_entry_point(eva):
     assert seen[0]['items'] == direct[0][1]['result']['items'] == [{'id': visible, 'name': 'Visible'}]
     assert [answer['status'] for answer in seen[1:]] == [status for status, _, _ in direct[1:]] == [404, 403, 403]
     assert [activity['status'] for activity in stored['runs'][0]['activities']] == ['done', 'failed', 'refused', 'refused']
+
+
+def test_an_administrators_pause_holds_against_the_owner(eva):
+    app, script = eva
+    editor, admin = client(app, 'editor'), client(app)
+    task = editor('POST', '/api/_eva/tasks', {'name': 'Weekly', 'instructions': 'Summarise projects.', 'cron': '0 9 * * 1', 'timezone': 'Asia/Dubai'})[1]
+    key = f"schedule.eva_task_{task['id']}.active"
+    assert admin('POST', '/api/_controls/overrides', {'changes': [{'kind': 'setting', 'key': key, 'value': False}]})[0] == 200
+    paused = editor('GET', f"/api/_eva/tasks/{task['id']}")[1]
+    assert paused['active'] is False and paused['paused_by_admin'] is True and paused['next_run_at'] is None
+    # The owner can't turn it back on, run it now, or re-enable it by changing the timing.
+    assert editor('PATCH', f"/api/_eva/tasks/{task['id']}", {'active': True})[0] == 409
+    assert editor('POST', f"/api/_eva/tasks/{task['id']}/run", {})[0] == 409
+    assert editor('PATCH', f"/api/_eva/tasks/{task['id']}", {'cron': '0 10 * * 1'})[0] == 200
+    with app.database._connection() as connection:
+        assert connection.execute('SELECT enabled FROM evlet_schedules WHERE name=?', (f"eva_task_{task['id']}",)).fetchone()[0] == 0
+    # A job queued before the pause doesn't run either.
+    from evlet.auth import User
+    with app.database.transaction() as tx:
+        row = tx.connection.execute("SELECT id, username, role FROM evlet_users WHERE username='editor'").fetchone()
+        app.business.jobs.enqueue(tx, 'eva_task', {'task': task['id'], 'manual': True}, user=User(*row))
+    assert app.business.jobs.run_one()
+    with app.database._connection() as connection:
+        assert connection.execute('SELECT count(*) FROM evlet_eva_task_runs').fetchone()[0] == 0
+    assert script.requests == []
+    # Resuming in Controls gives the owner the task back.
+    assert admin('POST', '/api/_controls/overrides', {'changes': [{'kind': 'setting', 'key': key, 'value': None}]})[0] == 200
+    assert editor('PATCH', f"/api/_eva/tasks/{task['id']}", {'active': True})[1]['active'] is True
+
+
+def test_an_aed_allowance_needs_a_rate_for_the_model(eva):
+    app, script = eva
+    admin, editor = client(app), client(app, 'editor')
+    setting(app, 'eva.model', 'Fast')
+    assert admin('GET', '/api/_controls/eva')[1]['missing_rates'] == ['Fast']
+    # Without an AED limit, a model with no rate still works; its cost shows as zero.
+    conversation, _, stored = ask(app, editor, 'Hello')
+    assert stored['runs'][0]['status'] == 'completed'
+    setting(app, 'eva.user_limit', {'amount': '25.00', 'unit': 'aed', 'period': 'week'})
+    refused = editor('POST', f'/api/_eva/conversations/{conversation}/messages', {'text': 'Again'})
+    assert refused[0] == 409 and 'no rate' in refused[1]['error']
+    setting(app, 'eva.rates', {'Standard': {'input': '7.35', 'cached': '1.84', 'output': '29.38'}, 'Fast': {'input': '1.00', 'cached': '0.25', 'output': '4.00'}})
+    assert admin('GET', '/api/_controls/eva')[1]['missing_rates'] == []
+    assert ask(app, editor, 'Again', conversation)[2]['runs'][-1]['status'] == 'completed'
+
+
+def test_runs_nobody_is_working_on_never_block_a_chat(eva):
+    app, script = eva
+    editor = client(app, 'editor')
+    conversation, run, _ = ask(app, editor, 'First')
+    import time
+    with app.database.transaction() as tx:
+        # A run another process started and then stopped: still "running", silent for six minutes.
+        stuck = tx.connection.execute("INSERT INTO evlet_eva_runs(conversation_id,user_id,origin,model,status,started_at,updated_at,process) "
+                                      "VALUES (?,2,'eva','Standard','running',?,?,'gone')", (conversation, int(time.time()) - 400, int(time.time()) - 360)).lastrowid
+    _, _, stored = ask(app, editor, 'Second', conversation)
+    statuses = {item['id']: item['status'] for item in stored['runs']}
+    assert statuses[stuck] == 'failed' and stored['runs'][-1]['status'] == 'completed'
+    # Stopping a run whose thread is gone closes it at once instead of leaving a flag nobody reads.
+    with app.database.transaction() as tx:
+        orphan = tx.connection.execute("INSERT INTO evlet_eva_runs(conversation_id,user_id,origin,model,status,started_at,updated_at,process) "
+                                       "VALUES (?,2,'eva','Standard','running',?,?,?)", (conversation, int(time.time()), int(time.time()), app.business.eva.process)).lastrowid
+    assert editor('POST', f'/api/_eva/runs/{orphan}/cancel', {})[1]['status'] == 'cancelled'
+    assert editor('DELETE', f'/api/_eva/conversations/{conversation}')[0] == 204
+
+
+def test_read_only_tasks_get_no_writing_tools_and_the_provider_address_stays_safe(eva):
+    from evlet.eva import safe_address
+    from evlet.tools import BY_NAME
+    app, _ = eva
+    assert app.business.tools.definition('create_file').kind == 'write' and 'create_file' not in BY_NAME
+    assert safe_address('https://api.openai.com/v1') and safe_address('http://127.0.0.1:9000/v1')
+    for address in ('http://api.example.test/v1', 'https://user:secret@example.test/v1', 'ftp://example.test', 'https://example.test/v1?x=1'):
+        assert not safe_address(address), address

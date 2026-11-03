@@ -44,6 +44,11 @@ MICRO = Decimal(1_000_000)
 MAX_FILE, MAX_FILES, MAX_TEXT = 1024 * 1024, 5, 20_000
 CONTEXT_CHARS, RESULT_CHARS = 120_000, 16_000
 MAX_TASKS, KEEP_EVENTS = 10, 2000
+# A running run with no sign of life for this long has no process working on it (two provider timeouts and a retry fit).
+STALE_SECONDS = 300
+PAUSED = 'An administrator paused this task in Controls, under Jobs. Ask them to resume it.'
+NO_RATE = ("Eva's allowance is counted in AED, but the model has no rate yet, so its cost can't be checked. "
+           'Ask your administrator to set rates in Controls, under AI, Eva.')
 EXTRA_TOOLS = ('create_file',)
 MODEL_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}')
 
@@ -67,8 +72,7 @@ class AI:
             raise ValueError('AI(enabled=True) needs at least one model: models={"Standard": "<provider model id>"}')
         if self.provider != 'openai' and not callable(getattr(self.provider, 'stream', None)):
             raise ValueError("AI(provider=...) is 'openai' or an object with stream(request)")
-        url = urlsplit(self.base_url)
-        if url.scheme not in ('https', 'http') or not url.hostname or url.query or url.fragment or (url.scheme == 'http' and url.hostname not in ('127.0.0.1', 'localhost', '::1')):
+        if not safe_address(self.base_url):
             raise ValueError('AI(base_url=...) is an https address (http only on this machine)')
         if type(self.max_output_tokens) is not int or not 256 <= self.max_output_tokens <= 64000:
             raise ValueError('AI(max_output_tokens=...) is 256 to 64000')
@@ -78,6 +82,10 @@ class ProviderError(Exception):
     def __init__(self, message, retry=False):
         super().__init__(message)
         self.message, self.retry = message, retry
+
+
+class RateMissing(Exception):
+    """An AED allowance applies but the model has no rate: Eva fails closed instead of counting the cost as zero."""
 
 
 class QuotaError(Exception):
@@ -146,10 +154,22 @@ class OpenAI:
             yield 'tool_call', calls[index]
 
 
+def safe_address(value):
+    """An https address, or http on this machine, with no credentials, query or fragment."""
+    try:
+        url = urlsplit(value)
+    except ValueError:
+        return False
+    return isinstance(value, str) and url.scheme in ('https', 'http') and bool(url.hostname) and not (url.username or url.password or url.query or url.fragment) \
+        and (url.scheme == 'https' or url.hostname in ('127.0.0.1', 'localhost', '::1'))
+
+
 def provider_test(values):
     """Controls' Test button for the OpenAI connector: list models with the key."""
     from .connectors import ConnectionFailed
     url = (values.get('base_url') or 'https://api.openai.com/v1').rstrip('/')
+    if not safe_address(url):
+        raise ConnectionFailed('Use an https address, or http only on this machine.')
     request = Request(url + '/models', headers={'Authorization': 'Bearer ' + (values.get('api_key') or '')})
     try:
         with build_opener(ProxyHandler({})).open(request, timeout=10) as response:
@@ -281,6 +301,9 @@ def configuration(business):
         connector_state = business.connectors.get('openai')
     except AccessError:
         pass
+    # An AED allowance can't be checked for a model without a rate, so Eva refuses those requests until one is set.
+    rates = settings['eva.rates']
+    result['missing_rates'] = [name for name in eva.ai.models if name not in rates]
     result.update(provider='OpenAI' if eva.ai.provider == 'openai' else type(eva.ai.provider).__name__, models=list(eva.ai.models),
                   connector={'saved': connector_state is not None and bool(connector_state['secrets'].get('api_key', {}).get('saved')),
                              'status': None if connector_state is None else connector_state['status']} if eva.ai.provider == 'openai' else None,
@@ -502,7 +525,7 @@ class Eva:
         business.tools.extra['create_file'] = (Tool(
             'create_file', 'Create a file the person can download from this chat: text formats with content, or an Excel workbook (.xlsx) with rows.',
             {'name': {'type': 'string', 'maxLength': 120}, 'content': {'type': 'string', 'maxLength': 500_000}, 'rows': {'type': 'object'}},
-            ('name',), origins=('eva', 'schedule'), label='Creating {name}'), self.create_file_tool)
+            ('name',), kind='write', origins=('eva', 'schedule'), label='Creating {name}'), self.create_file_tool)
         if business.jobs is not None:
             from .jobs import Task
             business.jobs.tasks['eva_task'] = Task('eva_task', self.task_job, max_attempts=1, external=True)
@@ -548,10 +571,23 @@ class Eva:
             ):
                 tx.connection.execute(statement)
             # Runs a stopped process left behind: nobody is working on them any more.
-            stale = int(time.time()) - 600
-            for row in tx.connection.execute("SELECT id FROM evlet_eva_runs WHERE status='running' AND updated_at<?", (stale,)).fetchall():
-                self.close(tx.connection, row['id'], 'failed', 'Evlet restarted while this answer was being written. Ask again to continue.')
-            tx.connection.execute("UPDATE evlet_eva_task_runs SET status='failed', error='Evlet restarted during this run.' WHERE status='running' AND at<?", (stale,))
+            self.reap(tx.connection)
+
+    def alive(self, run_id):
+        with self.lock:
+            thread = self.threads.get(run_id)
+        return thread is not None and thread.is_alive()
+
+    def reap(self, connection, conversation_id=None):
+        """Close runs nobody is working on: not running here and silent for STALE_SECONDS (a restart, a crashed worker).
+        Called at start and before anything that would wait for a run, so a chat never stays blocked."""
+        stale = int(time.time()) - STALE_SECONDS
+        where, args = ("status='running' AND updated_at<?", [stale]) if conversation_id is None else \
+            ("status='running' AND updated_at<? AND conversation_id=?", [stale, conversation_id])
+        for row in connection.execute(f'SELECT id FROM evlet_eva_runs WHERE {where}', args).fetchall():
+            if not self.alive(row['id']):
+                self.close(connection, row['id'], 'failed', 'Evlet stopped while this answer was being written. Ask again to continue.')
+                connection.execute("UPDATE evlet_eva_task_runs SET status='failed', error='Evlet stopped during this run.' WHERE run_id=? AND status='running'", (row['id'],))
 
     # ---------- who may use Eva ----------
 
@@ -792,6 +828,7 @@ class Eva:
     def delete_conversation(self, user, conversation_id):
         with self.database.transaction() as tx:
             self.own(tx.connection, user, conversation_id)
+            self.reap(tx.connection, conversation_id)
             if tx.connection.execute("SELECT 1 FROM evlet_eva_runs WHERE conversation_id=? AND status='running'", (conversation_id,)).fetchone():
                 raise AccessError(409, 'Wait for Eva to finish, or stop it, before deleting this chat.')
             # Usage rows stay for the totals; they lose the link to the deleted chat.
@@ -817,12 +854,15 @@ class Eva:
         if model not in self.ai.models or (model != self.default_model() and not self.business.controls.settings['eva.choose_model']):
             raise ValidationError({'model': 'Use the model your administrator set'})
         try:
-            self.reserve(user.id, 'eva', check_only=True)
+            self.reserve(user.id, 'eva', check_only=True, model=model)
         except QuotaError as exc:
             raise AccessError(429, f'{exc} It resets on {dated(exc.reset, self.zone())}.') from None
+        except RateMissing as exc:
+            raise AccessError(409, str(exc)) from None
         host = dict(scope.get('headers', [])).get(b'host', b'').decode('latin1')
         with self.database.transaction() as tx:
             conversation = self.own(tx.connection, user, conversation_id)
+            self.reap(tx.connection, conversation_id)
             if tx.connection.execute("SELECT 1 FROM evlet_eva_runs WHERE conversation_id=? AND status IN ('running','awaiting_approval')", (conversation_id,)).fetchone():
                 raise AccessError(409, 'Eva is still working on this chat. Wait, answer the approval, or stop it first.')
             named = []
@@ -932,6 +972,8 @@ class Eva:
             self.finish(run_id, 'failed', exc.message, None)
         except ProviderError as exc:
             self.finish(run_id, 'failed', exc.message, None)
+        except RateMissing as exc:
+            self.finish(run_id, 'failed', str(exc), None)
         except Exception:
             logger.exception('Eva run %s failed', run_id)
             self.finish(run_id, 'failed', 'Something went wrong while Eva was working. Nothing after the last finished step was done.', None)
@@ -1057,7 +1099,10 @@ class Eva:
         values = self.business.connectors.values('openai')
         if not values or not values.get('api_key'):
             raise ProviderError('Eva has no provider key yet. An administrator can add it in Controls, under Connectors, OpenAI.')
-        return OpenAI(values.get('base_url') or self.ai.base_url, values['api_key'])
+        address = values.get('base_url') or self.ai.base_url
+        if not safe_address(address):
+            raise ProviderError('The OpenAI connector address must use https (http only on this machine). An administrator can fix it under Connectors.')
+        return OpenAI(address, values['api_key'])
 
     def request(self, run, user):
         """The provider request: instructions, as much recent conversation as fits, and the tools this person has."""
@@ -1137,6 +1182,15 @@ class Eva:
                 pending = json.loads(run['pending'] or '{}')
                 if pending.get('approval'):
                     tx.connection.execute("UPDATE evlet_tool_approvals SET status='declined', decided_at=? WHERE id=? AND status='pending'", (int(time.time()), pending['approval']))
+                self.close(tx.connection, run_id, 'cancelled', 'Stopped. Anything Eva finished before you stopped it stays done.')
+            elif run['status'] == 'running' and not self.alive(run_id) and run['process'] != self.process:
+                # No thread here and another (perhaps stopped) process started it: stop it now rather than wait for that process.
+                if run['updated_at'] < int(time.time()) - STALE_SECONDS:
+                    self.close(tx.connection, run_id, 'cancelled', 'Stopped. Anything Eva finished before you stopped it stays done.')
+                else:
+                    tx.connection.execute('UPDATE evlet_eva_runs SET cancel=1 WHERE id=?', (run_id,))
+            elif run['status'] == 'running' and not self.alive(run_id):
+                # Started in this process, but its thread is gone: nothing will read the flag.
                 self.close(tx.connection, run_id, 'cancelled', 'Stopped. Anything Eva finished before you stopped it stays done.')
             elif run['status'] == 'running':
                 tx.connection.execute('UPDATE evlet_eva_runs SET cancel=1 WHERE id=?', (run_id,))
@@ -1313,12 +1367,15 @@ class Eva:
         """Hold the expected cost of one model request against the person's and the instance's allowances, atomically."""
         rate = self.rate(model)
         cost = cost_micro(rate, {'input': input_tokens, 'output': output}) if model else 0
+        limits = self.limits(user_id, origin)
+        if model and rate is None and any(limit['unit'] == 'aed' for _, limit in limits):
+            raise RateMissing(NO_RATE)
         now = int(time.time())
         with self.database.transaction() as tx:
             connection = tx.connection
             # One writer at a time: two requests can't both take the last of an allowance.
             connection.execute('UPDATE evlet_eva_lock SET n=n+1 WHERE id=1')
-            for scope, limit in self.limits(user_id, origin):
+            for scope, limit in limits:
                 spent, held, reset = self.used(connection, scope, limit, user_id, now)
                 need = {'aed': cost, 'tokens': tokens, 'requests': 1}[limit['unit']] if not check_only else 0
                 if spent + held + need > self.allowed_amount(limit) or (check_only and spent + held >= self.allowed_amount(limit)):
@@ -1372,6 +1429,12 @@ class Eva:
 
     # ---------- scheduled tasks ----------
 
+    @staticmethod
+    def held(connection, task_id):
+        """Whether an administrator paused this task in Controls, under Jobs (an override the owner can't lift)."""
+        row = connection.execute("SELECT value FROM evlet_overrides WHERE kind='setting' AND key=?", (f'schedule.eva_task_{task_id}.active',)).fetchone()
+        return row is not None and json.loads(row['value']) is False
+
     def public_task(self, row, connection):
         from .services import Calendar
         try:
@@ -1380,10 +1443,12 @@ class Eva:
             upcoming = None
         schedule = connection.execute('SELECT enabled, next_run FROM evlet_schedules WHERE name=?', (f"eva_task_{row['id']}",)).fetchone() \
             if self.business.jobs is not None else None
+        held = self.held(connection, row['id'])
         return {'id': row['id'], 'name': row['name'], 'instructions': row['instructions'], 'cron': row['cron'], 'timezone': row['timezone'],
-                'active': bool(row['active']) and (schedule is None or bool(schedule['enabled'])), 'allow_changes': bool(row['allow_changes']),
+                'active': bool(row['active']) and not held and (schedule is None or bool(schedule['enabled'])), 'paused_by_admin': held,
+                'allow_changes': bool(row['allow_changes']),
                 'created_at': row['created_at'], 'last_run_at': row['last_run_at'], 'last_status': row['last_status'],
-                'next_run_at': (schedule['next_run'] if schedule else upcoming) if row['active'] else None}
+                'next_run_at': (schedule['next_run'] if schedule else upcoming) if row['active'] and not held else None}
 
     def tasks(self, user):
         with self.database._connection() as connection:
@@ -1456,13 +1521,17 @@ class Eva:
             tx.connection.execute('DELETE FROM evlet_schedules WHERE name=?', (name,))
         self.business.jobs.schedule(name, 'eva_task', {'task': task_id}, every=86400, start_at=Calendar(cron, zone).next(int(time.time())),
                                     user=User(user.id, user.username, user.role), calendar=(cron, zone))
-        if not active:
+        with self.database._connection() as connection:
+            held = self.held(connection, task_id)
+        if not active or held:
             self.business.jobs.set_schedule_active(name, False)
 
     def change_task(self, user, task_id, body):
         values = self.task_values(body, partial=True)
         with self.database.transaction() as tx:
             row = self.own_task(tx.connection, user, task_id)
+            if body.get('active') is True and self.held(tx.connection, task_id):
+                raise AccessError(409, PAUSED)
             if 'timezone' not in body:
                 values['timezone'] = row['timezone']
             for key in ('name', 'instructions', 'cron', 'timezone', 'allow_changes', 'active'):
@@ -1475,7 +1544,9 @@ class Eva:
                 self.schedule(user, task_id, row['cron'], row['timezone'], bool(row['active']))
             elif 'active' in body:
                 try:
-                    self.business.jobs.set_schedule_active(f'eva_task_{task_id}', bool(row['active']))
+                    with self.database._connection() as connection:
+                        held = self.held(connection, task_id)
+                    self.business.jobs.set_schedule_active(f'eva_task_{task_id}', bool(row['active']) and not held)
                 except ValueError:
                     self.schedule(user, task_id, row['cron'], row['timezone'], bool(row['active']))
         return self.task(user, task_id)
@@ -1511,6 +1582,8 @@ class Eva:
     def run_task_now(self, user, task_id):
         with self.database._connection() as connection:
             self.own_task(connection, user, task_id)
+            if self.held(connection, task_id):
+                raise AccessError(409, PAUSED)
         if self.business.jobs is None:
             raise AccessError(409, 'Scheduled tasks need background jobs, which this workspace does not run.')
         with self.database.transaction() as tx:
@@ -1528,6 +1601,10 @@ class Eva:
             return
         if not row['active'] and not payload.get('manual'):
             return
+        with self.database._connection() as connection:
+            if self.held(connection, task_id):
+                # Queued before an administrator paused it, or run by hand: the pause wins.
+                return
         now = int(time.time())
         def record(status, error=None, run_id=None, conversation_id=None, run_row=None):
             with self.database.transaction() as tx:
@@ -1549,17 +1626,25 @@ class Eva:
             except ValueError:
                 pass
             return
-        with self.database._connection() as connection:
-            if connection.execute("SELECT 1 FROM evlet_eva_task_runs WHERE task_id=? AND status='running'", (task_id,)).fetchone():
-                record('skipped', 'The previous run was still going.')
-                return
         try:
-            self.reserve(user.id, 'schedule', check_only=True)
+            self.reserve(user.id, 'schedule', check_only=True, model=self.default_model())
         except QuotaError as exc:
             record('skipped', 'The Eva allowance was used up. It resets on ' + dated(exc.reset, self.zone()) + '.')
             return
+        except RateMissing as exc:
+            record('skipped', str(exc))
+            return
         if not row['allow_changes']:
             user = User(user.id, user.username, user.role, user.links, access=KeyAccess(False, user.access.models, None, None, 'schedule'))
+        with self.database.transaction() as tx:
+            # Checked in the transaction that starts the run, so two workers can't both start one.
+            self.reap(tx.connection)
+            busy = tx.connection.execute("SELECT 1 FROM evlet_eva_task_runs WHERE task_id=? AND status='running'", (task_id,)).fetchone()
+            if busy:
+                tx.connection.execute("INSERT INTO evlet_eva_task_runs(task_id,at,status,error) VALUES (?,?,'skipped',?)", (task_id, now, 'The previous run was still going.'))
+                tx.connection.execute('UPDATE evlet_eva_tasks SET last_run_at=?, last_status=? WHERE id=?', (now, 'skipped', task_id))
+        if busy:
+            return
         with self.database.transaction() as tx:
             title = f"{row['name']} · {datetime.fromtimestamp(now, self.zone()).strftime('%d-%m-%Y')}"
             conversation = self.create_conversation(user, {'title': title}, task_id=task_id, connection=tx.connection)
