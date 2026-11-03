@@ -4,8 +4,8 @@ from urllib.parse import quote
 
 import pytest
 
-from evlet import (Attachments, Boolean, Database, Hierarchy, Integer, Journal, Link, Model, Policy, Registry, Rule, Text,
-                   any_of, action)
+from evlet import (Attachments, Boolean, Child, Database, Hierarchy, Integer, Journal, Link, Model, Policy, Registry, Rule,
+                   Table, Text, any_of, action)
 from evlet.auth import AccessError, User
 from evlet.measures import Count, Sum
 from evlet.permissions import scope_condition
@@ -22,6 +22,10 @@ class Employee(Model):
     reports_to = Link('employee', index=True)
 
 
+class LeaveDay(Child):
+    half = Boolean(default=False)
+
+
 class Leave(Model):
     """Viewers read their own and their team's leave, and every leave marked public; they may update it."""
     class Meta:
@@ -32,6 +36,7 @@ class Leave(Model):
     days = Integer(default=1)
     public = Boolean(default=False)
     note = Text(default='')
+    days_taken = Table(LeaveDay)
 
     @action('Approve', roles=('admin', 'viewer'))
     def approve(self):
@@ -136,6 +141,16 @@ def check_team_scopes(app):
     with app.database.transaction() as tx:
         tx.connection.execute('UPDATE employee SET reports_to = ? WHERE id = ?', (found['deep'], found['outsider']))
     assert listed(manager, 'employee')['total'] == 152
+    # Filter lists and child table groups (EXISTS) apply inside the scope: only the team's matching leave.
+    admin('POST', '/api/leave', {'employee': found['deep'], 'children': {'days_taken': [{'half': True}]}})
+    admin('POST', '/api/leave', {'employee': found['chief'], 'children': {'days_taken': [{'half': True}]}})
+    half = [{'child': 'days_taken', 'match': 'any', 'where': [['half', 'eq', True]]}]
+    assert listed(admin, 'leave', half)['total'] == 2
+    assert listed(manager, 'leave', half)['total'] == 1
+    assert listed(outsider, 'leave', half)['total'] == 0
+    assert listed(manager, 'leave', [['days', 'gte', 2], ['public', 'eq', False]])['total'] == 152
+    status, body, _ = manager('GET', '/api/leave/aggregate?measures=' + quote('n:count') + '&filters=' + quote(json.dumps(half)))
+    assert status == 200 and body['items'] == [{'n': 1}], body
     return found
 
 

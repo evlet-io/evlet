@@ -149,7 +149,8 @@ lookup; see [performance.md](performance.md#team-row-scopes) for plans and measu
 
 These scopes apply wherever a filter-object scope does: lists, counts, search, detail, writes,
 actions, attachments, related records, measures and aggregates, journal reads, realtime
-events, Link values in responses and the Link filter guard. HR roles without a scope see
+events, Link values in responses, the Link filter guard, and filter lists with child table
+groups (`EXISTS`) on list, aggregate and measures routes. HR roles without a scope see
 every row. Controls offers an app-registered team or `any_of` scope for every model it compiles
 for. The Playground's Employees show a manager, a team member and an outsider
 (`examples/playground/team.py`).
