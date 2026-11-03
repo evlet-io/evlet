@@ -798,3 +798,25 @@ def test_postgres_plan_and_add_table_with_confirmed_documents(pg_dsn):
         database.migrate(migrations) if migrate else database.initialize()
         return database
     check_plan_and_add_table(make)
+
+
+def test_postgres_retire_alter_and_run_data_with_confirmed_documents(pg_dsn):
+    from tests.test_migration_plan import check_retire_alter_and_run_data
+
+    def make(registry, migrations, migrate=False, plan=False, allow_destructive=False):
+        database = PostgreSQLDatabase(pg_dsn, registry, migrations=migrations)
+        if plan:
+            return database.plan(migrations)
+        database.migrate(migrations, allow_destructive=allow_destructive) if migrate else database.initialize()
+        return database
+    check_retire_alter_and_run_data(make)
+
+
+def test_postgres_run_data_order_maintenance_and_retired_links(pg_dsn):
+    from tests.test_migration_plan import check_run_data_order_and_maintenance, maker
+    check_run_data_order_and_maintenance(maker(pg_dsn, PostgreSQLDatabase))
+
+
+def test_postgres_maintenance_data_steps_are_opt_in_and_audited(pg_dsn):
+    from tests.test_migration_plan import check_maintenance_steps, maker
+    check_maintenance_steps(maker(pg_dsn, PostgreSQLDatabase))

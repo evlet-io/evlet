@@ -55,6 +55,10 @@ def parser():
     migrate.add_argument('--trust', action='store_true', help='Trust changed app source without prompting')
     migrate.add_argument('--recompute-posted', action='store_true',
                          help='Let Recompute operations recalculate posted records too; each changed one gets a journal entry')
+    migrate.add_argument('--allow-destructive', action='store_true',
+                         help='Let DropField delete the columns and values of retired fields; a backup is written first')
+    migrate.add_argument('--allow-maintenance', action='store_true',
+                         help='Let RunData steps declared with maintenance=True write confirmed, tracked and posted records; each is audited')
     migrate.add_argument('--plan', action='store_true',
                          help='Print the pending migrations and how they differ from the models; write nothing')
     makemigration = commands.add_parser('makemigration', help="Write the migration --plan suggests into a flat app's migrations folder")
@@ -220,8 +224,9 @@ def main(argv=None):
                 raise ValueError('Provide an instance name or --list')
         elif args.command == 'migrate' and args.plan:
             from .install import plan
-            if args.recompute_posted:
-                raise ValueError('Choose --plan or --recompute-posted')
+            if args.recompute_posted or args.allow_destructive or args.allow_maintenance:
+                raise ValueError('--plan writes nothing; run migrate without --plan to use --recompute-posted, '
+                                 '--allow-destructive or --allow-maintenance')
             result, suggestions, packages = plan(root, args.instance, trust=args.trust, confirm=confirm)
             print(f'Instance {args.instance}: plan only; nothing was written')
             print(result.text(suggestion=False))
@@ -245,7 +250,8 @@ def main(argv=None):
             from .install import install
             posted = args.command == 'migrate' and args.recompute_posted
             result = install(root, args.instance, app_name=args.name if args.command == 'install' else None, trust=args.trust, confirm=confirm,
-                             recompute_posted=posted)
+                             recompute_posted=posted, allow_destructive=args.command == 'migrate' and args.allow_destructive,
+                             allow_maintenance=args.command == 'migrate' and args.allow_maintenance)
             print(f'Instance {args.instance}: installed ' + ', '.join(result['apps']))
             print('Applied migrations: ' + (', '.join(result['migrations']) or 'none; schema is current'))
             if posted:
