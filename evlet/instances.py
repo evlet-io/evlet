@@ -39,6 +39,8 @@ class Instance:
     trusted_proxies: tuple = ()
     # `security = Security(...)` beside `instance` in config.py; read_instance fills it in.
     security: object = field(default=None, init=False, compare=False, repr=False)
+    # `ai = AI(...)` beside `instance` in config.py: Eva's hard gate. None keeps Eva off.
+    ai: object = field(default=None, init=False, compare=False, repr=False)
 
     def __post_init__(self):
         from .cli.project import valid_name
@@ -134,6 +136,11 @@ def read_instance(path):
     if not isinstance(security, Security):
         raise ValueError('config.py security must be security = Security(session_hours=..., lockout=..., password_min=...)')
     object.__setattr__(value, 'security', security)
+    from .eva import AI
+    ai = namespace.get('ai')
+    if ai is not None and not isinstance(ai, AI):
+        raise ValueError('config.py ai must be ai = AI(enabled=..., models={...})')
+    object.__setattr__(value, 'ai', ai)
     return value
 
 
@@ -376,7 +383,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     app = Application(database, auth=auth, policy=policy, ui=views, events=events, jobs=jobs,
                       reports=tuple(report for _, definition in definitions for report in definition.reports),
                       apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
-                      storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, **options)
+                      storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, ai=config.ai, **options)
     app.business.timezone = config.timezone
     # One key for connector secrets, two-step secrets and backup codes (evlet.secrets).
     from .secrets import SecretKey
@@ -402,7 +409,8 @@ def register_schedules(app, schedules):
     calendar_names = {schedule.name for schedule in schedules if isinstance(schedule, CalendarSchedule)}
     with app.database.transaction() as tx:
         for row in tx.connection.execute('SELECT name FROM evlet_calendar_schedules').fetchall():
-            if row['name'] not in calendar_names:
+            # Eva's scheduled tasks belong to people, not to an app release (evlet.eva).
+            if row['name'] not in calendar_names and not row['name'].startswith('eva_task_'):
                 # Only an active schedule is retired, so an operator-disabled one stays disabled when restored.
                 tx.connection.execute('UPDATE evlet_calendar_schedules SET retired=1 WHERE name=? AND retired=0 AND EXISTS (SELECT 1 FROM evlet_schedules WHERE name=? AND enabled=1)', (row['name'], row['name']))
                 tx.connection.execute('UPDATE evlet_schedules SET enabled=0 WHERE name=?', (row['name'],))

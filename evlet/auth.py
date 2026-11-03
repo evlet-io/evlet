@@ -246,9 +246,9 @@ class LocalAuth:
     def initialize(self):
         with self.database.transaction() as tx:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)')
-            # Allow MCP (Controls, Users): off for new people. It lets them connect AI assistants and grants no record access.
+            # Allow Eva and Allow MCP (Controls, Users): both off for new people. They open Eva or MCP and grant no record access.
             users = self.database.columns(tx.connection, 'evlet_users')
-            for name in ('allow_mcp',):
+            for name in ('allow_eva', 'allow_mcp'):
                 if name not in users:
                     tx.connection.execute(f'ALTER TABLE evlet_users ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0')
             if 'allow_mcp' not in users and self.database.columns(tx.connection, 'evlet_mcp_clients'):

@@ -56,6 +56,8 @@ export function scenario(name: string, { signedIn = true } = {}) {
   };
   const reply = (sent: Sent): Recorded => {
     const key = keyOf(sent.method, sent.url);
+    // testCRM runs without Eva, so the app's Eva check is answered as such a server answers it.
+    if (key === 'GET /api/_eva') return { status: 404, body: { error: 'Route not found' }, etag: null };
     if (sent.method === 'GET') {
       for (let at = phase; at >= 0; at--) if (phases[at][key]) return answer(phases[at][key]);
       const listed = batch(sent.url);

@@ -1,9 +1,10 @@
 # Changelog
 
-Evlet is pre-1.0. A minor version (0.2, 0.3) may change public APIs; the notes below
-say what to change. Evlet is not production ready.
+Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument that is
+removed or changed keeps working with a `DeprecationWarning` for at least one minor release
+first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## Unreleased (0.3.0.dev0)
 
 - **Breaking: record ids are text.** New records get a 63-bit, time-ordered id (milliseconds since
   01-01-2026 and 21 random bits), stored as before in the `INTEGER` primary key. Outside the
@@ -15,8 +16,24 @@ say what to change. Evlet is not production ready.
   What to change: clients read ids as strings and build URLs from them. A decimal id in an API path
   is now a 404 (the browser turns an old `/app/invoice/42` bookmark into the text id). Writes still
   take a JSON integer for a Link or a row id. In Python, `record.id` and Link values are
-  `evlet.identity.RecordId`, an `int` whose `str()` is the text id; `Database.get` takes either form
+  `RecordId` (a new root export), an `int` whose `str()` is the text id; `Database.get` takes either
+  form, and services and actions may take `RecordId` arguments
   ([docs/model-engine.md](docs/model-engine.md#record-ids)).
+- **API stability for apps.** [docs/api-stability.md](docs/api-stability.md) names the
+  surface apps can rely on (the root exports, field keywords, lifecycle decorators and the
+  `evlet.ui` names in the app docs), the deprecation rule and what stays internal.
+  `tests/test_public_api.py` pins those names and signatures. A change needs a regenerated
+  snapshot and an entry here.
+- **Tool Engine and Eva exports.** The root exports gain `AI` (Eva's model settings),
+  `Application(ai=...)` turns Eva on for an application, and `@api(..., tool=True)` offers an
+  app service as a tool to Eva and MCP clients ([docs/eva.md](docs/eva.md),
+  [docs/tools.md](docs/tools.md)). These are additions; existing apps need no change.
+- **Version 0.3.0.dev0.** Generated apps and the examples now require
+  `evlet>=0.3.0.dev0,<0.4`, because a `<0.3` range does not match 0.3 pre-releases. Apps
+  that declare `evlet>=0.2.0,<0.3` must widen the range to install on `main`.
+- **`DevSignIn` export.** The root exports gain `DevSignIn`, which serves the one-time
+  development sign-in links of `evlet dev` and `evlet playground` ([docs/cli.md](docs/cli.md#development-sign-in-links)).
+  Never wrap an application you serve with it.
 - **Light and dark themes.** Every screen of the browser UI comes in light and dark, or
   follows the device (`theme` in Settings, Appearance: `"light"`, `"dark"` or `"system"`, now
   the default). The server writes the theme on `<html>` before the page paints, so nothing

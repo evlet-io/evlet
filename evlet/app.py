@@ -26,7 +26,7 @@ class HTTPError(Exception):
 
 
 class Application:
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=()):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None):
         from .ui import ViewRegistry
         from .routing import RouteTable, resolve_routes
         if routes is not None and not isinstance(routes, RouteTable):
@@ -69,8 +69,15 @@ class Application:
                 self.business.secret_key = secret_key
             path = getattr(database, 'path', None)
             self.business.connectors.fallback = path.parent / 'secret.key' if path is not None else None
-        elif reports or apis or connectors or slips:
-            raise ValueError('Reports, slips, APIs and connectors require authentication')
+            # Eva only when config.py turns AI on: AI(enabled=True, models={...}). Otherwise nothing of Eva exists.
+            if ai is not None:
+                from .eva import AI, Eva
+                if not isinstance(ai, AI):
+                    raise ValueError('Pass ai=AI(...)')
+                if ai.enabled:
+                    self.business.eva = Eva(self.business, ai)
+        elif reports or apis or connectors or slips or ai is not None:
+            raise ValueError('Reports, slips, APIs, connectors and AI require authentication')
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -88,6 +95,9 @@ class Application:
             self._api_scope(scope)
             if scope['path'] == '/api/_events/stream' and self.business:
                 await self._event_stream(scope, receive, send)
+                return
+            if self.business and self.business.eva is not None and scope['path'].startswith('/api/_eva/runs/') and scope['path'].endswith('/stream'):
+                await self._eva_stream(scope, receive, send)
                 return
             body = None
             internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/'))
@@ -115,7 +125,7 @@ class Application:
                     if event["type"] == "http.disconnect":
                         return
                     data.extend(event.get("body", b""))
-                    maximum = (1500000 if scope['path'].endswith('/attachments') else 2900000 if scope['path'] == '/api/_settings/me/photo'
+                    maximum = (1500000 if scope['path'].endswith('/attachments') or scope['path'] == '/api/_eva/files' else 2900000 if scope['path'] == '/api/_settings/me/photo'
                                else MAX_BODY_BYTES) if self.business else MAX_BODY_BYTES
                     if len(data) > maximum:
                         raise HTTPError(413, "Request body exceeds the allowed size")
@@ -260,6 +270,57 @@ class Application:
                     return
                 except Exception:
                     logger.exception('Event stream failed')
+                    return
+        except OSError:
+            return
+        finally:
+            disconnect.cancel()
+            stopping.cancel()
+            await asyncio.gather(disconnect, stopping, return_exceptions=True)
+            try:
+                await send({'type': 'http.response.body', 'body': b'', 'more_body': False})
+            except OSError:
+                pass
+
+    async def _eva_stream(self, scope, receive, send):
+        """One Eva run's events as SSE: stored events after Last-Event-ID, then new ones as they are written, for about
+        25 seconds or until the run ends. A reconnect continues from the last id, so nothing runs twice."""
+        if scope['method'] != 'GET':
+            raise HTTPError(405, 'Method not allowed', [(b'allow', b'GET')])
+        last = dict(scope.get('headers', [])).get(b'last-event-id', b'0')
+        after = int(last) if last.isdigit() and len(last) <= 19 else 0
+        self.business.controls.refresh()
+        page = await asyncio.to_thread(self.business.eva.stream_page, scope, after)
+        await send({'type': 'http.response.start', 'status': 200, 'headers': [
+            (b'content-type', b'text/event-stream'), (b'cache-control', b'no-store'),
+            (b'x-accel-buffering', b'no'), (b'x-content-type-options', b'nosniff')]})
+        async def disconnected():
+            while (await receive())['type'] != 'http.disconnect':
+                pass
+        disconnect = asyncio.create_task(disconnected())
+        self._loop = asyncio.get_running_loop()
+        stopping = asyncio.create_task(self._stopping.wait())
+        deadline = asyncio.get_running_loop().time() + 25
+        try:
+            while True:
+                for item in page['items']:
+                    after = item['id']
+                    await send({'type': 'http.response.body', 'body': f"id: {item['id']}\nevent: {item['type']}\ndata: {json.dumps(item)}\n\n".encode(), 'more_body': True})
+                if page['done']:
+                    await send({'type': 'http.response.body', 'body': b'event: end\ndata: {}\n\n', 'more_body': True})
+                    return
+                if asyncio.get_running_loop().time() > deadline:
+                    return
+                done, _ = await asyncio.wait({disconnect, stopping}, timeout=0.05 if len(page['items']) >= 200 else 0.25, return_when=asyncio.FIRST_COMPLETED)
+                if done:
+                    return
+                try:
+                    page = await asyncio.to_thread(self.business.eva.stream_page, scope, after)
+                except AccessError:
+                    await send({'type': 'http.response.body', 'body': b'event: unavailable\ndata: {}\n\n', 'more_body': True})
+                    return
+                except Exception:
+                    logger.exception('Eva stream failed')
                     return
         except OSError:
             return

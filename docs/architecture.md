@@ -310,3 +310,11 @@ a call to an existing authenticated route, dispatched in process as the person, 
 second permission system and no AI-specific business code. The engine adds argument checks,
 approvals bound to the exact call and record revision, and one log of every call. See
 [the Tool Engine](tools.md).
+
+## Eva
+
+Eva (`evlet.eva`) runs on the Tool Engine. It adds the provider adapter (standard library,
+OpenAI first), conversations, runs streamed over SSE from stored events, files, usage,
+allowances held atomically before each request, and scheduled tasks on the existing jobs
+system. Eva is off unless config.py turns it on, and then Controls and each person's Allow
+Eva must too. See [Eva](eva.md).

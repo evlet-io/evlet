@@ -1,0 +1,159 @@
+/* Eva: chat, activity rows, approvals, the record panel and scheduled tasks. Theme tokens only, so both
+   themes work; filled accents use --accent-solid where the theme defines it. */
+.eva{display:flex;height:100%;min-height:0}
+.eva-side{width:264px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;background:var(--bg)}
+.eva-side-top{padding:12px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--divider)}
+.eva-side-top>.btn{justify-content:center}
+.eva-tabs{display:flex;gap:2px}
+.eva-tabs a{flex:1;height:28px;border-radius:7px;color:var(--fg-3);font-weight:500;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px}
+.eva-tabs a:hover{color:var(--fg)}
+.eva-tabs a.on{background:var(--bg-muted);color:var(--fg);font-weight:600}
+.eva-search{position:relative;display:flex;align-items:center}
+.eva-search svg{position:absolute;left:9px;color:var(--fg-3);pointer-events:none}
+.eva-search .input{padding-left:30px;height:30px;font-size:12.5px}
+.eva-convs{flex:1;overflow-y:auto;padding:4px 8px 12px}
+.eva-group-h{font-size:11px;font-weight:550;color:var(--fg-3);letter-spacing:.04em;text-transform:uppercase;padding:12px 8px 4px}
+.eva-group-h:empty{display:none}
+.eva-conv{display:flex;align-items:center;gap:4px;border-radius:8px;color:var(--fg-2)}
+.eva-conv:hover{background:var(--bg-muted)}
+.eva-conv.on{background:var(--accent-soft);color:var(--fg)}
+.eva-conv-link{flex:1;min-width:0;display:flex;align-items:center;gap:6px;padding:6px 4px 6px 8px}
+.eva-conv .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eva-conv.on .t{font-weight:550}
+.eva-conv .icon-btn{opacity:0}
+.eva-conv:hover .icon-btn,.eva-conv.on .icon-btn,.eva-conv .icon-btn:focus-visible{opacity:1}
+.eva-side-foot{border-top:1px solid var(--divider);padding:8px}
+.eva-none{color:var(--fg-3);padding:12px 8px;margin:0}
+.eva-main{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+
+.eva-thread{flex:1;display:flex;flex-direction:column;min-height:0;background:var(--bg)}
+.eva-thread-head{display:flex;align-items:center;gap:8px;padding:10px 20px;border-bottom:1px solid var(--divider)}
+.eva-thread-head h2{font-size:14px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eva-scroll{flex:1;overflow-y:auto;min-height:0}
+.eva-msgs{max-width:760px;margin:0 auto;padding:24px 20px 12px;display:flex;flex-direction:column;gap:18px}
+.eva-user{display:flex;justify-content:flex-end}
+.eva-bubble{max-width:min(560px,90%);background:var(--bg-muted);border-radius:14px 14px 4px 14px;padding:10px 14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.eva-bubble .eva-files{margin-top:8px}
+.eva-turn{display:flex;gap:12px;align-items:flex-start}
+.eva-mark{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:none;background:var(--t-violet-bg);color:var(--t-violet)}
+.eva-mark.lg{width:36px;height:36px;border-radius:10px}
+.eva-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+.eva-note{margin:0;color:var(--fg-3);font-size:12.5px}
+.eva-small{font-size:12px}
+
+.eva-acts{display:flex;flex-direction:column;gap:2px}
+.eva-act>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:4px 8px;margin:0 -8px;border-radius:7px;cursor:pointer;color:var(--fg-3);font-size:13px}
+.eva-act>summary::-webkit-details-marker{display:none}
+.eva-act>summary:hover{background:var(--bg-subtle);color:var(--fg-2)}
+.eva-act>summary b{font-weight:500;color:var(--fg-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eva-act .eva-sum{color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eva-act .chev{margin-left:auto;transition:transform .15s;color:var(--fg-4);flex:none}
+.eva-act[open] .chev{transform:rotate(90deg)}
+.eva-detail{margin:4px 0 8px 22px;border:1px solid var(--border);border-radius:10px;background:var(--bg-subtle);padding:10px 12px;display:grid;grid-template-columns:96px 1fr;gap:6px 12px;font-size:12.5px}
+.eva-detail dt{color:var(--fg-3)}
+.eva-detail dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.eva-detail a,.eva-md a{color:var(--accent);font-weight:500}
+.eva-code{font-family:var(--mono);font-size:11.5px;background:var(--bg-muted);border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}
+.eva-live{display:flex;align-items:center;gap:8px;color:var(--fg-3);font-size:13px}
+.eva-spin{width:14px;height:14px;border:2px solid var(--border-strong);border-top-color:var(--fg-3);border-radius:50%;animation:eva-spin .8s linear infinite;flex:none}
+.eva-spin.sm{width:12px;height:12px}
+.eva-shim{background:linear-gradient(90deg,var(--fg-3) 40%,var(--fg-4) 50%,var(--fg-3) 60%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:eva-shim 1.6s linear infinite}
+.eva-caret{display:inline-block;width:7px;height:15px;background:var(--fg-2);vertical-align:-2px;margin-left:2px;animation:eva-blink 1s steps(2) infinite}
+@keyframes eva-spin{to{transform:rotate(360deg)}}
+@keyframes eva-shim{from{background-position:100% 0}to{background-position:-100% 0}}
+@keyframes eva-blink{50%{opacity:0}}
+@media (prefers-reduced-motion: reduce){.eva-spin,.eva-shim,.eva-caret{animation:none}.eva-shim{color:var(--fg-3);background:none}}
+
+.eva-md{line-height:1.6;color:var(--fg);overflow-wrap:anywhere}
+.eva-md>*{margin:0 0 10px}
+.eva-md>*:last-child{margin-bottom:0}
+.eva-md h3,.eva-md h4{font-size:14px;font-weight:650;margin-top:6px}
+.eva-md ul,.eva-md ol{padding-left:20px}
+.eva-md code{font-family:var(--mono);font-size:12px;background:var(--bg-muted);border-radius:4px;padding:1px 4px}
+.eva-md pre{background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;padding:10px 12px;overflow-x:auto}
+.eva-md pre code{background:none;padding:0}
+.eva-table{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.eva-table table{border-collapse:collapse;width:100%;font-size:12.5px}
+.eva-table th{text-align:left;font-weight:550;color:var(--fg-3);padding:7px 12px;border-bottom:1px solid var(--border);background:var(--bg-subtle);white-space:nowrap}
+.eva-table td{padding:7px 12px;border-bottom:1px solid var(--divider)}
+.eva-table tr:last-child td{border-bottom:0}
+.eva-table td.r{text-align:right;font-variant-numeric:tabular-nums}
+
+.eva-files{display:flex;gap:8px;flex-wrap:wrap}
+.eva-file{display:inline-flex;align-items:center;gap:10px;padding:8px 12px 8px 8px;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-sm);max-width:100%;color:var(--fg-2)}
+.eva-file:hover{border-color:var(--border-strong)}
+.eva-file b{font-weight:550;font-size:12.5px;display:block;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eva-file small{color:var(--fg-3);font-size:11.5px}
+.eva-file-tile{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:none}
+
+.eva-approve{border:1px solid var(--t-amber);border-radius:12px;background:var(--surface);box-shadow:var(--shadow-md);overflow:hidden}
+.eva-approve-h{display:flex;gap:8px;align-items:center;padding:10px 14px;background:var(--t-amber-bg);color:var(--t-amber);font-weight:600;font-size:13px}
+.eva-approve-b{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.eva-approve-b p{margin:0;color:var(--fg-2);font-size:12.5px;line-height:1.55}
+.eva-approve-f{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--divider);flex-wrap:wrap}
+.eva-approve-f small{color:var(--fg-3);flex:1;min-width:160px}
+.eva-kv{display:grid;grid-template-columns:120px 1fr;gap:4px 12px;font-size:12.5px;margin:0}
+.eva-kv dt{color:var(--fg-3)}
+.eva-kv dt::first-letter{text-transform:uppercase}
+.eva-kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+
+.eva-quota{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--border);border-radius:14px;background:var(--bg-subtle);padding:14px 16px}
+.eva-quota strong{display:block;margin-bottom:4px;font-weight:600}
+.eva-quota p{margin:0;color:var(--fg-2);font-size:12.5px;line-height:1.55}
+
+.eva-compose-wrap{padding:8px 20px 16px}
+.eva-compose-wrap>.eva-quota{max-width:760px;margin:0 auto}
+.eva-compose{max-width:760px;margin:0 auto;border:1px solid var(--border-strong);border-radius:14px;background:var(--surface);box-shadow:var(--shadow-md)}
+.eva-compose:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring)}
+.eva-compose textarea{border:0;outline:0;background:none;resize:none;width:100%;padding:12px 14px 4px;min-height:48px;line-height:1.5;display:block}
+.eva-compose textarea:disabled{color:var(--fg-3)}
+.eva-compose-bar{display:flex;align-items:center;gap:6px;padding:6px 8px 8px}
+.eva-send{width:32px;height:32px;border-radius:9px;background:var(--accent-solid,var(--accent));color:var(--accent-fg);display:grid;place-items:center}
+.eva-send:disabled{opacity:.4;cursor:default}
+.eva-send.stop{background:var(--fg-2);color:var(--bg)}
+.eva-chips{display:flex;gap:6px;padding:10px 12px 0;flex-wrap:wrap}
+.eva-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg-subtle)}
+.eva-chip button{color:var(--fg-3);display:grid;place-items:center}
+.eva-hint{max-width:760px;margin:6px auto 0;font-size:11.5px;color:var(--fg-4);text-align:center}
+
+.eva-welcome{justify-content:flex-end}
+.eva-hello{flex:1;max-width:620px;margin:0 auto;padding:40px 20px 12px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px}
+.eva-hello h1{font-size:22px;font-weight:650;letter-spacing:-.02em;margin:6px 0 0}
+.eva-hello p{margin:0;color:var(--fg-3);max-width:52ch}
+.eva-starters{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px}
+.eva-starters button{padding:8px 12px;border:1px solid var(--border);border-radius:10px;color:var(--fg-2);font-size:12.5px;background:var(--surface);text-align:left}
+.eva-starters button:hover{border-color:var(--border-strong);color:var(--fg)}
+
+.eva-picks{display:flex;flex-direction:column;gap:2px;margin:10px 0}
+.eva-pick{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;text-align:left;width:100%}
+.eva-pick:hover{background:var(--bg-subtle)}
+.eva-pick b{display:block;font-weight:550;font-size:12.5px}
+.eva-pick small{color:var(--fg-3);font-size:11.5px}
+
+.drawer.eva-drawer{width:min(440px,100vw)}
+.eva-drawer .drawer-b{padding:0;display:flex;flex-direction:column}
+.eva-panel{display:flex;flex-direction:column;flex:1;min-height:0}
+.eva-context{display:flex;align-items:center;gap:8px;margin:12px;padding:8px 10px;border:1px dashed var(--border-strong);border-radius:10px;font-size:12.5px;color:var(--fg-2)}
+.eva-thread.compact .eva-msgs{padding:14px 12px}
+.eva-thread.compact .eva-compose-wrap{padding:8px 12px 12px}
+.eva-panel .eva-hello{padding:16px 12px}
+.eva-panel .eva-hello h1{font-size:17px}
+
+.eva-tasks .eva-lead{margin:-6px 0 16px}
+.eva-click{cursor:pointer}
+.eva-click:hover td{background:var(--bg-subtle)}
+.eva-task{display:flex;flex-direction:column;gap:16px}
+.eva-task h3{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin:0 0 6px}
+.eva-task-actions{display:flex;gap:8px;flex-wrap:wrap}
+.eva-instructions{margin:0;background:var(--bg-subtle);border-radius:10px;padding:10px 12px;white-space:pre-wrap}
+.eva-form{display:flex;flex-direction:column;gap:14px;grid-column:1/-1}
+.eva-row{display:flex;gap:12px;flex-wrap:wrap}
+.eva-row>*{flex:1;min-width:160px}
+.eva-parsed{border:1px solid var(--border);border-radius:10px;background:var(--bg-subtle);padding:10px 12px}
+
+@media (max-width:760px){
+  .eva-side{display:none}
+  .eva-msgs{padding:16px 12px}
+  .eva-compose-wrap{padding:8px 12px 12px}
+  .eva-kv,.eva-detail{grid-template-columns:1fr}
+}
