@@ -149,3 +149,11 @@ def sequential_ids():
 
 def sequential():
     return _sequential
+
+
+def checked(value):
+    """A RecordId from an int or text id, or None when the value is not a record id."""
+    try:
+        return RecordId(value)
+    except ValueError:
+        return None
