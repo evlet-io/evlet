@@ -759,3 +759,42 @@ def test_postgres_remote_mcp_oauth_and_assistant_tables(secured):
     assert overview['totals'] == {'reads': 1, 'writes': 1, 'denied': 0} and overview['clients'][0]['username'] == 'editor'
     assert form(secured, '/_/oauth/token', {'grant_type': 'refresh_token', 'refresh_token': tokens['refresh_token'], 'client_id': client_id})[1]['error'] == 'invalid_grant'
     assert rpc(secured, fresh['access_token'], 'ping')[0] == 401
+
+
+def test_framework_ledger_and_steps_match_sqlite(pg_dsn, monkeypatch):
+    from evlet import Application, framework
+    seen = []
+
+    def move(connection, postgres):
+        seen.append(postgres)
+        connection.execute('CREATE TABLE evlet_moved_calls (id INTEGER PRIMARY KEY, tool TEXT NOT NULL)')
+        connection.execute('INSERT INTO evlet_moved_calls (id, tool) SELECT id, username FROM evlet_users')
+        connection.execute('DROP TABLE evlet_legacy_calls')
+
+    db = PostgreSQLDatabase(pg_dsn, registry)
+    app = build_app(db, LocalAuth(db, origins=['http://127.0.0.1:8000'], secure_cookies=False))
+    app.initialize()
+    with db.transaction() as tx:
+        assert [tuple(row) for row in tx.connection.execute('SELECT position, name, checksum FROM evlet_framework_migrations')] == \
+            [(1, '0001_startup_tables', framework.STEPS[0].checksum())]
+        tx.connection.execute('CREATE TABLE evlet_legacy_calls (id INTEGER PRIMARY KEY)')
+        tx.connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('owner','x','admin')")
+    monkeypatch.setattr(framework, 'STEPS', (*framework.STEPS, framework.FrameworkStep('0002_move', 'Move rows, drop a table.', move)))
+    app.managed_framework = True
+    with pytest.raises(SchemaError, match='framework migrations are pending'):
+        app.initialize()
+    app.managed_framework = False
+    assert framework.upgrade(db) == ['0002_move'] and seen == [True]
+    with db.transaction() as tx:
+        assert [row[0] for row in tx.connection.execute('SELECT tool FROM evlet_moved_calls')] == ['owner']
+        assert tx.connection.execute("SELECT to_regclass('evlet_legacy_calls')").fetchone()[0] is None
+    # A failing step rolls back its own changes and leaves the ledger as it was.
+    def fail(connection, postgres):
+        connection.execute('DROP TABLE evlet_moved_calls')
+        raise RuntimeError('simulated framework step failure')
+    monkeypatch.setattr(framework, 'STEPS', (*framework.STEPS, framework.FrameworkStep('0003_fail', 'Fails.', fail)))
+    with pytest.raises(RuntimeError):
+        framework.upgrade(db)
+    with db.transaction() as tx:
+        assert tx.connection.execute('SELECT count(*) FROM evlet_framework_migrations').fetchone()[0] == 2
+        assert tx.connection.execute("SELECT to_regclass('evlet_moved_calls')").fetchone()[0] is not None

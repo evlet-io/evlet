@@ -344,7 +344,8 @@ A later release of one app can append migrations after another app's history.
 Checksums reject changed, removed or reordered applied migrations.
 
 A changed installation validates contributions, creates a SQLite backup, and runs the
-migration batch against a staged copy. It initializes the existing services and
+migration batch against a staged copy, followed by any pending Evlet framework
+migrations. It initializes the existing services and
 registers schedules there. Only after validation does it publish the database,
 record the installed manifest and atomically replace `apps.lock`. A failed staged
 migration leaves the active database, lock and private files intact. Backups stay
@@ -353,7 +354,9 @@ of your backup policy. SQL backups alone do not include uploaded file bytes, and
 restored without its `secret.key` can't open two-step sign-in secrets; keep the key with it.
 
 The lock records each app's version, source, full Git commit when available, and
-SHA-256 of included source files. Flat apps include their package root; legacy apps
+SHA-256 of included source files. Its `evlet` entry records the Evlet version and
+last framework migration; an instance with a different entry refuses to serve until
+`evlet migrate` runs (see docs/app-upgrades.md). Flat apps include their package root; legacy apps
 include `pyproject.toml` and the nested package. Legacy apps skip only
 `__pycache__` and `.pyc` files, so existing locks stay valid. Flat apps also skip
 dotfiles and dot-folders (such as `.env` and `.git`), `node_modules`, `*.egg-info`,

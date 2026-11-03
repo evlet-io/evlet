@@ -5,6 +5,13 @@ say what to change. Evlet is not production ready.
 
 ## Unreleased
 
+- **Evlet upgrades go through `evlet migrate`.** `apps.lock` and the installed manifest
+  now record the Evlet version and its last framework migration. An instance migrated
+  with another Evlet version refuses to serve and asks for `evlet migrate`, which backs
+  up the database and runs ordered, checksummed framework migrations
+  (`evlet_framework_migrations`) on the staged copy. Existing instances need one
+  `evlet migrate` after upgrading; it adopts today's startup tables with no other change
+  ([docs/app-upgrades.md](docs/app-upgrades.md#upgrade-evlet)).
 - **Pickers.** Select fields, and every select on the Settings and Controls pages, open Evlet's own list (current choice ticked, search for long
   lists, Clear for optional fields) instead of the browser's menu. Date, date-time, time and
   duration fields keep their typed input and add a calendar or steppers. List pages filter

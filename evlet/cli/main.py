@@ -192,6 +192,8 @@ def main(argv=None):
                              recompute_posted=posted)
             print(f'Instance {args.instance}: installed ' + ', '.join(result['apps']))
             print('Applied migrations: ' + (', '.join(result['migrations']) or 'none; schema is current'))
+            if result.get('framework'):
+                print('Framework migrations: ' + ', '.join(result['framework']))
             if posted:
                 print(f'Posted records recalculated: {result.get("posted", 0)}')
             if result['backup']:

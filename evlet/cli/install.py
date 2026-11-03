@@ -51,7 +51,8 @@ def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_p
         if not names:
             raise ValueError('No installed apps to migrate')
         packages = resolve_packages(root, names, check_installed=False)
-        after = {'apps': {package.name: package.locked() for package in packages}}
+        from ..framework import state, upgrade
+        after = {'apps': {package.name: package.locked() for package in packages}, 'evlet': state()}
         changed = [package.name for package in packages if package.name not in before['apps'] or portable_lock_entry(package.name, before['apps'][package.name]) != after['apps'][package.name]]
         if changed and not trust:
             if confirm is None or not confirm('Trust and execute these local Python apps: ' + ', '.join(changed) + '?'):
@@ -64,7 +65,7 @@ def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_p
                 app.initialize()
             finally:
                 app.database.close()
-            return {'apps': [package.name for package in packages], 'migrations': [], 'backup': None}
+            return {'apps': [package.name for package in packages], 'migrations': [], 'framework': [], 'backup': None}
         data = path / 'data'
         data.mkdir(mode=0o700, exist_ok=True)
         if data.is_symlink():
@@ -83,6 +84,8 @@ def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_p
                 snapshot(backup, stage)
             app, schedules = build_instance(config, path, packages, database_path=stage, storage_path=Path(directory) / 'private')
             applied = app.database.migrate(app.database.migrations, recompute_posted=recompute_posted)
+            # Framework steps run on the same staged copy, after the backup, before the additive startup tables.
+            framework = upgrade(app.database)
             app.initialize()
             register_schedules(app, schedules)
             with app.database.transaction() as tx:
@@ -90,7 +93,7 @@ def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_p
                 tx.connection.execute('INSERT OR REPLACE INTO evlet_installed_apps VALUES (1,?)', (json_text(after),))
             app.database.close()
             # Detect source edits during registration before publishing the result.
-            if {'apps': {package.name: package.locked() for package in packages}} != after:
+            if {'apps': {package.name: package.locked() for package in packages}, 'evlet': state()} != after:
                 raise ValueError('App sources changed during installation; retry with stable sources')
             with closing(sqlite3.connect(stage)) as connection:
                 connection.execute('PRAGMA wal_checkpoint(TRUNCATE)')
@@ -110,5 +113,5 @@ def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_p
             atomic_json(path / 'apps.lock', after)
             (path / '.install-journal.json').unlink()
             sync_directory(path)
-        return {'apps': [package.name for package in packages], 'migrations': applied, 'backup': str(backup) if backup else None,
+        return {'apps': [package.name for package in packages], 'migrations': applied, 'framework': framework, 'backup': str(backup) if backup else None,
                 'posted': getattr(applied, 'posted', 0)}
