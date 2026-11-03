@@ -76,6 +76,8 @@ export interface AppContext {
   pageSearch: Cell<HTMLInputElement | null>;
   openPalette(): void;
   toggleSidebar(): void;
+  /** Switch between the light and dark theme, saved as the person's Settings choice. */
+  toggleTheme(): void;
   signOut(): Promise<void>;
 }
 

@@ -12,6 +12,7 @@ import { createRouter } from './router';
 import { apiLinks, setLinkSource } from './ui/fields';
 import { LibraryPage } from './ui/library';
 import { mountToasts } from './ui/layers';
+import { applyTheme, type Theme } from './ui/theme';
 import { copy, responses, server } from './tests/server';
 
 const schema = responses.schema.body as AppSchema;
@@ -42,11 +43,8 @@ mountToasts();
 const record = new RecordStore({ api, schema, model: 'order' });
 void record.open(1);
 
-const theme = cell<'system' | 'light' | 'dark'>('system');
-effect(() => {
-  const value = theme.get();
-  if (value === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = value;
-});
+const theme = cell<Theme>('system');
+effect(() => applyTheme(theme.get()));
 
 const router = createRouter({ library: '/evlet.html' });
 router.start();

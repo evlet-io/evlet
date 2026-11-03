@@ -68,13 +68,15 @@ so it can show its own sign-in screen; its data still goes through the API check
 Every page the framework serves gets one non-executable block in `<head>`:
 
 ```html
-<script id="evlet-config" type="application/json">{"frontend":"crm.customer_portal","base":"/","api":"/api","realm":"portal","host":"portal.acme.com","docs":null,"version":"0.2.0"}</script>
+<script id="evlet-config" type="application/json">{"frontend":"crm.customer_portal","base":"/","api":"/api","realm":"portal","host":"portal.acme.com","docs":null,"theme":"system","version":"0.2.0"}</script>
 ```
 
 The desk shell's router and API client read `base`, `docs` and `api` from it, so one
 build runs at `/customer-portal` on the primary host and at `/` on a sub-host. `realm` is
 the host's realm, which decides the session cookie: a portal frontend also mounted on
-the primary host reports `desk` there.
+the primary host reports `desk` there. `theme` is the signed-in person's theme (`light`,
+`dark` or `system`; see [settings.md](settings.md)); the framework's own pages also carry it
+as `data-theme` on `<html>`, and a static or server frontend may read it from the block.
 
 `evlet.controls` serves Controls ([controls.md](controls.md)), and `evlet.settings` serves
 Settings ([settings.md](settings.md)) and redirects `/settings/accounts` to `/controls/users`. Flat-layout apps cannot

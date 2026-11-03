@@ -9,7 +9,7 @@ import { Icon, IconButton, IconTile, Key } from '../ui/base';
 import { tooltip } from '../ui/tooltip';
 import { MenuButton, mountToasts, openModal, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
 import { Lockup, Logo } from './login';
-import { applyTheme } from './prefs';
+import { resolveTheme, systemScheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { displayName, PersonMark } from './settings';
 import { presentSlip } from './slips';
@@ -28,8 +28,10 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const appName = application.playground ? 'Playground' : application.name || 'Evlet';
   const tenant = (ctx.session.tenant as { label?: string; name?: string } | undefined);
   const workspace = tenant?.label ?? tenant?.name ?? 'Workspace';
-  // Light only for now; a dark theme comes in a later release.
-  applyTheme('light');
+  // The theme button flips what the page shows now; from "system" it becomes an explicit choice.
+  const device = systemScheme();
+  const dark = () => resolveTheme(ctx.me.get()?.prefs.theme ?? 'system', device.get()) === 'dark';
+  const flipTheme = () => ctx.toggleTheme();
   // Close the drawer and any menu when the page changes.
   effect(() => { route.get(); mobileOpen.set(false); closePopover(); });
 
@@ -67,6 +69,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     const page = (label: string, icon: string, target: string): MenuItem => ({ label, icon, onSelect: () => void goSettings(router, target) });
     const items: MenuItem[] = me ? [
       page('Your profile', 'user', 'profile'), ...(me.portal ? [] : [page('Appearance', 'sun', 'appearance')]), page('Sign-in & security', 'lock', 'security'),
+      ...(me.portal ? [] : [{ label: dark() ? 'Light theme' : 'Dark theme', icon: dark() ? 'sun' : 'moon', onSelect: flipTheme }]),
       'separator', page('All settings', 'settings', me.last_page || 'profile'),
       ...(me.controls ? ['separator' as const, { label: 'Controls', icon: 'sliders-horizontal', hint: '↗', onSelect: () => { window.open('/controls', '_blank', 'noopener'); } }] : []),
       'separator',
@@ -106,7 +109,9 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
       </nav>
       ${ctx.dev ? html`<div class="side-bottom"><a class="nav-item" href=${ctx.libraryHref} rel="external" ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? 'Library' : null, 'right')}>
         ${Icon('layers', { tint: 'violet' })}<span class="lbl">Library</span></a></div>` : null}
-      <div class="side-foot">${me}</div>
+      <div class="side-foot">${me}${when(() => Boolean(ctx.me.get() && !ctx.me.get()!.portal), () => html`<button type="button" class="icon-btn theme-btn"
+        aria-label=${() => dark() ? 'Switch to light theme' : 'Switch to dark theme'} on:click=${flipTheme}
+        ref=${(el: HTMLElement) => tooltip(el, () => dark() ? 'Light theme' : 'Dark theme')}>${() => Icon(dark() ? 'sun' : 'moon')}</button>`)}</div>
     </div></aside>` as HTMLElement;
 
   const creatable = models.filter(model => model.permissions?.create !== false);

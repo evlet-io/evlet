@@ -3,11 +3,14 @@
 // topics point to the Python APIs instead of live demos.
 
 import { html, type Child } from '../dom';
-import { Button, Icon, IconTile } from '../ui/base';
+import { Button, Icon, IconTile, SegmentedControl } from '../ui/base';
 import { copyText } from '../ui/layers';
 import { PageHeader } from '../ui/list';
 import type { AppContext } from './context';
 import { identity, rootModels } from './meta';
+import { chooseTheme } from './settings';
+import { cell, effect } from '../reactive';
+import type { Theme } from '../ui/theme';
 
 const startCode = `from evlet import App, Model, Text, Boolean
 
@@ -82,6 +85,16 @@ const p = (text: string) => html`<p>${text}</p>`;
 const table = (rows: string[][], head?: string[]) => html`<table class="ev-contract">${head ? html`<thead><tr>${head.map(cell => html`<th>${cell}</th>`)}</tr></thead>` : null}
   <tbody>${rows.map(([name, ...cells]) => html`<tr><th>${name}</th>${cells.map(cell => html`<td>${cell}</td>`)}</tr>`)}</tbody></table>`;
 
+/** The person's theme, live: the same choice as Settings, Appearance. */
+function themeSwitch(ctx: AppContext): Child {
+  const me = ctx.me.peek();
+  if (!me || me.portal) return null;
+  const value = cell<Theme>(me.prefs.theme, { name: 'docs.theme' });
+  effect(() => { const now = ctx.me.get()?.prefs.theme; if (now) value.set(now); });
+  return html`<div class="ev-doc-theme">${SegmentedControl<Theme>({ label: 'Theme', value, size: 'small', onChange: theme => void chooseTheme(ctx.api, ctx.me, theme),
+    options: [{ value: 'light', label: 'Light', icon: 'sun' }, { value: 'dark', label: 'Dark', icon: 'moon' }, { value: 'system', label: 'Match my device' }] })}</div>`;
+}
+
 const TOPICS: Topic[] = [
   { id: 'overview', title: 'Build with Evlet', render: ctx => {
     const models = rootModels(ctx.schema);
@@ -126,11 +139,13 @@ const TOPICS: Topic[] = [
     ${section('Saving', p('Values save one at a time when you leave them, with Undo. Lines are saved together with Save. If the record changed since you opened it, your draft stays and you can reload.'))}
     ${section('Slips', p('A slip is a form with the fields of a model that saves nothing by itself. It opens from a record, the New menu, an action or browser code. The server checks every change. When it is handed in, its values go to the slip\'s hand_in() method, or become a record through the normal create path. See docs/slips.md.'), code(slipCode))}
   </article>` },
-  { id: 'extensions', title: 'Customization', render: () => html`<article class="ev-doc-article">
+  { id: 'extensions', title: 'Customization', render: ctx => html`<article class="ev-doc-article">
     ${section('Change a screen through the model', table([['Meta.list_fields', 'List columns, up to eight.'], ['Meta.layout', 'Sections of the Details tab.'],
       ['Meta.title_field', 'The record title and the pinned list column.'], ['Meta.search_fields', 'What search looks at.'],
       ['Meta.key_fields', 'The Key fields block and the summary strip.'], ['Meta.relations', 'The Related tab.'], ['Meta.measures', 'Totals in lists, boards and records.']]))}
     ${section('Per user', p('Column widths and order, the sidebar and quick access are saved for each user; appearance and region are in Settings. Recent records and searches last until you sign out.'))}
+    ${section('Light and dark', p('Every screen comes in a light and a dark theme, or follows the device and changes when it does. Each person chooses in Settings, Appearance, from the button beside their name or with the search palette; the server keeps the choice and opens every page in it, so nothing flashes. Screens use colour tokens only, so a model needs nothing for either theme.'),
+      themeSwitch(ctx))}
   </article>` },
   { id: 'reference', title: 'API reference', render: () => html`<article class="ev-doc-article">
     ${section('The public surface', table([['evlet', 'App, Application, Model, Registry, Database, fields, migrations, LocalAuth, Policy, Rule, Action and ChildTable.'],
