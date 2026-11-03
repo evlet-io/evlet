@@ -553,3 +553,17 @@ def test_portal_roles_lose_their_assistants(secured):
     assert rpc(secured, tokens['access_token'], 'tools/list')[0] == 401
     status, payload, _ = form(secured, '/_/oauth/token', {'grant_type': 'refresh_token', 'refresh_token': tokens['refresh_token'], 'client_id': client_id})
     assert status == 400 and payload['error'] == 'invalid_grant'
+
+
+def test_an_approval_belongs_to_the_assistant_that_asked(secured, monkeypatch):
+    seen, project = queue(secured, monkeypatch)
+    settings(secured, allow_writes=True)
+    _, first, person = connect(secured, 'admin')
+    _, second, _ = connect(secured, 'admin')
+    arguments = {'model': 'project', 'id': project['id'], 'action': 'refresh_progress'}
+    assert tool(secured, first['access_token'], 'run_action', arguments)['isError']
+    approve(person)
+    # The other assistant asking the same thing gets its own approval request, not the first one's.
+    other = tool(secured, second['access_token'], 'run_action', arguments)
+    assert other['isError'] and 'approval' in other['structuredContent']['error']
+    assert not tool(secured, first['access_token'], 'run_action', arguments)['isError']

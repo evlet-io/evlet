@@ -550,7 +550,9 @@ class Tools:
         if origin == 'schedule':
             raise ConnectorError(403, 'This change needs approval, and nobody is there to approve it during a scheduled run. It was skipped.')
         canonical = json.dumps(values, sort_keys=True, separators=(',', ':'))
-        digest = hashlib.sha256(json.dumps([user.id, origin, tool.name, canonical, revision.decode('latin1')]).encode()).hexdigest()
+        # Bound to the client that asked too: one assistant's approval can't be spent by another of the person's assistants.
+        client_id = user.access.assistant if user.access is not None else None
+        digest = hashlib.sha256(json.dumps([user.id, origin, client_id, tool.name, canonical, revision.decode('latin1')]).encode()).hexdigest()
         now = int(time.time())
         waiting = None
         with self.database.transaction() as tx:

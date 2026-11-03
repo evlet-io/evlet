@@ -58,7 +58,7 @@ always apply as well.
 An approval-needing call answers with an error that names the request. The person approves
 it in Settings → AI assistants ("Waiting for your approval"), and the client calls the same
 tool again with the same arguments. The approval covers that one call with those arguments on
-that revision of the record, once, for 24 hours. If the record changes first, a new approval
+that revision of the record, from that client, once, for 24 hours. If the record changes first, a new approval
 is needed. Only a signed-in browser session can answer an approval, never a key or an
 assistant. A change the person's role cannot make is refused at once, without asking anyone.
 
