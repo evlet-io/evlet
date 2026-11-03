@@ -84,7 +84,7 @@
 .ev-files{display:grid;gap:10px}
 .ev-print-body{display:grid;gap:12px;min-height:0}
 .ev-print-design{display:grid;gap:4px;font-size:13px;max-width:320px}
-.ev-print-frame{width:100%;height:min(72vh,900px);border:1px solid var(--border);border-radius:10px;background:#fff}
+.ev-print-frame{width:100%;height:min(72vh,900px);border:1px solid var(--border);border-radius:10px;background:var(--surface)}
 .ev-print-note{margin:0;font-size:12px}
 .ev-print-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .ev-print.drawer{width:min(760px,100vw)}
