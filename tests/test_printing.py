@@ -624,6 +624,7 @@ def test_controls_saves_previews_and_removes_a_design(secured):
     assert status == 200 and content.startswith(b'%PDF') and headers[b'content-type'] == b'application/pdf'
     assert admin('GET', '/api/_controls/prints/preview/' + 'x' * 24 + '.pdf')[0] == 404
     assert admin('POST', '/api/_controls/prints/preview', {'definition': definition, 'record': 999})[0] == 404
+    assert admin('POST', '/api/_controls/prints/preview', {'definition': definition, 'record': 'not an id'})[0] == 422
     assert admin('POST', '/api/_controls/prints/preview', {'definition': {**definition, 'main': [{'type': 'nope'}]}, 'record': 1})[0] == 422
     # An app's design cannot be overwritten; a stored one under its own name can.
     assert admin('PUT', '/api/_controls/prints/InvoicePrint', {'definition': definition})[0] == 422

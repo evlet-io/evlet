@@ -1310,9 +1310,11 @@ class Designer:
             raise ValidationError({'definition': str(exc)}) from None
         business = self.prints.business
         if design.model is not None:
-            record_id = body.get('record')
-            if type(record_id) is not int or not 0 < record_id < 2**63:
-                raise ValidationError({'record': 'Choose a record to preview with.'})
+            from .identity import RecordId
+            try:
+                record_id = RecordId(body.get('record'))
+            except (ValueError, TypeError):
+                raise ValidationError({'record': 'Choose a record to preview with.'}) from None
             model = business.registry.resolve(design.model)
             with business.database.transaction() as tx:
                 record = business.policy.record(tx, user, model, record_id)

@@ -229,7 +229,7 @@ export class ControlsClient extends ApiClient implements KeysApi {
   }
   async removePrint(name: string) { await this.request('DELETE', `/api/_controls/prints/${encodeURIComponent(name)}`); }
   /** Render an unsaved design; the PDF is served once from the returned address for ten minutes. */
-  async previewPrint(body: { definition: PrintDefinition; record?: number; filters?: Record<string, unknown> }) {
+  async previewPrint(body: { definition: PrintDefinition; record?: string; filters?: Record<string, unknown> }) {
     return (await this.request<{ url: string; size: number }>('POST', '/api/_controls/prints/preview', { body })).data;
   }
   async exportCode(only?: { kind: string; key: string }) {

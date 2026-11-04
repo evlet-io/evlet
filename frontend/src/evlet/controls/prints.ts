@@ -92,7 +92,7 @@ function Editor(ctx: ControlsContext, data: PrintListing, item: PrintItem | null
   const name = cell(item && !readOnly ? item.name : '');
   const editable = cell(!readOnly);
   const region = cell<Region>('main'), picked = cell(0), shape = cell(0);
-  const previewUrl = cell(''), previewProblem = cell(''), sample = cell<number | null>(null), busy = cell(false);
+  const previewUrl = cell(''), previewProblem = cell(''), sample = cell<string | null>(null), busy = cell(false);
   const restructure = () => { shape.set(shape.peek() + 1); later(); };
   const target = () => definition.model ? data.models.find(model => model.name === definition.model) : undefined;
   const report = () => definition.report ? data.reports.find(entry => entry.name === definition.report) : undefined;
@@ -114,7 +114,7 @@ function Editor(ctx: ControlsContext, data: PrintListing, item: PrintItem | null
     if (!data.available) return;
     if (definition.model && sample.peek() === null) {
       try {
-        const page = (await ctx.api.request<{ items: Array<{ id: number }> }>('GET', `/api/${definition.model}`, { query: { limit: 1 } })).data;
+        const page = (await ctx.api.request<{ items: Array<{ id: string }> }>('GET', `/api/${definition.model}`, { query: { limit: 1 } })).data;
         sample.set(page.items[0]?.id ?? null);
       } catch { sample.set(null); }
       if (sample.peek() === null) { previewProblem.set('Add a record to preview this design with.'); return; }

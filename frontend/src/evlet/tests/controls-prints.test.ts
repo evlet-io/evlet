@@ -39,7 +39,7 @@ function open() {
     ['GET', /\/api\/_controls\/state$/, () => ({ status: 200, body: state(), etag: null })],
     ['GET', /\/api\/_controls\/overrides$/, () => ({ status: 200, body: { version: 1, problems: [], items: [] }, etag: null })],
     ['GET', /\/api\/_controls\/prints$/, () => ({ status: 200, body: listing(), etag: null })],
-    ['GET', /\/api\/invoice\?/, () => ({ status: 200, body: { items: [{ id: 7 }], total: 1, limit: 1, offset: 0 }, etag: null })],
+    ['GET', /\/api\/invoice\?/, () => ({ status: 200, body: { items: [{ id: '0000000000007' }], total: 1, limit: 1, offset: 0 }, etag: null })],
     ['POST', /\/api\/_controls\/prints\/preview$/, () => ({ status: 200, body: { url: '/api/_controls/prints/preview/abcdefghijklmnopqrstuvwx.pdf', size: 9000 }, etag: null })],
     ['PUT', /\/api\/_controls\/prints\/InvoicePrintCopy$/, (sent: Sent) => ({ status: 200, body: { name: 'InvoicePrintCopy', source: 'stored', definition: sent.body.definition }, etag: null })],
   ] as any);
@@ -60,7 +60,7 @@ describe('print designs', () => {
     expect(text(host.querySelector('.ev-pd-list'))).toContain('InvoicePrint');
     // The app's design: read only, previewed against the first record.
     await until(() => expect(host.querySelector('.ev-pd-frame')?.getAttribute('src')).toBe('/api/_controls/prints/preview/abcdefghijklmnopqrstuvwx.pdf'));
-    expect(posted(sent, /preview$/)[0].body).toMatchObject({ record: 7, definition: { model: 'invoice' } });
+    expect(posted(sent, /preview$/)[0].body).toMatchObject({ record: '0000000000007', definition: { model: 'invoice' } });
     expect((host.querySelector('#pd-title') as HTMLInputElement).disabled).toBe(true);
     expect(byText(host, '.ev-pd-editor button', 'Save')).toBeNull();
     click(byText(host, '.ev-pd-editor button', 'Copy'));
