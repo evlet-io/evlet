@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cell } from '../reactive';
 import { ChildRows, ChildTable } from '../ui/childtable';
-import { emptyPrefs } from '../ui/table';
+import { emptyPrefs, type TablePrefs } from '../ui/table';
 import { RecordStore } from '../model/record';
 import { backend, id, bigOrder, change, cleanup, key, pick, render, schema, watch } from './ui-helpers';
 
@@ -201,18 +201,19 @@ describe('ChildTable over a record store', () => {
     expect(host.querySelectorAll('col')[2].getAttribute('style')).toContain('170px');
     handle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(prefs.peek().widths.qty).toBeUndefined();
-    // Columns menu: hide Rate, move Amount up, the first column stays pinned.
+    // Columns menu: hide Rate; pin and unpin with the pin buttons.
     [...host.querySelectorAll<HTMLButtonElement>('.g-bar button')].find(button => button.textContent!.includes('Columns'))!.click();
     const menu = document.querySelector('.cols-pop')!;
-    expect(menu.querySelector('.col-eye')!.hasAttribute('disabled')).toBe(true);
     menu.querySelector<HTMLButtonElement>('[aria-label="Hide Rate"]')!.click();
     expect(prefs.peek().hidden).toEqual(['rate']);
     expect([...host.querySelectorAll('thead th[data-key]')].map(th => th.getAttribute('data-key'))).toEqual(['product', 'qty', 'amount']);
-    // Hidden columns keep their place: moving Amount up passes Rate first.
-    document.querySelector<HTMLButtonElement>('.cols-pop [aria-label="Move Amount up"]')!.click();
-    expect(prefs.peek().order).toEqual(['product', 'qty', 'amount', 'rate']);
-    document.querySelector<HTMLButtonElement>('.cols-pop [aria-label="Move Amount up"]')!.click();
+    // Pinning Amount moves it to the end of the pinned range, after Product.
+    menu.querySelector<HTMLButtonElement>('[aria-label="Pin Amount"]')!.click();
+    expect(prefs.peek()).toMatchObject({ order: ['product', 'amount', 'qty', 'rate'], pinned: 2 });
     expect([...host.querySelectorAll('thead th[data-key]')].map(th => th.getAttribute('data-key'))).toEqual(['product', 'amount', 'qty']);
+    // Unpinning Product moves it to the start of the rest.
+    document.querySelector<HTMLButtonElement>('.cols-pop [aria-label="Unpin Product"]')!.click();
+    expect(prefs.peek()).toMatchObject({ order: ['amount', 'product', 'qty', 'rate'], pinned: 1 });
   });
 
   it('opens a row in place with every field and closes it with Done', async () => {
@@ -498,5 +499,234 @@ describe('ChildTable focus, click and Tab', () => {
     key(document.activeElement!, 'ArrowDown');
     expect([...host.querySelectorAll('td.active')]).toEqual([document.activeElement]);
     expect(host.querySelectorAll('td[data-col][tabindex="0"]')).toHaveLength(1);
+  });
+});
+
+// ---------- the Columns menu: drag, keyboard, pinned range ----------
+
+describe('Columns menu', () => {
+  const ROWH = 32;
+  // jsdom lays nothing out: each menu entry is 32 px tall, in its order.
+  const layout = () => {
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (!this.dataset.entry) return original.call(this);
+      const at = [...this.parentElement!.querySelectorAll(':scope > [data-entry]')].indexOf(this);
+      return { top: at * ROWH, bottom: at * ROWH + ROWH, height: ROWH, left: 0, right: 200, width: 200, x: 0, y: at * ROWH, toJSON: () => ({}) } as DOMRect;
+    };
+    return () => { HTMLElement.prototype.getBoundingClientRect = original; };
+  };
+  let restore = () => {};
+  afterEach(() => restore());
+
+  const open = async (prefs = cell<TablePrefs>(emptyPrefs())) => {
+    const { store } = await bigOrder(2);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'], prefs }));
+    [...host.querySelectorAll<HTMLButtonElement>('.g-bar button')].find(button => button.textContent!.includes('Columns'))!.click();
+    const menu = document.querySelector<HTMLElement>('.cols-pop')!;
+    restore = layout();
+    return { host, prefs, menu, store };
+  };
+  const entries = (menu: Element) => [...menu.querySelectorAll<HTMLElement>('[data-entry]')].map(row => row.dataset.entry);
+  const headers = (host: Element) => [...host.querySelectorAll('thead th[data-key]')].map(th => th.getAttribute('data-key'));
+  const gripOf = (menu: Element, entry: string) => menu.querySelector<HTMLElement>(`[data-entry="${entry}"] .col-grip`)!;
+  const drag = (menu: Element, entry: string, toY: number, pointerType = 'mouse') => {
+    const grip = gripOf(menu, entry);
+    grip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType, clientY: 0 }));
+    document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType, clientY: toY }));
+    document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType, clientY: toY }));
+  };
+  const said = async (menu: Element) => { await Promise.resolve(); await Promise.resolve(); return menu.querySelector('.col-said')!.textContent; };
+
+  it('shows the pinned range above a divider, with labelled grips, pins and eyes', async () => {
+    const { menu } = await open();
+    expect(entries(menu)).toEqual(['product', 'edge', 'qty', 'rate', 'amount']);
+    expect(menu.querySelector('[role="list"]')!.getAttribute('aria-label')).toBe('Columns in order');
+    expect(gripOf(menu, 'qty').getAttribute('aria-label')).toBe('Move Qty');
+    expect(gripOf(menu, 'qty').getAttribute('aria-describedby')).toBe(menu.querySelector('.col-hint')!.id);
+    expect(gripOf(menu, 'edge').getAttribute('aria-label')).toBe('Move the end of the pinned columns');
+    expect(menu.querySelector('[aria-label="Unpin Product"]')!.getAttribute('aria-pressed')).toBe('true');
+    expect(menu.querySelector('[aria-label="Pin Qty"]')!.getAttribute('aria-pressed')).toBe('false');
+    expect(menu.querySelector('[aria-label="Hide Qty"]')).not.toBeNull();
+    expect(menu.querySelector('.col-said')!.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('reorders by dragging a grip with the mouse, and the table follows at once', async () => {
+    const { host, prefs, menu } = await open();
+    // Amount (entry 4) dropped between Qty and Rate.
+    drag(menu, 'amount', 3 * ROWH);
+    expect(entries(menu)).toEqual(['product', 'edge', 'qty', 'amount', 'rate']);
+    expect(prefs.peek()).toMatchObject({ order: ['product', 'qty', 'amount', 'rate'], pinned: 1 });
+    expect(headers(host)).toEqual(['product', 'qty', 'amount', 'rate']);
+    expect(await said(menu)).toBe('Amount, position 3 of 4, not pinned. Dropped.');
+  });
+
+  it('pins by dragging a column above the divider, by touch too, and unpins by dragging below it', async () => {
+    const { host, prefs, menu } = await open();
+    drag(menu, 'rate', ROWH + 4, 'touch');
+    expect(entries(menu)).toEqual(['product', 'rate', 'edge', 'qty', 'amount']);
+    expect(prefs.peek().pinned).toBe(2);
+    const rate = host.querySelector<HTMLElement>('th[data-key="rate"]')!;
+    expect(rate.classList.contains('stk')).toBe(true);
+    expect(rate.classList.contains('s2')).toBe(true);
+    expect(host.querySelector('th[data-key="product"]')!.classList.contains('s2')).toBe(false);
+    drag(menu, 'product', 3 * ROWH);
+    expect(entries(menu)).toEqual(['rate', 'edge', 'product', 'qty', 'amount']);
+    expect(prefs.peek().pinned).toBe(1);
+    // Dragging the divider itself pins everything above it.
+    drag(menu, 'edge', 4 * ROWH);
+    expect(entries(menu)).toEqual(['rate', 'product', 'qty', 'edge', 'amount']);
+    expect(prefs.peek().pinned).toBe(3);
+    // and to the top unpins all.
+    drag(menu, 'edge', 0);
+    expect(prefs.peek().pinned).toBe(0);
+    expect([...host.querySelectorAll('thead th.stk[data-key]')].map(th => th.getAttribute('data-key'))).toEqual([]);
+  });
+
+  it('keeps one column unpinned, by drag and by the pin button', async () => {
+    const { prefs, menu } = await open(cell<TablePrefs>({ ...emptyPrefs(), pinned: 3 }));
+    expect(entries(menu)).toEqual(['product', 'qty', 'rate', 'edge', 'amount']);
+    const pinAmount = menu.querySelector<HTMLButtonElement>('[data-entry="amount"] .col-pin')!;
+    expect(pinAmount.disabled).toBe(true);
+    expect(pinAmount.getAttribute('aria-label')).toBe('Amount stays unpinned');
+    drag(menu, 'edge', 9 * ROWH);
+    expect(prefs.peek().pinned).toBe(3);
+    expect(await said(menu)).toContain('Keep at least one column unpinned');
+  });
+
+  it('moves with the keyboard: Space lifts, arrows move, Space drops, Esc cancels', async () => {
+    const { host, prefs, menu } = await open();
+    let grip = gripOf(menu, 'rate');
+    grip.focus();
+    key(grip, ' ');
+    expect(grip.getAttribute('aria-pressed')).toBe('true');
+    expect(await said(menu)).toContain('Rate, position 3 of 4, not pinned. Lifted.');
+    key(grip, 'ArrowUp');
+    await Promise.resolve();
+    expect(entries(menu)).toEqual(['product', 'edge', 'rate', 'qty', 'amount']);
+    expect(document.activeElement).toBe(gripOf(menu, 'rate'));
+    key(document.activeElement!, 'ArrowUp');
+    await Promise.resolve();
+    expect(entries(menu)).toEqual(['product', 'rate', 'edge', 'qty', 'amount']);
+    expect(await said(menu)).toBe('Rate, position 2 of 4, pinned');
+    key(document.activeElement!, 'Enter');
+    expect(prefs.peek()).toMatchObject({ order: ['product', 'rate', 'qty', 'amount'], pinned: 2 });
+    expect(gripOf(menu, 'rate').getAttribute('aria-pressed')).toBe('false');
+    // Esc puts a lifted column back and keeps the menu open.
+    await Promise.resolve();
+    grip = gripOf(menu, 'amount');
+    grip.focus();
+    key(grip, ' ');
+    key(grip, 'Home');
+    await Promise.resolve();
+    expect(headers(host)[0]).toBe('amount');
+    key(document.activeElement!, 'Escape');
+    expect(document.querySelector('.cols-pop')).not.toBeNull();
+    expect(prefs.peek()).toMatchObject({ order: ['product', 'rate', 'qty', 'amount'], pinned: 2 });
+    expect(headers(host)).toEqual(['product', 'rate', 'qty', 'amount']);
+    expect(await said(menu)).toContain('Move cancelled');
+  });
+
+  it('sets sticky offsets for two and three pinned columns, in header, cells and totals', async () => {
+    const prefs = cell<TablePrefs>({ ...emptyPrefs(), widths: { product: 150, qty: 80 }, pinned: 2 });
+    const { host } = await open(prefs);
+    const left = (selector: string) => host.querySelector<HTMLElement>(selector)!.style.left;
+    // The row control column is 84 px wide.
+    expect(left('th[data-key="product"]')).toBe('84px');
+    expect(left('th[data-key="qty"]')).toBe('234px');
+    expect(left('tbody tr[data-key] td[data-col="qty"]')).toBe('234px');
+    expect(host.querySelector('tbody tr[data-key] td[data-col="qty"]')!.classList.contains('s2')).toBe(true);
+    expect(host.querySelectorAll('tfoot td.stk').length).toBe(3);
+    expect(left('th[data-key="rate"]')).toBe('');
+    prefs.set({ ...prefs.peek(), pinned: 3 });
+    expect(left('th[data-key="rate"]')).toBe('314px');
+    expect(left('tbody tr[data-key] td[data-col="rate"]')).toBe('314px');
+    expect(host.querySelector('th[data-key="qty"]')!.classList.contains('s2')).toBe(false);
+    expect(host.querySelector('th[data-key="rate"]')!.classList.contains('s2')).toBe(true);
+    // Editing a pinned cell keeps it pinned.
+    host.querySelector<HTMLElement>('tbody tr[data-key] td[data-col="rate"]')!.click();
+    expect(host.querySelector('td.editing')!.classList.contains('stk')).toBe(true);
+  });
+
+  it('reads prefs saved before pinning existed, and round-trips the new ones', async () => {
+    const old = { widths: {}, order: ['product', 'rate', 'qty', 'amount'], hidden: ['qty'] };
+    const { host, prefs, menu } = await open(cell(old as any));
+    expect(headers(host)).toEqual(['product', 'rate', 'amount']);
+    expect(host.querySelector('th[data-key="product"]')!.classList.contains('stk')).toBe(true);
+    expect(host.querySelector('th[data-key="rate"]')!.classList.contains('stk')).toBe(false);
+    expect(entries(menu)).toEqual(['product', 'edge', 'rate', 'qty', 'amount']);
+    menu.querySelector<HTMLButtonElement>('[aria-label="Pin Rate"]')!.click();
+    const saved = JSON.parse(JSON.stringify(prefs.peek()));
+    expect(saved).toEqual({ widths: {}, order: ['product', 'rate', 'qty', 'amount'], hidden: ['qty'], pinned: 2 });
+  });
+
+  it('warns, without blocking, when pinned columns take most of the table', async () => {
+    const { menu, prefs } = await open(cell<TablePrefs>({ ...emptyPrefs(), widths: { product: 500 } }));
+    const scroller = document.querySelector<HTMLElement>('.g-scroll')!;
+    Object.defineProperty(scroller, 'clientWidth', { value: 700, configurable: true });
+    menu.querySelector<HTMLButtonElement>('[aria-label="Pin Qty"]')!.click();
+    expect(prefs.peek().pinned).toBe(2);
+    expect(menu.querySelector('.col-warn')!.textContent).toContain('Pinned columns take most');
+  });
+
+  it('keeps one column shown', async () => {
+    const { prefs, menu } = await open(cell<TablePrefs>({ ...emptyPrefs(), hidden: ['qty', 'rate'] }));
+    const amount = menu.querySelector<HTMLButtonElement>('[data-entry="amount"] .col-eye')!;
+    amount.click();
+    expect(prefs.peek().hidden).toEqual(['qty', 'rate', 'amount']);
+    const product = menu.querySelector<HTMLButtonElement>('[data-entry="product"] .col-eye')!;
+    expect(product.disabled).toBe(true);
+    expect(product.getAttribute('aria-label')).toBe('Product stays shown');
+  });
+});
+
+describe('ChildTable focus view', () => {
+  const heading = { type: 'Order', icon: 'file-text', title: () => 'Big order', number: () => 'ORD-0042',
+    mark: () => { const span = document.createElement('span'); span.className = 'org-mark'; span.textContent = 'B'; return span; },
+    footer: () => { const bar = document.createElement('div'); bar.className = 'ev-savebar'; bar.textContent = 'Unsaved changes'; return bar; } };
+  const focusButton = (host: Element) => host.querySelector<HTMLButtonElement>('.g-bar button[aria-pressed]')!;
+
+  it('keeps the record header and the save bar around the table, outside what scrolls', async () => {
+    const { store } = await bigOrder(2);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'rate', 'amount'], heading }));
+    expect(host.querySelector('.g-rec')).toBeNull();
+    focusButton(host).click();
+    const head = host.querySelector<HTMLElement>('.grid.max > .g-rec')!;
+    expect(head.querySelector('.g-rec-title')!.textContent).toBe('Big order');
+    expect(head.querySelector('.g-rec-no')!.textContent).toBe('ORD-0042');
+    expect(head.querySelector('.g-rec-type')!.textContent).toBe('Order');
+    expect(head.querySelector('.org-mark')).not.toBeNull();
+    expect(head.getAttribute('aria-label')).toBe('Order Big order');
+    // The header and the save bar sit outside the scrolling rows, so they stay in view.
+    const scroller = host.querySelector('.g-scroll')!;
+    expect(scroller.contains(head)).toBe(false);
+    expect(head.compareDocumentPosition(scroller) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    scroller.scrollTop = 400;
+    scroller.dispatchEvent(new Event('scroll'));
+    expect(host.querySelector('.grid.max > .g-rec')).toBe(head);
+    expect(host.querySelector('.grid.max > .g-foot .ev-savebar')!.textContent).toBe('Unsaved changes');
+    expect(host.querySelector('.g-crumb')).toBeNull();
+  });
+
+  it('goes back to the form with Esc or Back to form', async () => {
+    const { store } = await bigOrder(2);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'rate', 'amount'], heading }));
+    focusButton(host).click();
+    focusButton(host).focus();
+    key(document.activeElement!, 'Escape');
+    expect(host.querySelector('.grid.max')).toBeNull();
+    expect(host.querySelector('.g-rec')).toBeNull();
+    expect(host.querySelector('.g-foot')).toBeNull();
+    focusButton(host).click();
+    [...host.querySelectorAll<HTMLButtonElement>('.g-rec button')].find(button => button.textContent!.includes('Back to form'))!.click();
+    expect(host.querySelector('.grid.max')).toBeNull();
+    expect(document.activeElement).toBe(focusButton(host));
+    // Esc while a cell is being edited cancels the edit first and keeps focus view.
+    focusButton(host).click();
+    cellOf(rowsIn(host)[0], 'qty').click();
+    key(document.activeElement!, 'Escape');
+    expect(host.querySelector('.grid.max')).not.toBeNull();
+    key(document.activeElement!, 'Escape');
+    expect(host.querySelector('.grid.max')).toBeNull();
   });
 });

@@ -600,6 +600,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     totals: model.fields.filter(meta => (meta.compute as any)?.$expr === 'aggregate' && (meta.compute as any).table === child.name && has(meta.name))
       .map(meta => ({ label: meta.label, value: () => formatOf(meta, store.field(meta.name).value.get()) })) }) : ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
     locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, crumb: () => titleText.get(),
+    // Focus view keeps a compact copy of this header, and the save bar, above and below the lines.
+    heading: { type: model.label, icon: look.icon, title: () => titleText.get(),
+      number: numberText ?? (naming ? () => { const value = store.field('name').value.get(); return value && String(value) !== titleText.get() ? String(value) : ''; } : null),
+      mark: () => look.person ? Avatar({ name: markName, size: 'sm' }) : RecordMark({ name: markName, size: 'sm', tint: look.tint }), footer: () => saveBarView() },
     prefs: prefs.cell(`grid.${name}.${child.name}`, emptyPrefs()) });
 
   const panels = [
@@ -613,7 +617,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- save bar ----------
 
-  const saveBar = isNew
+  const saveBarView = () => isNew
     ? html`<div class="ev-savebar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => panel ? panel.close() : void router.go('list', { model: name }) })}
         <span class="grow muted">${Icon('info', { size: 'sm' })} Values are checked again when you create it.</span>
         ${Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check', disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save() })}</div>`
@@ -621,6 +625,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         <span class="grow">${Icon('pencil', { size: 'sm' })} Unsaved changes</span>
         ${Button({ label: 'Discard', variant: 'ghost', onClick: () => void store.revert() })}
         ${Button({ label: () => store.saving.get() ? 'Saving…' : 'Save', variant: 'primary', icon: 'check', disabled: () => store.saving.get(), onClick: () => void save() })}</div>`);
+  const saveBar = saveBarView();
 
   // ---------- side panel ----------
 

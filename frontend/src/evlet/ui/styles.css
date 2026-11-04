@@ -778,8 +778,21 @@ th:hover>.rz::after{background:var(--border-strong)}
 .col-row:hover{background:var(--bg-muted)}
 .col-row .lbl{flex:1;font-size:13px}
 .col-row.hid .lbl{color:var(--fg-3)}
-.col-eye{width:26px;height:26px;display:grid;place-items:center;border-radius:6px;color:var(--fg-3)}
-.col-eye:hover:not(:disabled){color:var(--accent)}
+.col-eye,.col-pin,.col-grip{width:26px;height:26px;display:grid;place-items:center;border-radius:6px;color:var(--fg-3);flex:none}
+.col-eye:hover:not(:disabled),.col-pin:hover:not(:disabled){color:var(--accent)}
+.col-pin[aria-pressed="true"]{color:var(--accent)}
+.col-pin:disabled,.col-eye:disabled{opacity:.35;cursor:default}
+/* The grip is the drag handle: touch drags it instead of scrolling the menu. */
+.col-grip{cursor:grab;touch-action:none}
+.col-grip[aria-pressed="true"]{cursor:grabbing;color:var(--accent);background:var(--accent-soft,var(--bg-muted))}
+.col-list{display:grid;gap:1px}
+.col-row.lift,.col-edge.lift{background:var(--bg-muted);box-shadow:0 2px 8px var(--shadow-edge)}
+.col-edge{display:flex;align-items:center;gap:6px;height:30px;padding:0 4px;font-size:11.5px;border-radius:6px}
+.col-edge .col-line{width:18px;border-top:2px solid var(--accent);flex:none}
+.col-edge .muted{flex:1;border-top:1px dashed var(--border-strong);padding-top:2px}
+.col-warn{display:flex;gap:6px;align-items:flex-start;margin:6px 4px 0;font-size:12px;color:var(--t-amber,var(--fg-2))}
+.col-hint{margin:6px 4px 0;font-size:11.5px}
+.col-said{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .icon-btn.sm{width:24px;height:24px}
 .icon-btn:disabled{opacity:.3;cursor:default;background:none}
 
@@ -1227,3 +1240,17 @@ th:hover>.rz::after{background:var(--border-strong)}
 .doc-panel .ev-savebar{margin-left:-6px;margin-right:-6px;margin-bottom:0;border-radius:var(--r) var(--r) 0 0}
 .dt tbody tr.cur td{background:var(--accent-soft)}
 .dt tbody tr.cur td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+
+/* Focus view of a child table: the record's header, compact, above the table. */
+.g-rec{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface);min-width:0;flex:none}
+.g-rec-mark{display:inline-flex;flex:none}
+.g-rec-type{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--fg-3);flex:none}
+.g-rec-title{font-size:15px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-rec-no{color:var(--fg-3);font-size:12.5px;white-space:nowrap;flex:none}
+.g-rec .grow{flex:1}
+.g-foot{flex:none}
+.g-foot .ev-savebar{margin:0;border-radius:0;position:static}
+@media (max-width:480px){
+  .g-rec{gap:8px;padding:8px 12px}
+  .g-rec-mark,.g-rec-type{display:none}
+}
