@@ -89,7 +89,12 @@ export interface ModelSchema {
   state?: StateSchema;
   /** Slips the role may present from a record of this model. */
   slips?: SlipSchema[];
+  /** Print designs the role may print a record of this model with, the default first. */
+  prints?: PrintSchema[];
 }
+
+/** A print design (evlet.PrintDesign) the role may print with; the PDF comes from the server. */
+export interface PrintSchema { name: string; title: string; default: boolean }
 
 /** A slip (evlet.Slip) the role may present; its fields come from the slip's own routes. */
 export interface SlipSchema { name: string; label: string; hand_in_label: string }

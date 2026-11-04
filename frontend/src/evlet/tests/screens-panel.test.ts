@@ -181,6 +181,19 @@ describe('records in a side panel beside the list', () => {
     expect(items()).toContain('Copy link');
   });
 
+  it('offers Print in More, not as a header button, when the role may print', async () => {
+    const printable = copy(schema('panel'));
+    printable.body.printing = { available: true };
+    printable.body.models.find((model: { name: string }) => model.name === 'invoice').prints = [{ name: 'InvoicePrint', title: 'Invoice', default: true }];
+    const { host } = start(routes().map(route => String(route[1]).includes('schema') ? [route[0], route[1], printable] as Route : route), `/app/invoice?open=${three}`);
+    await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
+    const buttons = () => [...panel(host)!.querySelectorAll('.doc-head .ph-actions button:not([aria-label="More actions"])')].map(text);
+    await until(() => expect(buttons()).toEqual(['Issue', 'Record payment']));
+    click(panel(host)!.querySelector('button[aria-label="More actions"]'));
+    const items = () => [...document.querySelectorAll('[role="menuitem"]')].map(text);
+    await until(() => expect(items()).toContain('Print'));
+  });
+
   it('creates a record in the panel: New opens ?open=new and Cancel closes it', async () => {
     const { host } = start(routes(), '/app/invoice');
     await until(() => expect(row(host, three)).not.toBeNull());

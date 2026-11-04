@@ -127,6 +127,16 @@ export class AppClient extends ApiClient {
     return (await this.request<Attachment>('POST', `/api/${model}/${id}/attachments`, { body: { name, content } })).data;
   }
 
+  /** The address of a record's PDF in a print design, inline for the preview or as a download. */
+  printUrl(model: string, id: string, design: string, download = false) {
+    return this.url(`/api/${model}/${id}/prints/${encodeURIComponent(design)}.pdf`) + (download ? '?download=1' : '');
+  }
+
+  /** Render the PDF now and keep it as an attachment of the record. */
+  async fileCopy(model: string, id: string, design: string) {
+    return (await this.request<Attachment>('POST', `/api/${model}/${id}/prints/${encodeURIComponent(design)}/file`)).data;
+  }
+
   /** Check a report's filters without running it (POST /api/_reports/{name}/evaluate). */
   async evaluateReport(name: string, filters: Record<string, unknown>, revision: number) {
     return (await this.request<ReportCheck>('POST', `/api/_reports/${reportName(name)}/evaluate`, { body: { filters, revision } })).data;
