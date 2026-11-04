@@ -35,7 +35,7 @@ def test_invoice_register_filters_sorts_and_totals_every_row(secured):
     editor = client(secured, 'editor')
     owners = seed(editor)
     catalog = {item['name']: item for item in editor('GET', '/api/_reports')[1]['reports']}
-    assert set(catalog) == {'InvoiceRegister', 'InvoicesByCustomer', 'SalesByCustomer'} and catalog['InvoiceRegister']['model'] == 'invoice'
+    assert set(catalog) == {'InvoiceRegister', 'InvoicesByCustomer', 'InvoicesByStatus', 'SalesByCustomer'} and catalog['InvoiceRegister']['model'] == 'invoice'
     status, result, _ = editor('POST', '/api/_reports/InvoiceRegister', {'filters': {'from_date': '2026-10-01'}, 'limit': 1, 'sort': '-total'})
     assert status == 200, result
     # AED invoices only, posted from 1 October: two rows, the larger first, totalled over both.
