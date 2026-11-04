@@ -16,6 +16,7 @@ import sys
 import tempfile
 from urllib.parse import parse_qsl, quote, urlsplit
 
+from evlet.identity import sequential_ids
 from evlet.instances import activate_generation
 from scripts import testcrm
 
@@ -165,7 +166,8 @@ def main():
     folder = Path(tempfile.mkdtemp(prefix='evlet-testcrm-fixtures-'))
     app = testcrm.build(folder / 'project', frontend_port=8000)
     out = {}
-    with activate_generation(app):
+    # Ids count up per table, so a recording only changes when the responses do.
+    with activate_generation(app), sequential_ids():
         app.initialize()
         testcrm.seed(app, PASSWORD, big_lines=150)
         try:

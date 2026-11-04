@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 from evlet import (AI, Action, ApiScope, AppDefinition, Application, ChildTable, DevSignIn, EventStore, Frontend, Host, JobQueue, LocalAuth,
-                   Policy, Rule, Security, Task, ValidationError, own_customer)
+                   Policy, RecordId, Rule, Security, Task, ValidationError, own_customer)
 from evlet import api
 from evlet.routing import resolve_routes
 from evlet.services import Endpoint
@@ -84,7 +84,7 @@ def refresh_progress(tx, job, payload):
 
 
 @api(method='GET', permission=(Project, 'read'), tool=True)
-def project_overview(context, project: int):
+def project_overview(context, project: RecordId):
     """One project at a glance: its status, progress, budget and how many of its tasks are done."""
     record = context.get(Project, project)
     tasks = getattr(record, 'tasks', ())

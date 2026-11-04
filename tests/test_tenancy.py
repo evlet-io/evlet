@@ -8,6 +8,7 @@ import sqlite3
 import pytest
 
 from evlet import TenantApplication, TenantRegistry
+from evlet.identity import RecordId
 from evlet.tenancy import dns_txt, hostname
 from examples.playground.manage import provision
 from examples.playground.tenants import tenant_app
@@ -43,22 +44,24 @@ def login(router, slug, role='admin'):
 def test_isolated_sessions_records_children_actions_and_files(tenants):
     catalog, router = tenants
     alpha, beta = login(router, 'alpha'), login(router, 'beta')
+    projects = {}
     for slug, auth in (('alpha', alpha), ('beta', beta)):
         host = slug + '.localhost:8000'
         status, project, _ = call(router, host, 'POST', '/api/project', {'name': slug, 'children': {'tasks': [{'title': slug, 'done': True}]}}, **auth)
-        assert status == 201 and project['id'] == 1
-        assert call(router, host, 'POST', '/api/project/1/actions/start', {}, **auth)[0] == 200
+        assert status == 201 and str(RecordId(project['id'])) == project['id']
+        projects[slug] = path = f"/api/project/{project['id']}"
+        assert call(router, host, 'POST', path + '/actions/start', {}, **auth)[0] == 200
         content = base64.b64encode(slug.encode()).decode()
-        assert call(router, host, 'POST', '/api/project/1/attachments', {'name': 'same.txt', 'content': content}, **auth)[0] == 201
+        assert call(router, host, 'POST', path + '/attachments', {'name': 'same.txt', 'content': content}, **auth)[0] == 201
     for slug, auth, other in (('alpha', alpha, beta), ('beta', beta, alpha)):
-        host = slug + '.localhost:8000'
+        host, project = slug + '.localhost:8000', projects[slug]
         assert call(router, host, path='/api/project', **auth)[1]['items'][0]['name'] == slug
-        assert call(router, host, path='/api/project/1', **auth)[1]['children']['tasks'][0]['title'] == slug
-        assert call(router, host, path='/api/project/1/attachments/1', **auth)[1] == slug.encode()
-        for path in ('/api/schema', '/api/project/1', '/api/project/1/attachments/1', '/api/auth/users'):
+        assert call(router, host, path=project, **auth)[1]['children']['tasks'][0]['title'] == slug
+        assert call(router, host, path=project + '/attachments/1', **auth)[1] == slug.encode()
+        for path in ('/api/schema', project, project + '/attachments/1', '/api/auth/users'):
             assert call(router, host, path=path, **other)[0] == 401
-        assert call(router, host, 'PATCH', '/api/project/1', {'name': 'wrong'}, cookie=auth['cookie'], csrf=other['csrf'])[0] == 403
-        assert call(router, host, 'POST', '/api/project/1/actions/complete', {}, **other)[0] == 401
+        assert call(router, host, 'PATCH', project, {'name': 'wrong'}, cookie=auth['cookie'], csrf=other['csrf'])[0] == 403
+        assert call(router, host, 'POST', project + '/actions/complete', {}, **other)[0] == 401
         schema = call(router, host, path='/api/schema', **auth)[1]
         assert schema['tenant'] == {'slug': slug, 'label': slug.title()}
         assert 'database_path' not in json.dumps(schema)
@@ -67,9 +70,9 @@ def test_isolated_sessions_records_children_actions_and_files(tenants):
             row = db.execute('SELECT content,storage_key FROM evlet_attachments').fetchone()
             assert row[0] == b'' and (tenant.files_path / row[1]).read_bytes() == slug.encode()
     viewer = login(router, 'alpha', 'viewer')
-    assert call(router, 'alpha.localhost:8000', 'POST', '/api/project/1/attachments', {'name': 'x', 'content': 'eA=='}, **viewer)[0] == 403
+    assert call(router, 'alpha.localhost:8000', 'POST', projects['alpha'] + '/attachments', {'name': 'x', 'content': 'eA=='}, **viewer)[0] == 403
     restarted = TenantApplication(TenantRegistry(catalog.root), tenant_app)
-    assert call(restarted, 'alpha.localhost:8000', path='/api/project/1/attachments/1', **alpha)[1] == b'alpha'
+    assert call(restarted, 'alpha.localhost:8000', path=projects['alpha'] + '/attachments/1', **alpha)[1] == b'alpha'
 
 
 @pytest.mark.parametrize('host', ['unknown.localhost:8000', 'alpha.localhost.evil.test:8000', 'alpha.localhost.:8000', 'alpha.localhost:80', 'alpha.localhost:08000', 'alpha.localhost', '127.0.0.1:8000', 'alpha.localhost:8000:80', 'alpha.localhost\n:8000'])

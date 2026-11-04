@@ -31,7 +31,8 @@ SolidJS by Evlet's own UI framework.
    initialization enables WAL. Currency is stored as integer minor units and
    serialized as a two-decimal string, avoiding floating-point rounding. Currency
    is intentionally limited to two decimal places in v0.1. A `Link` stores the
-   referenced record ID and uses a real database foreign key. Schema creation is
+   referenced record's 63-bit id and uses a real database foreign key; JSON and URLs
+   carry the 13-character text form of the id. Schema creation is
    supported; migrations are not. Changing a model requires a new disposable
    development database until migrations exist. A future PostgreSQL adapter can
    implement the same small operations without introducing a generic ORM now.

@@ -16,6 +16,7 @@ import re
 from urllib.parse import parse_qs
 
 from .auth import AccessError
+from .identity import path_id
 from .fields import Boolean, Date, DateTime, Decimal, Integer, Link, LongText, Reference, Tags
 from .models import Model, ValidationError, identifier
 from .query import SqlQuery
@@ -679,9 +680,9 @@ def route(business, scope, user, model, parts):
         raise AccessError(405, 'Method not allowed')
     record_id = None
     if len(parts) == 5:
-        if not re.fullmatch(r'[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > MAX_STORED:
+        if path_id(parts[3]) is None:
             raise AccessError(404, 'Record not found')
-        record_id = int(parts[3])
+        record_id = path_id(parts[3])
     business.policy.require(user, model, 'read')
     if parts[3] == 'aggregate':
         query, filters = parameters(scope, {'measures', 'group_by', 'filters', 'q'})

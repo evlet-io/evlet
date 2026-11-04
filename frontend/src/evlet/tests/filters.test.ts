@@ -7,7 +7,7 @@ import type { ScreenModel } from '../app/meta';
 import { GroupedChoiceList } from '../ui/pickers';
 import { mount } from '../dom';
 import { adminRoutes, byText, click, press, recorded, screen, start, stopAll, text, typeInto, until } from './screens-helpers';
-import { copy, type Sent } from './server';
+import { copy, id, type Sent } from './server';
 
 afterEach(stopAll);
 
@@ -212,7 +212,7 @@ describe('the filter builder on a list', () => {
     };
     await pick('Al Sahra Trading');
     await pick('Bayan Medical');
-    await until(() => expect(JSON.parse(itemCalls(sent).pop()!.filters)).toEqual([['default_customer', 'in', [1, 2]]]));
+    await until(() => expect(JSON.parse(itemCalls(sent).pop()!.filters)).toEqual([['default_customer', 'in', [id(1), id(2)]]]));
     expect(text(host.querySelector('.toolbar .filter-chip'))).toBe('Default customer in Al Sahra Trading, Bayan Medical');
     // The picker empties itself after each record; the chosen records show as chips in the row.
     expect(text(host.querySelector('.fb-list .in-link'))).toBe('Choose default customer');

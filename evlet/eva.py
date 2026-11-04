@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo
 from xml.etree import ElementTree
 
 from .auth import AccessError, KeyAccess, User
+from .identity import checked as record_id, text as text_id
 from .connector import ConnectorError
 from .models import ValidationError
 from .tools import ApprovalNeeded, NAMES, Tool, label, redacted
@@ -731,7 +732,7 @@ class Eva:
     def public_conversation(row):
         return {'id': row['id'], 'title': row['title'], 'created_at': row['created_at'], 'updated_at': row['updated_at'],
                 'archived': row['archived_at'] is not None, 'task_id': row['task_id'],
-                'context': {'model': row['context_model'], 'id': row['context_id']} if row['context_model'] else None}
+                'context': {'model': row['context_model'], 'id': text_id(row['context_id'])} if row['context_model'] else None}
 
     def conversations(self, user, params):
         clauses, args = ['user_id=?'], [user.id]
@@ -757,8 +758,9 @@ class Eva:
             raise ValidationError({'title': 'Use a title of 1 to 120 characters'})
         context = body.get('context')
         if context is not None:
-            if not isinstance(context, dict) or set(context) != {'model', 'id'} or not isinstance(context['model'], str) or type(context['id']) is not int:
+            if not isinstance(context, dict) or set(context) != {'model', 'id'} or not isinstance(context['model'], str) or record_id(context['id']) is None:
                 raise ValidationError({'context': 'Use a record: {"model", "id"}'})
+            context = {'model': context['model'], 'id': record_id(context['id'])}
             if not re.fullmatch('[a-z][a-z0-9_]{0,127}', context['model']):
                 raise ValidationError({'context': 'Use a record: {"model", "id"}'})
             # The record must be readable now; the chat keeps only its model and id.
@@ -1116,7 +1118,7 @@ class Eva:
         system = SYSTEM.format(app=(getattr(self.business, 'application', None) or {}).get('name', 'Evlet'), person=(profile and profile['full_name']) or user.username,
                                role=user.role, today=now.strftime('%d-%m-%Y'), weekday=now.strftime('%A'), zone=zone.key)
         if conversation['context_model']:
-            system += f"\n\nThe person opened this chat from the {conversation['context_model'].replace('_', ' ')} record with id {conversation['context_id']}. " \
+            system += f"\n\nThe person opened this chat from the {conversation['context_model'].replace('_', ' ')} record with id {text_id(conversation['context_id'])}. " \
                       'Read it with get_record when the question is about "this" record.'
         if run['origin'] == 'schedule':
             system += '\n\nThis is a scheduled task. Nobody is watching: do the work, then write the result for the person to read later.'
@@ -1276,7 +1278,7 @@ class Eva:
                     self.business.policy.record(session, person, model, row['record_id'], 'read')
                 except Exception:
                     continue
-                found.append({'model': row['model'], 'record_id': row['record_id'], 'file_id': row['id'], 'name': row['name'], 'size': row['size']})
+                found.append({'model': row['model'], 'record_id': text_id(row['record_id']), 'file_id': row['id'], 'name': row['name'], 'size': row['size']})
                 if len(found) == 20:
                     break
             connection.rollback()
@@ -1285,8 +1287,9 @@ class Eva:
     def import_file(self, user, body, scope):
         """Copy a file attached to a record into this person's Eva files, read through the route as them."""
         if not isinstance(body, dict) or set(body) != {'model', 'id', 'file_id'} or not isinstance(body['model'], str) \
-                or not re.fullmatch('[a-z][a-z0-9_]{0,127}', body['model']) or type(body['id']) is not int or type(body['file_id']) is not int:
+                or not re.fullmatch('[a-z][a-z0-9_]{0,127}', body['model']) or record_id(body['id']) is None or type(body['file_id']) is not int:
             raise ValidationError({'_form': 'Send model, id and file_id'})
+        body = {**body, 'id': record_id(body['id'])}
         from .tools import Dispatch
         request = Dispatch(self.business, scope, self.person(user.id))
         try:
@@ -1718,12 +1721,14 @@ def affected(tool, values, result):
         if tool == 'create_file' and isinstance(result, dict):
             return [{'file': result.get('id'), 'name': result.get('name')}]
         return []
-    if type(values.get('id')) is int:
-        return [{'model': values['model'], 'id': values['id']}]
-    if tool == 'create_record' and isinstance(result, dict) and type(result.get('id')) is int:
-        return [{'model': values['model'], 'id': result['id']}]
+    # Record ids are text in tool arguments and results (evlet/identity.py).
+    if record_id(values.get('id')) is not None:
+        return [{'model': values['model'], 'id': text_id(values['id'])}]
+    if tool == 'create_record' and isinstance(result, dict) and record_id(result.get('id')) is not None:
+        return [{'model': values['model'], 'id': text_id(result['id'])}]
     if tool == 'list_records' and isinstance(result, dict):
-        return [{'model': values['model'], 'id': item['id']} for item in result.get('items', [])[:20] if isinstance(item, dict) and type(item.get('id')) is int]
+        return [{'model': values['model'], 'id': text_id(item['id'])} for item in result.get('items', [])[:20]
+                if isinstance(item, dict) and record_id(item.get('id')) is not None]
     return []
 
 

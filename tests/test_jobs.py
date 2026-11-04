@@ -134,7 +134,7 @@ def test_actor_permission_rechecked_and_status_hidden(secured):
 def test_project_job_updates_and_publishes_only_after_success(secured):
     c = client(secured)
     project = c('POST', '/api/project', {'name': 'Job', 'children': {'tasks': [{'title': 'Done', 'done': True}, {'title': 'Pending'}]}})[1]
-    response = c('POST', '/api/project/1/actions/refresh_progress', {})[1]
+    response = c('POST', f"/api/project/{project['id']}/actions/refresh_progress", {})[1]
     assert secured.business.jobs.run_one()
     assert secured.database.get(Project, project['id']).progress == 50
     job = c('GET', f"/api/_jobs/{response['job']['id']}")[1]

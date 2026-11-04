@@ -232,8 +232,10 @@ Panel and FormLayout. A FormLayout uses 12 columns; a Field can set `width=6` or
 
 ### Page routes
 
-Generated page names keep the routes `/app/note`, `/app/note/new`, `/app/note/123`
-and `/app/note/123/view`. Explicit pages use their registered routes. Custom parameters
+Generated page names keep the routes `/app/note`, `/app/note/new`, `/app/note/01hc1sd9vc1ye`
+and `/app/note/01hc1sd9vc1ye/view`. The last segment is the record's text id; an older
+bookmark with a decimal id (`/app/note/42`) opens the same record and the address changes
+to its text id. Explicit pages use their registered routes. Custom parameters
 use `/orders/{reference}` or `/orders/{id:int}` and are available in view state.
 The route resolver rejects ambiguous routes. Routes start with a fixed segment, and
 the first segments in `evlet.routing.RESERVED` (such as `/api`, `/app`, `/assets`,
@@ -241,7 +243,7 @@ the first segments in `evlet.routing.RESERVED` (such as `/api`, `/app`, `/assets
 are reserved, ignoring case. See [routing.md](routing.md).
 
 `Navigate.to`, `to_list`, `to_record`, `to_new` and `back` are page operations.
-`GET /api/ui/resolve?path=/app/note/123` resolves only views available to the
+`GET /api/ui/resolve?path=/app/note/01hc1sd9vc1ye` resolves only views available to the
 authenticated user. Record loading still performs record-level checks through the
 existing API.
 

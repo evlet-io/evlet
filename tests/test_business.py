@@ -200,14 +200,14 @@ def test_model_field_row_rules_apply_to_list_count_search_detail_writes_and_link
     secured.business.policy = Policy(registry, rules={('editor', Customer): rule, ('editor', Project): Rule(())})
     c = client(secured, 'editor')
     page = c('GET', '/api/customer?limit=1')[1]
-    assert page['total'] == 1 and page['items'] == [{'id': visible.id, 'name': 'Visible', 'active': True}]
+    assert page['total'] == 1 and page['items'] == [{'id': str(visible.id), 'name': 'Visible', 'active': True}]
     assert c('GET', '/api/customer?q=secretphrase')[1]['total'] == 0
     assert c('GET', f'/api/customer/{hidden.id}')[0] == 404
     assert c('GET', '/api/customer?' + urlencode({'filters': json.dumps({'active': False})}))[1]['total'] == 0
     for query in ({'filters': json.dumps({'notes': 'secretphrase'})}, {'order_by': 'notes'}, {'filters': json.dumps({'customer__name': 'Hidden'})}):
         assert c('GET', '/api/customer?' + urlencode(query))[0] == 403
     assert c('GET', f'/api/invoice/{invoice.id}')[1]['customer'] is None
-    assert c('POST', '/api/invoice', {'customer': hidden.id, 'reference': 'Forbidden', 'total': '1.00'})[0] == 404
+    assert c('POST', '/api/invoice', {'customer': str(hidden.id), 'reference': 'Forbidden', 'total': '1.00'})[0] == 404
     assert c('PATCH', f'/api/customer/{visible.id}', {'notes': 'override'})[0] == 403
     assert c('PATCH', f'/api/customer/{visible.id}', {'active': False})[0] == 404
     assert db.get(Customer, visible.id).active is True

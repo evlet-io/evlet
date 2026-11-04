@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from evlet.identity import sequential_ids
+
 from examples.playground.lifecycle.app import create_app
 from tests.test_business import client, http, PASSWORD
 
@@ -22,7 +24,7 @@ def normalize(value, key=None):
 
 
 def record():
-    with TemporaryDirectory() as folder:
+    with TemporaryDirectory() as folder, sequential_ids():
         app = create_app(Path(folder) / 'test.sqlite3')
         app.initialize()
         http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
@@ -36,17 +38,17 @@ def record():
         capture('session', 'GET', '/api/auth/session')
         capture('schema', 'GET', '/api/schema')
         tag = capture('draft', 'POST', '/api/order', {'number': 'ORD-001', 'customer': 'A', 'children': {'lines': [{'description': 'First', 'rate': '10'}, {'description': 'Second', 'rate': '20'}]}})
-        tag = capture('confirmed', 'POST', '/api/order/1/confirm', {}, tag)
-        capture('snapshot1', 'GET', '/api/order/1/snapshot?revision=1')
-        tag = capture('cancelled', 'POST', '/api/order/1/cancel', {'reason': 'Customer and lines changed'}, tag)
-        tag = capture('reopened', 'POST', '/api/order/1/reopen', {}, tag)
+        tag = capture('confirmed', 'POST', '/api/order/0000000000001/confirm', {}, tag)
+        capture('snapshot1', 'GET', '/api/order/0000000000001/snapshot?revision=1')
+        tag = capture('cancelled', 'POST', '/api/order/0000000000001/cancel', {'reason': 'Customer and lines changed'}, tag)
+        tag = capture('reopened', 'POST', '/api/order/0000000000001/reopen', {}, tag)
         lines = result['snapshot1']['body']['document']['children']['lines']
-        tag = capture('edited', 'PATCH', '/api/order/1', {'customer': 'B', 'children': {'lines': [{'id': lines[0]['id'], 'quantity': 2, 'description': 'First', 'rate': '10'}, {'description': 'Third', 'rate': '30'}]}}, tag)
-        capture('reconfirmed', 'POST', '/api/order/1/confirm', {}, tag)
-        capture('revisions', 'GET', '/api/order/1/revisions')
-        capture('snapshot2', 'GET', '/api/order/1/snapshot?revision=2')
-        capture('diff', 'GET', '/api/order/1/diff?from=1&to=2')
-        capture('history', 'GET', '/api/order/1/history')
+        tag = capture('edited', 'PATCH', '/api/order/0000000000001', {'customer': 'B', 'children': {'lines': [{'id': lines[0]['id'], 'quantity': 2, 'description': 'First', 'rate': '10'}, {'description': 'Third', 'rate': '30'}]}}, tag)
+        capture('reconfirmed', 'POST', '/api/order/0000000000001/confirm', {}, tag)
+        capture('revisions', 'GET', '/api/order/0000000000001/revisions')
+        capture('snapshot2', 'GET', '/api/order/0000000000001/snapshot?revision=2')
+        capture('diff', 'GET', '/api/order/0000000000001/diff?from=1&to=2')
+        capture('history', 'GET', '/api/order/0000000000001/history')
         return result
 
 

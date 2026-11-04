@@ -52,21 +52,23 @@ def app(tmp_path):
 
 def test_dialog_load_submit_retry_and_source_revision(app):
     c = client(app)
-    assert c('POST', '/api/ticket', {'name': 'Original'})[0] == 201
-    source = c('GET', '/api/ticket/1')
+    status, created, _ = c('POST', '/api/ticket', {'name': 'Original'})
+    assert status == 201
+    ticket = created['id']
+    source = c('GET', f'/api/ticket/{ticket}')
     headers = {b'if-match': source[2][b'etag']}
-    status, loaded, _ = c('POST', '/api/_dialogs/ticket/1/copy/load', {}, headers=headers)
+    status, loaded, _ = c('POST', f'/api/_dialogs/ticket/{ticket}/copy/load', {}, headers=headers)
     assert status == 200, loaded
     assert loaded['values']['count'] == 1
     assert app.database.count(Ticket) == 1
     data = {'key': 'test-operation-1', 'values': {'count': 2}}
-    first = c('POST', '/api/_dialogs/ticket/1/copy/submit', data, headers=headers)
+    first = c('POST', f'/api/_dialogs/ticket/{ticket}/copy/submit', data, headers=headers)
     assert first[0] == 200, first
     assert app.database.count(Ticket) == 3
-    retry = c('POST', '/api/_dialogs/ticket/1/copy/submit', data, headers=headers)
+    retry = c('POST', f'/api/_dialogs/ticket/{ticket}/copy/submit', data, headers=headers)
     assert retry[:2] == first[:2]
     assert app.database.count(Ticket) == 3
-    assert c('POST', '/api/_dialogs/ticket/1/copy/submit', {**data, 'key': 'test-operation-2'}, headers=headers)[0] == 409
+    assert c('POST', f'/api/_dialogs/ticket/{ticket}/copy/submit', {**data, 'key': 'test-operation-2'}, headers=headers)[0] == 409
     with app.database._connection() as connection:
         assert not connection.execute("SELECT name FROM sqlite_master WHERE name IN ('copy','tickets')").fetchall()
 

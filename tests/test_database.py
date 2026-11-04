@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from evlet import ConflictError, Database, Model, NotFoundError, Registry, ValidationError
+from evlet.identity import RecordId
 from examples.playground.models import Customer, Invoice, Payment, registry
 
 
@@ -81,7 +82,8 @@ def test_empty_model_and_unregistered_model(tmp_path):
         pass
     db = Database(tmp_path / "empty.sqlite3", Registry(Empty))
     db.initialize()
-    assert db.create(Empty).to_dict() == {"id": 1}
+    empty = db.create(Empty)
+    assert empty.to_dict() == {"id": empty.id} and isinstance(empty.id, RecordId)
     with pytest.raises(ValueError, match="registry"):
         db.create(Customer, name="No")
     with pytest.raises(ValueError, match="temporary file"):
