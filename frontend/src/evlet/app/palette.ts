@@ -10,8 +10,9 @@ import { openModal } from '../ui/layers';
 import { resolveTheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { identity, rootModels, titleOf, type ScreenModel } from './meta';
+import { REPORT_ICON, reportsOf } from './report-page';
 
-interface Tile { id: string; group: 'Lists' | 'Documents' | 'Pages'; icon: string; tint: Tint; label: string; badge?: 'plus' | 'list'; run: () => void }
+interface Tile { id: string; group: 'Lists' | 'Documents' | 'Reports' | 'Pages'; icon: string; tint: Tint; label: string; badge?: 'plus' | 'list'; run: () => void }
 interface Item { icon: string; tint: Tint | 'ghost'; label: string; sub?: string; hint?: string; run: () => void; tile?: boolean; record?: boolean; recent?: string }
 
 const columns = () => { try { return window.matchMedia?.('(max-width: 760px)')?.matches ? 4 : 6; } catch { return 6; } };
@@ -25,6 +26,8 @@ export function quickTiles(ctx: AppContext): Tile[] {
     if (model.permissions?.create !== false) tiles.push({ id: `n-${model.name}`, group: 'Documents', icon, tint, label: `New ${model.label.toLowerCase()}`, badge: 'plus',
       run: () => void ctx.router.go('create', { model: model.name }) });
   }
+  for (const report of reportsOf(ctx)) tiles.push({ id: `r-${report.name}`, group: 'Reports', icon: REPORT_ICON, tint: 'rose', label: report.label,
+    run: () => void ctx.router.go('report', { report: report.name }) });
   return tiles;
 }
 
@@ -102,7 +105,7 @@ function paletteBody(ctx: AppContext, close: () => void) {
     }
     const matches = (value: string) => value.toLowerCase().includes(text);
     const pages = all.filter(tile => matches(tile.label) || matches(tile.group)).slice(0, 6)
-      .map(tile => ({ icon: tile.icon, tint: tile.tint, label: tile.label, hint: tile.group === 'Documents' ? 'Create' : tile.group === 'Lists' ? 'List' : 'Page', run: tile.run }));
+      .map(tile => ({ icon: tile.icon, tint: tile.tint, label: tile.label, hint: tile.group === 'Documents' ? 'Create' : tile.group === 'Lists' ? 'List' : tile.group === 'Reports' ? 'Report' : 'Page', run: tile.run }));
     return [['Records', records.get()], ['Pages and actions', pages], ['Preferences', preferences().filter(item => matches(item.label))]] as Array<[string, Item[]]>;
   });
   const items = derive(() => groups.get().flatMap(([, list]) => list));
@@ -139,7 +142,7 @@ function paletteBody(ctx: AppContext, close: () => void) {
         ${editingNow ? Array.from({ length: Math.max(0, cap - shown.length) }, () => html`<div class="qa-tile empty"><span class="qa-ic">${Icon('plus')}</span><span class="qa-lbl">Empty</span></div>`) : null}
       </div>
       ${editingNow ? html`<div class="qa-picker"><div class="qa-note">${shown.length >= cap ? 'Quick access is full. Remove a tile or switch to 2 rows to add more.' : 'Pick what shows in quick access. Documents open as a list or as a new form.'}</div>
-        ${(['Lists', 'Documents', 'Pages'] as const).map(group => html`<div class="qa-pg"><div class="qa-pgh">${group}</div><div class="qa-chips">${all.filter(item => item.group === group).map(item => {
+        ${(['Lists', 'Documents', 'Reports', 'Pages'] as const).map(group => html`<div class="qa-pg"><div class="qa-pgh">${group}</div><div class="qa-chips">${all.filter(item => item.group === group).map(item => {
           const on = shown.includes(item);
           return html`<button type="button" class="qa-chip" class:on=${on} aria-pressed=${String(on)} disabled=${!on && shown.length >= cap}
             on:click=${() => setIds(on ? shown.filter(other => other !== item).map(other => other.id) : [...shown.map(other => other.id), item.id])}>

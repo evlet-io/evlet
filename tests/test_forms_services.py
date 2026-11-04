@@ -3,11 +3,13 @@ import json
 
 import pytest
 
-from evlet import (Model, Text, Integer, Rule, Dialog, Report, Column, Registry, Database,
+from evlet import (Model, Text, Integer, Rule, Dialog, Report, Column, Chart, Count, Sum, Registry, Database,
                    Application, LocalAuth, api, cron, ValidationError)
 from evlet.forms import Forms
 from evlet.services import Calendar, Endpoint
 from test_business import http, client, PASSWORD
+from test_postgres import pg_dsn  # noqa: F401 - fixture
+from evlet.postgres import PostgreSQLDatabase
 
 
 class Ticket(Model):
@@ -238,3 +240,215 @@ def test_restored_calendar_schedule_is_enabled_and_task_changes_apply(tmp_path, 
     queue.set_schedule_active('nightly', True)
     register_schedules(app, [paused])
     assert rows()['nightly']['enabled'] == 0
+
+
+class Sale(Model):
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
+                   'viewer': Rule(('read',), read_fields=('customer', 'amount'))}
+    customer = Text(required=True)
+    amount = Integer(default=0)
+    cost = Integer(default=0)
+
+
+class SalesByCustomer(Report):
+    title = 'Sales by customer'
+    roles = ('admin', 'viewer')
+    group = 'Sales'
+    model = Sale
+    sortable = ('customer', 'amount')
+    chart = Chart('bar', x='customer', y=('amount', 'cost'))
+    customer = Text(default='')
+    columns = (Column('id', type='link', link='sale'), Column('customer', link='sale'),
+               Column('amount', type='integer', total=True, unit='AED'),
+               Column('cost', type='integer', total=True, unit='AED', source='sale.cost'))
+
+    def run(self):
+        filters = {'customer': self.customer} if self.customer else {}
+        page = self.context.list(Sale, filters=filters, order_by=self.context.sort or ('id',), limit=self.context.limit, offset=self.context.offset)
+        everything = self.context.aggregate(Sale, measures={'amount': Sum('amount')}, filters=filters)
+        return {'rows': [{key: row.get(key) for key in ('id', 'customer', 'amount', 'cost')} for row in page['rows']],
+                'total': page['total'], 'totals': {'amount': everything[0]['amount'] or 0, 'cost': 0}}
+
+
+class Unexported(SalesByCustomer):
+    export = False
+
+
+class SalesGrouped(Report):
+    title = 'Sales grouped'
+    roles = ('admin', 'viewer')
+    group_by = 'customer'
+    sortable = ('amount',)
+    columns = (Column('customer'), Column('id', type='integer'),
+               Column('amount', type='integer', total=True, unit='AED'),
+               Column('cost', type='integer', total=True, unit='AED', source='sale.cost'))
+
+    def run(self):
+        self.context.seen = self.context.sort
+        page = self.context.list(Sale, order_by=self.context.sort, limit=self.context.limit, offset=self.context.offset)
+        groups = self.context.aggregate(Sale, measures={'n': Count(), 'amount': Sum('amount')}, group_by=('customer',))
+        return {'rows': [{key: row.get(key) for key in ('customer', 'id', 'amount', 'cost')} for row in page['rows']], 'total': page['total'],
+                'groups': [{'value': group['customer'], 'count': group['n'], 'totals': {'amount': group['amount']}} for group in groups]}
+
+
+class SalesGroupedByPage(SalesGrouped):
+    def run(self):
+        # run() is called on the report's draft, so the parent's run is named directly.
+        result = SalesGrouped.run(self)
+        del result['groups']
+        return result
+
+
+@pytest.fixture(params=['sqlite', 'postgresql'])
+def sales(request, tmp_path):
+    # Report runs, totals, sorting and export behave the same on both databases.
+    db = (Database(tmp_path / 'sales.sqlite3', Registry(Sale)) if request.param == 'sqlite'
+          else PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), Registry(Sale)))
+    auth = LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    app = Application(db, auth=auth, reports=(SalesByCustomer, Unexported, SalesGrouped, SalesGroupedByPage))
+    app.initialize()
+    assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
+    admin = client(app)
+    assert admin('POST', '/api/auth/users', {'username': 'viewer', 'password': PASSWORD, 'role': 'viewer'})[0] == 201
+    for customer, amount, cost in (('Beta', 30, 3), ('Alpha', 10, 1), ('=SUM(A1)', 5, 0), ('Alpha', 7, 2)):
+        assert admin('POST', '/api/sale', {'customer': customer, 'amount': amount, 'cost': cost})[0] == 201
+    return app
+
+
+def test_report_catalog_describes_the_view(sales):
+    entry = next(item for item in client(sales)('GET', '/api/_reports')[1]['reports'] if item['name'] == 'SalesByCustomer')
+    assert entry['group'] == 'Sales' and entry['model'] == 'sale' and entry['export'] is True
+    assert entry['sortable'] == ['customer', 'amount']
+    assert entry['chart'] == {'type': 'bar', 'x': 'customer', 'y': ['amount', 'cost'], 'label': None}
+    assert [column['name'] for column in entry['columns']] == ['id', 'customer', 'amount', 'cost']
+    assert entry['columns'][1]['link'] == 'sale' and 'source' not in entry['columns'][3]
+
+
+def test_report_sort_and_whole_result_totals(sales):
+    c = client(sales)
+    status, result, _ = c('POST', '/api/_reports/SalesByCustomer', {'filters': {}, 'limit': 2, 'sort': '-amount'})
+    assert status == 200, result
+    assert [row['amount'] for row in result['rows']] == [30, 10] and result['sort'] == '-amount'
+    assert result['totals'] == {'scope': 'all', 'values': {'amount': '52', 'cost': '0'}}
+    assert c('POST', '/api/_reports/SalesByCustomer', {'sort': 'cost'})[0] == 422
+    assert c('POST', '/api/_reports/SalesByCustomer', {'sort': ['amount']})[0] == 422
+
+
+def test_report_without_given_totals_keeps_page_totals(app):
+    class Totalled(Tickets):
+        columns = (Column('id', type='integer'), Column('title'), Column('copies', type='integer', total=True, unit='copies'))
+    app.business.forms.reports['Totalled'] = Totalled
+    c = client(app)
+    c('POST', '/api/ticket', {'title': 'One', 'copies': 2})
+    c('POST', '/api/ticket', {'title': 'Two', 'copies': 3})
+    result = c('POST', '/api/_reports/Totalled', {'limit': 1})[1]
+    assert result['totals'] == {'scope': 'page', 'values': {'copies': '2'}} and result['sort'] is None
+
+
+def test_report_column_source_hides_unreadable_fields(sales):
+    viewer = client(sales, 'viewer')
+    entry = next(item for item in viewer('GET', '/api/_reports')[1]['reports'] if item['name'] == 'SalesByCustomer')
+    assert [column['name'] for column in entry['columns']] == ['id', 'customer', 'amount']
+    assert entry['chart']['y'] == ['amount']
+    result = viewer('POST', '/api/_reports/SalesByCustomer', {'filters': {}})[1]
+    assert all('cost' not in row for row in result['rows']) and set(result['totals']['values']) == {'amount'}
+    status, content, headers = viewer('POST', '/api/_reports/SalesByCustomer/export.csv', {'filters': {}})
+    assert status == 200 and b'Cost' not in content and b'Amount' in content
+
+
+def test_report_export_is_csv_with_the_same_checks(sales):
+    c = client(sales)
+    # Sorted by a number: text order depends on the database's collation.
+    status, content, headers = c('POST', '/api/_reports/SalesByCustomer/export.csv', {'filters': {}, 'sort': 'amount'})
+    assert status == 200
+    assert headers[b'content-type'] == b'text/csv; charset=utf-8'
+    assert headers[b'content-disposition'] == b"attachment; filename*=UTF-8''Sales%20by%20customer.csv"
+    assert headers[b'x-content-type-options'] == b'nosniff'
+    text = content.decode('utf-8')
+    assert text.startswith('﻿Id,Customer,Amount,Cost\r\n')
+    # Ids are text record ids; the other cells follow the sort.
+    assert [line.split(',', 1)[1] for line in text.splitlines()[1:]] == ["'=SUM(A1),5,0", 'Alpha,7,2', 'Alpha,10,1', 'Beta,30,3']
+    assert c('POST', '/api/_reports/Unexported/export.csv', {'filters': {}})[0] == 403
+    assert c('POST', '/api/_reports/SalesByCustomer/export.csv', {'limit': 5})[0] == 422
+    assert c('GET', '/api/_reports/SalesByCustomer/export.csv')[0] == 403
+
+
+def test_report_export_stops_at_the_row_bound(sales, monkeypatch):
+    import evlet.forms
+    monkeypatch.setattr(evlet.forms, 'EXPORT_ROWS', 2)
+    status, content, _ = client(sales)('POST', '/api/_reports/SalesByCustomer/export.csv', {})
+    assert status == 200, content
+    content = content.decode('utf-8')
+    lines = content.splitlines()
+    assert len(lines) == 4 and lines[-1] == '2 more rows were left out. Narrow the filters to export them.'
+
+
+@pytest.mark.parametrize('attributes, message', [
+    ({'sortable': ('missing',)}, 'sortable'),
+    ({'chart': Chart('line', x='id', y=('customer',))}, 'chart'),
+    ({'columns': (Column('id', type='integer', source='sale.missing'),)}, 'source'),
+    ({'columns': (Column('id', type='integer', link='Missing'),)}, 'Missing'),
+    ({'export': 'yes'}, 'export'),
+    ({'group': 3}, 'group'),
+    ({'group_by': 'missing'}, 'group_by'),
+])
+def test_report_view_declarations_are_checked(tmp_path, attributes, message):
+    report = type('Broken', (SalesByCustomer,), {'chart': None, 'sortable': (), **attributes})
+    db = Database(tmp_path / 'broken.sqlite3', Registry(Sale))
+    auth = LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    with pytest.raises(Exception, match=message):
+        Application(db, auth=auth, reports=(report,))
+
+
+def test_csv_cells_guard_text_but_keep_negative_numbers():
+    from evlet.forms import csv_cell
+    assert csv_cell('-5.00', 'currency') == '-5.00' and csv_cell(-3, 'integer') == '-3'
+    assert csv_cell('-5 rows', 'text') == "'-5 rows" and csv_cell('@SUM', 'text') == "'@SUM" and csv_cell(None) == ''
+    assert csv_cell(True, 'boolean') == 'Yes'
+
+
+def test_report_groups_keep_rows_together_with_subtotals(sales, monkeypatch):
+    c = client(sales)
+    seen = []
+    original = SalesGrouped.run
+    monkeypatch.setattr(SalesGrouped, 'run', lambda self: (result := original(self), seen.append(self.context.seen))[0])
+    status, result, _ = c('POST', '/api/_reports/SalesGrouped', {'filters': {}, 'limit': 4, 'sort': '-amount'})
+    assert status == 200, result
+    # The group column comes first, then the person's sort. Which group comes first depends on the
+    # database's collation, so the rows are checked group by group.
+    assert seen[-1] == ('customer', '-amount')
+    customers = [row['customer'] for row in result['rows']]
+    assert sorted(customers) == ['=SUM(A1)', 'Alpha', 'Alpha', 'Beta'] and customers.index('Alpha') + 1 == customers.index('Alpha', customers.index('Alpha') + 1)
+    assert [row['amount'] for row in result['rows'] if row['customer'] == 'Alpha'] == [10, 7]
+    # The groups on this page, with totals over every row of each group.
+    assert result['groups']['scope'] == 'all'
+    assert {item['value']: (item['count'], item['totals']) for item in result['groups']['items']} == {
+        '=SUM(A1)': (1, {'amount': '5', 'cost': None}), 'Alpha': (2, {'amount': '17', 'cost': None}), 'Beta': (1, {'amount': '30', 'cost': None})}
+    entry = next(item for item in c('GET', '/api/_reports')[1]['reports'] if item['name'] == 'SalesGrouped')
+    assert entry['group_by'] == 'customer'
+    status, page, _ = c('POST', '/api/_reports/SalesGroupedByPage', {'filters': {}, 'limit': 4})
+    assert status == 200, page
+    assert page['groups']['scope'] == 'page'
+    assert {item['value']: (item['count'], item['totals']) for item in page['groups']['items']} == {
+        '=SUM(A1)': (1, {'amount': '5', 'cost': '0'}), 'Alpha': (2, {'amount': '17', 'cost': '3'}), 'Beta': (1, {'amount': '30', 'cost': '3'})}
+
+
+def test_report_group_subtotals_follow_field_rules(sales):
+    viewer = client(sales, 'viewer')
+    result = viewer('POST', '/api/_reports/SalesGroupedByPage', {'filters': {}, 'limit': 4})[1]
+    assert {item['value']: item['totals'] for item in result['groups']['items']}['Alpha'] == {'amount': '17'}
+
+
+def test_chart_and_column_source_shapes():
+    with pytest.raises(ValueError): Chart('pie', x='a', y=('b',))
+    with pytest.raises(ValueError): Chart('bar', x='a', y=())
+    assert Chart('line', x='a', y='b').y == ('b',)
+    with pytest.raises(ValueError): Column('a', source='nodot')
+
+
+def test_report_pages_are_served_only_for_known_reports(sales, app):
+    from evlet.ui.routes import _serves
+    assert _serves(sales, 'evlet.reports', '/reports', '') and _serves(sales, 'evlet.reports', '/reports', '/SalesByCustomer')
+    assert not _serves(sales, 'evlet.reports', '/reports', '/Missing')
+    app.business.forms.reports.clear()
+    assert not _serves(app, 'evlet.reports', '/reports', '')

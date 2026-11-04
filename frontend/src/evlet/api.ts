@@ -45,6 +45,8 @@ export interface RequestOptions {
   /** The ETag of the version being changed. */
   ifMatch?: string | null;
   signal?: AbortSignal;
+  /** Read the body as a file (a Blob) instead of JSON, for downloads and PDFs. */
+  file?: boolean;
 }
 
 export interface ClientOptions {
@@ -178,6 +180,7 @@ export class ApiClient {
     }
     const etag = response.headers.get('etag');
     if (response.status === 204) return { data: null as T, etag, status: 204 };
+    if (options.file && response.ok) return { data: await response.blob() as T, etag, status: response.status };
     let data: any;
     try {
       data = await response.json();

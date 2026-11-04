@@ -18,7 +18,8 @@ from evlet.services import Endpoint
 from .models import Customer, Invoice, Project, ProjectTask, registry
 from .migrate import configured_database
 from .settings import ProjectPreferences, ProjectSettings
-from .prints import PRINTS, REPORTS
+from .prints import PRINTS, REPORTS as PRINTED_REPORTS
+from .reports import REPORTS
 from .slips import SLIPS
 from .ui import playground_ui
 
@@ -107,7 +108,7 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=N
                       actions=(Action(Project, 'start', 'Start project', start_project),
                                Action(Project, 'complete', 'Complete project', complete_project),
                                Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress)),
-                      attachments=(Project,), slips=SLIPS, apis=SERVICES, ai=ai, reports=REPORTS, prints=PRINTS)
+                      attachments=(Project,), slips=SLIPS, reports=(*REPORTS, *PRINTED_REPORTS), apis=SERVICES, ai=ai, prints=PRINTS)
     # Settings > Projects: people who can read projects see it; editors and admins change it.
     app.business.settings.register('projects', ProjectSettings, ProjectPreferences, (Project,))
     return app
