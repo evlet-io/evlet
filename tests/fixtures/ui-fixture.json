@@ -970,6 +970,303 @@
         "layout": {
           "bindings": {},
           "events": {},
+          "id": "ledgerentry.list.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "invoice",
+                      "props": {
+                        "field": "invoice"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "customer",
+                      "props": {
+                        "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "posting_date",
+                      "props": {
+                        "field": "posting_date"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "amount",
+                      "props": {
+                        "field": "amount"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "memo",
+                      "props": {
+                        "field": "memo"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "ledgerentry",
+        "name": "ledgerentry.list",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Ledger entries",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "form",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "ledgerentry.form.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "invoice",
+                      "props": {
+                        "field": "invoice"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "customer",
+                      "props": {
+                        "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "posting_date",
+                      "props": {
+                        "field": "posting_date"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "amount",
+                      "props": {
+                        "field": "amount"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "memo",
+                      "props": {
+                        "field": "memo"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "ledgerentry",
+        "name": "ledgerentry.form",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Ledger entry",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "detail",
+        "layout": {
+          "bindings": {},
+          "events": {},
+          "id": "ledgerentry.detail.root",
+          "props": {
+            "gap": 16
+          },
+          "slots": {
+            "children": [
+              {
+                "bindings": {},
+                "events": {},
+                "id": "main_details",
+                "props": {
+                  "gap": 16,
+                  "title": ""
+                },
+                "slots": {
+                  "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "invoice",
+                      "props": {
+                        "field": "invoice"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "customer",
+                      "props": {
+                        "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "posting_date",
+                      "props": {
+                        "field": "posting_date"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "amount",
+                      "props": {
+                        "field": "amount"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "memo",
+                      "props": {
+                        "field": "memo"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              }
+            ]
+          },
+          "type": "Column",
+          "version": 1
+        },
+        "model": "ledgerentry",
+        "name": "ledgerentry.detail",
+        "options": {},
+        "route": null,
+        "section": "Models",
+        "state": {},
+        "subtitle": "",
+        "title": "Ledger entry",
+        "version": 1
+      },
+      {
+        "computed": {},
+        "dependencies": {},
+        "icon": "grid",
+        "kind": "list",
+        "layout": {
+          "bindings": {},
+          "events": {},
           "id": "project.list.root",
           "props": {
             "gap": 16
@@ -11120,6 +11417,16 @@
           ]
         },
         {
+          "name": "ledgerentry.customer",
+          "label": "Ledger entries",
+          "model": "ledgerentry",
+          "link": "customer",
+          "limit": 10,
+          "order": [
+            "-id"
+          ]
+        },
+        {
           "name": "project.customer",
           "label": "Projects",
           "model": "project",
@@ -11455,9 +11762,24 @@
       ],
       "child_only": false,
       "children": [],
-      "actions": [],
+      "actions": [
+        {
+          "name": "post",
+          "label": "Post to ledger"
+        }
+      ],
       "attachments": false,
       "relations": [
+        {
+          "name": "ledgerentry.invoice",
+          "label": "Ledger entries",
+          "model": "ledgerentry",
+          "link": "invoice",
+          "limit": 10,
+          "order": [
+            "-id"
+          ]
+        },
         {
           "name": "payment.invoice",
           "label": "Payments",
@@ -11731,6 +12053,269 @@
         "create": true,
         "update": true,
         "delete": true
+      },
+      "child_only": false,
+      "children": [],
+      "actions": [],
+      "attachments": false
+    },
+    {
+      "name": "ledgerentry",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "invoice",
+            "customer",
+            "posting_date",
+            "amount",
+            "memo"
+          ]
+        }
+      ],
+      "label": "Ledger entry",
+      "plural": "Ledger entries",
+      "description": "What posted invoices owe. Only Post to ledger on an invoice writes entries.",
+      "title_field": "title",
+      "list_fields": [
+        "id",
+        "posting_date",
+        "customer",
+        "invoice",
+        "amount"
+      ],
+      "search_fields": [
+        "memo",
+        "title",
+        "name"
+      ],
+      "open_in": "page",
+      "fields": [
+        {
+          "name": "invoice",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": true,
+          "minimum": 1,
+          "maximum": null,
+          "target": "invoice",
+          "label": "Invoice",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "customer",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "minimum": 1,
+          "maximum": null,
+          "target": "customer",
+          "label": "Customer",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "posting_date",
+          "type": "date",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "label": "Posting date",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": null,
+          "maximum": null,
+          "label": "Amount",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull",
+            "in",
+            "nin"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "currency_source": {
+            "link": "customer",
+            "field": "currency",
+            "model": "customer"
+          }
+        },
+        {
+          "name": "memo",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 120,
+          "label": "Memo",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        }
+      ],
+      "api": "read",
+      "permissions": {
+        "create": false,
+        "update": false,
+        "delete": false
       },
       "child_only": false,
       "children": [],

@@ -9,7 +9,7 @@ def test_discovery_requires_a_session_and_catalog_is_compact(secured):
     assert http(secured, 'GET', '/api/_discovery')[0] == 401
     c = client(secured)
     status, catalog, _ = c('GET', '/api/_discovery?limit=2')
-    assert status == 200 and len(catalog['models']) == 2 and catalog['total'] == 6
+    assert status == 200 and len(catalog['models']) == 2 and catalog['total'] == 7
     assert all('fields' not in model for model in catalog['models'])
     assert len(json.dumps(catalog)) < len(json.dumps(c('GET', '/api/schema')[1])) / 2
     assert c('GET', '/api/_discovery?q=project')[1]['models'][0]['name'] == 'project'
