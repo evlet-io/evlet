@@ -131,6 +131,36 @@ describe('Models', () => {
   });
 });
 
+describe('collapsible sections in the layout editor', () => {
+  it('sets Can collapse and Starts per section, and turning collapse off drops both', async () => {
+    const { host, sent } = open('/controls/models?model=Lead&tab=layout');
+    await until(() => expect(host.querySelector('.ctl-lsec-fold')).toBeTruthy());
+    const starts = () => host.querySelector<HTMLButtonElement>('#ctl-ls-starts-0')!;
+    expect(starts().disabled).toBe(true);
+    const fold = () => byText(host, '.ctl-lsec-fold [role="switch"]', 'Can collapse');
+    click(fold());
+    await until(() => expect(starts().disabled).toBe(false));
+    click(starts());
+    click(byText(document.body, '[role="option"]', 'Closed'));
+    await until(() => expect(text(starts())).toBe('Closed'));
+    // Turning collapse off drops both options, so it starts open again when turned back on.
+    click(fold());
+    await until(() => expect(starts().disabled).toBe(true));
+    expect(text(starts())).toBe('Open');
+    click(fold());
+    await until(() => expect(starts().disabled).toBe(false));
+    expect(text(starts())).toBe('Open');
+    click(starts());
+    click(byText(document.body, '[role="option"]', 'Closed when empty'));
+    await until(() => expect(text(starts())).toBe('Closed when empty'));
+    expect(text(host.querySelector('.ctl-pvsec h3'))).toContain('closed when empty');
+    click(byText(bar()!, 'button', 'Save changes'));
+    await until(() => expect(bar()).toBeNull());
+    const posted = sent.filter(entry => entry.method === 'POST')[0].body.changes[0];
+    expect(posted.value[0]).toMatchObject({ title: 'Details', collapsible: true, collapsed: 'empty' });
+  });
+});
+
 describe('Naming', () => {
   it('shows series from the server, the condition error and the next names', async () => {
     const { host } = open('/controls/naming');

@@ -304,3 +304,5 @@
 .ev-pd-preview-head{display:flex;gap:8px;align-items:baseline}
 .ev-pd-frame{width:100%;height:min(78vh,1000px);border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface)}
 @media (max-width:1100px){.ev-pd,.ev-pd-grid{grid-template-columns:1fr}}
+.ctl-lsec-fold{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.ctl-lsec-fold .ctl-select{min-width:160px}

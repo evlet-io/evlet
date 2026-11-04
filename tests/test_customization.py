@@ -163,8 +163,8 @@ def test_an_unplaced_field_is_added_to_the_last_section(app):
     layout = [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 12}]}, {'title': 'Money', 'fields': [{'name': 'value', 'width': 6}]}]
     assert save(admin, ('layout', 'Lead', layout))[0] == 200
     entry = schema_of(admin, 'lead')
-    assert entry['layout'] == [{'label': 'Lead', 'fields': ['title'], 'wide': ['title']},
-                               {'label': 'Money', 'fields': ['value', 'source', 'customer', 'notes'], 'wide': ['notes']}]
+    assert entry['layout'] == [{'label': 'Lead', 'fields': ['title'], 'wide': ['title'], 'collapsible': False, 'collapsed': False},
+                               {'label': 'Money', 'fields': ['value', 'source', 'customer', 'notes'], 'wide': ['notes'], 'collapsible': False, 'collapsed': False}]
     for bad, message in (([], 'Keep between 1 and 12 sections.'), ([{'title': '', 'fields': []}], 'Give every section a title'),
                          ([{'title': 'A', 'fields': [{'name': 'title', 'width': 6}, {'name': 'title', 'width': 6}]}], 'Put each field in one place.'),
                          ([{'title': 'A', 'fields': [{'name': 'nothing', 'width': 6}]}], 'Place fields of Lead by name')):
@@ -172,6 +172,50 @@ def test_an_unplaced_field_is_added_to_the_last_section(app):
     ui = admin('GET', '/api/ui')[1]
     form = next(view for view in ui['views'] if view['name'] == 'lead.form')
     assert [group['id'] for group in form['layout']['slots']['children']] == ['main_details', 'section_2']
+
+
+def test_a_layout_section_can_collapse_and_choose_how_it_starts(app):
+    admin = client(app)
+    layout = [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 12}]},
+              {'title': 'Money', 'fields': [{'name': 'value', 'width': 6}], 'collapsible': True, 'collapsed': True},
+              {'title': 'Notes', 'fields': [{'name': 'notes', 'width': 12}], 'collapsible': True, 'collapsed': 'empty'}]
+    assert save(admin, ('layout', 'Lead', layout))[0] == 200
+    assert [(group['label'], group['collapsible'], group['collapsed']) for group in schema_of(admin, 'lead')['layout']] == [
+        ('Lead', False, False), ('Money', True, True), ('Notes', True, 'empty')]
+    # Stored with the options only on sections that can collapse, so plain sections read as before.
+    saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')
+    assert [{key: section.get(key) for key in ('collapsible', 'collapsed') if key in section} for section in saved['value']] == [
+        {}, {'collapsible': True, 'collapsed': True}, {'collapsible': True, 'collapsed': 'empty'}]
+    assert saved['file'] == [{'title': 'Details', 'fields': [{'name': name, 'width': 12 if name == 'notes' else 6} for name in ('title', 'source', 'value', 'customer', 'notes')]}]
+    # Turning collapse off again with Starts open is the plain section.
+    plain = [{'title': 'Details', 'fields': [{'name': name, 'width': 12 if name == 'notes' else 6} for name in ('title', 'source', 'value', 'customer', 'notes')],
+              'collapsible': False, 'collapsed': False}]
+    assert save(admin, ('layout', 'Lead', plain))[0] == 200
+    assert next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')['value'] is None
+    for value, message in ((dict(collapsible='yes'), 'Section Money: use true or false for Can collapse.'),
+                           (dict(collapsible=True, collapsed='later'), 'Section Money: Starts must be open'),
+                           (dict(collapsible=True, collapsed=1), 'Section Money: Starts must be open'),
+                           (dict(collapsible=False, collapsed=True), "Section Money can't collapse, so it starts open."),
+                           (dict(collapsed='empty'), "Section Money can't collapse"),
+                           (dict(open=True), 'optionally collapsible and collapsed')):
+        bad = [{'title': 'Money', 'fields': [{'name': 'value', 'width': 6}], **value}]
+        assert message in save(admin, ('layout', 'Lead', bad))[1]['fields']['changes.0']
+
+
+def test_a_layout_saved_before_collapsible_sections_still_loads(tmp_path, hashed):
+    build(tmp_path, *models())
+    # Written the way older versions stored it: no collapsible or collapsed keys.
+    old = [{'title': 'Main', 'fields': [{'name': 'title', 'width': 6}]}, {'title': 'Rest', 'fields': [{'name': 'notes', 'width': 12}]}]
+    with sqlite3.connect(tmp_path / 'custom.sqlite3') as connection:
+        connection.execute("INSERT INTO evlet_overrides(kind,key,value,changed_by,changed_at) VALUES ('layout','Lead',?,NULL,0)", (json.dumps(old),))
+    app = build(tmp_path, *models())
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    assert admin('GET', '/api/_controls/state')[1]['attention'] == []
+    assert [(group['label'], group['collapsible'], group['collapsed']) for group in schema_of(admin, 'lead')['layout']] == [
+        ('Main', False, False), ('Rest', False, False)]
+    saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')
+    assert saved['value'] == old
 
 
 def test_a_list_override_sets_columns_page_size_and_sort_and_drops_unreadable_columns(app):

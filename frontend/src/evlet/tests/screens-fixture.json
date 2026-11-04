@@ -1272,6 +1272,8 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
@@ -1661,6 +1663,8 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
@@ -1834,6 +1838,8 @@
      "label": "Product",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "price"
@@ -2858,6 +2864,8 @@
      "label": "Order",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "customer",
@@ -3112,6 +3120,8 @@
      "label": "Contact",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "email",
@@ -3322,6 +3332,8 @@
      "label": "Quote",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "number",
         "customer",
@@ -3563,6 +3575,8 @@
      "label": "Line",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "product",
         "qty",
@@ -3639,6 +3653,8 @@
      "label": "Part",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "hours"
        ],
@@ -5182,6 +5198,8 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
@@ -5340,6 +5358,8 @@
      "label": "Product",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "price"
@@ -5582,6 +5602,8 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
@@ -5755,6 +5777,8 @@
      "label": "Product",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "price"
@@ -6759,6 +6783,8 @@
      "label": "Order",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "customer",
@@ -6897,6 +6923,8 @@
      "label": "Contact",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "email"
@@ -7099,6 +7127,8 @@
      "label": "Quote",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "number",
         "customer",
@@ -7340,6 +7370,8 @@
      "label": "Line",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "product",
         "qty",
@@ -7416,6 +7448,8 @@
      "label": "Part",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "hours"
        ],

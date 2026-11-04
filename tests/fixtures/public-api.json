@@ -98,6 +98,7 @@
     "SQLiteStorage": "class()",
     "Schedule": "class(name: str, task: str, every: int, payload: dict = <factory>) -> None",
     "SchemaError": "exception",
+    "Section": "class(title, fields, *, collapsible=True, collapsed=False)",
     "Security": "class(session_hours: int = 12, lockout: int = 5, password_min: int = 15) -> None",
     "Select": "class(choices, **kwargs)",
     "Sequence": "class(format, *, scope=(), assign_on='create', date=None, **kwargs)",

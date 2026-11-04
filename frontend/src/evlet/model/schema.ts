@@ -75,7 +75,8 @@ export interface ModelSchema {
   fields: FieldSchema[];
   list_fields: string[];
   search_fields?: string[];
-  layout?: Array<{ label: string; fields: string[]; wide?: string[] }>;
+  /** Form sections. collapsible and collapsed come from evlet.Section or a Controls layout (absent from older servers). */
+  layout?: Array<{ label: string; fields: string[]; wide?: string[]; collapsible?: boolean; collapsed?: boolean | 'empty' }>;
   /** Rows per page and default order, from a Controls list view. */
   page_size?: number;
   order_by?: string;

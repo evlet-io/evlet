@@ -317,7 +317,34 @@ class Meta:
 Use at most eight groups and list each visible field at most once. Visible fields a
 layout leaves out follow in an Other group, in declaration order. A field listed twice,
 or an unknown or hidden name, fails registration with a message naming it. The default
-is one Details group. The UI schema retains version 1 with additive layout,
+is one Details group.
+
+### Collapsible sections
+
+A plain `('Title', fields)` group always shows. Use `Section` for a group people can open
+and close from its heading:
+
+```python
+from evlet import Section
+
+class Meta:
+    layout = (
+        ('Project', ('title', 'customer', 'status')),
+        Section('Planning', ('budget', 'progress')),                 # starts open
+        Section('Schedule', ('starts_on',), collapsed=True),         # starts closed
+        Section('Notes', ('notes',), collapsed='empty'),             # closed when empty
+    )
+```
+
+`Section(title, fields, *, collapsible=True, collapsed=False)`. `collapsed` is where the
+section starts: `False` open, `True` closed, or `'empty'`, closed when every field in it is
+empty on an existing record and always open on a new one. Any other value, or `collapsed`
+on a section with `collapsible=False`, fails registration with a message naming the model
+and the section. The group rules above apply to sections too, and Other always shows.
+`collapsed` is only the starting point: each person's own choice is remembered per model
+([ui.md](ui.md#collapsible-sections)). Each layout entry in the UI schema carries
+`collapsible` and `collapsed` (`false` for plain groups). Controls can change both per
+section ([controls.md](controls.md)). The UI schema retains version 1 with additive layout,
 permissions, actions, children, child_only, and attachments metadata. Presentation
 changes do not alter migration checksums.
 

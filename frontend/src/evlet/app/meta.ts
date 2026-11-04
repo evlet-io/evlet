@@ -125,14 +125,14 @@ export function keyFields(model: ScreenModel): FieldSchema[] {
 }
 
 /** Details sections: Meta.layout, or one section with every visible field. Unknown names (not readable) drop out. */
-export function sections(model: ScreenModel): Array<{ label: string; fields: FieldSchema[] }> {
+export function sections(model: ScreenModel): Array<{ label: string; fields: FieldSchema[]; collapsible?: boolean; collapsed?: boolean | 'empty' }> {
   const layout = model.layout?.length ? model.layout : [{ label: 'Details', fields: visible(model).map(field => field.name) }];
   const seen = new Set<string>();
-  const result = layout.map(section => ({ label: section.label, fields: section.fields.map(name => fieldOf(model, name))
+  const result = layout.map(section => ({ label: section.label, collapsible: section.collapsible, collapsed: section.collapsed, fields: section.fields.map(name => fieldOf(model, name))
     .filter((field): field is FieldSchema => Boolean(field && !field.hidden && !seen.has(field.name) && seen.add(field.name))) }));
   // Readable fields the layout leaves out still show, last.
   const rest = visible(model).filter(field => !seen.has(field.name));
-  if (rest.length) result.push({ label: 'Other', fields: rest });
+  if (rest.length) result.push({ label: 'Other', collapsible: false, collapsed: false, fields: rest });
   return result.filter(section => section.fields.length);
 }
 

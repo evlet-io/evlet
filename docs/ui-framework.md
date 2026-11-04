@@ -279,6 +279,7 @@ mark only.
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type, `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
 | `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
+| `fold.ts` | FoldSection, Folds, `foldSummary`, `revealField`, `revealFirstError` ([collapsible sections](ui.md#collapsible-sections)) |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table`, and ChildRows for a narrow column |
 | `split.ts` | SplitView: a main area and a resizable side panel |
@@ -467,7 +468,12 @@ mount(document.querySelector('#app')!, () => DocFrame({
 - **ChildRows** shows a record `Table` in a narrow column: one line per row with its first value
   and its last amount, the other numbers under it; a row opens in place with its fields, and Add
   row, Remove row and Open full table sit around it. Locked lines show values only.
-- **FormSection** with `collapsible` opens and closes from its heading (`aria-expanded`).
+- **FormSection** with `collapsible` opens and closes from its heading (`aria-expanded`). With `fold` it is a
+  **FoldSection**: a heading button with `aria-expanded`, `aria-controls` and a chevron, a summary and an error
+  count while closed, and `hidden` on the closed body so Tab skips it. A `Folds` holds one form's state: the
+  person's choices (a preferences cell of title to open) over each section's start (`collapsed`, the phone rule,
+  `'empty'`); `reveal(title)` opens one for now and `reset()` forgets the choices. `revealField(root, name)`
+  opens the section holding a field and focuses it.
 - Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
   first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
   polite live region that the app creates at mount with `mountToasts()`. A popover stays open

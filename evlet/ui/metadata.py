@@ -24,6 +24,44 @@ def plural_for(label):
 
 OPEN_IN = ('page', 'panel')
 
+# How a collapsible section starts: open, closed, or closed when every field in it is empty.
+COLLAPSED = (False, True, 'empty')
+
+
+def starts_valid(value):
+    """Whether value is one of COLLAPSED exactly: 1 and 0 are not True and False here."""
+    return value is True or value is False or (type(value) is str and value == 'empty')
+
+
+class Section:
+    """A form section in Model.Meta.layout that a person can open and close.
+
+    `collapsed` is where it starts: False (open), True (closed) or 'empty' (closed when every field in
+    it is empty on an existing record; a new record shows it open). A person's own choice wins after that.
+    A plain ('Title', fields) pair is a section that can't collapse."""
+
+    __slots__ = ('title', 'fields', 'collapsible', 'collapsed')
+
+    def __init__(self, title, fields, *, collapsible=True, collapsed=False):
+        self.title, self.fields, self.collapsible, self.collapsed = title, fields, collapsible, collapsed
+
+    def __repr__(self):
+        return f'Section({self.title!r}, {self.fields!r}, collapsible={self.collapsible!r}, collapsed={self.collapsed!r})'
+
+    def check(self, model):
+        """Raise ValueError naming the model and the section when the options can't work."""
+        where = f'{model} layout section {self.title!r}'
+        if not isinstance(self.title, str) or not self.title.strip():
+            raise ValueError(f'{model} layout: give every Section a title')
+        if not isinstance(self.fields, (tuple, list)):
+            raise ValueError(f'{where}: list its fields as a tuple of field names')
+        if type(self.collapsible) is not bool:
+            raise ValueError(f'{where}: collapsible must be True or False')
+        if not starts_valid(self.collapsed):
+            raise ValueError(f"{where}: collapsed must be False, True or 'empty', not {self.collapsed!r}")
+        if not self.collapsible and self.collapsed is not False:
+            raise ValueError(f'{where}: collapsed needs collapsible=True, because this section always shows')
+
 
 def view_for(model):
     meta = getattr(model, 'Meta', None)
@@ -72,8 +110,12 @@ def view_for(model):
     if not isinstance(layout, (tuple, list)) or len(layout) > 8:
         raise ValueError('Use at most eight layout groups')
     for group in layout:
+        section = group if isinstance(group, Section) else None
+        if section is not None:
+            section.check(model.__name__)
+            group = (section.title, section.fields)
         if not isinstance(group, (tuple, list)) or len(group) != 2 or not isinstance(group[0], str) or not group[0] or not isinstance(group[1], (tuple, list)):
-            raise ValueError('Layout groups are (label, field names) pairs')
+            raise ValueError('Layout groups are (label, field names) pairs or Section(title, fields)')
         unknown = [str(name) for name in group[1] if not isinstance(name, str) or name not in visible]
         if unknown:
             raise ValueError(f'Layout group {group[0]} names unknown or hidden fields: {", ".join(unknown)}')
@@ -81,11 +123,13 @@ def view_for(model):
             if name in used:
                 raise ValueError(f'Layout lists {name} more than once')
             used.append(name)
-        groups.append({'label': group[0], 'fields': list(group[1])})
+        # A plain (label, fields) pair is a section that can't collapse.
+        groups.append({'label': group[0], 'fields': list(group[1]), 'collapsible': bool(section and section.collapsible),
+                       'collapsed': section.collapsed if section and section.collapsible else False})
     # Visible fields the layout leaves out follow under Other, in declaration order.
     rest = [name for name in visible if name not in used]
     if rest:
-        groups.append({'label': 'Other', 'fields': rest})
+        groups.append({'label': 'Other', 'fields': rest, 'collapsible': False, 'collapsed': False})
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in}
 

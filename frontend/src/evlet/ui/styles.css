@@ -1205,6 +1205,13 @@ th:hover>.rz::after{background:var(--border-strong)}
 .fs-fold.closed .fs-chev{transform:rotate(-90deg)}
 .fs-fold.closed .fs-h{margin-bottom:0}
 .fs-fold.closed{padding-bottom:14px}
+.fs-fold .fs-h h3{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fs-fold .fs-toggle{min-height:28px;text-align:left}
+.fs-sum{font-size:12.5px;font-weight:400}
+.fs-err{font-size:11px;font-weight:600;background:var(--t-rose-bg);color:var(--t-rose);border-radius:10px;padding:0 7px;line-height:18px}
+@media (prefers-reduced-motion:reduce){.fs-chev{transition:none}}
+/* Print and PDF show every section open (the server's print designs never collapse). */
+@media print{.fs-fold .fs-body[hidden]{display:block!important}.fs-fold .fs-chev,.fs-fold .fs-sum,.fs-fold .fs-err{display:none!important}}
 
 /* ---------- DocFrame panel variant: a record beside a list ---------- */
 .doc.doc-panel{display:flex;flex-direction:column;min-height:100%}

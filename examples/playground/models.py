@@ -1,7 +1,7 @@
 """A small consumer of Evlet's public API, not an accounting system."""
 
 from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Registry,
-                   Rule, Select, Series, Text)
+                   Rule, Section, Select, Series, Text)
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
 CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
@@ -64,7 +64,12 @@ class Project(Model):
     class Meta:
         description = "Track a small project and its customer."
         list_fields = ('title', 'customer', 'status', 'budget')
-        layout = (('Project', ('title', 'customer', 'status')), ('Planning', ('budget', 'progress', 'starts_on')), ('Notes', ('notes',)))
+        # A plain ('Title', fields) group always shows; a Section can be opened and closed. Planning
+        # starts open, Schedule starts closed and Notes starts closed when it is empty.
+        layout = (('Project', ('title', 'customer', 'status')),
+                  Section('Planning', ('budget', 'progress')),
+                  Section('Schedule', ('starts_on',), collapsed=True),
+                  Section('Notes', ('notes',), collapsed='empty'))
         open_in = 'panel'
 
     # A declared title is the record title itself.

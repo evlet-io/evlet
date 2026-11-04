@@ -45,7 +45,9 @@ export interface FieldOverride {
   label?: string; help_text?: string; tooltip?: string; placeholder?: string; hidden?: boolean; required?: boolean; read_only?: boolean;
   default?: unknown; options_add?: string[]; options_hidden?: string[];
 }
-export interface LayoutSection { title: string; fields: Array<{ name: string; width: 6 | 12 }> }
+export interface LayoutSection { title: string; fields: Array<{ name: string; width: 6 | 12 }>;
+  /** Whether people can open and close the section, and how it starts (absent in layouts saved before them). */
+  collapsible?: boolean; collapsed?: boolean | 'empty' }
 export interface ListValue { columns: string[]; page_size: number; sort: string; /** How the list opens a record (absent in list views saved before it existed). */ open_in?: 'page' | 'panel' }
 export interface SeriesValue { id: string; label: string; format: string; when: string }
 export interface FieldInfo {
