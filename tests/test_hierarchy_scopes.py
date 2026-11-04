@@ -12,6 +12,7 @@ from evlet.permissions import scope_condition
 from test_business import PASSWORD, client
 from test_meaning import serve
 from test_rules_types import ALL
+from evlet.identity import RecordId
 
 TEAM = Hierarchy('employee', parent='reports_to')
 
@@ -116,7 +117,7 @@ def check_team_scopes(app):
     assert outsider('GET', '/api/payslip/aggregate?measures=' + quote('n:count'))[1]['items'] == [{'n': 0}]
     # Detail, writes, actions, attachments and journal reads follow the same scope.
     with app.database.transaction() as tx:
-        rows = {row['employee']: row['id'] for row in tx.connection.execute('SELECT id, employee FROM leave WHERE public = ?', (False,))}
+        rows = {RecordId(row['employee']): str(RecordId(row['id'])) for row in tx.connection.execute('SELECT id, employee FROM leave WHERE public = ?', (False,))}
     deep, theirs = f"/api/leave/{rows[found['deep']]}", f"/api/leave/{rows[found['outsider']]}"
     assert manager('GET', deep)[0] == 200 and manager('GET', theirs)[0] == 404
     assert outsider('GET', deep)[0] == 404
@@ -143,7 +144,7 @@ def check_team_scopes(app):
         return status, body.get('result')
     assert tool(manager, 'list_records', model='employee')[1]['total'] == 151
     assert tool(manager, 'aggregate_records', model='payslip', measures='n:count')[1]['items'] == [{'n': 150}]
-    assert tool(manager, 'get_record', model='employee', id=found['outsider'])[0] == 404
+    assert tool(manager, 'get_record', model='employee', id=str(found['outsider']))[0] == 404
     assert tool(outsider, 'record_history', model='leave', id=rows[found['deep']])[0] == 404
     assert tool(outsider, 'list_records', model='leave')[1]['total'] == 2
     # Moving the outsider into the manager's team changes what the manager sees at once.

@@ -8,6 +8,8 @@ import json
 import re
 from urllib.parse import urlsplit
 
+from .identity import RecordId
+
 MISSING = object()
 
 
@@ -287,7 +289,7 @@ class Integer(Field):
         self.maximum = maximum
 
     def validate(self, value):
-        if type(value) is not int:
+        if type(value) is not int and not isinstance(value, RecordId):
             raise ValueError("Expected an integer")
         if not -MAX_INTEGER - 1 <= value <= MAX_INTEGER:
             raise ValueError("Integer is outside SQLite's supported range")
@@ -608,11 +610,26 @@ class LongText(Text):
 
 
 class Link(Integer):
+    """A foreign key to another model's id. The value is a RecordId: an int in Python and SQL,
+    the 13-character text id in JSON (evlet/identity.py). Writes accept either form."""
     kind = "link"
 
     def __init__(self, target, **kwargs):
         super().__init__(minimum=1, **kwargs)
         self.target = target
+
+    def validate(self, value):
+        try:
+            return RecordId(value)
+        except ValueError:
+            raise ValueError("Use a record id") from None
+
+    def from_storage(self, value):
+        return None if value is None else RecordId(super().from_storage(value))
+
+    def serialize(self, value):
+        # A RecordId: JSON responses write its text form (identity.jsonable).
+        return None if value is None else RecordId(value)
 
     def metadata(self):
         target = self.target if isinstance(self.target, str) else storage_name(self.target)
@@ -791,7 +808,7 @@ class MultiSelect(Tags):
 class Reference(Field):
     """A link to a record of any registered model, stored as <name>_model and <name>_id; no SQL foreign key.
 
-    The value is {"model": "<storage name>", "id": <id>}. Writes check that the record exists.
+    The value is {"model": "<storage name>", "id": "<text id>"}. Writes check that the record exists.
     index=True creates one index over both columns, (<name>_model, <name>_id).
     """
     kind = "reference"
@@ -809,9 +826,10 @@ class Reference(Field):
         model, record_id = value["model"], value["id"]
         if not isinstance(model, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", model):
             raise ValueError("Use a registered model name")
-        if type(record_id) is not int or not 1 <= record_id <= MAX_INTEGER:
-            raise ValueError("Use a positive record ID")
-        return (model, record_id)
+        try:
+            return (model, RecordId(record_id))
+        except ValueError:
+            raise ValueError("Use a record id") from None
 
     def columns(self, name):
         return ((name + "_model", "TEXT"), (name + "_id", "INTEGER"))
@@ -825,10 +843,10 @@ class Reference(Field):
             return None
         if type(model) is not str or type(record_id) is not int:
             raise ValueError("Stored reference has the wrong type")
-        return (model, record_id)
+        return (model, RecordId(record_id))
 
     def to_storage(self, value):
         raise ValueError("Reference fields use two columns")
 
     def serialize(self, value):
-        return None if value is None else {"model": value[0], "id": value[1]}
+        return None if value is None else {"model": value[0], "id": RecordId(value[1])}

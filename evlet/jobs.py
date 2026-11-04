@@ -11,6 +11,7 @@ import sqlite3
 import time
 
 from .auth import AccessError, User
+from .identity import text as text_id
 from .database import NotFoundError
 from .models import ValidationError
 from .permissions import Policy
@@ -321,7 +322,8 @@ class JobQueue:
     def recent(self):
         """Trusted operator summary; never includes payloads or exception messages."""
         with self.database._connection() as db:
-            return [dict(row) for row in db.execute('SELECT id,task,actor,model,record_id,state,attempts,run_at,error FROM evlet_jobs ORDER BY id DESC LIMIT 100')]
+            return [{**dict(row), 'record_id': text_id(row['record_id'])}
+                    for row in db.execute('SELECT id,task,actor,model,record_id,state,attempts,run_at,error FROM evlet_jobs ORDER BY id DESC LIMIT 100')]
 
     def retry(self, job_id):
         with self.database.transaction() as tx:

@@ -12,6 +12,7 @@ import re
 from urllib.parse import parse_qs, quote
 
 from .auth import AccessError
+from .identity import RecordId, path_id
 from .database import ROW_LIMIT, Session, using
 from .fields import Link
 from .ui.metadata import view_for
@@ -574,12 +575,15 @@ class Business:
             if set(body) - {'id', 'values', 'revision', 'calculation'} or not isinstance(body.get('values', {}), dict):
                 raise ValidationError({'draft': 'Invalid draft request'})
             record_id = body.get('id')
-            if record_id is not None and (type(record_id) is not int or not 0 < record_id < 2**63):
-                raise ValidationError({'draft': 'Invalid draft request'})
+            if record_id is not None:
+                try:
+                    record_id = RecordId(record_id)
+                except ValueError:
+                    raise ValidationError({'draft': 'Invalid draft request'}) from None
             if 'calculation' in body:
                 self.check_calculation(model, body['calculation'])
             with self.context(user, readonly=True) as context:
-                draft, previous = load_draft(context, model, body.get('id'), body.get('values', {}), preview=True)
+                draft, previous = load_draft(context, model, record_id, body.get('values', {}), preview=True)
                 # A locked or posted record keeps its saved results on a save, so the preview shows those.
                 from .effects import has_postings
                 from .states import locked_state
@@ -656,12 +660,12 @@ class Business:
         checks = ExitStack()
         def row_visible(child, key):
             nonlocal tx
-            if not re.fullmatch('[1-9][0-9]{0,18}', key) or int(key) > 2**63-1:
+            if path_id(key) is None:
                 return True  # A client's temporary row key.
             if tx is None:
                 tx = checks.enter_context(self.database.transaction())  # One lookup transaction, opened only if needed.
             try:
-                self.policy.record(tx, user, child, int(key))
+                self.policy.record(tx, user, child, path_id(key))
             except AccessError:
                 return False
             return True
@@ -693,17 +697,17 @@ class Business:
         if len(parts) == 5 and parts[4] in CORRECTIONS:
             if method != 'POST':
                 raise AccessError(405, 'Method not allowed')
-            if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
+            if path_id(parts[3]) is None: raise AccessError(404, 'Record not found')
             from .corrections import dispatch
-            return dispatch(self, scope, body, user, model, int(parts[3]), parts[4])
+            return dispatch(self, scope, body, user, model, path_id(parts[3]), parts[4])
         if len(parts) == 5 and parts[4] == 'journal':
-            if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
+            if path_id(parts[3]) is None: raise AccessError(404, 'Record not found')
             from .journal import route
-            return route(self, scope, body, user, model, int(parts[3]))
+            return route(self, scope, body, user, model, path_id(parts[3]))
         if getattr(model, '__declaration_mode__', False) and method == 'DELETE' and len(parts) == 4:
-            if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1: raise AccessError(404, 'Record not found')
+            if path_id(parts[3]) is None: raise AccessError(404, 'Record not found')
             with self.context(user) as context:
-                record = self.policy.record(context._tx, user, model, int(parts[3]), 'delete')
+                record = self.policy.record(context._tx, user, model, path_id(parts[3]), 'delete')
                 if b'if-match' not in dict(scope.get('headers', [])): raise AccessError(428, 'A current If-Match revision is required')
                 self.check_revision(scope, context._tx, user, record)
                 context.delete(model, record.id)
@@ -716,9 +720,9 @@ class Business:
             from .documents import Context
             record_id = None
             if len(parts) >= 4:
-                if not re.fullmatch('[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1:
+                if path_id(parts[3]) is None:
                     raise AccessError(404, 'Record not found')
-                record_id = int(parts[3])
+                record_id = path_id(parts[3])
             action = parts[5] if len(parts) == 6 and parts[4] == 'actions' and method == 'POST' else None
             move = parts[5] if len(parts) == 6 and parts[4] == 'moves' and method == 'POST' else None
             if not ((len(parts) == 3 and method == 'POST') or (len(parts) == 4 and method == 'PATCH') or action or move):
@@ -756,9 +760,9 @@ class Business:
         if len(parts) == 4 and parts[3] in ('aggregate', 'measures') or len(parts) == 5 and parts[4] == 'measures':
             from .measures import route
             return route(self, scope, user, model, parts)
-        if len(parts) < 4 or not re.fullmatch(r'[1-9][0-9]{0,18}', parts[3]) or int(parts[3]) > 2**63-1:
+        if len(parts) < 4 or path_id(parts[3]) is None:
             raise AccessError(404, 'Record not found')
-        record_id = int(parts[3])
+        record_id = path_id(parts[3])
         if len(parts) >= 6 and parts[4] == 'lines':
             if method != 'GET':
                 raise AccessError(405, 'Method not allowed')
@@ -1075,7 +1079,11 @@ class Business:
                     raise AccessError(403, 'The parent link is managed by the collection')
                 self.policy.check_values(tx, user, child.model, values)
                 if row_id is not None:
-                    if type(row_id) is not int or row_id not in existing or row_id in kept:
+                    try:
+                        row_id = RecordId(row_id)
+                    except ValueError:
+                        row_id = None
+                    if row_id is None or row_id not in existing or row_id in kept:
                         raise ValidationError({'children': 'Child ID must belong to this parent and appear once'})
                     self.policy.record(tx, user, child.model, row_id, 'update' if values else 'read')
                     if values:
@@ -1167,9 +1175,9 @@ class Business:
                     raise AccessError(404, 'Collection not found')
                 if index + 1 == len(path):
                     break
-                if not re.fullmatch('[1-9][0-9]{0,18}', path[index + 1]) or int(path[index + 1]) > 2**63-1:
+                if path_id(path[index + 1]) is None:
                     raise AccessError(404, 'Record not found')
-                row = self.policy.record(tx, user, child.model, int(path[index + 1]))
+                row = self.policy.record(tx, user, child.model, path_id(path[index + 1]))
                 if getattr(row, child.link) != owner_id:
                     raise AccessError(404, 'Record not found')
                 owner, owner_id = child.model, row.id

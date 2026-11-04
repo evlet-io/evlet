@@ -296,7 +296,7 @@ class ViewRegistry:
                     if match:
                         return {"view": view, "params": match.groupdict()}
         match = re.fullmatch(
-            re.escape(base.rstrip("/")) + r"/([a-z][a-z0-9_]*)(?:/(new|[1-9][0-9]{0,15})(/view)?)?", path
+            re.escape(base.rstrip("/")) + r"/([a-z][a-z0-9_]*)(?:/(new|[0-7][0-9a-zA-Z]{12})(/view)?)?", path
         )
         if match:
             model, record_id, detail = match.groups()

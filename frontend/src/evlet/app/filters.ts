@@ -9,6 +9,7 @@
 // GST, "is set" becomes isnull, "not equals" becomes "not in" so that empty values match too.
 
 import { each, html, type Child } from '../dom';
+import { legacyRecordId } from '../ids';
 import { cell, derive, effect, untrack, type Cell, type Readable } from '../reactive';
 import { Button, FilterChip, IconButton } from '../ui/base';
 import { Dropdown, GroupedPicker, rangePresets, type GroupedChoice } from '../ui/pickers';
@@ -131,7 +132,11 @@ export function decode(fields: Map<string, FilterField>, text: string | undefine
   const state: FilterState = { rows: [], matches: {} };
   if (!text) return state;
   let id = 0;
+  // Links saved before text ids hold numbers (42); they name the same records as '000000000001a'.
+  const linkValue = (value: unknown): unknown => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? legacyRecordId(String(value))
+    : Array.isArray(value) ? value.map(linkValue) : value;
   const add = (field: string, op: string, value: unknown) => {
+    if (fields.get(field)?.meta.type === 'link') value = linkValue(value);
     const row = { id: ++id, field, op, value };
     if (complete(fields, row)) state.rows.push(row);
   };
@@ -165,7 +170,7 @@ export function rowLabel(fields: Map<string, FilterField>, state: FilterState, r
   const field = fields.get(row.field)!, meta = field.meta;
   const found = conditionsFor(meta).find(item => item.op === row.op)!;
   const one = (value: unknown): string => {
-    if (meta.type === 'link' && meta.target && typeof value === 'number') return links.title(meta.target, value).get() ?? `#${value}`;
+    if (meta.type === 'link' && meta.target && typeof value === 'string') return links.title(meta.target, value).get() ?? `#${value}`;
     if (meta.type === 'select' || meta.type === 'multiselect') return humanize(String(value));
     return TEXTUAL.has(meta.type) ? String(value) : formatOf(meta, value) || String(value);
   };
@@ -310,7 +315,7 @@ function ValueEditor(field: FilterField, kind: ValueKind, value: () => unknown, 
       if (id !== null && !untrack(list).includes(id)) set([...untrack(list), id]);
       added.set(added.peek() + 1);
     }, links, `Add ${field.label}`, 'add')); };
-    return html`<div class="fb-list">${() => list().map(id => FilterChip({ label: () => (meta.target ? links.title(meta.target, Number(id)).get() : null) ?? `#${id}`,
+    return html`<div class="fb-list">${() => list().map(id => FilterChip({ label: () => (meta.target ? links.title(meta.target, String(id)).get() : null) ?? `#${id}`,
       onRemove: () => set(untrack(list).filter(item => item !== id)) }))}${picker}</div>`;
   }
   const input = html`<input class="input" aria-label=${label} placeholder="Values, separated by commas" autocomplete="off"

@@ -23,11 +23,14 @@ from urllib.parse import urlencode
 from .auth import AccessError
 from .connector import ConnectorError
 from .database import ConflictError, NotFoundError
+from .identity import SCHEMA as ID_SCHEMA, RecordId, jsonable
 from .models import ValidationError
 
 SAFE_INTEGER = 2**53 - 1
 MODEL = {'type': 'string', 'pattern': '^[a-z][a-z0-9_]{0,127}$'}
 ID = {'type': 'integer', 'minimum': 1, 'maximum': SAFE_INTEGER}
+# A record id is its 13-character text form; ID is for jobs and files.
+RECORD = dict(ID_SCHEMA)
 PAGE = {'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100}, 'offset': {'type': 'integer', 'minimum': 0, 'maximum': SAFE_INTEGER}}
 ORIGINS = ('eva', 'schedule', 'mcp', 'api')
 # Confirmation groups: which kinds of allowed change can still need an approval click.
@@ -85,35 +88,35 @@ TOOLS = (
     Tool('list_records', 'Query permitted records. Filters use the described fields and operators; all results obey row and field permissions.',
          {'model': MODEL, **PAGE, 'search': {'type': 'string', 'maxLength': 200}, 'filters': {'type': 'object'}, 'order_by': {'type': 'string', 'maxLength': 500}},
          ('model',), label='Reading {model}'),
-    Tool('get_record', 'Read a permitted record and its accessible child collections.', {'model': MODEL, 'id': ID}, ('model', 'id'), label='Reading {model} {id}'),
+    Tool('get_record', 'Read a permitted record and its accessible child collections.', {'model': MODEL, 'id': RECORD}, ('model', 'id'), label='Reading {model} {id}'),
     Tool('aggregate_records', 'Totals, counts, minimums and maximums over permitted records, optionally grouped. '
          'measures: comma separated field:function[:name] such as amount:sum:total,count:count. group_by: comma separated fields, date fields may add :month or :year.',
          {'model': MODEL, 'measures': {'type': 'string', 'maxLength': 500}, 'group_by': {'type': 'string', 'maxLength': 200},
           'filters': {'type': 'object'}, 'search': {'type': 'string', 'maxLength': 200}}, ('model', 'measures'), label='Totalling {model}'),
     Tool('record_history', "Read a permitted record's journal: who changed what and when, notes and calls.",
-         {'model': MODEL, 'id': ID, **PAGE}, ('model', 'id'), label='Reading the history of {model} {id}'),
+         {'model': MODEL, 'id': RECORD, **PAGE}, ('model', 'id'), label='Reading the history of {model} {id}'),
     Tool('list_reports', 'List the reports this person can run, with their filters and columns.', {}, label='Looking at reports'),
     Tool('run_report', 'Run a permitted report with its filters. Returns one page of rows.',
          {'report': {'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_.]{0,127}$'}, 'filters': {'type': 'object'}, **PAGE}, ('report',), label='Running the {report} report'),
-    Tool('list_files', 'List the files attached to a permitted record.', {'model': MODEL, 'id': ID}, ('model', 'id'), label='Listing files on {model} {id}'),
+    Tool('list_files', 'List the files attached to a permitted record.', {'model': MODEL, 'id': RECORD}, ('model', 'id'), label='Listing files on {model} {id}'),
     Tool('read_file', "Read the text of a file attached to a permitted record. Files that aren't text return their size only.",
-         {'model': MODEL, 'id': ID, 'file_id': ID}, ('model', 'id', 'file_id'), label='Reading a file'),
+         {'model': MODEL, 'id': RECORD, 'file_id': ID}, ('model', 'id', 'file_id'), label='Reading a file'),
     Tool('list_services', 'List the business services this app offers to assistants, with their arguments.', {}, label='Looking at services'),
     Tool('job_status', 'Read the status of a queued action owned by this account, or accessible to its administrator.', {'id': ID}, ('id',), label='Checking a background task'),
     Tool('create_record', 'Create a record using its described create schema. Backend validation and permissions apply. Do not retry an uncertain write automatically.',
          {'model': MODEL, 'values': {'type': 'object'}}, ('model', 'values'), kind='write', group='create', label='Creating {model}'),
     Tool('update_record', 'Update supplied values only. Supplied child collections replace their rows; omit children to preserve them.',
-         {'model': MODEL, 'id': ID, 'values': {'type': 'object'}}, ('model', 'id', 'values'), kind='write', group='update', label='Updating {model} {id}'),
+         {'model': MODEL, 'id': RECORD, 'values': {'type': 'object'}}, ('model', 'id', 'values'), kind='write', group='update', label='Updating {model} {id}'),
     Tool('change_state', 'Confirm, cancel or reopen a document. Confirming finalises it; cancelling and reopening need a reason for cancel.',
-         {'model': MODEL, 'id': ID, 'operation': {'type': 'string', 'enum': ['confirm', 'cancel', 'reopen']}, 'reason': {'type': 'string', 'maxLength': 500}},
+         {'model': MODEL, 'id': RECORD, 'operation': {'type': 'string', 'enum': ['confirm', 'cancel', 'reopen']}, 'reason': {'type': 'string', 'maxLength': 500}},
          ('model', 'id', 'operation'), kind='write', label='Changing the state of {model} {id}'),
     Tool('run_action', 'Execute one registered permitted action on a record. It may modify records or enqueue work.',
-         {'model': MODEL, 'id': ID, 'action': MODEL}, ('model', 'id', 'action'), kind='write', group='action', label='Running {action} on {model} {id}'),
+         {'model': MODEL, 'id': RECORD, 'action': MODEL}, ('model', 'id', 'action'), kind='write', group='action', label='Running {action} on {model} {id}'),
     Tool('call_service', 'Call a business service from list_services with its arguments.',
          {'service': {'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_.]{0,200}$'}, 'arguments': {'type': 'object'}}, ('service',),
          kind='write', group='action', label='Running {service}'),
     Tool('delete_record', 'Delete a permitted record and owned children. This can permanently remove data.',
-         {'model': MODEL, 'id': ID}, ('model', 'id'), kind='destructive', group='destructive', label='Deleting {model} {id}'),
+         {'model': MODEL, 'id': RECORD}, ('model', 'id'), kind='destructive', group='destructive', label='Deleting {model} {id}'),
 )
 BY_NAME = {tool.name: tool for tool in TOOLS}
 NAMES = tuple(BY_NAME)
@@ -206,7 +209,7 @@ class Dispatch:
             raise ConnectorError(409, str(exc)) from None
         if status >= 400:
             raise ConnectorError(status, payload.get('error', 'Request failed') if isinstance(payload, dict) else 'Request failed')
-        return (None if status == 204 else payload), dict(response)
+        return (None if status == 204 else jsonable(payload)), dict(response)
 
     def get(self, path):
         return self('GET', path)[0]
@@ -510,7 +513,7 @@ class Tools:
         import inspect
         from typing import get_type_hints
         hints = get_type_hints(endpoint.function)
-        names = {str: 'string', int: 'integer', bool: 'boolean', float: 'number'}
+        names = {str: 'string', int: 'integer', bool: 'boolean', float: 'number', RecordId: 'string'}
         parameters = list(inspect.signature(endpoint.function).parameters.values())[1:]
         return {'name': endpoint.name, 'description': inspect.getdoc(endpoint.function) or '', 'method': endpoint.method,
                 'arguments': {'type': 'object', 'additionalProperties': False,

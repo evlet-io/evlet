@@ -7,14 +7,14 @@ import { byText, click, requests, start, stopAll, text, until, type Route } from
 afterEach(stopAll);
 const routes = (record: Recorded = f.draft): Route[] => [
   ['GET', /\/api\/auth\/session$/, f.session], ['GET', /\/api\/schema$/, f.schema],
-  ['GET', /\/api\/order\/1$/, record], ['GET', /\/api\/order\/1\/journal/, f.history],
-  ['GET', /\/api\/order\/1\/revisions/, f.revisions], ['GET', /\/api\/order\/1\/snapshot/, f.snapshot2],
-  ['GET', /\/api\/order\/1\/diff/, f.diff],
+  ['GET', /\/api\/order\/0000000000001$/, record], ['GET', /\/api\/order\/0000000000001\/journal/, f.history],
+  ['GET', /\/api\/order\/0000000000001\/revisions/, f.revisions], ['GET', /\/api\/order\/0000000000001\/snapshot/, f.snapshot2],
+  ['GET', /\/api\/order\/0000000000001\/diff/, f.diff],
 ];
 
 describe('document lifecycle contract', () => {
   it('confirms with the current ETag and updates state, revision and permitted actions', async () => {
-    const { host, sent } = start([...routes(), ['POST', /\/api\/order\/1\/confirm$/, f.confirmed]], '/app/order/1?tab=details');
+    const { host, sent } = start([...routes(), ['POST', /\/api\/order\/0000000000001\/confirm$/, f.confirmed]], '/app/order/0000000000001?tab=details');
     await until(() => expect(byText(host, '.doc-head button', 'Confirm')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Confirm'));
     await until(() => expect(text(host)).toContain('Confirmed · Revision 1'));
@@ -25,7 +25,7 @@ describe('document lifecycle contract', () => {
   });
 
   it('shows immutable snapshots and parent/child additions, removals and edits', async () => {
-    const { host, sent } = start(routes(f.reconfirmed), '/app/order/1?tab=revisions');
+    const { host, sent } = start(routes(f.reconfirmed), '/app/order/0000000000001?tab=revisions');
     await until(() => expect(byText(host, 'button', 'Compare revisions')).not.toBeNull());
     await until(() => expect(byText(host, 'button', 'Compare revisions')?.hasAttribute('disabled')).toBe(false));
     click(byText(host, 'button', 'Compare revisions'));

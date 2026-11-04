@@ -526,9 +526,9 @@ def test_http_rejects_malformed_parameters(app):
         '/api/invoice/aggregate?measures=n:count&order_by=n',
         '/api/invoice/aggregate?measures=' + ','.join(f'm{index}:count' for index in range(9)),
         '/api/invoice/aggregate?measures=n:count&filters=' + quote(json.dumps({'total__gt': 'x'})),
-        '/api/invoice/1/measures?q=x',
+        '/api/invoice/0000000000001/measures?q=x',
         '/api/invoice/measures?q=' + 'x' * 201,
-        '/api/invoice/1/measures?filters=%7B%7D',
+        '/api/invoice/0000000000001/measures?filters=%7B%7D',
         '/api/invoice/aggregate?measures=n%FF:count',
         '/api/invoice/aggregate?measures=n:count&filters=' + 'x' * 9000,
     ]
@@ -537,7 +537,7 @@ def test_http_rejects_malformed_parameters(app):
         assert status == 422, (url, status, body)
     # Document models answer writes to a non-numeric record path with 404, others with 405.
     assert admin('POST', '/api/invoice/aggregate', {})[0] in (404, 405)
-    assert admin('DELETE', '/api/invoice/1/measures')[0] == 405
+    assert admin('DELETE', '/api/invoice/0000000000001/measures')[0] == 405
     assert admin('GET', '/api/invoice/abc/measures')[0] == 404
     assert admin('GET', '/api/invoice/0/measures')[0] == 404
     assert admin('GET', '/api/invoice/aggregate/extra')[0] == 404

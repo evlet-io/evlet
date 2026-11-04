@@ -152,7 +152,7 @@ def test_registry_routes_extensions_and_custom_contract():
 
     schema = Registry(Contact).ui_schema()
     ui.validate(schema)
-    result = ui.resolve("/app/contact/12", schema)
+    result = ui.resolve("/app/contact/000000000000c", schema)
     assert result["view"]["kind"] == "form"
     assert (
         result["view"]["layout"]["slots"]["children"][0]["slots"]["children"][0][

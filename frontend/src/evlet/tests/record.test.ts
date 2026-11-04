@@ -4,7 +4,7 @@ import { effect, scope } from '../reactive';
 import { buildChanges } from '../model/changes';
 import { RecordStore, sameValue } from '../model/record';
 import type { AppSchema } from '../model/schema';
-import { copy, responses, server, type Sent } from './server';
+import { copy, id, responses, server, type Sent } from './server';
 
 const schema = responses.schema.body as AppSchema;
 const stores: RecordStore[] = [];
@@ -15,12 +15,12 @@ function backend(overrides: Array<[string, RegExp, any]> = []) {
   let saved = false;
   const routes: Array<[string, RegExp, any]> = [
     ...overrides,
-    ['GET', /\/api\/order\/1$/, 'detail'],
-    ['GET', /\/api\/order\/1\/lines\/lines\?limit=100&offset=100$/, () => responses[saved ? 'lines_page_after_update' : 'lines_page']],
-    ['GET', /\/api\/customer\/1$/, { ...responses.customer, status: 200 }],
-    ['GET', /\/api\/product\/1$/, { ...responses.product, status: 200 }],
-    ['PATCH', /\/api\/order\/1$/, () => { saved = true; return responses.update; }],
-    ['POST', /\/api\/order\/1\/actions\/close$/, () => { saved = true; return responses.action; }],
+    ['GET', /\/api\/order\/0000000000001$/, 'detail'],
+    ['GET', /\/api\/order\/0000000000001\/lines\/lines\?limit=100&offset=100$/, () => responses[saved ? 'lines_page_after_update' : 'lines_page']],
+    ['GET', /\/api\/customer\/0000000000001$/, { ...responses.customer, status: 200 }],
+    ['GET', /\/api\/product\/0000000000001$/, { ...responses.product, status: 200 }],
+    ['PATCH', /\/api\/order\/0000000000001$/, () => { saved = true; return responses.update; }],
+    ['POST', /\/api\/order\/0000000000001\/actions\/close$/, () => { saved = true; return responses.action; }],
     ['POST', /\/api\/_draft\/order$/, 'draft'],
   ];
   const stub = server(routes);
@@ -29,16 +29,16 @@ function backend(overrides: Array<[string, RegExp, any]> = []) {
   return { store, sent: stub.sent };
 }
 const paths = (sent: Sent[]) => sent.map(item => `${item.method} ${item.url}`);
-const line = (store: RecordStore, id: number) => store.table('lines').rows.peek().find(row => row.id === id)!;
+const line = (store: RecordStore, n: number) => store.table('lines').rows.peek().find(row => row.id === id(n))!;
 
 describe('opening a record', () => {
   it('pages in rows over 100, then allows edits, with calculations matching the server', async () => {
     const { store, sent } = backend();
-    await store.open(1);
+    await store.open(id(1));
     await store.idle();
-    expect(paths(sent).slice(0, 2)).toEqual(['GET /api/order/1', 'GET /api/order/1/lines/lines?limit=100&offset=100']);
-    expect(paths(sent)).toContain('GET /api/customer/1');
-    expect(paths(sent)).toContain('GET /api/product/1');
+    expect(paths(sent).slice(0, 2)).toEqual(['GET /api/order/0000000000001', 'GET /api/order/0000000000001/lines/lines?limit=100&offset=100']);
+    expect(paths(sent)).toContain('GET /api/customer/0000000000001');
+    expect(paths(sent)).toContain('GET /api/product/0000000000001');
     const lines = store.table('lines');
     expect(lines.rows.peek()).toHaveLength(120);
     expect(lines.partial.peek()).toBe(false);
@@ -53,7 +53,7 @@ describe('opening a record', () => {
 
   it('refuses edits until every row is loaded', async () => {
     const { store } = backend();
-    await store.open(1, { loadAll: false });
+    await store.open(id(1), { loadAll: false });
     expect(store.ready.peek()).toBe(false);
     expect(store.table('lines').partial.peek()).toBe(true);
     expect(() => store.field('title').set('x')).toThrow('Load every row');
@@ -65,16 +65,16 @@ describe('opening a record', () => {
 
   it('names nested table paths for the lines endpoint', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const first = line(store, 1);
     expect(store.table('lines').apiPath()).toEqual(['lines']);
-    expect(first.table('parts').apiPath()).toEqual(['lines', 1, 'parts']);
+    expect(first.table('parts').apiPath()).toEqual(['lines', id(1), 'parts']);
     expect(first.table('parts').rows.peek().map(row => row.field('hours').value.peek())).toEqual(['1.5000', '2.0000']);
   });
 
   it('exposes field metadata from the schema for renderers', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const total = store.field('total'), stage = store.field('stage'), reason = store.field('reason');
     expect([total.label, total.meta.type, total.meta.scale, total.calculated]).toEqual(['Total', 'currency', 2, true]);
     expect(stage.meta.choices).toEqual(['open', 'won', 'lost']);
@@ -89,7 +89,7 @@ describe('opening a record', () => {
 describe('editing', () => {
   it('a quantity edit recalculates its amount and the total, and notifies only those readers', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const rows = store.table('lines').rows.peek();
     let amountRuns = 0, totalRuns = 0;
     const stop = scope(() => {
@@ -106,7 +106,7 @@ describe('editing', () => {
 
   it('tracks dirty fields and reverts to the saved values', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const qty = line(store, 5).field('qty');
     qty.set('1.0');
     expect(qty.dirty.peek()).toBe(false); // the same number as the saved 1.0000
@@ -122,9 +122,9 @@ describe('editing', () => {
 
   it('a new line takes its rate from the product (initial) and updates the totals', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     await store.idle();
-    const row = store.table('lines').add({ product: 1 });
+    const row = store.table('lines').add({ product: id(1) });
     expect(row.isNew).toBe(true);
     expect(row.field('rate').value.peek()).toBe('250.00');
     expect(row.field('amount').value.peek()).toBe('250.00');
@@ -137,7 +137,7 @@ describe('editing', () => {
 
   it('rules flow into field cells; a lock is decided on the saved record', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const reason = store.field('reason'), remark = store.field('remark');
     expect(reason.rules.peek()).toEqual({ applies: false, required: false, locked: false });
     store.field('stage').set('lost');
@@ -151,7 +151,7 @@ describe('editing', () => {
 
   it('refuses writes to calculated fields', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     expect(() => store.field('total').set('1')).toThrow('Total is calculated');
   });
 });
@@ -159,7 +159,7 @@ describe('editing', () => {
 describe('saving', () => {
   it('builds a change set, saves with If-Match, and the response replaces the draft', async () => {
     const { store, sent } = backend();
-    await store.open(1);
+    await store.open(id(1));
     store.field('title').set('Renamed');
     const lines = store.table('lines');
     line(store, 2).field('qty').set('3');
@@ -168,7 +168,7 @@ describe('saving', () => {
     expect(added.key).toBe('n1');
     expect(buildChanges(store.root)).toEqual({
       title: 'Renamed',
-      children: { lines: { create: [{ _key: 'n1', qty: '2', rate: '1' }], update: [{ id: 2, qty: '3' }], delete: [3] } },
+      children: { lines: { create: [{ _key: 'n1', qty: '2', rate: '1' }], update: [{ id: id(2), qty: '3' }], delete: [id(3)] } },
     });
     expect(store.field('total').value.peek()).toBe('304.50');
     expect(await store.save()).toBe(true);
@@ -179,7 +179,7 @@ describe('saving', () => {
     expect(store.dirty.peek()).toBe(false);
     expect(lines.rows.peek()).toHaveLength(120);
     // The new row kept its object (and so its DOM) and now has the id the server gave it.
-    expect(added.id).toBe(121);
+    expect(added.id).toBe(id(121));
     expect(lines.rows.peek().includes(added)).toBe(true);
     expect(store.field('title').value.peek()).toBe('Renamed');
     expect(store.field('total').value.peek()).toBe('304.50');
@@ -187,17 +187,17 @@ describe('saving', () => {
 
   it('nests change sets for rows of rows', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const parts = line(store, 1).table('parts');
     parts.rows.peek()[0].field('hours').set('3');
     parts.add({ hours: '1' });
-    expect(buildChanges(store.root)).toEqual({ children: { lines: { update: [{ id: 1, children: { parts: {
-      create: [{ _key: 'n1', hours: '1' }], update: [{ id: 1, hours: '3' }] } } }] } } });
+    expect(buildChanges(store.root)).toEqual({ children: { lines: { update: [{ id: id(1), children: { parts: {
+      create: [{ _key: 'n1', hours: '1' }], update: [{ id: id(1), hours: '3' }] } } }] } } });
   });
 
   it('sends nothing for an unchanged record', async () => {
     const { store, sent } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const before = sent.length;
     expect(await store.save()).toBe(true);
     expect(sent.length).toBe(before);
@@ -205,11 +205,11 @@ describe('saving', () => {
 
   it('sends order when rows were moved', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const lines = store.table('lines');
     lines.move(line(store, 3), 0);
     const changes = buildChanges(store.root) as any;
-    expect(changes.children.lines.order.slice(0, 3)).toEqual([3, 1, 2]);
+    expect(changes.children.lines.order.slice(0, 3)).toEqual([id(3), id(1), id(2)]);
     expect(changes.children.lines.order).toHaveLength(120);
   });
 
@@ -232,10 +232,10 @@ describe('saving', () => {
         fields: [{ ...text('project'), type: 'link', target: 'project' }, text('title'),
           { name: 'done', type: 'boolean', label: 'Done', required: true, read_only: false, default_kind: 'static', default: false }] },
     ] } as unknown as AppSchema;
-    const detail = { id: 4, name: 'Explore Evlet', children: { tasks: [{ id: 1, title: 'Read', done: false }, { id: 2, title: 'Try', done: true }] } };
+    const detail = { id: id(4), name: 'Explore Evlet', children: { tasks: [{ id: id(1), title: 'Read', done: false }, { id: id(2), title: 'Try', done: true }] } };
     const open = async () => {
-      const stub = server([['GET', /\/api\/project\/4$/, { status: 200, body: detail, etag: '"r1"' }],
-        ['PATCH', /\/api\/project\/4$/, { status: 200, body: detail, etag: '"r2"' }]]);
+      const stub = server([['GET', /\/api\/project\/0000000000004$/, { status: 200, body: detail, etag: '"r1"' }],
+        ['PATCH', /\/api\/project\/0000000000004$/, { status: 200, body: detail, etag: '"r2"' }]]);
       const store = new RecordStore({ api: createClient({ fetch: stub.fetch }), schema: plain, model: 'project', today: () => '2026-11-01' });
       stores.push(store);
       return { store, sent: stub.sent };
@@ -243,22 +243,22 @@ describe('saving', () => {
 
     it('sends saved rows by id with their changes and new rows without _key', async () => {
       const { store, sent } = await open();
-      await store.open(4);
+      await store.open(id(4));
       const tasks = store.table('tasks');
       tasks.rows.peek()[0].field('done').set(true);
       tasks.add({ title: 'Ship' });
-      expect(buildChanges(store.root)).toEqual({ children: { tasks: [{ id: 1, done: true }, { id: 2 }, { title: 'Ship', done: false }] } });
+      expect(buildChanges(store.root)).toEqual({ children: { tasks: [{ id: id(1), done: true }, { id: id(2) }, { title: 'Ship', done: false }] } });
       expect(await store.save()).toBe(true);
-      expect(sent.find(item => item.method === 'PATCH')!.body).toEqual({ children: { tasks: [{ id: 1, done: true }, { id: 2 }, { title: 'Ship', done: false }] } });
+      expect(sent.find(item => item.method === 'PATCH')!.body).toEqual({ children: { tasks: [{ id: id(1), done: true }, { id: id(2) }, { title: 'Ship', done: false }] } });
     });
 
     it('leaves out a removed row and sends nothing for an unchanged table', async () => {
       const { store } = await open();
-      await store.open(4);
+      await store.open(id(4));
       store.field('name').set('Renamed');
       expect(buildChanges(store.root)).toEqual({ name: 'Renamed' });
       store.table('tasks').remove(store.table('tasks').rows.peek()[1]);
-      expect(buildChanges(store.root)).toEqual({ name: 'Renamed', children: { tasks: [{ id: 1 }] } });
+      expect(buildChanges(store.root)).toEqual({ name: 'Renamed', children: { tasks: [{ id: id(1) }] } });
     });
 
     it('a new record sends its rows without _key', async () => {
@@ -283,8 +283,8 @@ describe('saving', () => {
   });
 
   it('keeps the draft and reports a conflict when the record changed on the server', async () => {
-    const { store } = backend([['PATCH', /\/api\/order\/1$/, 'stale_if_match']]);
-    await store.open(1);
+    const { store } = backend([['PATCH', /\/api\/order\/0000000000001$/, 'stale_if_match']]);
+    await store.open(id(1));
     store.field('title').set('Mine');
     expect(await store.save()).toBe(false);
     expect(store.conflict.peek()).toMatchObject({ status: 409, message: 'This record changed since you opened it. Reload it before saving.' });
@@ -293,8 +293,8 @@ describe('saving', () => {
   });
 
   it('puts server validation errors on the field of the right row', async () => {
-    const { store } = backend([['PATCH', /\/api\/order\/1$/, 'validation']]);
-    await store.open(1);
+    const { store } = backend([['PATCH', /\/api\/order\/0000000000001$/, 'validation']]);
+    await store.open(id(1));
     line(store, 4).field('qty').set('13');
     expect(await store.save()).toBe(false);
     expect(line(store, 4).field('qty').error.peek()).toBe('Thirteen is not allowed');
@@ -305,7 +305,7 @@ describe('saving', () => {
 
   it('sends errors it cannot place to the form', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     store.showErrors({ _form: 'One or more values are invalid', 'lines.999.qty': 'Gone' });
     expect(store.formError.peek()).toBe('One or more values are invalid Gone');
   });
@@ -314,7 +314,7 @@ describe('saving', () => {
 describe('actions and previews', () => {
   it('runs an action on a clean record and applies the result', async () => {
     const { store, sent } = backend();
-    await store.open(1);
+    await store.open(id(1));
     store.field('title').set('Unsaved');
     expect(await store.runAction('close', { note: 'done' })).toBe(false);
     expect(store.formError.peek()).toBe('Save or discard your changes first.');
@@ -329,16 +329,16 @@ describe('actions and previews', () => {
 
   it('asks the server to evaluate a draft', async () => {
     const { store, sent } = backend();
-    await store.open(1);
+    await store.open(id(1));
     store.field('stage').set('lost');
     const result = await store.preview();
     expect(result.states).toEqual({ reason: 'required-input' });
-    expect(sent.at(-1)!.body).toMatchObject({ id: 1, values: { stage: 'lost' } });
+    expect(sent.at(-1)!.body).toMatchObject({ id: id(1), values: { stage: 'lost' } });
   });
 
   it('reloads from the server and forgets the draft', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     store.field('title').set('Temp');
     await store.reload();
     expect(store.field('title').value.peek()).toBe('Big order');
@@ -358,7 +358,7 @@ describe('values', () => {
   it('the recorded detail is not changed by the store', async () => {
     const before = copy(responses.detail.body);
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     line(store, 1).field('qty').set('9');
     expect(responses.detail.body).toEqual(before);
   });

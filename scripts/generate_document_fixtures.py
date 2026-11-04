@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tests'))
 from test_documents import Order
 from test_business import http, client, PASSWORD
 from evlet import Registry, Database, LocalAuth, Application
+from evlet.identity import sequential_ids
 
 
 def collect(app):
@@ -19,14 +20,16 @@ def collect(app):
     result['values'].pop('_key')
     ui = c('GET', '/api/ui')[1]
     form = next(view for view in ui['views'] if view['name'] == 'order.form')
-    assert c('POST', '/api/order', values)[0] == 201
-    _, saved, headers = c('GET', '/api/order/1')
+    status, created, _ = c('POST', '/api/order', values)
+    assert status == 201
+    _, saved, headers = c('GET', f"/api/order/{created['id']}")
     return {'models': models, 'input': values, 'preview': result, 'form': form,
             'saved': saved, 'etag': headers[b'etag'].decode()}
 
 
 def main():
-    with TemporaryDirectory() as directory:
+    # Ids count up per table, so the recording only changes when the responses do.
+    with TemporaryDirectory() as directory, sequential_ids():
         db = Database(Path(directory) / 'fixture.sqlite3', Registry(Order))
         app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
         app.initialize()

@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adminRoutes, byText, click, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
-import { copy } from './server';
+import { copy, id } from './server';
 
 afterEach(() => { vi.useRealTimers(); stopAll(); });
 
 const orderRoutes = (patch: Route[2] = recorded.update): Route[] => [
   ...adminRoutes(),
-  ['GET', /\/api\/order\/1$/, recorded.detail],
-  ['GET', /\/api\/order\/1\/lines\/lines\?/, recorded.lines_page],
-  ['GET', /\/api\/customer\/1$/, { ...recorded.customer, status: 200 }],
-  ['GET', /\/api\/product\/1$/, { ...recorded.product, status: 200 }],
-  ['PATCH', /\/api\/order\/1$/, patch],
+  ['GET', /\/api\/order\/0000000000001$/, recorded.detail],
+  ['GET', /\/api\/order\/0000000000001\/lines\/lines\?/, recorded.lines_page],
+  ['GET', /\/api\/customer\/0000000000001$/, { ...recorded.customer, status: 200 }],
+  ['GET', /\/api\/product\/0000000000001$/, { ...recorded.product, status: 200 }],
+  ['PATCH', /\/api\/order\/0000000000001$/, patch],
 ];
 const field = (host: Element, name: string) => host.querySelector<HTMLElement>(`.ff[data-field="${name}"]`);
 const rowsIn = (host: Element) => [...host.querySelectorAll<HTMLElement>('.grid tbody tr[data-key]')];
@@ -18,7 +18,7 @@ const cellOf = (row: Element, col: string) => [...row.querySelectorAll<HTMLEleme
 
 describe('generated record view', () => {
   it('lays out the header, summary, Details sections and a tab per Table from the schema', async () => {
-    const { host } = start(orderRoutes(), '/app/order/1');
+    const { host } = start(orderRoutes(), '/app/order/0000000000001');
     await until(() => expect(text(host.querySelector('.doc-head .eyebrow'))).toBe('Order'));
     expect(text(host.querySelector('.doc-head h1'))).toContain('Big order');
     expect(text(host.querySelector('.crumbs .cur'))).toBe('Big order');
@@ -37,14 +37,14 @@ describe('generated record view', () => {
   });
 
   it('saves one field in place with the record revision and offers Undo', async () => {
-    const { host, sent } = start(orderRoutes(), '/app/order/1');
+    const { host, sent } = start(orderRoutes(), '/app/order/0000000000001');
     await until(() => expect(field(host, 'title')?.querySelector('button.fval')).toBeTruthy());
     click(field(host, 'title')!.querySelector('button.fval'));
     const input = field(host, 'title')!.querySelector('input')!;
     input.value = 'Bigger order';
     press(input, 'Enter');
-    await until(() => expect(requests(sent, 'PATCH', /order\/1$/)).toHaveLength(1));
-    const patch = requests(sent, 'PATCH', /order\/1$/)[0];
+    await until(() => expect(requests(sent, 'PATCH', /order\/0000000000001$/)).toHaveLength(1));
+    const patch = requests(sent, 'PATCH', /order\/0000000000001$/)[0];
     expect(patch.body.title).toBe('Bigger order');
     expect(patch.headers['if-match']).toBe(recorded.detail.etag);
     await until(() => expect(lastToast()).toContain('Title saved'));
@@ -52,7 +52,7 @@ describe('generated record view', () => {
   });
 
   it('keeps the draft and offers Reload when the record changed elsewhere', async () => {
-    const { host } = start(orderRoutes(recorded.stale_if_match), '/app/order/1');
+    const { host } = start(orderRoutes(recorded.stale_if_match), '/app/order/0000000000001');
     await until(() => expect(field(host, 'title')?.querySelector('button.fval')).toBeTruthy());
     click(field(host, 'title')!.querySelector('button.fval'));
     const input = field(host, 'title')!.querySelector('input')!;
@@ -64,7 +64,7 @@ describe('generated record view', () => {
   });
 
   it('edits a line in the Lines tab, then saves the change set from the save bar', async () => {
-    const { host, sent } = start(orderRoutes(), '/app/order/1?tab=t-lines');
+    const { host, sent } = start(orderRoutes(), '/app/order/0000000000001?tab=t-lines');
     await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
     await until(() => expect(text(host.querySelector('.g-t .n'))).toBe('120'));
     const qty = cellOf(rowsIn(host)[1], 'qty');
@@ -74,15 +74,15 @@ describe('generated record view', () => {
     press(input, 'Enter');
     await until(() => expect(text(host.querySelector('.ev-savebar'))).toContain('Unsaved changes'));
     press(host.querySelector('.doc')!, 'Enter', { metaKey: true });
-    await until(() => expect(requests(sent, 'PATCH', /order\/1$/)).toHaveLength(1));
-    const body = requests(sent, 'PATCH', /order\/1$/)[0].body;
+    await until(() => expect(requests(sent, 'PATCH', /order\/0000000000001$/)).toHaveLength(1));
+    const body = requests(sent, 'PATCH', /order\/0000000000001$/)[0].body;
     expect(body.children.lines.update).toEqual([{ id: recorded.detail.body.children.lines[1].id, qty: '3.0000' }]);
     await until(() => expect(host.querySelector('.ev-savebar')).toBeNull());
     expect(location.search).toBe('?tab=t-lines');
   });
 
   it('switching tabs with unsaved edits asks nothing and keeps every edit for one save', async () => {
-    const { host, sent } = start(orderRoutes(), '/app/order/1?tab=t-lines');
+    const { host, sent } = start(orderRoutes(), '/app/order/0000000000001?tab=t-lines');
     await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
     const qty = cellOf(rowsIn(host)[1], 'qty');
     click(qty);
@@ -100,12 +100,12 @@ describe('generated record view', () => {
     expect(document.querySelector('.modal')).toBeNull();
     await until(() => expect(text(cellOf(rowsIn(host)[1], 'qty'))).toContain('3'));
     press(host.querySelector('.doc')!, 'Enter', { metaKey: true });
-    await until(() => expect(requests(sent, 'PATCH', /order\/1$/)).toHaveLength(1));
-    expect(requests(sent, 'PATCH', /order\/1$/)[0].body.children.lines.update).toEqual([{ id: recorded.detail.body.children.lines[1].id, qty: '3.0000' }]);
+    await until(() => expect(requests(sent, 'PATCH', /order\/0000000000001$/)).toHaveLength(1));
+    expect(requests(sent, 'PATCH', /order\/0000000000001$/)[0].body.children.lines.update).toEqual([{ id: recorded.detail.body.children.lines[1].id, qty: '3.0000' }]);
   });
 
   it('still asks before opening another record with unsaved edits', async () => {
-    const { host, router } = start(orderRoutes(), '/app/order/1?tab=t-lines');
+    const { host, router } = start(orderRoutes(), '/app/order/0000000000001?tab=t-lines');
     await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
     const qty = cellOf(rowsIn(host)[0], 'qty');
     click(qty);
@@ -117,11 +117,11 @@ describe('generated record view', () => {
     await until(() => expect(text(document.querySelector('.modal h2'))).toBe('Discard unsaved changes?'));
     click(byText(document.body, '.modal-f button', 'Cancel'));
     expect(await leaving).toBe(false);
-    expect(location.pathname).toBe('/app/order/1');
+    expect(location.pathname).toBe('/app/order/0000000000001');
   });
 
   it('asks before leaving with unsaved lines, and stays when asked to keep editing', async () => {
-    const { host, router } = start(orderRoutes(), '/app/order/1?tab=t-lines');
+    const { host, router } = start(orderRoutes(), '/app/order/0000000000001?tab=t-lines');
     await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
     const qty = cellOf(rowsIn(host)[0], 'qty');
     click(qty);
@@ -133,7 +133,7 @@ describe('generated record view', () => {
     await until(() => expect(text(document.querySelector('.modal h2'))).toBe('Discard unsaved changes?'));
     click(byText(document.body, '.modal-f button', 'Cancel'));
     expect(await leaving).toBe(false);
-    expect(location.pathname).toBe('/app/order/1');
+    expect(location.pathname).toBe('/app/order/0000000000001');
     const again = router.go('docs', {});
     await until(() => expect(document.querySelector('.modal')).not.toBeNull());
     click(byText(document.body, '.modal-f button', 'Discard changes'));
@@ -142,7 +142,7 @@ describe('generated record view', () => {
   });
 
   it('runs an action with its scalar arguments through the action dialog', async () => {
-    const { host, sent } = start([...orderRoutes(), ['POST', /\/api\/order\/1\/actions\/close$/, recorded.action]], '/app/order/1');
+    const { host, sent } = start([...orderRoutes(), ['POST', /\/api\/order\/0000000000001\/actions\/close$/, recorded.action]], '/app/order/0000000000001');
     await until(() => expect(byText(host, '.doc-head button', 'Close')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Close'));
     const dialog = document.querySelector('.modal')!;
@@ -155,10 +155,10 @@ describe('generated record view', () => {
   });
 
   it('creates a record from a form with initial values from the address, then opens it', async () => {
-    const created = { status: 201, etag: '"new"', body: { id: 56, name: 'Acme Trading', rate: '0.00', credit_days: 30 } };
+    const created = { status: 201, etag: '"new"', body: { id: id(56), name: 'Acme Trading', rate: '0.00', credit_days: 30 } };
     const { host, sent } = start([...adminRoutes(),
       ['POST', /\/api\/customer$/, created],
-      ['GET', /\/api\/customer\/56$/, { ...created, status: 200 }],
+      ['GET', /\/api\/customer\/000000000001r$/, { ...created, status: 200 }],
     ], '/app/customer/new?name=Acme%20Trading');
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New customer'));
     const name = host.querySelector<HTMLInputElement>('.fld[data-field="name"] input')!;
@@ -166,7 +166,7 @@ describe('generated record view', () => {
     expect(host.querySelector('.doc-side')).toBeNull();
     typeInto(host.querySelector<HTMLInputElement>('.fld[data-field="credit_days"] input')!, '30');
     click(byText(host, '.ev-savebar button', 'Create customer'));
-    await until(() => expect(location.pathname).toBe('/app/customer/56'));
+    await until(() => expect(location.pathname).toBe('/app/customer/000000000001r'));
     expect(requests(sent, 'POST', /customer$/)[0].body).toMatchObject({ name: 'Acme Trading', credit_days: 30 });
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toContain('Acme Trading'));
     expect(lastToast()).toContain('Customer created');
@@ -198,8 +198,8 @@ describe('permission-driven screens', () => {
     ['GET', /\/api\/auth\/session$/, screen.viewer_session],
     ['GET', /\/api\/schema$/, screen.viewer_schema],
     ['GET', /\/api\/contact\?/, screen.viewer_contacts],
-    ['GET', /\/api\/contact\/1$/, screen.viewer_contact_detail],
-    ['GET', /\/api\/contact\/1\/attachments$/, screen.attachments],
+    ['GET', /\/api\/contact\/0000000000001$/, screen.viewer_contact_detail],
+    ['GET', /\/api\/contact\/0000000000001\/attachments$/, screen.attachments],
   ];
 
   it('a viewer sees only readable fields, no New, no actions, and nothing editable', async () => {
@@ -222,14 +222,14 @@ describe('permission-driven screens', () => {
   it('the admin of the same records gets every field, the action and an upload; a refused upload says why', async () => {
     let uploaded = false;
     const { host, sent } = start([...adminRoutes(),
-      ['GET', /\/api\/contact\/1$/, screen.contact_detail],
-      ['GET', /\/api\/contact\/1\/attachments$/, () => copy(uploaded ? screen.attachments : screen.attachments_empty)],
-      ['POST', /\/api\/contact\/1\/attachments$/, sent => {
+      ['GET', /\/api\/contact\/0000000000001$/, screen.contact_detail],
+      ['GET', /\/api\/contact\/0000000000001\/attachments$/, () => copy(uploaded ? screen.attachments : screen.attachments_empty)],
+      ['POST', /\/api\/contact\/0000000000001\/attachments$/, sent => {
         if (sent.body.name !== 'brief.txt') return copy(screen.attachment_refused);
         uploaded = true;
         return copy(screen.attachment_upload);
       }],
-    ], '/app/contact/1');
+    ], '/app/contact/0000000000001');
     await until(() => expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['name', 'email', 'phone', 'notes']));
     expect(host.querySelectorAll('.fs button.fval').length).toBe(4);
     expect(byText(host, '.doc-head button', 'Mark contacted')).not.toBeNull();
@@ -259,26 +259,26 @@ describe('printing a record', () => {
   const routes = (schema: any, filed: () => void = () => {}): Route[] => [
     ['GET', /\/api\/auth\/session$/, recorded.session],
     ['GET', /\/api\/schema$/, schema],
-    ['GET', /\/api\/contact\/1$/, screen.contact_detail],
-    ['GET', /\/api\/contact\/1\/attachments$/, screen.attachments_empty],
-    ['POST', /\/api\/contact\/1\/prints\/LabelPrint\/file$/, () => { filed(); return { status: 201, body: { id: 7, name: 'Mariam Haddad.pdf', size: 15000 }, headers: {} } as any; }],
+    ['GET', /\/api\/contact\/0000000000001$/, screen.contact_detail],
+    ['GET', /\/api\/contact\/0000000000001\/attachments$/, screen.attachments_empty],
+    ['POST', /\/api\/contact\/0000000000001\/prints\/LabelPrint\/file$/, () => { filed(); return { status: 201, body: { id: 7, name: 'Mariam Haddad.pdf', size: 15000 }, headers: {} } as any; }],
   ];
 
   it('opens the server PDF of the chosen design, with Download and File a copy', async () => {
     let filed = 0;
-    const { host, sent } = start(routes(printing(), () => { filed += 1; }), '/app/contact/1');
+    const { host, sent } = start(routes(printing(), () => { filed += 1; }), '/app/contact/0000000000001');
     await until(() => expect(byText(host, '.doc-head button', 'Print')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Print'));
     const drawer = () => document.querySelector<HTMLElement>('.drawer.ev-print')!;
     await until(() => expect(drawer()).not.toBeNull());
     const frame = drawer().querySelector('iframe')!;
-    expect(frame.getAttribute('src')).toBe('/api/contact/1/prints/ContactPrint.pdf');
-    expect(drawer().querySelector('a.btn.primary')!.getAttribute('href')).toBe('/api/contact/1/prints/ContactPrint.pdf?download=1');
+    expect(frame.getAttribute('src')).toBe('/api/contact/0000000000001/prints/ContactPrint.pdf');
+    expect(drawer().querySelector('a.btn.primary')!.getAttribute('href')).toBe('/api/contact/0000000000001/prints/ContactPrint.pdf?download=1');
     const select = drawer().querySelector('select')!;
     expect([...select.options].map(option => option.textContent)).toEqual(['Contact sheet', 'Label']);
     select.value = 'LabelPrint';
     select.dispatchEvent(new Event('change', { bubbles: true }));
-    await until(() => expect(frame.getAttribute('src')).toBe('/api/contact/1/prints/LabelPrint.pdf'));
+    await until(() => expect(frame.getAttribute('src')).toBe('/api/contact/0000000000001/prints/LabelPrint.pdf'));
     click(byText(drawer(), 'button', 'File a copy'));
     await until(() => expect(filed).toBe(1));
     expect(requests(sent, 'POST', /prints\/LabelPrint\/file$/)[0].headers['x-evlet-request']).toBe('1');
@@ -289,7 +289,7 @@ describe('printing a record', () => {
 
   it('shows no Print without designs for the role or without the print extra', async () => {
     for (const schema of [printing(false), printing(true, [])]) {
-      const { host } = start(routes(schema), '/app/contact/1');
+      const { host } = start(routes(schema), '/app/contact/0000000000001');
       await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('Mariam Haddad'));
       expect(byText(host, '.doc-head button', 'Print')).toBeNull();
       stopAll();

@@ -6,6 +6,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Breaking: record ids are text.** New records get a 63-bit, time-ordered id (milliseconds since
+  01-01-2026 and 21 random bits), stored as before in the `INTEGER` primary key. Outside the
+  database an id is always 13 lowercase Crockford base32 characters, such as `01hc1sd9vc1ye`: JSON
+  bodies, Link values, `{"model", "id"}` References, row ids, the journal, events, Slips' `source`,
+  Eva and MCP tool arguments, and URLs (`/api/invoice/01hc1sd9vc1ye`, `/app/invoice/01hc1sd9vc1ye`).
+  Ids are never JSON numbers, because a browser cannot hold 63 bits in a number. Existing rows keep
+  their ids (42 shows as `000000000001a`); nothing is rewritten.
+  What to change: clients read ids as strings and build URLs from them. A decimal id in an API path
+  is now a 404 (the browser turns an old `/app/invoice/42` bookmark into the text id). Writes still
+  take a JSON integer for a Link or a row id. In Python, `record.id` and Link values are
+  `RecordId` (a new root export), an `int` whose `str()` is the text id; `Database.get` takes either
+  form, and services and actions may take `RecordId` arguments
+  ([docs/model-engine.md](docs/model-engine.md#record-ids)).
 - **Print designs.** `PrintDesign` (a new root export) prints a record or a report to PDF through
   WeasyPrint: blocks in a header, main, footnote, footer and watermark region, Jinja templates in a
   sandbox with every value escaped, HTML for any single block, page number formats, and a footnote

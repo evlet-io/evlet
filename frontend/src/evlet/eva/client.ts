@@ -10,7 +10,7 @@ export interface EvaStatus {
   models: string[]; model: string; choose_model: boolean; allowance: Allowance; tasks: boolean; pending_approvals: number;
   files: { max_size: number; max_files: number; kinds: string[] };
 }
-export interface Conversation { id: number; title: string; created_at: number; updated_at: number; archived: boolean; task_id: number | null; context: { model: string; id: number } | null }
+export interface Conversation { id: number; title: string; created_at: number; updated_at: number; archived: boolean; task_id: number | null; context: { model: string; id: string } | null }
 export interface FileRef { id: number; name: string; size: number; kind: 'upload' | 'evlet' | 'generated'; created_at?: number }
 export interface Message { id: number; run_id: number | null; role: 'user' | 'assistant'; content: string; created_at: number; files: FileRef[] }
 export interface Approval {
@@ -27,7 +27,7 @@ export interface Run { id: number; status: 'running' | 'awaiting_approval' | 'co
   started_at: number; finished_at: number | null; activities: Activity[] }
 export interface Stored { conversation: Conversation; messages: Message[]; runs: Run[]; files: FileRef[]; usage: { tokens: number; cost: string } }
 export interface RunEvent { id: number; type: string; at: number; [key: string]: unknown }
-export interface Library { records: Array<{ model: string; record_id: number; file_id: number; name: string; size: number }>; chats: Array<{ id: number; name: string; size: number; conversation: string | null }> }
+export interface Library { records: Array<{ model: string; record_id: string; file_id: number; name: string; size: number }>; chats: Array<{ id: number; name: string; size: number; conversation: string | null }> }
 export interface Task {
   id: number; name: string; instructions: string; cron: string; timezone: string; active: boolean; allow_changes: boolean; created_at: number;
   /** Paused by an administrator in Controls, under Jobs: only they can resume it. */
@@ -52,7 +52,7 @@ export class Eva {
   conversations(query: { q?: string; archived?: boolean } = {}) {
     return this.call<{ items: Conversation[]; archived: number; next: number | null }>('GET', '/api/_eva/conversations', undefined, { q: query.q || undefined, archived: query.archived ? '1' : undefined });
   }
-  create(body: { title?: string; context?: { model: string; id: number } } = {}) { return this.call<Conversation>('POST', '/api/_eva/conversations', body); }
+  create(body: { title?: string; context?: { model: string; id: string } } = {}) { return this.call<Conversation>('POST', '/api/_eva/conversations', body); }
   open(id: number) { return this.call<Stored>('GET', `/api/_eva/conversations/${id}`); }
   change(id: number, body: { title?: string; archived?: boolean }) { return this.call<Conversation>('PATCH', `/api/_eva/conversations/${id}`, body); }
   remove(id: number) { return this.call<null>('DELETE', `/api/_eva/conversations/${id}`); }
@@ -65,7 +65,7 @@ export class Eva {
   approvals() { return this.call<{ items: Approval[] }>('GET', '/api/_tools/approvals'); }
   upload(name: string, content: string) { return this.call<FileRef>('POST', '/api/_eva/files', { name, content }); }
   library(q: string) { return this.call<Library>('GET', '/api/_eva/library', undefined, { q }); }
-  importFile(model: string, id: number, fileId: number) { return this.call<FileRef>('POST', '/api/_eva/files/import', { model, id, file_id: fileId }); }
+  importFile(model: string, id: string, fileId: number) { return this.call<FileRef>('POST', '/api/_eva/files/import', { model, id, file_id: fileId }); }
   fileUrl(id: number) { return this.api.url(`/api/_eva/files/${id}`); }
   tasks() { return this.call<{ items: Task[]; limit: number; jobs: boolean }>('GET', '/api/_eva/tasks'); }
   task(id: number) { return this.call<Task>('GET', `/api/_eva/tasks/${id}`); }

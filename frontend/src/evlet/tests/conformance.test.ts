@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import fixtures from './finite-fixtures.json';
 import { createClient } from '../api';
+import { legacyRecordId } from '../ids';
 import { RecordStore, type Row } from '../model/record';
 import type { AppSchema, ModelSchema } from '../model/schema';
 
@@ -28,21 +29,24 @@ function schemaFor(plan: any): AppSchema {
   return { version: 1, ui_version: 1, models };
 }
 
+// The scenarios name records by their legacy integer ids; the browser reads them by text id.
+const textId = (id: number | string) => typeof id === 'number' ? legacyRecordId(String(id))! : id;
+
 // Lookups wait until the scenario supplies them, like a slow server.
 function lookupServer() {
   const waiting = new Map<string, (values: Record<string, unknown>) => void>();
   const supplied = new Map<string, Record<string, unknown>>();
   const fetch = async (input: RequestInfo | URL) => {
-    const [, model, id] = /\/api\/(\w+)\/(\d+)$/.exec(String(input))!;
+    const [, model, id] = /\/api\/(\w+)\/([0-9a-z]{13})$/.exec(String(input))!;
     const key = `${model}:${id}`;
     const values = supplied.get(key) ?? await new Promise<Record<string, unknown>>(resolve => waiting.set(key, resolve));
-    return new Response(JSON.stringify({ id: Number(id), ...values }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ id, ...values }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   return {
     fetch: fetch as typeof globalThis.fetch,
-    supplied: (model: string, id: number) => supplied.has(`${model}:${id}`),
+    supplied: (model: string, id: number) => supplied.has(`${model}:${textId(id)}`),
     supply(model: string, id: number, values: Record<string, unknown>) {
-      const key = `${model}:${id}`;
+      const key = `${model}:${textId(id)}`;
       supplied.set(key, values);
       waiting.get(key)?.(values);
       waiting.delete(key);
@@ -91,10 +95,10 @@ describe('record store against the shared finite-v1 scenarios', () => {
       const data = structuredClone(scenario.data);
       const backend = lookupServer();
       // A saved document's detail is the scenario data; every other read is a lookup.
-      const fetch = (async (input: RequestInfo | URL) => String(input) === `/api/${model}/${data.id}`
+      const fetch = (async (input: RequestInfo | URL) => data.id && String(input) === `/api/${model}/${textId(data.id)}`
         ? new Response(JSON.stringify(data), { status: 200 }) : backend.fetch(input)) as typeof globalThis.fetch;
       const store = new RecordStore({ api: createClient({ fetch }), schema: schemaFor(plan), model });
-      if (data.id) await store.open(data.id); else await store.create(data);
+      if (data.id) await store.open(textId(data.id)); else await store.create(data);
       const [initial, ...steps] = scenario.steps;
       await replay(store, backend, initial, steps);
     });
