@@ -597,7 +597,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   };
   // Sections people open and close (evlet.Section), remembered per user and model by title; the app's
   // collapsed value is where they start. In the narrow side panel every section can close.
-  const folds = new Folds(prefs.cell<Record<string, boolean>>(`form.${name}.open`, {}), isNew);
+  const folds = new Folds(prefs.formSections(name), isNew);
   const foldOf = (section: { collapsible?: boolean; collapsed?: boolean | 'empty' }, index: number) =>
     ({ collapsible: Boolean(section.collapsible || panel), collapsed: section.collapsible ? section.collapsed ?? false : false, index });
   const foldable = Boolean(panel) || sections(model).some(section => section.collapsible);

@@ -60,6 +60,20 @@ export class Prefs {
     });
   }
 
+  /** Open and closed form sections of a model, by section title (true is open), for the record page and
+   * the side panel alike. Sections closed in a side panel before this key (`panel.<model>.closed`) carry over once. */
+  formSections(model: string): Cell<Record<string, boolean>> {
+    const name = `form.${model}.open`, fresh = !this.cells.has(name);
+    const value = this.cell<Record<string, boolean>>(name, {});
+    const old = fresh ? this.read<unknown>(`panel.${model}.closed`, null) : null;
+    if (Array.isArray(old)) {
+      const carried = Object.fromEntries(old.filter((title): title is string => typeof title === 'string').map(title => [title, false]));
+      value.set({ ...carried, ...value.peek() });
+      try { this.storage?.removeItem(this.key(`panel.${model}.closed`)); } catch { /* blocked */ }
+    }
+    return value;
+  }
+
   get collapsed() { return this.cell('collapsed', false); }
   get density() { return this.cell<Density>('density', 'comfortable'); }
   /** This session's recent searches (memory only). */

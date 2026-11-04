@@ -118,6 +118,18 @@ describe('FoldSection', () => {
     prefs.dispose(); again.dispose();
   });
 
+  it('carries sections closed in the side panel under the old key over once, for page and panel alike', () => {
+    const storage = new Map<string, string>([['evlet.sam.panel.Site.closed', JSON.stringify(['Place', 'Notes'])], ['evlet.sam.form.Site.open', JSON.stringify({ Notes: true })]]);
+    const store = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) } as unknown as Storage;
+    const prefs = new Prefs('sam', store);
+    // A choice already saved under the new key wins over the old panel list.
+    expect(prefs.formSections('Site').peek()).toEqual({ Place: false, Notes: true });
+    expect(storage.has('evlet.sam.panel.Site.closed')).toBe(false);
+    expect(JSON.parse(storage.get('evlet.sam.form.Site.open')!)).toEqual({ Place: false, Notes: true });
+    expect(prefs.formSections('Site')).toBe(prefs.formSections('Site'));
+    prefs.dispose();
+  });
+
   it('revealField opens the section that holds a field, scrolls to it and focuses it', () => {
     const choices = saved();
     const host = render(() => section(new Folds(choices, false, false), fields(), { collapsed: true }));

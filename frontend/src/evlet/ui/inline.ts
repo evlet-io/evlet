@@ -176,8 +176,6 @@ export function KeyValueList(items: Array<FieldLike | { label: string; field: Fi
 
 /** A titled group of fields in two columns; long text spans both. */
 export function FormSection(props: { title: string; note?: string; fields: FieldLike[]; save?: Save; links?: LinkSource | null; extra?: Child;
-  /** A heading that opens and closes the section (a narrow side panel). */
-  collapsible?: { collapsed: () => boolean; toggle: () => void };
   /** A collapsible form section (FoldSection): its form's Folds, how it starts and its place in the form. */
   fold?: { folds: Folds; collapsible: boolean; collapsed: FoldStart; index: number } }): HTMLElement {
   const cells = props.fields.map(field => {
@@ -189,14 +187,6 @@ export function FormSection(props: { title: string; note?: string; fields: Field
   if (props.fold) {
     return FoldSection({ title: props.title, note: props.note, fields: props.fields, folds: props.fold.folds, collapsible: props.fold.collapsible,
       collapsed: props.fold.collapsed, index: props.fold.index, body: [cells.length ? html`<div class="fs-g">${cells}</div>` : null, props.extra ?? null] });
-  }
-  const fold = props.collapsible;
-  if (fold) {
-    const id = uid('fs');
-    return html`<section class="fs fs-fold" class:closed=${fold.collapsed} aria-label=${props.title}><div class="fs-h"><h3><button type="button" class="fs-toggle"
-      aria-expanded=${() => String(!fold.collapsed())} aria-controls=${id} on:click=${fold.toggle}>${Icon('chevron-down', { size: 'xs', className: 'fs-chev' })}${props.title}</button></h3>
-      ${props.note ? html`<p>${props.note}</p>` : null}</div>
-      <div id=${id} hidden=${fold.collapsed}>${cells.length ? html`<div class="fs-g">${cells}</div>` : null}${props.extra ?? null}</div></section>` as HTMLElement;
   }
   return html`<section class="fs" aria-label=${props.title}><div class="fs-h"><h3>${props.title}</h3>${props.note ? html`<p>${props.note}</p>` : null}</div>
     ${cells.length ? html`<div class="fs-g">${cells}</div>` : null}${props.extra ?? null}</section>` as HTMLElement;

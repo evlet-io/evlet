@@ -141,8 +141,9 @@ fields are filled ("3 of 5 filled"), or "Required missing" when a required field
 a badge with the number of fields that have errors.
 
 - **Starting state.** The app's `collapsed` value, unless the person chose: open and closed are
-  remembered per user and model in their browser preferences, by section title. Reset layout in
-  the record's More menu forgets those choices.
+  remembered per user and model in their browser preferences, by section title, and the record page
+  and the side panel share them. Sections closed in a side panel before this release carry over once.
+  Reset layout in the record's More menu forgets those choices.
 - **Phones.** Below 760 px, collapsible sections after the first start closed unless the person's
   saved choice says otherwise. This is the default behaviour.
 - **Errors and focus.** A field error opens its section. A refused save opens every section with an
