@@ -16,6 +16,8 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 - Generated model screens: lists, boards for models with a State, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
   files.
+- Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
+  `/reports/<name>`, listed in the sidebar.
 - Slips ([slips.md](slips.md)): forms presented from a record, the New menu, an action or browser
   code, checked on the server and handed in to a handler or turned into a record.
 - Printing ([printing.md](printing.md)): a Print button on record views for roles that may print the
@@ -36,7 +38,7 @@ interface does not show them (owner decision 3 in [handoff-plan.md](internal/han
 | Python pages: `PageView`, `ListView`, `FormView`, layouts, `ViewRegistry` extensions and `CustomComponent` | Compiled and served by `GET /api/ui` and `GET /api/ui/resolve`. A page route opens Docs in the browser. Use generated screens and `Meta` options instead |
 | The Playground's Projects demo and Layouts page (`examples/playground/ui.py`) | Registered as Python pages, so not rendered |
 | Native TS/JS panels (`evlet/native.py`, `views/` modules in an app) | Built, hashed and served from `/assets/apps/...` for signed-in users as before. No screen mounts them |
-| Reports and the older record-bound forms (`dialog: true` actions) | Run through their existing routes. `/reports/<name>` shows a notice. Use [slips](slips.md) for forms |
+| The older record-bound forms (`dialog: true` actions) | Run through their existing routes. Use [slips](slips.md) for forms |
 | Account management | `/api/auth/users` routes are unchanged. `/settings/accounts` shows a notice |
 
 ## Build and run
@@ -89,7 +91,7 @@ Docs off it starts on the first list the role can open and hides the Docs links.
 | `/settings/<page>`, `/settings/app/<app>` | Settings ([settings.md](settings.md)); `/settings` opens the last page |
 | `/settings/accounts` | Redirects to `/controls/users` |
 | `/eva`, `/eva/<chat>`, `/eva/tasks` | Eva's chat and scheduled tasks ([eva.md](eva.md)). Served only when config.py turns Eva on; the page asks `/api/_eva` and shows nothing of Eva to people without it |
-| `/reports/<name>` | Notice: reports are not shown in this interface |
+| `/reports`, `/reports/<name>` | The reports this role may run, and one report's view ([reports.md](reports.md)) |
 | Registered Python page routes | Served, then open Docs |
 
 The development-only `/ui` and `/m/<model>` paths of the earlier preview are gone.

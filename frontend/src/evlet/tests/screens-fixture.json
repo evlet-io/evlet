@@ -935,6 +935,579 @@
   "etag": "\"3a5d74f8096346c8049a1e882340893750ae3c1373e58b1c32f5d8ec8cab2aff\"",
   "status": 200
  },
+ "report_evaluate": {
+  "body": {
+   "errors": {},
+   "revision": 1,
+   "rules": {},
+   "states": {},
+   "values": {
+    "_source": {},
+    "_sources": {},
+    "children": {},
+    "min_days": 20,
+    "search": ""
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
+ "report_evaluate_invalid": {
+  "body": {
+   "errors": {
+    "min_days": "Expected an integer"
+   },
+   "revision": 1,
+   "rules": {},
+   "states": {},
+   "values": {
+    "_source": {},
+    "_sources": {},
+    "children": {},
+    "min_days": "many",
+    "search": ""
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
+ "report_grouped_run": {
+  "body": {
+   "filters": {
+    "_source": {},
+    "_sources": {},
+    "children": {},
+    "min_days": 20,
+    "search": ""
+   },
+   "groups": {
+    "items": [
+     {
+      "count": 2,
+      "totals": {
+       "rate": "1560.00"
+      },
+      "value": 30
+     },
+     {
+      "count": 1,
+      "totals": {
+       "rate": "480.50"
+      },
+      "value": 45
+     }
+    ],
+    "scope": "all"
+   },
+   "limit": 50,
+   "offset": 0,
+   "revision": 1,
+   "rows": [
+    {
+     "credit_days": 30,
+     "id": "0000000000001",
+     "rate": "1250.00"
+    },
+    {
+     "credit_days": 30,
+     "id": "0000000000004",
+     "rate": "310.00"
+    },
+    {
+     "credit_days": 45,
+     "id": "0000000000002",
+     "rate": "480.50"
+    }
+   ],
+   "sort": null,
+   "total": 3,
+   "totals": {
+    "scope": "page",
+    "values": {
+     "rate": "2040.50"
+    }
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
+ "report_run": {
+  "body": {
+   "filters": {
+    "_source": {},
+    "_sources": {},
+    "children": {},
+    "min_days": 20,
+    "search": ""
+   },
+   "limit": 50,
+   "offset": 0,
+   "revision": 1,
+   "rows": [
+    {
+     "credit_days": 45,
+     "id": "0000000000002",
+     "rate": "480.50",
+     "title": "Al Noor Trading"
+    },
+    {
+     "credit_days": 30,
+     "id": "0000000000001",
+     "rate": "1250.00",
+     "title": "Corniche Foods"
+    },
+    {
+     "credit_days": 30,
+     "id": "0000000000004",
+     "rate": "310.00",
+     "title": "Oasis Water"
+    }
+   ],
+   "sort": null,
+   "total": 3,
+   "totals": {
+    "scope": "all",
+    "values": {
+     "rate": "2040.50"
+    }
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
+ "report_run_sorted": {
+  "body": {
+   "filters": {
+    "_source": {},
+    "_sources": {},
+    "children": {},
+    "min_days": 20,
+    "search": ""
+   },
+   "limit": 50,
+   "offset": 0,
+   "revision": 2,
+   "rows": [
+    {
+     "credit_days": 30,
+     "id": "0000000000001",
+     "rate": "1250.00",
+     "title": "Corniche Foods"
+    },
+    {
+     "credit_days": 45,
+     "id": "0000000000002",
+     "rate": "480.50",
+     "title": "Al Noor Trading"
+    },
+    {
+     "credit_days": 30,
+     "id": "0000000000004",
+     "rate": "310.00",
+     "title": "Oasis Water"
+    }
+   ],
+   "sort": "-rate",
+   "total": 3,
+   "totals": {
+    "scope": "all",
+    "values": {
+     "rate": "2040.50"
+    }
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
+ "report_schema": {
+  "body": {
+   "models": [
+    {
+     "actions": [],
+     "attachments": false,
+     "behavior": {
+      "credit_days": {},
+      "name": {},
+      "rate": {},
+      "title": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "customer",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Customer name",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Rate",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "rate",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "currency",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": 30,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Credit days",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "credit_days",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "integer",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      }
+     ],
+     "label": "Customer",
+     "layout": [
+      {
+       "fields": [
+        "title",
+        "rate",
+        "credit_days"
+       ],
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "title",
+      "rate",
+      "credit_days"
+     ],
+     "name": "customer",
+     "open_in": "page",
+     "order": [
+      "title",
+      "rate",
+      "credit_days",
+      "name"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Customers",
+     "resource": "customer",
+     "search_fields": [
+      "title",
+      "name"
+     ],
+     "sources": {},
+     "title_field": "title"
+    }
+   ],
+   "reports": [
+    {
+     "autorun": false,
+     "behavior": {
+      "min_days": {},
+      "search": {}
+     },
+     "chart": {
+      "label": null,
+      "type": "bar",
+      "x": "title",
+      "y": [
+       "rate"
+      ]
+     },
+     "children": [],
+     "columns": [
+      {
+       "label": "Customer",
+       "link": "customer",
+       "name": "id",
+       "total": false,
+       "type": "link",
+       "unit": null
+      },
+      {
+       "label": null,
+       "link": null,
+       "name": "title",
+       "total": false,
+       "type": "text",
+       "unit": null
+      },
+      {
+       "label": "Credit days",
+       "link": null,
+       "name": "credit_days",
+       "total": false,
+       "type": "integer",
+       "unit": null
+      },
+      {
+       "label": null,
+       "link": null,
+       "name": "rate",
+       "total": true,
+       "type": "currency",
+       "unit": "AED"
+      }
+     ],
+     "export": true,
+     "fields": [
+      {
+       "default": 0,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Credit days from",
+       "maximum": null,
+       "minimum": null,
+       "name": "min_days",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "integer",
+       "unique": false
+      },
+      {
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Name contains",
+       "max_length": 255,
+       "name": "search",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "text",
+       "unique": false
+      }
+     ],
+     "group": "Sales",
+     "group_by": null,
+     "label": "Customer rates",
+     "model": "customer",
+     "name": "CustomerRates",
+     "sortable": [
+      "title",
+      "rate"
+     ],
+     "source_fields": [],
+     "sources": {}
+    },
+    {
+     "autorun": false,
+     "behavior": {
+      "min_days": {},
+      "search": {}
+     },
+     "chart": null,
+     "children": [],
+     "columns": [
+      {
+       "label": "Credit days",
+       "link": null,
+       "name": "credit_days",
+       "total": false,
+       "type": "integer",
+       "unit": null
+      },
+      {
+       "label": "Customer",
+       "link": "customer",
+       "name": "id",
+       "total": false,
+       "type": "link",
+       "unit": null
+      },
+      {
+       "label": null,
+       "link": null,
+       "name": "rate",
+       "total": true,
+       "type": "currency",
+       "unit": "AED"
+      }
+     ],
+     "export": true,
+     "fields": [
+      {
+       "default": 0,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Credit days from",
+       "maximum": null,
+       "minimum": null,
+       "name": "min_days",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "integer",
+       "unique": false
+      },
+      {
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Name contains",
+       "max_length": 255,
+       "name": "search",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "text",
+       "unique": false
+      }
+     ],
+     "group": "Sales",
+     "group_by": "credit_days",
+     "label": "Rates by terms",
+     "model": "customer",
+     "name": "RatesByTerms",
+     "sortable": [
+      "rate"
+     ],
+     "source_fields": [],
+     "sources": {}
+    }
+   ],
+   "ui_version": 1,
+   "version": 1
+  },
+  "etag": null,
+  "status": 200
+ },
+ "report_session": {
+  "body": {
+   "application": {
+    "docs": "/docs",
+    "name": "Evlet",
+    "playground": false
+   },
+   "csrf": "fixture-csrf-token",
+   "user": {
+    "id": 1,
+    "role": "admin",
+    "username": "owner"
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
  "schema": {
   "body": {
    "models": [

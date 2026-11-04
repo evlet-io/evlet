@@ -100,7 +100,32 @@ export interface PrintSchema { name: string; title: string; default: boolean }
 export interface SlipSchema { name: string; label: string; hand_in_label: string }
 
 export interface AppSchema { version: number; ui_version: number; models: ModelSchema[]; /** Slips for the New menu. */ slips?: SlipSchema[];
+  /** Reports the role may run (evlet.Report), with their filters, columns and view settings. */ reports?: ReportSchema[];
   /** Present when the app has print designs; available is false without the server's print extra. */ printing?: { available: boolean } }
+
+/** A report column: its type, and for a link column the model its values open. */
+export interface ReportColumn { name: string; type: 'text' | 'integer' | 'decimal' | 'currency' | 'date' | 'boolean' | 'link'; label: string | null;
+  link: string | null; total: boolean; unit: string | null }
+
+/** A report (GET /api/_reports or the schema's reports): its filters are the fields of a transient form. */
+export interface ReportSchema {
+  name: string;
+  label: string;
+  fields: Array<FieldSchema & { calculated?: boolean }>;
+  autorun: boolean;
+  columns: ReportColumn[];
+  /** The sidebar heading it is listed under; empty lists it under Reports alone. */
+  group: string;
+  /** The model whose list offers it. */
+  model: string | null;
+  sortable: string[];
+  export: boolean;
+  chart: { type: 'bar' | 'line'; x: string; y: string[]; label: string | null } | null;
+  /** A column whose rows are kept together, with a heading and a subtotal for each group. */
+  group_by?: string | null;
+  /** Print designs the role may print it with (Print Design). */
+  prints?: Array<{ name: string; title: string; default: boolean }>;
+}
 
 /** Look up models and fields by name. */
 export class SchemaIndex {
