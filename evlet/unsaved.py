@@ -159,9 +159,7 @@ class Unsaved:
         if path == '/api/_unsaved':
             if method != 'GET':
                 raise AccessError(405, 'Method not allowed')
-            with self.database._connection() as connection:
-                count = connection.execute('SELECT count(*) FROM evlet_unsaved WHERE user_id=?', (user.id,)).fetchone()[0]
-            return 200, {'limits': self.limits(), 'count': count, 'enabled': self.enabled(user)}, []
+            return 200, self.info(user), []
         parts = path.split('/')
         if len(parts) != 5 or method not in ('GET', 'PUT', 'DELETE'):
             raise AccessError(404, 'Route not found')
@@ -179,6 +177,12 @@ class Unsaved:
         if method == 'PUT':
             return self.put(user, model, name, record_id, body)
         return self.get(user, model, name, record_id)
+
+    def info(self, user):
+        """The person's limits, entry count and setting; /api/_settings/me carries it too."""
+        with self.database._connection() as connection:
+            count = connection.execute('SELECT count(*) FROM evlet_unsaved WHERE user_id=?', (user.id,)).fetchone()[0]
+        return {'limits': self.limits(), 'count': int(count), 'enabled': self.enabled(user)}
 
     def enabled(self, user):
         return self.business.settings.core(user.id).get('keep_unsaved', True) is not False

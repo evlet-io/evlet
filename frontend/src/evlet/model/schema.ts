@@ -81,6 +81,8 @@ export interface ModelSchema {
   order_by?: string;
   /** How the list opens a record: the full page (default) or a side panel beside the list. */
   open_in?: 'page' | 'panel';
+  /** Meta.autosave: false keeps the "Discard your changes?" prompt instead of keeping unsaved changes. */
+  autosave?: boolean;
   children?: ChildSchema[];
   actions?: ActionSchema[];
   permissions?: { create: boolean; update: boolean; delete: boolean };

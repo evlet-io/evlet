@@ -160,7 +160,7 @@ Appearance ("Keep unsaved changes when I leave a record"), which also deletes wh
 
 | Route | What it does |
 |---|---|
-| `GET /api/_unsaved` | The person's limits, entry count and whether the setting is on |
+| `GET /api/_unsaved` | The person's limits, entry count and whether the setting is on (also `unsaved` in `GET /api/_settings/me`) |
 | `PUT /api/_unsaved/<model>/<id>` | `{"changes", "base_revision"}`: keep the edits; answers `{saved_at, size, dropped}` |
 | `GET /api/_unsaved/<model>/<id>` | `{entry, dropped}`: the person's own entry with `stale` when the record moved on |
 | `DELETE /api/_unsaved/<model>/<id>` | Discard the person's own entry |

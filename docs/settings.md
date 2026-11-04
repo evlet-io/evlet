@@ -223,7 +223,7 @@ sign-in, appearance and the other pages answer 404.
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/_settings/me` | Profile, preferences, notifications, security (two-step state, sessions, active `api_keys`), pages, apps with their labels, the last page, whether Controls opens |
+| `GET /api/_settings/me` | Profile, preferences, notifications, `unsaved` (limits and how many unsaved changes the person has kept; desk only), security (two-step state, sessions, active `api_keys`), pages, apps with their labels, the last page, whether Controls opens |
 | `PATCH /api/_settings/me/profile` | `full_name`, `short_name`, `title`, `phone`, `signature` |
 | `PATCH /api/_settings/me/prefs` | Appearance and region keys, `keep_unsaved`, `notify.<event>` as `[in Evlet, email]`, `quiet` as `{on, from, to}`, `last_page` |
 | `GET/POST/DELETE /api/_settings/me/photo` | `{"type", "data"}` with base64 data |

@@ -1,7 +1,7 @@
 # Unsaved changes: keep edits on leave, never write the record
 
-Status: in progress. Backend first, then the record form. This note follows the owner's design
-and records how Evlet implements it.
+Status: implemented (server store, Controls, settings, the record form). This note follows the
+owner's design and records how Evlet implements it.
 
 ## Rule
 
@@ -53,7 +53,7 @@ evlet_unsaved(user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASC
 
 | Route | What it does |
 |---|---|
-| `GET /api/_unsaved` | The caller's own limits and entry count: `{limits, count}`. The browser store reads its limits here |
+| `GET /api/_unsaved` | The caller's own limits, entry count and setting: `{limits, count, enabled}`. `GET /api/_settings/me` carries the same as `unsaved`, which is what the app reads at sign-in |
 | `PUT /api/_unsaved/<model>/<id>` | Upsert `{"changes", "base_revision"}`. Idempotent. Answers `{saved_at, size, dropped}` |
 | `GET /api/_unsaved/<model>/<id>` | The caller's own entry: `{entry: {changes, base_revision, saved_at, size, stale}, dropped}`, or `{entry: null}` |
 | `DELETE /api/_unsaved/<model>/<id>` | Discard the caller's own entry. Answers 204 even when there was none |
@@ -71,9 +71,8 @@ evlet_unsaved(user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASC
   caller cannot read it, the entry is deleted and the answer is 404, as for the record. `stale` is
   true when the record's revision moved past `base_revision`.
 * Save does not need the browser to call DELETE: a successful record save (PATCH, or a document
-  write) deletes the saver's entry in the same transaction. The browser also sends DELETE after a
-  save, which is harmless. Deleting a record deletes every user's entry for it, in the delete's
-  transaction.
+  write) deletes the saver's entry in the same transaction. The form's Discard sends DELETE.
+  Deleting a record deletes every user's entry for it, in the delete's transaction.
 * Turning the personal setting off deletes the person's entries.
 
 ### Privacy
@@ -132,6 +131,23 @@ Opening a record with an entry shows a bar above the form: "You have unsaved cha
 still needed. When the entry is stale, fields where both the stored edit and the record changed
 since `base` are listed with both values; the person keeps theirs or the saved value per field,
 or discards everything.
+
+## In the browser
+
+* `model/unsaved.ts`: `capture` (a saved record: dirty writable fields with `base`, changed rows by
+  id, added rows with their keys, removed row ids), `captureNew` (fields the person set and every
+  row), `conflicts` and `apply` (sets each value through the field, so locks and rules still hold,
+  and counts what no longer fits). Row order is not kept.
+* `app/unsaved.ts`: the browser store (`LocalUnsaved`), `keepChanges` and `keepWhenHidden`. The
+  record page asks the router as before; with autosave on the answer is to keep the edits and
+  toast. When they can't be kept (too large, the server refused or did not answer in 5 seconds,
+  no browser storage), the old "Discard unsaved changes?" prompt comes back with the reason.
+* `app/unsaved-bar.ts`: the restore bar and the conflict dialog. A record asks the server for its
+  entry only when the person has any (`unsaved.count` from `/api/_settings/me`, raised when this
+  tab keeps one), so a person with none sends no extra request.
+* Controls, Jobs: the Unsaved changes section (`controls/unsaved.ts`).
+* The relative time is a small helper in the bar; it can move to a shared `RelativeTime`
+  component when one exists.
 
 ## Owner decisions open
 

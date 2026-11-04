@@ -382,6 +382,8 @@ class Settings:
             'profile': {key: row[key] for key in ('full_name', 'short_name', 'title', 'phone', 'email', 'signature')} | {'photo': row['photo_file'] is not None},
             'prefs': {key: prefs.get(key, value) for key, value in APPEARANCE.items()},
             'notifications': {'events': events, 'quiet': prefs.get('quiet', QUIET)},
+            # Unsaved changes kept on leave (evlet.unsaved): limits and how many this person has.
+            **({} if portal else {'unsaved': self.business.unsaved.info(user)}),
             'security': {
                 'password_min': self.business.auth.password_min,
                 'two_step': {'on': row['two_step_secret'] is not None, 'since': row['two_step_since'], 'agent': row['two_step_agent'], 'codes': codes,

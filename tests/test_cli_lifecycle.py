@@ -280,7 +280,7 @@ def test_schedule_registered_without_running_jobs(project):
     install(project, 'acme', trust=True)
     app = runtime(project)
     with app.database.transaction() as tx:
-        assert tx.connection.execute('SELECT COUNT(*) FROM evlet_schedules').fetchone()[0] == 1
+        assert tx.connection.execute("SELECT COUNT(*) FROM evlet_schedules WHERE name<>'evlet_unsaved_purge'").fetchone()[0] == 1
         assert tx.connection.execute('SELECT COUNT(*) FROM evlet_jobs').fetchone()[0] == 0
 
 

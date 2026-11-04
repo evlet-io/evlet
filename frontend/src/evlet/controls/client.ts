@@ -257,6 +257,8 @@ export class ControlsClient extends ApiClient implements KeysApi {
   async jobs() { return (await this.request<Jobs>('GET', '/api/_controls/jobs')).data; }
   async setSchedule(name: string, active: boolean) { return (await this.request<Jobs>('POST', `/api/_controls/jobs/schedules/${name}`, { body: { active } })).data; }
   async runSchedule(name: string) { return (await this.request<Jobs & { job: number }>('POST', `/api/_controls/jobs/schedules/${name}/run`, { body: {} })).data; }
+  async unsaved() { return (await this.request<UnsavedSummary>('GET', '/api/_controls/unsaved')).data; }
+  async clearUnsaved(days: number) { return (await this.request<UnsavedSummary & { cleared: number }>('POST', '/api/_controls/unsaved/clear', { body: { days } })).data; }
   async retryJob(id: number) { return (await this.request<Jobs>('POST', `/api/_controls/jobs/${id}/retry`, { body: {} })).data; }
   async connectors() { return (await this.request<{ connectors: ConnectorInfo[]; items: ConnectorRow[] }>('GET', '/api/_controls/connectors')).data; }
   async saveConnector(id: string, body: ConnectorBody) {
@@ -281,3 +283,7 @@ export class ControlsClient extends ApiClient implements KeysApi {
     return (await this.request<{ items: RoleRow[] }>('DELETE', `/api/_controls/roles/${encodeURIComponent(id)}`)).data.items;
   }
 }
+
+/** Unsaved changes on this instance: counts and sizes only (GET /api/_controls/unsaved). */
+export interface UnsavedSummary { entries: number; bytes: number; oldest: number | null; limits: Record<string, number>;
+  people: Array<{ id: number; username: string; entries: number; bytes: number; latest: number }> }

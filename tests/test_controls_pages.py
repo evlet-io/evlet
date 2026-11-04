@@ -62,18 +62,24 @@ def test_the_audit_log_pages_newest_first_with_search_and_area(secured):
 def test_jobs_pause_run_now_and_retry_failed_jobs_only(secured):
     admin, jobs = client(secured), secured.business.jobs
     jobs.schedule('nightly', 'project_progress', {'project_id': 404}, every=3600)
+    # The framework's own daily clean-up (evlet_unsaved_purge) is listed too.
+    nightly = lambda body: next(item for item in body['schedules'] if item['name'] == 'nightly')
     listed = admin('GET', '/api/_controls/jobs')[1]
-    assert listed['available'] and listed['schedules'][0] | {'next_run': 0} == {
+    assert [item['name'] for item in listed['schedules']] == ['evlet_unsaved_purge', 'nightly']
+    assert listed['available'] and nightly(listed) | {'next_run': 0} == {
         'name': 'nightly', 'task': 'project_progress', 'every': 3600, 'expression': None, 'timezone': None, 'next_run': 0,
         'active': True, 'paused': False, 'app': None}
 
     paused = admin('POST', '/api/_controls/jobs/schedules/nightly', {'active': False})[1]
-    assert paused['schedules'][0]['active'] is False and paused['schedules'][0]['paused'] is True
+    assert nightly(paused)['active'] is False and nightly(paused)['paused'] is True
     item = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['key'] == 'schedule.nightly.active')
     assert (item['kind'], item['file'], item['value'], item['changed_by']) == ('setting', True, False, 'admin')
-    assert jobs.tick(now=2**40) == 0
+    # Only the framework clean-up is due; the paused schedule queues nothing.
+    assert jobs.tick(now=2**40) == 1
+    with secured.database._connection() as connection:
+        assert [row[0] for row in connection.execute('SELECT task FROM evlet_jobs')] == ['evlet_unsaved_purge']
     assert admin('POST', '/api/_controls/jobs/schedules/nightly/run', {})[:2] == (409, {'error': 'nightly is paused. Resume it first.'})
-    resumed = admin('POST', '/api/_controls/jobs/schedules/nightly', {'active': True})[1]['schedules'][0]
+    resumed = nightly(admin('POST', '/api/_controls/jobs/schedules/nightly', {'active': True})[1])
     assert resumed['active'] and not resumed['paused']
     assert admin('POST', '/api/_controls/jobs/schedules/missing', {'active': False})[0] == 404
     assert admin('POST', '/api/_controls/jobs/schedules/nightly', {'active': 'no'})[0] == 422

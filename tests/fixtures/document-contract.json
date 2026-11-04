@@ -28,6 +28,7 @@
         "name"
       ],
       "open_in": "page",
+      "autosave": true,
       "fields": [
         {
           "name": "title",
@@ -256,6 +257,7 @@
       ],
       "search_fields": [],
       "open_in": "page",
+      "autosave": true,
       "fields": [
         {
           "name": "qty",

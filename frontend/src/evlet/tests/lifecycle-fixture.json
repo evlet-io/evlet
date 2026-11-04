@@ -52,6 +52,7 @@
             "name"
           ],
           "open_in": "page",
+          "autosave": true,
           "fields": [
             {
               "name": "number",
@@ -303,6 +304,7 @@
             "description"
           ],
           "open_in": "page",
+          "autosave": true,
           "fields": [
             {
               "name": "description",
