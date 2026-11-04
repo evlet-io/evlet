@@ -35,7 +35,7 @@ def test_official_client_can_discover_read_write_and_receive_validation(live_con
                 metadata = description.structuredContent
                 for schema in metadata['schemas'].values():
                     Draft202012Validator.check_schema(schema)
-                values = {'name': 'Official client', 'children': {'tasks': [{'title': 'Done', 'done': True}]}}
+                values = {'title': 'Official client', 'children': {'tasks': [{'title': 'Done', 'done': True}]}}
                 Draft202012Validator(metadata['schemas']['create']).validate(values)
                 created = await session.call_tool('create_record', {'model': 'project', 'values': values})
                 assert not created.isError
@@ -142,7 +142,7 @@ def test_official_client_signs_in_with_oauth_and_calls_tools_over_http(remote_se
                 assert 'discover_models' in tools and 'create_record' not in tools  # mcp.allow_writes is off
                 found = await session.call_tool('discover_models', {})
                 assert not found.isError and 'project' in [item['name'] for item in found.structuredContent['models']]
-                blocked = await session.call_tool('create_record', {'model': 'project', 'values': {'name': 'No'}})
+                blocked = await session.call_tool('create_record', {'model': 'project', 'values': {'title': 'No'}})
                 assert blocked.isError and blocked.structuredContent['status'] == 403
     asyncio.run(run())
     assert storage.tokens.access_token.startswith('evm_') and storage.tokens.refresh_token.startswith('evr_')

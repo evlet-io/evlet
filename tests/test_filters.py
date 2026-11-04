@@ -33,7 +33,7 @@ ITEMS = {
 @pytest.fixture
 def items(secured):
     admin = client(secured)
-    status, customer, _ = admin('POST', '/api/customer', {'name': 'Gulf Traders', 'currency': 'AED'})
+    status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Gulf Traders', 'currency': 'AED'})
     assert status == 201, customer
     ids = {}
     for code, values in ITEMS.items():

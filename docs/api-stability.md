@@ -21,6 +21,10 @@ production ready, but the rules below hold from 0.3 on.
   `When`. The browser does not render Python pages today ([ui.md](ui.md)), but their API
   stays.
 
+- **Record identity.** Every record has `id`, `name` and `title`. `id` is a 13-character text id in
+  JSON and URLs and a `RecordId` in Python; `name` and `title` are reserved field names on record
+  models ([model-engine.md](model-engine.md#record-ids)).
+
 For each of these, the contract covers the name and the arguments it takes: their names,
 order, whether they are keyword-only, and their defaults. Model `Meta` options and the
 behaviour each guide documents are public too. `tests/test_public_api.py` pins the names and

@@ -10,7 +10,7 @@ from test_rules_types import ALL, application
 
 class Slot(Model):
     permissions = ALL
-    name = Text(default='')
+    title = Text(default='')
     day = Date()
     starts = DateTime()
     at = Time()

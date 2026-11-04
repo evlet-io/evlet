@@ -18,7 +18,7 @@ from test_postgres import pg_dsn  # noqa: F401
 def models():
     """Fresh classes per test: instance fields are attached to the classes themselves."""
     class Customer(Model):
-        name = Text(required=True)
+        customer_name = Text(required=True)
 
     class Lead(Model):
         title = Text(required=True)
@@ -246,7 +246,7 @@ def test_instance_field_rules(app):
     assert admin('GET', '/api/lead')[1]['items'][0]['x_tier'] == 'silver'
     assert admin('POST', '/api/lead', {'title': 'Two', 'x_tier': None})[1]['fields'] == {'x_tier': 'This field is required'}
     assert admin('POST', '/api/_controls/fields/Lead', {'name': 'account', 'type': 'Link', 'label': 'Account', 'target': 'customer'})[0] == 201
-    customer = admin('POST', '/api/customer', {'name': 'Gulf Steel'})[1]
+    customer = admin('POST', '/api/customer', {'customer_name': 'Gulf Steel'})[1]
     assert admin('POST', '/api/lead', {'title': 'Three', 'x_tier': 'gold', 'x_account': customer['id']})[1]['x_account'] == customer['id']
     assert admin('DELETE', '/api/_controls/fields/Lead/x_account')[0] == 200
     assert admin('DELETE', '/api/_controls/fields/Lead/x_nothing')[0] == 404
@@ -549,7 +549,7 @@ def test_postgresql_instance_fields(pg):
     admin('POST', '/api/lead', {'title': 'Before'})
     status, added, _ = admin('POST', '/api/_controls/fields/Lead', {'name': 'account', 'type': 'Link', 'label': 'Account', 'target': 'customer'})
     assert status == 201 and added['backup'] is None
-    customer = admin('POST', '/api/customer', {'name': 'Gulf Steel'})[1]
+    customer = admin('POST', '/api/customer', {'customer_name': 'Gulf Steel'})[1]
     assert admin('POST', '/api/lead', {'title': 'After', 'x_account': customer['id']})[1]['x_account'] == customer['id']
     assert admin('POST', '/api/lead', {'title': 'Bad', 'x_account': 999})[0] in (404, 422)
     assert save(admin, ('list', 'Lead', {'columns': ['title', 'x_account'], 'page_size': 25, 'sort': 'title'}))[0] == 200
@@ -595,12 +595,12 @@ def test_two_applications_sharing_classes_keep_their_own_instance_fields(tmp_pat
     a, b = client(first), client(second)
     assert a('POST', '/api/_controls/fields/Customer', {'name': 'region', 'type': 'Text', 'label': 'Region'})[0] == 201
     assert b('POST', '/api/_controls/fields/Customer', {'name': 'tier', 'type': 'Integer', 'label': 'Tier'})[0] == 201
-    assert b('POST', '/api/customer', {'name': 'y', 'x_tier': 2})[1]['x_tier'] == 2
-    assert b('POST', '/api/customer', {'name': 'y', 'x_region': 'n'})[0] == 403
+    assert b('POST', '/api/customer', {'customer_name': 'y', 'x_tier': 2})[1]['x_tier'] == 2
+    assert b('POST', '/api/customer', {'customer_name': 'y', 'x_region': 'n'})[0] == 403
     assert save(b, ('field', 'Lead.title', {'label': 'Topic'}))[0] == 200
-    record = a('POST', '/api/customer', {'name': 'z', 'x_region': 'n'})[1]
+    record = a('POST', '/api/customer', {'customer_name': 'z', 'x_region': 'n'})[1]
     assert record['x_region'] == 'n' and 'x_tier' not in record
-    assert [field['name'] for field in schema_of(a, 'customer')['fields']] == ['name', 'x_region']
+    assert [field['name'] for field in schema_of(a, 'customer')['fields']] == ['customer_name', 'name', 'title', 'x_region']
     assert 'x_region' not in classes[0].__declared_fields__ and not hasattr(classes[0], 'x_region')
 
 
@@ -834,22 +834,22 @@ def test_a_current_user_default_cannot_be_replaced(tmp_path, hashed):
 
 def test_unplaced_fields_follow_a_file_layout_under_other_and_an_override_in_its_last_section(tmp_path, hashed):
     class Site(Model):
-        name = Text(required=True)
+        title = Text(required=True)
         city = Text()
 
         class Meta:
-            layout = (('Site', ('name', 'city')),)
+            layout = (('Site', ('title', 'city')),)
 
     class Room(Model):
-        name = Text(required=True)
+        title = Text(required=True)
         floor = Text()
         notes = LongText()
 
         class Meta:
-            layout = (('Room', ('name',)),)
+            layout = (('Room', ('title',)),)
 
     class Desk(Model):
-        name = Text(required=True)
+        title = Text(required=True)
 
     app = build(tmp_path, Site, Room, Desk)
     add_user(app, 'admin', 'admin')
@@ -857,14 +857,14 @@ def test_unplaced_fields_follow_a_file_layout_under_other_and_an_override_in_its
     for model in ('Site', 'Room', 'Desk'):
         assert admin('POST', f'/api/_controls/fields/{model}', {'name': 'zone', 'type': 'Text', 'label': 'Zone'})[0] == 201
     # A declared layout leaves unplaced fields to Other, joining the Other group it already has.
-    assert [(group['label'], group['fields']) for group in schema_of(admin, 'site')['layout']] == [('Site', ['name', 'city']), ('Other', ['x_zone'])]
-    assert [(group['label'], group['fields']) for group in schema_of(admin, 'room')['layout']] == [('Room', ['name']), ('Other', ['floor', 'notes', 'x_zone'])]
+    assert [(group['label'], group['fields']) for group in schema_of(admin, 'site')['layout']] == [('Site', ['title', 'city']), ('Other', ['x_zone'])]
+    assert [(group['label'], group['fields']) for group in schema_of(admin, 'room')['layout']] == [('Room', ['title']), ('Other', ['floor', 'notes', 'x_zone'])]
     # The default Details group takes every field.
-    assert [(group['label'], group['fields']) for group in schema_of(admin, 'desk')['layout']] == [('Details', ['name', 'x_zone'])]
+    assert [(group['label'], group['fields']) for group in schema_of(admin, 'desk')['layout']] == [('Details', ['title', 'x_zone'])]
     # A Controls layout puts them in its last section.
-    layout = [{'title': 'Where', 'fields': [{'name': 'city', 'width': 6}]}, {'title': 'Site', 'fields': [{'name': 'name', 'width': 6}]}]
+    layout = [{'title': 'Where', 'fields': [{'name': 'city', 'width': 6}]}, {'title': 'Site', 'fields': [{'name': 'title', 'width': 6}]}]
     assert save(admin, ('layout', 'Site', layout))[0] == 200
-    assert [(group['label'], group['fields']) for group in schema_of(admin, 'site')['layout']] == [('Where', ['city']), ('Site', ['name', 'x_zone'])]
+    assert [(group['label'], group['fields']) for group in schema_of(admin, 'site')['layout']] == [('Where', ['city']), ('Site', ['title', 'x_zone'])]
 
 
 def test_recompute_keeps_instance_fields_and_skips_posted_records(tmp_path, hashed):

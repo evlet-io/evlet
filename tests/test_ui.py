@@ -179,7 +179,7 @@ def test_authenticated_ui_metadata_and_field_permissions(secured):
         secured.registry,
         rules={
             ("editor", Customer): Rule(
-                ("read", "update"), read_fields=("name",), write_fields=("name",)
+                ("read", "update"), read_fields=("customer_name",), write_fields=("customer_name",)
             ),
             ("editor", Project): Rule(()),
         },
@@ -192,7 +192,7 @@ def test_authenticated_ui_metadata_and_field_permissions(secured):
     assert [
         node["props"]["field"]
         for node in form["layout"]["slots"]["children"][0]["slots"]["children"]
-    ] == ["name"]
+    ] == ["customer_name"]
     assert c("GET", "/api/ui/resolve?path=/app/project")[0] == 404
     assert (
         c("GET", "/api/ui/resolve?path=/app/customer/new")[1]["view"]["kind"] == "form"
@@ -221,22 +221,22 @@ def test_revision_checks_prevent_stale_update_delete_and_action(secured):
     record = c(
         "POST",
         "/api/project",
-        {"name": "Original", "children": {"tasks": [{"title": "Task"}]}},
+        {"title": "Original", "children": {"tasks": [{"title": "Task"}]}},
     )[1]
     path = "/api/project/" + str(record["id"])
     _, _, headers = c("GET", path)
     revision = headers[b"etag"]
     assert (
-        c("PATCH", path, {"name": "Changed"}, headers={b"if-match": revision})[0] == 200
+        c("PATCH", path, {"title": "Changed"}, headers={b"if-match": revision})[0] == 200
     )
     for method, suffix, body in [
-        ("PATCH", "", {"name": "Stale"}),
+        ("PATCH", "", {"title": "Stale"}),
         ("DELETE", "", None),
         ("POST", "/actions/start", {}),
     ]:
         assert c(method, path + suffix, body, headers={b"if-match": revision})[0] == 409
     _, latest, headers = c("GET", path)
-    assert latest["name"] == "Changed" and latest["status"] == "planned"
+    assert latest["title"] == "Changed" and latest["status"] == "planned"
     task = latest["children"]["tasks"][0]
     assert (
         c(
@@ -251,13 +251,13 @@ def test_revision_checks_prevent_stale_update_delete_and_action(secured):
         c(
             "PATCH",
             path,
-            {"name": "Child stale"},
+            {"title": "Child stale"},
             headers={b"if-match": headers[b"etag"]},
         )[0]
         == 409
     )
     # Existing clients without a revision remain compatible.
-    assert c("PATCH", path, {"name": "Compatible"})[0] == 200
+    assert c("PATCH", path, {"title": "Compatible"})[0] == 200
 
 
 def test_static_ui_preserves_unknown_routes_and_api_authentication(secured):

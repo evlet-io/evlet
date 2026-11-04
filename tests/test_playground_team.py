@@ -8,7 +8,7 @@ from test_business import PASSWORD, client, hashed, secured  # noqa: F401 (fixtu
 def names(c):
     status, page, _ = c('GET', '/api/employee?limit=100')
     assert status == 200, page
-    return sorted(item['name'] for item in page['items'])
+    return sorted(item['full_name'] for item in page['items'])
 
 
 def test_manager_member_and_outsider_see_their_part_of_the_team(secured):

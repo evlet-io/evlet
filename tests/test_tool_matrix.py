@@ -43,12 +43,12 @@ def callers(secured):
         made[role] = {'session': by_session, 'key': by_key, 'mcp': by_mcp}
     # Row and field rules, set after the settings above so a Controls refresh doesn't replace them.
     secured.business.policy = Policy(registry, rules={
-        ('viewer', Customer): Rule(read_fields=('name',), scope=lambda user: {'active': True}),
-        ('editor', Customer): Rule(operations=('read', 'update'), read_fields=('name',), write_fields=('name',), scope=lambda user: {'active': True}),
+        ('viewer', Customer): Rule(read_fields=('customer_name',), scope=lambda user: {'active': True}),
+        ('editor', Customer): Rule(operations=('read', 'update'), read_fields=('customer_name',), write_fields=('customer_name',), scope=lambda user: {'active': True}),
         ('viewer', Project): Rule(()),
     })
-    visible = secured.database.create(Customer, name='Visible', email='seen@example.test', active=True)
-    hidden = secured.database.create(Customer, name='Hidden', email='hidden@example.test', active=False)
+    visible = secured.database.create(Customer, customer_name='Visible', email='seen@example.test', active=True)
+    hidden = secured.database.create(Customer, customer_name='Hidden', email='hidden@example.test', active=False)
     return made, str(visible.id), str(hidden.id)
 
 
@@ -63,7 +63,7 @@ def test_reads_follow_row_and_field_rules_everywhere(callers):
     made, visible, hidden = callers
     for role in ('editor', 'viewer'):
         kind, page = same(made[role], 'list_records', {'model': 'customer'})
-        assert kind == 'ok' and page['total'] == 1 and page['items'] == [{'id': visible, 'name': 'Visible'}]
+        assert kind == 'ok' and page['total'] == 1 and page['items'] == [{'id': visible, 'customer_name': 'Visible'}]
         assert same(made[role], 'get_record', {'model': 'customer', 'id': hidden}) == ('error', 404)
         # Filtering on a field the role can't read is refused, not answered by inference.
         assert same(made[role], 'list_records', {'model': 'customer', 'filters': {'email': 'seen@example.test'}}) == ('error', 403)
@@ -75,20 +75,20 @@ def test_changes_follow_operations_and_writable_fields_everywhere(callers):
     made, visible, hidden = callers
     editor, viewer = made['editor'], made['viewer']
     assert same(editor, 'update_record', {'model': 'customer', 'id': visible, 'values': {'email': 'changed@example.test'}}) == ('error', 403)
-    assert same(editor, 'update_record', {'model': 'customer', 'id': hidden, 'values': {'name': 'Leaked'}}) == ('error', 404)
+    assert same(editor, 'update_record', {'model': 'customer', 'id': hidden, 'values': {'customer_name': 'Leaked'}}) == ('error', 404)
     # A delete the role can't make is refused at once, not turned into an approval request.
     assert same(editor, 'delete_record', {'model': 'customer', 'id': visible}) == ('error', 403)
-    assert same(viewer, 'create_record', {'model': 'customer', 'values': {'name': 'No'}}) == ('error', 403)
-    assert same(viewer, 'update_record', {'model': 'customer', 'id': visible, 'values': {'name': 'No'}}) == ('error', 403)
+    assert same(viewer, 'create_record', {'model': 'customer', 'values': {'customer_name': 'No'}}) == ('error', 403)
+    assert same(viewer, 'update_record', {'model': 'customer', 'id': visible, 'values': {'customer_name': 'No'}}) == ('error', 403)
     # Allowed changes run, through each entry point in turn.
     for index, call in enumerate(editor.values()):
-        kind, record = call('update_record', {'model': 'customer', 'id': visible, 'values': {'name': f'Renamed {index}'}})
-        assert kind == 'ok' and record['name'] == f'Renamed {index}'
+        kind, record = call('update_record', {'model': 'customer', 'id': visible, 'values': {'customer_name': f'Renamed {index}'}})
+        assert kind == 'ok' and record['customer_name'] == f'Renamed {index}'
 
 
 def test_the_playground_offers_a_service_as_a_tool(secured):
     editor, viewer = client(secured, 'editor'), client(secured, 'viewer')
-    project = editor('POST', '/api/project', {'name': 'Fit-out', 'children': {'tasks': [{'title': 'Order', 'done': True}, {'title': 'Fit', 'done': False}]}})
+    project = editor('POST', '/api/project', {'title': 'Fit-out', 'children': {'tasks': [{'title': 'Order', 'done': True}, {'title': 'Fit', 'done': False}]}})
     services = editor('POST', '/api/_tools/execute', {'tool': 'list_services', 'arguments': {}})[1]['result']['services']
     assert [service['name'] for service in services] == ['playground.project_overview']
     overview = editor('POST', '/api/_tools/execute', {'tool': 'call_service', 'arguments': {'service': 'playground.project_overview', 'arguments': {'project': project[1]['id']}}})

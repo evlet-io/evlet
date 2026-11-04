@@ -14,10 +14,10 @@ describe('link titles', () => {
     const stub = server([
       ['GET', /\/api\/customer\?/, sent => {
         const ids: string[] = JSON.parse(new URL(sent.url, 'http://x').searchParams.get('filters')!).id__in;
-        return reply(ids.filter(item => item !== id(4)).map(item => ({ id: item, name: `Customer ${parseInt(item, 32)}` })));
+        return reply(ids.filter(item => item !== id(4)).map(item => ({ id: item, title: `Customer ${parseInt(item, 32)}` })));
       }],
-      ['GET', /\/api\/product\?/, reply([{ id: id(1), name: 'Support hours' }])],
-      ['GET', /\/api\/customer\/0000000000009$/, { status: 200, body: { id: id(9), name: 'Read already' }, etag: '"c9"' }],
+      ['GET', /\/api\/product\?/, reply([{ id: id(1), title: 'Support hours' }])],
+      ['GET', /\/api\/customer\/0000000000009$/, { status: 200, body: { id: id(9), title: 'Read already' }, etag: '"c9"' }],
     ]);
     const api = new AppClient({ fetch: stub.fetch });
     const links = apiLinks(api, schema);

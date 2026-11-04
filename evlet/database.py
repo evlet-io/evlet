@@ -8,6 +8,7 @@ from .fields import ACTIVE, EMPTY_LAYER, Link, MISSING, Reference
 from .identity import RecordId, new_id, sequential
 from .models import ValidationError, identifier
 from .query import SqlQuery
+from .naming import has_title, title_of
 from .sequences import name_new, raw_write
 
 # Most rows one list call returns, and most rows one child collection may hold in an editor.
@@ -186,9 +187,26 @@ def storage_columns(model, values, names):
     return columns, stored
 
 
-def insert(connection, table, names, values):
+def insert(connection, table, names, values, *, id_title=False):
     """Insert one row under a new record id and return the id. A taken id (a collision of the 21 random
-    bits within one millisecond) inserts nothing, so another id is drawn; other constraints still raise."""
+    bits within one millisecond) inserts nothing, so another id is drawn; other constraints still raise.
+    With id_title, a standard title with nothing else to show takes the text id (evlet/naming.py), in the
+    same statement."""
+    position = names.index('title') if id_title and values[names.index('title')] is None else None
+    record_id = _insert(connection, table, names, values, position)
+    if position is not None and sequential():
+        connection.execute(f'UPDATE {table} SET "title" = ? WHERE "id" = ?', (str(record_id), record_id))
+    return record_id
+
+
+def stored_values(model, values, record_id=None):
+    """values with the standard title filled in, ready for storage_columns."""
+    if not has_title(model):
+        return values
+    return {**values, 'title': title_of(model, values, record_id)}
+
+
+def _insert(connection, table, names, values, title_position=None):
     if sequential():
         # Recorded fixtures: the table's own autoincrement numbers rows 1, 2, 3 and never reuses one.
         sql = f'INSERT INTO {table} ({", ".join(identifier(name) for name in names)}) VALUES ({", ".join("?" for _ in names)})' \
@@ -198,6 +216,8 @@ def insert(connection, table, names, values):
     placeholders = ', '.join('?' for _ in range(len(names) + 1))
     for _ in range(8):
         record_id = new_id()
+        if title_position is not None:
+            values = [*values[:title_position], str(record_id), *values[title_position + 1:]]
         cursor = connection.execute(f'INSERT INTO {table} ({columns}) VALUES ({placeholders}) ON CONFLICT ("id") DO NOTHING',
                                     [record_id, *values])
         if cursor.rowcount == 1:
@@ -253,14 +273,14 @@ class Session:
         record = model(**values)
         numbers = raw_write(self, model, values, None, record._values)
         # A trusted session may give a naming field a value (imports); otherwise the series names it.
-        name = name_new(self.connection, self.registry, model, record._values, today(self.timezone))
+        name = name_new(self.connection, self.registry, model, record._values, today(self.timezone), record=record)
         if name:
             numbers = {**numbers, self.registry.naming[model].field: name}
         if numbers:
             record = model(**{**record._values, **numbers})
         self.check_references(model, record._values)
-        names, stored = storage_columns(model, record._values, model.__fields__)
-        return self.get(model, insert(self.connection, table, names, stored))
+        names, stored = storage_columns(model, stored_values(model, record._values), model.__fields__)
+        return self.get(model, insert(self.connection, table, names, stored, id_title=has_title(model)))
 
     def get(self, model, record_id):
         try:
@@ -299,7 +319,8 @@ class Session:
         if changes:
             self.check_references(model, {name: record._values[name] for name in changes})
             table = identifier(self.registry.name_for(model))
-            names, stored = storage_columns(model, record._values, changes)
+            values = stored_values(model, record._values, current.id)
+            names, stored = storage_columns(model, values, [*changes, *(['title'] if has_title(model) and 'title' not in changes else [])])
             assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
             self.connection.execute(f'UPDATE {table} SET {assignments} WHERE "id" = ?', stored + [current.id])
         return self.get(model, current.id)
@@ -313,6 +334,12 @@ class Session:
                     raise ValidationError({name: 'Use a registered model name'})
                 if self.connection.execute(f'SELECT 1 FROM {identifier(value[0])} WHERE "id" = ?', (value[1],)).fetchone() is None:
                     raise ValidationError({name: 'The referenced record does not exist'})
+
+    def add_standard_columns(self, model):
+        """For a data migration that fills names: give the model's table the standard name and title
+        columns now instead of in framework step 0003, which runs after app migrations. Idempotent."""
+        from .naming import add_columns
+        add_columns(self.connection, not isinstance(self.connection, sqlite3.Connection), self.registry.name_for(model), model)
 
     def delete(self, model, record_id):
         self._guard(model)

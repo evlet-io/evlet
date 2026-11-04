@@ -8,26 +8,26 @@ from examples.playground.models import Customer, Invoice, registry
 
 def test_defaults_inheritance_and_serialization():
     class Named(Model):
-        name = Text(required=True)
+        title = Text(required=True)
 
     class Product(Named):
         quantity = Integer(default=1, minimum=0)
         price = Currency(default="12.50")
         notes = Text(default=lambda: "New")
 
-    item = Product(name="Notebook")
+    item = Product(title="Notebook")
     assert item.price == Decimal("12.50")
-    assert item.to_dict() == {"id": None, "name": "Notebook", "quantity": 1,
-                              "price": "12.50", "notes": "New"}
+    assert item.to_dict() == {"id": None, "title": "Notebook", "quantity": 1,
+                              "price": "12.50", "notes": "New", "name": None}
     with pytest.raises(AttributeError):
-        item.name = "Changed"
+        item.title = "Changed"
 
 
 @pytest.mark.parametrize("data,field", [
-    ({}, "name"), ({"name": None}, "name"), ({"name": "  "}, "name"),
-    ({"name": 12}, "name"), ({"name": "x" * 121}, "name"),
-    ({"name": "A", "id": 8}, "id"), ({"name": "A", "unknown": 1}, "unknown"),
-    ({"name": "\ud800"}, "name"), ({"name": "A", "self": 1}, "self"),
+    ({}, "customer_name"), ({"customer_name": None}, "customer_name"), ({"customer_name": "  "}, "customer_name"),
+    ({"customer_name": 12}, "customer_name"), ({"customer_name": "x" * 121}, "customer_name"),
+    ({"customer_name": "A", "id": 8}, "id"), ({"customer_name": "A", "unknown": 1}, "unknown"),
+    ({"customer_name": "\ud800"}, "customer_name"), ({"customer_name": "A", "self": 1}, "self"),
 ])
 def test_model_rejects_invalid_fields(data, field):
     with pytest.raises(ValidationError) as caught:

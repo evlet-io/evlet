@@ -134,10 +134,10 @@ def test_password_hash_capacity_rejects_excess_work_and_recovers(monkeypatch):
 
 def test_no_auth_application_rejects_rebinding_before_database_access(database):
     app = Application(database)
-    for method, path, body in [('GET','/api/customer',None), ('POST','/api/customer',{'name':'No'})]:
+    for method, path, body in [('GET','/api/customer',None), ('POST','/api/customer',{'customer_name':'No'})]:
         assert http(app, method, path, body, headers={b'host':b'attacker.example',b'origin':b'http://attacker.example'})[0] == 403
     assert http(app, 'GET','/api/customer',headers={b'origin':b'http://attacker.example'})[0] == 403
-    assert http(app, 'POST','/api/customer',{'name':'Allowed'})[0] == 201
+    assert http(app, 'POST','/api/customer',{'customer_name':'Allowed'})[0] == 201
     custom = Application(database, hosts=['development.example'])
     assert http(custom, 'GET','/api/customer',headers={b'host':b'development.example',b'origin':b'http://development.example'})[0] == 200
 
@@ -195,7 +195,7 @@ def test_scoped_child_edit_preserves_hidden_children(secured):
     from evlet import Policy, Rule
     from examples.playground.models import Project, ProjectTask, registry
     editor = client(secured, 'editor')
-    parent = editor('POST', '/api/project', {'name':'Rows', 'children':{'tasks':[{'title':'Visible', 'done':True}, {'title':'Hidden', 'done':False}]}})[1]
+    parent = editor('POST', '/api/project', {'title':'Rows', 'children':{'tasks':[{'title':'Visible', 'done':True}, {'title':'Hidden', 'done':False}]}})[1]
     secured.business.policy = Policy(registry, rules={('editor',ProjectTask): Rule(('read','create','update','delete'),scope=lambda user:{'done':True})})
     path = f"/api/project/{parent['id']}"
     visible = editor('GET',path)[1]['children']['tasks'][0]

@@ -4,7 +4,7 @@ import { copy } from './server';
 
 // Responses recorded from the real report routes (record_reports in scripts/generate_ui_framework_fixtures.py):
 // CustomerRates, a manual report with two filters, a link column, a total over every row and a bar chart.
-const customer = (id: string, name: string) => ({ status: 200, etag: null, body: { id, name, rate: '0.00', credit_days: 30 } });
+const customer = (id: string, title: string) => ({ status: 200, etag: null, body: { id, title, rate: '0.00', credit_days: 30 } });
 const routes = (extra: Route[] = [], schema = screen.report_schema): Route[] => [
   ...extra,
   ['GET', /\/api\/auth\/session$/, screen.report_session],

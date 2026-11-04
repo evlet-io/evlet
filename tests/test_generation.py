@@ -18,9 +18,9 @@ def test_ui_schema_defaults_labels_and_storage_snapshot_are_separate(tmp_path):
         class Meta:
             label = 'Thing'
             plural = 'Things'
-            list_fields = ('name', 'amount')
-            search_fields = ('name',)
-        name = Text(required=True, label='Display name')
+            list_fields = ('title', 'amount')
+            search_fields = ('title',)
+        title = Text(required=True, label='Display name')
         amount = Currency(default='12.50', read_only=True)
         when = Date(default=lambda: calls.append(1) or date(2026, 10, 28))
         secret = Text(hidden=True, default='internal')
@@ -33,20 +33,20 @@ def test_ui_schema_defaults_labels_and_storage_snapshot_are_separate(tmp_path):
     view = metadata['models'][0]
     fields = {field['name']: field for field in view['fields']}
     assert metadata['ui_version'] == 1
-    assert view['title_field'] == 'name'
-    assert view['list_fields'] == ['id', 'name', 'amount']
+    assert view['title_field'] == 'title'
+    assert view['list_fields'] == ['id', 'title', 'amount']
     assert fields['amount']['default'] == '12.50'
     assert fields['amount']['read_only'] is True
     assert fields['when']['default_kind'] == 'callable' and 'default' not in fields['when']
     assert 'primevue' not in json.dumps(metadata).lower()
-    Thing.name.label = 'Renamed label'
-    Thing.Meta.list_fields = ('name',)
+    Thing.title.label = 'Renamed label'
+    Thing.Meta.list_fields = ('title',)
     assert registered.schema() == original
     db.initialize()
     assert registered.ui_schema()['models'][0]['fields'][0]['label'] == 'Renamed label'
     app = Application(db)
-    assert request(app, 'POST', '/api/thing', {'name': 'Saved', 'amount': '1.00'})[0] == 422
-    status, saved, _ = request(app, 'POST', '/api/thing', {'name': 'Saved'})
+    assert request(app, 'POST', '/api/thing', {'title': 'Saved', 'amount': '1.00'})[0] == 422
+    status, saved, _ = request(app, 'POST', '/api/thing', {'title': 'Saved'})
     assert status == 201 and saved['amount'] == '12.50' and saved['when'] == '2026-10-28'
     assert calls == [1]
     assert request(app, 'PATCH', f"/api/thing/{saved['id']}", {'amount': '2.00'})[0] == 422
@@ -55,7 +55,7 @@ def test_ui_schema_defaults_labels_and_storage_snapshot_are_separate(tmp_path):
 
 def test_unfamiliar_model_supports_every_field_and_standard_api(tmp_path):
     class Device(Model):
-        name = Text(required=True)
+        title = Text(required=True)
         notes = LongText()
         count = Integer(default=0)
         cost = Currency(default='0.00')
@@ -74,9 +74,9 @@ def test_unfamiliar_model_supports_every_field_and_standard_api(tmp_path):
     assert {f['type'] for f in schema['models'][0]['fields']} == {
         'text', 'longtext', 'integer', 'currency', 'decimal', 'boolean', 'date', 'datetime', 'select', 'email', 'url',
     }
-    status, saved, _ = request(app, 'POST', '/api/device', {'name': 'Sensor', 'email': 'test@example.test', 'website': 'https://example.test'})
+    status, saved, _ = request(app, 'POST', '/api/device', {'title': 'Sensor', 'email': 'test@example.test', 'website': 'https://example.test'})
     assert status == 201 and saved['rate'] == '1.2345' and saved['enabled'] is False
-    assert request(app, 'PATCH', f"/api/device/{saved['id']}", {'notes': 'Updated'})[1]['name'] == 'Sensor'
+    assert request(app, 'PATCH', f"/api/device/{saved['id']}", {'notes': 'Updated'})[1]['title'] == 'Sensor'
     result = request(app, 'GET', '/api/device?q=example&limit=1')[1]
     assert result['total'] == 1 and len(result['items']) == 1
     assert request(app, 'DELETE', f"/api/device/{saved['id']}")[0] == 204
@@ -96,13 +96,13 @@ def test_invalid_view_overrides_fail_early(options):
 
 
 def test_search_combines_text_fields_with_typed_filters_and_count(database, application):
-    first = database.create(Customer, name="Literal %_'); DROP TABLE customer;--", email='alpha@example.test', active=True)
-    database.create(Customer, name='Alpha', active=False)
-    database.create(Customer, name='Elsewhere', email='alpha@elsewhere.test', active=True)
+    first = database.create(Customer, customer_name="Literal %_'); DROP TABLE customer;--", email='alpha@example.test', active=True)
+    database.create(Customer, customer_name='Alpha', active=False)
+    database.create(Customer, customer_name='Elsewhere', email='alpha@elsewhere.test', active=True)
     query = urlencode({'q': 'ALPHA', 'filters': json.dumps({'active': True}), 'limit': 1, 'offset': 1, 'order_by': 'id'})
     status, page, _ = request(application, 'GET', '/api/customer?' + query)
     assert status == 200 and page['total'] == 2 and len(page['items']) == 1
-    assert page['items'][0]['name'] == 'Elsewhere'
+    assert page['items'][0]['customer_name'] == 'Elsewhere'
     assert database.count(Customer, search='alpha', filters={'active': True}) == 2
     assert database.list(Customer, search="%_'); DROP TABLE customer;--")[0].id == first.id
     assert database.list(Customer, search=f'#{first.id}')[0].id == first.id
@@ -114,13 +114,13 @@ def test_search_combines_text_fields_with_typed_filters_and_count(database, appl
 
 
 def test_relationship_search_reaches_records_beyond_first_hundred(database, application):
-    first = database.create(Customer, name='Old customer')
+    first = database.create(Customer, customer_name='Old customer')
     with database.transaction() as tx:
-        for i in range(105): tx.create(Customer, name=f'Recent customer {i}')
+        for i in range(105): tx.create(Customer, customer_name=f'Recent customer {i}')
     invoice = database.create(Invoice, customer=first.id, reference='OLD', total='12.50')
     page = request(application, 'GET', '/api/customer?q=Old&limit=20')[1]
     assert page['total'] == 1 and page['items'][0]['id'] == str(first.id)
-    assert request(application, 'GET', f'/api/customer/{first.id}')[1]['name'] == 'Old customer'
+    assert request(application, 'GET', f'/api/customer/{first.id}')[1]['customer_name'] == 'Old customer'
     assert request(application, 'GET', f'/api/invoice/{invoice.id}')[1]['customer'] == str(first.id)
 
 
@@ -169,10 +169,10 @@ def test_project_migration_preserves_existing_records(tmp_path, installation):
     assert applied == ([m.name for m in migrations][2 if installation == 'milestone3' else 1 if installation == 'milestone2' else 0:])
     target.initialize()
     assert target.migrate(migrations) == []
-    project = target.create(Project, name='Generated screens', budget='1.23')
+    project = target.create(Project, title='Generated screens', budget='1.23')
     assert project.to_dict()['budget'] == '1.23' and project.status == 'planned'
     if installation != 'fresh':
-        assert target.get(Customer, customer.id).name == 'Keep'
+        assert target.get(Customer, customer.id).customer_name == 'Keep'
         assert target.get(Invoice, invoice.id).to_dict()['total'] == '123.45'
         assert target.get(Payment, payment.id).invoice == invoice.id
     with sqlite3.connect(path) as connection:

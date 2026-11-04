@@ -34,14 +34,14 @@ class FiniteMeta:
 
 class Customer(Model):
     permissions = ALL
-    name = Text(default='customer')
+    title = Text(default='customer', label='Customer name')
     rate = Currency(default=0)
     credit_days = Integer(default=30)
 
 
 class Product(Model):
     permissions = ALL
-    name = Text(default='product')
+    title = Text(default='product')
     price = Currency(default=0)
 
 
@@ -82,14 +82,14 @@ class Order(Model):
 
 class Contact(Model):
     """For the screens: field permissions per role, an action, attachments."""
-    permissions = {'admin': FULL, 'editor': FULL, 'viewer': Rule(('read',), read_fields=('name', 'email'))}
-    name = Text(required=True)
+    permissions = {'admin': FULL, 'editor': FULL, 'viewer': Rule(('read',), read_fields=('title', 'email'))}
+    title = Text(required=True, label='Full name')
     email = Email()
     phone = Text()
     notes = LongText()
 
     class Meta:
-        list_fields = ('name', 'email', 'phone')
+        list_fields = ('title', 'email', 'phone')
 
     @action(label='Mark contacted')
     def contacted(self, note: str = ''):
@@ -216,8 +216,8 @@ def record_api(folder):
     keep('session', c('GET', '/api/auth/session'))
     keep('unauthenticated', http(app, 'GET', '/api/schema'))
     keep('schema', c('GET', '/api/schema'))
-    customer = keep('customer', c('POST', '/api/customer', {'name': 'Al Sahra Trading', 'rate': '12.50', 'credit_days': 45}))
-    product = keep('product', c('POST', '/api/product', {'name': 'Support hours', 'price': '250.00'}))
+    customer = keep('customer', c('POST', '/api/customer', {'title': 'Al Sahra Trading', 'rate': '12.50', 'credit_days': 45}))
+    product = keep('product', c('POST', '/api/product', {'title': 'Support hours', 'price': '250.00'}))
     lines = [{'_key': f'l{index}', 'product': product['id'], 'qty': '1', 'rate': '2.50'} for index in range(120)]
     lines[0]['children'] = {'parts': [{'_key': 'p0', 'hours': '1.5'}, {'_key': 'p1', 'hours': '2'}]}
     created = keep('create', c('POST', '/api/order', {'title': 'Big order', 'customer': customer['id'], 'issued': '2026-11-01',
@@ -279,7 +279,7 @@ def documents(out, folder):
         # Every write on a saved document sends the ETag of its last read.
         return editor(method, record + route, body, headers={b'if-match': editor('GET', record)[2][b'etag']})
 
-    customer = admin('POST', '/api/customer', {'name': 'Al Sahra Trading', 'credit_days': 30})[1]['id']
+    customer = admin('POST', '/api/customer', {'title': 'Al Sahra Trading', 'credit_days': 30})[1]['id']
     keep('invoice_session', editor('GET', '/api/auth/session'))
     keep('invoice_schema', editor('GET', '/api/schema'))
     lines = [{'_key': 'a', 'item': 'Support hours', 'qty': '10', 'rate': '250.00'}, {'_key': 'b', 'item': 'Licence', 'qty': '2', 'rate': '90.00'}]
@@ -426,9 +426,9 @@ def record_screens(folder):
              'Marina Yachts', 'Noor Pharmacy', 'Oasis Water', 'Palm Realty', 'Qasr Events', 'Ras Al Khor Motors', 'Sahara Labs',
              'Tilal Farms', 'Umm Suqeim Bakery', 'Wadi Textiles', 'Yas Fitness', 'Zabeel Printing', 'Zayed Medical Supplies'] + [f'Trading house {number}' for number in range(26, 56)]
     for index, name in enumerate(names):
-        assert admin('POST', '/api/customer', {'name': name, 'rate': f'{10 + index}.50', 'credit_days': 15 + index})[0] == 201
-    keep('customers_page1', admin('GET', '/api/customer?limit=50&offset=0&order_by=name'))
-    keep('customers_page2', admin('GET', '/api/customer?limit=50&offset=50&order_by=name'))
+        assert admin('POST', '/api/customer', {'title': name, 'rate': f'{10 + index}.50', 'credit_days': 15 + index})[0] == 201
+    keep('customers_page1', admin('GET', '/api/customer?limit=50&offset=0&order_by=title'))
+    keep('customers_page2', admin('GET', '/api/customer?limit=50&offset=50&order_by=title'))
     keep('customers_by_rate_desc', admin('GET', '/api/customer?limit=50&offset=0&order_by=-rate'))
     keep('customers_search', admin('GET', '/api/customer?limit=50&offset=0&q=medical'))
     for title, stage in (('Office fit-out', 'open'), ('Annual support', 'won'), ('Warehouse racks', 'open'), ('Fleet tracking', 'lost')):
@@ -436,7 +436,7 @@ def record_screens(folder):
                                                        **({'reason': 'Budget moved'} if stage == 'lost' else {})})
         assert status == 201, body
     keep('orders_open', admin('GET', '/api/order?limit=20&offset=0&filters=%7B%22stage%22%3A%22open%22%7D'))
-    contact = keep('contact_create', admin('POST', '/api/contact', {'name': 'Mariam Haddad', 'email': 'mariam@example.com',
+    contact = keep('contact_create', admin('POST', '/api/contact', {'title': 'Mariam Haddad', 'email': 'mariam@example.com',
                                                                    'phone': '+971 4 555 0101', 'notes': 'Prefers email.'}))
     url = f"/api/contact/{contact['id']}"
     keep('contact_detail', admin('GET', url))
@@ -492,8 +492,12 @@ class QuickCustomer(Slip):
     title = 'Quick customer'
     menu = True
     becomes = Customer
-    name = Text(required=True)
+    customer_name = Text(required=True)
     credit_days = Integer(default=30)
+
+    def document(self, source):
+        # A slip's own `title` is its heading, so the slip names the customer in customer_name.
+        return {'title': self.customer_name, 'credit_days': self.credit_days}
 
 
 def record_slips(folder):
@@ -518,7 +522,7 @@ def record_slips(folder):
     admin = lambda method, path, body=None, **kwargs: http(app, method, path, body, cookie=cookie, csrf=csrf, **kwargs)
     keep('slip_session', admin('GET', '/api/auth/session'))
     keep('slip_schema', admin('GET', '/api/schema'))
-    assert admin('POST', '/api/customer', {'name': 'Corniche Foods', 'rate': '12.50', 'credit_days': 30})[0] == 201
+    assert admin('POST', '/api/customer', {'title': 'Corniche Foods', 'rate': '12.50', 'credit_days': 30})[0] == 201
     customer = keep('slip_customer', admin('GET', '/api/customer/0000000000001'))
     source = {'model': 'customer', 'id': customer['id']}
     keep('slip_present', admin('POST', '/api/_slips/plan_visit/present', {'source': source, 'values': {}}))
@@ -530,7 +534,7 @@ def record_slips(folder):
     keep('slip_hand_in', admin('POST', '/api/_slips/plan_visit/hand-in', {'source': source, 'key': 'fixture-visit-2', 'values': {
         'visit_on': '2026-11-16', 'kind': 'install', 'rate': '350.00', 'children': {'stops': [{'_key': 'row-1', 'place': 'Warehouse', 'hours': '2.5'}]}}}, headers=revision))
     keep('slip_quick_present', admin('POST', '/api/_slips/quick_customer/present', {'source': None, 'values': {}}))
-    keep('slip_quick_hand_in', admin('POST', '/api/_slips/quick_customer/hand-in', {'source': None, 'key': 'fixture-quick-1', 'values': {'name': 'Oasis Water', 'credit_days': 45}}))
+    keep('slip_quick_hand_in', admin('POST', '/api/_slips/quick_customer/hand-in', {'source': None, 'key': 'fixture-quick-1', 'values': {'customer_name': 'Oasis Water', 'credit_days': 45}}))
     database.close()
     return out
 
@@ -541,20 +545,20 @@ class CustomerRates(Report):
     roles = ('admin', 'editor', 'viewer')
     group = 'Sales'
     model = Customer
-    sortable = ('name', 'rate')
-    chart = Chart('bar', x='name', y=('rate',))
+    sortable = ('title', 'rate')
+    chart = Chart('bar', x='title', y=('rate',))
     min_days = Integer(default=0, label='Credit days from')
     search = Text(default='', label='Name contains')
-    columns = (Column('id', type='link', link='customer', label='Customer'), Column('name'),
+    columns = (Column('id', type='link', link='customer', label='Customer'), Column('title'),
                Column('credit_days', type='integer', label='Credit days'),
                Column('rate', type='currency', total=True, unit='AED', source='customer.rate'))
 
     def run(self):
         filters = {'credit_days__gte': self.min_days or 0}
-        if self.search: filters['name__contains'] = self.search
-        page = self.context.list(Customer, filters=filters, order_by=self.context.sort or ('name',), limit=self.context.limit, offset=self.context.offset)
+        if self.search: filters['title__contains'] = self.search
+        page = self.context.list(Customer, filters=filters, order_by=self.context.sort or ('title',), limit=self.context.limit, offset=self.context.offset)
         everything = self.context.aggregate(Customer, measures={'rate': Sum('rate')}, filters=filters)
-        return {'rows': [{key: row.get(key) for key in ('id', 'name', 'credit_days', 'rate')} for row in page['rows']],
+        return {'rows': [{key: row.get(key) for key in ('id', 'title', 'credit_days', 'rate')} for row in page['rows']],
                 'total': page['total'], 'totals': {'rate': everything[0]['rate'] or 0}}
 
 
@@ -594,9 +598,9 @@ def record_reports(folder):
     status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'owner', 'password': PASSWORD})
     cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
     admin = lambda method, path, body=None, **kwargs: http(app, method, path, body, cookie=cookie, csrf=csrf, **kwargs)
-    for name, rate, days in (('Corniche Foods', '1250.00', 30), ('Al Noor Trading', '480.50', 45), ('Blue Dune Interiors', '2100.00', 15),
-                             ('Oasis Water', '310.00', 30)):
-        assert admin('POST', '/api/customer', {'name': name, 'rate': rate, 'credit_days': days})[0] == 201
+    for title, rate, days in (('Corniche Foods', '1250.00', 30), ('Al Noor Trading', '480.50', 45), ('Blue Dune Interiors', '2100.00', 15),
+                              ('Oasis Water', '310.00', 30)):
+        assert admin('POST', '/api/customer', {'title': title, 'rate': rate, 'credit_days': days})[0] == 201
     keep('report_session', admin('GET', '/api/auth/session'))
     keep('report_schema', admin('GET', '/api/schema'))
     keep('report_evaluate', admin('POST', '/api/_reports/CustomerRates/evaluate', {'filters': {'min_days': 20, 'search': ''}, 'revision': 1}))

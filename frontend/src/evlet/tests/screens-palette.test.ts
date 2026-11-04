@@ -8,7 +8,7 @@ const empty = { status: 200, etag: null, body: { items: [], total: 0, limit: 5, 
 const search = (sent: Sent) => new URL(sent.url, 'http://x').searchParams.get('q') === 'medical' ? copy(screen.customers_search) : copy(empty);
 const routes = (): Route[] => [...adminRoutes(),
   ['GET', /\/api\/customer\?/, search], ['GET', /\/api\/(product|order|contact)\?/, empty],
-  ['GET', /\/api\/customer\/000000000000s$/, { status: 200, etag: '"c25"', body: { id: id(25), name: 'Zayed Medical Supplies', rate: '34.50', credit_days: 39 } }]];
+  ['GET', /\/api\/customer\/000000000000s$/, { status: 200, etag: '"c25"', body: { id: id(25), title: 'Zayed Medical Supplies', rate: '34.50', credit_days: 39 } }]];
 const palette = () => document.querySelector<HTMLElement>('.modal.palette');
 const input = () => palette()!.querySelector<HTMLInputElement>('.pal-in input')!;
 

@@ -18,10 +18,10 @@ def secured(request, tmp_path, monkeypatch, hashed):
 
 def seed(api):
     owners = {}
-    for name, currency in (('Al Sahra Trading', 'AED'), ('Gulf Supplies', 'AED'), ('Boston Imports', 'USD')):
-        status, body, _ = api('POST', '/api/customer', {'name': name, 'currency': currency})
+    for title, currency in (('Al Sahra Trading', 'AED'), ('Gulf Supplies', 'AED'), ('Boston Imports', 'USD')):
+        status, body, _ = api('POST', '/api/customer', {'customer_name': title, 'currency': currency})
         assert status == 201, body
-        owners[name] = body['id']
+        owners[title] = body['id']
     for owner, reference, total, status, posted in (('Al Sahra Trading', 'PO-1', '100.00', 'sent', '2026-10-01'),
                                                     ('Al Sahra Trading', 'PO-2', '250.50', 'sent', '2026-10-15'),
                                                     ('Gulf Supplies', 'PO-3', '75.00', 'draft', '2026-09-30'),

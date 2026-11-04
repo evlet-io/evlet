@@ -21,9 +21,9 @@ def no_bad(value):
 
 
 class Client(Model):
-    permissions = {**ALL, 'editor': Rule(('read',), read_fields=('name', 'rate', 'credit_days')),
-                   'viewer': Rule(('read',), read_fields=('name',))}
-    name = Text(required=True)
+    permissions = {**ALL, 'editor': Rule(('read',), read_fields=('title', 'rate', 'credit_days')),
+                   'viewer': Rule(('read',), read_fields=('title',))}
+    title = Text(required=True)
     rate = Currency(default=0)
     credit_days = Integer(default=30)
     secret_limit = Currency(default=0)
@@ -31,7 +31,7 @@ class Client(Model):
 
 class Product(Model):
     permissions = ALL
-    name = Text(default='')
+    title = Text(default='')
     price = Currency(default=0)
 
 
@@ -45,7 +45,7 @@ class DealLine(Child):
 class Deal(Model):
     Meta = FiniteMeta
     permissions = ALL
-    name = Text(default='Deal')
+    title = Text(default='Deal')
     client = Link(Client)
     stage = Select(('open', 'won', 'lost'), default='open')
     terms = Integer(initial=F('client.credit_days'))
@@ -94,10 +94,10 @@ def deals(tmp_path):
 
 def seed_deals(app):
     c = client(app)
-    one = c('POST', '/api/client', {'name': 'One', 'rate': '2.50', 'credit_days': 30})[1]['id']
-    two = c('POST', '/api/client', {'name': 'Two', 'rate': '4.00', 'credit_days': 10})[1]['id']
-    pen = c('POST', '/api/product', {'name': 'Pen', 'price': '1.20'})[1]['id']
-    ink = c('POST', '/api/product', {'name': 'Ink', 'price': '7.00'})[1]['id']
+    one = c('POST', '/api/client', {'title': 'One', 'rate': '2.50', 'credit_days': 30})[1]['id']
+    two = c('POST', '/api/client', {'title': 'Two', 'rate': '4.00', 'credit_days': 10})[1]['id']
+    pen = c('POST', '/api/product', {'title': 'Pen', 'price': '1.20'})[1]['id']
+    ink = c('POST', '/api/product', {'title': 'Ink', 'price': '7.00'})[1]['id']
     return app, c, {'one': one, 'two': two, 'pen': pen, 'ink': ink}
 
 
@@ -163,7 +163,7 @@ def test_document_sessions_report_rule_states_and_observe_them():
     stop = document.observe_rules(root, seen.append)
     document.set(root, 'stage', 'lost')
     assert seen[-1]['reason'] == {'applies': True, 'required': True, 'locked': False}
-    document.set(root, 'name', 'unrelated')
+    document.set(root, 'title', 'unrelated')
     assert len(seen) == 1
     stop()
     document.set(root, 'stage', 'won')
@@ -182,7 +182,7 @@ def test_initial_suggestions_follow_their_inputs_and_keep_user_edits(deals):
     assert [line['rate'] for line in deal['children']['lines']] == ['1.20', '6.50']
     # A later edit is kept while the inputs stay the same.
     assert patch(c, url, {'discount': '7.00'})[1]['discount'] == '7.00'
-    kept = patch(c, url, {'name': 'Renamed'})[1]
+    kept = patch(c, url, {'title': 'Renamed'})[1]
     assert (kept['discount'], kept['terms']) == ('7.00', 30)
     # A changed input suggests again; a value supplied in the same write wins.
     moved = patch(c, url, {'client': ids['two']})[1]
@@ -191,7 +191,7 @@ def test_initial_suggestions_follow_their_inputs_and_keep_user_edits(deals):
     assert (both['discount'], both['terms']) == ('9.00', 30)
     # An unchanged input does not suggest again, even when the linked record changed meanwhile.
     patch(c, f"/api/client/{ids['one']}", {'rate': '3.00'})
-    assert patch(c, url, {'name': 'Again'})[1]['discount'] == '9.00'
+    assert patch(c, url, {'title': 'Again'})[1]['discount'] == '9.00'
     lines = both['children']['lines']
     swapped = patch(c, url, {'children': {'lines': [{'id': lines[0]['id'], 'product': ids['ink']}, {'id': lines[1]['id']},
                                                     {'_key': 'n', 'product': ids['pen']}]}})[1]
@@ -223,10 +223,10 @@ def test_applies_when_clears_and_skips_validation_and_required_when_is_enforced(
     reopened = patch(c, url, {'stage': 'open'})[1]
     assert reopened['reason'] is None
     # An undecided rule counts as required: without a client the credit days are unknown.
-    status, result, _ = c('POST', '/api/deal', {'name': 'No client'})
+    status, result, _ = c('POST', '/api/deal', {'title': 'No client'})
     assert status == 422 and result['fields'] == {'note': 'This field is required'}
-    assert c('POST', '/api/deal', {'name': 'No client', 'note': 'Walk-in'})[0] == 201
-    long = c('POST', '/api/client', {'name': 'Slow', 'credit_days': 90})[1]['id']
+    assert c('POST', '/api/deal', {'title': 'No client', 'note': 'Walk-in'})[0] == 201
+    long = c('POST', '/api/client', {'title': 'Slow', 'credit_days': 90})[1]['id']
     assert c('POST', '/api/deal', {'client': long})[1]['fields'] == {'note': 'This field is required'}
 
 
@@ -241,7 +241,7 @@ def test_locked_fields_reject_changes_over_http_actions_and_context(deals):
     assert won[0] == 200 and won[1]['stage'] == 'won'
     status, result, _ = patch(c, url, {'discount': '1.00'})
     assert status == 422 and result['fields'] == {'discount': 'This field is locked and cannot be changed now'}
-    assert patch(c, url, {'discount': '2.50', 'name': 'Same value'})[0] == 200
+    assert patch(c, url, {'discount': '2.50', 'title': 'Same value'})[0] == 200
     _, _, headers = c('GET', url)
     status, result, _ = c('POST', url + '/actions/bump', {}, headers={b'if-match': headers[b'etag']})
     assert status == 422 and 'locked' in result['fields']['discount']
@@ -260,7 +260,7 @@ def test_locked_fields_reject_changes_over_http_actions_and_context(deals):
 
 def test_rules_over_unreadable_inputs_stay_enforced_without_revealing_them(deals):
     app, c, ids = deals
-    secret = c('POST', '/api/client', {'name': 'Guarded', 'secret_limit': '500'})[1]['id']
+    secret = c('POST', '/api/client', {'title': 'Guarded', 'secret_limit': '500'})[1]['id']
     deal = c('POST', '/api/deal', {'client': secret})[1]
     url = f"/api/deal/{deal['id']}"
     editor = add_user(app, 'editor')
@@ -286,8 +286,8 @@ def test_rules_over_unreadable_inputs_stay_enforced_without_revealing_them(deals
 
 def test_initial_over_unreadable_inputs_is_withheld_like_a_calculation(tmp_path):
     class Vendor(Model):
-        permissions = {**ALL, 'editor': Rule(('read',), read_fields=('name',))}
-        name = Text(default='')
+        permissions = {**ALL, 'editor': Rule(('read',), read_fields=('title',))}
+        title = Text(default='')
         cost = Currency(default=0)
 
     class Order(Model):
@@ -310,7 +310,7 @@ def test_initial_over_unreadable_inputs_is_withheld_like_a_calculation(tmp_path)
 # New field types
 
 class Contact(Model):
-    name = Text(default='')
+    title = Text(default='')
     phone = Phone()
     share = Percent()
     opens = Time()
@@ -364,17 +364,17 @@ def test_new_types_validate_and_serialize():
 
 
 def check_types_storage_and_filters(database):
-    other = database.create(Contact, name='Target')
-    first = database.create(Contact, name='A', phone='+44 20 7946 0000', share='12.5', opens='09:00', spent='PT2H',
+    other = database.create(Contact, title='Target')
+    first = database.create(Contact, title='A', phone='+44 20 7946 0000', share='12.5', opens='09:00', spent='PT2H',
                             labels=['vip', 'north'], about={'model': 'contact', 'id': other.id}, price='10.00')
-    database.create(Contact, name='B', share='50', opens='14:30:00', spent=600, labels=['north'])
+    database.create(Contact, title='B', share='50', opens='14:30:00', spent=600, labels=['north'])
     loaded = database.get(Contact, first.id).to_dict()
-    assert loaded | {'id': 0} == {'id': 0, 'name': 'A', 'phone': '+442079460000', 'share': '12.50', 'opens': '09:00:00', 'spent': 'PT2H',
+    assert loaded | {'id': 0} == {'id': 0, 'name': None, 'title': 'A', 'phone': '+442079460000', 'share': '12.50', 'opens': '09:00:00', 'spent': 'PT2H',
                                   'labels': ['vip', 'north'], 'about': {'model': 'contact', 'id': other.id}, 'price': '10.00',
                                   'code': 'USD', 'local': None}
 
     def names(**filters):
-        return sorted(record.name for record in database.list(Contact, filters=filters))
+        return sorted(record.title for record in database.list(Contact, filters=filters))
     assert names(labels__contains='north') == ['A', 'B'] and names(labels__contains='vip') == ['A'] and names(labels__contains='nort') == []
     assert names(about={'model': 'contact', 'id': other.id}) == ['A'] and names(about__isnull=True) == ['B', 'Target']
     assert names(spent__gte='PT1H') == ['A'] and names(spent__lt=3600) == ['B']
@@ -402,12 +402,12 @@ def test_new_types_store_and_filter_on_sqlite(tmp_path):
 def add_types(make):
     """Add each new type to an existing table with AddField and check the stored rows."""
     class Contact(Model):
-        name = Text(default='')
+        title = Text(default='')
     database = make(Registry(Contact), [])
-    database.create(Contact, name='Existing')
+    database.create(Contact, title='Existing')
 
     class Contact(Model):  # noqa: F811 - the upgraded definition
-        name = Text(default='')
+        title = Text(default='')
         phone = Phone()
         share = Percent(default='5')
         opens = Time()
@@ -421,7 +421,7 @@ def add_types(make):
     with pytest.raises(SchemaError, match='null backfill'):
         AddField('contact', 'other', Reference(), backfill={'model': 'contact', 'id': 1}).apply(None)
     record = upgraded.list(Contact)[0]
-    assert record.to_dict() | {'id': 0} == {'id': 0, 'name': 'Existing', 'phone': None, 'share': '5.00', 'opens': None,
+    assert record.to_dict() | {'id': 0} == {'id': 0, 'name': None, 'title': 'Existing', 'phone': None, 'share': '5.00', 'opens': None,
                                             'spent': 'PT0S', 'labels': None, 'about': None}
     updated = upgraded.update(Contact, record.id, about={'model': 'contact', 'id': record.id}, labels=['a'])
     assert updated.to_dict()['about'] == {'model': 'contact', 'id': record.id}
@@ -438,7 +438,7 @@ def test_new_types_can_be_added_by_migration_on_sqlite(tmp_path):
 
 class Secret(Model):
     permissions = {**ALL, 'viewer': Rule(())}
-    name = Text(default='')
+    title = Text(default='')
 
 
 class Memo(Model):
@@ -450,7 +450,7 @@ class Memo(Model):
 def test_references_check_existence_and_hide_unreadable_targets_over_http(tmp_path):
     app = application(tmp_path, Secret, Memo)
     c = client(app)
-    secret = c('POST', '/api/secret', {'name': 'x'})[1]['id']
+    secret = c('POST', '/api/secret', {'title': 'x'})[1]['id']
     status, memo, _ = c('POST', '/api/memo', {'about': {'model': 'secret', 'id': secret}})
     assert status == 201 and memo['about'] == {'model': 'secret', 'id': secret}
     assert c('POST', '/api/memo', {'about': {'model': 'secret', 'id': encode(RecordId(secret) + 50)}})[0] == 404
@@ -649,7 +649,7 @@ def test_legacy_child_tables_cannot_hold_finite_rows(tmp_path):
 
     class Parent(Model):
         permissions = ALL
-        name = Text(default='')
+        title = Text(default='')
 
     class Row(Model):
         permissions = ALL
