@@ -109,6 +109,10 @@ def parser():
     reset_two_step.add_argument('instance')
     reset_two_step.add_argument('username')
     reset_two_step.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
+    set_password = users_commands.add_parser('set-password', help="Set a user's password; asks twice without echo. Ends their sessions. Audited as cli")
+    set_password.add_argument('instance')
+    set_password.add_argument('username')
+    set_password.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     keys = commands.add_parser('secrets', help='Manage the key that seals connector secrets, two-step secrets and backup codes')
     keys_commands = keys.add_subparsers(dest='secrets_command', required=True)
     keys_rotate = keys_commands.add_parser('rotate', help='Re-encrypt saved secrets under a new secret.key')
@@ -327,8 +331,18 @@ def main(argv=None):
             from ..instances import read_instance
             path = child(root, 'instances', args.instance)
             read_instance(path)
-            reset_two_step_from_shell(path / 'data/database.sqlite3', args.username)
-            print(f'Two-step sign-in is reset for {args.username}. They set it up again at their next sign-in.')
+            if args.users_command == 'set-password':
+                import getpass
+                from ..controls import set_password_from_shell
+                config = read_instance(path)
+                first = getpass.getpass(f'New password for {args.username}: ')
+                if first != getpass.getpass('Repeat the password: '):
+                    raise ValueError('The two passwords differ. Nothing was changed.')
+                set_password_from_shell(path / 'data/database.sqlite3', args.username, first, config.security.password_min)
+                print(f'Password set for {args.username}. Their other sessions, AI assistants and API keys ended.')
+            else:
+                reset_two_step_from_shell(path / 'data/database.sqlite3', args.username)
+                print(f'Two-step sign-in is reset for {args.username}. They set it up again at their next sign-in.')
         elif args.command == 'secrets':
             from .project import child
             from ..instances import read_instance

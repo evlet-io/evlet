@@ -6,6 +6,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **`evlet dev` creates the first admin.** On an instance with no accounts, `evlet dev` creates an
+  active admin (`admin`, or `--user NAME`) with a random password that is never shown and prints a
+  one-time sign-in link, so you type no password or two-step code in development. `--no-link` skips
+  both. `evlet serve`, tenants and deployments never create accounts. New
+  `evlet users set-password <instance> <username>` sets a real password from the server shell. It
+  asks twice, enforces `security.password_min`, ends the user's sessions and is audited as `cli`
+  ([docs/cli.md](docs/cli.md#development-sign-in-links)).
+
 - **Breaking: every record has a standard name and title.** Record models (not Table rows) gain
   two framework columns next to `id`. `name` is the human identifier, unique per model, filled by
   `Meta.naming`: a naming series (which now fills `name` by default), the model's

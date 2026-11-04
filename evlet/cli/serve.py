@@ -141,7 +141,8 @@ def development_factory():
     runtime = ManagedRuntime(lambda: load_runtime(root, name, port=port, development=True),
                              lambda: instance_guard(child(root, 'instances', name), serving=True), jobs=True, debug=os.environ.get('EVLET_CLI_DEBUG') == '1')
     # Development only: one-time sign-in links at /_dev/signin. serve() below never adds them.
-    return DevSignIn(runtime, announce=os.environ.get('EVLET_CLI_LINK') == '1', user=os.environ.get('EVLET_CLI_LINK_USER') or None)
+    return DevSignIn(runtime, announce=os.environ.get('EVLET_CLI_LINK') == '1', user=os.environ.get('EVLET_CLI_LINK_USER') or None,
+                     create_admin=(os.environ.get('EVLET_CLI_LINK_USER') or 'admin') if os.environ.get('EVLET_CLI_LINK') == '1' else False)
 
 
 def declares_primary(path):
