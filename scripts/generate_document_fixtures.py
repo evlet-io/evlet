@@ -9,6 +9,7 @@ from test_documents import Order
 from test_business import http, client, PASSWORD
 from evlet import Registry, Database, LocalAuth, Application
 from evlet.identity import sequential_ids
+from evlet.audit import fixed_times
 
 
 def collect(app):
@@ -29,7 +30,7 @@ def collect(app):
 
 def main():
     # Ids count up per table, so the recording only changes when the responses do.
-    with TemporaryDirectory() as directory, sequential_ids():
+    with TemporaryDirectory() as directory, sequential_ids(), fixed_times():
         db = Database(Path(directory) / 'fixture.sqlite3', Registry(Order))
         app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
         app.initialize()

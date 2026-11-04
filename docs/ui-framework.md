@@ -285,6 +285,7 @@ mark only.
 | `doc.ts` | DocFrame (page or panel variant), DocHeader, MoveButton, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
 | `theme.ts` | `applyTheme`, `resolveTheme`, `systemScheme`, `currentTheme`, `THEMES`, `isTheme` ([Themes](#themes)) |
+| `time.ts` | `RelativeTime`, `relativeTime`, `exactTime`, `zoneLabel`, `RELATIVE_STEPS`, `minuteClock` ([Relative times](#relative-times)) |
 | `../app/filters.ts` | The list filter builder: filterBuilder, FilterPanel, FilterChips, filterFields, conditionsFor, encode, decode, compact |
 | `library.ts` | The Library page; open `/evlet.html` on the dev server (`npm run dev`) |
 
@@ -296,6 +297,37 @@ a lock hint says why ("Locked when Stage is won"), a calculated value shows its 
 GST date-times, exact decimals, `1h 30m` durations) and a wrong value stays in the input with
 a message that says how to fix it. `localField()` makes the same cells for forms that are not
 records, such as action dialogs.
+
+### Relative times
+
+`RelativeTime({ at, exact?, onToggle?, className? })` shows a moment as words relative to now, in a
+`<time datetime="...">` element. Hover or keyboard focus shows the exact time in a tooltip, in the
+person's date format and zone: `04-11-2026 14:05 GST` (GST unless they chose another zone in
+Settings). Its accessible name holds both forms.
+
+| Time since | Words |
+|---|---|
+| under 1 minute | just now |
+| under 1 hour | 1 minute ago, 2 minutes ago ... |
+| under 24 hours | 1 hour ago, 2 hours ago ... |
+| under 7 days | yesterday (24 to 48 hours), 2 days ago ... |
+| under 5 weeks | last week (7 to 13 days), 2 weeks ago ... |
+| 5 weeks or more | the date, such as 30-09-2026 |
+
+The thresholds live in one list, `RELATIVE_STEPS`, and the words come from `Intl.RelativeTimeFormat`
+with no library. A time slightly in the future (another clock) reads "just now".
+
+All RelativeTimes on a page share one minute clock (`minuteClock()`): one timer while any is shown,
+none while the tab is hidden, and a catch-up the moment it shows again, so "just now" becomes "1 minute
+ago" by itself. With `exact` the element shows the exact time and the tooltip the words; with
+`onToggle` it is a button (`aria-pressed`) that switches them.
+
+The record page's Record info block shows **Created** and **Last modified** from the detail's
+`_audit` ([model-engine.md](model-engine.md#record-times)): `2 hours ago · Aslam`. Clicking a
+time switches every time in Record info between relative and exact, remembered per person
+(`prefs.exactTimes`). Who is the person's display name, a link to Controls Users for people who may
+open Controls and plain text otherwise; it is absent for engine writes and for portal roles. The
+Activity tab's entry times use RelativeTime too, without the toggle.
 
 ### Typing dates and times
 
@@ -658,7 +690,8 @@ a title opens the full page in a new browser tab.
 | `Meta.relations` (Phase 10) | The Related tab and side block |
 | `attachments` | The Files side block, with upload for roles that can update while the record is not locked |
 | `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
-| Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system"), field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
+| Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
+| Every record (`_audit`) | Created and Last modified in the Record info side block, as relative times with who ([Relative times](#relative-times)) |
 
 A section appears only when the schema or the detail carries its key. The screen tests replay
 these keys as the engine sends them, recorded from an invoice with a State, a Sequence, effects,

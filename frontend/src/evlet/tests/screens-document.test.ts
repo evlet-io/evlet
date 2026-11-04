@@ -2,7 +2,7 @@
 // State and moves, Sequence, void and revise, effects, measures, meaning metadata, files and the
 // journal.
 import { afterEach, describe, expect, it } from 'vitest';
-import { byText, click, invoice, lastToast, requests, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
+import { byText, click, invoice, lastToast, requests, start, stopAll, headText, text, typeInto, until, type Route } from './screens-helpers';
 import { copy, type Recorded, type Sent } from './server';
 
 afterEach(stopAll);
@@ -48,7 +48,7 @@ describe('transaction document (recorded fixtures)', () => {
     // Activity: the journal grouped by day, newest first, actors named from the page's users, field
     // changes old and new and Table rows counted.
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(3));
-    const items = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));
+    const items = [...host.querySelectorAll('.tl-item .hd')].map(item => headText(item));
     expect(items).toEqual(['sara attached signed-copy.pdf', 'sara changed it', 'sara created this record']);
     const changed = host.querySelectorAll('.tl-item')[1];
     expect([...changed.querySelectorAll('.ev-diff')].map(text)).toEqual(['Total AED 0.00 AED 2,680.00', 'Lines 2 added']);
@@ -235,7 +235,7 @@ describe('transaction document (recorded fixtures)', () => {
   it('shows the issued invoice journal as the engine records it: moves, postings, numbers, actions and people', async () => {
     const { host } = start(routes(invoice.invoice_issued_detail), `/app/invoice/${draft}`);
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(invoice.invoice_journal.body.items.length));
-    const heads = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));
+    const heads = [...host.querySelectorAll('.tl-item .hd')].map(item => headText(item));
     expect(heads).toEqual([
       'The system logged a message to the customer',
       'sara planned a follow-up',
@@ -289,7 +289,7 @@ describe('transaction document (recorded fixtures)', () => {
     // The viewer cannot read ledger entries: the posting is a `changed` entry with nothing in it, marked partial.
     const partial = [...host.querySelectorAll('.tl-item')].filter(item => item.querySelector('.ev-partial'));
     expect(partial).toHaveLength(1);
-    expect(text(partial[0].querySelector('.hd')).replace(/\d\d:\d\d.*$/, '')).toBe('sara changed it');
+    expect(headText(partial[0].querySelector('.hd'))).toBe('sara changed it');
     expect(text(partial[0].querySelector('.ev-partial'))).toBe('Some details are hidden');
     expect(partial[0].querySelector('.note')).toBeNull();
     expect(requests(sent, 'POST', /\/journal$/)).toHaveLength(0);
@@ -301,7 +301,7 @@ describe('transaction document (recorded fixtures)', () => {
     journal.body.items[1].via = 'Claude';
     const { host } = start(routes(invoice.invoice_draft, journal), `/app/invoice/${draft}`);
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(3));
-    const items = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));
+    const items = [...host.querySelectorAll('.tl-item .hd')].map(item => headText(item));
     expect(items).toEqual(['sara attached signed-copy.pdf', 'sara changed it via Claude', 'sara created this record']);
   });
 
@@ -313,7 +313,7 @@ describe('transaction document (recorded fixtures)', () => {
     journal.body.total = 2;
     const { host } = start(routes(invoice.invoice_draft, journal), `/app/invoice/${draft}`);
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(2));
-    const items = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));
+    const items = [...host.querySelectorAll('.tl-item .hd')].map(item => headText(item));
     expect(items).toEqual(['sara received an email from buyer@acme.test', 'sara sent an email to a contact']);
     expect(text(host.querySelector('.tl-item .note .subj'))).toBe('Order');
   });

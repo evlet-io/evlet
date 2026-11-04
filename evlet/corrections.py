@@ -16,6 +16,7 @@ operation back.
 
 import json
 
+from .audit import actor_id, touch
 from .auth import AccessError
 from .fields import Link, Reference
 from .identity import RecordId
@@ -225,6 +226,7 @@ def void_record(context, model, record, reason):
     business, tx, user = context._business, context._tx, context.user
     name, previous = model.__state__, record._values.get(model.__state__)
     tx.connection.execute(f'UPDATE {identifier(business.registry.name_for(model))} SET {identifier(name)}=? WHERE id=?', (VOID, record.id))
+    touch(tx.connection, identifier(business.registry.name_for(model)), record.id, actor_id(user))
     reversed_rows = reverse_effects(context, model, record.id, previous)
     reaction = getattr(model, 'changed', None)
     if reaction is not None:
@@ -540,6 +542,7 @@ def unpost(context, model, record_id, reason):
     name, previous = model.__state__, record._values.get(model.__state__)
     to = unpost_state(context, model, record.id)
     tx.connection.execute(f'UPDATE {identifier(business.registry.name_for(model))} SET {identifier(name)}=? WHERE id=?', (to, record.id))
+    touch(tx.connection, identifier(business.registry.name_for(model)), record.id, actor_id(user))
     reversed_rows = reverse_effects(context, model, record.id, previous)
     reaction = getattr(model, 'changed', None)
     if reaction is not None:
