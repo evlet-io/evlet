@@ -63,8 +63,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const model = screenModel(ctx.schema, name);
   const { icon, tint } = identity(model);
   const state = model.state && fieldOf(model, model.state.field) ? model.state : null;
-  const canCreate = model.permissions?.create !== false;
-  const canDelete = model.permissions?.delete === true;
+  const canCreate = model.api !== 'read' && model.permissions?.create !== false;
+  const canDelete = model.api !== 'read' && model.permissions?.delete === true;
   const fields = listFields(model);
   const start = router.route.peek()?.query ?? {};
   ctx.crumbs.set([{ label: model.plural }]);
@@ -295,7 +295,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     const move = state!.moves.find(item => item.to === to && sources(item).includes(from));
     if (!move) return `${titleOf(model, row)} cannot move from ${humanize(from)} to ${humanize(to)}`;
     if (move.roles && !move.roles.includes(role)) return `Your role cannot use ${move.label}`;
-    if (model.permissions?.update === false) return 'You cannot change this record';
+    if (model.api === 'read' || model.permissions?.update === false) return 'You cannot change this record';
     // A move that asks for values (a reason, say) is made from the record, where its dialog asks for them.
     if (move.asks?.length) return `Open ${titleOf(model, row)} to use ${move.label}: it asks for ${move.asks.map(field => fieldOf(model, field)?.label.toLowerCase() ?? field).join(' and ')}`;
     return null;

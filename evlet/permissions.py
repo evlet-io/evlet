@@ -1,5 +1,7 @@
 """Backend model, field, and row rules. Python database sessions remain trusted."""
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from types import MappingProxyType, SimpleNamespace
 
@@ -15,6 +17,71 @@ from .query import Condition, SqlQuery, child_tables, conditions
 CHUNK = 500
 # Engine corrections: admin has them by default and a Rule may grant them to other roles too.
 CORRECTIONS = ('void', 'revise', 'unpost', 'repost', 'confirm', 'cancel', 'reopen')
+# Operations that change a record or what is kept with it; Meta.api = "read" refuses them to callers.
+WRITES = frozenset(('create', 'update', 'delete', 'journal', *CORRECTIONS))
+# Meta.api values: what callers (HTTP routes, MCP, Eva, connectors) reach of a model.
+API = ('full', 'read', None)
+# True while a request is served. The app code it runs (actions, moves, reactions, services) is trusted again.
+CALLER = ContextVar('evlet_caller', default=False)
+
+
+@contextmanager
+def calling(value=True):
+    """Serve a request as a caller (value=True), or run trusted app code inside one (value=False)."""
+    token = CALLER.set(value)
+    try:
+        yield
+    finally:
+        CALLER.reset(token)
+
+
+def trusted():
+    """Run app code a request calls, such as an action handler, as trusted Python: Meta.api does not limit it."""
+    return calling(False)
+
+
+def surface(registry, model, operation):
+    """The one rule over what may be done to a model before any role is asked, so no Rule or Controls
+    override can grant it back. Effect rows are written only by the engine, so nobody changes them. While a
+    caller is served, Meta.api = "read" refuses every write and Meta.api = None refuses everything."""
+    if operation in ('create', 'update', 'delete') and model in getattr(registry, 'effect_targets', ()):
+        return False
+    if not CALLER.get():
+        return True
+    api = getattr(registry, 'api', {}).get(model, 'full')
+    return api == 'full' or api == 'read' and operation not in WRITES
+
+
+def read_only(model):
+    """The refusal for a write route of a Meta.api = "read" model."""
+    return f'{model.__name__} records are read only here. The application changes them.'
+
+
+def compile_api(registry):
+    """{model: Meta.api} for every registered model; owned rows follow their document. A Link from a model
+    callers reach to an api=None model must be hidden, and so must an effect target's source when the
+    posting document is api=None, so ids and titles of such records never reach a caller."""
+    result = {}
+    for model in registry.models.values():
+        root = registry.root_of(model)
+        value = getattr(root.Meta, 'api', 'full')
+        if value not in API:
+            raise ValueError(f'{root.__name__}: Meta.api is "full", "read" or None')
+        result[model] = value
+    for model, value in result.items():
+        if value is None:
+            continue
+        for name, field in model.__declared_fields__.items():
+            if isinstance(field, Link) and result.get(field.target) is None and not field.hidden:
+                raise ValueError(f'{model.__name__}.{name} links to {field.target.__name__}, which has Meta.api = None. '
+                                 'Declare the Link hidden=True so its ids and titles stay private')
+    for source, bounds in getattr(registry, 'effects', {}).items():
+        for bound in bounds:
+            field = bound.target.__declared_fields__.get('source')
+            if result.get(source) is None and result.get(bound.target) is not None and field is not None and not field.hidden:
+                raise ValueError(f'{bound.target.__name__}.source names {source.__name__} records, which has Meta.api = None. '
+                                 'Declare it source = Reference(hidden=True)')
+    return MappingProxyType(result)
 
 
 def corrects(model, operation):
@@ -331,8 +398,7 @@ class Policy:
         return found
 
     def allows(self, user, model, operation):
-        if operation in ('create', 'update', 'delete') and model in getattr(self.registry, 'effect_targets', ()):
-            # Effect rows are written only by the engine, so no role may change them.
+        if not surface(self.registry, model, operation):
             return False
         if operation in CORRECTIONS:
             access = getattr(user, 'access', None)
