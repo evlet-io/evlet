@@ -19,7 +19,7 @@ from test_rules_types import ALL, add_user, start
 
 class Account(Model):
     permissions = {**ALL, 'viewer': Rule(('read',), scope=lambda user: {'public': True})}
-    name = Text(default='')
+    title = Text(default='')
     public = Boolean(default=True)
 
 
@@ -47,8 +47,8 @@ class Invoice(Model):
     Meta = InvoiceMeta
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'void', 'revise')),
                    'editor': Rule(('read', 'create', 'update'), scope=lambda user: {'owner': user.id}),
-                   'viewer': Rule(('read',), read_fields=('name', 'owner', 'account'))}
-    name = Text(default='')
+                   'viewer': Rule(('read',), read_fields=('title', 'owner', 'account'))}
+    title = Text(default='')
     cost = Currency(default=0)
     owner = Integer(default=0)
     account = Link(Account)
@@ -60,7 +60,7 @@ class Invoice(Model):
 
     @action('Rename', inputs={'title': Text(required=True)})
     def rename(self, title):
-        self.name = title
+        self.title = title
 
 
 class Memo(Model):
@@ -120,7 +120,7 @@ def seed(app):
     add_user(app, 'viewer')
     c = client(app)
     for name, public in (('Public', True), ('Private', False)):
-        status, account, _ = c('POST', '/api/account', {'name': name, 'public': public})
+        status, account, _ = c('POST', '/api/account', {'title': name, 'public': public})
         assert status == 201, account
         ACCOUNTS[name] = account['id']
     return app
@@ -145,7 +145,7 @@ def history(c, url, query=''):
 
 
 def new_invoice(c, **values):
-    body = {'name': 'First', 'cost': '5', 'owner': 2, 'account': ACCOUNTS['Private'], 'children': {'lines': [
+    body = {'title': 'First', 'cost': '5', 'owner': 2, 'account': ACCOUNTS['Private'], 'children': {'lines': [
         {'_key': 'a', 'qty': '2', 'rate': '5', 'secret': 's1', 'children': {'remarks': [{'_key': 'r1', 'text': 'x'}]}},
         {'_key': 'b', 'qty': '1', 'rate': '3', 'shared': False}]}, **values}
     status, record, _ = c('POST', '/api/invoice', body)
@@ -204,7 +204,7 @@ def check_engine(app):
     created = history(c, url)['items'][0]
     assert (created['kind'], created['actor']) == ('created', 1)
     fields = created['data']['fields']
-    assert fields['name'] == {'old': None, 'new': 'First'} and fields['total'] == {'old': None, 'new': '13.00'}
+    assert fields['title'] == {'old': None, 'new': 'First'} and fields['total'] == {'old': None, 'new': '13.00'}
     assert fields['status'] == {'old': None, 'new': 'draft'} and fields['account'] == {'old': None, 'new': ACCOUNTS['Private']}
     # Numbers have their own entries; row links and positions are not values.
     assert 'number' not in fields and 'revises' not in fields
@@ -216,13 +216,13 @@ def check_engine(app):
     edit(c, url, {'children': {'lines': {'order': [rows['1.0000'], rows['2.0000']]}}})
     assert history(c, url)['items'][0]['data'] == {'rows': {'lines': {'reordered': True}}}
     # Field and row changes in one write: an update, a removal with its old values, and an addition.
-    status, saved, _ = edit(c, url, {'name': 'Second', 'children': {'lines': {
+    status, saved, _ = edit(c, url, {'title': 'Second', 'children': {'lines': {
         'update': [{'id': rows['2.0000'], 'qty': '3', 'children': {'remarks': {'create': [{'_key': 'r2', 'text': 'y'}]}}}],
         'delete': [rows['1.0000']], 'create': [{'_key': 'c', 'qty': '1', 'rate': '1'}]}}})
     assert status == 200, saved
     changed = history(c, url)['items'][0]
     assert changed['kind'] == 'changed' and changed['data']['fields'] == {
-        'name': {'old': 'First', 'new': 'Second'}, 'total': {'old': '13.00', 'new': '16.00'}}
+        'title': {'old': 'First', 'new': 'Second'}, 'total': {'old': '13.00', 'new': '16.00'}}
     lines = changed['data']['rows']['lines']
     assert lines['added'][0]['id'] == saved['_row_ids']['c']
     assert lines['updated'] == [{'id': rows['2.0000'], 'fields': {'qty': {'old': '2.0000', 'new': '3.0000'}, 'amount': {'old': '10.00', 'new': '15.00'}},
@@ -231,11 +231,11 @@ def check_engine(app):
     assert 'reordered' not in lines
     # A write that changes nothing adds nothing.
     count = history(c, url)['total']
-    edit(c, url, {'name': 'Second'})
+    edit(c, url, {'title': 'Second'})
     assert history(c, url)['total'] == count
     # An action names itself.
     assert post(c, url, 'actions/rename', {'title': 'Third'})[0] == 200
-    assert history(c, url)['items'][0]['data'] == {'fields': {'name': {'old': 'Second', 'new': 'Third'}}, 'action': 'rename'}
+    assert history(c, url)['items'][0]['data'] == {'fields': {'title': {'old': 'Second', 'new': 'Third'}}, 'action': 'rename'}
     # A move, then the number it assigned.
     assert post(c, url, 'moves/issued')[0] == 200
     number, moved = history(c, url)['items'][:2]
@@ -245,7 +245,7 @@ def check_engine(app):
     assert post(c, url, 'void', {'reason': 'Wrong customer'})[0] == 200
     assert history(c, url)['items'][0]['data'] == {'from': 'issued', 'to': 'void', 'reason': 'Wrong customer'}
     # A revise voids the original, links it to the copy, and the copy starts with `created`.
-    other, other_url = new_invoice(c, name='Other')
+    other, other_url = new_invoice(c, title='Other')
     post(c, other_url, 'moves/issued')
     status, copy, _ = post(c, other_url, 'revise', {'reason': 'New prices'})
     assert status == 201, copy
@@ -294,9 +294,9 @@ def check_reading(app):
     post(c, url, 'moves/issued')
     seen = history(viewer, url)
     number, moved, created = seen['items']
-    # The viewer reads name, owner and account; the private account's id is hidden; so is the State.
+    # The viewer reads title, owner and account; the private account's id is hidden; so is the State.
     assert created['partial'] and created['data']['fields'] == {
-        'name': {'old': None, 'new': 'First'}, 'owner': {'old': None, 'new': 2}, 'account': {'old': None, 'new': None}}
+        'title': {'old': None, 'new': 'First'}, 'owner': {'old': None, 'new': 2}, 'account': {'old': None, 'new': None}}
     # Rows outside the viewer's row scope are left out; row fields it cannot read are removed.
     added = created['data']['rows']['lines']['added']
     assert [item['id'] for item in added] == [rows['2.0000']]
@@ -315,7 +315,7 @@ def check_reading(app):
     # An action's name is left out for roles that cannot read the State.
     renamed, renamed_url = new_invoice(c)
     assert post(c, renamed_url, 'actions/rename', {'title': 'Renamed'})[0] == 200
-    assert history(viewer, renamed_url)['items'][0]['data'] == {'fields': {'name': {'old': 'First', 'new': 'Renamed'}}}
+    assert history(viewer, renamed_url)['items'][0]['data'] == {'fields': {'title': {'old': 'First', 'new': 'Renamed'}}}
     assert history(c, renamed_url)['items'][0]['data']['action'] == 'rename'
     # Removed rows are hidden under a row scope, since they can no longer be checked against it.
     draft, draft_url = new_invoice(c)
@@ -566,9 +566,9 @@ def check_rollback(app, monkeypatch):
         with pytest.raises(RuntimeError):
             context.move(Invoice, record['id'], 'issued')
         monkeypatch.undo()
-        context.update(Invoice, record['id'], name='After')
+        context.update(Invoice, record['id'], title='After')
     saved = c('GET', url)[1]
-    assert saved['status'] == 'draft' and saved['number'] is None and saved['name'] == 'After'
+    assert saved['status'] == 'draft' and saved['number'] is None and saved['title'] == 'After'
     assert [item['kind'] for item in history(c, url)['items']] == ['changed', 'created']
     assert journal_module.verify(app.database)[1] == []
     assert post(c, url, 'moves/issued')[1]['number'] == 'INV-001'

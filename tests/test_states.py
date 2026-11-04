@@ -11,14 +11,14 @@ from finite_fixtures import FiniteMeta
 from test_business import client
 from test_rules_types import ALL, add_user, start
 
-HIDDEN = {**ALL, 'editor': Rule(('read', 'create', 'update'), read_fields=('customer', 'name', 'remarks', 'approved', 'total',
+HIDDEN = {**ALL, 'editor': Rule(('read', 'create', 'update'), read_fields=('customer', 'title', 'remarks', 'approved', 'total',
                                                                            'reference', 'status')),
-          'viewer': Rule(('read',), read_fields=('name', 'status', 'total'))}
+          'viewer': Rule(('read',), read_fields=('title', 'status', 'total'))}
 
 
 class Customer(Model):
     permissions = ALL
-    name = Text(default='')
+    title = Text(default='')
     limit = Currency(default=0)
 
 
@@ -38,7 +38,7 @@ class Invoice(Model):
     Meta = FiniteMeta
     permissions = HIDDEN
     customer = Link(Customer)
-    name = Text(default='')
+    title = Text(default='')
     remarks = Text(default='', editable_when_locked=True)
     approved = Boolean(default=False)
     secret = Currency(default=0)
@@ -52,21 +52,21 @@ class Invoice(Model):
     ), locked=('issued', 'paid', 'void'), final=('paid', 'void'))
 
     def on_issue(self):
-        if self.name == 'fail':
-            raise ValidationError({'name': 'Run failed'})
+        if self.title == 'fail':
+            raise ValidationError({'title': 'Run failed'})
         self.reference = 'INV-' + str(self.id)
         self.remarks = 'issued'
 
     def on_paid(self):
-        # Runs on a locked record: it may change `name`, but `reference` keeps its locked_when.
-        self.name = 'Paid'
+        # Runs on a locked record: it may change `title`, but `reference` keeps its locked_when.
+        self.title = 'Paid'
         if self.remarks == 'rewrite':
             self.reference = 'CHANGED'
 
     @action('Record payment', inputs={'amount': Currency(required=True, minimum='0.01'), 'paid_on': Date(required=True), 'memo': Text()},
             available_when=F('status') == 'issued')
     def record_payment(self, amount, paid_on, memo=None):
-        self.name = f'paid {amount} on {paid_on.isoformat()}' + (f' ({memo})' if memo else '')
+        self.title = f'paid {amount} on {paid_on.isoformat()}' + (f' ({memo})' if memo else '')
         return {'amount': str(amount)}
 
     @action('Change reference', inputs={'value': Text(required=True)})
@@ -82,7 +82,7 @@ class Invoice(Model):
         new_name = Text(required=True)
 
         def submit(self, source):
-            self.context.update(Invoice, source.id, name=self.new_name)
+            self.context.update(Invoice, source.id, title=self.new_name)
             return {'renamed': True}
 
 
@@ -96,7 +96,7 @@ def invoices(tmp_path):
 
 def seed(app):
     c = client(app)
-    customer = c('POST', '/api/customer', {'name': 'Acme', 'limit': '50'})[1]['id']
+    customer = c('POST', '/api/customer', {'title': 'Acme', 'limit': '50'})[1]['id']
     return app, c, customer
 
 
@@ -109,7 +109,7 @@ def move(c, url, to, headers=None):
 
 
 def new_invoice(c, customer=None, **values):
-    body = {'name': 'Invoice', 'customer': customer, 'children': {'lines': [{'_key': 'a', 'qty': '2', 'rate': '5',
+    body = {'title': 'Invoice', 'customer': customer, 'children': {'lines': [{'_key': 'a', 'qty': '2', 'rate': '5',
                                                                               'children': {'parts': [{'_key': 'p', 'code': 'X'}]}}]}, **values}
     status, record, _ = c('POST', '/api/invoice', body)
     assert status == 201, record
@@ -167,7 +167,7 @@ def check_ordinary_writes_cannot_set_the_state(invoices):
     status, body, _ = c('PATCH', url, {'status': 'issued'}, headers=etag(c, url))
     assert status == 422 and body['fields'] == {'status': 'This changes only through its moves'}
     # Sending the saved value back is not a change.
-    assert c('PATCH', url, {'status': 'draft', 'name': 'Renamed'}, headers=etag(c, url))[1]['name'] == 'Renamed'
+    assert c('PATCH', url, {'status': 'draft', 'title': 'Renamed'}, headers=etag(c, url))[1]['title'] == 'Renamed'
     with app.business.context(User(1, 'admin', 'admin')) as context:
         with pytest.raises(ValidationError):
             context.update(Invoice, record['id'], status='void')
@@ -216,7 +216,7 @@ def check_moves_check_state_role_guard_and_revision(invoices):
     with app.business.context(User(1, 'admin', 'admin')) as context:
         context.update(Invoice, record['id'], remarks='approved')
     paid = move(c, url, 'paid')[1]
-    assert (paid['status'], paid['name'], paid['reference']) == ('paid', 'Paid', f"INV-{record['id']}")
+    assert (paid['status'], paid['title'], paid['reference']) == ('paid', 'Paid', f"INV-{record['id']}")
     assert move(c, url, 'void')[1] == {'error': 'This record is paid, which is final; it has no moves'}
     assert c('GET', url)[1]['_moves'] == []
 
@@ -227,9 +227,9 @@ def test_moves_check_state_role_guard_and_revision(invoices):
 
 def check_a_failing_run_rolls_the_move_back(invoices):
     app, c, customer = invoices
-    record, url = new_invoice(c, customer, name='fail')
+    record, url = new_invoice(c, customer, title='fail')
     status, body, _ = move(c, url, 'issued')
-    assert status == 422 and body['fields'] == {'name': 'Run failed'}
+    assert status == 422 and body['fields'] == {'title': 'Run failed'}
     after = c('GET', url)[1]
     assert (after['status'], after['reference'], after['remarks']) == ('draft', '', '')
 
@@ -273,7 +273,7 @@ def check_locked_records_refuse_ordinary_writes_at_every_depth(invoices):
     part = line['children']['parts'][0]
     move(c, url, 'issued')
     locked = 'This record is issued, so it is locked'
-    assert c('PATCH', url, {'name': 'Changed'}, headers=etag(c, url))[1]['fields'] == {'name': locked}
+    assert c('PATCH', url, {'title': 'Changed'}, headers=etag(c, url))[1]['fields'] == {'title': locked}
     assert c('PATCH', url, {'children': {'lines': {'create': [{'qty': '1'}]}}}, headers=etag(c, url))[1]['fields'] == {'lines': locked}
     assert c('PATCH', url, {'children': {'lines': {'delete': [line['id']]}}}, headers=etag(c, url))[1]['fields'] == {'lines': locked}
     assert c('PATCH', url, {'children': {'lines': {'update': [{'id': line['id'], 'qty': '9'}]}}},
@@ -289,13 +289,13 @@ def check_locked_records_refuse_ordinary_writes_at_every_depth(invoices):
     assert c('DELETE', url, headers=etag(c, url))[1] == {'error': 'This record is issued, so it is locked and cannot be deleted'}
     with app.business.context(User(1, 'admin', 'admin')) as context:
         with pytest.raises(ValidationError):
-            context.update(Invoice, record['id'], name='Python')
+            context.update(Invoice, record['id'], title='Python')
         with pytest.raises(AccessError):
             context.delete(Invoice, record['id'])
     dialog = f"/api/_dialogs/invoice/{record['id']}/rename/submit"
     status, body, _ = c('POST', dialog, {'key': 'rename-once', 'values': {'new_name': 'Dialog'}}, headers=etag(c, url))
-    assert status == 422 and body['fields'] == {'name': locked}
-    assert c('GET', url)[1]['name'] == 'Invoice'
+    assert status == 422 and body['fields'] == {'title': locked}
+    assert c('GET', url)[1]['title'] == 'Invoice'
 
 
 def test_locked_records_refuse_ordinary_writes_at_every_depth(invoices):
@@ -307,7 +307,7 @@ def test_draft_records_stay_editable_and_deletable(invoices):
     record, url = new_invoice(c, customer)
     dialog = f"/api/_dialogs/invoice/{record['id']}/rename/submit"
     assert c('POST', dialog, {'key': 'rename-draft', 'values': {'new_name': 'Dialog'}}, headers=etag(c, url))[0] == 200
-    assert c('GET', url)[1]['name'] == 'Dialog'
+    assert c('GET', url)[1]['title'] == 'Dialog'
     assert c('DELETE', url, headers=etag(c, url))[0] == 204
 
 
@@ -329,11 +329,11 @@ def check_actions_validate_inputs_and_availability(invoices):
     # The action changes a locked record; locked_when still applies to what it writes.
     status, paid, _ = c('POST', action_url, {**pay, 'memo': 'bank'}, headers=etag(c, url))
     assert status == 200, paid
-    assert paid['name'] == 'paid 12.50 on 2026-11-01 (bank)' and paid['_outcome'] == {'amount': '12.50'}
+    assert paid['title'] == 'paid 12.50 on 2026-11-01 (bank)' and paid['_outcome'] == {'amount': '12.50'}
     status, body, _ = c('POST', url + '/actions/change_reference', {'value': 'NEW'}, headers=etag(c, url))
     assert status == 422 and body['fields'] == {'reference': 'This field is locked and cannot be changed now'}
     with app.business.context(User(1, 'admin', 'admin')) as context:
-        assert context.action(Invoice, record['id'], 'record_payment', amount='3', paid_on='2026-11-02')['name'] == 'paid 3.00 on 2026-11-02'
+        assert context.action(Invoice, record['id'], 'record_payment', amount='3', paid_on='2026-11-02')['title'] == 'paid 3.00 on 2026-11-02'
         with pytest.raises(ValidationError):
             context.action(Invoice, record['id'], 'record_payment', amount='3')
     draft, draft_url = new_invoice(c, customer)
@@ -706,7 +706,7 @@ def test_reading_a_stated_document_costs_at_most_one_more_statement(tmp_path):
 
 def test_stored_results_reading_editable_fields_through_legacy_formulas_and_fetches_are_rejected():
     class Owner(Model):
-        name = Text(default='')
+        title = Text(default='')
 
     class Extra(Child):
         extra = Integer(default=0, editable_when_locked=True)
@@ -723,26 +723,26 @@ def test_stored_results_reading_editable_fields_through_legacy_formulas_and_fetc
         {'lines': Table(Extra), 'total': Integer(compute='sum(lines.extra)')},
         {'remarks': Integer(default=0, editable_when_locked=True), 'v': Integer(compute='remarks * 2', stored=False),
          's': Integer(compute='v + 1')},
-        {'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.name')},
-        {'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.name', read_only=True)},
+        {'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.title')},
+        {'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.title', read_only=True)},
     )
     for fields in rejected:
         with pytest.raises(ValueError, match='editable while locked'):
             build(fields)
     # A finite stored result that reads a fetched copy of an editable Link is rejected too.
     with pytest.raises(ValueError, match='editable while locked'):
-        build({'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.name'),
+        build({'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.title'),
                'shown': Text(compute=F('owner_name'))}, meta=True)
     # Counting rows reads no field; a virtual result and a fetch over a fixed Link stay allowed.
     build({'lines': Table(Extra), 'n': Integer(compute='count(lines)')})
     build({'lines': Table(Fixed), 'total': Integer(compute='sum(lines.qty)'), 'remarks': Integer(default=0, editable_when_locked=True),
            'v': Integer(compute='remarks * 2', stored=False)})
-    build({'owner': Link(Owner), 'owner_name': Text(fetch='owner.name', read_only=True)})
+    build({'owner': Link(Owner), 'owner_name': Text(fetch='owner.title', read_only=True)})
 
 
 class Account(Model):
     permissions = ALL
-    name = Text(default='')
+    title = Text(default='')
     limit = Currency(default=0)
 
 
@@ -765,7 +765,7 @@ class Kept(Model):
 class KeptLegacy(Model):
     permissions = ALL
     account = Link(Account)
-    account_name = Text(fetch='account.name', read_only=True)
+    account_name = Text(fetch='account.title', read_only=True)
     remarks = Text(default='', editable_when_locked=True, required_if='account_name == "Big"')
     note = Text(default='', editable_when_locked=True)
     status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'),), locked=('issued',))
@@ -774,13 +774,13 @@ class KeptLegacy(Model):
 def test_rules_on_locked_records_read_the_saved_results(tmp_path):
     app = start(Database(tmp_path / 'kept.sqlite3', Registry(Account, Kept, KeptLegacy)))
     c = client(app)
-    account = c('POST', '/api/account', {'name': 'Small', 'limit': '10'})[1]['id']
+    account = c('POST', '/api/account', {'title': 'Small', 'limit': '10'})[1]['id']
     record = c('POST', '/api/kept', {'account': account, 'memo': 'm', 'children': {'lines': [{'_key': 'a'}]}})[1]
     url, line = f"/api/kept/{record['id']}", record['children']['lines'][0]['id']
     legacy = f"/api/keptlegacy/{c('POST', '/api/keptlegacy', {'account': account})[1]['id']}"
     for path in (url, legacy):
         assert move(c, path, 'issued')[0] == 200
-    c('PATCH', f'/api/account/{account}', {'name': 'Big', 'limit': '99'}, headers=etag(c, f'/api/account/{account}'))
+    c('PATCH', f'/api/account/{account}', {'title': 'Big', 'limit': '99'}, headers=etag(c, f'/api/account/{account}'))
     # The record keeps limit 10.00, so remarks is not required and memo still applies and keeps its value.
     status, body, _ = c('PATCH', url, {'children': {'lines': {'update': [{'id': line, 'note': 'n'}]}}}, headers=etag(c, url))
     assert status == 200, body

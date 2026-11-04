@@ -9,16 +9,19 @@ from test_business import PASSWORD, client, http, secured, hashed  # noqa: F401 
 class Client(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'update')),
                    'viewer': Rule(('read',))}
-    name = Text(required=True)
+    title = Text(required=True)
 
     @action('Plan job')
     def plan_job(self):
-        return present(StartJob, source=self, values={'name': self.name + ' job', 'billing': 'time'})
+        return present(StartJob, source=self, values={'name': self.title + ' job', 'billing': 'time'})
 
 
 class Job(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read',)), 'viewer': Rule(('read',))}
-    name = Text(required=True)
+    class Meta:
+        title_field = 'job_name'
+
+    job_name = Text(required=True)
     client = Link(Client, required=True)
     starts_on = Date()
     budget = Currency(minimum='0')
@@ -56,7 +59,7 @@ class StartJob(Slip):
             raise ValidationError({'starts_on': 'Pick a date from 2000 on'})
 
     def hand_in(self):
-        job = self.context.create(Job, name=self.name, client=self.client, starts_on=self.starts_on,
+        job = self.context.create(Job, job_name=self.name, client=self.client, starts_on=self.starts_on,
                                   children={'steps': [{'title': step.title, 'hours': step.hours} for step in self.steps]})
         return Outcome(f'Job {job["id"]} started', open=(Job, job['id']), data={'hours': str(self.total)})
 
@@ -77,7 +80,7 @@ class QuickJob(Slip):
     steps = Table(Step)
 
     def document(self, source):
-        return {'name': self.name, 'client': self.client, 'budget': self.hours * self.rate,
+        return {'job_name': self.name, 'client': self.client, 'budget': self.hours * self.rate,
                 'steps': [{'title': step.title, 'hours': step.hours} for step in self.steps]}
 
 
@@ -85,7 +88,7 @@ class DirectJob(Slip):
     title = 'Direct job'
     becomes = Job
     review = False
-    name = Text(required=True)
+    job_name = Text(required=True)
     client = Link(Client, required=True)
 
 
@@ -104,7 +107,7 @@ def app(tmp_path):
 
 
 def acme(c):
-    status, record, _ = c('POST', '/api/client', {'name': 'Acme'})
+    status, record, _ = c('POST', '/api/client', {'title': 'Acme'})
     assert status == 201, record
     return record['id'], {b'if-match': c('GET', f'/api/client/{record["id"]}')[2][b'etag']}
 
@@ -178,7 +181,7 @@ def test_hand_in_runs_the_handler_once_against_the_current_source(app):
     assert app.database.count(Job) == 1
     assert c('POST', '/api/_slips/start_job/hand-in', {**body, 'values': {**body['values'], 'name': 'Other'}}, headers=revision)[0] == 409
     # A slip filled against an older revision of its source is refused.
-    assert c('PATCH', f'/api/client/{client_id}', {'name': 'Acme Trading'}, headers=revision)[0] == 200
+    assert c('PATCH', f'/api/client/{client_id}', {'title': 'Acme Trading'}, headers=revision)[0] == 200
     assert c('POST', '/api/_slips/start_job/hand-in', {**body, 'key': 'hand-in-0003'}, headers=revision)[0] in (409, 412)
     assert app.database.count(Job) == 1
 
@@ -234,19 +237,19 @@ def test_becomes_review_returns_values_and_creates_nothing(app):
     status, outcome, _ = c('POST', '/api/_slips/quick_job/hand-in', body)
     assert status == 200, outcome
     assert outcome == {'document': {'model': 'job', 'review': True, 'values': {
-        'name': 'Kitchen', 'client': client_id, 'budget': '300.00', 'children': {'steps': [{'title': 'Measure', 'hours': '1.0000'}]}}}}
+        'job_name': 'Kitchen', 'client': client_id, 'budget': '300.00', 'children': {'steps': [{'title': 'Measure', 'hours': '1.0000'}]}}}}
     assert app.database.count(Job) == 0
 
 
 def test_becomes_direct_creates_through_the_normal_create_path(app):
     c = client(app)
     client_id, _ = acme(c)
-    status, outcome, _ = c('POST', '/api/_slips/direct_job/hand-in', {'key': 'direct-0001', 'values': {'name': 'Garage', 'client': client_id}})
+    status, outcome, _ = c('POST', '/api/_slips/direct_job/hand-in', {'key': 'direct-0001', 'values': {'job_name': 'Garage', 'client': client_id}})
     assert status == 200, outcome
     job_id = c('GET', '/api/job')[1]['items'][0]['id']
     assert outcome == {'document': {'model': 'job', 'id': job_id}, 'open': {'model': 'job', 'id': job_id}}
-    assert c('GET', f'/api/job/{job_id}')[1]['name'] == 'Garage'
-    status, result, _ = c('POST', '/api/_slips/direct_job/hand-in', {'key': 'direct-0002', 'values': {'name': 'Shed', 'client': 999}})
+    assert c('GET', f'/api/job/{job_id}')[1]['job_name'] == 'Garage'
+    status, result, _ = c('POST', '/api/_slips/direct_job/hand-in', {'key': 'direct-0002', 'values': {'job_name': 'Shed', 'client': 999}})
     assert status in (403, 404, 422) and app.database.count(Job) == 1
 
 
@@ -292,7 +295,7 @@ def test_definitions_are_checked_when_registered(tmp_path):
 def test_playground_slips_estimate_then_plan_a_project_and_review_an_invoice(secured):
     from examples.playground.models import Invoice, Project
     c = client(secured)
-    status, customer, _ = c('POST', '/api/customer', {'name': 'Acme', 'active': True})
+    status, customer, _ = c('POST', '/api/customer', {'customer_name': 'Acme', 'active': True})
     assert status == 201
     customer = customer['id']
     revision = {b'if-match': c('GET', f'/api/customer/{customer}')[2][b'etag']}

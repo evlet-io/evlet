@@ -3,13 +3,14 @@
     "items": [
       {
         "id": "0000000000001",
-        "name": "Website launch",
+        "title": "Website launch",
         "customer": "0000000000001",
         "status": "planned",
         "budget": "1250.50",
         "progress": 0,
         "starts_on": null,
-        "notes": null
+        "notes": null,
+        "name": null
       }
     ],
     "total": 1,
@@ -18,24 +19,27 @@
   },
   "detail": {
     "id": "0000000000001",
-    "name": "Website launch",
+    "title": "Website launch",
     "customer": "0000000000001",
     "status": "planned",
     "budget": "1250.50",
     "progress": 0,
     "starts_on": null,
     "notes": null,
+    "name": null,
     "children": {
       "tasks": [
         {
           "id": "0000000000001",
           "title": "Prepare content",
-          "done": false
+          "done": false,
+          "name": null
         },
         {
           "id": "0000000000002",
           "title": "Review pages",
-          "done": true
+          "done": true,
+          "name": null
         }
       ]
     }

@@ -992,13 +992,35 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:6d4f1841c6203c22294c9953614775386c0b6c9eec91491f5d347b58675a4e5f",
+   "model_schema_hash": "sha256:06a666225b7654e244a43d81b91edb04322a2ebba55bb3e5aa6efdd687a7af87",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "capped",
    "tables": {
     "$root": {
      "fields": {
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
       "total": {
        "computed": true,
        "default": null,
@@ -1266,7 +1288,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:25032952548b803e10142f7f67a0737212038ea4fb396943d88a5711715251ed",
+   "model_schema_hash": "sha256:e521c463e26a936333dfe344b076971a6c5001f3a943ee17869814e36079494c",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "choice",
@@ -1317,6 +1339,17 @@
        "stored": true,
        "type": "text"
       },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
       "nested": {
        "computed": true,
        "default": null,
@@ -1338,6 +1371,17 @@
        "scale": null,
        "stored": false,
        "type": "decimal"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       },
       "zero": {
        "computed": false,
@@ -1754,7 +1798,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:86596e9c0e13c39c73a9a72e1868653484c02d99b84f24c7458b6ceba1e7941a",
+   "model_schema_hash": "sha256:1d01ff61eb39945e34c58817f717fb507b00651061739cf12f79dfb0672d84fc",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "costsheet",
@@ -1830,6 +1874,28 @@
        "scale": 2,
        "stored": true,
        "type": "decimal"
+      },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       },
       "total_qty": {
        "computed": true,
@@ -2492,7 +2558,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:68b49a890eaffa69bfba7f99f508ce6c6130f027357a2d6d57af4b6006d918d1",
+   "model_schema_hash": "sha256:431bd135c6271409a54d2113c491abe25e36c514a79941aaebb4fe7acfd164bb",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "invoice",
@@ -2534,6 +2600,17 @@
        "stored": true,
        "type": "decimal"
       },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
       "net_total": {
        "computed": true,
        "default": null,
@@ -2555,6 +2632,17 @@
        "scale": 2,
        "stored": true,
        "type": "decimal"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       },
       "vat_total": {
        "computed": true,
@@ -2828,7 +2916,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:5e10103ff0464c5ec41aa5e3edb6f69fbd48a62bda1b277ce7254041df60f0ea",
+   "model_schema_hash": "sha256:c811d09f8e9767910ebeb5a4456fac04a31f8e3c8cb47742b068dd1da3315752",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "moments",
@@ -2879,6 +2967,17 @@
        "stored": true,
        "type": "datetime"
       },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
       "same": {
        "computed": true,
        "default": null,
@@ -2889,6 +2988,17 @@
        "scale": null,
        "stored": true,
        "type": "boolean"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       }
      },
      "model": "moments",
@@ -3388,7 +3498,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:5fc66d807f4903f0e980fdf6bec580292b068c30941a25142d0b368be41ae962",
+   "model_schema_hash": "sha256:643277bcaec5401a84e98e93c854d1c1fde3906af4b69638a0d6729b2fc9f071",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "offer",
@@ -3440,6 +3550,17 @@
        "scale": 0,
        "stored": true,
        "type": "decimal"
+      },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       },
       "note": {
        "computed": false,
@@ -3510,6 +3631,17 @@
        "scale": 0,
        "stored": true,
        "type": "decimal"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       },
       "total": {
        "computed": true,
@@ -3808,7 +3940,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:5f21ca9537f2a473f88fd403db46d2c4f8a9172f4475d1f450db25f4011ca488",
+   "model_schema_hash": "sha256:66a40ea7b1ce13985b656b8ea2af720f8a30bbbf90200fd58da16b24416915d0",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "project",
@@ -3838,6 +3970,28 @@
        "scale": 4,
        "stored": true,
        "type": "decimal"
+      },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       },
       "total": {
        "computed": true,
@@ -4221,7 +4375,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:e1eacd9fdac9e77673611fffda870171874ef0d30a0c79ffe7486d19754370d0",
+   "model_schema_hash": "sha256:e860db4b2a7ca09d26e7a4ab367e540e6b8718e664277cb7d7b350abf7700336",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "rounding",
@@ -4283,6 +4437,17 @@
        "stored": true,
        "type": "decimal"
       },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
       "raw": {
        "computed": true,
        "default": null,
@@ -4304,6 +4469,17 @@
        "scale": 2,
        "stored": true,
        "type": "decimal"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       },
       "up": {
        "computed": true,
@@ -4790,7 +4966,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:3671ad6d3d3e65dfca1d5cc1263de592e39ef412fb33af38d9eba2c31e512ceb",
+   "model_schema_hash": "sha256:684a89a4e794c6786fa176cfe5aaaf6c2d328794a4ea9079a468883cd22feffc",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "sale",
@@ -4887,6 +5063,17 @@
        "stored": true,
        "type": "decimal"
       },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
       "net": {
        "computed": true,
        "default": null,
@@ -4897,6 +5084,17 @@
        "scale": 2,
        "stored": true,
        "type": "decimal"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       },
       "vip": {
        "computed": true,
@@ -5334,7 +5532,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:cdd180fbe08bd89ae5fc4ccd733c8c08afb0721f4edffde1af29d654455197c9",
+   "model_schema_hash": "sha256:f3d3c2cc47b9a1e7663783756b146d5e5eacc3c24ce2af16f7750f1e2f26b4a9",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "schedule",
@@ -5418,6 +5616,17 @@
        "stored": true,
        "type": "decimal"
       },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
       "same": {
        "computed": true,
        "default": null,
@@ -5463,6 +5672,17 @@
        "scale": null,
        "stored": true,
        "type": "boolean"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       },
       "until": {
        "computed": true,
@@ -6062,7 +6282,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:4e8977d44e39b269fc2aff231613253852387d97b7344602a75f0aedf16530b9",
+   "model_schema_hash": "sha256:f22fac4950d29a97c937241d893a2e06c9052477367f68daa0390c0f6fc7b51e",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "states",
@@ -6123,6 +6343,17 @@
        "scale": null,
        "stored": true,
        "type": "boolean"
+      },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       },
       "negated": {
        "computed": true,
@@ -6233,6 +6464,17 @@
        "scale": null,
        "stored": false,
        "type": "decimal"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
       },
       "unrounded": {
        "computed": true,

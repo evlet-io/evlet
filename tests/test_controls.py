@@ -134,9 +134,9 @@ def test_portal_is_a_framework_role_and_portal_custom_roles_never_open_controls(
 def test_own_customer_preset_uses_the_links_the_session_preloads(hosts):
     admin = on_host(hosts, 'admin', DESK)
     add_user(hosts, 'rep', 'editor')
-    ids = [admin('POST', '/api/customer', {'name': name, 'email': f'{name}@example.com'})[1]['id'] for name in ('Mine', 'Theirs')]
+    ids = [admin('POST', '/api/customer', {'customer_name': name, 'email': f'{name}@example.com'})[1]['id'] for name in ('Mine', 'Theirs')]
     for customer_id in ids:
-        assert admin('POST', '/api/project', {'name': f'Project {customer_id}', 'customer': customer_id})[0] == 201
+        assert admin('POST', '/api/project', {'title': f'Project {customer_id}', 'customer': customer_id})[0] == 201
     rep = on_host(hosts, 'rep', DESK)
     assert len(rep('GET', '/api/project')[1]['items']) == 2
     value = {'ops': ['read', 'create', 'update', 'delete'], 'read': None, 'write': None, 'scope': 'own_customer'}
@@ -298,18 +298,18 @@ def test_an_override_set_is_atomic_and_reports_each_invalid_item(secured):
     assert payload['fields']['changes.2'] == 'Admin always has full access. Its rules cannot be changed.'
     assert version(secured) == before
     assert all(item['value'] is None for item in admin('GET', '/api/_controls/overrides')[1]['items'])
-    assert client(secured, 'editor')('POST', '/api/customer', {'name': 'Still allowed'})[0] == 201
+    assert client(secured, 'editor')('POST', '/api/customer', {'customer_name': 'Still allowed'})[0] == 201
 
 
 @pytest.mark.parametrize('kind,key,value,message', [
     ('perm', 'viewer|Customer', {'ops': ['read', 'create'], 'read': None, 'write': None, 'scope': None}, 'can only take access away'),
-    ('perm', 'clerk|Customer', {'ops': ['read'], 'read': ['name', 'email', 'notes'], 'write': None, 'scope': None}, 'can only hide more'),
-    ('perm', 'clerk|Customer', {'ops': ['read', 'update'], 'read': ['name'], 'write': ['name'], 'scope': None}, 'can only allow fewer'),
+    ('perm', 'clerk|Customer', {'ops': ['read'], 'read': ['customer_name', 'email', 'notes'], 'write': None, 'scope': None}, 'can only hide more'),
+    ('perm', 'clerk|Customer', {'ops': ['read', 'update'], 'read': ['customer_name'], 'write': ['customer_name'], 'scope': None}, 'can only allow fewer'),
     ('perm', 'clerk|Project', {'ops': ['read'], 'read': None, 'write': None, 'scope': None}, 'comes from the app'),
     ('perm', 'editor|Customer', {'ops': ['create'], 'read': None, 'write': None, 'scope': None}, 'need read access'),
-    ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': ['name'], 'scope': None}, 'need create or update'),
+    ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': ['customer_name'], 'scope': None}, 'need create or update'),
     ('perm', 'editor|Customer', {'ops': [], 'read': None, 'write': None, 'scope': 'owner'}, 'must be empty'),
-    ('perm', 'editor|Customer', {'ops': ['read', 'update'], 'read': ['name'], 'write': ['email'], 'scope': None}, 'must also be readable'),
+    ('perm', 'editor|Customer', {'ops': ['read', 'update'], 'read': ['customer_name'], 'write': ['email'], 'scope': None}, 'must also be readable'),
     ('perm', 'editor|Customer', {'ops': ['read'], 'read': [], 'write': None, 'scope': None}, 'at least one readable field'),
     ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': 'owner'}, 'not available for Customer'),
     ('setting', 'security.password_min', 14, 'can only go up'),
@@ -323,7 +323,7 @@ def test_an_override_set_is_atomic_and_reports_each_invalid_item(secured):
 def test_stricter_only_rules_reject_the_looser_value(tmp_path, hashed, kind, key, value, message):
     database = Database(tmp_path / 'strict.sqlite3', registry)
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False)
-    rules = {('clerk', Customer): Rule(('read', 'update'), read_fields=('name', 'email'), write_fields=('email',)),
+    rules = {('clerk', Customer): Rule(('read', 'update'), read_fields=('customer_name', 'email'), write_fields=('email',)),
              ('clerk', Project): Rule(('read',), scope=lambda user: {'customer': user.id})}
     app = Application(database, auth=auth, policy=Policy(registry, rules=rules, roles={'admin': 'admin', 'editor': 'editor', 'viewer': 'viewer', 'clerk': 'editor'}))
     app.initialize()
@@ -334,19 +334,19 @@ def test_stricter_only_rules_reject_the_looser_value(tmp_path, hashed, kind, key
 
 def test_saved_overrides_apply_and_an_equal_value_is_not_stored(secured):
     admin = client(secured)
-    assert save(admin, ('perm', 'editor|Customer', {'ops': ['read'], 'read': ['name'], 'write': None, 'scope': None}),
+    assert save(admin, ('perm', 'editor|Customer', {'ops': ['read'], 'read': ['customer_name'], 'write': None, 'scope': None}),
                 ('setting', 'security.password_min', 20), ('setting', 'security.lockout', 5))[0] == 200
     items = {(item['kind'], item['key']): item for item in admin('GET', '/api/_controls/overrides')[1]['items']}
-    assert items['perm', 'editor|Customer']['value']['read'] == ['name'] and items['perm', 'editor|Customer']['changed_by'] == 'admin'
+    assert items['perm', 'editor|Customer']['value']['read'] == ['customer_name'] and items['perm', 'editor|Customer']['changed_by'] == 'admin'
     assert items['setting', 'security.lockout']['value'] is None and items['setting', 'security.password_min']['value'] == 20
     editor = client(secured, 'editor')
-    assert editor('POST', '/api/customer', {'name': 'Blocked'})[0] == 403
-    assert admin('POST', '/api/customer', {'name': 'Visible'})[0] == 201
-    assert set(editor('GET', '/api/customer')[1]['items'][0]) == {'id', 'name'}
+    assert editor('POST', '/api/customer', {'customer_name': 'Blocked'})[0] == 403
+    assert admin('POST', '/api/customer', {'customer_name': 'Visible'})[0] == 201
+    assert set(editor('GET', '/api/customer')[1]['items'][0]) == {'id', 'customer_name'}
     status, payload, _ = admin('POST', '/api/_controls/users', {'username': 'short', 'password': 'x' * 19, 'role': 'viewer'})
     assert status == 422 and payload['fields']['password'] == 'Use between 20 and 128 characters'
     assert save(admin, ('perm', 'editor|Customer', None))[0] == 200
-    assert editor('POST', '/api/customer', {'name': 'Allowed again'})[0] == 201
+    assert editor('POST', '/api/customer', {'customer_name': 'Allowed again'})[0] == 201
     with secured.database._connection() as db:
         audit = db.execute('SELECT actor, area, target, detail FROM evlet_audit ORDER BY id').fetchall()
     assert [tuple(row) for row in audit][-1] == ('admin', 'Permissions', 'editor · Customer', 'Reset to the file value')
@@ -359,9 +359,9 @@ def test_a_second_application_on_the_same_database_picks_up_the_new_policy(secur
     other.database.initialize()
     other.business.initialize()
     editor = client(other, 'editor')
-    assert editor('POST', '/api/customer', {'name': 'Before'})[0] == 201
+    assert editor('POST', '/api/customer', {'customer_name': 'Before'})[0] == 201
     assert save(client(secured), ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': None}))[0] == 200
-    assert editor('POST', '/api/customer', {'name': 'After'})[0] == 403
+    assert editor('POST', '/api/customer', {'customer_name': 'After'})[0] == 403
     assert other.business.controls.version == version(secured)
 
 
@@ -372,11 +372,11 @@ def test_a_custom_role_falls_back_to_its_base(secured):
     add_user(secured, 'clerkuser', 'clerk')
     add_user(secured, 'salesuser', 'sales')
     clerk, sales = client(secured, 'clerkuser'), client(secured, 'salesuser')
-    assert clerk('GET', '/api/customer')[0] == 200 and clerk('POST', '/api/customer', {'name': 'No'})[0] == 403
-    assert sales('POST', '/api/customer', {'name': 'Yes'})[0] == 201
+    assert clerk('GET', '/api/customer')[0] == 200 and clerk('POST', '/api/customer', {'customer_name': 'No'})[0] == 403
+    assert sales('POST', '/api/customer', {'customer_name': 'Yes'})[0] == 201
     assert save(admin, ('perm', 'sales|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': None}))[0] == 200
-    assert sales('POST', '/api/customer', {'name': 'Not now'})[0] == 403
-    assert client(secured, 'editor')('POST', '/api/customer', {'name': 'Editor still can'})[0] == 201
+    assert sales('POST', '/api/customer', {'customer_name': 'Not now'})[0] == 403
+    assert client(secured, 'editor')('POST', '/api/customer', {'customer_name': 'Editor still can'})[0] == 201
     for role_id, message in (('Sales', 'Use 2 to 31'), ('controls', 'That name is taken'), ('sales', 'That name is taken')):
         status, payload, _ = admin('POST', '/api/_controls/roles', {'id': role_id, 'base': 'editor'})
         assert status == 422 and message in payload['fields']['id']
@@ -391,8 +391,8 @@ def test_an_app_rule_for_a_custom_role(tmp_path, hashed):
     add_user(app, 'admin', 'admin')
     add_user(app, 'salesuser', 'sales')
     sales = client(app, 'salesuser')
-    assert sales('POST', '/api/customer', {'name': 'Refused'})[0] == 403
-    assert sales('POST', '/api/project', {'name': 'From editor'})[0] == 201
+    assert sales('POST', '/api/customer', {'customer_name': 'Refused'})[0] == 403
+    assert sales('POST', '/api/project', {'title': 'From editor'})[0] == 201
     roles = client(app)('GET', '/api/_controls/roles')[1]['items']
     assert next(role for role in roles if role['id'] == 'sales')['base'] == 'editor'
     status, payload, _ = client(app)('DELETE', '/api/_controls/roles/sales')
@@ -457,7 +457,7 @@ def test_an_override_that_no_longer_validates_fails_closed_and_is_reported(secur
     stale(secured, 'editor|Customer', {'ops': ['read'], 'read': ['gone'], 'write': None, 'scope': None})
     stale(secured, 'security.lockout', 99)
     stale(secured, 'security.password_min', 'long')
-    assert editor('GET', '/api/customer')[0] == 403 and editor('POST', '/api/customer', {'name': 'x'})[0] == 403
+    assert editor('GET', '/api/customer')[0] == 403 and editor('POST', '/api/customer', {'customer_name': 'x'})[0] == 403
     assert editor('GET', '/api/project')[0] == 200
     assert (secured.business.auth.lockout, secured.business.auth.password_min) == (5, 64)
     attention = admin('GET', '/api/_controls/state')[1]['attention']
@@ -474,7 +474,7 @@ def test_a_policy_that_cannot_be_built_denies_everyone_but_admin(secured, monkey
             raise ValueError('Broken rule')
         return real(*args, **kwargs)
     monkeypatch.setattr(controls, 'Policy', policy)
-    assert save(admin, ('perm', 'viewer|Customer', {'ops': ['read'], 'read': ['name'], 'write': None, 'scope': None}))[0] == 200
+    assert save(admin, ('perm', 'viewer|Customer', {'ops': ['read'], 'read': ['customer_name'], 'write': None, 'scope': None}))[0] == 200
     assert editor('GET', '/api/project')[0] == 403
     assert admin('GET', '/api/project')[0] == 200
     assert any(item['title'] == 'Every role but admin is denied' for item in admin('GET', '/api/_controls/state')[1]['attention'])
@@ -561,7 +561,7 @@ def test_a_shorter_session_length_ends_sessions_older_than_it(secured):
     {'kind': 'perm', 'key': 'editor|Customer', 'value': {'ops': ['read'], 'read': None, 'write': None, 'scope': []}},
     {'kind': 'perm', 'key': 'editor|Customer', 'value': {'ops': ['read'], 'read': None, 'write': None, 'scope': {}}},
     {'kind': 'perm', 'key': 'editor|Customer', 'value': {'ops': [['read']], 'read': None, 'write': None, 'scope': None}},
-    {'kind': 'perm', 'key': 'editor|Customer', 'value': {'ops': ['read'], 'read': [['name']], 'write': None, 'scope': None}},
+    {'kind': 'perm', 'key': 'editor|Customer', 'value': {'ops': ['read'], 'read': [['customer_name']], 'write': None, 'scope': None}},
     {'kind': 'setting', 'key': 'security.controls_ips', 'value': [['1.2.3.4']]},
 ])
 def test_malformed_items_are_refused_not_crashing(secured, change):

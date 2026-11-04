@@ -155,15 +155,15 @@ def seed(app, password, *, big_lines=150):
     users = {name: app.business.auth.create_user(username=name, password=password, role=role) for name, role in USERS}
     admin = users['admin']
     with app.business.context(admin) as context:
-        organizations = [context.create(m['Organization'], name=name, industry=industry, emirate=emirate,
+        organizations = [context.create(m['Organization'], title=name, industry=industry, emirate=emirate,
                                         website=f'https://{site}', phone=phone, payment_days=terms,
                                         trn=f'1000{index:011d}')['id']
                          for index, (name, industry, emirate, site, phone, terms) in enumerate(ORGANIZATIONS)]
-        contacts = [context.create(m['Contact'], name=name, job_title=title, organization=organizations[org],
+        contacts = [context.create(m['Contact'], full_name=name, job_title=title, organization=organizations[org],
                                    email=name.split()[0].lower() + '@' + ORGANIZATIONS[org][3],
                                    phone=f'+971 50 {400 + index:03d} {2290 + index:04d}')['id']
                     for index, (name, title, org) in enumerate(CONTACTS)]
-        products = {code: context.create(m['Product'], code=code, name=name, kind=kind, price=price, taxable=taxable)['id']
+        products = {code: context.create(m['Product'], code=code, title=name, kind=kind, price=price, taxable=taxable)['id']
                     for code, name, kind, price, taxable in PRODUCTS}
     deals = []
     for title, org, contact, owner, source, stage, close, lines in DEALS:
@@ -187,7 +187,7 @@ def seed(app, password, *, big_lines=150):
         context.update(m['Deal'], deals[0], internal_notes='Partner sign-off needed for any discount above 5%.')
     for name, company, email, phone, source, score, owner, status in LEADS:
         with app.business.context(users[owner]) as context:
-            lead = context.create(m['Lead'], name=name, company=company, email=email, phone=phone, lead_source=source,
+            lead = context.create(m['Lead'], full_name=name, company=company, email=email, phone=phone, lead_source=source,
                                   score=score, owner=owner)['id']
             if status != 'new':
                 context.move(m['Lead'], lead, status)

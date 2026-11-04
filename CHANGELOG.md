@@ -6,6 +6,24 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Breaking: every record has a standard name and title.** Record models (not Table rows) gain
+  two framework columns next to `id`. `name` is the human identifier, unique per model, filled by
+  `Meta.naming`: a naming series (which now fills `name` by default), the model's
+  `autoname(self, context)` method (`Naming()`), or people typing it (`Naming(manual=True)`), on
+  create, on confirm (`assign_on="confirm"`, gap-free numbers for confirmable documents) or on
+  entering a state. Once assigned, people who may write the field can change it with a normal
+  edit; Links point to the id, so nothing else changes. `title` is the display text Link pickers,
+  lists, search and Eva show: a declared `title` field, or kept in sync from `Meta.title_field` or a
+  `Meta.title = "{first_name} {last_name}"` template, falling back to the name, then the text id.
+  Record pages show the title as the heading and the name in mono next to it
+  ([docs/model-engine.md](docs/model-engine.md#name-and-title)).
+  What to change: an `Application` refuses a model that declares its own `name` field; rename it in
+  an app migration, such as `RenameField('customer', 'name', 'customer_name')`, and point
+  `Meta.title_field` at it (or rename it to `title`). Then run `evlet migrate`: framework migration
+  `0003_record_names` adds the columns to existing tables and fills every title. API responses and
+  the schema now include `name` and `title`; the schema's `title_field` is `title`.
+  The Playground's `Customer.name` is now `customer_name`, `Employee.name` is `full_name`, `Project.name` is `title`, and invoice
+  numbers moved from `number` into `name` (migration `0008_record_names`).
 - **Breaking: record ids are text.** New records get a 63-bit, time-ordered id (milliseconds since
   01-01-2026 and 21 random bits), stored as before in the `INTEGER` primary key. Outside the
   database an id is always 13 lowercase Crockford base32 characters, such as `01hc1sd9vc1ye`: JSON
@@ -42,6 +60,28 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **`DevSignIn` export.** The root exports gain `DevSignIn`, which serves the one-time
   development sign-in links of `evlet dev` and `evlet playground` ([docs/cli.md](docs/cli.md#development-sign-in-links)).
   Never wrap an application you serve with it.
+- **Evlet upgrades go through `evlet migrate`.** `apps.lock` and the installed manifest
+  now record the Evlet version and its last framework migration. An instance migrated
+  with another Evlet version refuses to serve and asks for `evlet migrate`, which backs
+  up the database and runs ordered, checksummed framework migrations
+  (`evlet_framework_migrations`) on the staged copy. Existing instances need one
+  `evlet migrate` after upgrading; it adopts today's startup tables with no other change
+  ([docs/app-upgrades.md](docs/app-upgrades.md#upgrade-evlet)).
+- **Field retirement, safe type changes and data steps.** `RetireField` removes a field from the
+  models and API while keeping its column and values; `DropField` deletes a retired field's column
+  only with `allow_destructive=True` (`evlet migrate --allow-destructive`, which keeps a backup).
+  `AlterField` converts Integer to Decimal, widens a decimal scale, lengthens text and adds Select
+  choices, validating every stored row in the migration transaction. `RunData(function)` runs a
+  trusted data step right after its own migration; `RunData(..., maintenance=True)` may write
+  confirmed and posted records only with `--allow-maintenance`, and each such step is audited. A
+  retired Link drops its foreign key. `--plan` suggests RetireField and AlterField
+  ([docs/model-engine.md](docs/model-engine.md#retiring-and-dropping-fields)).
+- **Migration plans.** `evlet migrate <instance> --plan` and `database.plan(migrations)` show the
+  pending migrations and each model, field and property that differs from the models, with a
+  suggested migration; nothing is written. `evlet makemigration <app> --instance <instance>`
+  writes that suggestion into a flat app. A mismatch error now lists the same differences.
+  `AddTable(parent, name, ChildClass)` adds a child table without hand-written owner and position
+  fields, and `CreateModel` no longer compares the Python class name ([docs/model-engine.md](docs/model-engine.md#planning-a-migration)).
 - **Team and hierarchy row scopes.** New root exports `Hierarchy` and `any_of`. `Hierarchy(model, parent=...)` declares a reporting tree, and
   `Hierarchy.team(field)` is a row scope over the user's linked record and everyone below it at any
   depth, resolved in SQL with a recursive query on SQLite and PostgreSQL. `any_of(...)` combines
@@ -74,6 +114,12 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Playground items.** A new Item model has about 200 fields and two child tables (prices,
   barcodes), to try filters at scale. Run `.venv/bin/python -m examples.playground.migrate` (migration `0005_items`) on an
   existing Playground database.
+- **Migration plans.** `evlet migrate <instance> --plan` and `database.plan(migrations)` show the
+  pending migrations and each model, field and property that differs from the models, with a
+  suggested migration; nothing is written. `evlet makemigration <app> --instance <instance>`
+  writes that suggestion into a flat app. A mismatch error now lists the same differences.
+  `AddTable(parent, name, ChildClass)` adds a child table without hand-written owner and position
+  fields, and `CreateModel` no longer compares the Python class name ([docs/model-engine.md](docs/model-engine.md#planning-a-migration)).
 - **Playground invoice numbers.** New Playground invoices are named by a naming series,
   `INV-{YYYY}-{#####}` dated by the posting date (`INV-2026-00001`), in a new `number` field
   (migration `0006_invoice_number`; run `python -m examples.playground.migrate`). `reference` is now

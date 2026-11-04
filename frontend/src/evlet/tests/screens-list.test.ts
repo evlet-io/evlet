@@ -19,8 +19,8 @@ describe('generated list page', () => {
   it('shows the list fields with the title pinned first, the total and pages through the server', async () => {
     const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, customers]], '/app/customer');
     await until(() => expect(text(host.querySelector('.ev-list .summary'))).toBe('55 customers'));
-    expect([...host.querySelectorAll('thead th')].map(text)).toEqual(['', 'Name', 'Rate', 'Credit days']);
-    expect(host.querySelector('thead th[data-key="name"]')!.classList.contains('stk')).toBe(true);
+    expect([...host.querySelectorAll('thead th')].map(text)).toEqual(['', 'Customer name', 'Rate', 'Credit days']);
+    expect(host.querySelector('thead th[data-key="title"]')!.classList.contains('stk')).toBe(true);
     expect(rowTitles(host)[0]).toBe('Al Sahra Trading');
     expect(host.querySelector<HTMLAnchorElement>(`tbody tr[data-key="${id(1)}"] a.ev-row-link`)!.getAttribute('href')).toBe('/app/customer/0000000000001');
     expect(text(host.querySelector('.ev-pager span'))).toBe('1–50 of 55');

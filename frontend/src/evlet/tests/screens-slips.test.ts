@@ -116,7 +116,7 @@ describe('slips', () => {
     await until(() => expect(router.route.peek()?.name).toBe('create'));
     await until(() => expect(text(host.querySelector('.ev-record'))).toContain('Filled in from Quick customer.'));
     expect(requests(sent, 'POST', /\/api\/customer$/)).toHaveLength(0);
-    const name = host.querySelector<HTMLInputElement>('[data-field="name"] input')!;
+    const name = host.querySelector<HTMLInputElement>('[data-field="title"] input')!;
     expect(name.value).toBe('Oasis Water');
     expect(host.querySelector<HTMLInputElement>('[data-field="credit_days"] input')!.value).toBe('45');
   });

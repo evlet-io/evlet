@@ -79,12 +79,12 @@ def test_reference_app_full_public_flow(project):
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     c = client(app)
-    company = c('POST', '/api/company', {'name': 'Example'})[1]['id']
-    warehouse = c('POST', '/api/warehouse', {'name': 'Stores', 'company': company})[1]['id']
-    item = c('POST', '/api/itemmaster', {'name': 'Sample', 'description': 'Reference item'})[1]['id']
-    bom = c('POST', '/api/bom', {'name': 'Standard', 'item': item, 'company': company})[1]['id']
+    company = c('POST', '/api/company', {'title': 'Example'})[1]['id']
+    warehouse = c('POST', '/api/warehouse', {'title': 'Stores', 'company': company})[1]['id']
+    item = c('POST', '/api/itemmaster', {'title': 'Sample', 'description': 'Reference item'})[1]['id']
+    bom = c('POST', '/api/bom', {'title': 'Standard', 'item': item, 'company': company})[1]['id']
     assert c('POST', '/api/stockbalance', {'item': item, 'warehouse': warehouse, 'actual_qty': '12'})[0] == 201
-    values = {'name': 'SO-1', 'company': company, 'warehouse': warehouse, 'children': {'items': [{'_key': 'r1', 'item': item, 'qty': '3', 'rate': '2.25'}]}}
+    values = {'title': 'SO-1', 'company': company, 'warehouse': warehouse, 'children': {'items': [{'_key': 'r1', 'item': item, 'qty': '3', 'rate': '2.25'}]}}
     preview = c('POST', '/api/_draft/salesorder', {'values': values, 'revision': 1})
     assert preview[0] == 200, preview
     assert preview[1]['values']['children']['items'][0]['available_qty'] == '12.0000'
@@ -115,7 +115,7 @@ def test_reference_app_full_public_flow(project):
     assert report[1]['rows'][0]['total'] == '6.75'
     assert c('GET', f'/api/_services/amendment.services.integrations.warehouse.checks.balance_count?warehouse={warehouse}')[1] == {'count': 1}
     c('PATCH', f'/api/company/{company}', {'payment_days': 45}, headers={b'if-match': c('GET', f'/api/company/{company}')[2][b'etag']})
-    quote = {'name': 'Q-1', 'inclusive': True, 'company': company, 'issued_on': '2026-11-01', 'discount_rate': '3.33',
+    quote = {'title': 'Q-1', 'inclusive': True, 'company': company, 'issued_on': '2026-11-01', 'discount_rate': '3.33',
              'children': {'lines': [{'_key': 'a', 'qty': '1', 'rate': '105'},
                                                                       {'_key': 'b', 'qty': '2', 'rate': '10', 'taxable': False}]}}
     status, saved, _ = c('POST', '/api/quote', quote)
@@ -123,7 +123,7 @@ def test_reference_app_full_public_flow(project):
     assert (saved['net_total'], saved['vat_total'], saved['taxable_net'], saved['grand_total']) == ('120.00', '5.00', '100.00', '125.00')
     # 120.00 * 3.33% = 3.996 is rounded half up to the Currency scale; the due date follows the company Link.
     assert (saved['discount'], saved['payable'], saved['valid_until']) == ('4.00', '121.00', '2026-12-16')
-    assert c('POST', '/api/quote', {'name': 'Q-2'})[1]['valid_until'] is None
+    assert c('POST', '/api/quote', {'title': 'Q-2'})[1]['valid_until'] is None
     url = f"/api/quote/{saved['id']}"
     edit = lambda body: c('PATCH', url, body, headers={b'if-match': c('GET', url)[2][b'etag']})
     assert saved['payment_days'] == 45 and edit({'payment_days': 10})[1]['valid_until'] == '2026-11-11'
@@ -165,7 +165,7 @@ def test_reference_app_full_public_flow(project):
     assert check(app) == []
     assert edit({'discount_rate': '5'})[1]['fields'] == {'discount_rate': 'This record is won, so it is locked'}
     # A lost quote takes a reason while locked; reopening it clears the reason.
-    lost = c('POST', '/api/quote', {'name': 'Q-3', 'children': {'lines': [{'qty': '1', 'rate': '10'}]}})[1]
+    lost = c('POST', '/api/quote', {'title': 'Q-3', 'children': {'lines': [{'qty': '1', 'rate': '10'}]}})[1]
     lost_url = f"/api/quote/{lost['id']}"
     assert move(lost_url, 'sent')[0] == 200 and move(lost_url, 'lost')[1]['stage'] == 'lost'
     assert c('GET', lost_url)[1]['number'] == sent['number'][:-1] + '2'
@@ -179,7 +179,7 @@ def test_reference_app_full_public_flow(project):
     assert quote_schema['state']['final'] == ['won', 'void'] and quote_schema['actions'][0]['inputs'][0]['name'] == 'extra_days'
     # A sent quote is revised: it becomes void and a new draft copy with the same lines links back to it.
     assert quote_schema['revisable'] and quote_schema['permissions']['revise']
-    sent_quote = c('POST', '/api/quote', {'name': 'Q-4', 'children': {'lines': [{'qty': '2', 'rate': '10'}, {'qty': '1', 'rate': '4'}]}})[1]
+    sent_quote = c('POST', '/api/quote', {'title': 'Q-4', 'children': {'lines': [{'qty': '2', 'rate': '10'}, {'qty': '1', 'rate': '4'}]}})[1]
     sent_url = f"/api/quote/{sent_quote['id']}"
     sent_body = move(sent_url, 'sent')[1]
     sent_number = sent_body['number']
@@ -197,7 +197,7 @@ def test_reference_app_full_public_flow(project):
     revisions = c('GET', f"{sent_url}/related/quote.revises")[1]
     assert revisions['total'] == 1 and revisions['items'][0]['id'] == copy['id']
     copy_url = f"/api/quote/{copy['id']}"
-    assert c('PATCH', copy_url, {'name': 'Q-4 rev'}, headers={b'if-match': c('GET', copy_url)[2][b'etag']})[1]['name'] == 'Q-4 rev'
+    assert c('PATCH', copy_url, {'title': 'Q-4 rev'}, headers={b'if-match': c('GET', copy_url)[2][b'etag']})[1]['title'] == 'Q-4 rev'
     assert move(copy_url, 'sent')[1]['number'] == sent['number'][:-1] + '4'
     number = next(field for field in quote_schema['fields'] if field['name'] == 'number')
     assert (number['type'], number['read_only'], number['sequence']) == (

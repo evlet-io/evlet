@@ -129,6 +129,16 @@ Currency and decimal values stay exact strings. A Currency field shows its code 
 app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)).
 Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-framework.md](ui-framework.md#pickers)).
 
+### Ids, names and titles
+
+Record addresses use the record's text id, `/app/invoice/01hc1sd9vc1ye`, so changing a name never
+breaks a link or a bookmark. An older bookmark with a decimal id opens the same record and the
+address changes to its text id. A record page shows the record's `title` as its heading and, when
+the model has naming, its `name` next to it in a monospaced font, or "Assigned on save" or
+"Assigned on confirm" until it has one. Link pickers, list rows, search and the recent records
+show titles; the schema's `title_field` is `title` for every record model
+([model-engine.md](model-engine.md#name-and-title)).
+
 ### Filters
 
 A list's Filter button (with a count of active filters) opens a panel of filter rows under the

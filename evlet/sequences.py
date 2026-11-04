@@ -443,29 +443,49 @@ class Series:
 
 
 class Naming:
-    """Name records on create with the first series whose condition matches, from the top.
+    """How records get their standard `name` (evlet/naming.py).
 
-    `field` is a unique, optional Text field of the model that only the server fills on create (a trusted
-    Session may pass a name, for imports). `date_field` is an optional Date field for the date tokens;
-    without it they use the creation day in the instance timezone.
+    Naming(Series(...), ...): the first series whose condition matches, from the top.
+    Naming(): the model's `autoname(self, context) -> str` method, run in the write transaction.
+    Naming(manual=True): people type the name.
+
+    `assign_on` is "create" (the default), "confirm" for a confirmable model (the name is taken in the
+    confirm transaction, so drafts never use a number) or a state of the model. Until then the name is
+    empty. `date_field` is an optional Date field for the date tokens; without it they use the day the
+    name is assigned, in the instance timezone. A trusted Session may pass a name (imports); it is kept.
+
+    The older form Naming("field", Series(...)) names a unique, optional Text field of the model instead,
+    on create, and that field stays read only.
     """
 
-    def __init__(self, field, *series, date_field=None):
-        if not isinstance(field, str):
-            raise ValueError('Naming field names a unique Text field')
-        identifier(field)
-        if not series or any(not isinstance(item, Series) for item in series):
-            raise ValueError('Naming takes one or more Series after the field name')
+    def __init__(self, *series, date_field=None, assign_on='create', manual=False):
+        field = 'name'
+        if series and isinstance(series[0], str):
+            field, series = series[0], series[1:]
+            identifier(field)
+            if not series:
+                raise ValueError('Naming takes one or more Series after the field name')
+        if any(not isinstance(item, Series) for item in series):
+            raise ValueError('Naming takes Series, such as Naming(Series("INV-{YYYY}-{#####}"))')
+        if manual is not True and manual is not False:
+            raise ValueError('Naming manual is True or False')
+        if manual and series:
+            raise ValueError('Naming(manual=True) takes no series: people type the name')
+        if not isinstance(assign_on, str) or not assign_on:
+            raise ValueError('Naming assign_on is "create", "confirm" or a state name')
+        if field != 'name' and assign_on != 'create':
+            raise ValueError('Naming of a field other than name assigns on create')
         if date_field is not None:
             if not isinstance(date_field, str):
                 raise ValueError('Naming date_field names a Date field')
             identifier(date_field)
-        self.field, self.date_field = field, date_field
+        self.field, self.date_field, self.assign_on, self.manual = field, date_field, assign_on, manual
         last = len(series) - 1
         self.series = tuple({'id': item.id or ('default' if index == last else f'series_{index + 1}'),
                              'label': item.label or item.format, 'format': item.format, 'when': item.when}
                             for index, item in enumerate(series))
-        check_order(self.series)
+        if self.series:
+            check_order(self.series)
 
 
 def check_order(series):
@@ -485,10 +505,13 @@ class NamingRules:
     condition names a field the model no longer has.
     """
 
-    def __init__(self, model, field, date_field, series):
+    def __init__(self, model, field, date_field, series, assign_on='create', manual=False):
         from .expressions import UnknownField, parse
         fields = model.__declared_fields__
         self.model, self.field, self.date_field = model, field, date_field
+        self.assign_on, self.manual = assign_on, manual
+        # Without series and not manual, the model's autoname(self, context) method names records.
+        self.autoname = not series and not manual
         self.series, self.skipped = [], []
         for item in series:
             parts = parse_series(item['format'])
@@ -509,6 +532,11 @@ class NamingRules:
     def public(self):
         return [item for item, _, _ in self.series]
 
+    @property
+    def system(self):
+        """Whether the server assigns the name (a series or autoname), so people do not type it."""
+        return not self.manual
+
     def match(self, values):
         for item, parts, condition in self.series:
             if condition is None or condition.matches(values):
@@ -522,17 +550,29 @@ class NamingRules:
 
 def compile_naming(model, naming, series=None):
     """Check Meta.naming against its model; `series` replaces the file series (a Controls override)."""
+    from .naming import has_name
     fields = model.__declared_fields__
     where = f'{model.__name__}.Meta.naming'
     target = fields.get(naming.field)
+    if naming.field == 'name' and not has_name(model):
+        raise ValueError(f'{where}: {model.__name__} declares its own name field; rename it so the standard name can be used')
     if not isinstance(target, Text) or isinstance(target, (LongText, Sequence)) or not target.stored \
             or not target.unique or target.required or target.compute is not None:
         raise ValueError(f'{where}: {naming.field} must be a stored Text field with unique=True and not required; '
                          'the server fills it on create')
     if naming.date_field is not None and not isinstance(fields.get(naming.date_field), Date):
         raise ValueError(f'{where}: date_field names {naming.date_field!r}, which is not a Date field of the model')
+    if naming.assign_on == 'confirm' and not getattr(model, 'confirmable', False):
+        raise ValueError(f'{where}: assign_on="confirm" needs a confirmable model')
+    if naming.assign_on not in ('create', 'confirm'):
+        state = model.__state__
+        if state is None or naming.assign_on not in fields[state].choices:
+            raise ValueError(f'{where}: assign_on is "create", "confirm" or a state of the model, not {naming.assign_on!r}')
+    rules = naming.series if series is None else series
+    if not rules and not naming.manual and not callable(getattr(model, 'autoname', None)):
+        raise ValueError(f'{where}: give Series, manual=True, or an autoname(self, context) method on the model')
     try:
-        return NamingRules(model, naming.field, naming.date_field, naming.series if series is None else series)
+        return NamingRules(model, naming.field, naming.date_field, rules, naming.assign_on, naming.manual)
     except ValueError as exc:
         raise ValueError(f'{where}: {exc}') from None
 
@@ -617,11 +657,38 @@ def preview_name(connection, resource, rules, parts, values, today):
     return prefix + str((row[0] if row else 0) + 1).zfill(width) + render(tail, values, day)
 
 
-def name_new(connection, registry, model, values, today, actor=None):
-    """The name for a new record without one, or None when the model has no naming or a name was given."""
+def naming_rules(registry, model):
     from .fields import active_layer
-    rules = active_layer().naming.get(model) or registry.naming.get(model)
-    if rules is None or values.get(rules.field) not in (None, ''):
-        return None
+    return active_layer().naming.get(model) or registry.naming.get(model)
+
+
+def name_due(rules, values, *, created=False, lifecycle=None, move=None):
+    """Whether a record without a name gets one in this write (see Naming.assign_on)."""
+    if rules is None or rules.manual or values.get(rules.field) not in (None, ''):
+        return False
+    if rules.assign_on == 'create':
+        return created
+    if rules.assign_on == 'confirm':
+        return lifecycle == 'confirm'
+    state = rules.model.__state__
+    return (created and values.get(state) == rules.assign_on) or (move is not None and move.to == rules.assign_on)
+
+
+def issue(connection, registry, model, rules, values, today, actor=None, *, record=None, context=None, record_id=None):
+    """A name from the series or the model's autoname(self, context), checked to be free."""
+    from .naming import check_name
+    table = registry.name_for(model)
+    if rules.autoname:
+        name = model.autoname(record, context)
+        check_name(connection, table, model, name, record_id)
+        return name
     connection.execute(COUNTER_TABLE)
-    return issue_name(connection, registry.name_for(model), rules, values, today, actor)
+    return issue_name(connection, table, rules, values, today, actor)
+
+
+def name_new(connection, registry, model, values, today, actor=None, *, record=None, context=None):
+    """The name for a new record without one, or None when none is due on create or a name was given."""
+    rules = naming_rules(registry, model)
+    if not name_due(rules, values, created=True):
+        return None
+    return issue(connection, registry, model, rules, values, today, actor, record=record, context=context)

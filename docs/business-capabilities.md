@@ -93,8 +93,8 @@ from evlet import Policy, Rule
 policy = Policy(registry, rules={
     ('editor', Customer): Rule(
         operations=('read', 'create', 'update'),
-        read_fields=('name', 'email', 'active'),
-        write_fields=('name', 'email'),
+        read_fields=('customer_name', 'email', 'active'),
+        write_fields=('customer_name', 'email'),
         scope=lambda user: {'active': True},
     ),
     ('viewer', Payment): Rule(operations=()),
@@ -307,7 +307,7 @@ storage are not implemented.
 ```python
 class Meta:
     layout = (
-        ('Project', ('name', 'customer', 'status')),
+        ('Project', ('title', 'customer', 'status')),
         ('Planning', ('budget', 'progress', 'starts_on')),
         ('Notes', ('notes',)),
     )
