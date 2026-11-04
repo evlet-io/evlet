@@ -79,6 +79,8 @@ export interface ModelSchema {
   /** Rows per page and default order, from a Controls list view. */
   page_size?: number;
   order_by?: string;
+  /** How the list opens a record: the full page (default) or a side panel beside the list. */
+  open_in?: 'page' | 'panel';
   children?: ChildSchema[];
   actions?: ActionSchema[];
   permissions?: { create: boolean; update: boolean; delete: boolean };

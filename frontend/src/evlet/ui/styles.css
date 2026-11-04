@@ -1160,3 +1160,69 @@ th:hover>.rz::after{background:var(--border-strong)}
   .fb-gh{flex-wrap:wrap}
   .fb-gh .in-select{min-width:0}
 }
+
+/* ---------- SplitView: main area and a resizable side panel ---------- */
+.split{display:flex;height:100%;min-height:0;min-width:0}
+.split-main{flex:1 1 auto;min-width:0;min-height:0;overflow:auto}
+.split-side{flex:none;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
+.split-div{flex:none;width:9px;margin:0 -4px;position:relative;z-index:6;cursor:col-resize;touch-action:none;outline:none}
+.split-div::before{content:"";position:absolute;inset:0 4px;background:var(--border)}
+.split-div::after{content:"";position:absolute;top:50%;left:2px;width:5px;height:36px;margin-top:-18px;border-radius:3px;background:var(--accent);opacity:0;transition:opacity .15s}
+.split-div:hover::before,.split-div.drag::before,.split-div:focus-visible::before{background:var(--accent)}
+.split-div:hover::after,.split-div.drag::after,.split-div:focus-visible::after{opacity:1}
+.split-over .split-div{display:none}
+.split-over .split-side{position:absolute;inset:0;z-index:20}
+.split-open .split-side{animation:split-in .16s ease-out}
+@keyframes split-in{from{opacity:.4;transform:translateX(16px)}}
+@media (prefers-reduced-motion:reduce){.split-open .split-side{animation:none}.split-div::after{transition:none}}
+
+/* ---------- ChildRows: a child table in a narrow column ---------- */
+.crows-h{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.crows-h h3{margin:0 auto 0 0;font-size:13px;font-weight:600}
+.crows-lock{display:flex;align-items:center;gap:6px;font-size:12.5px;margin:0 0 6px}
+.crows-l{list-style:none;margin:0;padding:0;border-top:1px solid var(--divider)}
+.crow{border-bottom:1px solid var(--divider)}
+.crow-h{display:flex;align-items:flex-start;gap:10px;width:100%;padding:9px 4px;text-align:left;border-radius:var(--r-sm)}
+.crow-h:hover{background:var(--bg-subtle)}
+.crow-h .grow{flex:1;min-width:0}
+.crow-h b{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crow-sub{display:block;font-size:12px;color:var(--fg-3)}
+.crow-amt{font-weight:550;white-space:nowrap}
+.crow-chev{color:var(--fg-4);margin-top:3px;transition:transform .15s}
+.crow.open .crow-chev{transform:rotate(180deg)}
+.crow-ed{display:grid;gap:4px;padding:2px 4px 12px}
+.crow-ed .fields{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:13px}
+.crow-ed dt{color:var(--fg-3)}.crow-ed dd{margin:0}
+.crow-actions{display:flex;justify-content:flex-end}
+.crows-empty{padding:12px 4px;font-size:13px}
+.crows-t{display:grid;grid-template-columns:1fr auto;gap:4px 16px;margin:10px 0 0 auto;max-width:300px;font-size:13px}
+.crows-t dt{color:var(--fg-2)}.crows-t dd{margin:0;text-align:right}
+.crows-t dt:last-of-type,.crows-t dd:last-of-type{font-weight:650;color:var(--fg)}
+
+/* ---------- collapsible form sections ---------- */
+.fs-toggle{display:inline-flex;align-items:center;gap:6px;font:inherit;color:inherit;padding:0}
+.fs-chev{color:var(--fg-4);transition:transform .15s}
+.fs-fold.closed .fs-chev{transform:rotate(-90deg)}
+.fs-fold.closed .fs-h{margin-bottom:0}
+.fs-fold.closed{padding-bottom:14px}
+
+/* ---------- DocFrame panel variant: a record beside a list ---------- */
+.doc.doc-panel{display:flex;flex-direction:column;min-height:100%}
+/* The save bar sits at the bottom of the panel, even under a short record. */
+.doc-panel .doc-main{padding:12px 18px 0;max-width:none;margin:0;flex:1;display:flex;flex-direction:column}
+.doc-panel .doc-main > *{flex:none}
+.doc-panel .doc-main > [role="tabpanel"]{margin-bottom:16px}
+.doc-panel .ev-savebar{margin-top:auto}
+.doc-panel .doc-head{gap:8px;margin-bottom:12px}
+.doc-panel .doc-mark,.doc-panel .doc-head .eyebrow{display:none}
+.doc-panel .doc-head .ttl{min-width:0;flex-basis:100%}
+.doc-panel .doc-head h1{font-size:18px}
+.doc-panel .ph-actions{flex-wrap:wrap}
+.doc-panel .stepper{margin-bottom:14px}
+.doc-panel .sum{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc-panel .fs{padding:12px 14px}
+.doc-panel .fs-g{grid-template-columns:minmax(0,1fr)}
+.doc-panel .ff.full{grid-column:auto}
+.doc-panel .ev-savebar{margin-left:-6px;margin-right:-6px;margin-bottom:0;border-radius:var(--r) var(--r) 0 0}
+.dt tbody tr.cur td{background:var(--accent-soft)}
+.dt tbody tr.cur td:first-child{box-shadow:inset 3px 0 0 var(--accent)}

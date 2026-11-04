@@ -14,7 +14,8 @@ import {
   AddChip, Avatar, Button, Checkbox, Chip, CountBadge, Divider, EmptyState, FilterChip, Icon, IconButton, IconTile, InfoNote, Key, LinkButton, ProgressBar,
   QuickAddInput, RecordMark, ScoreBars, SearchInput, SegmentedControl, Stat, StateBanner, StatusPill, SummaryStrip, Switch,
 } from './base';
-import { ChildTable } from './childtable';
+import { ChildRows, ChildTable } from './childtable';
+import { SplitView } from './split';
 import { tint, type Tint } from './core';
 import { DocFrame, DocHeader, LockBanner, MoveButton, SideBlock, StatusFlow, TabPanel, Tabs, type Lifecycle } from './doc';
 import { BaseField, displayValue, localField, type FieldLike } from './fields';
@@ -194,6 +195,13 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     'page-header': () => PageHeader({ icon: 'handshake', tint: 'blue', title: 'Deals', count: 42, actions: [Button({ label: 'Import', icon: 'upload' }), Button({ label: 'New deal', icon: 'plus', variant: 'primary' })] }),
     tabs: () => Tabs({ tabs: [{ id: 'all', label: 'All deals', count: 42 }, { id: 'mine', label: 'Mine', count: 12 }, { id: 'closing', label: 'Closing this month', count: 5 }], active: cell('all'), label: 'Saved views' }),
     toolbar: () => Toolbar({ left: [SearchInput({ value: cell(''), placeholder: 'Search deals' }), Filters({ filters })], right: [ListSummary([{ label: 'Open', value: '12' }, { label: 'Pipeline', value: 'AED 1.15M' }])] }),
+    'split-view': () => {
+      const open = cell(true), width = cell(260);
+      return html`<div style="width:100%;height:180px;position:relative;border:1px solid var(--border);border-radius:12px;overflow:hidden">${SplitView({
+        main: html`<div style="padding:12px">${Button({ label: () => open.get() ? 'Close the panel' : 'Open the panel', size: 'small', onClick: () => open.set(!open.peek()) })}</div>`,
+        side: () => html`<p class="muted" style="padding:12px">Side panel</p>`, open, width, label: 'Resize the sample panel', minSide: 160, minMain: 120, initial: 260, breakpoint: 360,
+      })}</div>`;
+    },
     'doc-frame': () => html`<div style="width:100%;border:1px solid var(--border);border-radius:12px;overflow:hidden">${DocFrame({ tint: 'blue', main: html`<p class="muted">Main column</p>`, side: html`<p class="muted">Side panel</p>` })}</div>`,
     'side-block': () => html`<div style="width:300px">${SideBlock({ title: 'Tags', body: row(Chip({ label: 'Hot', icon: 'flame', tone: 'rose' }), AddChip({ label: 'Tag' })) })}</div>`,
     drawer: () => Button({ label: 'Open a drawer', icon: 'panel-right', onClick: () => openDrawer({ title: 'Contact', body: () => KeyValueList([f.email, f.phone, f.tags], { save: () => true }),
@@ -211,6 +219,8 @@ function demos(record: RecordStore | null): Record<string, Demo> {
       blocked: to => to === 'won' && flowState.peek() !== 'negotiation' ? 'Move to Negotiation before marking it won' : null })}</div>`,
     'state-banner': () => stack(SegmentedControl({ options: [{ value: 'draft', label: 'Draft' }, { value: 'locked', label: 'Issued' }, { value: 'void', label: 'Void' }], value: lifecycle, size: 'small', label: 'Lifecycle' }),
       LockBanner({ lifecycle, state: 'Issued', lockedText: 'Only remarks can change. To correct it, void or revise.', reason: 'Customer cancelled the order.', onRevise: () => toast('Opened a revision'), onVoid: () => toast('Opened Void invoice') })),
+    'child-rows': onRecord(store => html`<div style="width:100%;max-width:420px">${ChildRows({ table: store.table('lines'), title: 'Lines' })}</div>`,
+      () => html`<span class="muted">Needs a record. Open this page from the dev server to see the sample order.</span>`),
     'child-table': onRecord(store => html`<div style="width:100%">${ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'], title: 'Lines', icon: 'package', crumb: () => String(store.field('title').value.get() ?? ''), height: 340 })}</div>`,
       () => html`<span class="muted">Needs a record. Open this page from the dev server to see the sample order.</span>`),
     'form-section': onRecord(store => html`<div style="width:100%">${FormSection({ title: 'Details', note: 'Values save as you change them.', fields: ['title', 'customer', 'stage', 'issued', 'due', 'reason', 'remark', 'total'].map(name => store.field(name)) })}</div>`,

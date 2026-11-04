@@ -154,7 +154,7 @@ class Exporter:
 
     def list_view(self, name, value):
         return (f'{self.folder(self.models[name])}/views/__init__.py',
-                f"{name.lower()}_list = {call('ListView', (), {'model': self.models[name], 'columns': value['columns'], 'page_size': value['page_size'], 'order_by': value['sort']})}")
+                f"{name.lower()}_list = {call('ListView', (), {'model': self.models[name], 'columns': value['columns'], 'page_size': value['page_size'], 'order_by': value['sort'], **({'open_in': value['open_in']} if 'open_in' in value else {})})}")
 
     def settings(self, values):
         """Security settings for config.py, allowed networks for routes.py and paused schedules beside the app's schedules."""

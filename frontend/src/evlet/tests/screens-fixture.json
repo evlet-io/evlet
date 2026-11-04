@@ -1215,6 +1215,7 @@
       "credit_days"
      ],
      "name": "customer",
+     "open_in": "page",
      "order": [
       "title",
       "rate",
@@ -1523,6 +1524,7 @@
       "credit_days"
      ],
      "name": "customer",
+     "open_in": "page",
      "order": [
       "title",
       "rate",
@@ -1693,6 +1695,7 @@
       "price"
      ],
      "name": "product",
+     "open_in": "page",
      "order": [
       "title",
       "price",
@@ -2725,6 +2728,7 @@
       "issued"
      ],
      "name": "order",
+     "open_in": "page",
      "order": [
       "title",
       "customer",
@@ -2972,6 +2976,7 @@
       "phone"
      ],
      "name": "contact",
+     "open_in": "page",
      "order": [
       "title",
       "email",
@@ -3186,6 +3191,7 @@
       "manual": false,
       "placeholder": "Assigned on save"
      },
+     "open_in": "page",
      "order": [
       "number",
       "customer",
@@ -3422,6 +3428,7 @@
       "amount"
      ],
      "name": "order_lines",
+     "open_in": "page",
      "order": [],
      "permissions": {
       "create": true,
@@ -3491,6 +3498,7 @@
       "hours"
      ],
      "name": "order_lines_parts",
+     "open_in": "page",
      "permissions": {
       "create": true,
       "delete": true,
@@ -5037,6 +5045,7 @@
       "credit_days"
      ],
      "name": "customer",
+     "open_in": "page",
      "order": [
       "title",
       "rate",
@@ -5192,6 +5201,7 @@
       "price"
      ],
      "name": "product",
+     "open_in": "page",
      "order": [
       "title",
       "price",
@@ -5435,6 +5445,7 @@
       "credit_days"
      ],
      "name": "customer",
+     "open_in": "page",
      "order": [
       "title",
       "rate",
@@ -5605,6 +5616,7 @@
       "price"
      ],
      "name": "product",
+     "open_in": "page",
      "order": [
       "title",
       "price",
@@ -6617,6 +6629,7 @@
       "issued"
      ],
      "name": "order",
+     "open_in": "page",
      "order": [
       "title",
       "customer",
@@ -6745,6 +6758,7 @@
       "email"
      ],
      "name": "contact",
+     "open_in": "page",
      "order": [
       "title",
       "email"
@@ -6954,6 +6968,7 @@
       "manual": false,
       "placeholder": "Assigned on save"
      },
+     "open_in": "page",
      "order": [
       "number",
       "customer",
@@ -7190,6 +7205,7 @@
       "amount"
      ],
      "name": "order_lines",
+     "open_in": "page",
      "order": [],
      "permissions": {
       "create": false,
@@ -7259,6 +7275,7 @@
       "hours"
      ],
      "name": "order_lines_parts",
+     "open_in": "page",
      "permissions": {
       "create": false,
       "delete": false,

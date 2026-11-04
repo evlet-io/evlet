@@ -16,6 +16,23 @@ const bodyRows = (host: Element) => [...host.querySelectorAll<HTMLElement>('tbod
 const headerKeys = (host: Element) => [...host.querySelectorAll('thead th[data-key]')].map(th => th.getAttribute('data-key'));
 
 describe('DataTable', () => {
+  it('marks the current row, keeps it in step, and reports rows the arrow keys move to', () => {
+    const current = cell<number | null>(2);
+    const moved: number[] = [];
+    const host = render(() => DataTable({ columns, rows: items(5), key: item => item.id, label: 'Deals', current, onMove: item => moved.push(item.id) }));
+    const row = (id: number) => host.querySelector<HTMLElement>(`tbody tr[data-key="${id}"]`)!;
+    expect(row(2).getAttribute('aria-current')).toBe('true');
+    expect(row(2).classList.contains('cur')).toBe(true);
+    expect(row(2).tabIndex).toBe(0);
+    expect(row(1).hasAttribute('aria-current')).toBe(false);
+    key(row(2), 'ArrowDown');
+    expect(moved).toEqual([3]);
+    current.set(4);
+    expect(row(4).getAttribute('aria-current')).toBe('true');
+    expect(row(2).hasAttribute('aria-current')).toBe(false);
+    expect(row(4).tabIndex).toBe(0);
+  });
+
   it('renders a grid with a sticky header and the first column pinned', () => {
     const host = render(() => DataTable({ columns, rows: items(5), key: item => item.id, label: 'Deals', selectable: true }));
     const table = host.querySelector('table')!;
