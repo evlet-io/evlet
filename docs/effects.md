@@ -114,7 +114,7 @@ rows are saved and before the move completes:
    in batches, one statement per linked model.
 3. Rows may set only the target's own source fields. `source`, `reversal`, calculated fields
    and unknown names are refused (`Not a field the rows may set`).
-4. The engine fills `source` with the record (`{"model": "invoice", "id": 7}`) and `reversal`
+4. The engine fills `source` with the record (`{"model": "invoice", "id": "01hc1sd9vc1ye"}`) and `reversal`
    with false, checks `balanced`, and writes the rows.
 
 Effects run in declaration order. Any failure rolls back the whole move: the state, the

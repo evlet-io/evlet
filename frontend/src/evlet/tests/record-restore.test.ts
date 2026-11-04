@@ -1,16 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildChanges } from '../model/changes';
 import { backend, cleanup } from './ui-helpers';
+import { id } from './server';
 
 afterEach(cleanup);
 
 describe('Table.restore and rows of rows', () => {
   it('brings back a removed saved row with its id and nested rows, and nothing is left to save', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const lines = store.table('lines'), first = lines.rows.peek()[0];
     lines.remove(first);
-    expect(buildChanges(store.root)).toEqual({ children: { lines: { delete: [1] } } });
+    expect(buildChanges(store.root)).toEqual({ children: { lines: { delete: [id(1)] } } });
     expect(store.field('total').value.peek()).toBe('297.50');
     lines.restore(first, 0);
     expect(lines.rows.peek()[0]).toBe(first);
@@ -22,7 +23,7 @@ describe('Table.restore and rows of rows', () => {
 
   it('brings back a removed new row, and refuses rows it did not remove', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const lines = store.table('lines');
     const row = lines.add({ qty: '2', rate: '10.00' });
     expect(store.field('total').value.peek()).toBe('320.00');
@@ -38,7 +39,7 @@ describe('Table.restore and rows of rows', () => {
 
   it('adds a row with rows of rows as new rows that take part in calculations', async () => {
     const { store } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const lines = store.table('lines');
     const row = lines.add({ qty: '1', rate: '5.00', children: { parts: [{ hours: '1.5' }, { hours: '2' }] } });
     expect(row.table('parts').rows.peek().map(part => [part.isNew, part.field('hours').value.peek()])).toEqual([[true, '1.5'], [true, '2']]);

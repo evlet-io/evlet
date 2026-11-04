@@ -116,7 +116,7 @@ export function EvaPage(ctx: AppContext, status: Cell<EvaStatus | null>, convers
 
 const STARTERS = ['Which invoices are overdue by more than 30 days?', 'Summarise what changed in my projects this week', 'Make a spreadsheet of my open projects'];
 
-function EvaWelcome(props: { ctx: AppContext; eva: Eva; status: Cell<EvaStatus | null>; onStarted: (conversation: Conversation) => void; context?: { model: string; id: number }; starters?: string[] }): HTMLElement {
+function EvaWelcome(props: { ctx: AppContext; eva: Eva; status: Cell<EvaStatus | null>; onStarted: (conversation: Conversation) => void; context?: { model: string; id: string }; starters?: string[] }): HTMLElement {
   const { eva, status } = props;
   const composer = Composer({ eva, status, busy: cell(false), send: async (text, files) => {
     const conversation = await eva.create(props.context ? { context: props.context, title: 'New chat' } : {});
@@ -457,7 +457,7 @@ export function Markdown(source: string): Node {
 // ---------- Ask Eva from a record ----------
 
 /** The side panel on a record: a new chat with the record as its context, kept like any other chat. */
-export function openEvaPanel(ctx: AppContext, status: Cell<EvaStatus | null>, model: { name: string; label: string }, id: number, title: string) {
+export function openEvaPanel(ctx: AppContext, status: Cell<EvaStatus | null>, model: { name: string; label: string }, id: string, title: string) {
   {
     const eva = new Eva(ctx.api);
     const conversation = cell<number | null>(null);

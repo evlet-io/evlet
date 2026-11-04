@@ -49,7 +49,7 @@ def callers(secured):
     })
     visible = secured.database.create(Customer, name='Visible', email='seen@example.test', active=True)
     hidden = secured.database.create(Customer, name='Hidden', email='hidden@example.test', active=False)
-    return made, visible.id, hidden.id
+    return made, str(visible.id), str(hidden.id)
 
 
 def same(calls, name, arguments):
@@ -88,10 +88,11 @@ def test_changes_follow_operations_and_writable_fields_everywhere(callers):
 
 def test_the_playground_offers_a_service_as_a_tool(secured):
     editor, viewer = client(secured, 'editor'), client(secured, 'viewer')
-    editor('POST', '/api/project', {'name': 'Fit-out', 'children': {'tasks': [{'title': 'Order', 'done': True}, {'title': 'Fit', 'done': False}]}})
+    project = editor('POST', '/api/project', {'name': 'Fit-out', 'children': {'tasks': [{'title': 'Order', 'done': True}, {'title': 'Fit', 'done': False}]}})
     services = editor('POST', '/api/_tools/execute', {'tool': 'list_services', 'arguments': {}})[1]['result']['services']
     assert [service['name'] for service in services] == ['playground.project_overview']
-    overview = editor('POST', '/api/_tools/execute', {'tool': 'call_service', 'arguments': {'service': 'playground.project_overview', 'arguments': {'project': 1}}})
+    overview = editor('POST', '/api/_tools/execute', {'tool': 'call_service', 'arguments': {'service': 'playground.project_overview', 'arguments': {'project': project[1]['id']}}})
+    assert 'result' in overview[1], overview
     assert overview[1]['result'] == {'project': 'Fit-out', 'status': 'planned', 'progress': 0, 'budget': '0.00', 'tasks': 2, 'done': 1}
     # The service declares (Project, 'read'), so a viewer may call it too; the route checks that, not the tool.
-    assert viewer('POST', '/api/_tools/execute', {'tool': 'call_service', 'arguments': {'service': 'playground.project_overview', 'arguments': {'project': 1}}})[1]['result']['done'] == 1
+    assert viewer('POST', '/api/_tools/execute', {'tool': 'call_service', 'arguments': {'service': 'playground.project_overview', 'arguments': {'project': project[1]['id']}}})[1]['result']['done'] == 1

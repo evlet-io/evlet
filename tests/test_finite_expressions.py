@@ -969,9 +969,9 @@ def test_link_paths_are_validated_at_registry_build():
     assert dated.plans[dated.models['doc']]['fields'][0]['expression']['$expr'] == 'date_add'
 
     doc = Document(doc_plan, {'party': 4})
-    assert doc.lookup_requests() == [['party', 4, ['area', 'days_due']]]
+    assert doc.lookup_requests() == [['party', '0000000000004', ['area', 'days_due']]]
     doc.set_lookups('party', 4, {'area': 2, 'days_due': 10})
-    assert doc.lookup_requests() == [['area', 2, ['country']]]
+    assert doc.lookup_requests() == [['area', '0000000000002', ['country']]]
     doc.set_lookups('area', 2, {'country': 1})
     doc.set_lookups('country', 1, {'offset': '5'})
     assert doc.snapshot()['result'] == '15.0000' and doc.lookup_requests() == []

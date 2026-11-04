@@ -23,7 +23,7 @@ def test_manager_member_and_outsider_see_their_part_of_the_team(secured):
     # The member sees their own manager link as empty: the manager is outside their scope.
     member_record = member('GET', f"/api/employee/{accounts['member']}")[1]
     assert member_record['reports_to'] is None
-    assert manager('GET', f"/api/employee/{accounts['member']}")[1]['reports_to'] == accounts['manager']
+    assert manager('GET', f"/api/employee/{accounts['member']}")[1]['reports_to'] == str(accounts['manager'])
 
 
 def test_team_changes_are_on_record(secured):

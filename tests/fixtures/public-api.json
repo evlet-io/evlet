@@ -80,6 +80,7 @@
     "PrintDesign": "class()",
     "Query": "class(target, *, filters=None, fields)",
     "Recompute": "class(table: str, fields: tuple) -> None",
+    "RecordId": "class(value)",
     "Ref": "class(path: str) -> None",
     "Reference": "class(**kwargs)",
     "Registry": "class(*models)",

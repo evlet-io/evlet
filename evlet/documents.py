@@ -13,6 +13,7 @@ from .auth import AccessError
 from .database import ConflictError, ROW_LIMIT
 from .declarations import Ref
 from .fields import CurrentUser, MISSING, Link
+from .identity import RecordId
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
@@ -212,7 +213,7 @@ class Context:
     def measures(self, model, record_id=None, *, filters=None):
         """Declared measures this user may read, with row scopes applied."""
         from .measures import scoped_measures
-        return scoped_measures(self._business, self._tx, self.user, self._model(model), record_id, filters)
+        return scoped_measures(self._business, self._tx, self.user, self._model(model), None if record_id is None else known_id(record_id), filters)
 
     @property
     def lifecycle_execution(self):
@@ -220,7 +221,7 @@ class Context:
 
     def document(self, model, record_id=None, **values):
         from .lifecycle import BoundDocument
-        return BoundDocument(self, self._model(model), record_id, values)
+        return BoundDocument(self, self._model(model), None if record_id is None else known_id(record_id), values)
 
     def confirm(self, model, record_id):
         return self._write(model, record_id, {}, lifecycle='confirm')
@@ -233,27 +234,27 @@ class Context:
 
     def history(self, model, record_id, **page):
         from .journal import entries
-        return entries(self, model, record_id, **page)
+        return entries(self, model, known_id(record_id), **page)
 
     def revisions(self, model, record_id, **page):
         from .lifecycle import revisions
-        return revisions(self, self._model(model), record_id, **page)
+        return revisions(self, self._model(model), known_id(record_id), **page)
 
     def snapshot(self, model, record_id, *, revision):
         from .lifecycle import snapshot
-        return snapshot(self, self._model(model), record_id, revision)
+        return snapshot(self, self._model(model), known_id(record_id), revision)
 
     def diff(self, model, record_id, first, second):
         from .lifecycle import diff
-        return diff(self, self._model(model), record_id, first, second)
+        return diff(self, self._model(model), known_id(record_id), first, second)
 
     def record_approval(self, model, record_id, *, approved, reason=None):
         from .lifecycle import record_approval
-        return record_approval(self, self._model(model), record_id, approved, reason)
+        return record_approval(self, self._model(model), known_id(record_id), approved, reason)
 
     def reference_effect(self, model, record_id):
         from .lifecycle import reference_effect
-        return reference_effect(self, model, record_id)
+        return reference_effect(self, model, known_id(record_id))
 
     def create(self, model, **values):
         return self._write(model, None, values)
@@ -290,7 +291,7 @@ class Context:
         from . import corrections
         if self.readonly:
             raise AccessError(403, 'This context is read only')
-        model = self._model(model)
+        model, record_id = self._model(model), known_id(record_id)
         key = (model, record_id)
         if key in self._active or len(self._active) >= 16:
             raise ValidationError({'_form': 'Recursive document change detected'})
@@ -305,7 +306,7 @@ class Context:
 
     def delete(self, model, record_id):
         if self.readonly: raise AccessError(403, 'This context is read only')
-        model = self._model(model)
+        model, record_id = self._model(model), known_id(record_id)
         key = (model, record_id)
         if key in self._active or len(self._active) >= 16:
             raise ValidationError({'_form': 'Recursive document change detected'})
@@ -357,6 +358,7 @@ class Context:
         model = self._model(model)
         if not getattr(model, '__declaration_mode__', False):
             raise ValueError('Contextual writes require declarative models')
+        record_id = None if record_id is None else known_id(record_id)
         key = (model, record_id)
         if key in self._active or len(self._active) >= 16:
             raise ValidationError({'_form': 'Recursive document change detected'})
@@ -539,6 +541,22 @@ CHANGES = ('create', 'update', 'delete', 'order')
 CHILD_ID = 'Child ID must belong to this parent and appear once'
 
 
+def known_id(value):
+    """A record id given to a Context method (a RecordId, an int or the text form), or a 404."""
+    try:
+        return RecordId(value)
+    except ValueError:
+        raise AccessError(404, 'Record not found') from None
+
+
+def item_id(value):
+    """A RecordId from a saved row id in a request (text, or an int from older clients), else None."""
+    try:
+        return RecordId(value)
+    except ValueError:
+        return None
+
+
 def row_changes(changes, existing, hidden, positioned, where):
     """Entries ('keep', id, False) or ('row', value, placed) for a {create, update, delete, order} change set.
 
@@ -560,7 +578,11 @@ def row_changes(changes, existing, hidden, positioned, where):
     saved = {row.id for row in existing}
 
     def saved_id(value):
-        if type(value) is not int or value not in saved or value in hidden:
+        try:
+            value = RecordId(value)
+        except ValueError:
+            fail(CHILD_ID)
+        if value not in saved or value in hidden:
             fail(CHILD_ID)
         return value
     deleted = [saved_id(value) for value in parts['delete']]
@@ -584,12 +606,13 @@ def row_changes(changes, existing, hidden, positioned, where):
             if isinstance(value.get('_key'), str):
                 created.setdefault(value['_key'], index)
         for item in parts['order']:
-            if type(item) is int:
-                if item in removed:
+            # The _key of a created row wins over a saved row id written the same way.
+            if isinstance(item, str) and item in created:
+                entry = ('new', created[item])
+            elif item_id(item) is not None:
+                if item_id(item) in removed:
                     fail('A deleted row cannot be ordered')
                 entry = ('saved', saved_id(item))
-            elif isinstance(item, str) and item in created:
-                entry = ('new', created[item])
             else:
                 fail('Order lists saved row IDs and the _key of rows created in this request')
             if entry in placed:
@@ -712,6 +735,8 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
                 raise ValidationError({prefix + child.name: 'Each row must be an object'})
             value = dict(value)
             row_id = value.pop('id', None)
+            if row_id is not None:
+                row_id = item_id(row_id) or row_id
             temporary = value.pop('_key', None)
             # New rows' keys map to IDs in one flat _row_ids object, so they are unique document-wide.
             fresh = row_id is None
@@ -723,7 +748,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             computed_write(business, child.model, value, prefix + child.name + '.')
             business.policy.check_values(tx, user, child.model, value, targets=targets)
             if row_id is not None:
-                if type(row_id) is not int or row_id not in originals or row_id in kept or row_id in hidden:
+                if not isinstance(row_id, RecordId) or row_id not in originals or row_id in kept or row_id in hidden:
                     raise ValidationError({prefix + child.name: CHILD_ID})
                 # A row that is not hidden is inside this user's row scope, so the operation check is enough.
                 business.policy.require(user, child.model, 'read' if preview or not value else 'update')
@@ -791,7 +816,7 @@ class LinkTargets:
 
     def get(self, model, record_id):
         self.context._business.policy.require(self.context.user, model, 'read')
-        if type(record_id) is not int:
+        if not isinstance(record_id, int):
             return self.context._business.policy.record(self.context._tx, self.context.user, model, record_id)
         self.prefetch([(model, record_id)])
         record = self.found.get((model, record_id))
@@ -1324,7 +1349,7 @@ def source_values(draft, allowed=None, behaviors=('compute',)):
 
 
 def write_snapshot(tx, draft, before=None, *, reload=True):
-    from .database import storage_columns
+    from .database import insert, storage_columns
     model = draft._definition
     # References are checked when they change; a saved one is not rechecked on every write.
     tx.check_references(model, {name: draft._values.get(name) for name in model.__fields__
@@ -1332,9 +1357,7 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     names, values = storage_columns(model, draft._values, model.__fields__)
     table = identifier(tx.registry.name_for(model))
     if draft.id is None:
-        sql = f'INSERT INTO {table} ({", ".join(identifier(name) for name in names)}) VALUES ({", ".join("?" for _ in names)})' if names else f'INSERT INTO {table} DEFAULT VALUES'
-        result = tx.connection.execute(sql, values)
-        object.__setattr__(draft, 'id', result.lastrowid)
+        object.__setattr__(draft, 'id', insert(tx.connection, table, names, values))
     elif names:
         tx.connection.execute(f'UPDATE {table} SET {", ".join(identifier(name) + "=?" for name in names)} WHERE id=?', [*values, draft.id])
     return tx.get(model, draft.id) if reload else None
@@ -1583,11 +1606,17 @@ def typed_arguments(function, values, *, skip=0):
     for parameter in parameters:
         value = values.get(parameter.name, parameter.default)
         kind = annotations.get(parameter.name)
-        if parameter.kind not in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY) or kind not in (str, int, bool, float):
+        if parameter.kind not in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY) or kind not in (str, int, bool, float, RecordId):
             raise ValueError('Action/API inputs require explicit scalar type annotations')
         if kind is float and type(value) is int and abs(value) <= 2**53:
             value = float(value)  # JSON cannot tell 1 from 1.0
-        if value is inspect.Parameter.empty or type(value) is not kind:
+        if kind is RecordId and value is not inspect.Parameter.empty:
+            # A record id argument: the text id (or an int from Python) names a record of any model.
+            try:
+                value = RecordId(value)
+            except ValueError:
+                raise ValidationError({parameter.name: 'Expected a record id'}) from None
+        if value is inspect.Parameter.empty or not (type(value) is kind or kind is RecordId):
             raise ValidationError({parameter.name: 'Expected ' + kind.__name__})
         import math
         if kind is int and abs(value) > 2**53-1 or kind is float and not math.isfinite(value) or kind is str and len(value) > 65536:
@@ -1602,9 +1631,9 @@ def argument_schema(function, *, skip=0):
     result = []
     for parameter in list(inspect.signature(function).parameters.values())[skip:]:
         kind = annotations.get(parameter.name)
-        if parameter.kind not in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY) or kind not in (str, int, bool, float):
+        if parameter.kind not in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY) or kind not in (str, int, bool, float, RecordId):
             raise ValueError('Action/API inputs require explicit scalar type annotations')
-        item = {'name': parameter.name, 'type': kind.__name__, 'required': parameter.default is inspect.Parameter.empty}
+        item = {'name': parameter.name, 'type': 'record_id' if kind is RecordId else kind.__name__, 'required': parameter.default is inspect.Parameter.empty}
         if not item['required']:
             if type(parameter.default) is not kind: raise ValueError('Argument default must match its declared type')
             item['default'] = parameter.default

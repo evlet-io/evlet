@@ -27,6 +27,7 @@ import re
 from types import MappingProxyType
 
 from .auth import AccessError, User
+from .identity import RecordId, jsonable
 from .fields import Boolean, Link, Reference
 from .models import Model, ValidationError, identifier
 from .permissions import CHUNK, Policy, Rule
@@ -358,7 +359,7 @@ class EnginePolicy(Policy):
     def _scoped(self, tx, user, model, record_ids, operation, columns):
         if operation != 'read':
             return {}
-        ids = [record_id for record_id in dict.fromkeys(record_ids) if type(record_id) is int]
+        ids = [record_id for record_id in dict.fromkeys(record_ids) if isinstance(record_id, int) and not isinstance(record_id, bool)]
         self.load(tx, model, ids)
         found = {record_id: self.cache[model, record_id] for record_id in ids if self.cache[model, record_id] is not None}
         return dict.fromkeys(found) if columns == 'record.id' else found
@@ -478,15 +479,14 @@ def is_balanced(bound, rows):
 def write(engine, bound, draft):
     """Insert one row with one statement, plus the calculation version of a finite-v1 target and an event when
     events are enabled. The source is the record being moved or voided, so it is not checked again."""
-    from .database import storage_columns
+    from .database import insert, storage_columns
     from .documents import record_plan
     business, tx, target = engine._business, engine._tx, bound.target
     tx.check_references(target, {name: draft._values.get(name) for name, field in target.__declared_fields__.items()
                                  if isinstance(field, Reference) and name != SOURCE})
     names, values = storage_columns(target, draft._values, target.__fields__)
     table = identifier(business.registry.name_for(target))
-    record_id = tx.connection.execute(f'INSERT INTO {table} ({", ".join(identifier(name) for name in names)}) '
-                                      f'VALUES ({", ".join("?" for _ in names)})', values).lastrowid
+    record_id = insert(tx.connection, table, names, values)
     if business.registry.plan_for(target) is not None:
         record_plan(tx, business.registry.name_for(target), record_id, business.registry.formula_hashes.get(target))
     business.changed(tx, target, record_id)
@@ -794,7 +794,7 @@ def orphans(tx, registry, bound, name, table):
 def difference(bound, model_name, record_id, kind, reversal, *, expected=None, actual=None, message=None):
     def shown(values):
         return {name: field.serialize(values.get(name)) for name, field in bound.target.__fields__.items()}
-    result = {'model': model_name, 'record': record_id, 'target': target_name(bound), 'kind': kind, 'reversal': bool(reversal)}
+    result = {'model': model_name, 'record': RecordId(record_id), 'target': target_name(bound), 'kind': kind, 'reversal': bool(reversal)}
     if expected is not None:
         result['expected'] = shown(expected)
     if actual is not None:
@@ -897,7 +897,7 @@ def describe(item):
     if item.get('message'):
         parts.append(item['message'])
     if 'expected' in item:
-        parts.append('expected ' + json.dumps(item['expected'], sort_keys=True))
+        parts.append('expected ' + json.dumps(jsonable(item['expected']), sort_keys=True))
     if 'actual' in item:
-        parts.append('saved ' + json.dumps(item['actual'], sort_keys=True))
+        parts.append('saved ' + json.dumps(jsonable(item['actual']), sort_keys=True))
     return '; '.join(parts)

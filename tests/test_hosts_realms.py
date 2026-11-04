@@ -135,7 +135,7 @@ def test_own_customer_scope_reads_evlet_user_links(portal):
     assert auth.user_links(buyer_id) == (('customer', acme.id),)
     assert [item['reference'] for item in buyer('GET', '/api/invoice')[1]['items']] == ['INV-1']
     assert [item['name'] for item in buyer('GET', '/api/customer')[1]['items']] == ['Acme']
-    assert buyer('GET', f'/api/invoice/{mine.id}')[1]['customer'] == acme.id
+    assert buyer('GET', f'/api/invoice/{mine.id}')[1]['customer'] == str(acme.id)
     assert buyer('GET', f'/api/invoice/{theirs.id}')[0] == 404
     assert buyer('POST', '/api/customer', {'name': 'Mine now'})[0] == 403
     assert set(buyer('GET', f'/api/customer/{acme.id}')[1]) == {'id', 'name', 'email'}
@@ -277,7 +277,7 @@ def test_docs_move_and_limit_to_roles(portal):
 def test_view_registry_resolves_generated_routes_under_a_frontend_base(portal):
     from evlet import User
     schema = portal.business.schema(User(1, 'admin', 'admin'))
-    assert portal.ui.resolve('/app/customer/3', schema)['params'] == {'id': '3'}
+    assert portal.ui.resolve('/app/customer/0000000000003', schema)['params'] == {'id': '0000000000003'}
     assert portal.ui.resolve('/crm/customer/new', schema, frontend='crm.crm', base='/crm')['view']['kind'] == 'form'
     with pytest.raises(LookupError):
         portal.ui.resolve('/app/customer', schema, frontend='crm.crm', base='/crm')
@@ -523,11 +523,11 @@ def test_api_scope_lists_each_route_family(portal):
             return True
         except HTTPError:
             return False
-    paths = ('/api/invoice', '/api/invoice/1', '/api/invoice/1/void', '/api/invoice/1/revise', '/api/invoice/1/unpost', '/api/invoice/1/repost',
-             '/api/invoice/1/actions/send',
-             '/api/invoice/1/moves/send', '/api/invoice/measures', '/api/invoice/aggregate', '/api/invoice/1/measures',
-             '/api/invoice/1/related/payment', '/api/invoice/1/lines/rows', '/api/invoice/1/attachments', '/api/_draft/invoice', '/api/invoice/1/other')
-    assert [path for path in paths if allowed(portal, path)] == ['/api/invoice', '/api/invoice/1']
+    paths = ('/api/invoice', '/api/invoice/01hbbfy2vasb2', '/api/invoice/01hbbfy2vasb2/void', '/api/invoice/01hbbfy2vasb2/revise', '/api/invoice/01hbbfy2vasb2/unpost', '/api/invoice/01hbbfy2vasb2/repost',
+             '/api/invoice/01hbbfy2vasb2/actions/send',
+             '/api/invoice/01hbbfy2vasb2/moves/send', '/api/invoice/measures', '/api/invoice/aggregate', '/api/invoice/01hbbfy2vasb2/measures',
+             '/api/invoice/01hbbfy2vasb2/related/payment', '/api/invoice/01hbbfy2vasb2/lines/rows', '/api/invoice/01hbbfy2vasb2/attachments', '/api/_draft/invoice', '/api/invoice/01hbbfy2vasb2/other')
+    assert [path for path in paths if allowed(portal, path)] == ['/api/invoice', '/api/invoice/01hbbfy2vasb2']
     shop = Frontend('shop', kind='static', dist='dist', path='/shop', auth='portal', api=('ops.full',))
     scope = ApiScope('full', models=(Invoice,), actions=((Invoice, 'void'), (Invoice, 'unpost'), (Invoice, 'send')),
                      extras=('measures', 'related', 'lines', 'attachments', 'drafts'))
@@ -535,7 +535,7 @@ def test_api_scope_lists_each_route_family(portal):
     auth = LocalAuth(portal.database, origins=routes.origins(), realms=routes.realms(), secure_cookies=False)
     app = Application(portal.database, auth=auth, routes=routes)
     # Each correction is listed on its own: unpost does not open repost.
-    assert [path for path in paths if not allowed(app, path)] == ['/api/invoice/1/revise', '/api/invoice/1/repost', '/api/invoice/1/other']
+    assert [path for path in paths if not allowed(app, path)] == ['/api/invoice/01hbbfy2vasb2/revise', '/api/invoice/01hbbfy2vasb2/repost', '/api/invoice/01hbbfy2vasb2/other']
     with pytest.raises(ValueError, match='extras'):
         ApiScope('bad', models=(Invoice,), extras=('everything',))
 

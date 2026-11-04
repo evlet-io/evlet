@@ -522,20 +522,20 @@
     "version": 1
   },
   "saved": {
-    "id": 1,
+    "id": "0000000000001",
     "title": "Contract",
     "status": "Draft",
     "total": "2.80",
     "children": {
       "items": [
         {
-          "id": 1,
+          "id": "0000000000001",
           "qty": "3.0000",
           "rate": "0.10",
           "amount": "0.30"
         },
         {
-          "id": 2,
+          "id": "0000000000002",
           "qty": "2.0000",
           "rate": "1.25",
           "amount": "2.50"

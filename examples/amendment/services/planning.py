@@ -1,5 +1,5 @@
 from decimal import Decimal
-from evlet import ValidationError
+from evlet import RecordId, ValidationError
 from amendment.models.masters import WorkOrder, BOM, ItemMaster
 
 
@@ -15,7 +15,7 @@ def remaining(context, source):
 
 def selection_rows(context, source):
     quantities = remaining(context, source)
-    return [{'source_row_id': row.id, 'item': row.item, 'pending_qty': quantities[row.id],
+    return [{'source_row_id': str(row.id), 'item': row.item, 'pending_qty': quantities[row.id],
              'qty': quantities[row.id], 'selected': quantities[row.id] > 0}
             for row in source.items if quantities[row.id] > 0]
 
@@ -26,7 +26,7 @@ def create_selected(context, source, selections, *, production_date=None):
     prepared = []
     for selection in selections:
         if not selection.selected: continue
-        row = source_rows.get(selection.source_row_id)
+        row = source_rows.get(RecordId(selection.source_row_id))
         if row is None or selection.qty <= 0 or selection.qty > quantities[row.id]:
             raise ValidationError({'items.' + selection.key + '.qty': 'Quantity exceeds the current unplanned quantity'})
         bom = context.get(BOM, selection.bom)

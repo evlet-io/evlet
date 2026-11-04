@@ -160,7 +160,7 @@ def action(function=None, *, label=None, roles=('admin', 'editor'), inputs=None,
 
     With `inputs` (a mapping of names to Field instances) each input is validated by its field and
     passed as a keyword argument; the method's signature is not read for types. Without `inputs`, the
-    method's annotated scalar parameters (str, int, bool, float) are its inputs.
+    method's annotated scalar parameters (str, int, bool, float, RecordId) are its inputs.
     """
     if isinstance(function, str):
         label, function = function, None

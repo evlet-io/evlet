@@ -7,14 +7,14 @@ import { start, type Route } from './screens-helpers';
 import type { Recorded, Sent } from './server';
 
 type Phase = Record<string, Recorded | { schema: string }>;
-const data = fixture as unknown as Record<string, Phase[]> & { schemas: Record<string, Recorded>; ids: Record<string, number> };
+const data = fixture as unknown as Record<string, Phase[]> & { schemas: Record<string, Recorded>; ids: Record<string, string> };
 export const ids = data.ids;
 
 /** The id of a record a scenario read, by its title (or a lead's name). */
-export function idOf(name: string, model: string, title: string): number {
+export function idOf(name: string, model: string, title: string): string {
   for (const phase of data[name]) for (const [key, value] of Object.entries(phase)) {
     const body = (value as Recorded).body;
-    if (new RegExp(`^GET /api/${model}/\\d+$`).test(key) && (body?.title ?? body?.name) === title) return body.id;
+    if (new RegExp(`^GET /api/${model}/[0-9a-z]{13}$`).test(key) && (body?.title ?? body?.name) === title) return body.id;
   }
   throw new Error(`${name} did not read ${model} ${title}`);
 }
@@ -42,7 +42,7 @@ export function scenario(name: string, { signedIn = true } = {}) {
   // the recording read one by one, as the server would list them.
   const batch = (url: string): Recorded | null => {
     const parsed = new URL(url, 'http://testcrm.local');
-    const ids = (JSON.parse(parsed.searchParams.get('filters') ?? '{}') as { id__in?: number[] }).id__in;
+    const ids = (JSON.parse(parsed.searchParams.get('filters') ?? '{}') as { id__in?: string[] }).id__in;
     if (!ids || [...parsed.searchParams.keys()].some(name => !['filters', 'limit', 'offset'].includes(name))) return null;
     const items: unknown[] = [];
     for (const id of ids) {
