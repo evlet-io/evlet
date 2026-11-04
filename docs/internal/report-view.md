@@ -9,7 +9,8 @@ What landed, against the phases in section 5:
   sorting, totals over every row, CSV export, `Column.source`, the column chooser, and Print through
   Print Design's report route.
 - From phase 3: the chart (`Report.chart`, drawn from the current page).
-- Not built: group subtotals (`group_by`), named presets, and the list print source.
+- Phase 3, second step (04-11-2026): group subtotals (`Report.group_by`) and per-person saved views.
+- Not built yet: the list print source, which waits for Print Design (PR 93) to merge.
 - Print shows only once Print Design adds `prints` to each report entry and `printing` to the schema.
   The page fetches the PDF with POST and shows it from a `blob:` address, so the page CSP adds
   `frame-src 'self' blob:`.

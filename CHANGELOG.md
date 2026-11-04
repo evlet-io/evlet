@@ -45,6 +45,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `POST /api/_reports/<name>/export.csv`. The evaluate route adds `rules`. Existing reports need no
   change; a report with a filter field named `group`, `model`, `sortable`, `chart` or `export` must
   rename it ([docs/reports.md](docs/reports.md)).
+- **Report groups and saved views.** `Report.group_by` keeps each group's rows together with a
+  heading and a subtotal; `run()` may return `groups` with each group's count and totals for every
+  row, and `context.sort` starts with the group column. People can save a report's filters and sort
+  as named views. `DataTable` gains `rowClass`. A filter field named `group_by` must be renamed.
 - **API stability for apps.** [docs/api-stability.md](docs/api-stability.md) names the
   surface apps can rely on (the root exports, field keywords, lifecycle decorators and the
   `evlet.ui` names in the app docs), the deprecation rule and what stays internal.

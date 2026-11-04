@@ -176,7 +176,9 @@ export interface ReportCheck { values: Record<string, unknown>; errors: Record<s
   rules: Record<string, { visible?: boolean; required?: boolean; read_only?: boolean }>; revision?: unknown }
 /** One page of a report: cleaned rows, the row count, totals (all rows, or this page) and the filters it ran with. */
 export interface ReportPage { rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number; sort: string | null;
-  totals?: { scope: 'all' | 'page'; values: Record<string, string | null> }; filters: Record<string, unknown>; revision?: unknown }
+  totals?: { scope: 'all' | 'page'; values: Record<string, string | null> }; filters: Record<string, unknown>; revision?: unknown;
+  /** With Report.group_by: the groups on this page with their row count and totals (of every row, or of the page). */
+  groups?: { scope: 'all' | 'page'; items: Array<{ value: unknown; count: number; totals: Record<string, string | null> }> } }
 
 /** A journal entry (docs/journal.md). `actor` is a user id, or null for the engine; `partial` marks an entry
  * the caller sees only in part; `done` is set on follow ups (the completing entry's id, or null). */

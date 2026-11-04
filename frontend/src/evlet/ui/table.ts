@@ -163,6 +163,8 @@ export interface DataTableProps<T> {
   totals?: Record<string, Prop<string>>;
   totalsLabel?: Prop<string>;
   empty?: () => Child;
+  /** A class for a row, such as a group heading or subtotal the caller puts among the rows. */
+  rowClass?: (row: T) => string | null;
   rowHeight?: number;
   /** Viewport height to assume before the container is measured. */
   height?: number;
@@ -292,7 +294,7 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
     const key = () => props.key(row());
     const selected = () => selection.get().has(key());
     const current = props.current ? () => props.current!.get() === key() : null;
-    return html`<tr role="row" data-key=${String(key())} class:sel=${selected} class:cur=${current ?? false} aria-current=${current ? () => current() ? 'true' : null : null}
+    return html`<tr role="row" data-key=${String(key())} class=${() => props.rowClass?.(row()) ?? null} class:sel=${selected} class:cur=${current ?? false} aria-current=${current ? () => current() ? 'true' : null : null}
       aria-selected=${props.selectable ? () => String(selected()) : null}
       aria-rowindex=${() => String(view.range.get().start + index() + 2)}
       tabindex=${() => focusKey.get() === key() ? '0' : '-1'}

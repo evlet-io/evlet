@@ -9318,6 +9318,138 @@
         "total"
       ],
       "export": true,
+      "group_by": null,
+      "chart": null
+    },
+    {
+      "name": "InvoicesByCustomer",
+      "label": "Invoices by customer",
+      "fields": [
+        {
+          "name": "customer",
+          "type": "link",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "minimum": 1,
+          "maximum": null,
+          "target": "customer",
+          "label": "Customer",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "draft",
+            "sent"
+          ],
+          "label": "Status",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "from_date",
+          "type": "date",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "label": "Posted from",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "to_date",
+          "type": "date",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "label": "Posted to",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        }
+      ],
+      "behavior": {
+        "customer": {
+          "filters": {
+            "currency": "AED"
+          }
+        },
+        "status": {},
+        "from_date": {},
+        "to_date": {}
+      },
+      "children": [],
+      "sources": {},
+      "source_fields": [],
+      "autorun": false,
+      "columns": [
+        {
+          "name": "customer",
+          "type": "link",
+          "label": null,
+          "link": "customer",
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "id",
+          "type": "link",
+          "label": "Invoice",
+          "link": "invoice",
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "posting_date",
+          "type": "date",
+          "label": "Posted",
+          "link": null,
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "label": null,
+          "link": null,
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "total",
+          "type": "currency",
+          "label": null,
+          "link": null,
+          "total": true,
+          "unit": "AED"
+        }
+      ],
+      "group": "Sales",
+      "model": "invoice",
+      "sortable": [
+        "posting_date",
+        "total"
+      ],
+      "export": true,
+      "group_by": "customer",
       "chart": null
     },
     {
@@ -9412,6 +9544,7 @@
         "total"
       ],
       "export": true,
+      "group_by": null,
       "chart": {
         "type": "bar",
         "x": "customer",

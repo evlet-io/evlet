@@ -74,6 +74,7 @@ class Report(Model):
     sortable = ()  # Columns people may sort by; run() reads the choice as context.sort, e.g. ('-total',).
     chart = None
     export = True
+    group_by = None  # A column whose rows are kept together, with a subtotal under each group.
     __transient__ = True
 
     def __init_subclass__(cls, **kwargs):
@@ -200,6 +201,7 @@ class Forms:
             if column.source is not None:
                 model, field = column.source.split('.')
                 if field not in registry.resolve(model).__declared_fields__: raise ValueError('Unknown column source: ' + column.source)
+        if report.group_by is not None and report.group_by not in columns: raise ValueError('Report group_by names a declared column')
         chart = report.chart
         if chart is not None and (not isinstance(chart, Chart) or chart.x not in columns
                                   or any(columns.get(name) is None or columns[name].type not in numbers for name in chart.y)):
@@ -230,6 +232,7 @@ class Forms:
                            'columns': [self.column(column) for column in report.columns if column.name not in hidden],
                            'group': report.group, 'model': None if report.model is None else self.business.registry.name_for(self.business.registry.resolve(report.model)),
                            'sortable': [column for column in report.sortable if column not in hidden], 'export': report.export,
+                           'group_by': None if report.group_by in hidden else report.group_by,
                            'chart': None if chart is None else {**vars(chart), 'y': [column for column in chart.y if column not in hidden]}})
         return result
 
@@ -241,8 +244,7 @@ class Forms:
 
     def page(self, context, report, draft, limit, offset, sort):
         """One page of a report as the browser gets it: cleaned cells, readable columns and totals."""
-        # run() passes context.sort straight to context.list(order_by=...).
-        context.limit, context.offset, context.sort = limit, offset, None if sort is None else (sort,)
+        context.limit, context.offset, context.sort = limit, offset, self.order(report, context.user, sort)
         result = draft.run()
         if not isinstance(result, dict) or not isinstance(result.get('rows'), list) or len(result['rows']) > limit:
             raise ValueError('Reports return a bounded rows/total result from context.list')
@@ -275,7 +277,53 @@ class Forms:
                 totals[column.name] = str(sum((Number(str(row[column.name])) for row in rows if row[column.name] is not None), Number(0)))
         page = {'rows': rows, 'total': result['total']}
         if totals: page['totals'] = {'scope': 'page' if given is None else 'all', 'values': totals}
+        grouping = self.grouping(context.user, report)
+        if grouping is not None: page['groups'] = self.groups(report, grouping, hidden, result.get('groups'), rows, types)
+        elif result.get('groups') is not None: raise ValueError('Report groups need Report.group_by')
         return page
+
+    def grouping(self, user, report):
+        """The group column for this person: None without group_by, or when they cannot read it."""
+        return None if report.group_by is None or report.group_by in self.hidden(user, report) else report.group_by
+
+    def order(self, report, user, sort):
+        """What run() reads as context.sort: the group column first, then the person's sort."""
+        grouping = self.grouping(user, report)
+        if grouping is None: return None if sort is None else (sort,)
+        return (grouping,) if sort is None or sort.lstrip('-') == grouping else (grouping, sort)
+
+    def groups(self, report, grouping, hidden, given, rows, types):
+        """Subtotals of the groups on this page: of every row when run() gives them, else of the page."""
+        from decimal import Decimal as Number
+        column = next(item for item in report.columns if item.name == grouping)
+        key = types[column.type]()
+        numbers = [item for item in report.columns if item.total and item.name not in hidden]
+        shown = {json.dumps(row[grouping]) for row in rows}
+        items = {}
+        if given is not None:
+            if not isinstance(given, list) or len(given) > 10000: raise ValueError('Report groups are a list of at most 10000 groups')
+            for group in given:
+                if not isinstance(group, dict) or set(group) - {'value', 'count', 'totals'} or type(group.get('count')) is not int or group['count'] < 0:
+                    raise ValueError('Each report group is {value, count, totals}')
+                totals = group.get('totals') or {}
+                if not isinstance(totals, dict) or set(totals) - {item.name for item in report.columns if item.total}:
+                    raise ValueError('Report group totals name columns that declare total')
+                value = key.serialize(key.clean(group.get('value')))
+                if json.dumps(value) not in shown: continue
+                cleaned = {}
+                for item in numbers:
+                    field = types[item.type]()
+                    total = field.serialize(field.clean(totals.get(item.name)))
+                    cleaned[item.name] = None if total is None else str(total)
+                items[json.dumps(value)] = {'value': value, 'count': group['count'], 'totals': cleaned}
+            return {'scope': 'all', 'items': list(items.values())}
+        for row in rows:
+            entry = items.setdefault(json.dumps(row[grouping]), {'value': row[grouping], 'count': 0, 'totals': {item.name: Number(0) for item in numbers}})
+            entry['count'] += 1
+            for item in numbers:
+                if row[item.name] is not None: entry['totals'][item.name] += Number(str(row[item.name]))
+        for entry in items.values(): entry['totals'] = {name: str(value) for name, value in entry['totals'].items()}
+        return {'scope': 'page', 'items': list(items.values())}
 
     def sort(self, report, user, value):
         """The sort a person asked for: a sortable column name, '-' first for descending."""
@@ -312,7 +360,7 @@ class Forms:
                 raise ValidationError({'page': 'Invalid report page'})
             sort = self.sort(report, user, body.get('sort'))
             with self.business.context(user, readonly=True) as context:
-                context.limit, context.offset, context.sort = limit, offset, None if sort is None else (sort,)
+                context.limit, context.offset, context.sort = limit, offset, self.order(report, user, sort)
                 draft = form_draft(report, context, body.get('filters', {}))
                 errors, states = settle(context, draft, complete=operation == 'run')
                 filters = draft_values(draft)
@@ -385,7 +433,7 @@ class Forms:
         sort = self.sort(report, user, body.get('sort'))
         rows, offset, total = [], 0, None
         with self.business.context(user, readonly=True) as context:
-            context.limit, context.offset, context.sort = 100, 0, None if sort is None else (sort,)
+            context.limit, context.offset, context.sort = 100, 0, self.order(report, user, sort)
             draft = form_draft(report, context, body.get('filters', {}))
             settle(context, draft, complete=True)
             object.__setattr__(draft, '_readonly', True)

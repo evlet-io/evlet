@@ -971,6 +971,66 @@
   "etag": null,
   "status": 200
  },
+ "report_grouped_run": {
+  "body": {
+   "filters": {
+    "_source": {},
+    "_sources": {},
+    "children": {},
+    "min_days": 20,
+    "search": ""
+   },
+   "groups": {
+    "items": [
+     {
+      "count": 2,
+      "totals": {
+       "rate": "1560.00"
+      },
+      "value": 30
+     },
+     {
+      "count": 1,
+      "totals": {
+       "rate": "480.50"
+      },
+      "value": 45
+     }
+    ],
+    "scope": "all"
+   },
+   "limit": 50,
+   "offset": 0,
+   "revision": 1,
+   "rows": [
+    {
+     "credit_days": 30,
+     "id": "0000000000001",
+     "rate": "1250.00"
+    },
+    {
+     "credit_days": 30,
+     "id": "0000000000004",
+     "rate": "310.00"
+    },
+    {
+     "credit_days": 45,
+     "id": "0000000000002",
+     "rate": "480.50"
+    }
+   ],
+   "sort": null,
+   "total": 3,
+   "totals": {
+    "scope": "page",
+    "values": {
+     "rate": "2040.50"
+    }
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
  "report_run": {
   "body": {
    "filters": {
@@ -995,14 +1055,20 @@
      "id": "0000000000001",
      "rate": "1250.00",
      "title": "Corniche Foods"
+    },
+    {
+     "credit_days": 30,
+     "id": "0000000000004",
+     "rate": "310.00",
+     "title": "Oasis Water"
     }
    ],
    "sort": null,
-   "total": 2,
+   "total": 3,
    "totals": {
     "scope": "all",
     "values": {
-     "rate": "1730.50"
+     "rate": "2040.50"
     }
    }
   },
@@ -1033,14 +1099,20 @@
      "id": "0000000000002",
      "rate": "480.50",
      "title": "Al Noor Trading"
+    },
+    {
+     "credit_days": 30,
+     "id": "0000000000004",
+     "rate": "310.00",
+     "title": "Oasis Water"
     }
    ],
    "sort": "-rate",
-   "total": 2,
+   "total": 3,
    "totals": {
     "scope": "all",
     "values": {
-     "rate": "1730.50"
+     "rate": "2040.50"
     }
    }
   },
@@ -1322,11 +1394,91 @@
       }
      ],
      "group": "Sales",
+     "group_by": null,
      "label": "Customer rates",
      "model": "customer",
      "name": "CustomerRates",
      "sortable": [
       "title",
+      "rate"
+     ],
+     "source_fields": [],
+     "sources": {}
+    },
+    {
+     "autorun": false,
+     "behavior": {
+      "min_days": {},
+      "search": {}
+     },
+     "chart": null,
+     "children": [],
+     "columns": [
+      {
+       "label": "Credit days",
+       "link": null,
+       "name": "credit_days",
+       "total": false,
+       "type": "integer",
+       "unit": null
+      },
+      {
+       "label": "Customer",
+       "link": "customer",
+       "name": "id",
+       "total": false,
+       "type": "link",
+       "unit": null
+      },
+      {
+       "label": null,
+       "link": null,
+       "name": "rate",
+       "total": true,
+       "type": "currency",
+       "unit": "AED"
+      }
+     ],
+     "export": true,
+     "fields": [
+      {
+       "default": 0,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Credit days from",
+       "maximum": null,
+       "minimum": null,
+       "name": "min_days",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "integer",
+       "unique": false
+      },
+      {
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "label": "Name contains",
+       "max_length": 255,
+       "name": "search",
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "type": "text",
+       "unique": false
+      }
+     ],
+     "group": "Sales",
+     "group_by": "credit_days",
+     "label": "Rates by terms",
+     "model": "customer",
+     "name": "RatesByTerms",
+     "sortable": [
       "rate"
      ],
      "source_fields": [],
