@@ -55,7 +55,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   snapped to the bottom of the last page. `Application(prints=[...])` registers designs. Printing is
   the new `print` operation (admin by default; other roles when their Rule names it). It needs the
   optional extra `evlet[print]`; without it the print routes answer 503
-  ([docs/printing.md](docs/printing.md)). These are additions; existing apps need no change.
+  ([docs/printing.md](docs/printing.md)). Record views get a Print button with a PDF preview, and
+  Controls gets a block designer for stored designs. These are additions; existing apps need no change.
 - **API stability for apps.** [docs/api-stability.md](docs/api-stability.md) names the
   surface apps can rely on (the root exports, field keywords, lifecycle decorators and the
   `evlet.ui` names in the app docs), the deprecation rule and what stays internal.

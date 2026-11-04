@@ -237,6 +237,8 @@ class Business:
             self.forms.initialize()
         if getattr(self, 'slips', None) and self.slips.slips:
             self.slips.initialize()
+        if getattr(self, 'prints', None) is not None:
+            self.prints.initialize()
         if self.events:
             self.events.initialize()
         if getattr(self, 'ui', None):

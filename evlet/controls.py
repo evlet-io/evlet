@@ -19,7 +19,7 @@ from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, 
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
-PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'apps', 'routing', 'jobs', 'overrides', 'audit')
+PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'prints', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
     'security.password_min': 15, 'security.session_hours': 12, 'security.lockout': 5,
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
@@ -1013,9 +1013,13 @@ class Controls:
     def dispatch(self, scope, body, user):
         self.check(scope, user)
         path, method = scope['path'].removeprefix('/api/_controls'), scope['method']
-        # Every change asks for a recent two-step code; reading, and trying a naming series, do not.
-        if method not in ('GET', 'HEAD') and not re.fullmatch(r'/naming/[A-Za-z][A-Za-z0-9_]{0,63}/try', path):
+        # Every change asks for a recent two-step code; reading, trying a naming series and previewing a print design do not.
+        if method not in ('GET', 'HEAD') and not re.fullmatch(r'/naming/[A-Za-z][A-Za-z0-9_]{0,63}/try', path) and path != '/prints/preview':
             self.business.settings.recently_verified(user)
+        if (path == '/prints' or path.startswith('/prints/')) and getattr(self.business, 'prints', None) is not None:
+            response = self.business.prints.designer.dispatch(path, method, body, user)
+            if response is not None:
+                return response
         if path == '/state' and method == 'GET':
             return 200, self.state(user, scope), []
         if path == '/overrides':

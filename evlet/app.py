@@ -132,8 +132,9 @@ class Application:
                     if event["type"] == "http.disconnect":
                         return
                     data.extend(event.get("body", b""))
+                    # Print designs carry their images as data: URIs (a design is at most 256 KiB).
                     maximum = (1500000 if scope['path'].endswith('/attachments') or scope['path'] == '/api/_eva/files' else 2900000 if scope['path'] == '/api/_settings/me/photo'
-                               else MAX_BODY_BYTES) if self.business else MAX_BODY_BYTES
+                               else 300000 if scope['path'].startswith('/api/_controls/prints') else MAX_BODY_BYTES) if self.business else MAX_BODY_BYTES
                     if len(data) > maximum:
                         raise HTTPError(413, "Request body exceeds the allowed size")
                     if not event.get("more_body", False):

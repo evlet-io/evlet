@@ -12,6 +12,22 @@ export interface OverrideItem {
   changed_by: string | null; changed_at: number | null; source?: 'app' | 'framework';
 }
 export interface Problem { kind: string; key: string; error: string }
+/** A print design block as stored: its type, its own options and the shared ones. */
+export interface PrintBlock { type: string; [option: string]: unknown }
+export interface PrintDefinition {
+  title: string; default: boolean; model?: string; report?: string; roles?: string[];
+  page: { size: string | string[]; orientation: string; margins: string[]; first_margin_top: string | null; font_size: string; currency: string | null; date_format: string };
+  header: PrintBlock[]; header_first: PrintBlock[] | null; main: PrintBlock[]; footer: PrintBlock[];
+  footnote: { place: string; height: string | null; blocks: PrintBlock[] } | null;
+  watermark: { text?: string; image?: string; html?: string; size: number; opacity: number; rotate: number; show_if?: string } | null;
+}
+export interface PrintItem { name: string; source: 'app' | 'stored'; definition: PrintDefinition; changed_by?: string | null; changed_at?: number | null }
+export interface PrintField { name: string; label: string; kind: string }
+export interface PrintListing {
+  available: boolean; designs: PrintItem[]; blocks: string[];
+  models: Array<{ name: string; label: string; fields: PrintField[]; tables: Array<{ name: string; label: string; fields: PrintField[] }>; attachments: boolean }>;
+  reports: Array<{ name: string; title: string; roles: string[]; fields: PrintField[]; columns: PrintField[] }>;
+}
 export interface Overrides { items: OverrideItem[]; problems: Problem[]; version: number }
 export interface RoleRow {
   id: string; kind: 'framework' | 'custom'; base: string | null; realm: 'desk' | 'portal'; opens_controls: boolean;
@@ -206,6 +222,15 @@ export class ControlsClient extends ApiClient implements KeysApi {
   }
   async tryName(model: string, body: { values: Record<string, unknown>; series?: SeriesValue[] }) {
     return (await this.request<TryResult>('POST', `/api/_controls/naming/${model}/try`, { body })).data;
+  }
+  async prints() { return (await this.request<PrintListing>('GET', '/api/_controls/prints')).data; }
+  async savePrint(name: string, definition: PrintDefinition) {
+    return (await this.request<PrintItem>('PUT', `/api/_controls/prints/${encodeURIComponent(name)}`, { body: { definition } })).data;
+  }
+  async removePrint(name: string) { await this.request('DELETE', `/api/_controls/prints/${encodeURIComponent(name)}`); }
+  /** Render an unsaved design; the PDF is served once from the returned address for ten minutes. */
+  async previewPrint(body: { definition: PrintDefinition; record?: string; filters?: Record<string, unknown> }) {
+    return (await this.request<{ url: string; size: number }>('POST', '/api/_controls/prints/preview', { body })).data;
   }
   async exportCode(only?: { kind: string; key: string }) {
     return (await this.request<CodeFile[]>('GET', '/api/_controls/overrides/export', { query: only ?? {} })).data;

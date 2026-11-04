@@ -278,3 +278,29 @@
 .eva-legend i.tasks{background:var(--t-violet)}
 @media (max-width:1100px){.eva-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:520px){.eva-tiles{grid-template-columns:1fr}}
+
+/* Print designs */
+.ev-pd{display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;align-items:start}
+.ev-pd-list ul{list-style:none;margin:0;padding:6px}
+.ev-pd-list li button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:var(--r);background:none;color:inherit;cursor:pointer}
+.ev-pd-list li button.on,.ev-pd-list li button:hover{background:var(--bg-muted)}
+.ev-pd-list li .grow{display:grid;min-width:0}
+.ev-pd-list li .muted{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev-pd-src{font-size:11px;color:var(--fg-3)}
+.ev-pd-actions{display:flex;gap:8px}
+.ev-pd-grid{display:grid;grid-template-columns:minmax(300px,420px) minmax(0,1fr);gap:16px;padding:16px}
+.ev-pd-form,.ev-pd-props,.ev-pd-blocks{display:grid;gap:10px;align-content:start;min-width:0}
+.ev-pd-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ev-pd-regions{flex-wrap:wrap}
+.ev-pd-items{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.ev-pd-items li{display:flex;align-items:center;gap:4px;border:1px solid var(--border);border-radius:var(--r);padding:2px 4px}
+.ev-pd-items li.on{border-color:var(--accent);background:var(--bg-muted)}
+.ev-pd-items li>.grow{display:grid;text-align:left;border:0;background:none;color:inherit;padding:6px;cursor:pointer;min-width:0}
+.ev-pd-items li .muted{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev-pd-switch{display:flex;align-items:center;gap:8px;font-size:13px}
+.ev-pd-hint{font-size:12px;margin:4px 0 0}
+.ev-pd-thumb{max-width:120px;max-height:60px;margin-top:6px}
+.ev-pd-preview{display:grid;gap:8px;align-content:start;min-width:0}
+.ev-pd-preview-head{display:flex;gap:8px;align-items:baseline}
+.ev-pd-frame{width:100%;height:min(78vh,1000px);border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface)}
+@media (max-width:1100px){.ev-pd,.ev-pd-grid{grid-template-columns:1fr}}

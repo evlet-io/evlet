@@ -177,9 +177,36 @@ exactly what prints. With more than one design the drawer offers a choice, the d
 Download saves the same PDF; File a copy appears when the model keeps attachments and the role may
 update the record, and the Files block then lists the new PDF.
 
+## The designer
+
+Controls has a **Print designs** page (Build, Print designs) for roles that open Controls. It lists the
+app's designs and the stored ones. An app's design is read only there; **Copy** makes a stored design
+from it. A design has a name (letters and digits, starting with a capital), a title, what it prints
+(a model or a report), the paper, its margins, and the five regions. In each region you add, move and
+remove blocks and set their options; **Write this block as HTML** replaces one block's markup with a
+Jinja template. The Watermark region takes text, an image or HTML with its size, opacity and angle.
+The preview is the PDF the server renders for the unsaved design, half a second after each change,
+against the first record of the model.
+
+Stored designs are kept in `evlet_print_designs` as JSON, and every save and removal is written to
+the audit log (area Print designs). Saving checks the design exactly as the application checks a
+Python design, and refuses the name of an app's design. Images are kept in the design as
+`data:image/...` URIs, at most 256 KiB in all. A stored design that no longer fits the app (a field was
+removed) is left out of the Print menu and logged. Stored designs take the same `print` permission.
+
+| Route | Does |
+| --- | --- |
+| `GET /api/_controls/prints` | Every design with its definition, and the models, tables, fields and reports to design with |
+| `PUT /api/_controls/prints/{name}` | `{"definition": {...}}`: save a stored design |
+| `DELETE /api/_controls/prints/{name}` | Remove a stored design |
+| `POST /api/_controls/prints/preview` | `{"definition", "record"}` or `{"definition", "filters"}`: render without saving; answers `{url}` |
+| `GET /api/_controls/prints/preview/{token}.pdf` | That PDF, for the same person, for ten minutes |
+
+These routes take the usual Controls checks; saving and removing ask for a recent two-step code,
+previewing does not.
+
 ## Not yet
 
-The block designer comes in the next step. Reports have no screen in this browser interface, so
-report designs print through their route.
+Reports have no screen in this browser interface, so report designs print through their route.
 Bulk printing many records into one PDF, barcodes, PDF/A, digital signatures and letterheads stored
 per company are not built.

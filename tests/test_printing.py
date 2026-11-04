@@ -585,3 +585,90 @@ def test_number_formatting():
     assert formats.money('5616.35', 'AED').striptags() == 'AED 5,616.35' and formats.money('5616.35').striptags() == '5,616.35'
     assert str(formats.date('2026-11-03')) == '<bdi dir="ltr">03-11-2026</bdi>'
     assert str(formats.ar('<x>')) == '<span lang="ar" dir="rtl">&lt;x&gt;</span>'
+
+
+# ---- stored designs and the designer -------------------------------------------------------------
+
+def test_designs_round_trip_through_json(tmp_path):
+    from evlet.printing import design_from, design_to
+    app = make_app(tmp_path)
+    for design in (TaxInvoicePrint, ShortPrint, ReportPrint):
+        data = design_to(design, app.business.registry)
+        rebuilt = design_from(design.__name__ + 'Copy', {**data, 'default': False}, app.business)
+        assert design_to(rebuilt, app.business.registry) == {**data, 'default': False}
+
+
+@pytest.mark.parametrize('change, message', [
+    ({'main': [{'type': 'chart'}]}, 'Each block has a type'),
+    ({'main': [{'type': 'text', 'text': 'x', 'colour': 'red'}]}, 'does not take colour'),
+    ({'main': [{'type': 'image', 'src': 'https://example.com/logo.png'}]}, 'data:image'),
+    ({'watermark': {'image': 'file:///etc/hosts'}}, 'data:image'),
+    ({'model': 'nothing'}, 'Choose a model'),
+    ({'page': {'size': 'B9'}}, 'size is'),
+    ({'footer': [{'type': 'pagenumber', 'format': 'Page'}]}, 'PageNumber takes a format'),
+    ({'surprise': 1}, 'Unknown design option'),
+])
+def test_stored_definitions_are_checked(tmp_path, change, message):
+    from evlet.printing import design_from, design_to
+    app = make_app(tmp_path)
+    data = {**design_to(ShortPrint, app.business.registry), **change}
+    with pytest.raises(ValueError, match=message):
+        design_from('StoredPrint', data, app.business)
+
+
+@renders
+def test_controls_saves_previews_and_removes_a_design(secured):
+    from tests.test_business import client
+    admin, editor = client(secured), client(secured, 'editor')
+    status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Gulf <b>Horizon</b>', 'currency': 'AED'})
+    status, invoice_record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-1', 'total': '10.00', 'status': 'draft'})
+    status, listing, _ = admin('GET', '/api/_controls/prints')
+    assert status == 200 and listing['available'] is True
+    app_design = next(item for item in listing['designs'] if item['name'] == 'InvoicePrint')
+    assert app_design['source'] == 'app' and app_design['definition']['model'] == 'invoice'
+    assert 'invoice' in [model['name'] for model in listing['models']] and 'table' in listing['blocks']
+    definition = {**app_design['definition'], 'title': 'Statement', 'default': False,
+                  'main': [{'type': 'heading', 'text': 'Statement'}, {'type': 'text', 'html': '<p class="who">{{ doc.customer.customer_name }}</p>'}]}
+    # Preview renders an unsaved definition against a record; the PDF waits under a token for this user only.
+    status, preview, _ = admin('POST', '/api/_controls/prints/preview', {'definition': definition, 'record': invoice_record['id']})
+    assert status == 200 and preview['url'].startswith('/api/_controls/prints/preview/')
+    status, content, headers = admin('GET', preview['url'])
+    assert status == 200 and content.startswith(b'%PDF') and headers[b'content-type'] == b'application/pdf'
+    assert admin('GET', '/api/_controls/prints/preview/' + 'x' * 24 + '.pdf')[0] == 404
+    assert admin('POST', '/api/_controls/prints/preview', {'definition': definition, 'record': 999})[0] == 404
+    assert admin('POST', '/api/_controls/prints/preview', {'definition': definition, 'record': 'not an id'})[0] == 422
+    assert admin('POST', '/api/_controls/prints/preview', {'definition': {**definition, 'main': [{'type': 'nope'}]}, 'record': 1})[0] == 422
+    # An app's design cannot be overwritten; a stored one under its own name can.
+    assert admin('PUT', '/api/_controls/prints/InvoicePrint', {'definition': definition})[0] == 422
+    status, saved, _ = admin('PUT', '/api/_controls/prints/StatementPrint', {'definition': definition})
+    assert status == 200 and saved['source'] == 'stored'
+    names = [entry['name'] for entry in editor('GET', '/api/_prints')[1]['models']]
+    assert names == ['InvoicePrint', 'StatementPrint']
+    status, content, _ = editor('GET', f"/api/invoice/{invoice_record['id']}/prints/StatementPrint.pdf")
+    assert status == 200 and content.startswith(b'%PDF')
+    with secured.database.transaction() as tx:
+        rows = tx.connection.execute("SELECT detail FROM evlet_audit WHERE area='Print designs' AND target='StatementPrint'").fetchall()
+    assert [row['detail'] for row in rows] == ['Added']
+    # Only Controls opens the designer.
+    assert editor('GET', '/api/_controls/prints')[0] == 404
+    assert editor('PUT', '/api/_controls/prints/StatementPrint', {'definition': definition})[0] == 404
+    assert admin('DELETE', '/api/_controls/prints/StatementPrint')[0] == 204
+    assert [entry['name'] for entry in editor('GET', '/api/_prints')[1]['models']] == ['InvoicePrint']
+    assert admin('DELETE', '/api/_controls/prints/StatementPrint')[0] == 404
+
+
+@renders
+def test_stored_design_values_are_escaped(secured):
+    from tests.test_business import client
+    from evlet.printing import Compiler, design_from
+    admin = client(secured)
+    status, customer, _ = admin('POST', '/api/customer', {'customer_name': '<script>x</script>', 'currency': 'AED'})
+    status, record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-2', 'total': '10.00'})
+    design = design_from('EscapePrint', {'model': 'invoice', 'main': [{'type': 'text', 'html': '<p>{{ doc.customer.customer_name }}</p>'},
+                                                                      {'type': 'text', 'text': '{{ doc.customer.customer_name }}'}]}, secured.business)
+    from examples.playground.models import Invoice
+    business, person = secured.business, user(secured)
+    with business.database.transaction() as tx:
+        context = document_context(business, tx, person, Invoice, business.policy.record(tx, person, Invoice, record['id']))
+    html = Compiler(design, context, business).html()
+    assert '<script>' not in html and html.count('&lt;script&gt;x&lt;/script&gt;') == 2
