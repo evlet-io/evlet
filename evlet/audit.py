@@ -152,14 +152,15 @@ def detail(business, tx, user, record):
     created_at, created_by, modified_at, modified_by = stored
     result = {'created_at': created_at, 'created_by': None, 'modified_at': modified_at, 'modified_by': None}
     role = business.controls.roles.get(user.role) or {} if getattr(business, 'controls', None) is not None else {}
-    if role.get('realm', 'desk') != 'desk':
+    if role.get('realm', 'desk') != 'desk' or created_by is None and modified_by is None:
         return result
-    ids = sorted({value for value in (created_by, modified_by) if value is not None})
-    if not ids:
-        return result
-    names = {row[0]: row[1] or row[2] for row in tx.connection.execute(
-        'SELECT u.id, COALESCE(NULLIF(p.short_name, \'\'), NULLIF(p.full_name, \'\')), u.username FROM evlet_users u '
-        f'LEFT JOIN evlet_user_profile p ON p.user_id = u.id WHERE u.id IN ({", ".join("?" for _ in ids)})', ids)}
+    # A write reads its record's detail more than once; the names are looked up once per transaction.
+    names = tx.__dict__.setdefault('_audit_names', {})
+    ids = sorted({value for value in (created_by, modified_by) if value is not None} - names.keys())
+    if ids:
+        names.update({row[0]: row[1] or row[2] for row in tx.connection.execute(
+            'SELECT u.id, COALESCE(NULLIF(p.short_name, \'\'), NULLIF(p.full_name, \'\')), u.username FROM evlet_users u '
+            f'LEFT JOIN evlet_user_profile p ON p.user_id = u.id WHERE u.id IN ({", ".join("?" for _ in ids)})', ids)})
     for key, value in (('created_by', created_by), ('modified_by', modified_by)):
         if value in names:
             result[key] = {'id': value, 'name': names[value]}

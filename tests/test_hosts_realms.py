@@ -138,7 +138,10 @@ def test_own_customer_scope_reads_evlet_user_links(portal):
     assert buyer('GET', f'/api/invoice/{mine.id}')[1]['customer'] == str(acme.id)
     assert buyer('GET', f'/api/invoice/{theirs.id}')[0] == 404
     assert buyer('POST', '/api/customer', {'customer_name': 'Mine now'})[0] == 403
-    assert set(buyer('GET', f'/api/customer/{acme.id}')[1]) == {'id', 'customer_name', 'email', 'title'}
+    detail = buyer('GET', f'/api/customer/{acme.id}')[1]
+    assert set(detail) == {'id', 'customer_name', 'email', 'title', '_audit'}
+    # A portal role sees when the record changed, never which staff member changed it.
+    assert detail['_audit']['created_at'] and detail['_audit']['created_by'] is None and detail['_audit']['modified_by'] is None
     auth.unlink_user(buyer_id, Customer, acme.id)
     assert buyer('GET', '/api/invoice')[1]['items'] == []
     from evlet.auth import AccessError
