@@ -445,7 +445,10 @@ class Tools:
                                 for report in request.get('/api/_reports')['reports']]}
         if name == 'run_report':
             body = {key: values[key] for key in ('filters', 'limit', 'offset') if key in values}
-            return request('POST', '/api/_reports/' + values['report'], body)[0]
+            result = request('POST', '/api/_reports/' + values['report'], body)[0]
+            # Where the same report opens in the browser, with the plain filter values in the address.
+            plain = {key: value for key, value in (values.get('filters') or {}).items() if isinstance(value, (str, int, float)) and not isinstance(value, bool)}
+            return {**result, 'view': '/reports/' + values['report'] + ('?' + urlencode(plain) if plain else '')}
         if name == 'list_services':
             return {'services': [self.describe_service(endpoint) for endpoint in self.services(user)]}
         if name == 'call_service':

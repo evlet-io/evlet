@@ -37,6 +37,18 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `RecordId` (a new root export), an `int` whose `str()` is the text id; `Database.get` takes either
   form, and services and actions may take `RecordId` arguments
   ([docs/model-engine.md](docs/model-engine.md#record-ids)).
+- **Report view.** Reports show in the browser at `/reports/<name>`, listed in the sidebar and
+  at `/reports`: the filter bar, typed rows, totals, an optional chart, Export (CSV) and Print.
+  New, all optional: `Report.group`, `model`, `sortable`, `chart` (`evlet.Chart`, a new root
+  export) and `export`; `Column(source=...)` hides a column from people who cannot read that field;
+  `run()` may return `totals` for every row and reads the sort as `context.sort`. New route
+  `POST /api/_reports/<name>/export.csv`. The evaluate route adds `rules`. Existing reports need no
+  change; a report with a filter field named `group`, `model`, `sortable`, `chart` or `export` must
+  rename it ([docs/reports.md](docs/reports.md)).
+- **Report groups and saved views.** `Report.group_by` keeps each group's rows together with a
+  heading and a subtotal; `run()` may return `groups` with each group's count and totals for every
+  row, and `context.sort` starts with the group column. People can save a report's filters and sort
+  as named views. `DataTable` gains `rowClass`. A filter field named `group_by` must be renamed.
 - **Print designs.** `PrintDesign` (a new root export) prints a record or a report to PDF through
   WeasyPrint: blocks in a header, main, footnote, footer and watermark region, Jinja templates in a
   sandbox with every value escaped, HTML for any single block, page number formats, and a footnote

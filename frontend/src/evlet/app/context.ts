@@ -15,14 +15,15 @@ import type { EvaStatus } from '../eva/client';
 /** The route table. These are the paths the Python server serves the app for (evlet/ui/routes.py).
  * The model screens live under the frontend's base from the config block (/app for the desk).
  * <base>/:model/new comes before <base>/:model/:id so "new" is never taken for an id. <base>/:model/:id/view
- * is an older link to a record and opens the record. Reports are not part of this UI; their
- * addresses still open and say so. Accounts moved to Controls (/controls/users), a separate page.
+ * is an older link to a record and opens the record. /reports lists the reports a role may run and
+ * /reports/<name> runs one. Accounts moved to Controls (/controls/users), a separate page.
  * Settings are /settings/<page> and /settings/app/<app>. */
 const FIXED = {
   home: '/',
   login: '/login',
   docs: '/docs',
   topic: '/docs/:topic',
+  reports: '/reports',
   report: '/reports/:report',
   settings: '/settings/:page',
   appSettings: '/settings/app/:app',

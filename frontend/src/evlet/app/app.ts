@@ -23,6 +23,7 @@ import { openPalette } from './palette';
 import { Prefs } from './prefs';
 import { resolveTheme } from '../ui/theme';
 import { RecordPage } from './record-page';
+import { ReportPage, ReportsPage, reportsOf } from './report-page';
 import { applyMe, chooseTheme, loadMe, PAGES as SETTINGS_PAGES, SettingsView, showCodes, type Me } from './settings';
 import { Shell } from './shell';
 import { useSlips } from './slips';
@@ -234,16 +235,10 @@ function page(ctx: AppContext): Child {
       const id = Number(route.params.conversation);
       return ctx.eva.peek() && Number.isSafeInteger(id) && id > 0 ? EvaPage(ctx, ctx.eva, id) : unavailable(ctx);
     }
-    case 'report': return notHere(ctx, 'Reports', 'Reports are not shown in this interface',
-      'Python reports keep their API and permissions. Model lists, boards and measures cover the data in this interface.');
+    case 'reports': return reportsOf(ctx).length ? ReportsPage(ctx) : unavailable(ctx);
+    case 'report': return reportsOf(ctx).some(report => report.name === route.params.report) ? ReportPage(ctx, route.params.report) : unavailable(ctx);
     default: return unavailable(ctx);
   }
-}
-
-/** An address the server still serves for a screen this interface does not have. */
-function notHere(ctx: AppContext, crumb: string, title: string, text: string): HTMLElement {
-  ctx.crumbs.set([{ label: crumb }]);
-  return html`<div class="page">${EmptyState({ icon: 'info', tint: 'slate', title, text, action: startButton(ctx) })}</div>` as HTMLElement;
 }
 
 function unavailable(ctx: AppContext): HTMLElement {

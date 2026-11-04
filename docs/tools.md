@@ -75,7 +75,7 @@ assistant. A change the person's role cannot make is refused at once, without as
 | `GET /api/_tools/approvals`, `POST /api/_tools/approvals/<id>` | A person's approvals, and `{"approve": true or false}`. Sessions only |
 | `GET /api/_tools/calls` | A person's own tool calls. Sessions only |
 | `GET /api/_controls/tools?origin=&outcome=&tool=&q=&before=` | The Tool log (Controls) |
-| `GET /api/_reports` | The reports this person can run, used by `list_reports` |
+| `GET /api/_reports` | The reports this person can run, used by `list_reports`. `run_report` adds `view`, the report's browser address ([reports.md](reports.md)) |
 
 A read-only API key may call `POST /api/_tools/execute` and run reports through `run_report`;
 its write tools are refused. Called directly, `POST /api/_reports/<name>` still needs a write key.
