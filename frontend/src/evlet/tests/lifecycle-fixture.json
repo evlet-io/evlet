@@ -33,7 +33,8 @@
                 "remarks"
               ],
               "collapsible": false,
-              "collapsed": false
+              "collapsed": false,
+              "flow": "rows"
             }
           ],
           "label": "Order",
@@ -54,6 +55,8 @@
             "name"
           ],
           "open_in": "page",
+          "tabs": [],
+          "default_tab": null,
           "fields": [
             {
               "name": "number",
@@ -290,7 +293,8 @@
                 "rate"
               ],
               "collapsible": false,
-              "collapsed": false
+              "collapsed": false,
+              "flow": "rows"
             }
           ],
           "label": "Line",
@@ -307,6 +311,8 @@
             "description"
           ],
           "open_in": "page",
+          "tabs": [],
+          "default_tab": null,
           "fields": [
             {
               "name": "description",
