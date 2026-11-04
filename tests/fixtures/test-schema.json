@@ -458,6 +458,148 @@
       ]
     },
     {
+      "name": "ledgerentry",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "invoice",
+            "customer",
+            "posting_date",
+            "amount",
+            "memo"
+          ]
+        }
+      ],
+      "label": "Ledger entry",
+      "plural": "Ledger entries",
+      "description": "What posted invoices owe. Only Post to ledger on an invoice writes entries.",
+      "title_field": "title",
+      "list_fields": [
+        "id",
+        "posting_date",
+        "customer",
+        "invoice",
+        "amount"
+      ],
+      "search_fields": [
+        "memo",
+        "title",
+        "name"
+      ],
+      "open_in": "page",
+      "fields": [
+        {
+          "name": "invoice",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": true,
+          "minimum": 1,
+          "maximum": null,
+          "target": "invoice",
+          "label": "Invoice",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "customer",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "minimum": 1,
+          "maximum": null,
+          "target": "customer",
+          "label": "Customer",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "posting_date",
+          "type": "date",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "label": "Posting date",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": null,
+          "maximum": null,
+          "label": "Amount",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "currency_source": {
+            "link": "customer",
+            "field": "currency"
+          },
+          "default_kind": "none"
+        },
+        {
+          "name": "memo",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 120,
+          "label": "Memo",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        }
+      ],
+      "api": "read"
+    },
+    {
       "name": "project",
       "layout": [
         {

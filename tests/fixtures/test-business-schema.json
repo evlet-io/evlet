@@ -281,6 +281,16 @@
           ]
         },
         {
+          "name": "ledgerentry.customer",
+          "label": "Ledger entries",
+          "model": "ledgerentry",
+          "link": "customer",
+          "limit": 10,
+          "order": [
+            "-id"
+          ]
+        },
+        {
           "name": "project.customer",
           "label": "Projects",
           "model": "project",
@@ -616,9 +626,24 @@
       ],
       "child_only": false,
       "children": [],
-      "actions": [],
+      "actions": [
+        {
+          "name": "post",
+          "label": "Post to ledger"
+        }
+      ],
       "attachments": false,
       "relations": [
+        {
+          "name": "ledgerentry.invoice",
+          "label": "Ledger entries",
+          "model": "ledgerentry",
+          "link": "invoice",
+          "limit": 10,
+          "order": [
+            "-id"
+          ]
+        },
         {
           "name": "payment.invoice",
           "label": "Payments",
@@ -888,6 +913,269 @@
           "locked_when": null
         }
       ],
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": false,
+      "children": [],
+      "actions": [],
+      "attachments": false
+    },
+    {
+      "name": "ledgerentry",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "invoice",
+            "customer",
+            "posting_date",
+            "amount",
+            "memo"
+          ]
+        }
+      ],
+      "label": "Ledger entry",
+      "plural": "Ledger entries",
+      "description": "What posted invoices owe. Only Post to ledger on an invoice writes entries.",
+      "title_field": "title",
+      "list_fields": [
+        "id",
+        "posting_date",
+        "customer",
+        "invoice",
+        "amount"
+      ],
+      "search_fields": [
+        "memo",
+        "title",
+        "name"
+      ],
+      "open_in": "page",
+      "fields": [
+        {
+          "name": "invoice",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": true,
+          "minimum": 1,
+          "maximum": null,
+          "target": "invoice",
+          "label": "Invoice",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "customer",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "minimum": 1,
+          "maximum": null,
+          "target": "customer",
+          "label": "Customer",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "posting_date",
+          "type": "date",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "label": "Posting date",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": null,
+          "maximum": null,
+          "label": "Amount",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull",
+            "in",
+            "nin"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "currency_source": {
+            "link": "customer",
+            "field": "currency",
+            "model": "customer"
+          }
+        },
+        {
+          "name": "memo",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 120,
+          "label": "Memo",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        }
+      ],
+      "api": "read",
       "permissions": {
         "create": true,
         "update": true,
@@ -9642,7 +9930,7 @@
     }
   ],
   "printing": {
-    "available": true
+    "available": false
   },
   "slips": [
     {

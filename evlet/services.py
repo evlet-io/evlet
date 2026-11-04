@@ -12,6 +12,7 @@ from urllib.parse import parse_qs
 
 from .auth import AccessError, User
 from .documents import Context, typed_arguments
+from .permissions import trusted
 from .identity import RecordId
 from .models import ValidationError
 
@@ -205,7 +206,8 @@ def dispatch(business, scope, body, user):
         except (ValueError, UnicodeError): raise ValidationError({'arguments': 'Invalid query arguments'}) from None
     arguments = typed_arguments(endpoint.function, values, skip=1)
     with business.context(user, readonly=endpoint.method == 'GET') as context:
-        result = endpoint.function(context, **arguments)
+        with trusted():
+            result = endpoint.function(context, **arguments)
         encoded = json.dumps(result, allow_nan=False)
         if len(encoded.encode()) > 1024 * 1024: raise ValueError('Endpoint result exceeds 1 MiB')
     return 200, result, []

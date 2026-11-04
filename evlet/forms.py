@@ -9,6 +9,7 @@ from .auth import AccessError
 from .identity import jsonable, path_id
 from .models import Model, ValidationError
 from .documents import Draft, Context, Snapshot, settle
+from .permissions import trusted
 from .ui.metadata import field_schema, source_schema
 from .reactivity import plans, serialized
 
@@ -218,10 +219,15 @@ class Forms:
                     hidden.add(column.name)
         return hidden
 
+    def offered(self, user, report):
+        """Whether this person may list and run the report: their role, and a model callers reach (Meta.api)."""
+        registry = self.business.registry
+        return user.role in report.roles and (report.model is None or registry.api.get(registry.resolve(report.model), 'full') is not None)
+
     def catalog(self, user):
         result = []
         for name, report in self.reports.items():
-            if user.role not in report.roles: continue
+            if not self.offered(user, report): continue
             hidden, chart = self.hidden(user, report), report.chart
             if chart is not None and (chart.x in hidden or set(chart.y) <= hidden): chart = None
             descriptor = metadata(report, name)
@@ -352,7 +358,7 @@ class Forms:
             for suffix in ('evaluate', 'export.csv'):
                 if name.endswith('/' + suffix): name, operation = name.removesuffix('/' + suffix), suffix
             report = self.reports.get(name)
-            if method != 'POST' or report is None or user.role not in report.roles: raise AccessError(403, 'Report is unavailable')
+            if method != 'POST' or report is None or not self.offered(user, report): raise AccessError(403, 'Report is unavailable')
             if operation == 'export.csv': return self.export(report, body, user)
             if set(body) - {'filters', 'revision', 'limit', 'offset', 'sort'}: raise ValidationError({'_form': 'Unknown report argument'})
             limit, offset = body.get('limit', 50), body.get('offset', 0)
@@ -397,7 +403,8 @@ class Forms:
                 context.source_revision = self.business.record_revision(context._tx, user, record).decode()
                 context.idempotency_key = key
                 draft = Draft(definition, context=context.read_context(), source=source)
-                draft.load(source)
+                with trusted():
+                    draft.load(source)
                 for name, rows in draft._rows.items():
                     for index, row in enumerate(rows):
                         protected = {key: str(value) for key, value in row._values.items() if row._definition.__declared_fields__[key].read_only}
@@ -415,7 +422,8 @@ class Forms:
                     project_source(descriptor)
                     for table in descriptor['children']: table['allow_add'] = not bool(draft._rows.get(table['name']))
                     return 200, {'definition': descriptor, 'values': draft_values(draft), 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
-                outcome = draft.submit(source)
+                with trusted():
+                    outcome = draft.submit(source)
                 outcome = jsonable(outcome)
                 encoded = json.dumps(outcome, allow_nan=False)
                 if len(encoded) > 65536: raise ValueError('Dialog result exceeds 64 KiB')
