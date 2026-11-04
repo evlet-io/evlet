@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import sqlite3
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -258,3 +259,28 @@ def test_link_options_parse():
     assert not args.no_link and args.user == 'owner'
     with pytest.raises(SystemExit):
         parser().parse_args(['serve', 'acme', '--user', 'owner'])
+
+
+def test_dev_watches_the_framework_when_it_is_edited_in_place(instance, monkeypatch, tmp_path):
+    from evlet.cli import serve as serving
+    project, _ = instance
+    captured = {}
+    monkeypatch.setattr(serving, 'run_server', lambda application, **options: captured.update(options))
+    serving.serve(project, 'acme', development=True)
+    package = Path(serving.__file__).resolve().parent.parent
+    # Tests run from the source checkout, so the framework is watched alongside apps and the instance.
+    assert captured['reload_dirs'] == [str(project / 'apps'), str(project / 'instances' / 'acme'), str(package)]
+    # An ordinary installed package is not watched.
+    monkeypatch.setattr(serving, 'framework_source', lambda: None)
+    serving.serve(project, 'acme', development=True)
+    assert captured['reload_dirs'] == [str(project / 'apps'), str(project / 'instances' / 'acme')]
+
+
+def test_framework_source_ignores_installed_packages(monkeypatch, tmp_path):
+    from evlet.cli import serve as serving
+    installed = tmp_path / 'lib' / 'python3.12' / 'site-packages' / 'evlet' / 'cli' / 'serve.py'
+    monkeypatch.setattr(serving, '__file__', str(installed))
+    assert serving.framework_source() is None
+    source = tmp_path / 'checkout' / 'evlet' / 'cli' / 'serve.py'
+    monkeypatch.setattr(serving, '__file__', str(source))
+    assert serving.framework_source() == (tmp_path / 'checkout' / 'evlet').resolve()

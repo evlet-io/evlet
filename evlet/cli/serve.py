@@ -144,6 +144,14 @@ def development_factory():
     return DevSignIn(runtime, announce=os.environ.get('EVLET_CLI_LINK') == '1', user=os.environ.get('EVLET_CLI_LINK_USER') or None)
 
 
+def framework_source():
+    """The Evlet package folder when it runs from a source checkout or editable install, else None."""
+    package = Path(__file__).resolve().parent.parent
+    if {'site-packages', 'dist-packages'} & set(package.parts):
+        return None
+    return package
+
+
 def declares_primary(path):
     """Whether instances/<name>/routes.py assigns primary, read without running it or importing apps."""
     import ast
@@ -155,6 +163,14 @@ def declares_primary(path):
         if any(isinstance(item, ast.Name) and item.id == 'primary' for item in targets):
             return True
     return False
+
+
+def development_dirs(root, path):
+    """Apps and the instance folder; plus Evlet itself when edited in place, so framework changes reload too."""
+    dirs = [str(root / 'apps'), str(path)]
+    if (package := framework_source()) is not None:
+        dirs.append(str(package))
+    return dirs
 
 
 def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=False, debug=False, link=True, user=None):
@@ -174,7 +190,7 @@ def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=Fa
         os.environ.update(values)
         try:
             run_server('evlet.cli.serve:development_factory', factory=True, host=host, port=port,
-                        reload=True, reload_dirs=[str(root / 'apps'), str(path)], lifespan='on', proxy_headers=False)
+                        reload=True, reload_dirs=development_dirs(root, path), lifespan='on', proxy_headers=False)
         finally:
             for key, value in previous.items():
                 if value is None:
