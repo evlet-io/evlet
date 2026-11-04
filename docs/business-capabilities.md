@@ -110,6 +110,15 @@ Link values. Creates and updates that leave the allowed scope roll back. Write
 permissions require read access. Omitted field sets mean all fields; empty tuples
 mean no fields. `read_only` fields also reject HTTP writes.
 
+Before any Rule, one framework rule decides what a model allows at all, so no Rule or
+Controls override can widen it. Effect targets take no create, update or delete
+([effects.md](effects.md#effect-rows-are-read-only)). While a request is served, a model with
+`Meta.api = "read"` takes no write of any kind and a model with `Meta.api = None` takes nothing
+([model-engine.md](model-engine.md#how-much-of-a-model-callers-reach)). The app code the request
+runs (actions, moves, reactions, dialogs, services, jobs) is trusted and writes as usual, so a
+posting action can be the only way into a ledger. A period lock (`Meta.period`) applies to
+every writer, trusted code included ([model-engine.md](model-engine.md#closed-periods)).
+
 ### Team and hierarchy scopes
 
 A filter object combines its filters with AND. Two scope forms cover "own records or the

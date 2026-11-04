@@ -95,6 +95,17 @@ Read through `self.context` (`list`, `aggregate`, `get`): it applies the person'
 and field rules. A value a report computes itself is the report author's responsibility; declare
 `source` on its column when it comes from one field.
 
+### Models callers cannot reach
+
+`run()` is trusted app code, like an action handler. It can read a model with `Meta.api = None`
+([model-engine.md](model-engine.md#how-much-of-a-model-callers-reach)), which no route, schema
+entry or tool reaches. The report itself is still a caller-facing route: it is listed and runs only
+for the roles in `roles`, and it shows only the columns and totals it returns. Its catalog entry
+never names the hidden model: `model` and the `link` of a link column on it are null, so the view
+shows ids as plain text, and a column `source` on it is not hidden by field rules. Choose `roles`
+with that in mind. A model with `Meta.api = "read"` reads like any other; the Playground's
+`LedgerBalances` report totals its read-only ledger.
+
 ## Routes
 
 | Route | Does |

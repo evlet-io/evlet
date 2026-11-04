@@ -8,7 +8,7 @@ import sqlite3
 from evlet import (AddField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
                    Link, LongText, Migration, Model, PostgreSQLDatabase, Registry, RenameField, RetireField, RunData, Select, Text)
 from .items import core_fields, item_fields
-from .models import Customer, registry
+from .models import Customer, Invoice, registry
 
 migrations = [Migration('0001_model_engine',
     AddField('customer', 'active', Boolean(required=True, default=True)),
@@ -113,8 +113,21 @@ migrations.append(Migration('0008_record_names',
 ))
 
 
+
+class LedgerEntry(Model):
+    """Frozen creation schema for the ledger written by Post to ledger."""
+    invoice = Link(Invoice, required=True, index=True)
+    customer = Link(Customer, required=True)
+    posting_date = Date(required=True)
+    amount = Currency(required=True)
+    memo = Text(max_length=120)
+
+
+migrations.append(Migration('0009_ledger', CreateModel(LedgerEntry)))
+
+
 # Invoice.project: a Link whose filters read the invoice's customer (Ref('customer')).
-migrations.append(Migration('0009_invoice_project', AddField('invoice', 'project', Link(Project))))
+migrations.append(Migration('0010_invoice_project', AddField('invoice', 'project', Link(Project))))
 
 
 def legacy_registry():

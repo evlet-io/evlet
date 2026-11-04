@@ -154,6 +154,9 @@ the engine:
 
 Reads follow the target's normal permissions and row scopes.
 
+The check is the same rule as `Meta.api = "read"` ([model-engine.md](model-engine.md#how-much-of-a-model-callers-reach)),
+which an app uses for rows its own posting code writes instead of the engine.
+
 ## Posted records keep their totals
 
 Once a record has posted (it has live effect rows: the latest row of some effect is an
@@ -220,6 +223,25 @@ originals (issue) | mirrors (unpost) | originals (repost) | mirrors (void)
   or a record whose effect rows link to it.
 * A record that ever posted is never deleted, even after an unpost: its rows still name it as
   their source. Delete answers 409.
+
+## Closed periods
+
+When a target declares `Meta.period` ([model-engine.md](model-engine.md#closed-periods)),
+its rows obey the period lock like any record:
+
+* **Posting.** A move that would write a row dated in a closed period is refused. The error
+  is on the posting document's own period field when it declares `Meta.period`, otherwise on
+  `_effects`, for example `"Posting rows: This date is in a closed period (locked up to
+  31-03-2026)"`.
+* **Mirror rows.** On void or unpost, a mirror row keeps the original row's date while that
+  date is open. When it is closed, the mirror takes the first open date instead: the day after
+  the lock that applies to the row, or today in the instance timezone when that is later. The
+  cancellation is then booked in the first period still open, and the closed one is not
+  touched.
+* **Repost.** A repost writes fresh originals with the record's own dates, so it is refused
+  when one of them is in a closed period.
+* **The document itself.** When the posting document declares `Meta.period` and is in a
+  closed period, its moves, void, unpost and repost are all refused, whatever its rows' dates.
 
 ## Details and schema
 

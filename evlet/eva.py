@@ -33,6 +33,7 @@ from .auth import AccessError, KeyAccess, User
 from .identity import checked as record_id, text as text_id
 from .connector import ConnectorError
 from .models import ValidationError
+from .permissions import calling
 from .tools import ApprovalNeeded, NAMES, Tool, label, redacted
 
 logger = logging.getLogger(__name__)
@@ -923,6 +924,11 @@ class Eva:
 
     def execute(self, run_id, resume=None):
         """Run Eva on a run until it answers, needs an approval, is stopped or fails. Runs on its own thread."""
+        # A run acts for a person, so it is a caller: Meta.api limits what it reaches (evlet/permissions.py).
+        with calling():
+            self._execute(run_id, resume)
+
+    def _execute(self, run_id, resume=None):
         try:
             self.business.controls.refresh()
             with self.database._connection() as connection:

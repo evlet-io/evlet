@@ -60,6 +60,9 @@ def current():
     for owner, names in MEMBERS.items():
         for name in names:
             api["evlet"][f"{owner}.{name}"] = normalise(signature(getattr(getattr(evlet, owner), name)))
+    # The options a model's Meta may declare, such as api and period.
+    from evlet.ui.metadata import META_OPTIONS
+    api["evlet"]["Model.Meta"] = f"options{sorted(META_OPTIONS)}"
     return api
 
 
