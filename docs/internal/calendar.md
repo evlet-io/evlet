@@ -1,6 +1,6 @@
 # Calendar engine: design
 
-Status: design for the owner's review, 04-11-2026. Nothing here is built yet. The owner approved
+Status: decided by the owner on 04-11-2026 (section 16). Nothing here is built yet. The owner approved
 the mockup on 04-11-2026; this spec does not depend on opening it, and section 0 lists its screens.
 
 Evlet gets one calendar engine that any app can use. It knows nothing about any app. It reads
@@ -226,7 +226,7 @@ class EventCalendar(Model):
     per_day = Integer(default=0)                 # 0: no limit
     step = Duration(default="PT15M")             # where slots may start: :00, :15, :30 ...
     no_overlap = Boolean(default=False)
-    handoffs = Select(("ask", "accept", "off"), default="ask")
+    handoffs = Select(("ask", "accept", "off"))  # default: ask for person calendars, accept for team and resource
     # Record calendars
     source = Text(default="", max_length=120)    # "<model>" or "<model>:<calendar name>"
     source_filter = Text(default="")             # JSON filter object, checked like a list filter
@@ -272,7 +272,8 @@ Every person gets a person calendar on first use of `/calendar`, created by trus
 Friday (`fri 08:00 to 12:00`) is two or one rows. `days` overrides a date: a holiday (closed) or
 different hours. A `feed` calendar can be named as a holiday source in settings: its all-day items
 close those days for the calendars that use it. Times are wall clock in the calendar's zone. The
-zone defaults to the instance time zone (`Instance(timezone=...)`); see decision 5 for GST.
+zone defaults to the instance time zone (`Instance(timezone=...)`). The project starter writes
+`timezone="Asia/Dubai"` (GST) into new instance configs; the calendar never hard-codes a zone.
 
 **Booking rules** apply to booking links and to Find a time suggestions. Desk edits are not
 refused by them; the UI warns ("Outside working hours", "Third booking today, limit 2"). Only
@@ -329,7 +330,8 @@ calendar the person is not a member of (the calendar's owner and admins are memb
 | `edit` | Same as read | Create, change, cancel events on the calendar |
 | `handoff` | Same as read | Edit, plus Move, Share and Delegate out of the calendar |
 
-Decision 4 asks whether `read` should exist; the owner's list has four levels.
+`read` is a fifth level beside the four the owner first listed, decided on 04-11-2026, so a person
+can see a team's meetings without being allowed to edit them.
 
 **How it is enforced.** A new row scope form, `calendar_member(level)`, reads the member table
 like `own_customer` reads user links. The framework's default rules for `Event` are:
@@ -393,8 +395,9 @@ Rules:
   `mode`, `from_calendar`, `to_calendar`, `by`, `note`, `state`: requested, accepted, declined,
   withdrawn, expired). The event shows on the target as tentative with "Waiting for you". Accept
   applies the change in one transaction; Decline leaves the event as it was. A request expires at
-  the event's start. With `accept`, the change applies at once. With `off`, nothing can be handed
-  to it.
+  the event's start. With `accept`, the change applies at once when the sender has `edit` on the
+  target, and is a request otherwise. With `off`, nothing can be handed to it. New person calendars
+  start with `ask`; new team and resource calendars start with `accept`.
 - **Free-time check.** The sheet lists targets with Free or Busy at that time, from the busy route
   (so a `free_busy` member sees no more than they may). When the target is `no_overlap` and busy,
   the action is refused in the transaction (section 3). Otherwise a busy target is a warning.
@@ -642,7 +645,7 @@ class BookingLink(Model):
     calendars = Table(...)                               # one calendar, or a pool (first free, then least booked)
     lengths = Text(default="PT30M")                      # one or more ISO durations to choose from
     realm = Select(("public", "portal"), default="public")
-    confirm_email = Boolean(default=True)                # held as tentative until the guest confirms
+    confirm_email = Boolean()                            # held as tentative until the guest confirms; default on for public, off for portal
     approve = Boolean(default=False)                     # the calendar owner accepts each booking
     questions = Table(...)                               # name and email always; up to 5 more short fields
     per_email_day = Integer(default=2)
@@ -763,7 +766,8 @@ The booking and reply pages are a small separate entry with no desk code.
   ```
 
   A view needing its own drawing uses an app frontend (`Frontend(kind="static")`) over the same
-  `/api/_calendar` routes. See decision 9.
+  `/api/_calendar` routes. A browser plugin registry comes only if an app needs drawing these views
+  can't do.
 
 ## 12. Eva and MCP tools
 
@@ -875,40 +879,40 @@ calls through the Tool Engine. Playground: a public "Book a demo" link on `publi
 
 PR 1 needs PR #100 (period lock) merged first. PRs 2 to 4 follow in order.
 
-## 16. Open decisions for the owner
+## 16. Decisions
+
+The owner decided all fifteen points on 04-11-2026, accepting each recommendation as written.
 
 1. **Names.** The declaration is `Calendar(...)` in `Meta.calendar`, the calendar record model is
-   `EventCalendar`, and the internal cron helper becomes `CronCalendar`. *Recommendation:* yes. The
-   alternative, `CalendarSource(...)` for the declaration, frees `Calendar` for the model but reads
-   worse in models.
-2. **Where events live.** An optional framework app, `evlet.calendar`, enabled per project. Record
-   calendars (PR 1) work without it. *Recommendation:* yes; a project with no use for plain events
-   gets no extra tables.
-3. **A `User()` field.** Generic, also useful for owners and assignees in apps. *Recommendation:* add
-   it in PR 2 rather than storing user ids in Integer fields.
-4. **A fifth level, `read`** (see details, no edit), between free time and edit. *Recommendation:*
-   add it; without it, a person who should see a team's meetings must be allowed to edit them.
-5. **Default time zone.** Calendars use the instance zone; the framework's own default stays UTC.
-   *Recommendation:* the project starter writes `timezone="Asia/Dubai"` (GST) into new instance
-   configs as the suggested value, and the calendar never hard-codes a zone.
-6. **Booking rules on desk edits.** *Recommendation:* warn on the desk, refuse on booking links;
-   only `no_overlap` refuses a desk edit.
-7. **Reply links.** *Recommendation:* on by default, beside email replies, so invites work with
-   outgoing mail only.
-8. **Hand-off acceptance default.** *Recommendation:* `ask` for person calendars; `accept` for
-   team and resource calendars when the sender has `edit` on the target.
-9. **App views.** *Recommendation:* Python `CalendarView` declarations now; a browser plugin
-   registry only if an app needs drawing the views can't do.
-10. **Booking confirmation by email.** *Recommendation:* on for public links (30-minute tentative
-    hold), off for portal links, where the person is signed in.
-11. **Private feed contents.** *Recommendation:* off unless enabled in Controls; when on, each
-    person's feed follows their own level, so busy-only members get Busy only.
-12. **External feed refresh.** *Recommendation:* every hour, never more often than every 15 minutes.
-13. **Notifications.** Sending notifications is not built yet (settings.md). *Recommendation:* PR 2
-    shows reminders and hand-off requests in the app while it is open (through the existing live
-    updates); PR 3 sends email by the existing `notify.<event>` preferences. A general notification
-    sender stays its own piece of work.
-14. **Record hand-off.** *Recommendation:* dropping a record card onto another calendar changes only
-    the declared `resource` field; record sources without `resource` can't be dropped there.
-15. **Free and busy detail.** *Recommendation:* merge overlapping and touching intervals, with no
-    further rounding.
+   `EventCalendar`, and the internal cron helper becomes `CronCalendar`. `CalendarSource(...)` would
+   free `Calendar` for the model but reads worse in models.
+2. **Where events live.** In an optional framework app, `evlet.calendar`, enabled per project.
+   Record calendars (PR 1) work without it, so a project with no use for plain events gets no extra
+   tables.
+3. **A `User()` field.** Added in PR 2, rather than storing user ids in Integer fields. It is
+   generic and also serves owners and assignees in apps.
+4. **A fifth level, `read`** (see details, no edit), between free time and edit. Without it, a
+   person who should see a team's meetings would have to be allowed to edit them.
+5. **Default time zone.** Calendars use the instance zone, and the framework's own default stays
+   UTC. The project starter writes `timezone="Asia/Dubai"` (GST) into new instance configs as the
+   suggested value. The calendar never hard-codes a zone.
+6. **Booking rules on desk edits.** The desk warns; booking links refuse. Only `no_overlap`
+   refuses a desk edit.
+7. **Reply links.** On by default, beside email replies, so invites work with outgoing mail only.
+8. **Hand-off acceptance default.** `ask` for person calendars; `accept` for team and resource
+   calendars when the sender has `edit` on the target.
+9. **App views.** Python `CalendarView` declarations now. A browser plugin registry comes only if
+   an app needs drawing these views can't do.
+10. **Booking confirmation by email.** On for public links, with a 30-minute tentative hold; off
+    for portal links, where the person is signed in.
+11. **Private feed contents.** Off unless enabled in Controls. When on, each person's feed follows
+    their own level, so busy-only members get Busy only.
+12. **External feed refresh.** Every hour, never more often than every 15 minutes.
+13. **Notifications.** Sending notifications is not built yet (settings.md). PR 2 shows reminders
+    and hand-off requests in the app while it is open, through the existing live updates. PR 3
+    sends email by the existing `notify.<event>` preferences. A general notification sender stays
+    its own piece of work.
+14. **Record hand-off.** Dropping a record card onto another calendar changes only the declared
+    `resource` field. Record sources without `resource` can't be dropped there.
+15. **Free and busy detail.** Overlapping and touching intervals are merged, with no further
+    rounding.
