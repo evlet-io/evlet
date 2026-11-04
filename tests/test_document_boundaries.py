@@ -143,15 +143,15 @@ def test_expression_type_errors_fail_before_schema_creation():
 def test_hidden_dependencies_and_outputs_are_not_disclosed(tmp_path):
     class Salary(Model):
         permissions = ALL
-        name = Text()
+        title = Text()
         secret = Currency(hidden=True, default='1250')
         inferred = Currency(compute='secret * 2')
     app = application(tmp_path, Salary)
     c = client(app)
-    result = c('POST', '/api/_draft/salary', {'values': {'name': 'Example'}})[1]
+    result = c('POST', '/api/_draft/salary', {'values': {'title': 'Example'}})[1]
     assert 'secret' not in result['values'] and 'inferred' not in result['values']
     metadata = c('GET', '/api/schema')[1]['models'][0]
-    assert {field['name'] for field in metadata['fields']} == {'name'}
+    assert {field['name'] for field in metadata['fields']} == {'name', 'title'}
     assert 'secret' not in str(metadata['behavior'])
 
 
@@ -231,7 +231,7 @@ def test_legacy_child_table_under_document_parent_saves(tmp_path):
     from evlet.business import ChildTable
     class Parent(Model):
         permissions = ALL
-        name = Text()
+        title = Text()
     class Line(Model):
         permissions = ALL
         owner = Link(Parent, required=True)
@@ -242,14 +242,14 @@ def test_legacy_child_table_under_document_parent_saves(tmp_path):
     app.initialize()
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
     c = client(app)
-    status, created, _ = c('POST', '/api/parent', {'name': 'p', 'children': {'lines': [{'qty': 1}, {'qty': 2}]}})
+    status, created, _ = c('POST', '/api/parent', {'title': 'p', 'children': {'lines': [{'qty': 1}, {'qty': 2}]}})
     assert status == 201, created
     assert [row['qty'] for row in created['children']['lines']] == [1, 2]
     _, current, headers = c('GET', f"/api/parent/{created['id']}")
-    status, updated, _ = c('PATCH', f"/api/parent/{created['id']}", {'name': 'q', 'children': {'lines': [current['children']['lines'][1]]}},
+    status, updated, _ = c('PATCH', f"/api/parent/{created['id']}", {'title': 'q', 'children': {'lines': [current['children']['lines'][1]]}},
                            headers={b'if-match': headers[b'etag']})
     assert status == 200, updated
-    assert updated['name'] == 'q' and [row['qty'] for row in updated['children']['lines']] == [2]
+    assert updated['title'] == 'q' and [row['qty'] for row in updated['children']['lines']] == [2]
     with db.transaction() as tx:
         assert [line.owner for line in tx.list(Line)] == [RecordId(created['id'])]
 
@@ -257,17 +257,17 @@ def test_legacy_child_table_under_document_parent_saves(tmp_path):
 def test_action_on_model_without_permissions_runs(tmp_path):
     from evlet import action
     class Ticket(Model):
-        name = Text()
+        title = Text()
         @action
         def close(self, note: str = ''):
-            self.name = 'closed ' + note
+            self.title = 'closed ' + note
     app = application(tmp_path, Ticket)
     c = client(app)
-    _, ticket, _ = c('POST', '/api/ticket', {'name': 'open'})
+    _, ticket, _ = c('POST', '/api/ticket', {'title': 'open'})
     _, _, headers = c('GET', f"/api/ticket/{ticket['id']}")
     status, result, _ = c('POST', f"/api/ticket/{ticket['id']}/actions/close", {'note': 'now'}, headers={b'if-match': headers[b'etag']})
     assert status == 200, result
-    assert result['name'] == 'closed now'
+    assert result['title'] == 'closed now'
 
 
 def test_child_and_inherited_permissions_are_kept():
@@ -315,24 +315,24 @@ def test_mixin_permissions_are_kept():
 def test_legacy_action_still_runs_on_model_with_declared_actions(tmp_path):
     from evlet import action, Action
     class Ticket(Model):
-        name = Text()
+        title = Text()
         @action
         def close(self):
-            self.name = 'closed'
+            self.title = 'closed'
     def reopen(tx, user, record):
-        tx.update(Ticket, record.id, name='open')
+        tx.update(Ticket, record.id, title='open')
     db = Database(tmp_path / 'db.sqlite3', Registry(Ticket))
     app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
                       actions=(Action(Ticket, 'reopen', 'Reopen', reopen),))
     app.initialize()
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
     c = client(app)
-    _, ticket, _ = c('POST', '/api/ticket', {'name': 'closed'})
+    _, ticket, _ = c('POST', '/api/ticket', {'title': 'closed'})
     assert c('POST', f"/api/ticket/{ticket['id']}/actions/reopen")[0] == 428
     _, _, headers = c('GET', f"/api/ticket/{ticket['id']}")
     status, result, _ = c('POST', f"/api/ticket/{ticket['id']}/actions/reopen", headers={b'if-match': headers[b'etag']})
     assert status == 200, result
-    assert result['name'] == 'open'
+    assert result['title'] == 'open'
 
 
 def test_float_action_arguments_accept_whole_json_numbers():
@@ -349,16 +349,16 @@ def test_float_action_arguments_accept_whole_json_numbers():
 
 def test_validation_errors_do_not_name_hidden_fields(tmp_path):
     class Payslip(Model):
-        permissions = {'admin': Rule(('read', 'create', 'update', 'delete'), read_fields=('name',), write_fields=('name',))}
-        name = Text()
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete'), read_fields=('title',), write_fields=('title',))}
+        title = Text()
         bonus = Currency(default='0')
         def validate(self):
-            if self.name == 'bad':
-                raise ValidationError({'bonus': 'Bonus exceeds the approved band', 'name': 'Check the name'})
+            if self.title == 'bad':
+                raise ValidationError({'bonus': 'Bonus exceeds the approved band', 'title': 'Check the name'})
     app = application(tmp_path, Payslip)
-    status, result, _ = client(app)('POST', '/api/payslip', {'name': 'bad'})
+    status, result, _ = client(app)('POST', '/api/payslip', {'title': 'bad'})
     assert status == 422
-    assert result['fields'] == {'name': 'Check the name', '_form': 'One or more values are invalid'}
+    assert result['fields'] == {'title': 'Check the name', '_form': 'One or more values are invalid'}
     assert 'bonus' not in str(result) and 'band' not in str(result)
 
 
@@ -388,7 +388,7 @@ def test_child_validation_errors_hide_restricted_fields_but_keep_row_messages(tm
 def test_storage_names_must_be_lowercase_routes():
     class SalesOrder(Model):
         storage_name = 'SalesOrders'
-        name = Text()
+        title = Text()
     with pytest.raises(ValueError, match='lowercase'):
         Registry(SalesOrder)
 
@@ -415,11 +415,11 @@ def test_source_outputs_follow_the_behaviours_each_route_exposes():
 def test_tampered_storage_types_return_a_json_error(tmp_path):
     from evlet import Integer
     class Item(Model):
-        name = Text()
+        title = Text()
         count = Integer()
     app = application(tmp_path, Item)
     c = client(app)
-    _, item, _ = c('POST', '/api/item', {'name': 'a', 'count': 1})
+    _, item, _ = c('POST', '/api/item', {'title': 'a', 'count': 1})
     with app.database._connection() as connection:
         connection.execute('UPDATE item SET count=? WHERE id=?', (b'\x00raw', RecordId(item['id'])))
         connection.commit()
@@ -433,7 +433,7 @@ def test_legacy_child_errors_do_not_name_hidden_child_fields(tmp_path):
     from evlet import Link, Policy
     from evlet.business import ChildTable
     class Parent(Model):
-        name = Text()
+        title = Text()
     class Line(Model):
         owner = Link(Parent, required=True)
         qty = Decimal(default='1')
@@ -446,7 +446,7 @@ def test_legacy_child_errors_do_not_name_hidden_child_fields(tmp_path):
     app.initialize()
     app.business.policy = Policy(db.registry, rules={('admin', Line): Rule(('read', 'create', 'update', 'delete'), read_fields=('owner', 'qty'))})
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
-    status, result, _ = client(app)('POST', '/api/parent', {'name': 'p', 'children': {'lines': [{'qty': '1'}]}})
+    status, result, _ = client(app)('POST', '/api/parent', {'title': 'p', 'children': {'lines': [{'qty': '1'}]}})
     assert status == 422 and 'cost' not in str(result) and 'margin' not in str(result)
 
 

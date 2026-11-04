@@ -12,7 +12,7 @@ from test_business import http, client, PASSWORD
 
 class Ticket(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
-    name = Text(required=True)
+    title = Text(required=True)
     copies = Integer(default=0)
     class Copy(Dialog):
         title = 'Create copies'
@@ -21,7 +21,7 @@ class Ticket(Model):
         def submit(self, source):
             rows = []
             for index in range(self.count):
-                rows.append(self.context.create(Ticket, name=source.name + ' copy')['id'])
+                rows.append(self.context.create(Ticket, title=source.title + ' copy')['id'])
             self.context.update(Ticket, source.id, copies=source.copies + self.count)
             return {'created': rows}
 
@@ -30,14 +30,14 @@ class Tickets(Report):
     title = 'Tickets'
     permissions = ('admin',)
     term = Text(default='')
-    columns = (Column('id', type='integer'), Column('name'), Column('copies', type='integer'))
+    columns = (Column('id', type='integer'), Column('name'), Column('title'), Column('copies', type='integer'))
     def run(self):
-        return self.context.list(Ticket, filters={'name__contains': self.term} if self.term else {}, limit=self.context.limit, offset=self.context.offset)
+        return self.context.list(Ticket, filters={'title__contains': self.term} if self.term else {}, limit=self.context.limit, offset=self.context.offset)
 
 
 @api(method='GET', permission=(Ticket, 'read'))
 def count_tickets(context, term: str = ''):
-    return {'count': context.count(Ticket, filters={'name': term} if term else {})}
+    return {'count': context.count(Ticket, filters={'title': term} if term else {})}
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def app(tmp_path):
 
 def test_dialog_load_submit_retry_and_source_revision(app):
     c = client(app)
-    status, created, _ = c('POST', '/api/ticket', {'name': 'Original'})
+    status, created, _ = c('POST', '/api/ticket', {'title': 'Original'})
     assert status == 201
     ticket = created['id']
     source = c('GET', f'/api/ticket/{ticket}')
@@ -75,7 +75,7 @@ def test_dialog_load_submit_retry_and_source_revision(app):
 
 def test_report_evaluation_does_not_run_and_results_are_bounded(app, monkeypatch):
     c = client(app)
-    c('POST', '/api/ticket', {'name': 'One'})
+    c('POST', '/api/ticket', {'title': 'One'})
     original = Tickets.run
     def reject(self): raise AssertionError('A filter edit must not run the report')
     monkeypatch.setattr(Tickets, 'run', reject)
@@ -83,7 +83,7 @@ def test_report_evaluation_does_not_run_and_results_are_bounded(app, monkeypatch
     monkeypatch.setattr(Tickets, 'run', original)
     status, result, _ = c('POST', '/api/_reports/Tickets', {'filters': {}, 'limit': 1, 'revision': 2})
     assert status == 200, result
-    assert result['rows'][0]['name'] == 'One' and result['revision'] == 2
+    assert result['rows'][0]['title'] == 'One' and result['revision'] == 2
     assert result['filters']['term'] == ''
     assert c('POST', '/api/_reports/Tickets', {'limit': 101})[0] == 422
 
@@ -125,7 +125,7 @@ def test_api_is_registered_typed_and_readonly(app):
     assert c('POST', '/api/_services/test.count')[0] == 405
     assert c('GET', '/api/_services/os.system')[0] == 404
     with app.business.context(app.business.auth.create_user(username='other', password=PASSWORD, role='admin'), readonly=True) as context:
-        with pytest.raises(Exception, match='read only'): context.create(Ticket, name='Forbidden')
+        with pytest.raises(Exception, match='read only'): context.create(Ticket, title='Forbidden')
 
 
 def test_calendar_dst_and_calendar_month():

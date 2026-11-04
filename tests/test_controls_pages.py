@@ -342,16 +342,16 @@ def test_export_writes_callables_as_set_in_code_and_names_the_real_file(tmp_path
     from evlet.controls_export import Exporter, literal
 
     class Gadget(Model):
-        name = Text(default=lambda: 'x', validator=lambda value: None)
+        caption = Text(default=lambda: 'x', validator=lambda value: None)
         weight = Decimal(scale=2)
 
     app = build(tmp_path, Gadget)
     add_user(app, 'admin', 'admin')
     admin = client(app)
-    assert save(admin, ('field', 'Gadget.name', {'label': 'Title'}))[0] == 200
+    assert save(admin, ('field', 'Gadget.caption', {'label': 'Title'}))[0] == 200
     code = next(item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1] if item['file'].endswith('test_controls_pages.py'))
     compile(code, 'models.py', 'exec')
-    assert "name = Text(default=..., validator=..., label='Title')  # ... is set in code in models.py: copy it from there" in code
+    assert "caption = Text(default=..., validator=..., label='Title')  # ... is set in code in models.py: copy it from there" in code
     # A calculated field's expression has no Python form here either.
     assert literal(object()) == '...' and literal((len, lambda: 1)) == '(..., ...)'
     exporter = Exporter(app.business.controls)

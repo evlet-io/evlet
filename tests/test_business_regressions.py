@@ -17,7 +17,7 @@ def test_authenticated_invalid_link_returns_field_validation(secured, value):
 
 @pytest.mark.parametrize('value', ['invalid', 0, True, 2**63])
 def test_authenticated_invalid_link_patch_is_validation_and_atomic(secured, value):
-    customer = secured.database.create(Customer, name='Review')
+    customer = secured.database.create(Customer, customer_name='Review')
     invoice = secured.database.create(Invoice, customer=customer.id, reference='ORIGINAL', total='1.00')
     call = client(secured, 'editor')
     status, data, _ = call('PATCH', f'/api/invoice/{invoice.id}', {
@@ -38,7 +38,7 @@ def test_child_create_without_update_is_supported_by_backend(secured):
                         if model['name'] == 'projecttask')
     assert child_schema['permissions'] == {'create': True, 'update': False, 'delete': False}
     status, data, _ = call('POST', '/api/project', {
-        'name': 'Can create', 'children': {'tasks': [{'title': 'Allowed new task'}]},
+        'title': 'Can create', 'children': {'tasks': [{'title': 'Allowed new task'}]},
     })
     assert status == 201, data
     assert data['children']['tasks'][0]['title'] == 'Allowed new task'
@@ -47,7 +47,7 @@ def test_child_create_without_update_is_supported_by_backend(secured):
 def test_child_delete_without_update_is_supported_by_backend(secured):
     call = client(secured, 'editor')
     status, project, _ = call('POST', '/api/project', {
-        'name': 'Can delete', 'children': {'tasks': [{'title': 'Remove me'}]},
+        'title': 'Can delete', 'children': {'tasks': [{'title': 'Remove me'}]},
     })
     assert status == 201
     secured.business.policy = Policy(registry, rules={
@@ -60,7 +60,7 @@ def test_child_delete_without_update_is_supported_by_backend(secured):
 
 @pytest.mark.parametrize('operation', ['create', 'delete'])
 def test_child_collection_can_retain_rows_without_update_permission(secured, operation):
-    project = secured.database.create(Project, name='Keep parent')
+    project = secured.database.create(Project, title='Keep parent')
     first = secured.database.create(ProjectTask, project=project.id, title='Keep first')
     second = secured.database.create(ProjectTask, project=project.id, title='Keep second')
     secured.business.policy = Policy(registry, rules={
@@ -74,14 +74,14 @@ def test_child_collection_can_retain_rows_without_update_permission(secured, ope
     assert secured.database.get(ProjectTask, second.id).title == 'Keep second'
     retained = [{'id': row['id']} for row in data['children']['tasks']]
     retained[0]['title'] = 'Forbidden update'
-    assert call('PATCH', f'/api/project/{project.id}', {'name': 'Rollback parent', 'children': {'tasks': retained}})[0] == 403
-    assert secured.database.get(Project, project.id).name == 'Keep parent'
+    assert call('PATCH', f'/api/project/{project.id}', {'title': 'Rollback parent', 'children': {'tasks': retained}})[0] == 403
+    assert secured.database.get(Project, project.id).title == 'Keep parent'
     assert call('GET', f'/api/project/{project.id}')[1] == data
 
 
 def test_child_retention_checks_parent_ownership_and_row_scope(secured):
-    project = secured.database.create(Project, name='Owned')
-    other = secured.database.create(Project, name='Other')
+    project = secured.database.create(Project, title='Owned')
+    other = secured.database.create(Project, title='Other')
     hidden = secured.database.create(ProjectTask, project=project.id, title='Hidden', done=False)
     foreign = secured.database.create(ProjectTask, project=other.id, title='Foreign', done=True)
     secured.business.policy = Policy(registry, rules={

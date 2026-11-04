@@ -32,6 +32,8 @@ class Application:
     def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None):
         from .ui import ViewRegistry
         from .routing import RouteTable, resolve_routes
+        from .naming import check_declarations
+        check_declarations(database.registry, {child.model for child in database.registry.children})
         if routes is not None and not isinstance(routes, RouteTable):
             raise ValueError('Pass a RouteTable from resolve_routes')
         self.routes = resolve_routes() if routes is None else routes

@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 
 from evlet import (AddField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
-                   Link, LongText, Migration, Model, PostgreSQLDatabase, Registry, Select, Text)
+                   Link, LongText, Migration, Model, PostgreSQLDatabase, Registry, RenameField, RetireField, RunData, Select, Text)
 from .items import core_fields, item_fields
 from .models import Customer, registry
 
@@ -90,6 +90,28 @@ class Employee(Model):
 # The frozen model is in no registry, so its Link to itself names the class directly.
 Employee.__fields__['reports_to'].target = Employee
 migrations.append(Migration('0007_employees', CreateModel(Employee)))
+
+
+def invoice_numbers_become_names(session):
+    """Records have a standard name now: invoice numbers move into it and their counters follow."""
+    session.add_standard_columns(session.registry.models['invoice'])
+    session.connection.execute('UPDATE invoice SET "name" = "number" WHERE "name" IS NULL AND "number" IS NOT NULL')
+    found = session.connection.execute("SELECT 1 FROM sqlite_master WHERE name = 'evlet_sequence'" if isinstance(session.connection, sqlite3.Connection)
+                                       else "SELECT to_regclass('evlet_sequence')").fetchone()
+    if found and found[0]:
+        session.connection.execute("UPDATE evlet_sequence SET field = 'name' WHERE model = 'invoice' AND field = 'number'")
+
+
+# Record identity: `name` is the standard record name, so the customer's, project's and employee's own
+# fields move aside (the project's becomes its declared title) and invoice numbers become names.
+migrations.append(Migration('0008_record_names',
+    RenameField('customer', 'name', 'customer_name'),
+    RenameField('project', 'name', 'title'),
+    RenameField('employee', 'name', 'full_name'),
+    RetireField('invoice', 'number'),
+    RunData(invoice_numbers_become_names),
+))
+
 
 def legacy_registry():
     """Frozen Milestone 1 definitions used only to validate a legacy baseline."""

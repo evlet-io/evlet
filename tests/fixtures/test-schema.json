@@ -8,7 +8,7 @@
         {
           "label": "Details",
           "fields": [
-            "name",
+            "customer_name",
             "email",
             "active",
             "currency",
@@ -19,26 +19,28 @@
       "label": "Customer",
       "plural": "Customers",
       "description": "Good work starts with good relationships.",
-      "title_field": "name",
+      "title_field": "customer_name",
       "list_fields": [
         "id",
-        "name",
+        "customer_name",
         "email",
         "active"
       ],
       "search_fields": [
-        "name",
-        "email"
+        "customer_name",
+        "email",
+        "title",
+        "name"
       ],
       "fields": [
         {
-          "name": "name",
+          "name": "customer_name",
           "type": "text",
           "required": true,
           "unique": false,
           "index": false,
           "max_length": 120,
-          "label": "Name",
+          "label": "Customer name",
           "help_text": "",
           "placeholder": "",
           "hidden": false,
@@ -108,6 +110,34 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "none"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
         }
       ]
     },
@@ -117,7 +147,7 @@
         {
           "label": "Details",
           "fields": [
-            "number",
+            "name",
             "customer",
             "reference",
             "total",
@@ -130,10 +160,10 @@
       "label": "Invoice",
       "plural": "Invoices",
       "description": "Keep each piece of work connected to a customer.",
-      "title_field": "number",
+      "title_field": "title",
       "list_fields": [
         "id",
-        "number",
+        "name",
         "reference",
         "customer",
         "total",
@@ -141,25 +171,12 @@
         "posting_date"
       ],
       "search_fields": [
-        "number",
+        "name",
         "reference",
-        "status"
+        "status",
+        "title"
       ],
       "fields": [
-        {
-          "name": "number",
-          "type": "text",
-          "required": false,
-          "unique": true,
-          "index": false,
-          "max_length": 40,
-          "label": "Invoice number",
-          "help_text": "Given by the naming series when the invoice is saved.",
-          "placeholder": "",
-          "hidden": false,
-          "read_only": false,
-          "default_kind": "none"
-        },
         {
           "name": "customer",
           "type": "link",
@@ -260,6 +277,34 @@
           "read_only": false,
           "default_kind": "static",
           "default": "0.0000"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
         }
       ]
     },
@@ -280,7 +325,7 @@
       "label": "Payment",
       "plural": "Payments",
       "description": "Record payments and the invoices they belong to.",
-      "title_field": "reference",
+      "title_field": "title",
       "list_fields": [
         "id",
         "invoice",
@@ -290,7 +335,9 @@
       ],
       "search_fields": [
         "reference",
-        "currency"
+        "currency",
+        "title",
+        "name"
       ],
       "fields": [
         {
@@ -376,6 +423,34 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "none"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
         }
       ]
     },
@@ -385,7 +460,7 @@
         {
           "label": "Project",
           "fields": [
-            "name",
+            "title",
             "customer",
             "status"
           ]
@@ -408,27 +483,28 @@
       "label": "Project",
       "plural": "Projects",
       "description": "Track a small project and its customer.",
-      "title_field": "name",
+      "title_field": "title",
       "list_fields": [
         "id",
-        "name",
+        "title",
         "customer",
         "status",
         "budget"
       ],
       "search_fields": [
-        "name",
-        "status"
+        "title",
+        "status",
+        "name"
       ],
       "fields": [
         {
-          "name": "name",
+          "name": "title",
           "type": "text",
           "required": true,
           "unique": false,
           "index": false,
           "max_length": 120,
-          "label": "Name",
+          "label": "Project",
           "help_text": "",
           "placeholder": "",
           "hidden": false,
@@ -537,6 +613,20 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "none"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
         }
       ]
     },
@@ -562,7 +652,8 @@
         "done"
       ],
       "search_fields": [
-        "title"
+        "title",
+        "name"
       ],
       "fields": [
         {
@@ -608,6 +699,20 @@
           "read_only": false,
           "default_kind": "static",
           "default": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
         }
       ]
     },
@@ -852,7 +957,7 @@
       "label": "Item",
       "plural": "Items",
       "description": "Items with about 200 fields, prices and barcodes: a list to try filters on.",
-      "title_field": "item_code",
+      "title_field": "title",
       "list_fields": [
         "id",
         "item_code",
@@ -863,7 +968,9 @@
       ],
       "search_fields": [
         "item_code",
-        "item_name"
+        "item_name",
+        "title",
+        "name"
       ],
       "fields": [
         {
@@ -4057,6 +4164,34 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "none"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
         }
       ],
       "document_version": 1,
@@ -4265,7 +4400,9 @@
         "density": {},
         "flavour": {},
         "fragrance": {},
-        "gauge": {}
+        "gauge": {},
+        "name": {},
+        "title": {}
       },
       "order": [
         "item_code",
@@ -4472,6 +4609,8 @@
         "flavour",
         "fragrance",
         "gauge",
+        "name",
+        "title",
         "prices.price_list",
         "prices.customer",
         "prices.currency",
@@ -4493,7 +4632,7 @@
         {
           "label": "Details",
           "fields": [
-            "name",
+            "full_name",
             "email",
             "reports_to"
           ]
@@ -4502,26 +4641,28 @@
       "label": "Employee",
       "plural": "Employees",
       "description": "People and who they report to.",
-      "title_field": "name",
+      "title_field": "full_name",
       "list_fields": [
         "id",
-        "name",
+        "full_name",
         "email",
         "reports_to"
       ],
       "search_fields": [
-        "name",
-        "email"
+        "full_name",
+        "email",
+        "title",
+        "name"
       ],
       "fields": [
         {
-          "name": "name",
+          "name": "full_name",
           "type": "text",
           "required": true,
           "unique": false,
           "index": false,
           "max_length": 120,
-          "label": "Name",
+          "label": "Full name",
           "help_text": "",
           "placeholder": "",
           "hidden": false,
@@ -4557,19 +4698,51 @@
           "hidden": false,
           "read_only": false,
           "default_kind": "none"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
         }
       ],
       "document_version": 1,
       "resource": "employee",
       "behavior": {
-        "name": {},
+        "full_name": {},
         "email": {},
-        "reports_to": {}
+        "reports_to": {},
+        "name": {},
+        "title": {}
       },
       "order": [
-        "name",
+        "full_name",
         "email",
-        "reports_to"
+        "reports_to",
+        "name",
+        "title"
       ],
       "sources": {}
     },
