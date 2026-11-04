@@ -15,7 +15,7 @@ class BuildPy(build_py):
         playground = resources / 'playground'
         playground.mkdir(parents=True, exist_ok=True)
         (playground / '__init__.py').write_text('"""Bundled framework examples."""\n')
-        for name in ('app.py', 'items.py', 'models.py', 'migrate.py', 'reports.py', 'settings.py', 'slips.py', 'ui.py'):
+        for name in ('app.py', 'items.py', 'models.py', 'migrate.py', 'prints.py', 'reports.py', 'settings.py', 'slips.py', 'ui.py'):
             shutil.copy2(root / 'examples/playground' / name, playground / name)
         shutil.copytree(root / 'examples/playground/portal', playground / 'portal', dirs_exist_ok=True)
         docs = resources / 'docs'

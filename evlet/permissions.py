@@ -258,7 +258,7 @@ class Policy:
         self.rules = MappingProxyType(self.rules)
         for (role, model), rule in self.rules.items():
             registry.name_for(model)
-            if role not in (*self.roles, PUBLIC) or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', 'journal', *CORRECTIONS}:
+            if role not in (*self.roles, PUBLIC) or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS}:
                 raise ValueError('Invalid permission rule')
             if 'journal' in rule.operations and model not in registry.journals:
                 raise ValueError(f'{model.__name__}: Rule names \'journal\', but the model has no journal '
@@ -306,6 +306,15 @@ class Policy:
             named |= {role for role, base in self.roles.items() if base == 'editor' and {'read', 'update'} <= set(operations[role])}
             journalers[model] = frozenset(named)
         self.journalers = MappingProxyType(journalers)
+        # Printing is its own operation: admin when its Rule reads the model, and every role whose Rule names
+        # 'print'. Read access is still required when a record prints.
+        printers = {}
+        for model in registry.models.values():
+            named = {role for role in self.roles if 'print' in self.rules.get((role, model), Rule(())).operations}
+            if 'read' in self.rules.get(('admin', model), default_rule('admin')).operations:
+                named.add('admin')
+            printers[model] = frozenset(named)
+        self.printers = MappingProxyType(printers)
 
     def rule(self, user, model):
         found = self.rules.get((user.role, model))
@@ -332,6 +341,8 @@ class Policy:
             return user.role in self.corrections.get((model, operation), ())
         if operation == 'journal':
             return user.role in self.journalers.get(model, ())
+        if operation == 'print':
+            return user.role in self.printers.get(model, ()) and 'read' in self.rule(user, model).operations
         return operation in self.rule(user, model).operations
 
     def require(self, user, model, operation):

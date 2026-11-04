@@ -99,3 +99,7 @@ from .mailboxes import Mail
 __all__ += ["Mail"]
 from .devlink import DevSignIn
 __all__ += ["DevSignIn"]
+
+from .printing import PrintDesign
+
+__all__ += ["PrintDesign"]

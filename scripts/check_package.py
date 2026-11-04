@@ -31,6 +31,17 @@ def main():
         if not (assets / logo).read_bytes().startswith(b"<?xml"):
             raise RuntimeError(f"Installed wheel lacks the {logo} logo")
 
+    print_fonts = Path(evlet.__file__).parent / "resources/print/fonts"
+    for font in ("NotoSans-Regular", "NotoSans-Bold", "NotoSansArabic-Regular", "NotoSansArabic-Bold"):
+        if not (print_fonts / (font + ".woff2")).read_bytes().startswith(b"wOF2"):
+            raise RuntimeError(f"Installed wheel lacks the {font} print font")
+    for licence in ("NotoSans-OFL.txt", "NotoSansArabic-OFL.txt"):
+        if "SIL OPEN FONT LICENSE" not in (print_fonts / licence).read_text().upper():
+            raise RuntimeError(f"Installed wheel lacks {licence}")
+    from evlet.printing import available
+    if available():
+        raise RuntimeError('Clean wheel check unexpectedly has the optional print extra')
+
     from evlet import PostgreSQLDatabase
     try:
         PostgreSQLDatabase('dbname=unused', Registry())

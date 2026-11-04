@@ -93,7 +93,8 @@ link. Links exist only under `evlet playground` and `evlet dev`, never under
 
 ## Optional capabilities
 
-PostgreSQL and S3 are available as `evlet[postgres]` and `evlet[s3]`. The existing
+PostgreSQL, S3 and PDF printing are available as `evlet[postgres]`, `evlet[s3]` and
+`evlet[print]` ([print designs](docs/printing.md)). The existing
 [tenant deployment](docs/tenancy-deployment.md), [jobs and live updates](docs/jobs-realtime.md),
 [connector](docs/connector.md), [Tool Engine](docs/tools.md), [Eva](docs/eva.md), [PostgreSQL](docs/postgresql.md) and
 [operations](docs/production-operations.md) guides describe their limits.

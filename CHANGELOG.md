@@ -49,6 +49,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   heading and a subtotal; `run()` may return `groups` with each group's count and totals for every
   row, and `context.sort` starts with the group column. People can save a report's filters and sort
   as named views. `DataTable` gains `rowClass`. A filter field named `group_by` must be renamed.
+- **Print designs.** `PrintDesign` (a new root export) prints a record or a report to PDF through
+  WeasyPrint: blocks in a header, main, footnote, footer and watermark region, Jinja templates in a
+  sandbox with every value escaped, HTML for any single block, page number formats, and a footnote
+  snapped to the bottom of the last page. `Application(prints=[...])` registers designs. Printing is
+  the new `print` operation (admin by default; other roles when their Rule names it). It needs the
+  optional extra `evlet[print]`; without it the print routes answer 503
+  ([docs/printing.md](docs/printing.md)). These are additions; existing apps need no change.
 - **API stability for apps.** [docs/api-stability.md](docs/api-stability.md) names the
   surface apps can rely on (the root exports, field keywords, lifecycle decorators and the
   `evlet.ui` names in the app docs), the deprecation rule and what stays internal.
