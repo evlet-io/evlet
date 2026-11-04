@@ -545,20 +545,20 @@ class CustomerRates(Report):
     roles = ('admin', 'editor', 'viewer')
     group = 'Sales'
     model = Customer
-    sortable = ('name', 'rate')
-    chart = Chart('bar', x='name', y=('rate',))
+    sortable = ('title', 'rate')
+    chart = Chart('bar', x='title', y=('rate',))
     min_days = Integer(default=0, label='Credit days from')
     search = Text(default='', label='Name contains')
-    columns = (Column('id', type='link', link='customer', label='Customer'), Column('name'),
+    columns = (Column('id', type='link', link='customer', label='Customer'), Column('title'),
                Column('credit_days', type='integer', label='Credit days'),
                Column('rate', type='currency', total=True, unit='AED', source='customer.rate'))
 
     def run(self):
         filters = {'credit_days__gte': self.min_days or 0}
-        if self.search: filters['name__contains'] = self.search
-        page = self.context.list(Customer, filters=filters, order_by=self.context.sort or ('name',), limit=self.context.limit, offset=self.context.offset)
+        if self.search: filters['title__contains'] = self.search
+        page = self.context.list(Customer, filters=filters, order_by=self.context.sort or ('title',), limit=self.context.limit, offset=self.context.offset)
         everything = self.context.aggregate(Customer, measures={'rate': Sum('rate')}, filters=filters)
-        return {'rows': [{key: row.get(key) for key in ('id', 'name', 'credit_days', 'rate')} for row in page['rows']],
+        return {'rows': [{key: row.get(key) for key in ('id', 'title', 'credit_days', 'rate')} for row in page['rows']],
                 'total': page['total'], 'totals': {'rate': everything[0]['rate'] or 0}}
 
 
@@ -581,8 +581,8 @@ def record_reports(folder):
     status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'owner', 'password': PASSWORD})
     cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
     admin = lambda method, path, body=None, **kwargs: http(app, method, path, body, cookie=cookie, csrf=csrf, **kwargs)
-    for name, rate, days in (('Corniche Foods', '1250.00', 30), ('Al Noor Trading', '480.50', 45), ('Blue Dune Interiors', '2100.00', 15)):
-        assert admin('POST', '/api/customer', {'name': name, 'rate': rate, 'credit_days': days})[0] == 201
+    for title, rate, days in (('Corniche Foods', '1250.00', 30), ('Al Noor Trading', '480.50', 45), ('Blue Dune Interiors', '2100.00', 15)):
+        assert admin('POST', '/api/customer', {'title': title, 'rate': rate, 'credit_days': days})[0] == 201
     keep('report_session', admin('GET', '/api/auth/session'))
     keep('report_schema', admin('GET', '/api/schema'))
     keep('report_evaluate', admin('POST', '/api/_reports/CustomerRates/evaluate', {'filters': {'min_days': 20, 'search': ''}, 'revision': 1}))
