@@ -9222,7 +9222,7 @@
       "autorun": false,
       "columns": [
         {
-          "name": "number",
+          "name": "name",
           "type": "text",
           "label": "Invoice",
           "link": null,
