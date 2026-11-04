@@ -97,7 +97,9 @@ def _serves(application, frontend, base, rest):
     if frontend == 'evlet.assets':
         return rest.startswith('/')
     if frontend == 'evlet.reports':
-        return bool(application.business) and rest.startswith('/') and rest[1:] in application.business.forms.reports
+        # /reports lists the reports, /reports/<name> runs one; the page asks the schema which this person may run.
+        reports = application.business.forms.reports if application.business else {}
+        return bool(reports) and (rest == '' or rest.startswith('/') and rest[1:] in reports)
     return False
 
 

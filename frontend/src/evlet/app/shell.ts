@@ -14,6 +14,7 @@ import { docsOn, goSettings, type AppContext } from './context';
 import { displayName, PersonMark } from './settings';
 import { presentSlip } from './slips';
 import { groupOf, identity, rootModels, type ScreenModel } from './meta';
+import { REPORT_ICON, reportGroups, reportsOf } from './report-page';
 
 const PHONE = '(max-width: 760px)';
 const isPhone = () => { try { return Boolean(window.matchMedia?.(PHONE)?.matches); } catch { return false; } };
@@ -44,6 +45,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     tooltip(item, () => collapsed.get() ? props.label : null, 'right');
     return item;
   };
+  const reports = reportsOf(ctx);
   const groups = ['Documents', 'Records'].map(name => [name, models.filter(model => groupOf(model) === name)] as const).filter(([, list]) => list.length);
   // Record counts beside each model, when the person turned them on in Settings.
   const counts = cell<Record<string, number>>({});
@@ -103,6 +105,10 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
         ${() => ctx.eva.get() ? navItem({ href: router.href('eva', {}), icon: 'sparkles', tint: 'violet', label: 'Eva', active: () => ['eva', 'evaChat', 'evaTasks'].includes(route.get()?.name ?? ''),
           count: () => ctx.eva.get()?.pending_approvals ? html`<span class="badge" title="Waiting for your approval">${ctx.eva.get()!.pending_approvals}</span>` : null }) : null}
         ${groups.map(([name, list]) => html`<div class="nav-group"><div class="nav-label">${name}</div>${list.map(modelItem)}</div>`)}
+        ${reports.length ? html`<div class="nav-group"><div class="nav-label">Reports</div>${reportGroups(reports).map(([group, list]) => [
+          group && reportGroups(reports).length > 1 ? html`<div class="nav-sub">${group}</div>` : null,
+          list.map(report => navItem({ href: router.href('report', { report: report.name }), icon: REPORT_ICON, tint: 'rose', label: report.label,
+            active: () => route.get()?.name === 'report' && route.get()?.params.report === report.name }))])}</div>` : null}
         ${when(() => recents.get().length > 0, () => html`<div class="nav-group"><div class="nav-label">Recent</div>${() => recents.get().map(item => {
           const model = models.find(entry => entry.name === item.model)!;
           return navItem({ href: router.href('record', { model: item.model, id: String(item.id) }), icon: identity(model).icon, tint: 'slate', label: item.title,

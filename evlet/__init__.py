@@ -69,10 +69,10 @@ __all__ += ["AppDefinition", "Instance", "Schedule", "Security"]
 from .routing import ApiScope, ControlsAccess, Docs, Frontend, Host, Request, Response
 __all__ += ["ApiScope", "ControlsAccess", "Docs", "Frontend", "Host", "Request", "Response"]
 __all__ += ["Child", "Move", "Table", "Ref", "Query", "action", "validate", "depends"]
-from .forms import Dialog, Report, Column
+from .forms import Chart, Dialog, Report, Column
 from .effects import Effect, Negate, Swap
 __all__ += ["Effect", "Negate", "Swap"]
-__all__ += ["Dialog", "Report", "Column"]
+__all__ += ["Chart", "Dialog", "Report", "Column"]
 
 from .slips import Outcome, Slip, present
 

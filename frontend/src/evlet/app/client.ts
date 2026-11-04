@@ -127,6 +127,23 @@ export class AppClient extends ApiClient {
     return (await this.request<Attachment>('POST', `/api/${model}/${id}/attachments`, { body: { name, content } })).data;
   }
 
+  /** Check a report's filters without running it (POST /api/_reports/{name}/evaluate). */
+  async evaluateReport(name: string, filters: Record<string, unknown>, revision: number) {
+    return (await this.request<ReportCheck>('POST', `/api/_reports/${reportName(name)}/evaluate`, { body: { filters, revision } })).data;
+  }
+
+  /** One page of a report, run with these filters and sort. */
+  async runReport(name: string, body: { filters: Record<string, unknown>; limit?: number; offset?: number; sort?: string | null; revision?: number }, signal?: AbortSignal) {
+    return (await this.request<ReportPage>('POST', `/api/_reports/${reportName(name)}`, { body, signal })).data;
+  }
+
+  /** A report as a file: its CSV export, or its PDF in a print design. */
+  async reportFile(name: string, kind: 'export.csv' | { print: string }, body: { filters: Record<string, unknown>; sort?: string | null }) {
+    const path = `/api/_reports/${reportName(name)}/${kind === 'export.csv' ? kind : `prints/${encodeURIComponent(kind.print)}`}`;
+    // Print designs take the filters only; the export takes the sort too.
+    return (await this.request<Blob>('POST', path, { body: kind === 'export.csv' ? body : { filters: body.filters }, file: true })).data;
+  }
+
   async removeAttachment(model: string, id: string, file: number) {
     await this.request('DELETE', `/api/${model}/${id}/attachments/${file}`);
   }
@@ -151,6 +168,15 @@ export class AppClient extends ApiClient {
     return this.request<RecordData>('POST', `/api/${model}/${id}/repost`, { body: reason ? { reason } : {}, ifMatch: etag });
   }
 }
+
+const reportName = (name: string) => { if (!NAME.test(name)) throw new Error(`Unknown report ${name}`); return name; };
+
+/** What a report's filter check answers: the settled values, errors, field states and conditions. */
+export interface ReportCheck { values: Record<string, unknown>; errors: Record<string, string>; states: Record<string, string>;
+  rules: Record<string, { visible?: boolean; required?: boolean; read_only?: boolean }>; revision?: unknown }
+/** One page of a report: cleaned rows, the row count, totals (all rows, or this page) and the filters it ran with. */
+export interface ReportPage { rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number; sort: string | null;
+  totals?: { scope: 'all' | 'page'; values: Record<string, string | null> }; filters: Record<string, unknown>; revision?: unknown }
 
 /** A journal entry (docs/journal.md). `actor` is a user id, or null for the engine; `partial` marks an entry
  * the caller sees only in part; `done` is set on follow ups (the completing entry's id, or null). */
