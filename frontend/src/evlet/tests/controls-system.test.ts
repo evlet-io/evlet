@@ -33,6 +33,10 @@ const audit = (before?: string) => ({ areas: ['Jobs', 'Security'], next: before 
   items: before ? [{ id: 8, at: 1789000000, actor: 'owner', area: 'Security', target: 'security.lockout', detail: 'Changed' }]
     : [{ id: 10, at: 1790000000, actor: 'owner', area: 'Jobs', target: 'nightly', detail: 'Paused' }] });
 const reply = (body: unknown, status = 200) => ({ status, body, etag: null });
+const periods = (date = '2026-03-31') => ({ can_change: true,
+  models: [{ name: 'invoice', label: 'Invoice', field: 'posting_date', scope: null }], scopes: [],
+  locks: date ? [{ scope: '', label: 'All records', date, changed_by: 'owner', changed_at: 1790000000 }] : [],
+  history: [{ id: 3, at: 1790000000, actor: 'owner', target: 'All records', detail: `Locked up to ${date.split('-').reverse().join('-')}`, before: null, after: date }] });
 
 const running: Array<() => void> = [];
 afterEach(() => { running.splice(0).forEach(stop => stop()); stopAll(); });
@@ -53,6 +57,8 @@ function open(path: string) {
     ['POST', /\/api\/_controls\/jobs\/schedules\/nightly$/, () => reply({ ...jobs(), schedules: [{ ...jobs().schedules[0], active: true, paused: false }] })],
     ['POST', /\/api\/_controls\/jobs\/schedules\/nightly\/run$/, () => reply({ ...jobs(), job: 8 })],
     ['POST', /\/api\/_controls\/jobs\/7\/retry$/, () => reply(jobs(false))],
+    ['GET', /\/api\/_controls\/periods$/, () => reply(periods())],
+    ['POST', /\/api\/_controls\/periods$/, (sent: Sent) => reply(periods((sent.body as any).date))],
     ['GET', /\/api\/_controls\/audit/, (sent: Sent) => reply(audit(new URL(sent.url, 'http://x').searchParams.get('before') ?? undefined))],
   ] as any);
   const router = controlsRouter();
@@ -73,6 +79,16 @@ function open(path: string) {
 }
 
 describe('Controls system pages', () => {
+  it('shows the period lock in DD-MM-YYYY and moves it for an admin', async () => {
+    const { host, sent } = open('/controls/periods');
+    await until(() => expect(text(host)).toContain('31-03-2026'));
+    expect(text(host)).toContain('posting_date');
+    typeInto(host.querySelector<HTMLInputElement>('#ctl-period-date')!, '2026-04-30');
+    click(byText(host, 'button', /^Lock$/));
+    await until(() => expect(text(host)).toContain('30-04-2026'));
+    expect(requests(sent, 'POST', /_controls\/periods$/).map(item => item.body)).toEqual([{ scope: null, date: '2026-04-30' }]);
+  });
+
   it('shows a waiting migration with the shell command and no browser migrate', async () => {
     const { host } = open('/controls/apps');
     await until(() => expect(byText(host, '.ctl-app', /Notes/)).toBeTruthy());

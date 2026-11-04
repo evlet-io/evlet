@@ -367,6 +367,92 @@ The neutral schema remains version 1 with additional field types and metadata.
 The Playground now generates forms, lists, and details from the extended UI
 metadata described in [application generation](application-generation.md).
 
+## How much of a model callers reach
+
+`Meta.api` says which surfaces a model gets. Callers are every HTTP route, MCP clients, Eva
+and the connector. Trusted Python is everything else: database sessions, `Context` in
+scripts, model actions and moves, legacy `Action` handlers, `changed` reactions, dialogs,
+`@api` services, jobs and migrations.
+
+| `Meta.api` | Callers | Trusted Python |
+|---|---|---|
+| `"full"` (default) | Read and write, by role | Everything |
+| `"read"` | Read, by role. No write of any kind, for any role, admin included | Everything |
+| `None` | Nothing. Every route answers 404 and no list names the model | Everything |
+
+```python
+class LedgerEntry(Model):
+    class Meta:
+        api = "read"           # only the posting code below writes entries
+
+    invoice = Link(Invoice, required=True)
+    posting_date = Date(required=True)
+    amount = Currency(required=True)
+
+
+def post_invoice(tx, user, invoice):           # Action(Invoice, "post", "Post to ledger", post_invoice)
+    tx.create(LedgerEntry, invoice=invoice.id, posting_date=invoice.posting_date, amount=invoice.total)
+```
+
+**`api = "read"`.** Every write route answers 403 "LedgerEntry records are read only here. The
+application changes them.": create, update, delete, drafts, actions, moves, void, revise,
+unpost, repost, confirm, cancel, reopen, journal entries, attachments and filing a print. So
+do the MCP and Eva write tools, which call the same routes. The schema carries `"api": "read"`
+and every write permission as false, so screens show no New, Edit, Delete, actions or moves.
+Controls overrides cannot grant a write back: the rule is checked before any `Rule`. It is the
+same rule that keeps effect rows read only ([effects.md](effects.md#effect-rows-are-read-only)).
+
+**`api = None`.** `/api/<model>` and every route under it answer 404, as for a model that does
+not exist. The model is left out of the schema, the sidebar, generated screens, Discovery,
+search, measures, Controls, the print catalog and the tool lists. It stays a full model for
+migrations, validation, transactions and Python queries. A Python report may read it: its
+`run()` is trusted code, and the report's own `roles` decide who sees the columns and totals it
+returns ([reports.md](reports.md#models-callers-cannot-reach)). A Link from a model callers
+reach to an `api = None` model must be `hidden=True`, and registration fails otherwise, naming
+the model and field. A caller cannot write a Reference that names such a model.
+
+`Meta.api` is checked at registration: `"full"`, `"read"` or `None`. Owned rows follow their
+document.
+
+## Closed periods
+
+`Meta.period` names the stored Date or DateTime field that places a record in a period.
+A lock date closes every period on or before it. `Meta.period_scope` optionally names a stored
+Link whose records each have their own lock too, such as one per company.
+
+```python
+class Invoice(Model):
+    class Meta:
+        period = "posting_date"
+        period_scope = "company"   # optional
+```
+
+Admins set the locks in Controls, Periods ([controls.md](controls.md#periods)). The lock that
+applies to a record is the later of the instance lock and its scope record's lock. A
+DateTime is read in the instance timezone.
+
+Every writer is refused, trusted Python included, when the saved date or the new date is on or
+before the lock: creating a record dated in a closed period, changing or deleting one in it,
+moving a date into or out of it, moves and corrections on such a document, and effect rows
+dated in it. The error is on the period field: `"This date is in a closed period (locked up to
+31-03-2026)"`, a 422 over HTTP and a `ValidationError` in Python. A record with no date is in
+no period.
+
+For a migration or a data repair, trusted code opens closed periods for one block. The reason
+is required, logged on the `evlet.periods` logger and written to the audit log. No route
+reaches it.
+
+```python
+with database.transaction() as tx, tx.unlocked_periods("Load March from the old system"):
+    tx.create(Invoice, posting_date=date(2026, 3, 10), ...)
+
+with business.context(user) as context, context.unlocked_periods("Fix a mistyped date"):
+    context.update(Invoice, invoice_id, posting_date="2026-03-11")
+```
+
+How unpost and void date their mirror rows in a closed period is in
+[effects.md](effects.md#closed-periods).
+
 ## Explicit migrations
 
 Startup creates a fresh database or verifies an existing schema. It does not

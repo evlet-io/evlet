@@ -21,7 +21,8 @@ from .auth import AccessError
 from .fields import Link, Reference
 from .identity import RecordId
 from .models import ValidationError, identifier
-from .permissions import CHUNK, corrects
+from . import periods
+from .permissions import CHUNK, corrects, trusted
 
 VOID = 'void'
 REASON_LENGTH = 1000
@@ -200,6 +201,7 @@ def revise(context, model, record_id, reason):
     name = sequences.name_new(tx.connection, business.registry, model, copy._values, host_today(business), user.username, record=copy, context=context)
     if name:
         copy._values[business.registry.naming[model].field] = name
+    periods.check(tx, model, after=copy._values)
     saved = write_snapshot(tx, copy)
     plan = business.registry.plan_for(model)
     if plan is not None:
@@ -209,7 +211,8 @@ def revise(context, model, record_id, reason):
     reaction = getattr(model, 'changed', None)
     if reaction is not None:
         freeze_draft(copy)
-        reaction(copy, Change('revise', user, None, freeze(copy.stored_values()), tuple(model.__fields__), freeze(children)))
+        with trusted():
+            reaction(copy, Change('revise', user, None, freeze(copy.stored_values()), tuple(model.__fields__), freeze(children)))
     from . import journal
     journal.written(context, model, saved.id, None, copy)
     for name, number in numbers:
@@ -225,6 +228,8 @@ def void_record(context, model, record, reason):
     from .documents import Change, freeze, freeze_draft, load_draft
     business, tx, user = context._business, context._tx, context.user
     name, previous = model.__state__, record._values.get(model.__state__)
+    # A record in a closed period (Meta.period) is neither voided nor unposted.
+    periods.check(tx, model, before=record._values)
     tx.connection.execute(f'UPDATE {identifier(business.registry.name_for(model))} SET {identifier(name)}=? WHERE id=?', (VOID, record.id))
     touch(tx.connection, identifier(business.registry.name_for(model)), record.id, actor_id(user))
     reversed_rows = reverse_effects(context, model, record.id, previous)
@@ -233,7 +238,8 @@ def void_record(context, model, record, reason):
         after, _ = load_draft(context, model, record.id, {}, preview=True)
         values = after.stored_values()
         freeze_draft(after)
-        reaction(after, Change('void', user, freeze({**values, name: previous}), freeze(values), (name,), freeze({})))
+        with trusted():
+            reaction(after, Change('void', user, freeze({**values, name: previous}), freeze(values), (name,), freeze({})))
     voided(context, model, record.id, previous, reason)
     from . import journal
     journal.effects_posted(context, model, record.id, reversed_rows)
@@ -541,6 +547,7 @@ def unpost(context, model, record_id, reason):
     record, reason = check_posting(context, model, record_id, 'unpost', reason)
     name, previous = model.__state__, record._values.get(model.__state__)
     to = unpost_state(context, model, record.id)
+    periods.check(tx, model, before=record._values)
     tx.connection.execute(f'UPDATE {identifier(business.registry.name_for(model))} SET {identifier(name)}=? WHERE id=?', (to, record.id))
     touch(tx.connection, identifier(business.registry.name_for(model)), record.id, actor_id(user))
     reversed_rows = reverse_effects(context, model, record.id, previous)
@@ -549,7 +556,8 @@ def unpost(context, model, record_id, reason):
         after, _ = load_draft(context, model, record.id, {}, preview=True)
         values = after.stored_values()
         freeze_draft(after)
-        reaction(after, Change('unpost', user, freeze({**values, name: previous}), freeze(values), (name,), freeze({})))
+        with trusted():
+            reaction(after, Change('unpost', user, freeze({**values, name: previous}), freeze(values), (name,), freeze({})))
     unposted(context, model, record.id, previous, to, reason)
     from . import journal
     journal.effects_posted(context, model, record.id, reversed_rows)

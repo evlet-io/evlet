@@ -23,7 +23,7 @@ export function quickTiles(ctx: AppContext): Tile[] {
   for (const model of rootModels(ctx.schema)) {
     const { icon, tint } = identity(model);
     tiles.push({ id: `l-${model.name}`, group: 'Lists', icon, tint, label: model.plural, badge: 'list', run: () => void ctx.router.go('list', { model: model.name }) });
-    if (model.permissions?.create !== false) tiles.push({ id: `n-${model.name}`, group: 'Documents', icon, tint, label: `New ${model.label.toLowerCase()}`, badge: 'plus',
+    if (model.api !== 'read' && model.permissions?.create !== false) tiles.push({ id: `n-${model.name}`, group: 'Documents', icon, tint, label: `New ${model.label.toLowerCase()}`, badge: 'plus',
       run: () => void ctx.router.go('create', { model: model.name }) });
   }
   for (const report of reportsOf(ctx)) tiles.push({ id: `r-${report.name}`, group: 'Reports', icon: REPORT_ICON, tint: 'rose', label: report.label,

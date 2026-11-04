@@ -31,6 +31,7 @@ from .identity import RecordId, jsonable
 from .naming import standard
 from .fields import Boolean, Link, Reference
 from .models import Model, ValidationError, identifier
+from . import periods
 from .permissions import CHUNK, Policy, Rule
 
 NUMERIC = ('integer', 'decimal', 'currency', 'percent')
@@ -565,11 +566,27 @@ def post(context, model, record_id, state):
         values = [normalized(draft) for draft in drafts]
         if not is_balanced(bound, values):
             raise failure(business, context.user, bound, balance_message(business, context.user, bound, values))
+        check_periods(context, model, bound, drafts)
         for draft in drafts:
             write(engine, bound, draft)
         if drafts:
             written.append(journal_item(business, bound, drafts, reversal=False))
     return written
+
+
+def check_periods(context, model, bound, drafts):
+    """Refuse effect rows dated in a closed period of their target (Meta.period). The error is on the posting
+    document's own period field when it declares one, else on `_effects`."""
+    tx = context._tx
+    if getattr(tx, '_periods_unlocked', False):
+        return
+    for draft in drafts:
+        lock = periods.closed(tx, bound.target, draft._values)
+        if lock is not None:
+            own = tx.registry.periods.get(model)
+            if own is not None:
+                raise ValidationError({own.field: periods.message(lock)})
+            raise ValidationError({'_effects': f'{bound.target.__name__} rows: ' + periods.message(lock)})
 
 
 def posted(tx, registry, bound, record_ids):
@@ -676,13 +693,16 @@ def reverse(context, model, record_id):
             # Nothing was posted, or this record's rows were reversed already.
             continue
         try:
-            drafts = prepare_all(engine, bound, [mirror_values(bound, row._values) for row in originals], record_id, reversal=True)
+            # A mirror row keeps its original's date unless that period is closed (evlet/periods.py).
+            mirrors = [periods.reopened(tx, bound.target, mirror_values(bound, row._values)) for row in originals]
+            drafts = prepare_all(engine, bound, mirrors, record_id, reversal=True)
         except RowError as error:
             raise failure(business, context.user, bound, 'The reversal of ' + row_message(business, context.user, error)) from None
         values = [normalized(draft) for draft in drafts]
         # Registration keeps a balanced pair balanced; this also guards a target that recalculates the pair.
         if not is_balanced(bound, values):
             raise failure(business, context.user, bound, balance_message(business, context.user, bound, values, 'The reversal of the '))
+        check_periods(context, model, bound, drafts)
         for draft in drafts:
             write(engine, bound, draft)
         written.append(journal_item(business, bound, drafts, reversal=True))

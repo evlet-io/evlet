@@ -172,8 +172,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const { api, router, prefs } = ctx;
   const { isNew, extras, panel } = options;
   const name = model.name, look = identity(model);
-  const canUpdate = model.permissions?.update !== false;
-  const canWrite = isNew ? model.permissions?.create !== false : canUpdate;
+  const canUpdate = model.api !== 'read' && model.permissions?.update !== false;
+  const canWrite = isNew ? model.api !== 'read' && model.permissions?.create !== false : canUpdate;
   const state = model.state && fieldOf(model, model.state.field) ? model.state : null;
   const locked = derive(() => Boolean(extras.get()._locked));
   const views = new Map<string, FieldLike>();
@@ -378,7 +378,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     if (now._repost) items.push({ label: `Repost ${model.label.toLowerCase()}`, icon: 'repeat', disabled: !now._repost.allowed, onSelect: () => correct('repost') });
     if (now._unpost) items.push({ label: `Unpost ${model.label.toLowerCase()}`, icon: 'rotate-ccw', danger: true, disabled: !now._unpost.allowed, onSelect: () => correct('unpost') });
     // A record that ever posted is kept (its entries name it), so the server refuses its delete.
-    if (!isNew && model.permissions?.delete && !locked.peek() && now._deletable !== false) items.push('separator', { label: 'Delete', icon: 'trash-2', danger: true, onSelect: remove });
+    if (!isNew && model.api !== 'read' && model.permissions?.delete && !locked.peek() && now._deletable !== false) items.push('separator', { label: 'Delete', icon: 'trash-2', danger: true, onSelect: remove });
     return items;
   };
 
@@ -728,7 +728,7 @@ function RecordTimes(ctx: AppContext, audit: () => RecordAudit | undefined): Chi
 /** The print preview: the PDF the server renders for this person, with Download and File a copy. */
 export function openPrint(ctx: AppContext, model: ScreenModel, id: string, title: string, designs: Array<{ name: string; title: string }>) {
   const design = cell(designs[0].name);
-  const canFile = Boolean(model.attachments) && model.permissions?.update !== false;
+  const canFile = Boolean(model.attachments) && model.api !== 'read' && model.permissions?.update !== false;
   const fileCopy = async () => {
     try {
       const file = await ctx.api.fileCopy(model.name, id, design.peek());
@@ -758,7 +758,7 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
   const changed = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.model === model.name && detail?.id === store.id) load(); };
   window.addEventListener('evlet-files-changed', changed);
   onCleanup(() => window.removeEventListener('evlet-files-changed', changed));
-  const canWrite = model.permissions?.update !== false;
+  const canWrite = model.api !== 'read' && model.permissions?.update !== false;
   // The files of a locked record cannot change: the server refuses with 409.
   const locked = () => Boolean(extrasOf(ctx.api.detail(model.name, store.id!).get())._locked);
   const limits = model.attachment_limits ?? { max_files: 10, max_size: 1_048_576 };
