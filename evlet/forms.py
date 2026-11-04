@@ -215,14 +215,22 @@ class Forms:
             if column.source is not None:
                 name, field = column.source.split('.')
                 model = self.business.registry.resolve(name)
+                if self.business.registry.api.get(model, 'full') is None:
+                    # No caller reads a model with Meta.api = None; the report's own roles decide who sees its columns.
+                    continue
                 if not self.business.policy.allows(user, model, 'read') or field not in self.business.policy.fields(user, model):
                     hidden.add(column.name)
         return hidden
 
     def offered(self, user, report):
-        """Whether this person may list and run the report: their role, and a model callers reach (Meta.api)."""
+        """Whether this person may list and run the report: its roles decide, also over a model with Meta.api = None."""
+        return user.role in report.roles
+
+    def surfaced(self, model):
+        """The storage name of a model callers reach, or None for one with Meta.api = None, which a report never names."""
         registry = self.business.registry
-        return user.role in report.roles and (report.model is None or registry.api.get(registry.resolve(report.model), 'full') is not None)
+        model = registry.resolve(model)
+        return registry.name_for(model) if registry.api.get(model, 'full') is not None else None
 
     def catalog(self, user):
         result = []
@@ -236,22 +244,24 @@ class Forms:
                 if declared.compute is not None or declared.query is not None: field['calculated'] = True
             result.append({**descriptor, 'autorun': report.autorun,
                            'columns': [self.column(column) for column in report.columns if column.name not in hidden],
-                           'group': report.group, 'model': None if report.model is None else self.business.registry.name_for(self.business.registry.resolve(report.model)),
+                           'group': report.group, 'model': None if report.model is None else self.surfaced(report.model),
                            'sortable': [column for column in report.sortable if column not in hidden], 'export': report.export,
                            'group_by': None if report.group_by in hidden else report.group_by,
                            'chart': None if chart is None else {**vars(chart), 'y': [column for column in chart.y if column not in hidden]}})
         return result
 
     def column(self, column):
-        registry = self.business.registry
         entry = {key: value for key, value in vars(column).items() if key != 'source'}
-        if column.link is not None: entry['link'] = registry.name_for(registry.resolve(column.link))
+        if column.link is not None: entry['link'] = self.surfaced(column.link)
         return entry
 
     def page(self, context, report, draft, limit, offset, sort):
         """One page of a report as the browser gets it: cleaned cells, readable columns and totals."""
         context.limit, context.offset, context.sort = limit, offset, self.order(report, context.user, sort)
-        result = draft.run()
+        # A report's run() is trusted app code: it reads models callers cannot reach (Meta.api = None) and
+        # returns only its declared columns, to the roles the report names.
+        with trusted():
+            result = draft.run()
         if not isinstance(result, dict) or not isinstance(result.get('rows'), list) or len(result['rows']) > limit:
             raise ValueError('Reports return a bounded rows/total result from context.list')
         if type(result.get('total')) is not int or result['total'] < len(result['rows']): raise ValueError('Report total must be a nonnegative row count')

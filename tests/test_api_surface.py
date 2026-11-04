@@ -2,7 +2,7 @@
 
 import pytest
 
-from evlet import (Action, Application, Currency, Database, Link, Model, Move, Policy, Reference, Registry, Rule, State, Text, ValidationError,
+from evlet import (Action, Application, Column, Count, Currency, Database, Link, Report, Model, Move, Policy, Reference, Registry, Rule, State, Text, ValidationError,
                    action)
 from evlet.auth import LocalAuth, User
 from evlet.permissions import calling
@@ -71,9 +71,23 @@ def post_sale(tx, user, sale):
 MODELS = (Entry, Book, Secret, Sale, Order)
 
 
+class Codes(Report):
+    """A report over a model with no surface: trusted code reads it, and only its columns reach the roles it names."""
+    title = 'Codes'
+    roles = ('admin',)
+    model = Secret
+    columns = (Column('id', type='link', link='secret'), Column('code'), Column('count', type='integer', total=True, unit='codes', source='secret.code'))
+
+    def run(self):
+        page = self.context.list(Secret, order_by=('id',), limit=self.context.limit, offset=self.context.offset)
+        [everything] = self.context.aggregate(Secret, measures={'count': Count()})
+        return {'rows': [{'id': row['id'], 'code': row['code'], 'count': 1} for row in page['rows']], 'total': page['total'],
+                'totals': {'count': everything['count']}}
+
+
 def build(database):
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
-                      actions=(Action(Sale, 'post', 'Post', post_sale), Action(Entry, 'touch', 'Touch', post_sale)), attachments=(Entry, Book))
+                      actions=(Action(Sale, 'post', 'Post', post_sale), Action(Entry, 'touch', 'Touch', post_sale)), attachments=(Entry, Book), reports=(Codes,))
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     admin = client(app)
@@ -268,3 +282,22 @@ def test_a_model_without_surface_stays_a_full_python_model(shop):
         with app.database.transaction() as tx:
             tx.create(Secret, code=7)
     assert app.database.list(Secret)[0].code == 's-2'
+
+
+def test_a_report_reads_a_model_without_surface_for_the_roles_it_names(shop):
+    app, admin = shop
+    _, _, secret = seeded(app)
+    [entry] = [item for item in admin('GET', '/api/_reports')[1]['reports'] if item['name'] == 'Codes']
+    # The report is listed; it never names the hidden model, as its model or as a link target.
+    assert entry['model'] is None and {column['name']: column.get('link') for column in entry['columns']} == {'id': None, 'code': None, 'count': None}
+    status, result, _ = admin('POST', '/api/_reports/Codes', {'filters': {}})
+    assert status == 200, result
+    assert [(row['id'], row['code']) for row in result['rows']] == [(str(secret), 's-1')] and result['totals']['values'] == {'count': '1'}
+    # A role the report does not name gets neither the listing nor the rows.
+    editor = client(app, 'editor')
+    assert 'Codes' not in {item['name'] for item in editor('GET', '/api/_reports')[1]['reports']}
+    assert editor('POST', '/api/_reports/Codes', {'filters': {}})[0] == 403
+    # The model itself still has no surface.
+    assert admin('GET', '/api/secret')[0] == 404 and admin('GET', f'/api/secret/{secret}')[0] == 404
+    assert 'secret' not in {model['name'] for model in admin('GET', '/api/schema')[1]['models']}
+    assert admin('POST', '/api/_tools/execute', {'tool': 'list_records', 'arguments': {'model': 'secret'}})[0] == 404

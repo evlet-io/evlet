@@ -9850,6 +9850,67 @@
       }
     },
     {
+      "name": "LedgerBalances",
+      "label": "Ledger balances",
+      "fields": [
+        {
+          "name": "to_date",
+          "type": "date",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "label": "Posted up to",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        }
+      ],
+      "behavior": {
+        "to_date": {}
+      },
+      "children": [],
+      "sources": {},
+      "source_fields": [],
+      "autorun": true,
+      "columns": [
+        {
+          "name": "customer",
+          "type": "link",
+          "label": null,
+          "link": "customer",
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "entries",
+          "type": "integer",
+          "label": null,
+          "link": null,
+          "total": true,
+          "unit": "entries"
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "label": "Owed",
+          "link": null,
+          "total": true,
+          "unit": "AED"
+        }
+      ],
+      "group": "Sales",
+      "model": "ledgerentry",
+      "sortable": [
+        "entries",
+        "amount"
+      ],
+      "export": true,
+      "group_by": null,
+      "chart": null
+    },
+    {
       "name": "InvoicesByStatus",
       "label": "Invoices by status",
       "fields": [

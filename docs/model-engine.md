@@ -349,8 +349,10 @@ same rule that keeps effect rows read only ([effects.md](effects.md#effect-rows-
 
 **`api = None`.** `/api/<model>` and every route under it answer 404, as for a model that does
 not exist. The model is left out of the schema, the sidebar, generated screens, Discovery,
-search, measures, Controls, the report and print catalogs and the tool lists. It stays a full
-model for migrations, validation, transactions and Python queries. A Link from a model callers
+search, measures, Controls, the print catalog and the tool lists. It stays a full model for
+migrations, validation, transactions and Python queries. A Python report may read it: its
+`run()` is trusted code, and the report's own `roles` decide who sees the columns and totals it
+returns ([reports.md](reports.md#models-callers-cannot-reach)). A Link from a model callers
 reach to an `api = None` model must be `hidden=True`, and registration fails otherwise, naming
 the model and field. A caller cannot write a Reference that names such a model.
 

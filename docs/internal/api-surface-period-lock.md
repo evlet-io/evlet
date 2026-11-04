@@ -20,7 +20,7 @@ Append-only enforcement was discussed and is not part of this.
 the request as one (`permissions.CALLER`, a context variable), so in process tool calls from MCP
 and Eva, which go through `Business.dispatch`, count as callers too. The app code a request runs is
 trusted again: action handlers (declared and legacy), a move's `run`, `changed` reactions, dialog
-`load` and `submit`, `@api` service functions. Jobs, schedules, migrations and scripts never run
+`load` and `submit`, `@api` service functions and a report's `run()`. Jobs, schedules, migrations and scripts never run
 as callers. Inside trusted code, `context.create(LedgerEntry, ...)` works as it always did.
 
 **One rule.** `permissions.surface(registry, model, operation)` decides, before any role:
@@ -38,12 +38,18 @@ cannot write. `/api/_draft/<model>` is refused too.
 
 **`api=None`.** `Business._dispatch` answers 404 "Route not found" for `/api/<model>` and every sub
 route, and for the draft route. The UI schema, Discovery, Controls models (permissions, fields,
-layout, naming, MCP hidden models), measures, the report and print catalogs, the tool list and the
+layout, naming, MCP hidden models), measures, the print catalog, the tool list and the
 sidebar all go through either `Policy.allows(..., 'read')` or `Registry.exposed`, so the model is
 absent. At registration, a Link from an exposed model to an `api=None` model must be `hidden=True`,
 and so must an effect target's `source` when the posting document is `api=None`; otherwise
 registration fails naming the model and field. A caller cannot write a Reference that names an
 `api=None` model.
+
+**Reports (owner decision, 04-11-2026).** A Python report may read an `api=None` model. Its `run()` is
+trusted code, so `context.list` and `context.aggregate` reach the model; the report route stays a caller
+and checks the report's own `roles`. The report is listed and runs normally for those roles and shows
+only the columns and totals it returns. The catalog never names the hidden model: its `model` and any
+link column's `link` are null, and a column `source` on it is not hidden by field rules.
 
 **Frontend.** The schema carries `api` per model. Lists and record pages of an `api="read"` model
 show no New, Edit, Delete, actions or moves. The permissions already say false; `api` makes the
@@ -96,3 +102,5 @@ with the usual recent two-step code. The Periods page (Controls, Build) shows th
 - Journal entries (notes, messages) count as writes, so an `api="read"` model takes none from callers.
 - Mirror rows in a closed period move to the first open date, not today, unless today is later.
 - A scope lock and the instance lock combine as the later of the two.
+
+Decided by the owner: Python reports may read `api=None` models (section 1, Reports).

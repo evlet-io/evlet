@@ -13,6 +13,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `None` gives the model no surface: its routes answer 404 and it is left out of the schema,
   Discovery, Controls and the tool lists. A Link from a model callers reach to an `api = None`
   model must be `hidden=True` ([docs/model-engine.md](docs/model-engine.md#how-much-of-a-model-callers-reach)).
+  A Python report may read an `api = None` model; its own `roles` decide who sees what it returns
+  ([docs/reports.md](docs/reports.md#models-callers-cannot-reach)).
   Nothing to change for existing models. The schema adds `"api": "read"` on read-only models.
 - **Period locks.** `Meta.period = "posting_date"` (and optionally `Meta.period_scope`) dates a
   model; admins set lock dates in Controls, Periods, with an audit trail. Records dated on or before
@@ -22,7 +24,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   or repair, logged and audited. Mirror rows of a void or unpost in a closed period move to the first
   open date ([docs/model-engine.md](docs/model-engine.md#closed-periods),
   [docs/effects.md](docs/effects.md#closed-periods)). The Playground's ledger entries
-  (`LedgerEntry`, `api = "read"`, written by Post to ledger) and invoices show both; migration
+  (`LedgerEntry`, `api = "read"`, written by Post to ledger, totalled by the Ledger balances report) and invoices show both; migration
   `0009_ledger` adds the table.
 - **Breaking: every record has a standard name and title.** Record models (not Table rows) gain
   two framework columns next to `id`. `name` is the human identifier, unique per model, filled by
