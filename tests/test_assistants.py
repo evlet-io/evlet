@@ -204,19 +204,19 @@ def test_tools_respect_permissions_writes_hidden_models_disabled_tools_and_rate(
     access, write = tokens['access_token'], editor['access_token']
     # Writes stay off while mcp.allow_writes is off, even for a client that may make changes.
     assert 'create_record' not in tools(secured, write)
-    result = tool(secured, write, 'create_record', {'model': 'customer', 'values': {'name': 'Blocked'}})
+    result = tool(secured, write, 'create_record', {'model': 'customer', 'values': {'customer_name': 'Blocked'}})
     assert result['isError'] and 'turned off changes' in result['structuredContent']['error']
     settings(secured, allow_writes=True)
     assert 'create_record' in tools(secured, write) and 'create_record' not in tools(secured, refused['access_token'])
-    assert tool(secured, write, 'create_record', {'model': 'customer', 'values': {'name': 'From Claude'}})['structuredContent']['name'] == 'From Claude'
-    assert tool(secured, refused['access_token'], 'create_record', {'model': 'customer', 'values': {'name': 'No'}})['structuredContent']['status'] == 403
+    assert tool(secured, write, 'create_record', {'model': 'customer', 'values': {'customer_name': 'From Claude'}})['structuredContent']['customer_name'] == 'From Claude'
+    assert tool(secured, refused['access_token'], 'create_record', {'model': 'customer', 'values': {'customer_name': 'No'}})['structuredContent']['status'] == 403
     # A viewer's assistant has the viewer's access, even with writes on.
     assert 'create_record' not in tools(secured, access)
     with secured.database._connection() as connection:
         viewer_client = connection.execute("SELECT m.id FROM evlet_mcp_clients m JOIN evlet_users u ON u.id=m.user_id WHERE u.username='viewer'").fetchone()[0]
         connection.execute('UPDATE evlet_mcp_clients SET allow_changes=1 WHERE id=?', (viewer_client,))
         connection.commit()
-    assert tool(secured, access, 'create_record', {'model': 'customer', 'values': {'name': 'No'}})['structuredContent']['status'] == 403
+    assert tool(secured, access, 'create_record', {'model': 'customer', 'values': {'customer_name': 'No'}})['structuredContent']['status'] == 403
     # Hidden models never appear, even to an admin.
     _, admin, _ = connect(secured, 'admin')
     settings(secured, hidden_models=['Customer'])
@@ -297,14 +297,14 @@ def test_controls_shows_totals_and_clients_and_signs_one_out(secured):
     _, tokens, person = connect(secured, 'editor')
     _, viewer, _ = connect(secured, 'viewer', allow_changes=False)
     tool(secured, tokens['access_token'], 'discover_models', {})
-    tool(secured, tokens['access_token'], 'create_record', {'model': 'customer', 'values': {'name': 'Made'}})
+    tool(secured, tokens['access_token'], 'create_record', {'model': 'customer', 'values': {'customer_name': 'Made'}})
     tool(secured, tokens['access_token'], 'update_record', {'model': 'customer', 'id': '7zzzzzzzzzzzz', 'values': {'name': 'Gone'}})
     tool(secured, viewer['access_token'], 'list_records', {'model': 'customer'})
     with secured.database._connection() as connection:
         viewer_client = connection.execute("SELECT m.id FROM evlet_mcp_clients m JOIN evlet_users u ON u.id=m.user_id WHERE u.username='viewer'").fetchone()[0]
         connection.execute('UPDATE evlet_mcp_clients SET allow_changes=1 WHERE id=?', (viewer_client,))
         connection.commit()
-    tool(secured, viewer['access_token'], 'create_record', {'model': 'project', 'values': {'name': 'Denied'}})
+    tool(secured, viewer['access_token'], 'create_record', {'model': 'project', 'values': {'title': 'Denied'}})
     admin = client(secured)
     status, overview, _ = admin('GET', '/api/_controls/mcp')
     assert status == 200 and overview['address'] == ORIGIN + '/_/mcp'
@@ -356,10 +356,10 @@ def test_settings_are_validated_and_stdio_follows_them(secured):
     capabilities = admin('GET', '/api/_discovery', headers=stdio)[1]['capabilities']
     assert capabilities['assistant'] == {'writes': False, 'rate': 60, 'disabled_tools': []}
     assert 'assistant' not in admin('GET', '/api/_discovery')[1]['capabilities']
-    assert admin('POST', '/api/customer', {'name': 'Local'}, headers=stdio)[0] == 403
+    assert admin('POST', '/api/customer', {'customer_name': 'Local'}, headers=stdio)[0] == 403
     settings(secured, hidden_models=['Customer'], allow_writes=True)
     assert admin('GET', '/api/customer', headers=stdio)[0] in (403, 404)
-    assert admin('POST', '/api/project', {'name': 'Local'}, headers=stdio)[0] == 201
+    assert admin('POST', '/api/project', {'title': 'Local'}, headers=stdio)[0] == 201
     settings(secured, enabled=False)
     assert admin('GET', '/api/_discovery', headers=stdio)[0] == 403
 
@@ -374,7 +374,7 @@ def queue(secured, monkeypatch):
     from evlet import Task
     seen = []
     monkeypatch.setitem(secured.business.jobs.tasks, 'project_progress', Task('project_progress', lambda tx, job, payload: seen.append(job.user)))
-    project = client(secured)('POST', '/api/project', {'name': 'Queued'})[1]
+    project = client(secured)('POST', '/api/project', {'title': 'Queued'})[1]
     return seen, project
 
 
@@ -487,7 +487,7 @@ def test_refusals_from_settings_count_as_denied(secured):
     settings(secured, disabled_tools=['list_records'])
     _, tokens, _ = connect(secured, 'editor')
     assert tool(secured, tokens['access_token'], 'list_records', {'model': 'project'})['isError']
-    assert tool(secured, tokens['access_token'], 'create_record', {'model': 'project', 'values': {'name': 'No'}})['isError']
+    assert tool(secured, tokens['access_token'], 'create_record', {'model': 'project', 'values': {'title': 'No'}})['isError']
     assert client(secured)('GET', '/api/_controls/mcp')[1]['totals'] == {'reads': 0, 'writes': 0, 'denied': 2}
 
 

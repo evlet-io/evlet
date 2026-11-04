@@ -54,7 +54,8 @@ def main():
     check(schema["version"] == 1 and schema["ui_version"] == 1, "Unexpected schema version")
     check({item["name"] for item in schema["models"]} == {"customer", "invoice", "payment", "project", "projecttask", "item", "item_prices", "item_barcodes", "employee"}, "Missing Playground models")
     suffix = uuid4().hex[:12]
-    customer = request("/api/customer", {"name": f"Smoke {suffix}"}, 201)
+    customer = request("/api/customer", {"customer_name": f"Smoke {suffix}"}, 201)
+    check(customer["title"] == f"Smoke {suffix}" and isinstance(customer["id"], str), "Customer title or text id missing")
     invoice = request("/api/invoice", {
         "customer": customer["id"], "reference": f"SMOKE-INV-{suffix}", "total": "123.45",
     }, 201)
@@ -62,11 +63,11 @@ def main():
         "invoice": invoice["id"], "reference": f"SMOKE-PAY-{suffix}", "amount": "123.45",
     }, 201)
     check(invoice["total"] == "123.45" and payment["amount"] == "123.45", "Currency lost precision")
-    check(request(f'/api/customer/{customer["id"]}')["name"] == customer["name"], "Customer read failed")
+    check(request(f'/api/customer/{customer["id"]}')["customer_name"] == customer["customer_name"], "Customer read failed")
     check(request(f'/api/payment/{payment["id"]}') == payment, "Payment read failed")
     check(request("/api/customer?limit=1")["items"][0]["id"] == customer["id"], "Paginated list failed")
-    error = request("/api/customer", {"name": ""}, 422)
-    check("name" in error["fields"], "Missing field validation")
+    error = request("/api/customer", {"customer_name": ""}, 422)
+    check("customer_name" in error["fields"], "Missing field validation")
     request("/api/invoice", {"customer": 2**63-1, "reference": f"ORPHAN-{suffix}", "total": "1.00"}, 404)
     updated = request(f'/api/invoice/{invoice["id"]}', {
         'total': '124.56', 'posting_date': '2026-10-28', 'status': 'sent', 'tax_rate': '5.1234',
@@ -74,10 +75,10 @@ def main():
     check(updated['total'] == '124.56' and updated['tax_rate'] == '5.1234', 'Update lost precision')
     query = urlencode({'filters': json.dumps({'invoice': invoice['id']}), 'order_by': 'amount'})
     check(request('/api/payment?' + query)['items'][0]['id'] == payment['id'], 'Relationship query failed')
-    project = request('/api/project', {'name': f'Project {suffix}', 'customer': customer['id'], 'budget': '5000.55'}, 201)
+    project = request('/api/project', {'title': f'Project {suffix}', 'customer': customer['id'], 'budget': '5000.55'}, 201)
     check(project['status'] == 'planned' and project['progress'] == 0, 'Generated form defaults failed')
     view = next(model for model in schema['models'] if model['name'] == 'project')
-    check(view['title_field'] == 'name' and 'budget' in view['list_fields'], 'Missing generated view metadata')
+    check(view['title_field'] == 'title' and 'budget' in view['list_fields'], 'Missing generated view metadata')
     project = request(f'/api/project/{project["id"]}', {'progress': 30, 'notes': 'Partial update'}, method='PATCH')
     check(project['budget'] == '5000.55' and project['progress'] == 30, 'Partial project update lost data')
     request(f'/api/project/{project["id"]}', {'progress': 101}, 422, 'PATCH')

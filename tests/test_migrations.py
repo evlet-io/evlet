@@ -261,4 +261,4 @@ def test_playground_migration_cli_keeps_sqlite_selection_and_backup(tmp_path, mo
     backup, = tmp_path.glob('*.backup')
     assert Database(backup, old_registry).get(old_registry.models['customer'], preserved.id).name == 'Preserved'
     app = create_app(); app.initialize()
-    assert app.database.get(Customer, preserved.id).name == 'Preserved'
+    assert app.database.get(Customer, preserved.id).customer_name == 'Preserved'

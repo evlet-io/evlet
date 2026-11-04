@@ -18,7 +18,7 @@ def store(secured, tmp_path):
 
 def test_existing_blob_attachments_remain_readable(secured, tmp_path):
     c = client(secured)
-    pid = c('POST', '/api/project', {'name': 'Old project'})[1]['id']
+    pid = c('POST', '/api/project', {'title': 'Old project'})[1]['id']
     assert c('POST', f'/api/project/{pid}/attachments', {'name': 'old.txt', 'content': 'b2xk'})[0] == 201
     storage = store(secured, tmp_path)
     assert c('GET', f'/api/project/{pid}/attachments/1')[1] == b'old'
@@ -38,7 +38,7 @@ def test_file_rollback_and_parent_deletion_are_collectable(secured, tmp_path):
             storage.add(tx, 'project', 1, 'rollback.txt', b'never committed')
             raise RuntimeError('abort')
     assert storage.collect() == 1
-    c = client(secured); pid = c('POST', '/api/project', {'name': 'Project'})[1]['id']
+    c = client(secured); pid = c('POST', '/api/project', {'title': 'Project'})[1]['id']
     c('POST', f'/api/project/{pid}/attachments', {'name': 'file.txt', 'content': 'YWJj'})
     assert storage.collect() == 0
     assert c('DELETE', f'/api/project/{pid}')[0] == 204
@@ -54,7 +54,7 @@ def test_storage_roots_are_bound_to_one_database(secured, tmp_path):
 
 def test_missing_or_symlink_files_and_invalid_keys_fail_closed(secured, tmp_path):
     storage = store(secured, tmp_path)
-    c = client(secured); pid = c('POST', '/api/project', {'name': 'Project'})[1]['id']
+    c = client(secured); pid = c('POST', '/api/project', {'title': 'Project'})[1]['id']
     c('POST', f'/api/project/{pid}/attachments', {'name': 'file.txt', 'content': 'YWJj'})
     with secured.database._connection() as db: row = db.execute('SELECT * FROM evlet_attachments').fetchone()
     path = storage.root / row['storage_key']; path.unlink()
@@ -70,7 +70,7 @@ def test_missing_or_symlink_files_and_invalid_keys_fail_closed(secured, tmp_path
 
 def test_failed_file_write_does_not_commit_metadata(secured, tmp_path, monkeypatch):
     storage = store(secured, tmp_path)
-    c = client(secured); pid = c('POST', '/api/project', {'name': 'Project'})[1]['id']
+    c = client(secured); pid = c('POST', '/api/project', {'title': 'Project'})[1]['id']
     real_open = os.open
     def fail(path, flags, *args):
         if flags & os.O_CREAT: raise OSError('disk full')
@@ -99,7 +99,7 @@ def test_file_adapter_rejects_other_database_transactions(secured, tmp_path):
 
 def test_corrupt_marker_returns_controlled_unavailability(secured, tmp_path):
     storage = store(secured, tmp_path)
-    c = client(secured); pid = c('POST', '/api/project', {'name': 'Project'})[1]['id']
+    c = client(secured); pid = c('POST', '/api/project', {'title': 'Project'})[1]['id']
     (storage.root / '.evlet-store').write_bytes(b'\xff')
     assert c('POST', f'/api/project/{pid}/attachments', {'name': 'file.txt', 'content': 'YWJj'})[0] == 503
 

@@ -257,7 +257,7 @@ def record(app, out):
 
     # A lead's Mark lost asks for the reason too: refused without it, done with it.
     sara = Scenario(app, 'sara')
-    lead = ids(sara, 'lead', name='Majid Obaid')
+    lead = ids(sara, 'lead', full_name='Majid Obaid')
     sara.record_page('lead', lead)
     assert sara.write('POST', f'/api/lead/{lead}/moves/lost', {}, read=f'/api/lead/{lead}')['status'] == 422
     assert sara.write('POST', f'/api/lead/{lead}/moves/lost', {'lost_reason': 'No budget this year'}, read=f'/api/lead/{lead}')['status'] == 200
@@ -266,7 +266,7 @@ def record(app, out):
 
     # Convert to deal on a qualified lead: the dialog sends the title and the expected close date.
     sara = Scenario(app, 'sara')
-    lead = ids(sara, 'lead', name='Anjali Varma')
+    lead = ids(sara, 'lead', full_name='Anjali Varma')
     sara.record_page('lead', lead)
     converted = sara.write('POST', f'/api/lead/{lead}/actions/convert', {'title': 'Pharmacy chain ERP', 'expected_close': '2026-12-15'},
                            read=f'/api/lead/{lead}')

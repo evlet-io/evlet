@@ -92,9 +92,9 @@ def test_authentication_cookie_csrf_logout_and_expiry(secured):
     assert session['application']['playground'] is True
     c = client(secured)
     assert c('GET', '/api/auth/session')[1]['user']['role'] == 'admin'
-    assert http(secured, 'POST', '/api/customer', {'name': 'No token'}, cookie=c.cookie)[0] == 403
-    assert c('POST', '/api/customer', {'name': 'Blocked'}, headers={b'x-evlet-request': b''})[0] == 403
-    assert c('POST', '/api/customer', {'name': 'Allowed'})[0] == 201
+    assert http(secured, 'POST', '/api/customer', {'customer_name': 'No token'}, cookie=c.cookie)[0] == 403
+    assert c('POST', '/api/customer', {'customer_name': 'Blocked'}, headers={b'x-evlet-request': b''})[0] == 403
+    assert c('POST', '/api/customer', {'customer_name': 'Allowed'})[0] == 201
     with secured.database._connection() as db:
         token = db.execute('SELECT token FROM evlet_sessions').fetchone()[0]
         assert token == hashlib.sha256(c.cookie.split('=')[1].encode()).hexdigest()
@@ -156,7 +156,7 @@ def test_project_tasks_save_the_full_lists_the_record_page_sends(secured):
     c = client(secured, 'editor')
     project = next(m for m in c('GET', '/api/schema')[1]['models'] if m['name'] == 'project')
     assert [(child['name'], child['row_changes']) for child in project['children']] == [('tasks', False)]
-    status, created, _ = c('POST', '/api/project', {'name': 'Explore Evlet', 'children': {'tasks': [{'title': 'Read', 'done': False}]}})
+    status, created, _ = c('POST', '/api/project', {'title': 'Explore Evlet', 'children': {'tasks': [{'title': 'Read', 'done': False}]}})
     assert status == 201, created
     path, first = f"/api/project/{created['id']}", created['children']['tasks'][0]['id']
     assert c('PATCH', path, {'children': {'tasks': [{'id': first}, {'title': 'Try', 'done': False}]}})[0] == 200
@@ -166,13 +166,13 @@ def test_project_tasks_save_the_full_lists_the_record_page_sends(secured):
     assert [(task['title'], task['done']) for task in saved['children']['tasks']] == [('Read', True), ('Try', False), ('Ship', False)]
     status, refused, _ = c('PATCH', path, {'children': {'tasks': {'update': [{'id': first, 'done': False}]}}})
     assert status == 422 and refused['fields']['children'].endswith('Use a known child collection with at most 100 rows')
-    assert c('POST', '/api/project', {'name': 'Keyed', 'children': {'tasks': [{'_key': 'n1', 'title': 'Plan'}]}})[0] == 403
+    assert c('POST', '/api/project', {'title': 'Keyed', 'children': {'tasks': [{'_key': 'n1', 'title': 'Plan'}]}})[0] == 403
     assert len(c('GET', path)[1]['children']['tasks']) == 3
 
 
 def test_deleting_a_project_removes_more_than_100_tasks(secured):
     with secured.database.transaction() as tx:
-        project = tx.create(Project, name='Large')
+        project = tx.create(Project, title='Large')
         for index in range(150):
             tx.create(ProjectTask, project=project.id, title=f'Task {index}')
     status, _, _ = client(secured)('DELETE', f'/api/project/{project.id}')
@@ -181,26 +181,26 @@ def test_deleting_a_project_removes_more_than_100_tasks(secured):
 
 
 def test_viewer_cannot_mutate_any_business_surface(secured):
-    project = secured.database.create(Project, name='Private')
+    project = secured.database.create(Project, title='Private')
     c = client(secured, 'viewer')
     schema = c('GET', '/api/schema')[1]
     model = next(m for m in schema['models'] if m['name'] == 'project')
     assert not any(model['permissions'].values()) and not model['actions']
-    for method, path, body in [('POST', '/api/project', {'name': 'No'}), ('PATCH', f'/api/project/{project.id}', {'name': 'No'}), ('DELETE', f'/api/project/{project.id}', {}), ('POST', f'/api/project/{project.id}/actions/start', {}), ('POST', f'/api/project/{project.id}/attachments', {'name': 'a', 'content': 'YQ=='})]:
+    for method, path, body in [('POST', '/api/project', {'title': 'No'}), ('PATCH', f'/api/project/{project.id}', {'title': 'No'}), ('DELETE', f'/api/project/{project.id}', {}), ('POST', f'/api/project/{project.id}/actions/start', {}), ('POST', f'/api/project/{project.id}/attachments', {'name': 'a', 'content': 'YQ=='})]:
         assert c(method, path, body)[0] == 403
     assert c('GET', f'/api/project/{project.id}')[0] == 200
 
 
 def test_model_field_row_rules_apply_to_list_count_search_detail_writes_and_links(secured):
     db = secured.database
-    visible = db.create(Customer, name='Visible', notes='secretphrase', active=True)
-    hidden = db.create(Customer, name='Hidden', active=False)
+    visible = db.create(Customer, customer_name='Visible', notes='secretphrase', active=True)
+    hidden = db.create(Customer, customer_name='Hidden', active=False)
     invoice = db.create(Invoice, customer=hidden.id, reference='Restricted link', total='5.00')
-    rule = Rule(('read', 'create', 'update'), read_fields=('name', 'active'), write_fields=('name', 'active'), scope=lambda user: {'active': True})
+    rule = Rule(('read', 'create', 'update'), read_fields=('customer_name', 'active'), write_fields=('customer_name', 'active'), scope=lambda user: {'active': True})
     secured.business.policy = Policy(registry, rules={('editor', Customer): rule, ('editor', Project): Rule(())})
     c = client(secured, 'editor')
     page = c('GET', '/api/customer?limit=1')[1]
-    assert page['total'] == 1 and page['items'] == [{'id': str(visible.id), 'name': 'Visible', 'active': True}]
+    assert page['total'] == 1 and page['items'] == [{'id': str(visible.id), 'customer_name': 'Visible', 'active': True}]
     assert c('GET', '/api/customer?q=secretphrase')[1]['total'] == 0
     assert c('GET', f'/api/customer/{hidden.id}')[0] == 404
     assert c('GET', '/api/customer?' + urlencode({'filters': json.dumps({'active': False})}))[1]['total'] == 0
@@ -211,16 +211,16 @@ def test_model_field_row_rules_apply_to_list_count_search_detail_writes_and_link
     assert c('PATCH', f'/api/customer/{visible.id}', {'notes': 'override'})[0] == 403
     assert c('PATCH', f'/api/customer/{visible.id}', {'active': False})[0] == 404
     assert db.get(Customer, visible.id).active is True
-    assert c('POST', '/api/customer', {'name': 'Outside scope', 'active': False})[0] == 404
+    assert c('POST', '/api/customer', {'customer_name': 'Outside scope', 'active': False})[0] == 404
     assert db.count(Customer) == 2
     schema = c('GET', '/api/schema')[1]
     assert 'project' not in [m['name'] for m in schema['models']]
-    assert [f['name'] for f in schema['models'][0]['fields']] == ['name', 'active']
+    assert [f['name'] for f in schema['models'][0]['fields']] == ['customer_name', 'active']
 
 
 def test_atomic_children_ownership_replacement_and_action_workflow(secured):
     c = client(secured, 'editor')
-    status, project, _ = c('POST', '/api/project', {'name': 'Work', 'children': {'tasks': [{'title': 'Build'}, {'title': 'Test'}]}})
+    status, project, _ = c('POST', '/api/project', {'title': 'Work', 'children': {'tasks': [{'title': 'Build'}, {'title': 'Test'}]}})
     assert status == 201, project
     pid = project['id']; path = f'/api/project/{pid}'
     tasks = project['children']['tasks']
@@ -232,9 +232,9 @@ def test_atomic_children_ownership_replacement_and_action_workflow(secured):
     assert c('POST', path + '/actions/start')[0] == 422
     assert c('POST', path + '/actions/complete')[0] == 422
     before = c('GET', path)[1]
-    assert c('PATCH', path, {'name': 'Rollback', 'children': {'tasks': [{'title': ''}]}})[0] == 422
+    assert c('PATCH', path, {'title': 'Rollback', 'children': {'tasks': [{'title': ''}]}})[0] == 422
     assert c('GET', path)[1] == before
-    other = c('POST', '/api/project', {'name': 'Other', 'children': {'tasks': [{'title': 'Other'}]}})[1]
+    other = c('POST', '/api/project', {'title': 'Other', 'children': {'tasks': [{'title': 'Other'}]}})[1]
     assert c('PATCH', path, {'children': {'tasks': [{'id': other['children']['tasks'][0]['id'], 'title': 'Hijack'}]}})[0] == 422
     assert c('PATCH', path, {'children': {'tasks': [{'title': 'Hijack', 'project': other['id']}]}})[0] == 403
     assert c('PATCH', path, {'children': {'tasks': [{**task, 'done': True} for task in tasks]}})[0] == 200
@@ -250,7 +250,7 @@ def test_action_transaction_rolls_back_all_writes(secured):
         tx.create(ProjectTask, project=project.id, title='Will roll back')
         raise ValidationError({'_form': 'Rejected'})
     secured.business.actions[Project, 'fail'] = Action(Project, 'fail', 'Fail', fail)
-    project = secured.database.create(Project, name='Atomic')
+    project = secured.database.create(Project, title='Atomic')
     c = client(secured)
     assert c('POST', f'/api/project/{project.id}/actions/fail')[0] == 422
     assert secured.database.get(Project, project.id).progress == 0
@@ -259,8 +259,8 @@ def test_action_transaction_rolls_back_all_writes(secured):
 
 def test_private_attachment_authorization_download_cleanup_and_bounds(secured):
     c = client(secured)
-    project = c('POST', '/api/project', {'name': 'Files'})[1]
-    other = c('POST', '/api/project', {'name': 'Other'})[1]
+    project = c('POST', '/api/project', {'title': 'Files'})[1]
+    other = c('POST', '/api/project', {'title': 'Other'})[1]
     path = f'/api/project/{project["id"]}'
     raw = b'<script>this must download, never render</script>'
     content = base64.b64encode(raw).decode()
@@ -294,7 +294,7 @@ def test_rule_configuration_and_layout_validation(secured):
 
 def test_concurrent_completion_commits_once(secured):
     from concurrent.futures import ThreadPoolExecutor
-    project = secured.database.create(Project, name='Concurrent', status='active')
+    project = secured.database.create(Project, title='Concurrent', status='active')
     secured.database.create(ProjectTask, project=project.id, title='Done', done=True)
     c = client(secured, 'editor')
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -322,22 +322,22 @@ def test_concurrent_admin_changes_keep_one_active_admin(secured, hashed):
 
 def test_child_permissions_rollback_parent_and_do_not_delete_hidden_rows(secured):
     c = client(secured, 'editor')
-    project = c('POST', '/api/project', {'name': 'Original', 'children': {'tasks': [{'title': 'Hidden'}]}})[1]
+    project = c('POST', '/api/project', {'title': 'Original', 'children': {'tasks': [{'title': 'Hidden'}]}})[1]
     secured.business.policy = Policy(registry, rules={('editor', ProjectTask): Rule(('read', 'create', 'update', 'delete'), scope=lambda user: {'done': True})})
     path = f'/api/project/{project["id"]}'
     assert c('GET', path)[1]['children']['tasks'] == []
-    assert c('PATCH', path, {'name': 'Attempt', 'children': {'tasks': []}})[0] == 200
-    assert secured.database.get(Project, project['id']).name == 'Attempt'
+    assert c('PATCH', path, {'title': 'Attempt', 'children': {'tasks': []}})[0] == 200
+    assert secured.database.get(Project, project['id']).title == 'Attempt'
     assert secured.database.count(ProjectTask) == 1
     assert c('DELETE', path)[0] == 404
 
 
 def test_scope_applies_to_actions_and_attachment_downloads(secured):
     c = client(secured, 'editor')
-    project = c('POST', '/api/project', {'name': 'Scoped'})[1]
+    project = c('POST', '/api/project', {'title': 'Scoped'})[1]
     path = f'/api/project/{project["id"]}'
     file = c('POST', path + '/attachments', {'name': 'a.txt', 'content': 'YQ=='})[1]
-    secured.business.policy = Policy(registry, rules={('editor', Project): Rule(('read', 'create', 'update', 'delete'), scope=lambda user: {'name': 'Different'})})
+    secured.business.policy = Policy(registry, rules={('editor', Project): Rule(('read', 'create', 'update', 'delete'), scope=lambda user: {'title': 'Different'})})
     assert c('POST', path + '/actions/start')[0] == 404
     assert c('GET', path + '/attachments')[0] == 404
     assert c('GET', path + f'/attachments/{file["id"]}')[0] == 404
@@ -346,9 +346,9 @@ def test_scope_applies_to_actions_and_attachment_downloads(secured):
 
 def test_child_and_attachment_limits_are_enforced(secured):
     c = client(secured, 'editor')
-    assert c('POST', '/api/project', {'name': 'Too many', 'children': {'tasks': [{'title': str(i)} for i in range(101)]}})[0] == 422
+    assert c('POST', '/api/project', {'title': 'Too many', 'children': {'tasks': [{'title': str(i)} for i in range(101)]}})[0] == 422
     assert secured.database.count(Project) == 0
-    project = c('POST', '/api/project', {'name': 'Files'})[1]
+    project = c('POST', '/api/project', {'title': 'Files'})[1]
     path = f'/api/project/{project["id"]}/attachments'
     for i in range(10):
         assert c('POST', path, {'name': f'{i}.txt', 'content': 'YQ=='})[0] == 201
@@ -364,7 +364,7 @@ def test_schema_fixtures_match_python_metadata():
 
 def test_malformed_csrf_token_is_rejected_without_server_error(secured):
     c = client(secured)
-    assert c('POST', '/api/customer', {'name': 'No'}, headers={b'x-csrf-token': b'\xff'})[0] == 403
+    assert c('POST', '/api/customer', {'customer_name': 'No'}, headers={b'x-csrf-token': b'\xff'})[0] == 403
 
 
 def test_account_listing_pages_without_exposing_passwords(secured, hashed):

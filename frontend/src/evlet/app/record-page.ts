@@ -383,15 +383,26 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const titleProp = isNew || !has(model.title_field) || (numbered && model.title_field === numbered.name) ? () => titleText.get() : view(model.title_field);
   const markName = () => titleText.get();
   const mark = look.person ? Avatar({ name: markName, size: 'xl' }) : RecordMark({ name: markName, size: 'lg', tint: look.tint });
-  const metaFacts = keyFields(model).filter(meta => meta.name !== model.title_field && has(meta.name) && !isStateField(model, meta)).slice(0, 3)
+  const metaFacts = keyFields(model).filter(meta => meta.name !== model.title_field && meta.name !== 'name' && has(meta.name) && !isStateField(model, meta)).slice(0, 3)
     .map(meta => html`<span class="ev-fact" title=${meta.label}>${displayValue(view(meta.name), { links: ctx.links, empty: `No ${meta.label.toLowerCase()}` })}</span>`);
   const numberFact = sequence && has(sequence.name) && !isNew ? when(() => !store.field(sequence.name).value.get(),
     () => html`<span class="muted">${(sequence as any).sequence?.assign_on && (sequence as any).sequence.assign_on !== 'create' ? `Number assigned on ${humanize((sequence as any).sequence.assign_on).toLowerCase()}` : 'Number assigned on save'}</span>`) : null;
+  // The standard name is the document number: in mono next to the title, or when it will be assigned.
+  const naming = model.naming?.field === 'name' && model.title_field !== 'name' && has('name') ? model.naming : null;
+  const nameFact = naming ? live(() => {
+    const value = store.field('name').value.get();
+    // A title that falls back to the name already shows it as the heading.
+    if (value && String(value) === titleText.get()) return null;
+    return value ? html`<span class="ev-fact mono" title="Name">${String(value)}</span>`
+      : naming.placeholder ? html`<span class="muted">${naming.placeholder}</span>` : null;
+  }) : null;
   const header = DocHeader({
     type: model.label, icon: look.icon, mark,
     title: titleProp,
-    mono: () => Boolean(numbered && model.title_field === numbered.name && has(numbered.name) && store.field(numbered.name).value.get()),
-    meta: [...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
+    mono: () => Boolean(numbered && model.title_field === numbered.name && has(numbered.name) && store.field(numbered.name).value.get())
+      // A title that is the record's name (no other title source) reads as a document number too.
+      || Boolean(naming && store.field('name').value.get() && String(store.field('name').value.get()) === titleText.get()),
+    meta: [nameFact, ...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
       const current = extras.get()._lifecycle;
       return current ? Chip({ label: `${model.lifecycle!.labels[current.state]} · Revision ${current.revision}`, tone: current.state === 'confirmed' ? 'green' : 'slate' }) : null;
     }) : null].filter(Boolean) as Child[],

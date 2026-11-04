@@ -12,7 +12,7 @@ def test_transactional_events_and_filtered_replay(secured):
     c = client(secured)
     baseline = c('GET', '/api/_events')[1]['cursor']
     assert baseline == '0'
-    customer = c('POST', '/api/customer', {'name': 'Visible'})[1]
+    customer = c('POST', '/api/customer', {'customer_name': 'Visible'})[1]
     page = c('GET', '/api/_events?cursor=0')[1]
     assert page['items'] == [{'model': 'customer', 'id': customer['id'], 'deleted': False}]
     assert len(page['cursor']) == 48
@@ -29,9 +29,9 @@ def test_transactional_events_and_filtered_replay(secured):
 
 def test_events_never_include_hidden_rows_fields_or_deleted_scoped_ids(secured):
     c = client(secured)
-    visible = c('POST', '/api/customer', {'name': 'visible', 'notes': 'secret'})[1]
-    c('POST', '/api/customer', {'name': 'hidden', 'notes': 'secret'})
-    secured.business.policy = Policy(secured.registry, rules={('viewer', Customer): Rule(('read',), read_fields=('name',), scope=lambda user: {'name': 'visible'})})
+    visible = c('POST', '/api/customer', {'customer_name': 'visible', 'notes': 'secret'})[1]
+    c('POST', '/api/customer', {'customer_name': 'hidden', 'notes': 'secret'})
+    secured.business.policy = Policy(secured.registry, rules={('viewer', Customer): Rule(('read',), read_fields=('customer_name',), scope=lambda user: {'customer_name': 'visible'})})
     viewer = client(secured, 'viewer')
     page = viewer('GET', '/api/_events?cursor=0')[1]
     assert page['items'] == [{'model': 'customer', 'id': visible['id'], 'deleted': False}]
@@ -43,7 +43,7 @@ def test_events_never_include_hidden_rows_fields_or_deleted_scoped_ids(secured):
 
 def test_retention_resets_stale_cursor(secured):
     events = EventStore(secured.database, retention=100)
-    secured.database.create(Customer, name='One')
+    secured.database.create(Customer, customer_name='One')
     with secured.database.transaction() as tx:
         old = events.publish(tx, Customer, 1)
         for _ in range(101): events.publish(tx, Customer, 1)

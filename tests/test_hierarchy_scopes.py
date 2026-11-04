@@ -19,7 +19,7 @@ TEAM = Hierarchy('employee', parent='reports_to')
 
 class Employee(Model):
     permissions = {**ALL, 'viewer': Rule(('read',), scope=TEAM.team())}
-    name = Text(required=True)
+    full_name = Text(required=True)
     reports_to = Link('employee', index=True)
 
 
@@ -60,14 +60,14 @@ def people(app, reports=150):
     Returns {name: employee id} for chief, manager, member, outsider and deep (the last report)."""
     db = app.database
     with db.transaction() as tx:
-        chief = tx.create(Employee, name='Chief').id
-        manager = tx.create(Employee, name='Manager', reports_to=chief).id
-        outsider = tx.create(Employee, name='Outsider', reports_to=chief).id
+        chief = tx.create(Employee, full_name='Chief').id
+        manager = tx.create(Employee, full_name='Manager', reports_to=chief).id
+        outsider = tx.create(Employee, full_name='Outsider', reports_to=chief).id
         # Five team leads under the manager, each with a chain of reports below it.
         below, ids = [manager], []
         for index in range(reports):
             parent = manager if index < 5 else ids[index - 5]
-            ids.append(tx.create(Employee, name=f'Report {index}', reports_to=parent).id)
+            ids.append(tx.create(Employee, full_name=f'Report {index}', reports_to=parent).id)
         for employee in (chief, manager, outsider, *ids):
             tx.create(Leave, employee=employee, days=2)
             tx.create(Payslip, employee=employee, amount=100)
@@ -171,8 +171,8 @@ def test_team_scopes_cover_lists_aggregates_records_and_files(tmp_path):
 def test_cycles_stop_and_a_user_without_a_linked_record_sees_nothing(tmp_path):
     app = serve(Database(tmp_path / 'cycle.sqlite3', Registry(*MODELS)))
     with app.database.transaction() as tx:
-        first = tx.create(Employee, name='First').id
-        second = tx.create(Employee, name='Second', reports_to=first).id
+        first = tx.create(Employee, full_name='First').id
+        second = tx.create(Employee, full_name='Second', reports_to=first).id
         tx.connection.execute('UPDATE employee SET reports_to = ? WHERE id = ?', (second, first))
     looped = sign_in(app, 'looped', first)
     assert listed(looped, 'employee')['total'] == 2

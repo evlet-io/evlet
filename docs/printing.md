@@ -29,7 +29,7 @@ class TaxInvoicePrint(PrintDesign):
     header = (Text("Sample Trading LLC · {{ doc.name }}", weight="bold"),)
     main = (
         Heading("Tax Invoice"),
-        Fields(("number", "Invoice no."), "posting_date", "customer", columns=2),
+        Fields(("name", "Invoice no."), "posting_date", "customer", columns=2),
         Table("lines", columns=(Column("item", width="55%"), Column("qty"), Column("rate"), Column("amount"))),
         Totals(("net_total", "Total excluding VAT"), ("vat_total", "VAT 5%"), ("grand_total", "Total")),
         Text(html="<p>Amount due: <b>{{ money(doc.grand_total) }}</b></p>"),
@@ -116,7 +116,8 @@ format prints as written.
 
 On a document design the template sees `doc`: the record's readable fields as Python values
 (dates, decimals), each Link as the linked record's readable fields with its `title`, and each child
-table as a list of rows. `doc.name` and `doc.title` are always there. On a report design it sees
+table as a list of rows. `doc.name` and `doc.title` are always there: when the role cannot read
+them, each is the record's id. On a report design it sees
 `report`: `title`, `filters` (the applied values by name), `rows`, `columns`, `totals` and `total`.
 Rows come from the report's own `run()`, page by page, up to 5000; a note says when more were left
 out.

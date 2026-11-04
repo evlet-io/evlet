@@ -453,10 +453,11 @@ A stored value that no longer validates turns it off. Changes are audited under 
 from evlet import Email, Journal, Mail, Model, Text
 
 class Contact(Model):
-    name = Text()
+    full_name = Text()
     email = Email()
 
     class Meta:
+        title_field = "full_name"
         journal = Journal()
         mail = Mail(match=("email",), kind="contact")
 ```

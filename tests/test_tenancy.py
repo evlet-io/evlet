@@ -47,7 +47,7 @@ def test_isolated_sessions_records_children_actions_and_files(tenants):
     projects = {}
     for slug, auth in (('alpha', alpha), ('beta', beta)):
         host = slug + '.localhost:8000'
-        status, project, _ = call(router, host, 'POST', '/api/project', {'name': slug, 'children': {'tasks': [{'title': slug, 'done': True}]}}, **auth)
+        status, project, _ = call(router, host, 'POST', '/api/project', {'title': slug, 'children': {'tasks': [{'title': slug, 'done': True}]}}, **auth)
         assert status == 201 and str(RecordId(project['id'])) == project['id']
         projects[slug] = path = f"/api/project/{project['id']}"
         assert call(router, host, 'POST', path + '/actions/start', {}, **auth)[0] == 200
@@ -55,12 +55,12 @@ def test_isolated_sessions_records_children_actions_and_files(tenants):
         assert call(router, host, 'POST', path + '/attachments', {'name': 'same.txt', 'content': content}, **auth)[0] == 201
     for slug, auth, other in (('alpha', alpha, beta), ('beta', beta, alpha)):
         host, project = slug + '.localhost:8000', projects[slug]
-        assert call(router, host, path='/api/project', **auth)[1]['items'][0]['name'] == slug
+        assert call(router, host, path='/api/project', **auth)[1]['items'][0]['title'] == slug
         assert call(router, host, path=project, **auth)[1]['children']['tasks'][0]['title'] == slug
         assert call(router, host, path=project + '/attachments/1', **auth)[1] == slug.encode()
         for path in ('/api/schema', project, project + '/attachments/1', '/api/auth/users'):
             assert call(router, host, path=path, **other)[0] == 401
-        assert call(router, host, 'PATCH', project, {'name': 'wrong'}, cookie=auth['cookie'], csrf=other['csrf'])[0] == 403
+        assert call(router, host, 'PATCH', project, {'title': 'wrong'}, cookie=auth['cookie'], csrf=other['csrf'])[0] == 403
         assert call(router, host, 'POST', project + '/actions/complete', {}, **other)[0] == 401
         schema = call(router, host, path='/api/schema', **auth)[1]
         assert schema['tenant'] == {'slug': slug, 'label': slug.title()}

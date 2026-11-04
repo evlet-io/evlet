@@ -200,7 +200,7 @@ def test_rules_lost_reason(crm):
 def test_lead_mark_lost_carries_the_reason(crm):
     """Lead declares lost_reason with applies_when and required_when on lost. Mark lost asks for it."""
     sara = login(crm, 'sara')
-    url = '/api/lead/' + str(find(sara, 'lead', name='Majid Obaid')['id'])
+    url = '/api/lead/' + str(find(sara, 'lead', full_name='Majid Obaid')['id'])
     refused = sara.write('POST', url + '/moves/lost', {})
     assert refused[0] == 422 and refused[1]['fields'] == {'lost_reason': 'This field is required'}
     assert sara('GET', url)[1]['status'] == 'new'
@@ -288,7 +288,7 @@ def test_actions_schedule_follow_up_and_convert_a_lead(crm):
     won = sara('GET', deal_url(sara, 'AMC renewal 2027'))[1]
     assert {action['name']: action['allowed'] for action in won['_actions']} == {'schedule_follow_up': False}
     # Converting a qualified lead creates its organization, contact and deal, and links the deal.
-    lead = find(sara, 'lead', name='Anjali Varma')
+    lead = find(sara, 'lead', full_name='Anjali Varma')
     url = f"/api/lead/{lead['id']}"
     converted = sara.write('POST', url + '/actions/convert', {'title': 'Pharmacy chain ERP', 'expected_close': '2026-12-15'})
     assert converted[0] == 200, converted
@@ -296,7 +296,7 @@ def test_actions_schedule_follow_up_and_convert_a_lead(crm):
     assert (deal['title'], deal['stage'], deal['owner'], deal['lead_source'], deal['expected_close']) == ('Pharmacy chain ERP', 'qualified', 'sara', 'LinkedIn', '2026-12-15')
     organization = sara('GET', f"/api/organization/{deal['organization']}")[1]
     contact = sara('GET', f"/api/contact/{deal['contact']}")[1]
-    assert (organization['name'], organization['tags'], contact['name'], contact['emirate']) == ('Bluewave Pharmacy Group', ['From lead'], 'Anjali Varma', 'Dubai')
+    assert (organization['title'], organization['tags'], contact['full_name'], contact['emirate']) == ('Bluewave Pharmacy Group', ['From lead'], 'Anjali Varma', 'Dubai')
     assert sara.write('POST', url + '/actions/convert', {'title': 'Again'})[0] == 409
 
 
@@ -324,7 +324,7 @@ def test_sales_see_only_their_deals_and_no_hidden_fields(crm):
     # A new deal or lead belongs to whoever creates it, without typing a username.
     created = sara('POST', '/api/deal', {'title': 'Mine without typing', 'organization': mine[0]['organization']})
     assert created[0] == 201 and created[1]['owner'] == 'sara'
-    assert sara('POST', '/api/lead', {'name': 'Hamad', 'company': 'Hamad Trading'})[1]['owner'] == 'sara'
+    assert sara('POST', '/api/lead', {'full_name': 'Hamad', 'company': 'Hamad Trading'})[1]['owner'] == 'sara'
 
 
 def test_two_sessions_editing_the_same_deal_conflict(crm):
@@ -399,7 +399,7 @@ def test_an_email_from_a_contact_appears_in_its_activity(crm):
         imap.mail, imap.log, imap.bodies, imap.validity, smtp.messages = [], [], [], 7, []
         admin, sara = login(crm, 'admin'), login(crm, 'sara')
         assert admin('POST', '/api/_controls/overrides', {'changes': [{'kind': 'setting', 'key': 'mail.personal', 'value': True}]})[0] == 200
-        contact = find(sara, 'contact', name='Khalid Al Mansoori')
+        contact = find(sara, 'contact', full_name='Khalid Al Mansoori')
         imap.mail += [message(1, contact['email'], 'Payment terms for Q3', to='sara@acme.test', body='Can we move to 45 days?'),
                       message(2, 'someone@unknown.test', 'Not a customer', to='sara@acme.test')]
         status, payload, _ = sara('POST', '/api/_settings/me/mailbox', mailbox(imap, smtp, address='sara@acme.test'))

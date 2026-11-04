@@ -17,7 +17,7 @@ from test_rules_types import ALL, add_user, start
 
 class Account(Model):
     permissions = ALL
-    name = Text(default='')
+    title = Text(default='')
 
 
 class Ledger(Model):
@@ -46,7 +46,7 @@ class Invoice(Model):
     Meta = InvoiceMeta
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'void')), 'editor': Rule(('read', 'create', 'update', 'void')),
                    'viewer': Rule(('read',))}
-    name = Text(default='')
+    title = Text(default='')
     account = Link(Account)
     number = Sequence('INV-{n:04}', assign_on='issued')
     # Takes this much off the credit row, so a test can make a repost fail its balance check.
@@ -118,7 +118,7 @@ def books(request, tmp_path):
         database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
     app = start(database)
     c = client(app)
-    account = c('POST', '/api/account', {'name': 'Sales'})[1]['id']
+    account = c('POST', '/api/account', {'title': 'Sales'})[1]['id']
     return app, c, account
 
 
@@ -126,11 +126,11 @@ def books(request, tmp_path):
 def sqlite_books(tmp_path):
     app = start(Database(tmp_path / 'books.sqlite3', Registry(*MODELS)))
     c = client(app)
-    return app, c, c('POST', '/api/account', {'name': 'Sales'})[1]['id']
+    return app, c, c('POST', '/api/account', {'title': 'Sales'})[1]['id']
 
 
 def new_invoice(c, account, lines=(('a', '1', '0.10'), ('b', '2', '0.10'))):
-    body = {'name': 'Invoice', 'account': account, 'children': {'lines': [{'item': item, 'qty': qty, 'rate': rate} for item, qty, rate in lines]}}
+    body = {'title': 'Invoice', 'account': account, 'children': {'lines': [{'item': item, 'qty': qty, 'rate': rate} for item, qty, rate in lines]}}
     status, record, _ = c('POST', '/api/invoice', body)
     assert status == 201, record
     return f"/api/invoice/{record['id']}"

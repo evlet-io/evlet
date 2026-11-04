@@ -24,8 +24,8 @@ from .ui import playground_ui
 
 portal = Frontend('portal', kind='static', dist='portal', path='/portal', title='Customer portal', auth='portal', api=('playground.portal',))
 PORTAL_RULES = {
-    ('portal', Customer): Rule(('read',), read_fields=('name', 'email'), scope=own_customer('id')),
-    ('portal', Invoice): Rule(('read',), read_fields=('customer', 'number', 'reference', 'total', 'status', 'posting_date'), scope=own_customer()),
+    ('portal', Customer): Rule(('read',), read_fields=('customer_name', 'title', 'email'), scope=own_customer('id')),
+    ('portal', Invoice): Rule(('read',), read_fields=('customer', 'name', 'title', 'reference', 'total', 'status', 'posting_date'), scope=own_customer()),
     # Admin prints whatever it reads; editors print invoices because their Rule names 'print'.
     ('editor', Invoice): Rule(('read', 'create', 'update', 'delete', 'print')),
 }
@@ -88,7 +88,7 @@ def project_overview(context, project: RecordId):
     """One project at a glance: its status, progress, budget and how many of its tasks are done."""
     record = context.get(Project, project)
     tasks = getattr(record, 'tasks', ())
-    return {'project': record.name, 'status': record.status, 'progress': record.progress, 'budget': getattr(record, 'budget', None),
+    return {'project': record.title, 'status': record.status, 'progress': record.progress, 'budget': getattr(record, 'budget', None),
             'tasks': len(tasks), 'done': sum(1 for task in tasks if task.done)}
 
 

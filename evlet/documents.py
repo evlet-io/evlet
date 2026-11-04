@@ -14,6 +14,7 @@ from .database import ConflictError, ROW_LIMIT
 from .declarations import Ref
 from .fields import CurrentUser, MISSING, Link
 from .identity import RecordId
+from .naming import drop_echoes
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
@@ -420,6 +421,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
     state_write(model, scalars, current)
     sequence_write(model, scalars, current, business.policy.fields(user, model))
     computed_write(business, model, scalars, '')
+    drop_echoes(model, scalars, current._values if current else None)
     business.policy.check_values(tx, user, model, scalars)
     # A new record takes the defaults Controls set on this instance for fields the caller left out.
     values = business.controls.custom.prepare(model, scalars) if current is None else scalars
@@ -746,6 +748,8 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             keys_seen.add(temporary) if temporary is not None and fresh else None
             value, nested = business.split_body(value)
             computed_write(business, child.model, value, prefix + child.name + '.')
+            original = originals.get(row_id) if row_id is not None else None
+            drop_echoes(child.model, value, getattr(original, '_values', None))
             business.policy.check_values(tx, user, child.model, value, targets=targets)
             if row_id is not None:
                 if not isinstance(row_id, RecordId) or row_id not in originals or row_id in kept or row_id in hidden:
@@ -1349,15 +1353,19 @@ def source_values(draft, allowed=None, behaviors=('compute',)):
 
 
 def write_snapshot(tx, draft, before=None, *, reload=True):
-    from .database import insert, storage_columns
+    from .database import insert, storage_columns, stored_values
+    from .naming import has_title
     model = draft._definition
     # References are checked when they change; a saved one is not rechecked on every write.
     tx.check_references(model, {name: draft._values.get(name) for name in model.__fields__
                                  if before is None or before._values.get(name) != draft._values.get(name)})
+    # The standard title follows its source on every write (evlet/naming.py).
+    if has_title(model):
+        draft._values['title'] = stored_values(model, draft._values, draft.id)['title']
     names, values = storage_columns(model, draft._values, model.__fields__)
     table = identifier(tx.registry.name_for(model))
     if draft.id is None:
-        object.__setattr__(draft, 'id', insert(tx.connection, table, names, values))
+        object.__setattr__(draft, 'id', insert(tx.connection, table, names, values, id_title=has_title(model)))
     elif names:
         tx.connection.execute(f'UPDATE {table} SET {", ".join(identifier(name) + "=?" for name in names)} WHERE id=?', [*values, draft.id])
     return tx.get(model, draft.id) if reload else None
@@ -1447,10 +1455,14 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     # Document numbers and names are assigned on the settled draft, in this transaction.
     from . import sequences
     numbers = sequences.assign(context, model, draft, before, declared_move)
-    if before is None:
-        name = sequences.name_new(tx.connection, business.registry, model, draft._values, host_today(business), user.username)
-        if name:
-            draft._values[business.registry.naming[model].field] = name
+    rules = sequences.naming_rules(business.registry, model)
+    if rules is not None and rules.field == 'name' and rules.system and (before is None or before._values.get('name') in (None, '')) \
+            and draft._values.get('name') not in (None, ''):
+        # A series or autoname assigns the name; people may change it once it has one.
+        raise ValidationError({'name': 'Assigned on confirm' if rules.assign_on == 'confirm' else 'Assigned on save'})
+    if sequences.name_due(rules, draft._values, created=before is None, lifecycle=lifecycle, move=declared_move):
+        draft._values[rules.field] = sequences.issue(tx.connection, business.registry, model, rules, draft._values, host_today(business),
+                                                     user.username, record=draft, context=context, record_id=draft.id)
     prior = before.stored_values() if before else None
     after = draft.stored_values()
     if prior == after and lifecycle is None:

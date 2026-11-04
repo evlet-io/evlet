@@ -34,7 +34,7 @@ OWN = lambda user: {'owner': user.id}  # noqa: E731
 
 class Customer(Model):
     permissions = {'admin': ALL, 'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
-    name = Text(default='')
+    title = Text(default='')
     email = Email()
 
     class Meta:
@@ -44,7 +44,7 @@ class Customer(Model):
 
 class Contact(Model):
     permissions = {'admin': ALL, 'editor': Rule(('read', 'create', 'update'), scope=OWN), 'viewer': Rule(('read',), scope=OWN)}
-    name = Text(default='')
+    title = Text(default='')
     email = Email()
     owner = Integer(default=0)
 
@@ -54,8 +54,8 @@ class Contact(Model):
 
 
 class Lead(Model):
-    permissions = {'admin': ALL, 'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',), read_fields=('name',))}
-    name = Text(default='')
+    permissions = {'admin': ALL, 'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',), read_fields=('title',))}
+    title = Text(default='')
     email = Email()
 
     class Meta:
@@ -65,7 +65,7 @@ class Lead(Model):
 
 class Supplier(Model):
     permissions = {'admin': ALL, 'editor': Rule(('read',)), 'viewer': Rule(('read',))}
-    name = Text(default='')
+    title = Text(default='')
     email = Email()
 
     class Meta:
@@ -280,11 +280,11 @@ def build(database):
         app.ids = {row[1]: row[0] for row in connection.execute('SELECT id, username FROM evlet_users')}
     with database.transaction() as tx:
         app.records = {
-            'customer': tx.create(Customer, name='Acme', email='Buyer@Acme.test').id,
-            'mine': tx.create(Contact, name='Mina', email='mina@acme.test', owner=app.ids['editor']).id,
-            'other': tx.create(Contact, name='Omar', email='omar@acme.test', owner=app.ids['admin']).id,
-            'lead': tx.create(Lead, name='Lina', email='lina@lead.test').id,
-            'supplier': tx.create(Supplier, name='Parts', email='sales@parts.test').id,
+            'customer': tx.create(Customer, title='Acme', email='Buyer@Acme.test').id,
+            'mine': tx.create(Contact, title='Mina', email='mina@acme.test', owner=app.ids['editor']).id,
+            'other': tx.create(Contact, title='Omar', email='omar@acme.test', owner=app.ids['admin']).id,
+            'lead': tx.create(Lead, title='Lina', email='lina@lead.test').id,
+            'supplier': tx.create(Supplier, title='Parts', email='sales@parts.test').id,
             'deal': tx.create(Deal, title='Big order').id,
             'partner': tx.create(Partner, email='hello@partner.test').id,
         }
@@ -900,10 +900,10 @@ def test_mail_declarations_are_checked(tmp_path):
 
     class Wrong(Model):
         permissions = {'admin': ALL}
-        name = Text(default='')
+        title = Text(default='')
 
         class Meta:
-            mail = Mail(match=('name',), kind='customer')
+            mail = Mail(match=('title',), kind='customer')
 
     database = Database(tmp_path / 'wrong.sqlite3', Registry(Wrong))
     with pytest.raises(ValueError, match='stored Email fields'):

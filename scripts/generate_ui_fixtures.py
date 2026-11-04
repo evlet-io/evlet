@@ -45,9 +45,9 @@ async def collect(app):
     csrf = login['csrf']
     ui, _ = await request('GET', '/api/ui')
     schema, _ = await request('GET', '/api/schema')
-    await request('POST', '/api/customer', {'name': 'Acme', 'email': 'hello@example.test'})
+    await request('POST', '/api/customer', {'customer_name': 'Acme', 'email': 'hello@example.test'})
     created, _ = await request('POST', '/api/project', {
-        'name': 'Website launch', 'customer': 1, 'budget': '1250.50',
+        'title': 'Website launch', 'customer': 1, 'budget': '1250.50',
         'children': {'tasks': [{'title': 'Prepare content'}, {'title': 'Review pages', 'done': True}]},
     })
     records, _ = await request('GET', '/api/project?limit=20&offset=0')
