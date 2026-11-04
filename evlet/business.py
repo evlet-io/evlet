@@ -381,8 +381,9 @@ class Business:
                 used_sources = {}
                 for path in (path for name in readable for path in references(plans(model)[name].get('compute'))):
                     if path.count('.') == 1: used_sources.setdefault(path.split('.')[0], set()).add(path.split('.')[1])
-                entry['sources'] = {name: {key: value for key, value in outputs.items() if key in used_sources[name]}
-                                    for name, outputs in entry.get('sources', {}).items() if name in used_sources}
+                if 'sources' in entry:
+                    entry['sources'] = {name: {key: value for key, value in outputs.items() if key in used_sources[name]}
+                                        for name, outputs in entry['sources'].items() if name in used_sources}
                 def ordered(key):
                     head, _, rest = key.partition('.')
                     if not rest:
@@ -394,7 +395,8 @@ class Business:
                     """Readable fields of an owned table's rows, or None when the rows are hidden."""
                     child = next((item.model for item in self.children.values() if item.parent is model and item.name == name), None)
                     return self.policy.fields(user, child) if child is not None and self.policy.allows(user, child, 'read') else None
-                entry['order'] = [key for key in entry.get('order', []) if ordered(key)]
+                if 'order' in entry:
+                    entry['order'] = [key for key in entry['order'] if ordered(key)]
             expressions = self.field_expressions(user, model)
             # operators: what a list filter may use on the field (evlet.query); none when it is not stored.
             entry['fields'] = [{**field, 'read_only': field['name'] not in writable, 'stored': model.__declared_fields__[field['name']].stored,
