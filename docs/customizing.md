@@ -32,6 +32,8 @@ models = (NotesItem,)
 Evlet uses these fields for the database, validation, API and generated forms.
 `list_fields` selects the default list columns. A user's column selection is
 saved only after they change it, and resets when the default columns change.
+`open_in = 'panel'` opens a record from the list in a side panel beside it
+instead of on its own page; see "Side panel" in [ui-framework.md](ui-framework.md).
 See [the model engine](model-engine.md) for fields, validators and query rules.
 
 ## Migrations

@@ -190,8 +190,8 @@ describe('Library page', () => {
     const { store } = backend();
     await store.open(id(1));
     const host = render(() => LibraryPage({ record: store }));
-    expect(ENTRIES).toHaveLength(115);
-    expect(host.querySelectorAll('[data-libcard]')).toHaveLength(115);
+    expect(ENTRIES).toHaveLength(117);
+    expect(host.querySelectorAll('[data-libcard]')).toHaveLength(117);
     const live = builtIds(store);
     expect(live.length).toBeGreaterThan(70);
     for (const id of ['icon', 'button', 'tooltip', 'base-field', 'reference-field', 'date-range', 'inline-value', 'popover', 'modal', 'drawer', 'toast', 'data-table', 'child-table', 'doc-header', 'status-flow', 'board'])

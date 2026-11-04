@@ -7,11 +7,12 @@
 import { html, match, when, type Child } from '../dom';
 import { ApiError, ValidationError, type RecordData } from '../api';
 import { legacyRecordId, recordId } from '../ids';
-import { batch, cell, derive, effect, onCleanup, untrack, type Readable } from '../reactive';
+import { batch, cell, derive, effect, onCleanup, runWithOwner, untrack, type Readable } from '../reactive';
+import type { Route } from '../router';
 import { RecordStore, type Field, type Rules } from '../model/record';
 import type { FieldSchema } from '../model/schema';
-import { Avatar, Button, Chip, EmptyState, Icon, IconTile, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
-import { ChildTable } from '../ui/childtable';
+import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
+import { ChildRows, ChildTable } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
 import { displayValue, fieldFor, localField, stateTint, type FieldLike } from '../ui/fields';
 import { FormSection, KeyValueList } from '../ui/inline';
@@ -22,7 +23,7 @@ import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { JournalEntry, JournalPage } from './client';
 import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, numberField, screenModel, sections, sequenceField,
-  summaryFields, titleOf, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
+  summaryFields, titleOf, LIST_KEYS, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { Revisions } from './revisions';
 import { presentSlip, takePrefill } from './slips';
@@ -73,30 +74,64 @@ function initialValues(model: ScreenModel, query: Record<string, string>) {
   return values;
 }
 
-export function RecordPage(ctx: AppContext, name: string, idText: string): HTMLElement {
+/**
+ * What a list gives a record it opens in its side panel. The address stays the list's, with the
+ * record in `?open=` and its tab in `?rtab=`.
+ */
+export interface PanelHost {
+  /** True while the panel covers the list (narrow screens): the header shows Back instead of Expand. */
+  overlay: Readable<boolean>;
+  /** The record tab from the address. */
+  tab: string | undefined;
+  setTab(tab: string | null): void;
+  /** Whether a navigation keeps this record open: only the list's search, filters or the record tab change. */
+  stays(to: Route<any> | null): boolean;
+  close(): void;
+  /** Open another record of the model in the panel, or the one just created. */
+  show(id: string): void;
+  /** The record was deleted. */
+  removed(): void;
+}
+
+// A record expanded from a side panel to its page keeps its store, so unsaved edits come along.
+let handoff: { model: string; id: string; store: RecordStore } | null = null;
+const handedOff = new WeakSet<RecordStore>();
+function takeHandoff(model: string, id: string): RecordStore | null {
+  const found = handoff && handoff.model === model && handoff.id === id ? handoff.store : null;
+  handoff = null;
+  return found;
+}
+
+export function RecordPage(ctx: AppContext, name: string, idText: string, panel?: PanelHost): HTMLElement {
   const { api, router } = ctx;
   const model = screenModel(ctx.schema, name);
   const isNew = idText === 'new';
   // An older bookmark carries a decimal id (/app/invoice/42): open the same record under its text id.
   const legacy = isNew ? null : legacyRecordId(idText);
-  if (legacy) {
+  if (legacy && !panel) {
     const route = router.route.peek();
     queueMicrotask(() => void router.go(route?.name === 'view' ? 'view' : 'record', { model: name, id: legacy }, route?.query ?? {}, { replace: true }));
     return html`<div></div>` as HTMLElement;
   }
-  const id = isNew ? null : recordId(idText);
-  if (!isNew && !id) return missing(ctx, model);
-  const store = new RecordStore({ api, schema: ctx.schema, model: name, user: ctx.user });
-  onCleanup(() => store.dispose());
+  const id = isNew ? null : recordId(legacy ?? idText);
+  if (!isNew && !id) return missing(ctx, model, panel);
+  const handed = panel ? null : takeHandoff(name, idText);
+  // A panel's store lives outside the panel's scope so Expand can hand it to the record page.
+  const make = () => new RecordStore({ api, schema: ctx.schema, model: name, user: ctx.user });
+  const store = handed ?? (panel ? runWithOwner(null, make) : make());
+  onCleanup(() => { if (!handedOff.has(store) || !panel) store.dispose(); });
   const status = cell<'loading' | 'ready' | 'missing' | 'error'>('loading', { name: `${name} page` });
   const failure = cell<string>('');
   const detail = isNew ? cell<RecordData | null>(null) : api.detail(name, id!);
   const extras = derive<DetailExtras>(() => extrasOf(detail.get()));
-  const query = router.route.peek()?.query ?? {};
+  const route = router.route.peek()?.query ?? {};
+  // In a side panel the address is the list's: its own keys are not values for a new record.
+  const query = panel ? Object.fromEntries(Object.entries(route).filter(([key]) => !LIST_KEYS.includes(key))) : route;
   // Values a slip handed over for review (outcome becomes, review): shown as a new record, not saved.
   const prefill = isNew ? takePrefill(name) : null;
 
   const load = async () => {
+    if (handed) { status.set('ready'); return; }
     status.set('loading');
     try {
       if (isNew) await store.create({ ...initialValues(model, query), ...(prefill?.values ?? {}) });
@@ -115,24 +150,26 @@ export function RecordPage(ctx: AppContext, name: string, idText: string): HTMLE
 
   const page = html`<div class="ev-record">${match(status, {
     loading: () => html`<div class="page"><p class="muted" role="status">Loading…</p></div>`,
-    missing: () => missing(ctx, model),
+    missing: () => missing(ctx, model, panel),
     error: () => html`<div class="page">${EmptyState({ icon: 'info', tint: 'rose', title: 'This record could not be opened', text: () => failure.get(), action: Button({ label: 'Try again', onClick: () => void load() }) })}</div>`,
-    ready: () => RecordView(ctx, model, store, { isNew, extras, detail, query, prefill: prefill?.from ?? null }),
+    ready: () => RecordView(ctx, model, store, { isNew, extras, detail, query, prefill: prefill?.from ?? null, panel }),
   })}</div>` as HTMLElement;
   return page;
 }
 
-function missing(ctx: AppContext, model: ScreenModel): HTMLElement {
-  ctx.crumbs.set([{ label: model.plural, href: ctx.router.href('list', { model: model.name }) }, { label: 'Not found' }]);
+function missing(ctx: AppContext, model: ScreenModel, panel?: PanelHost): HTMLElement {
+  if (!panel) ctx.crumbs.set([{ label: model.plural, href: ctx.router.href('list', { model: model.name }) }, { label: 'Not found' }]);
   return html`<div class="page">${EmptyState({ icon: identity(model).icon, tint: identity(model).tint, title: `${model.label} not found`,
-    text: 'It may have been deleted, or your role cannot open it.', action: Button({ label: `Open ${model.plural.toLowerCase()}`, onClick: () => void ctx.router.go('list', { model: model.name }) }) })}</div>` as HTMLElement;
+    text: 'It may have been deleted, or your role cannot open it.', action: panel ? Button({ label: 'Close', onClick: () => panel.close() })
+      : Button({ label: `Open ${model.plural.toLowerCase()}`, onClick: () => void ctx.router.go('list', { model: model.name }) }) })}</div>` as HTMLElement;
 }
 
-interface ViewOptions { isNew: boolean; extras: Readable<DetailExtras>; detail: Readable<RecordData | null>; query: Record<string, string>; /** The slip that filled this new record. */ prefill?: string | null }
+interface ViewOptions { isNew: boolean; extras: Readable<DetailExtras>; detail: Readable<RecordData | null>; query: Record<string, string>; /** The slip that filled this new record. */ prefill?: string | null;
+  /** Shown in a list's side panel: the narrow layout. */ panel?: PanelHost }
 
 function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, options: ViewOptions): HTMLElement {
   const { api, router, prefs } = ctx;
-  const { isNew, extras } = options;
+  const { isNew, extras, panel } = options;
   const name = model.name, look = identity(model);
   const canUpdate = model.permissions?.update !== false;
   const canWrite = isNew ? model.permissions?.create !== false : canUpdate;
@@ -157,7 +194,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const data: Record<string, unknown> = { id: store.id, [model.title_field]: field?.value.get() };
     return titleOf(model, data);
   });
-  effect(() => ctx.crumbs.set([{ label: model.plural, href: router.href('list', { model: name }) }, { label: titleText.get() }]));
+  if (!panel) effect(() => ctx.crumbs.set([{ label: model.plural, href: router.href('list', { model: name }) }, { label: titleText.get() }]));
   if (!isNew) {
     const remember = () => {
       const entry = { model: name, id: store.id!, title: untrack(() => titleText.get()) };
@@ -170,7 +207,16 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   let leaving = false;
   const changedNew = () => [...store.root.fields.values()].some(field => field.touched) || [...store.root.tables.values()].some(table => table.rows.peek().length > 0);
-  router.confirmLeave(() => !leaving && (isNew ? changedNew() : store.dirty.peek()), () => confirmDiscard());
+  // In a side panel, leaving the record (another row, Close, Back) asks; the list's own changes do not.
+  router.confirmLeave(() => !leaving && (isNew ? changedNew() : store.dirty.peek()), () => confirmDiscard(), panel ? { stays: to => panel.stays(to) } : {});
+  // Expand: the record page takes this store, unsaved edits included, so it does not ask.
+  const expand = (tab: string | null) => {
+    handoff = { model: name, id: isNew ? 'new' : String(store.id), store };
+    handedOff.add(store);
+    leaving = true;
+    const going = isNew ? router.go('create', { model: name }) : router.go('record', { model: name, id: String(store.id) }, tab ? { tab } : {});
+    void going.then(done => { if (!done) { leaving = false; handoff = null; handedOff.delete(store); } });
+  };
 
   const save = async () => {
     if (store.saving.peek()) return false;
@@ -184,7 +230,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     if (created) {
       leaving = true;
       toast(`${model.label} created`);
-      void router.go('record', { model: name, id: String(store.id) }, {}, { replace: true });
+      if (panel) panel.show(store.id!);
+      else void router.go('record', { model: name, id: String(store.id) }, {}, { replace: true });
     } else toast('Saved');
     return true;
   };
@@ -289,7 +336,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         if (kind === 'revise') {
           toast('Revised. You are editing the new draft.', { icon: 'copy' });
           const firstTable = model.children?.[0]?.name;
-          void router.go('record', { model: name, id: String(response.data.id) }, firstTable ? { tab: `t-${firstTable}` } : {});
+          if (panel) panel.show(response.data.id);
+          else void router.go('record', { model: name, id: String(response.data.id) }, firstTable ? { tab: `t-${firstTable}` } : {});
         } else {
           store.applyServer(response.data, response.etag);
           await store.loadAll().catch(() => {});
@@ -316,7 +364,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         close(); leaving = true;
         prefs.recentRecords.set(prefs.recentRecords.peek().filter(item => !(item.model === name && item.id === store.id)));
         toast(`${model.label} deleted`, { icon: 'trash-2' });
-        void router.go('list', { model: name });
+        if (panel) panel.removed(); else void router.go('list', { model: name });
       } catch (error) { close(); toast(error instanceof ApiError ? error.message : 'Not deleted.', { icon: 'info' }); }
     } } }) });
 
@@ -352,29 +400,44 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     } else void runLifecycle(operation).then(error => { if (error) toast(error, { icon: 'info' }); });
   };
 
-  const headerActions = (): Child => {
-    if (isNew) return null;
+  // The header's buttons: lifecycle operations, moves, actions and slips, in that order.
+  type HeaderEntry = { label: string; icon: string; blocked: () => string | null; run: () => void; variant: 'primary' | 'success' | 'default' };
+  const headerEntries = (): HeaderEntry[] => {
     const moves = extras.get()._moves ?? [];
     const firstAllowed = moves.findIndex(move => move.allowed);
-    const moveButtons = moves.map((move, index) => MoveButton({ label: move.label, icon: 'arrow-right', blocked: () => blockedMove(move.to),
-      variant: index === (firstAllowed < 0 ? 0 : firstAllowed) ? (/won|paid|done|complete|approve/i.test(move.to) ? 'success' : 'primary') : 'default',
-      onMove: () => void runMove(move.to) }));
-    const actionButtons = actions().map(action => MoveButton({ label: action.label, icon: 'zap', blocked: () => actionBlocked(action),
-      variant: !moves.length && action === actions()[0] ? 'primary' : 'default', onMove: () => runAction(action) }));
-    const slipButtons = (model.slips ?? []).map(slip => MoveButton({ label: slip.label, icon: 'file-text', blocked: slipBlocked, variant: 'default', onMove: () => openSlip(slip.name) }));
-    const lifecycleButtons = (extras.get()._lifecycle_actions ?? []).map(operation => MoveButton({
-      label: model.lifecycle?.labels[operation] ?? humanize(operation), icon: operation === 'cancel' ? 'rotate-ccw' : 'arrow-right',
-      blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null,
-      variant: 'primary', onMove: () => lifecycleAction(operation),
-    }));
+    return [
+      ...(extras.get()._lifecycle_actions ?? []).map(operation => ({ label: model.lifecycle?.labels[operation] ?? humanize(operation), icon: operation === 'cancel' ? 'rotate-ccw' : 'arrow-right',
+        blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null, run: () => lifecycleAction(operation), variant: 'primary' as const })),
+      ...moves.map((move, index) => ({ label: move.label, icon: 'arrow-right', blocked: () => blockedMove(move.to), run: () => void runMove(move.to),
+        variant: index === (firstAllowed < 0 ? 0 : firstAllowed) ? (/won|paid|done|complete|approve/i.test(move.to) ? 'success' as const : 'primary' as const) : 'default' as const })),
+      ...actions().map(action => ({ label: action.label, icon: 'zap', blocked: () => actionBlocked(action), run: () => runAction(action),
+        variant: !moves.length && action === actions()[0] ? 'primary' as const : 'default' as const })),
+      ...(model.slips ?? []).map(slip => ({ label: slip.label, icon: 'file-text', blocked: slipBlocked, run: () => openSlip(slip.name), variant: 'default' as const })),
+    ];
+  };
+  const askEvaNow = () => openEvaPanel(ctx, ctx.eva, { name, label: model.label }, store.id!, titleText.peek());
+  /** In a side panel the header keeps two buttons; the rest join the More menu. */
+  const PANEL_BUTTONS = 2;
+  const headerActions = (): Child => {
+    if (isNew) return null;
+    const entries = headerEntries();
+    const shown = panel ? entries.slice(0, PANEL_BUTTONS) : entries;
+    const buttons = shown.map(entry => MoveButton({ label: entry.label, icon: entry.icon, blocked: entry.blocked, variant: entry.variant, onMove: entry.run }));
     // Ask Eva, when Eva is on for this person: a chat about this record, in a side panel.
-    const askEva = ctx.eva.get() ? Button({ label: 'Ask Eva', icon: 'sparkles', iconTint: 'violet', hideLabelOnPhone: true,
-      onClick: () => openEvaPanel(ctx, ctx.eva, { name, label: model.label }, store.id!, titleText.peek()) }) : null;
+    const askEva = ctx.eva.get() && !panel ? Button({ label: 'Ask Eva', icon: 'sparkles', iconTint: 'violet', hideLabelOnPhone: true, onClick: askEvaNow }) : null;
     // Print, when the role may print this model and the server has the print extra: the preview is the server's PDF.
     const designs = ctx.schema.schema.printing?.available ? model.prints ?? [] : [];
-    const print = designs.length ? Button({ label: 'Print', icon: 'printer', hideLabelOnPhone: true,
-      onClick: () => openPrint(ctx, model, store.id!, titleText.peek(), designs) }) : null;
-    return [...lifecycleButtons, ...moveButtons, ...actionButtons, ...slipButtons, print, askEva, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items: moreItems, menuLabel: 'More actions' })];
+    const printNow = () => openPrint(ctx, model, store.id!, titleText.peek(), designs);
+    const print = designs.length && !panel ? Button({ label: 'Print', icon: 'printer', hideLabelOnPhone: true, onClick: printNow }) : null;
+    const items = (): MenuItem[] => {
+      if (!panel) return moreItems();
+      const rest: MenuItem[] = entries.slice(PANEL_BUTTONS).map(entry => ({ label: entry.label, icon: entry.icon,
+        onSelect: () => { const why = untrack(entry.blocked); if (why) toast(why, { icon: 'info' }); else entry.run(); } }));
+      if (designs.length) rest.push({ label: 'Print', icon: 'printer', onSelect: printNow });
+      if (ctx.eva.peek()) rest.push({ label: 'Ask Eva', icon: 'sparkles', onSelect: askEvaNow });
+      return [...rest, ...(rest.length ? ['separator' as const] : []), { label: 'Open full page', icon: 'maximize-2', onSelect: () => expand(active.peek()) }, ...moreItems()];
+    };
+    return [...buttons, print, askEva, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items, menuLabel: 'More actions' })];
   };
 
   // ---------- header ----------
@@ -408,6 +471,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     }) : null].filter(Boolean) as Child[],
     actions: [live(headerActions)],
   });
+  // The panel's top line: the record type and its number, Expand and Close (Back to the list while the panel covers it).
+  const numberText = numbered && numbered.name !== model.title_field && has(numbered.name) ? () => String(store.field(numbered.name).value.get() ?? '') : null;
+  const panelBar = panel ? html`<div class="ev-panel-bar">
+    ${when(panel.overlay, () => Button({ label: model.plural, icon: 'chevron-left', variant: 'ghost', size: 'small', onClick: () => panel.close() }))}
+    <span class="eyebrow">${Icon(look.icon, { size: 'xs' })}${model.label}</span>${numberText ? html`<span class="mono muted">${numberText}</span>` : null}<span class="grow"></span>
+    ${when(() => !panel.overlay.get(), () => [IconButton({ icon: 'maximize-2', tip: 'Open full page', onClick: () => expand(active.peek()) }),
+      IconButton({ icon: 'x', tip: 'Close (Esc)', onClick: () => panel.close() })])}</div>` : null;
 
   // ---------- banners ----------
 
@@ -486,11 +556,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // A record that has posted nothing yet still lists each target, with zero rows.
   const postings = !isNew && model.effects?.length ? derive(() => extras.get()._effects?.some(item => item.rows || item.reversals) ? extras.get()._effects! : null) : null;
   if (postings) tabItems.push({ id: 'postings', label: 'Postings', count: () => postings.get()?.length ? postings.get()!.reduce((sum, item) => sum + item.rows + item.reversals, 0) : null });
-  const wanted = options.query.tab;
+  const wanted = panel ? panel.tab : options.query.tab;
   const active = cell(tabItems.some(tab => tab.id === wanted) ? wanted! : tabItems[0].id, { name: `${name} tab` });
   effect(() => {
     const tab = active.get();
     untrack(() => {
+      // In a side panel the tab is the list address's rtab.
+      if (panel) { if ((panel.tab ?? tabItems[0].id) !== tab) panel.setTab(tab === tabItems[0].id ? null : tab); panel.tab = tab === tabItems[0].id ? undefined : tab; return; }
       const current = router.route.peek();
       if (!current || current.name !== (isNew ? 'create' : 'record')) return;
       if ((current.query.tab ?? tabItems[0].id) === tab) return;
@@ -513,11 +585,20 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     // A new record shows the fields it can fill in, and the naming series field saying it is assigned on save.
     if (isNew) return html`<div class="ev-new-form">${groups.map(section => html`<section class="fs" aria-label=${section.label}><div class="fs-h"><h3>${section.label}</h3></div>
       <div class="fs-g">${section.fields.filter(meta => (!meta.read_only || meta.name === model.naming?.field) && !meta.compute && !isStateField(model, meta)).map(meta => fieldFor({ field: view(meta.name), links: ctx.links }))}</div></section>`)}</div>`;
-    return groups.map((section, index) => FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
-      extra: index === groups.length - 1 ? childLinks : null }));
+    const sectionsShown = groups.map((section, index) => FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
+      extra: index === groups.length - 1 ? childLinks : null, collapsible: panel ? fold(section.label) : undefined }));
+    // The full page's side column folds into the panel: Files and Record info close the Details tab.
+    return panel ? [...sectionsShown, html`<div class="ev-panel-blocks">${SidePanel(ctx, model, store, view, relations, active, true)}</div>`] : sectionsShown;
   };
+  // Sections a person closed in the side panel, remembered per model.
+  const closedSections = prefs.cell<string[]>(`panel.${name}.closed`, []);
+  const fold = (title: string) => ({ collapsed: () => closedSections.get().includes(title),
+    toggle: () => closedSections.set(closedSections.peek().includes(title) ? closedSections.peek().filter(item => item !== title) : [...closedSections.peek(), title]) });
   const lockedText = () => model.fields.some(field => (field as any).editable_when_locked) ? `Locked. Lines can’t change while it is ${humanize(stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
-  const tablePanel = (child: { name: string; label: string }) => ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
+  const tablePanel = (child: { name: string; label: string }) => panel ? ChildRows({ table: store.table(child.name), title: child.label,
+    locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, onOpenFull: () => expand(`t-${child.name}`),
+    totals: model.fields.filter(meta => (meta.compute as any)?.$expr === 'aggregate' && (meta.compute as any).table === child.name && has(meta.name))
+      .map(meta => ({ label: meta.label, value: () => formatOf(meta, store.field(meta.name).value.get()) })) }) : ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
     locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, crumb: () => titleText.get(),
     prefs: prefs.cell(`grid.${name}.${child.name}`, emptyPrefs()) });
 
@@ -533,7 +614,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // ---------- save bar ----------
 
   const saveBar = isNew
-    ? html`<div class="ev-savebar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => void router.go('list', { model: name }) })}
+    ? html`<div class="ev-savebar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => panel ? panel.close() : void router.go('list', { model: name }) })}
         <span class="grow muted">${Icon('info', { size: 'sm' })} Values are checked again when you create it.</span>
         ${Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check', disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save() })}</div>`
     : when(() => store.dirty.get(), () => html`<div class="ev-savebar" role="region" aria-label="Unsaved changes">
@@ -543,10 +624,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- side panel ----------
 
-  const side = isNew ? undefined : SidePanel(ctx, model, store, view, relations, active);
+  const side = isNew || panel ? undefined : SidePanel(ctx, model, store, view, relations, active);
 
-  const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right',
-    main: [header, options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
+  const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
+    main: [panelBar, header, options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
   frame.addEventListener('keydown', event => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && (isNew || store.dirty.peek())) { event.preventDefault(); void save(); }
   });
@@ -597,13 +678,15 @@ export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (va
 
 // ---------- side panel ----------
 
-function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view: (name: string) => FieldLike, relations: NonNullable<ScreenModel['relations']>, active: { set(value: string): void }): Child {
+function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view: (name: string) => FieldLike, relations: NonNullable<ScreenModel['relations']>, active: { set(value: string): void },
+  narrow = false): Child {
   const has = (field: string) => store.root.fields.has(field);
-  const keys = keyFields(model).filter(meta => has(meta.name));
+  // A narrow panel shows key fields in its header and relations in the Related tab.
+  const keys = narrow ? [] : keyFields(model).filter(meta => has(meta.name));
   const blocks: Child[] = [];
   if (keys.length) blocks.push(SideBlock({ title: 'Key fields', action: html`<button type="button" class="h-link" on:click=${() => active.set('details')}>All fields</button>`,
     body: KeyValueList(keys.map(meta => view(meta.name)), { links: ctx.links }) }));
-  if (relations.length) blocks.push(SideBlock({ title: 'Related', body: html`<div>${relations.map(relation => {
+  if (relations.length && !narrow) blocks.push(SideBlock({ title: 'Related', body: html`<div>${relations.map(relation => {
     const total = cell<number | null>(null);
     // Counted again after every write of this record: a move or an action may add related records.
     effect(() => {

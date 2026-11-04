@@ -185,6 +185,20 @@ def test_a_list_override_sets_columns_page_size_and_sort_and_drops_unreadable_co
     assert save(admin, ('list', 'Lead', {**value, 'page_size': 30}))[1]['fields']['changes.0'] == 'Show 25, 50 or 100 rows per page.'
 
 
+def test_a_list_override_chooses_whether_records_open_in_a_side_panel(app):
+    admin = client(app)
+    assert schema_of(admin, 'lead')['open_in'] == 'page'
+    # A list view saved before open_in existed keeps the app's choice.
+    value = {'columns': ['title', 'value'], 'page_size': 25, 'sort': 'title'}
+    assert save(admin, ('list', 'Lead', value))[0] == 200
+    assert schema_of(admin, 'lead')['open_in'] == 'page'
+    assert save(admin, ('list', 'Lead', {**value, 'open_in': 'panel'}))[0] == 200
+    assert schema_of(admin, 'lead')['open_in'] == 'panel'
+    assert schema_of(client(app, 'editor'), 'lead')['open_in'] == 'panel'
+    assert save(admin, ('list', 'Lead', {**value, 'open_in': 'drawer'}))[1]['fields']['changes.0'] == 'Open records in the full page or a side panel.'
+    assert save(admin, ('list', 'Lead', {**value, 'open': 'panel'}))[1]['fields']['changes.0'] == 'Send columns, page_size and sort, and optionally open_in.'
+
+
 # ---------- instance fields ----------
 
 def backups(app):
