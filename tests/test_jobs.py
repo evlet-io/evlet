@@ -111,7 +111,7 @@ def test_schedules_coalesce_missed_runs_and_disable(secured):
     assert jobs.tick(now=7300) == 0
     with jobs.database._connection() as db:
         assert db.execute('SELECT count(*) FROM evlet_jobs').fetchone()[0] == 1
-        assert db.execute('SELECT next_run FROM evlet_schedules').fetchone()[0] == 10900
+        assert db.execute("SELECT next_run FROM evlet_schedules WHERE name='hourly'").fetchone()[0] == 10900
     jobs.set_schedule_active('hourly', False)
     assert jobs.tick(now=20000) == 0
 
