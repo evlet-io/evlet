@@ -25,7 +25,7 @@ The previous SolidJS interface and the Vue regression harness have been removed.
   own viewer, a choice of design, Download, and File a copy on records that keep attachments.
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
-`layout`, `key_fields`, `relations`, `measures` and `open_in`. See "What the model decides" in
+`layout`, `key_fields`, `relations`, `measures`, `open_in` and `autosave`. See "What the model decides" in
 [ui-framework.md](ui-framework.md).
 
 ## Not rendered by this interface
@@ -131,6 +131,46 @@ Currency and decimal values stay exact strings. A Currency field shows its code 
 `currency=` on the field: a fixed code, a field of the record, a field of a linked record or an
 app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)).
 Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-framework.md](ui-framework.md#pickers)).
+
+### Unsaved changes
+
+Leaving a record with unsaved edits never saves it. Only Save writes the record. Leaving means
+going to another page or record, closing the side panel, going back to the list, or hiding the
+tab. On a saved record the form keeps the edited fields (and the changed child rows) on the
+server, apart from the record, and shows "Unsaved changes kept, restore when you return". The
+next time the person opens that record a bar offers "Restore" or "Discard". Restore puts the
+edits back in the form as unsaved edits; Save is still needed. If someone saved the record in
+the meantime, the bar lists each field both of them changed, with both values, and the person
+keeps theirs or the saved one per field, or discards all of it.
+
+An unsaved new record stays in the browser only, so no record is created and no number is used
+until Save. Opening New for that model again asks "Restore your unfinished new ...?" with
+Restore and Start fresh. Signing out, or another person signing in on that browser, clears it.
+
+Server entries are kept for 30 days (200 per person), browser ones for 7 days (20 per person);
+an entry over 256 KB is not kept and stays only in the open tab. These are instance settings in
+Controls, Jobs ([controls.md](controls.md#unsaved-changes)). Only the person who left the edits
+can read them: API keys, Eva, MCP, the Tool Engine, connectors, reports and exports never see
+them.
+
+`Meta.autosave = False` on a model keeps the "Discard your changes?" prompt for it instead (the
+Playground's Payment does this). Each person can turn it off for themselves in Settings,
+Appearance ("Keep unsaved changes when I leave a record"), which also deletes what was kept
+([settings.md](settings.md)).
+
+| Route | What it does |
+|---|---|
+| `GET /api/_unsaved` | The person's limits, entry count and whether the setting is on |
+| `PUT /api/_unsaved/<model>/<id>` | `{"changes", "base_revision"}`: keep the edits; answers `{saved_at, size, dropped}` |
+| `GET /api/_unsaved/<model>/<id>` | `{entry, dropped}`: the person's own entry with `stale` when the record moved on |
+| `DELETE /api/_unsaved/<model>/<id>` | Discard the person's own entry |
+
+They need a signed-in browser session and its CSRF token, and that the person can read and
+update the record now. Fields the person may not write are left out and named in `dropped`;
+unknown fields are refused. Keeping edits never runs validators, events, numbering or history.
+A save removes the saver's entry, and deleting a record removes everyone's, in the same
+transaction. The format of `changes` is in
+[internal/unsaved-changes.md](internal/unsaved-changes.md).
 
 ### Ids, names and titles
 

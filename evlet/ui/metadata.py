@@ -29,7 +29,7 @@ def view_for(model):
     meta = getattr(model, 'Meta', None)
     allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments', 'effects',
-               'journal', 'naming', 'mail', 'title', 'open_in'}
+               'journal', 'naming', 'mail', 'title', 'open_in', 'autosave'}
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
             raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
@@ -64,6 +64,9 @@ def view_for(model):
     open_in = getattr(meta, 'open_in', 'page')
     if open_in not in OPEN_IN:
         raise ValueError('open_in must be "page" or "panel"')
+    # Leaving a record keeps its unsaved edits apart from it (evlet.unsaved); False keeps the leave prompt.
+    from ..unsaved import autosave as keeps_unsaved
+    autosave = keeps_unsaved(model)
     # Search also finds records by their title and name.
     search = tuple(dict.fromkeys((*search, *(key for key in ('title', 'name') if key in standard_text))))
     layout = getattr(meta, 'layout', (('Details', tuple(visible)),))
@@ -87,7 +90,8 @@ def view_for(model):
     if rest:
         groups.append({'label': 'Other', 'fields': rest})
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
-            'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in}
+            'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in,
+            'autosave': autosave}
 
 
 def currency_schema(field):

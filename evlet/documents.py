@@ -345,6 +345,8 @@ class Context:
         if business.registry.plan_for(model) is not None:
             tx.connection.execute('DELETE FROM evlet_calculation_versions WHERE resource=? AND record_id=?', (business.registry.name_for(model), record.id))
         tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (business.registry.name_for(model), record_id))
+        from .unsaved import Unsaved
+        Unsaved.record_deleted(tx.connection, business.registry.name_for(model), record_id)
         reaction = getattr(model, 'changed', None)
         if reaction:
             freeze_draft(before)

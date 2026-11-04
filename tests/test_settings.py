@@ -30,7 +30,7 @@ def test_personal_pages_save_and_the_last_page_is_remembered(secured):
     me = c('GET', '/api/_settings/me')[1]
     assert me['pages'] == ['profile', 'appearance', 'security', 'notifications', 'email', 'ai', 'keys'] and not me['portal'] and not me['controls']
     assert me['prefs'] == {'theme': 'system', 'density': 'comfortable', 'text': 'default', 'start': '', 'counts': False, 'lang': 'en',
-                           'tz': 'Asia/Dubai', 'date': 'dd-MM-yyyy', 'num': '1,234.56', 'week': 'mon'}
+                           'tz': 'Asia/Dubai', 'date': 'dd-MM-yyyy', 'num': '1,234.56', 'week': 'mon', 'keep_unsaved': True}
     assert c('PATCH', '/api/_settings/me/profile', {'full_name': 'Sara Khan', 'short_name': 'Sara', 'title': 'Sales', 'phone': '+971 50 123 4567', 'signature': 'Sara\nAcme'})[0] == 200
     status, payload, _ = c('PATCH', '/api/_settings/me/profile', {'short_name': '  ', 'phone': 'call me'})
     assert status == 422 and payload['fields'] == {'short_name': "This can't be empty.", 'phone': 'Use digits, spaces, +, - and brackets only.'}

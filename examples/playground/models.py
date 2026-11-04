@@ -51,6 +51,9 @@ class Invoice(Model):
 class Payment(Model):
     class Meta:
         description = "Record payments and the invoices they belong to."
+        # A payment is entered in one go, so leaving one with unsaved edits asks to discard them
+        # instead of keeping them for later (docs/ui.md, Unsaved changes).
+        autosave = False
 
     invoice = Link(Invoice, required=True)
     reference = Text(required=True, unique=True, max_length=40)

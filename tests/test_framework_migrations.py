@@ -67,7 +67,7 @@ def tables(path):
 def test_install_records_framework_version_in_lock_manifest_and_ledger(project):
     install(project, 'acme', app_name='notes', trust=True)
     lock = read_lock(project / 'instances/acme')
-    assert lock['evlet'] == framework.state() == {'version': framework.version(), 'schema': '0003_record_names'}
+    assert lock['evlet'] == framework.state() == {'version': framework.version(), 'schema': '0004_unsaved_changes'}
     assert database_state(database(project)) == lock
     with closing(sqlite3.connect(database(project))) as connection:
         rows = connection.execute('SELECT position, name, checksum, evlet_version FROM evlet_framework_migrations').fetchall()
@@ -86,7 +86,7 @@ def test_upgrade_from_0_2_0_instance_backs_up_then_applies_non_additive_step(pro
 
     main(['migrate', 'acme', '--project', str(project)])
     out = capsys.readouterr().out
-    assert 'Framework migrations: 0001_startup_tables, 0002_tool_calls, 0003_record_names, 0099_move_calls' in out
+    assert 'Framework migrations: 0001_startup_tables, 0002_tool_calls, 0003_record_names, 0004_unsaved_changes, 0099_move_calls' in out
     backup = out.split('Backup: ')[1].strip()
     # The backup is the instance exactly as 0.2.0 left it.
     assert {'evlet_legacy_calls', 'evlet_mcp_calls'} <= tables(backup) and 'evlet_framework_migrations' not in tables(backup)
@@ -97,7 +97,7 @@ def test_upgrade_from_0_2_0_instance_backs_up_then_applies_non_additive_step(pro
         assert connection.execute('SELECT at, user_id, origin, client, client_id, tool, model, kind, outcome FROM evlet_tool_calls').fetchall() == \
             [(NOW, 1, 'mcp', 'Desktop client', 3, 'list_records', 'notesitem', 'read', 'ok')]
         assert [row[0] for row in connection.execute('SELECT name FROM evlet_framework_migrations ORDER BY position')] == \
-            ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0099_move_calls']
+            ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0004_unsaved_changes', '0099_move_calls']
     assert read_lock(project / 'instances/acme')['evlet'] == {'version': framework.version(), 'schema': '0099_move_calls'}
     app = runtime(project)
     assert [record.title for record in app.database.list(app.registry.models['notesitem'])] == ['Keep this note']
@@ -118,7 +118,7 @@ def test_failed_framework_step_leaves_database_and_lock_untouched(project, monke
     assert not {'evlet_framework_migrations', 'evlet_tool_calls'} & tables(database(project))
     # A fixed release then upgrades the same instance.
     monkeypatch.setattr(framework, 'STEPS', (*released, MOVE))
-    assert install(project, 'acme')['framework'] == ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0099_move_calls']
+    assert install(project, 'acme')['framework'] == ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0004_unsaved_changes', '0099_move_calls']
 
 
 def test_serve_refuses_a_newer_evlet_until_migrate(project, monkeypatch):
@@ -180,7 +180,7 @@ def test_development_applications_bootstrap_and_apply_steps_automatically(tmp_pa
     app.initialize()
     with closing(sqlite3.connect(tmp_path / 'app.sqlite3')) as connection:
         assert [row[0] for row in connection.execute('SELECT name FROM evlet_framework_migrations ORDER BY position')] == \
-            ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0099_move_calls']
+            ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0004_unsaved_changes', '0099_move_calls']
 
 
 def test_plan_lists_pending_framework_steps_without_writing(project, capsys):

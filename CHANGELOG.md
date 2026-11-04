@@ -6,6 +6,20 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Unsaved changes are kept when you leave a record, and the record is never written.** Leaving
+  a saved record with unsaved edits keeps the edited fields in the new framework table
+  `evlet_unsaved` (framework migration `0004_unsaved_changes`, so run `evlet migrate`), and the
+  next visit offers Restore or Discard, with a per-field choice when the record changed in the
+  meantime. Unsaved new records stay in the browser. Only Save writes the record, so no validator,
+  event, number or history runs on leave. New routes `GET /api/_unsaved` and
+  `GET/PUT/DELETE /api/_unsaved/<model>/<id>` (signed-in sessions only, own entries only), and
+  Controls `GET /api/_controls/unsaved` and `POST /api/_controls/unsaved/clear` (counts only).
+  New instance settings `unsaved.server_days`, `unsaved.server_entries`, `unsaved.browser_days`,
+  `unsaved.browser_entries` and `unsaved.entry_kb`, the framework schedule `evlet_unsaved_purge`,
+  the personal setting `keep_unsaved`, and `Meta.autosave` (`True` by default; `False` keeps the
+  leave prompt), which `/api/schema` shows as `autosave`. What to change: nothing, unless a model
+  should keep the leave prompt; then set `Meta.autosave = False`. Database tools that list
+  framework tables see one more ([docs/ui.md](docs/ui.md#unsaved-changes)).
 - **Breaking: every record has a standard name and title.** Record models (not Table rows) gain
   two framework columns next to `id`. `name` is the human identifier, unique per model, filled by
   `Meta.naming`: a naming series (which now fills `name` by default), the model's

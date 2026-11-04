@@ -312,6 +312,28 @@ Run now enqueues one job like the schedule would; a paused schedule must be resu
 The failed count in the menu and Needs attention covers every failed job. Retry works on failed jobs only, and the job
 keeps its idempotency key.
 
+### Unsaved changes
+
+What people left unsaved on records ([ui.md](ui.md#unsaved-changes)): the total number of
+entries and their size, the oldest entry and, per person, their count, size and latest entry.
+Never what was changed. "Clear entries older than N days" deletes them now and writes an audit
+row (area Records).
+
+The limits are settings, saved through the change bar like the others, each in a safe range:
+
+| Setting | Default | Range |
+|---|---|---|
+| `unsaved.server_days`: server entries are deleted after | 30 days | 1 to 90 |
+| `unsaved.server_entries`: entries per person on the server, oldest dropped | 200 | 10 to 1000 |
+| `unsaved.browser_days`: unsaved new records kept in the browser for | 7 days | 1 to 30 |
+| `unsaved.browser_entries`: unsaved new records per person in one browser | 20 | 1 to 50 |
+| `unsaved.entry_kb`: the largest entry; a larger one stays only in the open tab | 256 KB | 16 to 1024 |
+
+Expired and over-cap entries are removed at every server start and daily by the framework
+schedule `evlet_unsaved_purge` (listed with the app schedules when jobs run), 500 rows at a time.
+Each person's cap also applies as soon as they leave a record. The browser removes its own
+expired and extra entries when the app loads.
+
 ## Overrides
 
 Every saved override with the app file value next to this instance's value, who changed it and
@@ -718,6 +740,7 @@ newest first, 50 rows at a time.
 | `GET /api/_controls/overrides/export?kind=&key=` | Export as code: `[{file, code}]` |
 | `GET /api/_controls/routing`, `POST /api/_controls/routing/check` | Route table, hosts and proxy config; DNS and certificate check |
 | `GET /api/_controls/jobs` | Schedules and recent jobs |
+| `GET /api/_controls/unsaved`, `POST /api/_controls/unsaved/clear` | Unsaved changes: `{entries, bytes, oldest, limits, people}` (counts and sizes only); clear `{"days"}` older than that, audited |
 | `POST /api/_controls/jobs/schedules/<name>` | `{active}`: pause or resume |
 | `POST /api/_controls/jobs/schedules/<name>/run`, `POST /api/_controls/jobs/<id>/retry` | Run now; retry a failed job |
 | `GET /api/_controls/audit?area=&q=&before=` | `{items, next, areas}`, newest first |

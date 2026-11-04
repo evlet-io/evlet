@@ -181,7 +181,7 @@ def test_upgrading_a_database_with_data_adds_the_columns_and_fills_titles(tmp_pa
         connection.execute("INSERT INTO contact (first_name, last_name) VALUES ('Old', 'Row')")
     database = Database(path, Registry(Contact))
     database.initialize()  # A table without the standard columns is accepted until the framework step runs.
-    assert upgrade(database)[-1] == '0003_record_names'
+    assert '0003_record_names' in upgrade(database)
     with sqlite3.connect(path) as connection:
         assert connection.execute('SELECT id, name, title FROM contact').fetchall() == [(1, None, 'Old Row')]
         assert any(row[2] for row in connection.execute("PRAGMA index_list(contact)") if row[1].endswith('name_unique'))

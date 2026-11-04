@@ -644,6 +644,7 @@ a title opens the full page in a new browser tab.
 | `Meta.search_fields` | The list search box and record search in the palette |
 | `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other |
 | `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
+| `Meta.autosave` | `True` (default): leaving a record with unsaved edits keeps them for later instead of asking to discard them; `False` keeps the leave prompt ([ui.md](ui.md#unsaved-changes)) |
 | `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |

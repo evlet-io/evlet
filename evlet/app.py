@@ -16,6 +16,8 @@ from .storage import StorageError
 
 logger = logging.getLogger(__name__)
 MAX_BODY_BYTES = 64 * 1024
+# Unsaved changes may be up to 1 MB (the unsaved.entry_kb maximum); the route checks the instance limit.
+UNSAVED_BODY = 1024 * 1024 + 4096
 
 
 class HTTPError(Exception):
@@ -121,8 +123,8 @@ class Application:
                     if not event.get('more_body', False):
                         break
                 status, payload, headers = await asyncio.to_thread(self._internal, scope, bytes(data))
-            # PUT carries a body only on the Controls routes (connectors); elsewhere it stays a 405.
-            elif scope["method"] in ("POST", "PATCH") or scope["method"] == "PUT" and scope["path"].startswith("/api/_controls/"):
+            # PUT carries a body only on the Controls routes (connectors) and unsaved changes; elsewhere it stays a 405.
+            elif scope["method"] in ("POST", "PATCH") or scope["method"] == "PUT" and scope["path"].startswith(("/api/_controls/", "/api/_unsaved/")):
                 content_type = dict(scope.get("headers", [])).get(b"content-type", b"")
                 if content_type.split(b";", 1)[0].strip().lower() != b"application/json":
                     raise HTTPError(415, "Send application/json")
@@ -134,7 +136,8 @@ class Application:
                     data.extend(event.get("body", b""))
                     # Print designs carry their images as data: URIs (a design is at most 256 KiB).
                     maximum = (1500000 if scope['path'].endswith('/attachments') or scope['path'] == '/api/_eva/files' else 2900000 if scope['path'] == '/api/_settings/me/photo'
-                               else 300000 if scope['path'].startswith('/api/_controls/prints') else MAX_BODY_BYTES) if self.business else MAX_BODY_BYTES
+                               else 300000 if scope['path'].startswith('/api/_controls/prints')
+                               else UNSAVED_BODY if scope['path'].startswith('/api/_unsaved/') else MAX_BODY_BYTES) if self.business else MAX_BODY_BYTES
                     if len(data) > maximum:
                         raise HTTPError(413, "Request body exceeds the allowed size")
                     if not event.get("more_body", False):
