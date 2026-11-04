@@ -98,6 +98,18 @@ describe('router', () => {
     expect(ask).toHaveBeenCalledTimes(2);
   });
 
+  it('confirmLeave can say which navigations keep the record, such as a list with it in a side panel', async () => {
+    const router = started();
+    await router.go('list', { model: 'deal' }, { open: '1' });
+    const ask = vi.fn(async () => false);
+    stops.push(router.confirmLeave(() => true, ask, { stays: to => to?.name === 'list' && to.query.open === '1' }));
+    expect(await router.go('list', { model: 'deal' }, { open: '1', q: 'acme' }, { replace: true })).toBe(true);
+    expect(ask).not.toHaveBeenCalled();
+    expect(await router.go('list', { model: 'deal' }, { open: '2' })).toBe(false);
+    expect(await router.go('list', { model: 'deal' })).toBe(false);
+    expect(ask).toHaveBeenCalledTimes(2);
+  });
+
   it('confirmLeave blocks closing the tab while dirty', () => {
     const router = started();
     stops.push(router.confirmLeave(() => true, () => false));

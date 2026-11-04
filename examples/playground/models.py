@@ -32,6 +32,8 @@ class Invoice(Model):
         # creation day without one. Controls, Naming can add series and set the counter. With no title
         # source the title is the name.
         naming = Naming(Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date')
+        # The list opens an invoice in a side panel beside it. People can switch back to the full page.
+        open_in = 'panel'
 
     customer = Link(Customer, required=True)
     # help_text reads under the input; tooltip sits behind a ? icon at its right end.
@@ -63,6 +65,7 @@ class Project(Model):
         description = "Track a small project and its customer."
         list_fields = ('title', 'customer', 'status', 'budget')
         layout = (('Project', ('title', 'customer', 'status')), ('Planning', ('budget', 'progress', 'starts_on')), ('Notes', ('notes',)))
+        open_in = 'panel'
 
     # A declared title is the record title itself.
     title = Text(required=True, max_length=120, label='Project')
