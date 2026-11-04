@@ -155,6 +155,19 @@ a badge with the number of fields that have errors.
   sections, and the server's print designs never use the form layout.
 - Height animates only when the device does not ask for reduced motion.
 
+### Field and tab order
+
+The DOM order of a form is its visual order, and nothing uses a positive `tabindex`. A section with
+`flow="columns"` lists its fields down the left column, then the right, so Tab goes the same way.
+Tab skips values that can't change (read only, locked or calculated); a click still focuses them,
+showing why, and screen readers read them. Record tabs follow `Meta.tabs` or the Controls tab order,
+and a record opens on its default tab, which the address then leaves out (`?tab=` names the others).
+
+**Enter moves to the next field** (Settings, Appearance, off by default) makes Enter go to the next
+field of a form and Shift+Enter to the one before, skipping fields that can't change. It never
+applies in long text or rich text, on buttons, or while a picker or list is open, and Ctrl or Cmd
+Enter still saves. On a saved record, where each value saves on its own, Enter keeps saving the value.
+
 ### Ids, names and titles
 
 Record addresses use the record's text id, `/app/invoice/01hc1sd9vc1ye`, so changing a name never

@@ -19,7 +19,7 @@ def test_layout_leaves_fields_for_other_and_names_mistakes():
     def model(layout):
         return type('Visit', (Model,), {'title': Text(), 'room': Text(), 'notes': Text(), 'secret': Text(hidden=True),
                                         'Meta': type('Meta', (), {'layout': layout})})
-    plain = {'collapsible': False, 'collapsed': False}
+    plain = {'collapsible': False, 'collapsed': False, 'flow': 'rows'}
     assert view_for(model((('Visit', ('title',)),)))['layout'] == [
         {'label': 'Visit', 'fields': ['title'], **plain}, {'label': 'Other', 'fields': ['room', 'notes'], **plain}]
     assert view_for(model((('Visit', ('title', 'room', 'notes')),)))['layout'] == [{'label': 'Visit', 'fields': ['title', 'room', 'notes'], **plain}]

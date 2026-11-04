@@ -159,7 +159,9 @@ export function revealField(root: ParentNode, name: string, options: { focus?: b
   target.dispatchEvent(new CustomEvent(REVEAL, { bubbles: true }));
   target.scrollIntoView?.({ block: 'center' });
   if (options.focus !== false) {
-    const control = target.querySelector<HTMLElement>('input:not([type=hidden]), select, textarea, button, [tabindex]:not([tabindex="-1"])');
+    // An editable control first; a read-only or calculated value (out of the Tab order) still takes focus from here.
+    const control = target.querySelector<HTMLElement>('input:not([type=hidden]):not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex="-1"])')
+      ?? target.querySelector<HTMLElement>('.fval') ?? target.querySelector<HTMLElement>('[tabindex]');
     control?.focus();
   }
   return true;
@@ -170,4 +172,31 @@ export function revealFirstError(root: ParentNode, fields: FieldLike[]): boolean
   const failed = fields.find(field => untrack(() => field.error.get()) && root.querySelector(`[data-field="${CSS.escape(field.meta.name)}"]`));
   for (const field of fields) if (untrack(() => field.error.get())) root.querySelector(`[data-field="${CSS.escape(field.meta.name)}"]`)?.dispatchEvent(new CustomEvent(REVEAL, { bubbles: true }));
   return failed ? revealField(root, failed.meta.name) : false;
+}
+
+/** How a section orders its fields: across then down (rows), or down the left column, then the right (columns). */
+export type Flow = 'rows' | 'columns';
+
+/**
+ * A section's fields in their order. rows is one two-column grid, filled across then down. columns
+ * splits the fields at each full-width one: each run goes down the left column, then the right, and
+ * a full-width field sits between runs like a section break. The DOM order is the order on screen, so
+ * Tab follows it; on a phone the columns stack in the same order.
+ */
+export function flowGrid(cells: Array<{ node: Node; wide: boolean }>, flow: Flow = 'rows'): HTMLElement | null {
+  if (!cells.length) return null;
+  if (flow !== 'columns') return html`<div class="fs-g">${cells.map(cell => cell.node)}</div>` as HTMLElement;
+  const parts: Node[] = [];
+  let run: Node[] = [];
+  const close = () => {
+    if (!run.length) return;
+    const half = Math.ceil(run.length / 2);
+    parts.push(html`<div class="fs-colrun"><div class="fs-col">${run.slice(0, half)}</div><div class="fs-col">${run.slice(half)}</div></div>`);
+    run = [];
+  };
+  for (const cell of cells) {
+    if (cell.wide) { close(); parts.push(cell.node); } else run.push(cell.node);
+  }
+  close();
+  return html`<div class="fs-g fs-cols">${parts}</div>` as HTMLElement;
 }

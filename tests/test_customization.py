@@ -163,8 +163,8 @@ def test_an_unplaced_field_is_added_to_the_last_section(app):
     layout = [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 12}]}, {'title': 'Money', 'fields': [{'name': 'value', 'width': 6}]}]
     assert save(admin, ('layout', 'Lead', layout))[0] == 200
     entry = schema_of(admin, 'lead')
-    assert entry['layout'] == [{'label': 'Lead', 'fields': ['title'], 'wide': ['title'], 'collapsible': False, 'collapsed': False},
-                               {'label': 'Money', 'fields': ['value', 'source', 'customer', 'notes'], 'wide': ['notes'], 'collapsible': False, 'collapsed': False}]
+    assert entry['layout'] == [{'label': 'Lead', 'fields': ['title'], 'wide': ['title'], 'collapsible': False, 'collapsed': False, 'flow': 'rows'},
+                               {'label': 'Money', 'fields': ['value', 'source', 'customer', 'notes'], 'wide': ['notes'], 'collapsible': False, 'collapsed': False, 'flow': 'rows'}]
     for bad, message in (([], 'Keep between 1 and 12 sections.'), ([{'title': '', 'fields': []}], 'Give every section a title'),
                          ([{'title': 'A', 'fields': [{'name': 'title', 'width': 6}, {'name': 'title', 'width': 6}]}], 'Put each field in one place.'),
                          ([{'title': 'A', 'fields': [{'name': 'nothing', 'width': 6}]}], 'Place fields of Lead by name')):
@@ -189,7 +189,7 @@ def test_a_layout_section_can_collapse_and_choose_how_it_starts(app):
     assert saved['file'] == [{'title': 'Details', 'fields': [{'name': name, 'width': 12 if name == 'notes' else 6} for name in ('title', 'source', 'value', 'customer', 'notes')]}]
     # Turning collapse off again with Starts open is the plain section.
     plain = [{'title': 'Details', 'fields': [{'name': name, 'width': 12 if name == 'notes' else 6} for name in ('title', 'source', 'value', 'customer', 'notes')],
-              'collapsible': False, 'collapsed': False}]
+              'collapsible': False, 'collapsed': False, 'flow': 'rows'}]
     assert save(admin, ('layout', 'Lead', plain))[0] == 200
     assert next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')['value'] is None
     for value, message in ((dict(collapsible='yes'), 'Section Money: use true or false for Can collapse.'),
@@ -197,7 +197,7 @@ def test_a_layout_section_can_collapse_and_choose_how_it_starts(app):
                            (dict(collapsible=True, collapsed=1), 'Section Money: Starts must be open'),
                            (dict(collapsible=False, collapsed=True), "Section Money can't collapse, so it starts open."),
                            (dict(collapsed='empty'), "Section Money can't collapse"),
-                           (dict(open=True), 'optionally collapsible and collapsed')):
+                           (dict(open=True), 'optionally collapsible, collapsed and flow')):
         bad = [{'title': 'Money', 'fields': [{'name': 'value', 'width': 6}], **value}]
         assert message in save(admin, ('layout', 'Lead', bad))[1]['fields']['changes.0']
 
@@ -216,6 +216,42 @@ def test_a_layout_saved_before_collapsible_sections_still_loads(tmp_path, hashed
         ('Main', False, False), ('Rest', False, False)]
     saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')
     assert saved['value'] == old
+
+
+def test_a_layout_sets_section_flow_and_the_record_tab_order(app):
+    admin = client(app)
+    sections = [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 6}, {'name': 'source', 'width': 6}, {'name': 'value', 'width': 6}], 'flow': 'columns'},
+                {'title': 'Notes', 'fields': [{'name': 'notes', 'width': 12}]}]
+    value = {'sections': sections, 'tabs': ['activity', 'details', 'related'], 'default_tab': 'activity'}
+    assert save(admin, ('layout', 'Lead', value))[0] == 200
+    entry = schema_of(admin, 'lead')
+    assert [(group['label'], group['flow']) for group in entry['layout']] == [('Lead', 'columns'), ('Notes', 'rows')]
+    assert (entry['tabs'], entry['default_tab']) == (['activity', 'details', 'related'], 'activity')
+    state = admin('GET', '/api/_controls/state')[1]
+    lead = next(model for model in state['models'] if model['name'] == 'Lead')
+    assert [tab['name'] for tab in lead['tabs']] == ['activity', 'details', 'revisions', 'related', 'postings']
+    # Sections alone are saved as the plain list they always were; rows is not stored.
+    assert save(admin, ('layout', 'Lead', [{**sections[0], 'flow': 'rows'}, sections[1]]))[0] == 200
+    saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')['value']
+    assert isinstance(saved, list) and 'flow' not in saved[0]
+    assert schema_of(admin, 'lead')['tabs'] == []
+    for bad, message in (({**value, 'tabs': ['lines']}, 'List record tabs of Lead once each'),
+                         ({**value, 'tabs': ['details', 'details']}, 'List record tabs of Lead once each'),
+                         ({**value, 'default_tab': 'postings'}, 'Open records on one of the record tabs.'),
+                         ({**value, 'extra': 1}, 'Send the layout as a list of sections, or as sections, tabs and default_tab.'),
+                         ([{**sections[0], 'flow': 'down'}], 'Section Lead: fill fields in rows ("rows") or down each column ("columns").')):
+        assert message in save(admin, ('layout', 'Lead', bad))[1]['fields']['changes.0']
+
+
+def test_removing_a_field_keeps_the_record_tab_order_of_a_layout(app):
+    admin = client(app)
+    assert admin('POST', '/api/_controls/fields/Lead', {'name': 'region', 'type': 'Text', 'label': 'Region'})[0] == 201
+    value = {'sections': [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 6}, {'name': 'x_region', 'width': 6}]}], 'tabs': ['details', 'activity'], 'default_tab': None}
+    assert save(admin, ('layout', 'Lead', value))[0] == 200
+    assert admin('DELETE', '/api/_controls/fields/Lead/x_region')[0] == 200
+    saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')['value']
+    assert saved == {'sections': [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 6}]}], 'tabs': ['details', 'activity'], 'default_tab': None}
+    assert schema_of(admin, 'lead')['tabs'] == ['details', 'activity']
 
 
 def test_a_list_override_sets_columns_page_size_and_sort_and_drops_unreadable_columns(app):

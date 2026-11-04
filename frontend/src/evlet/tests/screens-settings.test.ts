@@ -79,6 +79,15 @@ describe('personal pages', () => {
     expect(counted()).toBe(before);
   });
 
+  it('turns on Enter moves to the next field, off by default', async () => {
+    const { host, sent } = start(routes(), '/settings/appearance');
+    const toggle = () => host.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Enter moves to the next field"]');
+    await until(() => expect(toggle()).not.toBeNull());
+    expect(toggle()!.getAttribute('aria-checked')).toBe('false');
+    click(toggle());
+    await until(() => expect(requests(sent, 'PATCH', /\/api\/_settings\/me\/prefs$/).map(item => item.body)).toContainEqual({ enter_next: true }));
+  });
+
   it('starts with the region from the server and switches Arabic to right-to-left', async () => {
     const { host } = start(routes([['GET', /\/api\/order\?/, screen.orders_open]], me(body => { body.prefs.date = 'd MMM yyyy'; body.prefs.lang = 'ar'; })), '/app/order');
     await until(() => expect(text(host.querySelector('tbody tr[data-key]'))).toContain('20 Oct 2026'));

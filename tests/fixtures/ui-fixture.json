@@ -11196,7 +11196,8 @@
             "notes"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "columns"
         }
       ],
       "label": "Customer",
@@ -11216,6 +11217,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "fields": [
         {
           "name": "customer_name",
@@ -11507,7 +11510,8 @@
             "tax_rate"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Invoice",
@@ -11530,6 +11534,8 @@
         "title"
       ],
       "open_in": "panel",
+      "tabs": [],
+      "default_tab": null,
       "fields": [
         {
           "name": "customer",
@@ -11854,7 +11860,8 @@
             "received_at"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Payment",
@@ -11875,6 +11882,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "fields": [
         {
           "name": "invoice",
@@ -12123,7 +12132,8 @@
             "memo"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Ledger entry",
@@ -12143,6 +12153,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "fields": [
         {
           "name": "invoice",
@@ -12386,7 +12398,8 @@
             "status"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "Planning",
@@ -12395,7 +12408,8 @@
             "progress"
           ],
           "collapsible": true,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "Schedule",
@@ -12403,7 +12417,8 @@
             "starts_on"
           ],
           "collapsible": true,
-          "collapsed": true
+          "collapsed": true,
+          "flow": "rows"
         },
         {
           "label": "Notes",
@@ -12411,7 +12426,8 @@
             "notes"
           ],
           "collapsible": true,
-          "collapsed": "empty"
+          "collapsed": "empty",
+          "flow": "rows"
         }
       ],
       "label": "Project",
@@ -12431,6 +12447,12 @@
         "name"
       ],
       "open_in": "panel",
+      "tabs": [
+        "details",
+        "related",
+        "activity"
+      ],
+      "default_tab": "details",
       "fields": [
         {
           "name": "title",
@@ -12737,7 +12759,8 @@
             "done"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Project task",
@@ -12754,6 +12777,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "fields": [
         {
           "name": "project",
@@ -12897,7 +12922,8 @@
             "disabled"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "Details",
@@ -12923,7 +12949,8 @@
             "tax_category"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "GCC markets",
@@ -12990,7 +13017,8 @@
             "kuwait_status"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "Other markets",
@@ -13037,7 +13065,8 @@
             "export_status"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "Warehouses",
@@ -13092,7 +13121,8 @@
             "doha_safety_stock"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "Specifications",
@@ -13129,7 +13159,8 @@
             "gauge"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Item",
@@ -13151,6 +13182,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "fields": [
         {
           "name": "item_code",
@@ -20126,7 +20159,8 @@
             "reports_to"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Employee",
@@ -20146,6 +20180,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "fields": [
         {
           "name": "full_name",
@@ -20364,7 +20400,8 @@
             "valid_from"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Price",
@@ -20383,6 +20420,8 @@
         "currency"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "fields": [
         {
           "name": "price_list",
@@ -20604,7 +20643,8 @@
             "barcode_type"
           ],
           "collapsible": false,
-          "collapsed": false
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Barcode",
@@ -20621,6 +20661,8 @@
         "barcode_type"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "fields": [
         {
           "name": "barcode",

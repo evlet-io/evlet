@@ -279,7 +279,8 @@ mark only.
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type, `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
 | `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
-| `fold.ts` | FoldSection, Folds, `foldSummary`, `revealField`, `revealFirstError` ([collapsible sections](ui.md#collapsible-sections)) |
+| `fold.ts` | FoldSection, Folds, `foldSummary`, `revealField`, `revealFirstError` ([collapsible sections](ui.md#collapsible-sections)), `flowGrid` (rows or columns) |
+| `draglist.ts` | `dragList(root, { kind, move, label, zoneLabel })`: reorder by mouse, touch or keyboard, with announcements |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table`, and ChildRows for a narrow column |
 | `split.ts` | SplitView: a main area and a resizable side panel |
@@ -472,7 +473,16 @@ mount(document.querySelector('#app')!, () => DocFrame({
   count while closed, and `hidden` on the closed body so Tab skips it. A `Folds` holds one form's state: the
   person's choices (a preferences cell of title to open) over each section's start (`collapsed`, the phone rule,
   `'empty'`); `reveal(title)` opens one for now and `reset()` forgets the choices. `revealField(root, name)`
-  opens the section holding a field and focuses it.
+  opens the section holding a field and focuses it. `flowGrid(cells, flow)` lays a section's fields out
+  across then down, or down each column with full-width fields as breaks, in DOM order.
+- **dragList** reorders items in one or more lists. Mark items `data-drag-item="<kind>"` with
+  `data-drag-id`, the lists they may sit in `data-drop-zone="<kind>"` with `data-zone`, and give each item a
+  handle button `data-drag-handle="<kind>"`. Pointer (mouse, pen, touch): press a handle and move past
+  4 px; the item under the pointer shows where it lands. Keyboard: Space or Enter lifts, arrows move
+  (across list edges), Space or Enter drops, Escape puts it back. Every step is announced in a polite
+  live region. Listeners sit on `root`, so the lists may be redrawn after each `move`.
+- **enterMovesToNextField(root, on)** makes Enter and Shift+Enter move between the `[data-field]` blocks
+  under `root` while `on()` is true.
 - Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
   first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
   polite live region that the app creates at mount with `mountToasts()`. A popover stays open

@@ -13,6 +13,7 @@ const props = (label: string, extra: Record<string, unknown> = {}) =>
 const info = (name: string, type: string, extra: Record<string, unknown> = {}) =>
   ({ name, type, custom: false, editable: true, stored: true, unique: false, target: null, width: type === 'longtext' ? 12 : 6, ...extra });
 const lead = { name: 'Lead', label: 'Lead', app: 'crm', scopes: [null], table: 'lead', records: 3, naming: null,
+  tabs: [['activity', 'Activity'], ['details', 'Details'], ['revisions', 'Revisions'], ['lines', 'Lines'], ['related', 'Related'], ['postings', 'Postings']].map(([name, label]) => ({ name, label })),
   fields: [], fields_detail: [info('title', 'text'), info('source', 'select'), info('value', 'decimal'), info('notes', 'longtext')] };
 const invoice = { name: 'Invoice', label: 'Invoice', app: 'billing', scopes: [null], table: 'invoice', records: 2, naming: { field: 'reference', date_field: null },
   fields: [], fields_detail: [info('reference', 'text', { editable: false, unique: true }), info('total', 'decimal'), info('status', 'select')] };
@@ -158,6 +159,55 @@ describe('collapsible sections in the layout editor', () => {
     await until(() => expect(bar()).toBeNull());
     const posted = sent.filter(entry => entry.method === 'POST')[0].body.changes[0];
     expect(posted.value[0]).toMatchObject({ title: 'Details', collapsible: true, collapsed: 'empty' });
+  });
+});
+
+describe('order in the layout editor', () => {
+  const key = (target: Element, name: string) => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+  const grip = (host: Element, selector: string) => host.querySelector<HTMLElement>(`${selector} [data-drag-handle]`)!;
+
+  it('loads a layout saved as a plain list as rows, and saves flow, field and section order, tab order and the opening tab', async () => {
+    const { host, sent } = open('/controls/models?model=Lead&tab=layout');
+    await until(() => expect(host.querySelector('.ctl-lsec-fold')).toBeTruthy());
+    expect(text(host.querySelector('#ctl-ls-flow-0'))).toBe('Across, then down');
+    click(host.querySelector('#ctl-ls-flow-0'));
+    click(byText(document.body, '[role="option"]', 'Down each column'));
+    await until(() => expect(host.querySelector('.ctl-pvsec .fs-cols')).not.toBeNull());
+
+    // Keyboard: lift notes, move it up past value, drop.
+    grip(host, '[data-drag-id="notes"]').focus();
+    key(grip(host, '[data-drag-id="notes"]'), ' ');
+    key(grip(host, '[data-drag-id="notes"]'), 'ArrowUp');
+    key(grip(host, '[data-drag-id="notes"]'), ' ');
+    await until(() => expect([...host.querySelectorAll<HTMLElement>('.ctl-lf')].map(item => item.dataset.field)).toEqual(['title', 'source', 'notes', 'value']));
+    expect(text(host.querySelector('[data-drag-live="field"]'))).toContain('Notes dropped');
+
+    // A second section, then move it above the first by keyboard.
+    click(byText(host, 'button', 'Add section'));
+    await until(() => expect(host.querySelectorAll('.ctl-lsec')).toHaveLength(2));
+    const second = () => grip(host, '.ctl-lsec[data-drag-id="Section 2"]');
+    second().focus();
+    key(second(), ' ');
+    key(second(), 'ArrowUp');
+    key(second(), ' ');
+    await until(() => expect([...host.querySelectorAll<HTMLInputElement>('.ctl-lsec-head input')].map(input => input.value)).toEqual(['Section 2', 'Details']));
+
+    // Record tabs: Lines first, and records open on it.
+    const lines = () => grip(host, '.ctl-tabrow[data-drag-id="lines"]');
+    lines().focus();
+    for (const step of [' ', 'ArrowUp', 'ArrowUp', 'ArrowUp', ' ']) key(lines(), step);
+    await until(() => expect([...host.querySelectorAll<HTMLElement>('.ctl-tabrow')].map(row => row.dataset.dragId)).toEqual(['lines', 'activity', 'details', 'revisions', 'related', 'postings']));
+    click(host.querySelector('#ctl-tabs-home'));
+    click(byText(document.body, '[role="option"]', 'Lines'));
+    await until(() => expect(text(byText(host, '.ctl-tabrow', /^Lines/))).toContain('Opens first'));
+
+    click(byText(bar()!, 'button', 'Save changes'));
+    await until(() => expect(bar()).toBeNull());
+    const posted = sent.filter(entry => entry.method === 'POST')[0].body.changes[0].value;
+    expect(posted.tabs).toEqual(['lines', 'activity', 'details', 'revisions', 'related', 'postings']);
+    expect(posted.default_tab).toBe('lines');
+    expect(posted.sections.map((section: { title: string }) => section.title)).toEqual(['Section 2', 'Details']);
+    expect(posted.sections[1]).toMatchObject({ flow: 'columns', fields: [{ name: 'title', width: 6 }, { name: 'source', width: 6 }, { name: 'notes', width: 12 }, { name: 'value', width: 6 }] });
   });
 });
 

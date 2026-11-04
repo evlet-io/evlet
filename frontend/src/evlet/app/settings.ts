@@ -23,7 +23,8 @@ export interface Me {
   controls: boolean;
   development: boolean;
   profile: { full_name: string; short_name: string; title: string; phone: string; email: string; signature: string; photo: boolean };
-  prefs: { theme: Theme; density: 'comfortable' | 'compact'; text: 'default' | 'large'; start: string; counts: boolean; lang: string; tz: string; date: DateFormat; num: NumberFormat; week: string };
+  prefs: { theme: Theme; density: 'comfortable' | 'compact'; text: 'default' | 'large'; start: string; counts: boolean; lang: string; tz: string; date: DateFormat; num: NumberFormat; week: string;
+    /** Enter moves to the next field in forms (off by default). */ enter_next?: boolean };
   notifications: { events: Array<{ group: string; items: Array<{ key: string; label: string; locked: boolean; channels: [boolean, boolean] }> }>; quiet: { on: boolean; from: string; to: string } };
   security: {
     password_min: number;
@@ -57,7 +58,7 @@ export const PAGES: Record<string, [title: string, icon: string, group: string]>
 };
 const INDEX: Record<string, string[]> = {
   profile: ['Photo', 'Full name', 'Short name', 'Job title', 'Mobile', 'Email', 'Email signature', 'Username'],
-  appearance: ['Theme', 'Density', 'Text size', 'Start page', 'Record counts', 'Language', 'Time zone', 'Date format', 'Numbers', 'Week starts on'],
+  appearance: ['Theme', 'Density', 'Text size', 'Start page', 'Record counts', 'Enter moves to the next field', 'Language', 'Time zone', 'Date format', 'Numbers', 'Week starts on'],
   security: ['Password', 'Two-step sign-in', 'Backup codes', 'Sessions', 'Sign out everywhere'],
   notifications: ['Notifications', 'Quiet hours'],
   email: ['Your email', 'Mailbox'],
@@ -360,6 +361,8 @@ function AppearancePage(ctx: SettingsContext): Node {
     ${section('Workspace', '', [
       row('Open this page after sign-in', '', select(prefs.peek().start, [['', 'The usual start page'], ...ctx.starts], value => set('start', value), 'Start page')),
       row('Show record counts in the sidebar', '', Switch({ on: () => prefs.get().counts, ariaLabel: 'Record counts', onChange: next => set('counts', next) })),
+      row('Enter moves to the next field', 'In forms, Enter goes to the next field and Shift+Enter to the one before. Not in long text.',
+        Switch({ on: () => Boolean(prefs.get().enter_next), ariaLabel: 'Enter moves to the next field', onChange: next => set('enter_next', next) })),
     ])}
     ${section('Language and region', '', [
       row('Language', 'Arabic switches the layout to right-to-left.', select(prefs.peek().lang, [['en', 'English'], ['ar', 'العربية (Arabic)']], value => set('lang', value), 'Language')),

@@ -30,16 +30,16 @@ def test_personal_pages_save_and_the_last_page_is_remembered(secured):
     me = c('GET', '/api/_settings/me')[1]
     assert me['pages'] == ['profile', 'appearance', 'security', 'notifications', 'email', 'ai', 'keys'] and not me['portal'] and not me['controls']
     assert me['prefs'] == {'theme': 'system', 'density': 'comfortable', 'text': 'default', 'start': '', 'counts': False, 'lang': 'en',
-                           'tz': 'Asia/Dubai', 'date': 'dd-MM-yyyy', 'num': '1,234.56', 'week': 'mon'}
+                           'tz': 'Asia/Dubai', 'date': 'dd-MM-yyyy', 'num': '1,234.56', 'week': 'mon', 'enter_next': False}
     assert c('PATCH', '/api/_settings/me/profile', {'full_name': 'Sara Khan', 'short_name': 'Sara', 'title': 'Sales', 'phone': '+971 50 123 4567', 'signature': 'Sara\nAcme'})[0] == 200
     status, payload, _ = c('PATCH', '/api/_settings/me/profile', {'short_name': '  ', 'phone': 'call me'})
     assert status == 422 and payload['fields'] == {'short_name': "This can't be empty.", 'phone': 'Use digits, spaces, +, - and brackets only.'}
-    changes = {'density': 'compact', 'text': 'large', 'start': 'project', 'counts': True, 'lang': 'ar', 'tz': 'Asia/Kolkata', 'date': 'd MMM yyyy',
+    changes = {'density': 'compact', 'text': 'large', 'start': 'project', 'counts': True, 'enter_next': True, 'lang': 'ar', 'tz': 'Asia/Kolkata', 'date': 'd MMM yyyy',
                'num': '1.234,56', 'week': 'sun', 'notify.assigned': [False, True], 'notify.new_device': [False, False],
                'quiet': {'on': True, 'from': '21:00', 'to': '08:00'}, 'last_page': 'notifications'}
     assert c('PATCH', '/api/_settings/me/prefs', changes)[0] == 200
-    status, payload, _ = c('PATCH', '/api/_settings/me/prefs', {'theme': 'sepia', 'tz': 'Mars/Base', 'date': 'yy', 'last_page': 'billing', 'other': 1})
-    assert status == 422 and payload['fields'] == {'theme': 'Choose one of the options.', 'tz': 'Choose a time zone.',
+    status, payload, _ = c('PATCH', '/api/_settings/me/prefs', {'theme': 'sepia', 'enter_next': 'yes', 'tz': 'Mars/Base', 'date': 'yy', 'last_page': 'billing', 'other': 1})
+    assert status == 422 and payload['fields'] == {'theme': 'Choose one of the options.', 'enter_next': 'Use true or false.', 'tz': 'Choose a time zone.',
                                                    'date': 'Choose one of the options.', 'last_page': 'Choose a settings page.', 'other': 'Choose a known preference.'}
     me = c('GET', '/api/_settings/me')[1]
     assert me['profile'] | {'photo': None} == {'full_name': 'Sara Khan', 'short_name': 'Sara', 'title': 'Sales', 'phone': '+971 50 123 4567',

@@ -47,7 +47,10 @@ export interface FieldOverride {
 }
 export interface LayoutSection { title: string; fields: Array<{ name: string; width: 6 | 12 }>;
   /** Whether people can open and close the section, and how it starts (absent in layouts saved before them). */
-  collapsible?: boolean; collapsed?: boolean | 'empty' }
+  collapsible?: boolean; collapsed?: boolean | 'empty';
+  /** columns: fields go down the left column, then the right (absent: rows). */ flow?: 'columns' }
+/** A saved form layout: its sections, or its sections with the record tab order and default tab. */
+export type LayoutValue = LayoutSection[] | { sections: LayoutSection[]; tabs?: string[]; default_tab?: string | null }
 export interface ListValue { columns: string[]; page_size: number; sort: string; /** How the list opens a record (absent in list views saved before it existed). */ open_in?: 'page' | 'panel' }
 export interface SeriesValue { id: string; label: string; format: string; when: string }
 export interface FieldInfo {
@@ -55,7 +58,8 @@ export interface FieldInfo {
 }
 export interface ModelInfo {
   name: string; label: string; app: string | null; fields: Array<{ name: string; label: string; read_only: boolean }>; scopes: Array<string | null>;
-  table: string; records: number; fields_detail: FieldInfo[]; naming: { field: string; date_field: string | null } | null;
+  table: string; records: number; fields_detail: FieldInfo[];
+  /** Record page tabs the form layout can order (older servers send none). */ tabs?: Array<{ name: string; label: string }>; naming: { field: string; date_field: string | null } | null;
 }
 export interface Counter {
   prefix: string; value: number; last_name: string | null; how: 'issued' | 'set' | null; note: string | null;

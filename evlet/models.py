@@ -315,9 +315,11 @@ class Registry:
         for model in models:
             for field in model.__declared_fields__.values():
                 check_currency_source(model, field)
-        from .ui.metadata import view_for
+        from .ui.metadata import check_tabs, view_for
         for model in models:
-            view_for(model)
+            view = view_for(model)
+            tables = [child.name for child in self.children if child.parent is model]
+            check_tabs(tables, view['tabs'], view['default_tab'], f'{model.__name__}.Meta.tabs')
         self.models = MappingProxyType(registered)
         self.resources = MappingProxyType(resources)
         for model in models:

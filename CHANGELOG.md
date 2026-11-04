@@ -6,6 +6,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Field order, record tabs and Enter to move on.** `Section(..., flow="columns")` lists a
+  section's fields down the left column, then the right (full-width fields break the run); the DOM
+  and Tab follow the same order. `Meta.tabs` and `Meta.default_tab` order the record page's tabs and
+  choose the one it opens on, validated at registration. The schema adds `flow` per layout entry and
+  `tabs` and `default_tab` per model (additive). The Controls form layout gets Fields go, drag to
+  reorder fields and sections (mouse, touch and keyboard, with announcements) and a Record tabs card;
+  a layout with a tab order is saved as `{"sections", "tabs", "default_tab"}`, and plain lists load as
+  before. Tab skips read-only and calculated values. A new Appearance setting, "Enter moves to the
+  next field" (`enter_next`, off by default), speeds up data entry. The Playground's Customer uses
+  `flow="columns"` and Project sets `Meta.tabs`.
 - **Collapsible form sections.** `evlet.Section(title, fields, *, collapsible=True, collapsed=False)`
   in `Model.Meta.layout` is a section people can open and close; `collapsed` is `False` (open),
   `True` (closed) or `'empty'` (closed when every field is empty on an existing record). Plain
