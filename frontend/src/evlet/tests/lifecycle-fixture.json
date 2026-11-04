@@ -31,7 +31,9 @@
                 "number",
                 "customer",
                 "remarks"
-              ]
+              ],
+              "collapsible": false,
+              "collapsed": false
             }
           ],
           "label": "Order",
@@ -286,7 +288,9 @@
                 "description",
                 "quantity",
                 "rate"
-              ]
+              ],
+              "collapsible": false,
+              "collapsed": false
             }
           ],
           "label": "Line",

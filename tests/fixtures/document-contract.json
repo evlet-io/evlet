@@ -9,7 +9,9 @@
             "title",
             "status",
             "total"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         }
       ],
       "label": "Order",
@@ -240,7 +242,9 @@
             "rate",
             "amount",
             "stock"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         }
       ],
       "label": "Item",
