@@ -2495,7 +2495,7 @@
    "id": "doc-frame",
    "name": "DocFrame",
    "level": "Section",
-   "desc": "The record layout: main column on the left, side panel on the right (or left). Side panel drops below on narrow screens.",
+   "desc": "The record layout: main column on the left, side panel on the right (or left). Side panel drops below on narrow screens. The panel variant is one narrow column for a record opened beside a list.",
    "props": [
     [
      "side",
@@ -2511,6 +2511,35 @@
    "from": [],
    "used": [
     "Every record"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "layout",
+   "id": "split-view",
+   "name": "SplitView",
+   "level": "Section",
+   "desc": "A main area and a side panel beside it, with a divider to drag or move with the arrow keys. The width is remembered. On narrow screens the panel covers the main area.",
+   "props": [
+    [
+     "open",
+     "cell",
+     "Whether the panel shows"
+    ],
+    [
+     "width",
+     "cell",
+     "Per user, per list"
+    ],
+    [
+     "breakpoint",
+     "pixels",
+     "900"
+    ]
+   ],
+   "from": [],
+   "used": [
+    "Lists with a record in a side panel"
    ],
    "variants": []
   },
@@ -2894,10 +2923,42 @@
   },
   {
    "cat": "sections",
+   "id": "child-rows",
+   "name": "ChildRows",
+   "level": "Section",
+   "desc": "Lines of a record in a narrow column: one line per row with its amount, opened in place to edit, totals below and Open full table for the grid. Locks with the record.",
+   "props": [
+    [
+     "lines",
+     "Lines field",
+     ""
+    ],
+    [
+     "totals",
+     "list",
+     ""
+    ],
+    [
+     "locked",
+     "rule",
+     ""
+    ]
+   ],
+   "from": [
+    "base-field",
+    "button"
+   ],
+   "used": [
+    "Side panel"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "sections",
    "id": "form-section",
    "name": "FormSection",
    "level": "Section",
-   "desc": "Titled group of fields in two columns. Long text spans both.",
+   "desc": "Titled group of fields in two columns. Long text spans both. Can open and close from its heading, as in a list's side panel.",
    "props": [
     [
      "title",

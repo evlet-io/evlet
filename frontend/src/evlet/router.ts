@@ -136,11 +136,14 @@ export class Router<R extends Record<string, string>> {
    * `ask` shows an in-page confirmation and resolves to true to leave. While `when()` is
    * true, closing or reloading the tab also asks (the browser shows its own prompt there).
    * A change of query only, such as the record tab in `?tab=`, stays on the page and never asks.
+   * `stays` replaces that rule: a record in a list's side panel stays while `?open=` keeps its id.
    */
-  confirmLeave(when: () => boolean, ask: (to: Route<R> | null) => boolean | Promise<boolean>): () => void {
+  confirmLeave(when: () => boolean, ask: (to: Route<R> | null) => boolean | Promise<boolean>,
+    options: { stays?: (to: Route<R> | null, from: Route<R> | null) => boolean } = {}): () => void {
     const unload = (event: BeforeUnloadEvent) => { if (when()) { event.preventDefault(); event.returnValue = ''; } };
     this.window.addEventListener('beforeunload', unload);
-    const remove = this.guard((to, from) => samePage(to, from) || !when() || ask(to));
+    const stays = options.stays ?? samePage;
+    const remove = this.guard((to, from) => stays(to, from) || !when() || ask(to));
     const stop = () => { remove(); this.window.removeEventListener('beforeunload', unload); };
     onCleanup(stop);
     return stop;

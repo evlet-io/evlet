@@ -12,6 +12,7 @@ export * from './fields';
 export * from './inline';
 export * from './table';
 export * from './childtable';
+export * from './split';
 export * from './doc';
 export * from './list';
 export * from './pickers';

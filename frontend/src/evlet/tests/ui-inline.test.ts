@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cell } from '../reactive';
 import { localField } from '../ui/fields';
 import { FormSection, InlineValue, KeyValueList } from '../ui/inline';
 import { responses } from './server';
@@ -95,5 +96,21 @@ describe('FormSection', () => {
     key(input, 'Enter');
     expect(fields[0].value.peek()).toBe('Al Sahra Trading');
     expect(save).toHaveBeenCalledOnce();
+  });
+
+  it('opens and closes from its heading when collapsible', () => {
+    const collapsed = cell(false);
+    const fields = [localField({ name: 'name', type: 'text', label: 'Name' }, 'Al Sahra')];
+    const host = render(() => FormSection({ title: 'Details', fields, collapsible: { collapsed: () => collapsed.get(), toggle: () => collapsed.set(!collapsed.peek()) } }));
+    const toggle = host.querySelector<HTMLButtonElement>('.fs-toggle')!;
+    expect(toggle.textContent).toBe('Details');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const body = document.getElementById(toggle.getAttribute('aria-controls')!)!;
+    expect(body.hidden).toBe(false);
+    toggle.click();
+    expect(collapsed.peek()).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(body.hidden).toBe(true);
+    expect(host.querySelector('section')!.classList.contains('closed')).toBe(true);
   });
 });

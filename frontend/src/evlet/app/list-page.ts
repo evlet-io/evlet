@@ -5,8 +5,12 @@
 // Search, sort, page, view, saved view and filters live in the address, so a link opens the
 // same list. Everything runs on the server: the browser never filters or sorts a partial list.
 // The filter builder (rows of field, condition and value, child tables included) is filters.ts.
+//
+// A record opens on its own page or in a side panel beside the narrowed list (Meta.open_in, the
+// Controls list view, or the person's choice in the layout menu). The panel's record is `?open=`
+// in the list's address and its tab `?rtab=`, so a link or a reload opens the same list and record.
 
-import { html, match, when, type Child } from '../dom';
+import { each, html, match, when, type Child } from '../dom';
 import { ApiError, type RecordData } from '../api';
 import { batch, cell, derive, effect, onCleanup, untrack } from '../reactive';
 import { Button, CountBadge, EmptyState, IconButton, SearchInput, SegmentedControl, StatusPill, SummaryStrip, type StatProps } from '../ui/base';
@@ -14,6 +18,7 @@ import { currencyIn, displayValue, localField, stateTint } from '../ui/fields';
 import { formatMoney } from '../model/format';
 import { humanize } from '../ui/kinds';
 import { closeDialogs, DialogFooter, MenuButton, openModal, toast } from '../ui/layers';
+import { SplitView } from '../ui/split';
 import { Board, BoardCard, BulkBar, PageHeader, Toolbar, type BoardColumn, type BoardTotal } from '../ui/list';
 import { Tabs } from '../ui/doc';
 import { DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
@@ -21,10 +26,15 @@ import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
-import { fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, screenModel, sources, titleOf, type ScreenModel } from './meta';
+import { fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, LIST_KEYS, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
+import { RecordPage, type PanelHost } from './record-page';
+import { recordId } from '../ids';
 
 export const PAGE_SIZE = 50;
 const BOARD_SIZE = 100;
+/** Below this width the list beside a panel shows each record on two lines. */
+const COMPACT_WIDTH = 460;
+
 /** Bulk changes send at most this many requests at once. */
 const BULK_AT_ONCE = 4;
 
@@ -59,6 +69,26 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const start = router.route.peek()?.query ?? {};
   ctx.crumbs.set([{ label: model.plural }]);
 
+  // ---------- how records open ----------
+
+  const openChoice = ctx.prefs.cell<'page' | 'panel' | null>(`openIn.${name}`, null);
+  const openIn = derive(() => openChoice.get() ?? model.open_in ?? 'page', { name: `${name}.open in` });
+  /** The record open in the side panel (its id, or 'new'), from the address. */
+  const opened = derive(() => {
+    const route = router.route.get();
+    return route?.name === 'list' && route.params.model === name ? route.query.open ?? null : null;
+  }, { name: `${name}.open record` });
+  const panelOpen = derive(() => opened.get() !== null);
+  /** The list's address with this record (and record tab) in the panel, or none. */
+  const listHref = (open: string | null, rtab: string | null = null) => {
+    const route = router.route.peek();
+    const mine = route?.name === 'list' && route.params.model === name ? route.query : {};
+    const query = Object.fromEntries(Object.entries(mine).filter(([key]) => LIST_KEYS.includes(key) && key !== 'open' && key !== 'rtab'));
+    if (open) query.open = open;
+    if (open && rtab) query.rtab = rtab;
+    return router.href('list', { model: name }, query);
+  };
+
   // ---------- the list's state, from and to the address ----------
 
   const q = cell(start.q ?? '', { name: `${name}.q` });
@@ -89,6 +119,12 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     if (view.get() === 'board') params.view = 'board';
     if (tab.get() !== 'all') params.tab = tab.get();
     if (filters.address.get()) params.f = filters.address.get();
+    // The panel's record stays open while the list changes around it.
+    const now = untrack(() => router.route.peek()?.query ?? {});
+    if (now.open) params.open = now.open;
+    if (now.open && now.rtab) params.rtab = now.rtab;
+    // A create link (?open=new&customer=4) keeps its values while the new record is open.
+    if (now.open === 'new') for (const [key, value] of Object.entries(now)) if (!LIST_KEYS.includes(key)) params[key] = value;
     const href = router.href('list', { model: name }, params);
     untrack(() => { if (router.route.peek()?.name === 'list' && router.route.peek()?.params.model === name && href.endsWith(router.route.peek()!.url)) return; void router.navigate(href, { replace: true }); });
   });
@@ -162,7 +198,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   // ---------- header, views and toolbar ----------
 
-  const create = () => void router.go('create', { model: name });
+  const create = () => openIn.peek() === 'panel' ? void router.navigate(listHref('new'), { replace: panelOpen.peek() }) : void router.go('create', { model: name });
   if (canCreate) ctx.createHere.set(create);
   onCleanup(() => { if (ctx.createHere.peek() === create) ctx.createHere.set(null); });
 
@@ -179,6 +215,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     // Reports declared for this model (Report.model) open from here.
     reportsFor(ctx, name).length ? MenuButton({ label: 'Reports', icon: REPORT_ICON, hideLabelOnPhone: true, menuLabel: `${model.label} reports`,
       items: reportsFor(ctx, name).map(report => ({ label: report.label, icon: REPORT_ICON, tint: 'rose' as const, onSelect: () => void router.go('report', { report: report.name }) })) }) : null,
+    MenuButton({ icon: 'panel-right', tip: 'Open records in', ariaLabel: 'Open records in', menuLabel: 'Open records in', items: () => [{ heading: 'Open records in' },
+      { label: 'Side panel', icon: openIn.peek() === 'panel' ? 'check' : 'panel-right', onSelect: () => openChoice.set('panel') },
+      { label: 'Full page', icon: openIn.peek() === 'page' ? 'check' : 'maximize-2', onSelect: () => openChoice.set('page') }] }),
     canCreate ? Button({ label: `New ${model.label.toLowerCase()}`, icon: 'plus', variant: 'primary', hideLabelOnPhone: true, onClick: create }) : null,
   ].filter(Boolean) as Child[] });
 
@@ -204,19 +243,37 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   // ---------- table ----------
 
-  const open = (row: RecordData) => void router.go('record', { model: name, id: String(row.id) });
+  let focusPanel = false;
+  /** Open a record: in the panel (switching rows replaces the history entry, so Back closes it) or on its page. */
+  const open = (row: RecordData, focus = true) => {
+    if (openIn.peek() !== 'panel') return void router.go('record', { model: name, id: String(row.id) });
+    if (opened.peek() === String(row.id)) return;
+    focusPanel = focus;
+    void router.navigate(listHref(String(row.id), router.route.peek()?.query.rtab ?? null), { replace: panelOpen.peek() });
+  };
+  const plainClick = (event: MouseEvent) => event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+  const numbered = numberField(model);
+  const showNumber = numbered && numbered.name !== model.title_field && fields.some(meta => meta.name === numbered.name) ? numbered : null;
   const columns: Column<RecordData>[] = fields.map((meta, index) => ({
     key: meta.name, label: meta.label, align: ['currency', 'decimal', 'integer', 'percent', 'duration'].includes(meta.type) ? 'right' : 'left',
     width: index === 0 ? 240 : meta.type === 'currency' ? 140 : 160, value: (row: RecordData) => row[meta.name],
     sortable: meta.stored !== false && meta.type !== 'tags' && meta.type !== 'longtext',
     render: index === 0 && meta.name === model.title_field
-      ? (row: () => RecordData) => html`<a class="ev-row-link" href=${() => router.href('record', { model: name, id: String(row().id) })}>${() => titleOf(model, row())}</a>`
+      ? (row: () => RecordData) => html`<a class="ev-row-link" href=${() => router.href('record', { model: name, id: String(row().id) })}
+          on:click=${(event: MouseEvent) => { if (openIn.peek() === 'panel' && plainClick(event)) { event.preventDefault(); open(row()); } }}>${() => titleOf(model, row())}</a>${showNumber
+          ? when(panelOpen, () => html`<small class="ev-row-no mono">${() => String(row()[showNumber.name] ?? '')}</small>`) : null}`
       : (row: () => RecordData) => cellView(ctx, model, meta, row),
   }));
   const tablePrefs = ctx.prefs.cell<TablePrefs>(`list.${name}`, emptyPrefs());
   const selectable = canDelete || Boolean(state?.moves.length);
-  const table = () => DataTable<RecordData>({ columns, rows, key: row => row.id, label: model.plural, pinned: 1, selectable, selection, sort, serverSort: true,
-    onOpen: open, prefs: tablePrefs, height: 640,
+  // Beside a panel the list keeps the title (with the number under it), the State and the first amount.
+  const amountField = fields.find(meta => meta.type === 'currency') ?? fields.find(meta => ['decimal', 'integer'].includes(meta.type));
+  const kept = new Set([fields[0]?.name, state?.field, amountField?.name]);
+  const panelColumns = columns.filter(item => kept.has(item.key));
+  const current = derive(() => { const id = opened.get(); return id === null ? null : rows.get().find(row => String(row.id) === id)?.id ?? null; });
+  const table = (narrow = false) => DataTable<RecordData>({ columns: narrow ? panelColumns : columns, rows, key: row => row.id, label: model.plural, pinned: 1,
+    selectable: selectable && !narrow, selection, sort, serverSort: true, onOpen: row => open(row), prefs: tablePrefs, height: 640,
+    current: narrow ? current : undefined, onMove: narrow ? row => open(row, false) : undefined,
     empty: () => EmptyState({ icon: 'search', tint: 'slate', title: `No ${model.plural.toLowerCase()} match`, text: 'Try a different search or clear the filters.',
       action: Button({ label: 'Clear filters', onClick: clearAll }) }) });
   changes(() => sort.get(), () => page.set(1));
@@ -373,15 +430,108 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     return EmptyState({ icon, tint, title: `No ${model.plural.toLowerCase()} yet`, text: canCreate ? `Add the first ${model.label.toLowerCase()} to get started.` : `${model.plural} you can see show up here.`,
         action: canCreate ? Button({ label: `New ${model.label.toLowerCase()}`, icon: 'plus', variant: 'primary', onClick: create }) : undefined });
   };
+  // ---------- side panel ----------
+
+  const listWidth = cell(0, { name: `${name}.list width` });
+  const compactRows = () => {
+    const stateMeta = state ? fieldOf(model, state.field) : undefined;
+    const isCurrent = (row: RecordData) => String(row.id) === opened.get();
+    const element = html`<div class="ev-compact" role="listbox" aria-label=${model.plural}>${each(rows, row => row.id, row => html`<div role="option" class="ev-crow"
+      data-key=${String(row().id)} aria-selected=${() => String(isCurrent(row()))} tabindex=${() => isCurrent(row()) || (!current.get() && rows.get()[0] === row()) ? '0' : '-1'}
+      on:click=${() => open(row())} on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); open(row()); } }}>
+      <span class="l1"><b>${() => titleOf(model, row())}</b>${amountField ? html`<span class="num">${cellView(ctx, model, amountField, row)}</span>` : null}</span>
+      <span class="l2">${showNumber ? html`<span class="mono">${() => String(row()[showNumber.name] ?? '')}</span>` : html`<span></span>`}${stateMeta ? cellView(ctx, model, stateMeta, row) : null}</span></div>`,
+      { fallback: () => html`<p class="muted ev-note">No ${model.plural.toLowerCase()} match.</p>` })}</div>` as HTMLElement;
+    element.addEventListener('keydown', event => {
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      const items = [...element.querySelectorAll<HTMLElement>('[role="option"]')], at = items.indexOf(event.target as HTMLElement);
+      const next = items[at + (event.key === 'ArrowDown' ? 1 : -1)];
+      if (at < 0 || !next) return;
+      event.preventDefault();
+      next.focus();
+      const row = rows.peek().find(item => String(item.id) === next.dataset.key);
+      if (row) open(row, false);
+    });
+    effect(() => { const id = opened.get(); untrack(() => queueMicrotask(() => element.querySelector<HTMLElement>(`[data-key="${CSS.escape(String(id))}"]`)?.scrollIntoView?.({ block: 'nearest' }))); });
+    return element;
+  };
+
   // The table and board are built once per view; loads only change their rows.
   const mode = derive(() => failure.get() ? 'error'
-    : !loading.get() && total.get() === 0 && !query.get() && !filters.active.get().length && tab.get() === 'all' ? 'empty' : view.get());
+    : !loading.get() && total.get() === 0 && !query.get() && !filters.active.get().length && tab.get() === 'all' ? 'empty'
+    : view.get() === 'list' && panelOpen.get() ? (listWidth.get() && listWidth.get() < COMPACT_WIDTH ? 'compact' : 'narrow') : view.get());
   const content = html`<div role=${tabs ? 'tabpanel' : null} id=${() => tabs ? `ev-${name}-views-${tab.get()}-panel` : null} aria-labelledby=${() => tabs ? `ev-${name}-views-${tab.get()}` : null}>
-    ${match(mode, { error: () => body(), empty: () => body(), list: () => [table(), pager],
+    ${match(mode, { error: () => body(), empty: () => body(), list: () => [table(), pager], narrow: () => [table(true), pager], compact: () => [compactRows(), pager],
       board: () => [state ? html`<p class="muted ev-note ev-board-note" hidden=${() => tab.get() === 'all'}>${() => `Showing ${humanize(tab.get()).toLowerCase()} ${model.plural.toLowerCase()} only. Choose All ${model.plural.toLowerCase()} to see every column.`}</p>` : null,
         match(tab, Object.fromEntries(['all', ...state!.states].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
 
-  return html`<div class="page ev-list" data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${header}${tabs}${toolbar}<div id=${`ev-${name}-filters`}>${when(filtering, () => FilterPanel(filters, ctx.links, () => filtering.set(false)))}</div>${strip}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>${content}${bulk}</div>` as HTMLElement;
+  const list = html`<div class="page ev-list" class:ev-list-narrow=${panelOpen} data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${header}${tabs}${toolbar}<div id=${`ev-${name}-filters`}>${when(filtering, () => FilterPanel(filters, ctx.links, () => filtering.set(false)))}</div>${when(() => !panelOpen.get(), () => strip)}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>${content}${when(() => !panelOpen.get(), () => bulk)}</div>` as HTMLElement;
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(entries => listWidth.set(Math.round(entries[0]?.contentRect.width ?? 0)));
+    observer.observe(list);
+    onCleanup(() => observer.disconnect());
+  }
+
+  const overlay = cell(false, { name: `${name}.panel covers the list` });
+  const announce = cell('', { name: `${name}.panel announcement` });
+  /** Focus the row a closed panel showed, so the keyboard carries on from there. */
+  const focusRow = (id: string) => queueMicrotask(() => list.querySelector<HTMLElement>(`[data-key="${CSS.escape(id)}"]`)?.focus());
+  const closePanel = () => {
+    const was = opened.peek();
+    void router.navigate(listHref(null)).then(done => { if (done && was) focusRow(was); });
+  };
+  const host = (id: string): PanelHost => ({
+    overlay, tab: router.route.peek()?.query.rtab,
+    setTab: next => void router.navigate(listHref(id, next), { replace: true }),
+    stays: to => Boolean(to && to.name === 'list' && to.params.model === name && (to.query.open ?? null) === id),
+    close: closePanel,
+    show: next => { refresh(); void router.navigate(listHref(String(next)), { replace: true }); },
+    removed: () => { refresh(); void router.navigate(listHref(null), { replace: true }); },
+  });
+  // A saved, moved or changed record shows its new values in its row.
+  effect(() => {
+    const id = recordId(opened.get());
+    if (!id) return;
+    const data = api.detail(name, id).get();
+    if (!data) return;
+    untrack(() => {
+      const list = rows.peek(), at = list.findIndex(row => row.id === id);
+      if (at < 0) return;
+      const changed = Object.keys(list[at]).filter(key => key in data && JSON.stringify(list[at][key]) !== JSON.stringify(data[key]));
+      if (changed.length) rows.set(list.map((row, index) => index === at ? { ...row, ...Object.fromEntries(changed.map(key => [key, data[key]])) } : row));
+    });
+  });
+  const panelLabel = () => {
+    const id = opened.get(), row = rows.get().find(item => String(item.id) === id);
+    return id === 'new' ? `New ${model.label.toLowerCase()}` : row ? `${model.label} ${titleOf(model, row)}` : model.label;
+  };
+  const panel = () => {
+    const element = html`<section class="ev-panel" role="region" tabindex="-1" aria-label=${panelLabel}>
+      ${each(() => opened.get() === null ? [] : [opened.get()!], id => id, id => untrack(() => RecordPage(ctx, name, id(), host(id()))))}</section>` as HTMLElement;
+    // Opening moves focus into the panel, except while the arrow keys move along the list.
+    effect(() => {
+      const id = opened.get();
+      if (id === null) return;
+      untrack(() => {
+        announce.set(`Opened ${panelLabel()}`);
+        if (focusPanel) queueMicrotask(() => element.focus());
+        focusPanel = false;
+      });
+    });
+    return element;
+  };
+  const split = SplitView({ main: list, side: panel, open: panelOpen, overlay, width: ctx.prefs.cell(`panelWidth.${name}`, 480),
+    label: `Resize the ${model.label.toLowerCase()} panel` });
+  split.classList.add('ev-list-split');
+  split.append(html`<p class="ev-sr" aria-live="polite">${announce}</p>`);
+  // Escape closes the panel (dialogs and menus close first: they are outside it).
+  split.addEventListener('keydown', event => {
+    const target = event.target as HTMLElement;
+    if (event.key !== 'Escape' || event.defaultPrevented || !panelOpen.peek() || target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    event.preventDefault();
+    closePanel();
+  });
+  return split;
 }
 
 /** Run `then` when `value` changes, not on the first read. */

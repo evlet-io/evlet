@@ -4,7 +4,7 @@
 // Column widths and order live in a prefs cell the caller saves per user.
 
 import { each, html, type Child } from '../dom';
-import { cell, derive, effect, onCleanup, untrack, type Cell, type Derive } from '../reactive';
+import { cell, derive, effect, onCleanup, untrack, type Cell, type Derive, type Readable } from '../reactive';
 import { compare as compareNumbers, parse as parseNumber } from '../model/finite';
 import { Checkbox, Icon } from './base';
 import { read, type Prop } from './core';
@@ -154,6 +154,10 @@ export interface DataTableProps<T> {
   /** Sort on the server: the table only reports the sort and shows rows as given. */
   serverSort?: boolean;
   onOpen?: (row: T) => void;
+  /** The row open beside the table (a side panel): marked current and kept in view. */
+  current?: Readable<string | number | null>;
+  /** Called when the arrow keys (or Home, End, Page Up and Down) move to a row. */
+  onMove?: (row: T) => void;
   prefs?: Cell<TablePrefs>;
   /** Footer values by column key; the first column shows totalsLabel. */
   totals?: Record<string, Prop<string>>;
@@ -283,12 +287,15 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
     active.set(key);
     view.reveal(scroller, at);
     focusRow(key);
+    props.onMove?.(list[at]);
   };
 
   const rowView = (row: () => T, index: () => number) => {
     const key = () => props.key(row());
     const selected = () => selection.get().has(key());
-    return html`<tr role="row" data-key=${String(key())} class=${() => props.rowClass?.(row()) ?? null} class:sel=${selected} aria-selected=${props.selectable ? () => String(selected()) : null}
+    const current = props.current ? () => props.current!.get() === key() : null;
+    return html`<tr role="row" data-key=${String(key())} class=${() => props.rowClass?.(row()) ?? null} class:sel=${selected} class:cur=${current ?? false} aria-current=${current ? () => current() ? 'true' : null : null}
+      aria-selected=${props.selectable ? () => String(selected()) : null}
       aria-rowindex=${() => String(view.range.get().start + index() + 2)}
       tabindex=${() => focusKey.get() === key() ? '0' : '-1'}
       on:click=${(event: MouseEvent) => {
@@ -333,6 +340,13 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
   // The pinned column casts a shadow once the table scrolls sideways.
   const sideways = () => wrap.classList.toggle('scrolled', wrap.scrollLeft > 0);
   wrap.addEventListener('scroll', sideways, { passive: true });
+  // The current row takes Tab focus and is scrolled into view when it changes or the rows load.
+  if (props.current) effect(() => {
+    const key = props.current!.get(), list = rows.get();
+    const at = key === null ? -1 : list.findIndex(row => props.key(row) === key);
+    if (at < 0) return;
+    untrack(() => { active.set(key); view.reveal(scroller, at); });
+  });
   // Keep the active row in the data when rows change.
   effect(() => { const list = rows.get(); const key = untrack(() => active.get()); if (key !== null && !list.some(row => props.key(row) === key)) active.set(null); });
   return wrap;
