@@ -18,6 +18,7 @@ import json
 
 from .auth import AccessError
 from .fields import Link, Reference
+from .identity import RecordId
 from .models import ValidationError, identifier
 from .permissions import CHUNK, corrects
 
@@ -460,7 +461,7 @@ def dependents_message(context, items):
     shown, hidden = [], 0
     for item_model, item_id in items:
         if business.policy.allows(user, item_model, 'read') and business.policy.visible(tx, user, item_model, [item_id]):
-            shown.append(f'{item_model.__name__} {item_id}')
+            shown.append(f'{item_model.__name__} {RecordId(item_id)}')
         else:
             hidden += 1
     names = shown[:NAMED]
@@ -570,7 +571,7 @@ def revised_by(business, tx, user, model, record_id):
     copy_id = has_revision(business, tx, model, record_id)
     if copy_id is None or not business.policy.visible(tx, user, model, [copy_id]):
         return None
-    return copy_id
+    return RecordId(copy_id)
 
 
 def availability(business, context, model, record):

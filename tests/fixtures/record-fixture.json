@@ -2,9 +2,9 @@
   "list": {
     "items": [
       {
-        "id": 1,
+        "id": "0000000000001",
         "name": "Website launch",
-        "customer": 1,
+        "customer": "0000000000001",
         "status": "planned",
         "budget": "1250.50",
         "progress": 0,
@@ -17,9 +17,9 @@
     "offset": 0
   },
   "detail": {
-    "id": 1,
+    "id": "0000000000001",
     "name": "Website launch",
-    "customer": 1,
+    "customer": "0000000000001",
     "status": "planned",
     "budget": "1250.50",
     "progress": 0,
@@ -28,12 +28,12 @@
     "children": {
       "tasks": [
         {
-          "id": 1,
+          "id": "0000000000001",
           "title": "Prepare content",
           "done": false
         },
         {
-          "id": 2,
+          "id": "0000000000002",
           "title": "Review pages",
           "done": true
         }
@@ -44,12 +44,12 @@
     "items": [
       {
         "model": "customer",
-        "id": 1,
+        "id": "0000000000001",
         "deleted": false
       },
       {
         "model": "project",
-        "id": 1,
+        "id": "0000000000001",
         "deleted": false
       }
     ],

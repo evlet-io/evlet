@@ -1,9 +1,9 @@
-from evlet import api, cron
+from evlet import RecordId, api, cron
 from amendment.models.masters import StockBalance
 
 
 @api(method='GET', permission=(StockBalance, 'read'))
-def balance_count(context, warehouse: int):
+def balance_count(context, warehouse: RecordId):
     return {'count': context.count(StockBalance, filters={'warehouse': warehouse})}
 
 

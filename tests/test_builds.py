@@ -99,7 +99,7 @@ def test_reference_app_full_public_flow(project):
     row = dialog[1]['values']['children']['items'][0]
     submission = {'key': 'plan-once', 'values': {'children': {'items': [{'_key': row['_key'], 'selected': True, 'qty': '2', 'bom': bom}]}}}
     planned = c('POST', base + '/submit', submission, headers=headers)
-    assert planned[0] == 200, planned
+    assert planned[0] == 200, planned[1]
     assert c('POST', base + '/submit', submission, headers=headers)[1] == planned[1]
     assert c('GET', '/api/workorder')[1]['total'] == 1
     assert c('GET', '/api/salesorder/' + str(order['id']))[2][b'etag'] == headers[b'if-match']

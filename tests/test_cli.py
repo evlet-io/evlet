@@ -8,7 +8,7 @@ import pytest
 
 from evlet import ConnectorError, HTTPClient
 from evlet.cli import main, scaffold
-from tests.test_connector import live_connector, signed, wire_server
+from tests.test_connector import live_connector, project_path, signed, wire_server
 from tests.test_business import hashed, PASSWORD
 
 
@@ -21,9 +21,9 @@ def test_scaffold_runs_an_authenticated_persistent_application(tmp_path):
 from models import Item
 app = create_app(); app.initialize()
 assert app.business.auth.setup_needed()
-app.database.create(Item, title='Persistent')
+item = app.database.create(Item, title='Persistent')
 restarted = create_app(); restarted.initialize()
-assert restarted.database.get(Item, 1).title == 'Persistent'
+assert restarted.database.get(Item, item.id).title == 'Persistent'
 assert restarted.business.auth.allow_setup
 '''
     subprocess.run([sys.executable, '-c', code], cwd=target, env={**os.environ, 'PYTHONPATH': root}, check=True)
@@ -43,7 +43,7 @@ def test_cli_login_describe_and_logout_keep_credentials_private(live_connector, 
     assert json.loads(capsys.readouterr().out)['name'] == 'project'
     main(['logout', '--session', str(file)])
     assert not file.exists()
-    with pytest.raises(ConnectorError) as failure: client.get('/api/project/1')
+    with pytest.raises(ConnectorError) as failure: client.get(project_path(live_connector))
     assert failure.value.status == 401
 
 

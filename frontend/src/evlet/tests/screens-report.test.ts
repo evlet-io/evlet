@@ -4,17 +4,17 @@ import { copy } from './server';
 
 // Responses recorded from the real report routes (record_reports in scripts/generate_ui_framework_fixtures.py):
 // CustomerRates, a manual report with two filters, a link column, a total over every row and a bar chart.
-const customer = (id: number, name: string) => ({ status: 200, etag: null, body: { id, name, rate: '0.00', credit_days: 30 } });
+const customer = (id: string, name: string) => ({ status: 200, etag: null, body: { id, name, rate: '0.00', credit_days: 30 } });
 const routes = (extra: Route[] = [], schema = screen.report_schema): Route[] => [
   ...extra,
   ['GET', /\/api\/auth\/session$/, screen.report_session],
   ['GET', /\/api\/schema$/, schema],
   ['POST', /\/api\/_reports\/CustomerRates\/evaluate$/, screen.report_evaluate],
   ['POST', /\/api\/_reports\/CustomerRates$/, sent => sent.body.sort === '-rate' ? screen.report_run_sorted : screen.report_run],
-  ['GET', /\/api\/customer\/1$/, customer(1, 'Corniche Foods')],
-  ['GET', /\/api\/customer\/2$/, customer(2, 'Al Noor Trading')],
-  ['GET', /\/api\/customer\/3$/, customer(3, 'Blue Dune Interiors')],
-  ['GET', /\/api\/customer\/4$/, customer(4, 'Oasis Water')],
+  ['GET', /\/api\/customer\/0000000000001$/, customer('0000000000001', 'Corniche Foods')],
+  ['GET', /\/api\/customer\/0000000000002$/, customer('0000000000002', 'Al Noor Trading')],
+  ['GET', /\/api\/customer\/0000000000003$/, customer('0000000000003', 'Blue Dune Interiors')],
+  ['GET', /\/api\/customer\/0000000000004$/, customer('0000000000004', 'Oasis Water')],
   ['POST', /\/api\/_reports\/RatesByTerms\/evaluate$/, screen.report_evaluate],
   ['POST', /\/api\/_reports\/RatesByTerms$/, screen.report_grouped_run],
   ['GET', /\/api\/customer\?limit=\d+&offset=0$/, { status: 200, etag: null, body: { items: [], total: 0, limit: 50, offset: 0 } }],
@@ -57,7 +57,7 @@ describe('reports', () => {
     expect(body).toMatchObject({ filters: { min_days: 25, search: '' }, limit: 50, offset: 0, sort: null });
     // Link cells show the record title and open the record; numbers carry the report's currency.
     await until(() => expect(cells()[0][0]).toBe('Al Noor Trading'));
-    expect(page().querySelector('tbody a.ev-row-link')!.getAttribute('href')).toBe('/app/customer/2');
+    expect(page().querySelector('tbody a.ev-row-link')!.getAttribute('href')).toBe('/app/customer/0000000000002');
     expect(cells()[0].slice(1)).toEqual(['Al Noor Trading', '45', 'AED 480.50']);
     expect(text(page().querySelector('tfoot'))).toContain('AED 2,040.50');
     expect(text(page().querySelector('tfoot'))).toContain('Total');

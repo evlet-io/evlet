@@ -2,12 +2,15 @@
 //
 //   const api = createClient({ signal: () => router.signal });
 //   await api.session();                 // learns the CSRF token
-//   const { data, etag } = await api.get('invoice', 42);
-//   await api.update('invoice', 42, { remarks: 'Paid by cheque' }, etag);
+//   const { data, etag } = await api.get('invoice', '01hc1sd9vc1ye');
+//   await api.update('invoice', '01hc1sd9vc1ye', { remarks: 'Paid by cheque' }, etag);
 //
 // Conventions follow evlet/auth.py and evlet/business.py: the session cookie is sent by the
 // browser, every write carries X-Evlet-Request and X-CSRF-Token, and record writes send the
-// ETag from the last read as If-Match. Errors come back as {error, fields?}.
+// ETag from the last read as If-Match. Errors come back as {error, fields?}. Record ids are
+// 13-character text ids (ids.ts), never numbers.
+
+import { isRecordId, recordId } from './ids';
 
 export type FieldErrors = Record<string, string>;
 export type ErrorKind = 'network' | 'aborted' | 'validation' | 'conflict' | 'auth' | 'forbidden' | 'not_found' | 'limited' | 'server' | 'response';
@@ -64,11 +67,12 @@ export interface User { id: number; username: string; role: string }
 export interface Session { user: User | null; csrf?: string; setup?: boolean; tenant?: unknown; application?: { name?: string; playground?: boolean; docs?: string | null } }
 export interface Page<T> { items: T[]; total: number; limit: number; offset: number }
 export type RecordData = Record<string, unknown> & {
-  id: number;
+  /** The 13-character text id (ids.ts). */
+  id: string;
   children?: Record<string, RecordData[]>;
   children_pages?: Record<string, { total: number; limit: number; partial: boolean }>;
   /** After a write: the id given to each new row, by the _key it was sent with. */
-  _row_ids?: Record<string, number>;
+  _row_ids?: Record<string, string>;
 };
 export interface DraftResult { values: Record<string, unknown>; errors: FieldErrors; states: Record<string, string>; revision: unknown }
 /** filters: an object of "field__operator" keys, or a list of [field, operator, value] conditions and child groups (docs/ui.md, Filters). */
@@ -81,9 +85,10 @@ function modelPath(model: string) {
   if (!NAME.test(model)) throw new ApiError(`Unknown model ${model}`, 0, 'response');
   return `/api/${model}`;
 }
-function recordPath(model: string, id: number) {
-  if (!Number.isSafeInteger(id) || id < 1) throw new ApiError('This record ID is outside the supported browser range.', 0, 'response');
-  return `${modelPath(model)}/${id}`;
+function recordPath(model: string, id: string) {
+  const text = recordId(id);
+  if (!text) throw new ApiError('This is not a record id.', 0, 'response');
+  return `${modelPath(model)}/${text}`;
 }
 
 // One signal that aborts when any of the given signals aborts, and a release that drops
@@ -218,7 +223,7 @@ export class ApiClient {
     return data;
   }
 
-  async get(model: string, id: number, signal?: AbortSignal) { return this.request<RecordData>('GET', recordPath(model, id), { signal }); }
+  async get(model: string, id: string, signal?: AbortSignal) { return this.request<RecordData>('GET', recordPath(model, id), { signal }); }
 
   /** Create a record. Child rows go in `children: {table: [rows]}`, each new row with a `_key`. */
   async create(model: string, values: Record<string, unknown>) { return this.request<RecordData>('POST', modelPath(model), { body: values }); }
@@ -227,25 +232,25 @@ export class ApiClient {
    * Change a record. A Table may be sent as a change set
    * `children: {lines: {create: [...], update: [{id, ...}], delete: [ids], order: [ids and _keys]}}`.
    */
-  async update(model: string, id: number, changes: Record<string, unknown>, etag: string | null) {
+  async update(model: string, id: string, changes: Record<string, unknown>, etag: string | null) {
     return this.request<RecordData>('PATCH', recordPath(model, id), { body: changes, ifMatch: etag });
   }
 
-  async remove(model: string, id: number, etag: string | null) { return this.request<null>('DELETE', recordPath(model, id), { ifMatch: etag }); }
+  async remove(model: string, id: string, etag: string | null) { return this.request<null>('DELETE', recordPath(model, id), { ifMatch: etag }); }
 
   /**
    * One page of an owned table: path is the table name, or a route to a nested table
-   * through row ids, for example ['lines', 17, 'parts'].
+   * through row ids, for example ['lines', '01hc1sd9vc1ye', 'parts'].
    */
-  async lines<T = RecordData>(model: string, id: number, path: Array<string | number>, page: { limit?: number; offset?: number } = {}, signal?: AbortSignal): Promise<Page<T>> {
-    if (path.length % 2 !== 1 || path.some((part, index) => index % 2 ? !Number.isSafeInteger(part) || (part as number) < 1 : !NAME.test(String(part))))
+  async lines<T = RecordData>(model: string, id: string, path: string[], page: { limit?: number; offset?: number } = {}, signal?: AbortSignal): Promise<Page<T>> {
+    if (path.length % 2 !== 1 || path.some((part, index) => index % 2 ? !isRecordId(part) : !NAME.test(part)))
       throw new ApiError('Use a table name, or table, row id, table... for nested rows.', 0, 'response');
     const { data } = await this.request<Page<T>>('GET', `${recordPath(model, id)}/lines/${path.join('/')}`, { query: { limit: page.limit, offset: page.offset }, signal });
     return data;
   }
 
   /** Evaluate unsaved values on the server (calculations the browser cannot run locally). */
-  async draft(model: string, body: { id?: number | null; values: Record<string, unknown>; revision?: unknown; calculation?: unknown }): Promise<DraftResult> {
+  async draft(model: string, body: { id?: string | null; values: Record<string, unknown>; revision?: unknown; calculation?: unknown }): Promise<DraftResult> {
     modelPath(model);
     return (await this.request<DraftResult>('POST', `/api/_draft/${model}`, { body })).data;
   }
@@ -260,7 +265,7 @@ export class ApiClient {
   }
 
   /** Run a model action. A long action answers 202 with {job, record}. */
-  async action(model: string, id: number, name: string, args: Record<string, unknown> = {}, etag: string | null = null) {
+  async action(model: string, id: string, name: string, args: Record<string, unknown> = {}, etag: string | null = null) {
     if (!NAME.test(name)) throw new ApiError(`Unknown action ${name}`, 0, 'response');
     return this.request<RecordData | { job: unknown; record: RecordData }>('POST', `${recordPath(model, id)}/actions/${name}`, { body: args, ifMatch: etag });
   }
@@ -270,7 +275,7 @@ export class ApiClient {
    * move asks for (`asks` in `_moves`); the server answers with the record and its new `_moves`,
    * 422 with field errors, or 409 when the move is not available.
    */
-  async move(model: string, id: number, to: string, etag: string | null, values: Record<string, unknown> = {}) {
+  async move(model: string, id: string, to: string, etag: string | null, values: Record<string, unknown> = {}) {
     if (!SEGMENT.test(to)) throw new ApiError(`Unknown state ${to}`, 0, 'response');
     return this.request<RecordData>('POST', `${recordPath(model, id)}/moves/${to}`, { body: values, ifMatch: etag });
   }

@@ -12,9 +12,9 @@ def test_transactional_events_and_filtered_replay(secured):
     c = client(secured)
     baseline = c('GET', '/api/_events')[1]['cursor']
     assert baseline == '0'
-    c('POST', '/api/customer', {'name': 'Visible'})
+    customer = c('POST', '/api/customer', {'name': 'Visible'})[1]
     page = c('GET', '/api/_events?cursor=0')[1]
-    assert page['items'] == [{'model': 'customer', 'id': 1, 'deleted': False}]
+    assert page['items'] == [{'model': 'customer', 'id': customer['id'], 'deleted': False}]
     assert len(page['cursor']) == 48
     assert c('GET', '/api/_events?cursor=' + page['cursor'])[1]['items'] == []
     with pytest.raises(RuntimeError):
@@ -29,14 +29,14 @@ def test_transactional_events_and_filtered_replay(secured):
 
 def test_events_never_include_hidden_rows_fields_or_deleted_scoped_ids(secured):
     c = client(secured)
-    c('POST', '/api/customer', {'name': 'visible', 'notes': 'secret'})
+    visible = c('POST', '/api/customer', {'name': 'visible', 'notes': 'secret'})[1]
     c('POST', '/api/customer', {'name': 'hidden', 'notes': 'secret'})
     secured.business.policy = Policy(secured.registry, rules={('viewer', Customer): Rule(('read',), read_fields=('name',), scope=lambda user: {'name': 'visible'})})
     viewer = client(secured, 'viewer')
     page = viewer('GET', '/api/_events?cursor=0')[1]
-    assert page['items'] == [{'model': 'customer', 'id': 1, 'deleted': False}]
+    assert page['items'] == [{'model': 'customer', 'id': visible['id'], 'deleted': False}]
     assert 'secret' not in json.dumps(page) and 'hidden' not in json.dumps(page)
-    c('DELETE', '/api/customer/1')
+    c('DELETE', f"/api/customer/{visible['id']}")
     assert viewer('GET', '/api/_events?cursor=' + page['cursor'])[1]['items'] == []
     assert c('GET', '/api/_events?cursor=' + page['cursor'])[1]['items'][0]['deleted'] is True
 

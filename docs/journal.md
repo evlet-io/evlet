@@ -94,10 +94,10 @@ commits, no entry is left behind.
 
 ```json
 {"rows": {"lines": {
-  "added": [{"id": 7, "fields": {"qty": {"old": null, "new": "1.0000"}}}],
-  "updated": [{"id": 5, "fields": {"qty": {"old": "2.0000", "new": "3.0000"}},
-               "rows": {"remarks": {"added": [{"id": 9, "fields": {"text": {"old": null, "new": "y"}}}]}}}],
-  "removed": [{"id": 6, "fields": {"rate": {"old": "3.00", "new": null}}}],
+  "added": [{"id": "01hc1sd9vc1yg", "fields": {"qty": {"old": null, "new": "1.0000"}}}],
+  "updated": [{"id": "01hc1sd9vc1ye", "fields": {"qty": {"old": "2.0000", "new": "3.0000"}},
+               "rows": {"remarks": {"added": [{"id": "01hc1sdb0j8m4", "fields": {"text": {"old": null, "new": "y"}}}]}}}],
+  "removed": [{"id": "01hc1sd9vc1yf", "fields": {"rate": {"old": "3.00", "new": null}}}],
   "reordered": true
 }}}
 ```
@@ -262,7 +262,7 @@ already tell readers the same. An action's name is shown only to roles that can 
   role may post (empty for viewers by default).
 * The `EventStore` stays the way to learn about live changes; it is not history. Engine
   entries come with the record's usual change event. A user entry publishes an event with
-  `"journal": true` (`{"model": "invoice", "id": 4, "deleted": false, "journal": true}`), so
+  `"journal": true` (`{"model": "invoice", "id": "01hc1sd9vc1ye", "deleted": false, "journal": true}`), so
   an open record view can refresh its activity without reloading the record.
 
 ## Tamper evidence

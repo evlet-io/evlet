@@ -34,9 +34,13 @@ assistants read; public endpoints cannot be tools:
 
 ```python
 @api(method='GET', permission=(Project, 'read'), tool=True)
-def project_overview(context, project: int):
+def project_overview(context, project: RecordId):
     """One project at a glance: its status, progress, budget and how many of its tasks are done."""
 ```
+
+A parameter annotated `RecordId` takes a record's text id (`"01hc1sd9vc1ye"`) and arrives as a
+`RecordId`; the tool schema describes it as a string. Services and actions take `str`, `int`,
+`bool`, `float` and `RecordId` arguments.
 
 The Playground offers `playground.project_overview` this way.
 

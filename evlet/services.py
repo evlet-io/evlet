@@ -12,6 +12,7 @@ from urllib.parse import parse_qs
 
 from .auth import AccessError, User
 from .documents import Context, typed_arguments
+from .identity import RecordId
 from .models import ValidationError
 
 
@@ -148,7 +149,7 @@ def collect_service(package, module):
             from typing import get_type_hints
             parameters = list(inspect.signature(function).parameters.values())
             annotations = get_type_hints(function)
-            if not parameters or parameters[0].name != 'context' or any(parameter.kind not in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY) or annotations.get(parameter.name) not in (str, int, bool, float) for parameter in parameters[1:]):
+            if not parameters or parameters[0].name != 'context' or any(parameter.kind not in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY) or annotations.get(parameter.name) not in (str, int, bool, float, RecordId) for parameter in parameters[1:]):
                 raise ValueError('API functions require context followed by explicitly typed scalar inputs')
             if not isinstance(declaration['permission'], tuple) or len(declaration['permission']) != 2:
                 raise ValueError('API permission must be a resource/operation pair')
@@ -197,7 +198,7 @@ def dispatch(business, scope, body, user):
             values = {key: value[0] for key, value in query.items()}
             from typing import get_type_hints
             for key, kind in get_type_hints(endpoint.function).items():
-                if key in values and kind in (int, float): values[key] = kind(values[key])
+                if key in values and kind in (int, float, RecordId): values[key] = kind(values[key])
                 elif key in values and kind is bool:
                     if values[key] not in ('true', 'false'): raise ValueError('Invalid boolean')
                     values[key] = values[key] == 'true'

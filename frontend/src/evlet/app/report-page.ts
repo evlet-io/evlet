@@ -73,7 +73,8 @@ export function ReportsPage(ctx: AppContext): HTMLElement {
 function fromAddress(meta: FieldSchema, text: string): unknown {
   if (text.startsWith('[') || text.startsWith('{')) { try { return JSON.parse(text); } catch { return null; } }
   if (meta.type === 'boolean') return text === 'true';
-  if (['integer', 'link'].includes(meta.type) && /^-?\d{1,15}$/.test(text)) return Number(text);
+  // Record ids stay text (13 characters); only whole numbers become numbers.
+  if (meta.type === 'integer' && /^-?\d{1,15}$/.test(text)) return Number(text);
   return text;
 }
 
@@ -91,7 +92,7 @@ export function cellText(ctx: AppContext, column: ReportColumn, value: unknown):
     case 'integer': return formatNumber(value as number, 0);
     case 'date': return formatDate(String(value));
     case 'boolean': return value ? 'Yes' : 'No';
-    case 'link': return column.link ? ctx.links.title(column.link, Number(value)).get() ?? String(value) : String(value);
+    case 'link': return column.link ? ctx.links.title(column.link, String(value)).get() ?? String(value) : String(value);
     default: return String(value);
   }
 }
@@ -271,7 +272,7 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
     if (!filters) return null;
     const chips = shown.filter(meta => !blank(filters[meta.name])).map(meta => {
       const value = filters[meta.name];
-      const text = meta.type === 'link' && meta.target ? () => ctx.links.title(meta.target!, Number(value)).get() ?? String(value)
+      const text = meta.type === 'link' && meta.target ? () => ctx.links.title(meta.target!, String(value)).get() ?? String(value)
         : meta.type === 'date' ? formatDate(String(value)) : meta.type === 'boolean' ? (value ? 'Yes' : 'No')
           : meta.type === 'select' ? humanize(String(value)) : Array.isArray(value) ? value.map(item => humanize(String(item))).join(', ') : String(value);
       return html`<span class="chip ev-report-chip"><span class="muted">${meta.label}</span> <b>${text}</b></span>`;

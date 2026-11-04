@@ -153,7 +153,7 @@ role may write are asked for.
 
 ```python
 lost_reason = Text(applies_when=F("stage") == "lost", required_when=F("stage") == "lost")
-# POST /api/deal/7/moves/lost  {"lost_reason": "Chose another vendor"}
+# POST /api/deal/01hc1sd9vc1ye/moves/lost  {"lost_reason": "Chose another vendor"}
 context.move(Deal, 7, "lost", lost_reason="Chose another vendor")
 ```
 
@@ -208,7 +208,7 @@ def record_payment(self, amount): ...
   name a record the caller can read. The method must take exactly those names, and `name`,
   `model`, `record_id` and `self` are reserved because `context.action()` uses them. Each
   input field is copied, so one Field instance may be shared. Without
-  `inputs`, the method's annotated scalar parameters (`str`, `int`, `bool`, `float`) are its
+  `inputs`, the method's annotated scalar parameters (`str`, `int`, `bool`, `float`, `RecordId`) are its
   inputs, as before.
 * `available_when` is a finite-v1 Boolean expression decided on the saved record before
   the inputs are read. When it is not true the server answers 409, for example
