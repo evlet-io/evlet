@@ -12,11 +12,14 @@ import { InlineValue } from './inline';
 import { humanize } from './kinds';
 import { toast } from './layers';
 
-/** The record layout: main column and side panel (right, left or off), comfortable or compact. */
-export function DocFrame(props: { tint: Tint; main: Child; side?: Child; sidePosition?: Prop<'left' | 'right' | 'off'>; density?: Prop<'comfortable' | 'compact'> }): HTMLElement {
-  const position = () => read(props.sidePosition ?? 'right');
+/**
+ * The record layout: main column and side panel (right, left or off), comfortable or compact.
+ * The panel variant is the narrow layout of a record opened beside a list: one column, no side panel.
+ */
+export function DocFrame(props: { tint: Tint; main: Child; side?: Child; sidePosition?: Prop<'left' | 'right' | 'off'>; density?: Prop<'comfortable' | 'compact'>; variant?: 'page' | 'panel' }): HTMLElement {
+  const position = () => props.variant === 'panel' ? 'off' : read(props.sidePosition ?? 'right');
   const accent = tint(props.tint);
-  return html`<div class="doc" class:no-side=${() => position() === 'off' || !props.side} class:side-left=${() => position() === 'left'}
+  return html`<div class="doc" class:doc-panel=${props.variant === 'panel'} class:no-side=${() => position() === 'off' || !props.side} class:side-left=${() => position() === 'left'}
     class:compact=${() => read(props.density ?? 'comfortable') === 'compact'} style:--acc=${`var(--t-${accent})`} style:--acc-bg=${`var(--t-${accent}-bg)`}>
     <div class="doc-main">${props.main}</div>${props.side ? when(() => position() !== 'off', () => html`<aside class="doc-side" aria-label="Side panel">${props.side}</aside>`) : null}</div>` as HTMLElement;
 }

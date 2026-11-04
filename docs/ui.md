@@ -13,14 +13,14 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 - Sign-in and first-run setup (the first administrator account).
 - Docs after sign-in, with its topics.
 - The shell: sidebar with the models, recent records, search palette and New menu.
-- Generated model screens: lists, boards for models with a State, record views, new
-  records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
+- Generated model screens: lists, boards for models with a State, record views (on their own
+  page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
   files.
 - Slips ([slips.md](slips.md)): forms presented from a record, the New menu, an action or browser
   code, checked on the server and handed in to a handler or turned into a record.
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
-`layout`, `key_fields`, `relations` and `measures`. See "What the model decides" in
+`layout`, `key_fields`, `relations`, `measures` and `open_in`. See "What the model decides" in
 [ui-framework.md](ui-framework.md).
 
 ## Not rendered by this interface

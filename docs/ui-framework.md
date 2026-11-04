@@ -280,8 +280,9 @@ mark only.
 | `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
-| `childtable.ts` | ChildTable over a record store `Table` |
-| `doc.ts` | DocFrame, DocHeader, MoveButton, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
+| `childtable.ts` | ChildTable over a record store `Table`, and ChildRows for a narrow column |
+| `split.ts` | SplitView: a main area and a resizable side panel |
+| `doc.ts` | DocFrame (page or panel variant), DocHeader, MoveButton, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
 | `theme.ts` | `applyTheme`, `resolveTheme`, `systemScheme`, `currentTheme`, `THEMES`, `isTheme` ([Themes](#themes)) |
 | `../app/filters.ts` | The list filter builder: filterBuilder, FilterPanel, FilterChips, filterFields, conditionsFor, encode, decode, compact |
@@ -456,6 +457,17 @@ mount(document.querySelector('#app')!, () => DocFrame({
   arrow keys and opens with Enter. Widths, order and hidden columns live in a `TablePrefs`
   cell the screen saves per user. When the frame is wider than the columns, the last column
   takes the spare width, so the header and row rules reach the edge; the child table does the same.
+  `current` marks the row open beside the table (`aria-current`) and keeps it in view; `onMove`
+  reports the row the arrow keys move to, so a side panel can follow.
+- **SplitView** puts a side panel beside a main area. The divider is a `separator`: drag it, move
+  it with Left and Right (Home and End for the widest and narrowest), double click to reset. The
+  width is a cell the caller keeps; the panel takes at least `minSide` (380 px) and at most 70
+  percent, leaving `minMain` (320 px). Below `breakpoint` (900 px) the panel covers the main area
+  and `overlay` says so.
+- **ChildRows** shows a record `Table` in a narrow column: one line per row with its first value
+  and its last amount, the other numbers under it; a row opens in place with its fields, and Add
+  row, Remove row and Open full table sit around it. Locked lines show values only.
+- **FormSection** with `collapsible` opens and closes from its heading (`aria-expanded`).
 - Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
   first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
   polite live region that the app creates at mount with `mountToasts()`. A popover stays open
@@ -464,7 +476,7 @@ mount(document.querySelector('#app')!, () => DocFrame({
   asks for in one turn, none for a record already read or being read), keeps them for the session
   and forgets them when it ends; `recordOf(field)` gives a field's record store. Data is always text: nothing a record holds is parsed as markup.
 
-The Library page (`ui/library.ts`) lists all 114 components of the design catalog with their
+The Library page (`ui/library.ts`) lists all 117 components of the design catalog with their
 details and a live demo for each one built here; the rest are marked for the screens phase.
 The development entry (`frontend/evlet.html`, `src/evlet/dev.ts`) runs it against a sample
 order replayed from `api-fixture.json`, so record-bound components work without a server. It
@@ -581,12 +593,44 @@ values.
 Routes are the paths the Python server serves (`evlet/ui/routes.py`): `/docs` and
 `/docs/:topic`, `/app/:model` (list), `/app/:model/new` (a new record; field values in the query
 fill it, `?customer=4`), `/app/:model/:id` (a record; `?tab=` keeps the tab) and the older
-`/app/:model/:id/view`, which opens the record. `/reports/:report` says that screen is not part
+`/app/:model/:id/view`, which opens the record. A list with a record in its side panel keeps
+it in `?open=` (the id, or `new`) and the record's tab in `?rtab=`. `/reports/:report` says that screen is not part
 of this interface; `/controls` loads Controls as its own chunk (`frontend/src/evlet/controls/`,
 see [controls.md](controls.md)); any other address opens Docs. The earlier
 development paths `/ui/...` and `/m/:model` are gone. A list keeps its search, sort, page, view, saved view and filters in the query, so
 a link opens the same list. A record with unsaved changes asks before the page changes or the
 tab closes. Signing in keeps the address the user opened.
+
+### Side panel
+
+A list opens a record on its own page or in a side panel beside it. `Meta.open_in = "panel"`
+sets the app's default, the Controls list view ("Open records in") changes it for an instance,
+and each person can choose in the list's layout menu (the panel icon next to Filter). The
+person's choice wins, then the instance's, then the app's. It is a layout preference, not a
+permission. A link with `?open=` opens the panel whatever the setting, and Ctrl or Cmd click on
+a title opens the full page in a new browser tab.
+
+- The list narrows: it keeps the title (with the document number under it when the title is
+  something else), the State and the first amount, and hides the measures and the bulk bar. When
+  the list is narrower than 460 px each record takes two lines. The open row is current
+  (`aria-current`) and stays in view.
+- Up and Down move along the list and the panel follows; switching rows replaces the history
+  entry, so Back closes the panel. Escape and the close button close it and return focus to the
+  row. The divider resizes the panel, and the width is kept per list.
+- The panel is the record view with `DocFrame`'s panel variant: the same sections in one column.
+  The header keeps two buttons and puts the rest in More; key facts sit under the title; the side
+  column's Files and Record info close the Details tab and Related is a tab; sections close from
+  their heading (remembered per model); child tables are ChildRows with Open full table; the save
+  bar is pinned to the bottom of the panel. Tabs that do not fit scroll sideways.
+- Unsaved changes follow the record page: another tab of the record does not ask; another row,
+  Close, Escape, Back or leaving the list does (`confirmLeave` with `stays`). Expand opens the
+  record page at the same tab with the same record store, so unsaved edits come along without a
+  prompt.
+- New opens `?open=new`; values in the link fill the new record as on `/app/:model/new`. Create
+  shows the new record in the panel and its row in the list. Slips, moves and actions work as on
+  the page; a saved or moved record updates its row.
+- When the content area is narrower than 900 px the panel covers the list with a back link
+  (`Invoices`), and on phones it takes the screen.
 
 ### What the model decides
 
@@ -598,6 +642,7 @@ tab closes. Signing in keeps the address the user opened.
 | `Meta.title_field` | The record title (edited in place) and the pinned first list column |
 | `Meta.search_fields` | The list search box and record search in the palette |
 | `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other |
+| `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
 | `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |
@@ -628,7 +673,8 @@ Documents in the sidebar, the others as Records.
 
 Appearance, region, start page and sidebar counts are the person's Settings, kept on the server
 ([settings.md](settings.md)), and so is the theme ([Themes](#themes)). Layout preferences (sidebar, list column
-widths, child table columns, quick access) are kept in browser storage under `evlet.<username>.`.
+widths, child table columns, quick access, how each list opens records, the side panel's width and
+the panel sections a person closed) are kept in browser storage under `evlet.<username>.`.
 They never hold record data: recent records and recent searches stay in memory for the signed-in
 session and go on sign-out. The account area is at the bottom of the sidebar; the top bar keeps
 search and notifications.
