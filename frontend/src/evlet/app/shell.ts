@@ -122,7 +122,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
         ref=${(el: HTMLElement) => tooltip(el, () => dark() ? 'Light theme' : 'Dark theme')}>${() => Icon(dark() ? 'sun' : 'moon')}</button>`)}</div>
     </div></aside>` as HTMLElement;
 
-  const creatable = models.filter(model => model.permissions?.create !== false);
+  const creatable = models.filter(model => model.api !== 'read' && model.permissions?.create !== false);
   // Slips declared with menu = True open from New too; they save nothing until handed in.
   const menuSlips = ctx.schema.schema.slips ?? [];
   const crumbs = () => ctx.crumbs.get().map((crumb, index, all) => index === all.length - 1

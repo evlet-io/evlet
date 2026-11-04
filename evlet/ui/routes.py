@@ -88,7 +88,7 @@ def _serves(application, frontend, base, rest):
             return re.fullmatch(r'/eva(/tasks|/[1-9][0-9]{0,15})?', path) is not None
         if base == '/app':
             match = GENERATED.fullmatch(path)
-            return bool(match) and match[1] in application.registry.models
+            return bool(match) and match[1] in application.registry.exposed
         return path == '/' or any(view.route and route_pattern(view.route).fullmatch(path) for view in application.ui.views.values())
     if frontend == 'evlet.login':
         return path == '/login'
@@ -170,7 +170,7 @@ def _frontend(application, scope, host, identity, base, rest):
     config = _config(application, scope, host, identity, base)
     if definition.kind == 'evlet':
         match = MODEL_PATH.fullmatch(rest)
-        if match is None or match[1] and match[1] not in application.registry.models:
+        if match is None or match[1] and match[1] not in application.registry.exposed:
             raise HTTPError(404, 'Route not found')
         response = static_response('/', config)
     elif definition.kind == 'static':

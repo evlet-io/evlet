@@ -5,7 +5,7 @@ A report reads through its context, so each person sees only the rows and fields
 
 from evlet import Chart, Column, Count, Date, Link, Report, Select, Sum
 
-from .models import Customer, Invoice
+from .models import Customer, Invoice, LedgerEntry
 
 def aed_customers(context):
     """Customers billed in AED. A total needs one declared unit, so these reports keep to one currency.
@@ -103,4 +103,30 @@ class InvoicesByCustomer(InvoiceRegister):
                 'groups': [{'value': group['customer'], 'count': group['n'], 'totals': {'total': group['total']}} for group in groups]}
 
 
-REPORTS = (InvoiceRegister, InvoicesByCustomer, SalesByCustomer)
+class LedgerBalances(Report):
+    """What each customer owes from posted invoices, read from the ledger. Ledger entries have Meta.api = "read":
+    only Post to ledger writes them, and a report reads them like any model. A report would read a model with
+    Meta.api = None too, and show only the columns it returns, to the roles it names."""
+    title = 'Ledger balances'
+    roles = ('admin', 'editor')
+    group = 'Sales'
+    model = LedgerEntry
+    autorun = True
+    sortable = ('entries', 'amount')
+    to_date = Date(label='Posted up to')
+    columns = (Column('customer', type='link', link='customer'), Column('entries', type='integer', total=True, unit='entries'),
+               Column('amount', type='currency', total=True, unit='AED', label='Owed'))
+
+    def run(self):
+        customers = aed_customers(self.context)
+        if not customers: return {'rows': [], 'total': 0, 'totals': {'entries': 0, 'amount': 0}}
+        filters = {'customer__in': customers, **({'posting_date__lte': self.to_date} if self.to_date else {})}
+        groups = self.context.aggregate(LedgerEntry, measures={'entries': Count(), 'amount': Sum('amount')}, group_by=('customer',), filters=filters)
+        order = (self.context.sort or ('-amount',))[0]
+        groups.sort(key=lambda row: row[order.lstrip('-')] or 0, reverse=order.startswith('-'))
+        offset, limit = self.context.offset, self.context.limit
+        totals = {'entries': sum(row['entries'] for row in groups), 'amount': sum((row['amount'] or 0 for row in groups), 0)}
+        return {'rows': groups[offset:offset + limit], 'total': len(groups), 'totals': totals}
+
+
+REPORTS = (InvoiceRegister, InvoicesByCustomer, SalesByCustomer, LedgerBalances)
