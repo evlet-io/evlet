@@ -9,7 +9,7 @@ from test_api import request
 
 @pytest.mark.parametrize("amount", ["1e999999999", "-1e999999999"])
 def test_extreme_currency_returns_field_validation(application, database, amount):
-    customer = database.create(Customer, name="Currency check")
+    customer = database.create(Customer, customer_name="Currency check")
     status, payload, headers = request(application, "POST", "/api/invoice", {
         "customer": customer.id, "reference": "EXTREME", "total": amount,
     })
@@ -23,7 +23,7 @@ def test_extreme_currency_returns_field_validation(application, database, amount
 @pytest.mark.parametrize("key", ["\ud800", "\udfff", "invalid\ud800name"])
 def test_invalid_unicode_key_returns_json_validation(application, database, key):
     status, payload, headers = request(application, "POST", "/api/customer", {
-        "name": "Unicode check", key: 1,
+        "customer_name": "Unicode check", key: 1,
     })
     assert status == 422
     assert payload["fields"][key] == "Unknown field"
@@ -34,15 +34,15 @@ def test_invalid_unicode_key_returns_json_validation(application, database, key)
 
 def test_valid_unicode_still_round_trips(application):
     name = "مقهى دبي ☕"
-    status, customer, _ = request(application, "POST", "/api/customer", {"name": name})
-    assert status == 201 and customer["name"] == name
+    status, customer, _ = request(application, "POST", "/api/customer", {"customer_name": name})
+    assert status == 201 and customer["customer_name"] == name and customer["title"] == name
     assert request(application, "GET", f'/api/customer/{customer["id"]}')[1] == customer
 
 
 @pytest.mark.parametrize('field', ['total', 'tax_rate'])
 @pytest.mark.parametrize('amount', ['1e999999999', '-1e999999999'])
 def test_extreme_decimals_in_create_update_and_query(application, database, field, amount):
-    customer = database.create(Customer, name='Decimal check')
+    customer = database.create(Customer, customer_name='Decimal check')
     values = {'customer': customer.id, 'reference': 'VALID', 'total': '12.50'}
     status, payload, _ = request(application, 'POST', '/api/invoice', {**values, field: amount})
     assert status == 422 and field in payload['fields']
@@ -58,11 +58,11 @@ def test_extreme_decimals_in_create_update_and_query(application, database, fiel
 
 
 def test_invalid_unicode_update_does_not_change_record(application, database):
-    customer = database.create(Customer, name='Keep this name')
+    customer = database.create(Customer, customer_name='Keep this name')
     key = '\ud800'
     status, payload, headers = request(application, 'PATCH', f'/api/customer/{customer.id}', {
-        'name': 'Changed', key: 1,
+        'customer_name': 'Changed', key: 1,
     })
     assert status == 422 and payload['fields'][key] == 'Unknown field'
     assert headers[b'content-type'].startswith(b'application/json')
-    assert database.get(Customer, customer.id).name == 'Keep this name'
+    assert database.get(Customer, customer.id).customer_name == 'Keep this name'

@@ -3,27 +3,27 @@ from evlet import Model, Text, Link, Decimal, Boolean, Select, Rule, Date, Integ
 
 class Company(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read',)), 'viewer': Rule(('read',))}
-    name = Text(required=True)
+    title = Text(required=True)
     phone = Phone()
     payment_days = Integer(default=30, minimum=0)
 
 
 class Warehouse(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read',)), 'viewer': Rule(('read',))}
-    name = Text(required=True)
+    title = Text(required=True)
     company = Link(Company, required=True)
 
 
 class ItemMaster(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read',)), 'viewer': Rule(('read',))}
-    name = Text(required=True)
+    title = Text(required=True)
     description = Text()
     unit = Select(('Unit', 'Kg'), required=True, default='Unit')
 
 
 class BOM(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read',)), 'viewer': Rule(('read',))}
-    name = Text(required=True)
+    title = Text(required=True)
     item = Link(ItemMaster, required=True)
     company = Link(Company, required=True)
     is_active = Boolean(default=True, required=True)

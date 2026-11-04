@@ -48,7 +48,7 @@ class StartJob(Slip):
             raise ValidationError({"starts_on": "Pick a date from 2026 on"})
 
     def hand_in(self):                 # runs once, in one transaction
-        job = self.context.create(Job, name=self.name, client=self.client,
+        job = self.context.create(Job, title=self.name, client=self.client,
                                   children={"steps": [{"title": t.title} for t in self.tasks]})
         return Outcome(f"Job {job['id']} started", open=(Job, job["id"]))
 
@@ -128,7 +128,7 @@ the role cannot write are refused with 403, never dropped.
   ```python
   @action("Plan job")
   def plan_job(self):
-      return present(StartJob, source=self, values={"name": self.name + " job"})
+      return present(StartJob, source=self, values={"name": self.title + " job"})
   ```
 
 * **From another slip.** `hand_in()` returns `present(...)` or `Outcome(present=...)`.

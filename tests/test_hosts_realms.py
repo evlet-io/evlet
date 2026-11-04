@@ -122,8 +122,8 @@ def test_portal_and_desk_cookies_are_host_only_and_separate(portal):
 
 
 def test_own_customer_scope_reads_evlet_user_links(portal):
-    acme = portal.database.create(Customer, name='Acme', email='buyer@acme.test')
-    other = portal.database.create(Customer, name='Other')
+    acme = portal.database.create(Customer, customer_name='Acme', email='buyer@acme.test')
+    other = portal.database.create(Customer, customer_name='Other')
     mine = portal.database.create(Invoice, customer=acme.id, reference='INV-1', total='10.00')
     theirs = portal.database.create(Invoice, customer=other.id, reference='INV-2', total='20.00')
     auth = portal.business.auth
@@ -134,11 +134,11 @@ def test_own_customer_scope_reads_evlet_user_links(portal):
     auth.link_user(buyer_id, 'customer', acme.id)
     assert auth.user_links(buyer_id) == (('customer', acme.id),)
     assert [item['reference'] for item in buyer('GET', '/api/invoice')[1]['items']] == ['INV-1']
-    assert [item['name'] for item in buyer('GET', '/api/customer')[1]['items']] == ['Acme']
+    assert [item['customer_name'] for item in buyer('GET', '/api/customer')[1]['items']] == ['Acme']
     assert buyer('GET', f'/api/invoice/{mine.id}')[1]['customer'] == str(acme.id)
     assert buyer('GET', f'/api/invoice/{theirs.id}')[0] == 404
-    assert buyer('POST', '/api/customer', {'name': 'Mine now'})[0] == 403
-    assert set(buyer('GET', f'/api/customer/{acme.id}')[1]) == {'id', 'name', 'email'}
+    assert buyer('POST', '/api/customer', {'customer_name': 'Mine now'})[0] == 403
+    assert set(buyer('GET', f'/api/customer/{acme.id}')[1]) == {'id', 'customer_name', 'email', 'title'}
     auth.unlink_user(buyer_id, Customer, acme.id)
     assert buyer('GET', '/api/invoice')[1]['items'] == []
     from evlet.auth import AccessError
@@ -152,7 +152,7 @@ def test_own_customer_scope_reads_evlet_user_links(portal):
 
 
 def test_portal_role_sees_nothing_without_an_app_rule(portal):
-    project = portal.database.create(Project, name='Hidden')
+    project = portal.database.create(Project, title='Hidden')
     policy = portal.business.policy
     from evlet import User
     assert not policy.allows(User(1, 'buyer', 'portal'), Project, 'read')
@@ -225,11 +225,11 @@ def test_public_endpoints_are_opt_in_and_rate_limited_per_address(portal):
         return {'customers': len(context.list(Customer)['rows']), 'user': context.user.role}
     public = Endpoint('playground.count', count, 'GET', (Customer, 'read'), public=True)
     private = Endpoint('playground.private', count, 'GET', (Customer, 'read'))
-    policy = Policy(registry, rules={('public', Customer): Rule(('read',), read_fields=('name',))})
+    policy = Policy(registry, rules={('public', Customer): Rule(('read',), read_fields=('customer_name',))})
     auth = LocalAuth(portal.database, origins=portal.routes.origins(), secure_cookies=False)
     app = Application(portal.database, auth=auth, policy=policy, apis=(public, private))
     app.initialize()
-    portal.database.create(Customer, name='Acme')
+    portal.database.create(Customer, customer_name='Acme')
     assert http(app, 'GET', '/api/_services/playground.private')[0] == 401
     for _ in range(30):
         status, body, _ = http(app, 'GET', '/api/_services/playground.count')
@@ -565,8 +565,8 @@ def test_old_sessions_gain_the_desk_realm(tmp_path):
 
 def test_portal_users_filter_on_records_they_can_read(portal):
     from urllib.parse import quote
-    acme = portal.database.create(Customer, name='Acme')
-    other = portal.database.create(Customer, name='Other')
+    acme = portal.database.create(Customer, customer_name='Acme')
+    other = portal.database.create(Customer, customer_name='Other')
     portal.database.create(Invoice, customer=acme.id, reference='INV-1', total='10.00')
     portal.database.create(Invoice, customer=other.id, reference='INV-2', total='20.00')
     auth = portal.business.auth

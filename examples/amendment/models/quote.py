@@ -39,7 +39,7 @@ class Quote(Model):
 
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
-    name = Text(required=True)
+    title = Text(required=True)
     # The stage changes only through its moves. Sent, won and lost quotes are locked against ordinary
     # edits; a won quote is final. Only an administrator can reopen a sent or lost quote, or void or
     # revise a sent one (POST /api/quote/{id}/void or /revise with a reason).
@@ -96,4 +96,4 @@ class Quote(Model):
 
     # Effect rows are a pure function of the saved quote.
     def ledger_rows(self):
-        return [{'company': self.company, 'amount': self.payable, 'memo': self.name}]
+        return [{'company': self.company, 'amount': self.payable, 'memo': self.title}]

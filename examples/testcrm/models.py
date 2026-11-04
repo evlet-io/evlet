@@ -25,7 +25,7 @@ SOURCES = ('Referral', 'Website', 'LinkedIn', 'Event', 'Google Ads', 'Cold call'
 class Organization(Model):
     """A company we sell to. Winning its first deal makes it a customer."""
     permissions = {'admin': EVERYTHING, 'editor': Rule(('read', 'create', 'update')), 'viewer': READ}
-    name = Text(required=True, max_length=160)
+    title = Text(required=True, max_length=160, label='Company name')
     industry = Select(INDUSTRIES)
     emirate = Select(EMIRATES, default='Dubai')
     website = URL()
@@ -38,14 +38,13 @@ class Organization(Model):
     tags = Tags()
 
     class Meta:
-        title_field = 'name'
-        list_fields = ('name', 'industry', 'emirate', 'status', 'customer_since', 'phone')
-        search_fields = ('name', 'trn')
+        list_fields = ('title', 'industry', 'emirate', 'status', 'customer_since', 'phone')
+        search_fields = ('title', 'trn')
         key_fields = ('status', 'emirate', 'industry', 'payment_days')
-        layout = (('Company', ('name', 'industry', 'emirate', 'website', 'phone', 'trn')),
+        layout = (('Company', ('title', 'industry', 'emirate', 'website', 'phone', 'trn')),
                   ('Account', ('status', 'customer_since', 'payment_days', 'tags')))
         relations = (Related('deal', 'organization', label='Deals', limit=10, order=('-id',)),
-                     Related('contact', 'organization', label='People', limit=10, order=('name',)))
+                     Related('contact', 'organization', label='People', limit=10, order=('full_name',)))
         measures = {
             'deals': Count('deal', link='organization'),
             'won_value': Sum('total', model='deal', link='organization', where=F('stage') == 'won'),
@@ -57,7 +56,7 @@ class Organization(Model):
 class Contact(Model):
     """A person at an organization."""
     permissions = {'admin': EVERYTHING, 'editor': Rule(('read', 'create', 'update')), 'viewer': READ}
-    name = Text(required=True, max_length=120)
+    full_name = Text(required=True, max_length=120)
     job_title = Text(max_length=120)
     organization = Link(Organization, index=True)
     email = Email()
@@ -66,9 +65,9 @@ class Contact(Model):
     emirate = Text(compute=F('organization.emirate'))
 
     class Meta:
-        title_field = 'name'
-        list_fields = ('name', 'job_title', 'organization', 'email', 'phone')
-        search_fields = ('name', 'email')
+        title_field = 'full_name'
+        list_fields = ('full_name', 'job_title', 'organization', 'email', 'phone')
+        search_fields = ('full_name', 'email')
         key_fields = ('organization', 'job_title', 'email', 'phone')
         # Emails with this person, from a salesperson's own mailbox, land in the Activity tab.
         journal = Journal()
@@ -78,7 +77,7 @@ class Contact(Model):
 class Product(Model):
     """What we sell. Only an administrator changes prices."""
     permissions = {'admin': EVERYTHING, 'editor': READ, 'viewer': READ}
-    name = Text(required=True, max_length=120)
+    title = Text(required=True, max_length=120, label='Product name')
     code = Text(required=True, unique=True, max_length=20)
     kind = Select(('licence', 'service', 'subscription'), default='service')
     price = Currency(default=0, minimum=0)
@@ -86,9 +85,8 @@ class Product(Model):
     active = Boolean(default=True)
 
     class Meta:
-        title_field = 'name'
-        list_fields = ('code', 'name', 'kind', 'price', 'active')
-        search_fields = ('name', 'code')
+        list_fields = ('code', 'title', 'kind', 'price', 'active')
+        search_fields = ('title', 'code')
 
 
 class Booking(Model):
@@ -163,7 +161,7 @@ class Deal(Model):
     class Line(Child):
         product = Link(Product)
         # Suggested from the product; the user may change all three.
-        description = Text(initial=F('product.name'), max_length=200)
+        description = Text(initial=F('product.title'), max_length=200)
         rate = Currency(initial=F('product.price'), minimum=0)
         taxable = Boolean(initial=F('product.taxable'))
         qty = Decimal(scale=2, default=1, minimum=0)
@@ -263,7 +261,7 @@ class Task(Model):
 class Lead(Model):
     """Someone who might buy. A qualified lead is converted into an organization, a contact and a deal."""
     permissions = {'admin': EVERYTHING, 'editor': Rule(('read', 'create', 'update')), 'viewer': READ}
-    name = Text(required=True, max_length=120)
+    full_name = Text(required=True, max_length=120)
     company = Text(required=True, max_length=160)
     email = Email()
     phone = Phone()
@@ -281,9 +279,9 @@ class Lead(Model):
     deal = Link(Deal)
 
     class Meta:
-        title_field = 'name'
-        list_fields = ('name', 'company', 'lead_source', 'score', 'owner', 'status')
-        search_fields = ('name', 'company', 'email')
+        title_field = 'full_name'
+        list_fields = ('full_name', 'company', 'lead_source', 'score', 'owner', 'status')
+        search_fields = ('full_name', 'company', 'email')
         key_fields = ('company', 'score', 'owner', 'lead_source')
         mail = Mail(match=('email',), kind='lead')
 
@@ -291,8 +289,8 @@ class Lead(Model):
             available_when=(F('status') == 'qualified') & (F('deal') == None))  # noqa: E711
     def convert(self, title, expected_close):
         """Creates the organization, the contact and a deal at qualified, and links the deal here."""
-        organization = self.context.create(Organization, name=self.company, phone=self.phone, tags=['From lead'])
-        contact = self.context.create(Contact, name=self.name, organization=organization['id'], email=self.email,
+        organization = self.context.create(Organization, title=self.company, phone=self.phone, tags=['From lead'])
+        contact = self.context.create(Contact, full_name=self.full_name, organization=organization['id'], email=self.email,
                                       phone=self.phone)
         deal = self.context.create(Deal, title=title, organization=organization['id'], contact=contact['id'],
                                    owner=self.owner or self.context.user.username, lead_source=self.lead_source,

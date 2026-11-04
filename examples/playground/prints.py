@@ -14,7 +14,7 @@ class InvoicesByStatus(Report):
     title = 'Invoices by status'
     roles = ('admin', 'editor')
     status = Select(['draft', 'sent'], default='sent')
-    columns = (Column('number', label='Invoice'), Column('reference'), Column('posting_date', type='date', label='Date'),
+    columns = (Column('name', label='Invoice'), Column('reference'), Column('posting_date', type='date', label='Date'),
                Column('total', type='decimal', total=True, unit='mixed currencies'))
 
     def run(self):
@@ -29,7 +29,7 @@ class InvoicePrint(PrintDesign):
     header = (Text('Evlet Playground · {{ doc.name }}', weight='bold'),)
     main = (
         Heading('Invoice'),
-        Fields(('number', 'Invoice no.'), 'posting_date', 'customer', ('reference', 'Your reference'), 'status', 'tax_rate'),
+        Fields(('name', 'Invoice no.'), 'posting_date', ('customer', 'Customer'), ('reference', 'Your reference'), 'status', 'tax_rate'),
         Totals(('total', 'Total')),
         # One block written as HTML: values stay escaped and only readable fields are there.
         Text(html='<p>Amount due: <b>{{ money(doc.total, doc.customer.currency) }}</b>. Please quote {{ doc.name }} with your payment.</p>'),

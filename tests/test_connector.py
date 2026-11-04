@@ -20,8 +20,8 @@ def connector_app():
     def factory(tenant):
         app = tenant_app(tenant)
         app.business.policy = Policy(app.registry, rules={
-            ('viewer', Customer): Rule(read_fields=('name',), scope=lambda user: {'active': True}),
-            ('editor', Customer): Rule(operations=('read', 'update'), read_fields=('name',), write_fields=('name',), scope=lambda user: {'active': True}),
+            ('viewer', Customer): Rule(read_fields=('customer_name',), scope=lambda user: {'active': True}),
+            ('editor', Customer): Rule(operations=('read', 'update'), read_fields=('customer_name',), write_fields=('customer_name',), scope=lambda user: {'active': True}),
         })
         return app
     return TenantApplication(TenantRegistry(os.environ['EVLET_TENANT_ROOT']), factory)
@@ -44,7 +44,7 @@ def live_connector(tmp_path, hashed):
             # The stdio tests change records, so this workspace lets AI assistants make changes.
             tx.connection.execute("INSERT INTO evlet_overrides(kind,key,value) VALUES ('setting','mcp.allow_writes','true')")
             tx.connection.execute('UPDATE evlet_config SET version=version+1')
-        app.database.create(Project, name=slug)
+        app.database.create(Project, title=slug)
         catalog.set_active(slug, True)
     env = {**os.environ, 'EVLET_TENANT_ROOT': str(catalog.root)}
     with (tmp_path / 'server.log').open('w') as log:
@@ -81,7 +81,7 @@ def signed(live_connector, slug='alpha', role='admin'):
 
 def project_path(live_connector, slug='alpha'):
     """The API path of the project the fixture made in that tenant, named after the tenant."""
-    project, = live_connector[1][slug].database.list(Project, filters={'name': slug})
+    project, = live_connector[1][slug].database.list(Project, filters={'title': slug})
     return f'/api/project/{project.id}'
 
 
@@ -106,13 +106,13 @@ def test_live_tools_use_tenant_authentication_permissions_actions_and_validation
     client = signed(live_connector)
     server = MCPServer(client, allow_writes=True); initialize(server)
     alpha_project, beta_project = project_path(live_connector), project_path(live_connector, 'beta')
-    assert invoke(server, 'get_record', {'model': 'project', 'id': alpha_project.rsplit('/', 1)[1]})['result']['structuredContent']['name'] == 'alpha'
-    created = invoke(server, 'create_record', {'model': 'project', 'values': {'name': 'Connector', 'children': {'tasks': [{'title': 'Complete', 'done': True}]}}})['result']['structuredContent']
+    assert invoke(server, 'get_record', {'model': 'project', 'id': alpha_project.rsplit('/', 1)[1]})['result']['structuredContent']['title'] == 'alpha'
+    created = invoke(server, 'create_record', {'model': 'project', 'values': {'title': 'Connector', 'children': {'tasks': [{'title': 'Complete', 'done': True}]}}})['result']['structuredContent']
     record_id = created['id']
     rejected = invoke(server, 'update_record', {'model': 'project', 'id': record_id, 'values': {'status': 'done'}})['result']
     assert rejected['isError'] and rejected['structuredContent']['status'] == 403
-    invalid = invoke(server, 'create_record', {'model': 'project', 'values': {'name': ''}})['result']
-    assert invalid['isError'] and 'name' in invalid['structuredContent']['fields']
+    invalid = invoke(server, 'create_record', {'model': 'project', 'values': {'title': ''}})['result']
+    assert invalid['isError'] and 'title' in invalid['structuredContent']['fields']
     assert approved(live_connector, server, 'run_action', {'model': 'project', 'id': record_id, 'action': 'start'})['result']['structuredContent']['status'] == 'active'
     job = approved(live_connector, server, 'run_action', {'model': 'project', 'id': record_id, 'action': 'refresh_progress'})['result']['structuredContent']['job']
     assert invoke(server, 'job_status', {'id': job['id']})['result']['structuredContent']['state'] == 'queued'
@@ -120,23 +120,23 @@ def test_live_tools_use_tenant_authentication_permissions_actions_and_validation
     assert invoke(server, 'job_status', {'id': job['id']})['result']['structuredContent']['state'] == 'succeeded'
     assert invoke(server, 'get_record', {'model': 'project', 'id': record_id})['result']['structuredContent']['progress'] == 100
     assert approved(live_connector, server, 'delete_record', {'model': 'project', 'id': record_id})['result']['structuredContent'] == {'deleted': True}
-    assert signed(live_connector, 'beta').get(beta_project)['name'] == 'beta'
+    assert signed(live_connector, 'beta').get(beta_project)['title'] == 'beta'
     assert live_connector[1]['beta'].database.count(Project) == 1
     file = tmp_path / 'session.json'; client.save(file)
     assert file.stat().st_mode & 0o777 == 0o600 and PASSWORD not in file.read_text()
-    assert HTTPClient.load(file).get(alpha_project)['name'] == 'alpha'
+    assert HTTPClient.load(file).get(alpha_project)['title'] == 'alpha'
     with pytest.raises(FileExistsError): client.save(file)
 
 
 def test_read_only_connector_and_viewer_cannot_dispatch_mutations(live_connector):
     reader = MCPServer(signed(live_connector)); initialize(reader)
     assert all(tool['annotations']['readOnlyHint'] for tool in reader.available())
-    result = invoke(reader, 'create_record', {'model': 'customer', 'values': {'name': 'Blocked'}})['result']
+    result = invoke(reader, 'create_record', {'model': 'customer', 'values': {'customer_name': 'Blocked'}})['result']
     assert result['isError'] and result['structuredContent']['status'] == 403
     viewer = MCPServer(signed(live_connector, role='viewer'), allow_writes=True); initialize(viewer)
     # call_service is offered for the Playground's read-only service; each service keeps its own permission.
     assert all(tool['annotations']['readOnlyHint'] or tool['name'] == 'call_service' for tool in viewer.available())
-    result = invoke(viewer, 'create_record', {'model': 'customer', 'values': {'name': 'Blocked'}})['result']
+    result = invoke(viewer, 'create_record', {'model': 'customer', 'values': {'customer_name': 'Blocked'}})['result']
     assert result['isError'] and result['structuredContent']['status'] == 403
     for value in ('../auth/users', 'customer/1', '_jobs', 'project?limit=100', 'project%2F1'):
         assert invoke(viewer, 'get_record', {'model': value, 'id': '0000000000001'})['result']['structuredContent']['status'] == 422
@@ -207,18 +207,18 @@ def test_protocol_lifecycle_errors_notifications_and_input_bounds():
 
 def test_tools_enforce_row_and_field_rules_from_the_live_application(live_connector):
     admin = signed(live_connector)
-    visible = admin.request('POST', '/api/customer', {'name': 'Visible', 'email': 'private@example.test', 'active': True})[0]
-    hidden = admin.request('POST', '/api/customer', {'name': 'Hidden', 'email': 'hidden@example.test', 'active': False})[0]
+    visible = admin.request('POST', '/api/customer', {'customer_name': 'Visible', 'email': 'private@example.test', 'active': True})[0]
+    hidden = admin.request('POST', '/api/customer', {'customer_name': 'Hidden', 'email': 'hidden@example.test', 'active': False})[0]
     server = MCPServer(signed(live_connector, role='editor'), allow_writes=True); initialize(server)
     page = invoke(server, 'list_records', {'model': 'customer'})['result']['structuredContent']
-    assert page['total'] == 1 and page['items'] == [{'id': visible['id'], 'name': 'Visible'}]
+    assert page['total'] == 1 and page['items'] == [{'id': visible['id'], 'customer_name': 'Visible'}]
     assert invoke(server, 'get_record', {'model': 'customer', 'id': hidden['id']})['result']['structuredContent']['status'] == 404
-    assert invoke(server, 'update_record', {'model': 'customer', 'id': hidden['id'], 'values': {'name': 'Leaked'}})['result']['structuredContent']['status'] == 404
+    assert invoke(server, 'update_record', {'model': 'customer', 'id': hidden['id'], 'values': {'customer_name': 'Leaked'}})['result']['structuredContent']['status'] == 404
     assert invoke(server, 'update_record', {'model': 'customer', 'id': visible['id'], 'values': {'email': 'changed@example.test'}})['result']['structuredContent']['status'] == 403
     assert invoke(server, 'list_records', {'model': 'customer', 'filters': {'email': 'private@example.test'}})['result']['structuredContent']['status'] == 403
     schema = invoke(server, 'describe_model', {'model': 'customer'})['result']['structuredContent']
-    assert [field['name'] for field in schema['fields']] == ['name']
-    assert invoke(server, 'update_record', {'model': 'customer', 'id': visible['id'], 'values': {'name': 'Updated'}})['result']['structuredContent']['name'] == 'Updated'
+    assert [field['name'] for field in schema['fields']] == ['customer_name']
+    assert invoke(server, 'update_record', {'model': 'customer', 'id': visible['id'], 'values': {'customer_name': 'Updated'}})['result']['structuredContent']['customer_name'] == 'Updated'
 
 
 @pytest.fixture
@@ -279,11 +279,11 @@ def test_connector_rejects_unusable_or_unbounded_responses(wire_server, path):
 
 def test_connector_does_not_retry_uncertain_writes(wire_server):
     client, requests = wire_server
-    with pytest.raises(ConnectorError) as failure: client.request('POST', '/api/customer', {'name': 'Once'})
+    with pytest.raises(ConnectorError) as failure: client.request('POST', '/api/customer', {'customer_name': 'Once'})
     assert failure.value.status == 503
     assert 'never retried' in failure.value.message
     assert [path for path, cookie in requests] == ['/api/customer']
-    with pytest.raises(ConnectorError) as failure: client.request('POST', '/api/customer', {'name': 'x' * 65536})
+    with pytest.raises(ConnectorError) as failure: client.request('POST', '/api/customer', {'customer_name': 'x' * 65536})
     assert failure.value.status == 413 and len(requests) == 1
 
 
@@ -291,13 +291,13 @@ def test_tool_calls_stay_in_their_tenant(live_connector):
     catalog, apps, port = live_connector
     alpha = signed(live_connector)
     found = alpha.request('POST', '/api/_tools/execute', {'tool': 'list_records', 'arguments': {'model': 'project'}})[0]['result']
-    assert [item['name'] for item in found['items']] == ['alpha']
+    assert [item['title'] for item in found['items']] == ['alpha']
     # An alpha session is not a session on beta, for tools as for everything else.
     replay = HTTPClient(f'http://beta.localhost:{port}', cookie=alpha.cookie, csrf=alpha.csrf)
     with pytest.raises(ConnectorError) as failure: replay.request('POST', '/api/_tools/execute', {'tool': 'list_records', 'arguments': {'model': 'project'}})
     assert failure.value.status == 401
     beta = signed(live_connector, 'beta')
-    assert [item['name'] for item in beta.request('POST', '/api/_tools/execute', {'tool': 'list_records', 'arguments': {'model': 'project'}})[0]['result']['items']] == ['beta']
+    assert [item['title'] for item in beta.request('POST', '/api/_tools/execute', {'tool': 'list_records', 'arguments': {'model': 'project'}})[0]['result']['items']] == ['beta']
     # Each tenant keeps its own tool log.
     with apps['beta'].database._connection() as connection:
         assert connection.execute("SELECT count(*) FROM evlet_tool_calls WHERE origin='api'").fetchone()[0] == 1
