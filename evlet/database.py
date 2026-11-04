@@ -9,6 +9,8 @@ from .identity import RecordId, new_id, sequential
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .naming import has_title, title_of
+from . import periods
+from .permissions import CALLER
 from .sequences import name_new, raw_write
 
 # Most rows one list call returns, and most rows one child collection may hold in an editor.
@@ -233,6 +235,9 @@ class Session:
         self.registry = registry
         self.timezone = timezone
         self._maintenance = False
+        # Period locks read once per transaction, and whether unlocked_periods() is active (evlet/periods.py).
+        self._period_locks = None
+        self._periods_unlocked = False
 
     @contextmanager
     def maintenance(self):
@@ -243,6 +248,11 @@ class Session:
             yield self
         finally:
             self._maintenance = previous
+
+    def unlocked_periods(self, reason):
+        """For migrations and data repairs only: write records dated in closed periods inside this block.
+        The reason is required; it is logged and written to the audit log. See evlet/periods.py."""
+        return periods.unlocked(self, reason)
 
     def _guard(self, model):
         if not self._maintenance and (getattr(self.registry.root_of(model), 'confirmable', False)
@@ -278,6 +288,7 @@ class Session:
             numbers = {**numbers, self.registry.naming[model].field: name}
         if numbers:
             record = model(**{**record._values, **numbers})
+        periods.check(self, model, after=record._values)
         self.check_references(model, record._values)
         names, stored = storage_columns(model, stored_values(model, record._values), model.__fields__)
         return self.get(model, insert(self.connection, table, names, stored, id_title=has_title(model)))
@@ -317,6 +328,7 @@ class Session:
         record = model(**{**current._values, **changes})
         raw_write(self, model, changes, current, record._values)
         if changes:
+            periods.check(self, model, before=current._values, after=record._values)
             self.check_references(model, {name: record._values[name] for name in changes})
             table = identifier(self.registry.name_for(model))
             values = stored_values(model, record._values, current.id)
@@ -329,7 +341,8 @@ class Session:
         """Reference fields have no SQL foreign key, so each write checks that the record exists."""
         for name, value in values.items():
             if isinstance(model.__declared_fields__.get(name), Reference) and value is not None:
-                target = self.registry.models.get(value[0])
+                # A caller cannot name a model it has no surface on (Meta.api = None).
+                target = (self.registry.exposed if CALLER.get() else self.registry.models).get(value[0])
                 if target is None:
                     raise ValidationError({name: 'Use a registered model name'})
                 if self.connection.execute(f'SELECT 1 FROM {identifier(value[0])} WHERE "id" = ?', (value[1],)).fetchone() is None:
@@ -343,7 +356,9 @@ class Session:
 
     def delete(self, model, record_id):
         self._guard(model)
-        record_id = self.get(model, record_id).id
+        current = self.get(model, record_id)
+        periods.check(self, model, before=current._values)
+        record_id = current.id
         table = identifier(self.registry.name_for(model))
         self.connection.execute(f'DELETE FROM {table} WHERE "id" = ?', (record_id,))
 

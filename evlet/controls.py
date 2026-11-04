@@ -14,12 +14,15 @@ from .controls_system import System
 from .customization import Customization, activated, instance_fields
 from .fields import Layer
 from .fields import Link
-from .models import ValidationError
+from .database import NotFoundError
+from .identity import path_id
+from .models import ValidationError, identifier
+from .periods import TABLE as PERIOD_LOCKS
 from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
-PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'prints', 'apps', 'routing', 'jobs', 'overrides', 'audit')
+PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'periods', 'prints', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
     'security.password_min': 15, 'security.session_hours': 12, 'security.lockout': 5,
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
@@ -63,6 +66,7 @@ def ensure_schema(connection):
         'CREATE TABLE IF NOT EXISTS evlet_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL, area TEXT NOT NULL, target TEXT NOT NULL, detail TEXT NOT NULL, before TEXT, after TEXT)',
         'CREATE TABLE IF NOT EXISTS evlet_config (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)',
         'INSERT OR IGNORE INTO evlet_config(id,version) VALUES (1,1)',
+        PERIOD_LOCKS,
     ):
         connection.execute(statement)
     if isinstance(connection, sqlite3.Connection):
@@ -414,7 +418,8 @@ class Controls:
 
     def models(self):
         children = self.business.child_models
-        return {model.__name__: model for model in self.registry.models.values() if model not in children}
+        # A model with Meta.api = None has no surface, so Controls has nothing to customize on it.
+        return {model.__name__: model for model in self.registry.exposed.values() if model not in children}
 
     def perm_key(self, key):
         role, _, name = key.partition('|') if isinstance(key, str) else ('', '', '')
@@ -697,6 +702,74 @@ class Controls:
         if self.business.events is not None:
             self.business.events.publish_config(tx, version)
         return version
+
+    # ---------- period locks ----------
+
+    def period_scopes(self):
+        """{name: model} of the models whose records each carry their own lock (Meta.period_scope targets)."""
+        result = {}
+        for model, period in self.registry.periods.items():
+            if period.scope is not None and model in self.registry.exposed.values():
+                target = model.__fields__[period.scope].target
+                result[self.registry.name_for(target)] = target
+        return result
+
+    def periods(self):
+        """The models with Meta.period, every saved lock and the latest changes (evlet/periods.py)."""
+        from .naming import has_title
+        models = []
+        for model, period in self.registry.periods.items():
+            if model not in self.registry.exposed.values():
+                continue
+            scope = model.__fields__[period.scope].target if period.scope else None
+            models.append({'name': self.registry.name_for(model), 'label': model.__name__, 'field': period.field,
+                           'scope': None if scope is None else {'field': period.scope, 'model': self.registry.name_for(scope), 'label': scope.__name__}})
+        with self.database._connection() as connection:
+            rows = connection.execute('SELECT p.scope, p.lock_date, p.changed_at, u.username FROM evlet_period_locks p '
+                                      'LEFT JOIN evlet_users u ON u.id=p.changed_by ORDER BY p.scope').fetchall()
+            history = [dict(row) for row in connection.execute("SELECT id,at,actor,target,detail,before,after FROM evlet_audit "
+                                                              "WHERE area='Periods' ORDER BY id DESC LIMIT 50")]
+            titles, scopes = {}, []
+            for name, target in self.period_scopes().items():
+                title = 'title' if has_title(target) else None
+                records = connection.execute(f'SELECT id{", title" if title else ""} FROM {identifier(name)} ORDER BY id LIMIT 200').fetchall()
+                choices = [{'id': str(row['id']), 'title': (row['title'] if title else None) or str(row['id'])} for row in records]
+                titles.update({f'{name}:{item["id"]}': item['title'] for item in choices})
+                scopes.append({'model': name, 'label': target.__name__, 'records': choices})
+        locks = [{'scope': row['scope'], 'label': 'All records' if row['scope'] == '' else titles.get(row['scope'], row['scope']),
+                  'date': row['lock_date'], 'changed_by': row['username'], 'changed_at': row['changed_at']} for row in rows]
+        return {'models': models, 'scopes': scopes, 'locks': locks, 'history': history, 'can_change': True}
+
+    def set_period(self, user, body):
+        """Set or clear one lock: {"scope": null or {"model", "id"}, "date": "YYYY-MM-DD" or null}. Admin only."""
+        from datetime import date
+        from .periods import scope_key, set_lock
+        if user.role != 'admin':
+            raise AccessError(403, 'Only an admin can change period locks.')
+        if not isinstance(body, dict) or set(body) != {'scope', 'date'}:
+            raise ValidationError({'_form': 'Send scope and date.'})
+        try:
+            value = None if body['date'] is None else date.fromisoformat(body['date']) if isinstance(body['date'], str) and len(body['date']) == 10 else ''
+        except ValueError:
+            value = ''
+        if value == '':
+            raise ValidationError({'date': 'Use a date such as 2026-03-31, or null to open every period.'})
+        scope = body['scope']
+        if scope is None:
+            key = ''
+        else:
+            target = self.period_scopes().get(scope.get('model')) if isinstance(scope, dict) and set(scope) == {'model', 'id'} else None
+            record_id = path_id(str(scope.get('id'))) if target is not None else None
+            if record_id is None:
+                raise ValidationError({'scope': 'Choose a record of a model that periods are locked by.'})
+            with self.database.transaction() as tx:
+                try:
+                    tx.get(target, record_id)
+                except NotFoundError:
+                    raise ValidationError({'scope': 'That record does not exist.'}) from None
+            key = scope_key(self.registry, target, record_id)
+        with self.database.transaction() as tx:
+            set_lock(tx.connection, key, value, user)
 
     # ---------- users and roles ----------
 
@@ -1097,6 +1170,11 @@ class Controls:
             return 200, self.custom.set_counter(user, match[1], body), []
         if match and match[2] == 'try' and method == 'POST':
             return 200, self.custom.try_name(match[1], body), []
+        if path == '/periods' and method == 'GET':
+            return 200, self.periods(), []
+        if path == '/periods' and method == 'POST':
+            self.set_period(user, body)
+            return 200, self.periods(), []
         if path == '/overrides/export' and method == 'GET':
             from .controls_export import export
             return 200, export(self, params(scope, 'kind', 'key')), []

@@ -9,6 +9,7 @@ from .auth import AccessError
 from .identity import jsonable, path_id
 from .models import Model, ValidationError
 from .documents import Draft, Context, Snapshot, settle
+from .permissions import trusted
 from .ui.metadata import field_schema, source_schema
 from .reactivity import plans, serialized
 
@@ -214,14 +215,27 @@ class Forms:
             if column.source is not None:
                 name, field = column.source.split('.')
                 model = self.business.registry.resolve(name)
+                if self.business.registry.api.get(model, 'full') is None:
+                    # No caller reads a model with Meta.api = None; the report's own roles decide who sees its columns.
+                    continue
                 if not self.business.policy.allows(user, model, 'read') or field not in self.business.policy.fields(user, model):
                     hidden.add(column.name)
         return hidden
 
+    def offered(self, user, report):
+        """Whether this person may list and run the report: its roles decide, also over a model with Meta.api = None."""
+        return user.role in report.roles
+
+    def surfaced(self, model):
+        """The storage name of a model callers reach, or None for one with Meta.api = None, which a report never names."""
+        registry = self.business.registry
+        model = registry.resolve(model)
+        return registry.name_for(model) if registry.api.get(model, 'full') is not None else None
+
     def catalog(self, user):
         result = []
         for name, report in self.reports.items():
-            if user.role not in report.roles: continue
+            if not self.offered(user, report): continue
             hidden, chart = self.hidden(user, report), report.chart
             if chart is not None and (chart.x in hidden or set(chart.y) <= hidden): chart = None
             descriptor = metadata(report, name)
@@ -230,22 +244,24 @@ class Forms:
                 if declared.compute is not None or declared.query is not None: field['calculated'] = True
             result.append({**descriptor, 'autorun': report.autorun,
                            'columns': [self.column(column) for column in report.columns if column.name not in hidden],
-                           'group': report.group, 'model': None if report.model is None else self.business.registry.name_for(self.business.registry.resolve(report.model)),
+                           'group': report.group, 'model': None if report.model is None else self.surfaced(report.model),
                            'sortable': [column for column in report.sortable if column not in hidden], 'export': report.export,
                            'group_by': None if report.group_by in hidden else report.group_by,
                            'chart': None if chart is None else {**vars(chart), 'y': [column for column in chart.y if column not in hidden]}})
         return result
 
     def column(self, column):
-        registry = self.business.registry
         entry = {key: value for key, value in vars(column).items() if key != 'source'}
-        if column.link is not None: entry['link'] = registry.name_for(registry.resolve(column.link))
+        if column.link is not None: entry['link'] = self.surfaced(column.link)
         return entry
 
     def page(self, context, report, draft, limit, offset, sort):
         """One page of a report as the browser gets it: cleaned cells, readable columns and totals."""
         context.limit, context.offset, context.sort = limit, offset, self.order(report, context.user, sort)
-        result = draft.run()
+        # A report's run() is trusted app code: it reads models callers cannot reach (Meta.api = None) and
+        # returns only its declared columns, to the roles the report names.
+        with trusted():
+            result = draft.run()
         if not isinstance(result, dict) or not isinstance(result.get('rows'), list) or len(result['rows']) > limit:
             raise ValueError('Reports return a bounded rows/total result from context.list')
         if type(result.get('total')) is not int or result['total'] < len(result['rows']): raise ValueError('Report total must be a nonnegative row count')
@@ -352,7 +368,7 @@ class Forms:
             for suffix in ('evaluate', 'export.csv'):
                 if name.endswith('/' + suffix): name, operation = name.removesuffix('/' + suffix), suffix
             report = self.reports.get(name)
-            if method != 'POST' or report is None or user.role not in report.roles: raise AccessError(403, 'Report is unavailable')
+            if method != 'POST' or report is None or not self.offered(user, report): raise AccessError(403, 'Report is unavailable')
             if operation == 'export.csv': return self.export(report, body, user)
             if set(body) - {'filters', 'revision', 'limit', 'offset', 'sort'}: raise ValidationError({'_form': 'Unknown report argument'})
             limit, offset = body.get('limit', 50), body.get('offset', 0)
@@ -397,7 +413,8 @@ class Forms:
                 context.source_revision = self.business.record_revision(context._tx, user, record).decode()
                 context.idempotency_key = key
                 draft = Draft(definition, context=context.read_context(), source=source)
-                draft.load(source)
+                with trusted():
+                    draft.load(source)
                 for name, rows in draft._rows.items():
                     for index, row in enumerate(rows):
                         protected = {key: str(value) for key, value in row._values.items() if row._definition.__declared_fields__[key].read_only}
@@ -415,7 +432,8 @@ class Forms:
                     project_source(descriptor)
                     for table in descriptor['children']: table['allow_add'] = not bool(draft._rows.get(table['name']))
                     return 200, {'definition': descriptor, 'values': draft_values(draft), 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
-                outcome = draft.submit(source)
+                with trusted():
+                    outcome = draft.submit(source)
                 outcome = jsonable(outcome)
                 encoded = json.dumps(outcome, allow_nan=False)
                 if len(encoded) > 65536: raise ValueError('Dialog result exceeds 64 KiB')
