@@ -27,6 +27,7 @@
         "status",
         "name"
       ],
+      "open_in": "page",
       "fields": [
         {
           "name": "title",
@@ -254,6 +255,7 @@
         "stock"
       ],
       "search_fields": [],
+      "open_in": "page",
       "fields": [
         {
           "name": "qty",

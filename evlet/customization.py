@@ -22,7 +22,7 @@ from .fields import (ACTIVE, MISSING, Boolean, Currency, CurrentUser, Date, Deci
                      State, Text, active_layer)
 from .database import ConflictError
 from .models import ValidationError, identifier
-from .ui.metadata import label_for, view_for
+from .ui.metadata import OPEN_IN, label_for, view_for
 
 PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default', 'options_add', 'options_hidden')
 DISPLAY = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden')
@@ -176,7 +176,8 @@ class Customization:
             return [{'title': group['label'], 'fields': [{'name': key, 'width': width(fields[key])} for key in group['fields']]}
                     for group in view_for(model)['layout']]
         if kind == 'list':
-            return {'columns': [key for key in view_for(model)['list_fields'] if key != 'id'], 'page_size': 50, 'sort': '-id'}
+            view = view_for(model)
+            return {'columns': [key for key in view['list_fields'] if key != 'id'], 'page_size': 50, 'sort': '-id', 'open_in': view['open_in']}
         return [dict(item) for item in getattr(model.Meta, 'naming').series]
 
     def items(self):
@@ -324,8 +325,9 @@ class Customization:
 
     def check_list(self, model, _, value):
         stored = {name for name, field in self.fields(model).items() if field.stored and field.kind != 'reference'}
-        if not isinstance(value, dict) or set(value) != {'columns', 'page_size', 'sort'}:
-            raise ValueError('Send columns, page_size and sort.')
+        # open_in is optional: list views saved before it existed keep the app's choice.
+        if not isinstance(value, dict) or not {'columns', 'page_size', 'sort'} <= set(value) <= {'columns', 'page_size', 'sort', 'open_in'}:
+            raise ValueError('Send columns, page_size and sort, and optionally open_in.')
         columns = value['columns']
         if not isinstance(columns, list) or not 1 <= len(columns) <= 8 or any(name not in stored for name in columns) or len(set(columns)) != len(columns):
             raise ValueError(f'Choose 1 to 8 columns of {model.__name__}, each once.')
@@ -334,7 +336,9 @@ class Customization:
         sort = value['sort']
         if not isinstance(sort, str) or sort.removeprefix('-') not in {'id', *stored}:
             raise ValueError('Sort by a field of the model, or -id for newest first.')
-        return {'columns': list(columns), 'page_size': value['page_size'], 'sort': sort}
+        if 'open_in' in value and value['open_in'] not in OPEN_IN:
+            raise ValueError('Open records in the full page or a side panel.')
+        return {'columns': list(columns), 'page_size': value['page_size'], 'sort': sort, **({'open_in': value['open_in']} if 'open_in' in value else {})}
 
     def check_naming(self, model, _, value, saved=False):
         from .sequences import NamingRules, SERIES_ID, check_order
@@ -470,6 +474,8 @@ class Customization:
             value = self.lists[model]
             entry['list_fields'] = ['id', *(name for name in value['columns'] if name in readable)]
             entry['page_size'] = value['page_size']
+            if 'open_in' in value:
+                entry['open_in'] = value['open_in']
             if value['sort'].removeprefix('-') in readable or value['sort'] in ('id', '-id'):
                 entry['order_by'] = value['sort']
 

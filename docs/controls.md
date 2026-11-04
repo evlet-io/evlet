@@ -224,8 +224,9 @@ app adds later or an instance field, go to the last section. Without a Controls 
 takes every field. Section ids stay positional (`main_details`, `section_2`, ...).
 The browser renders forms from this layout; `width: 12` makes a field full width.
 
-**List view** (kind `list`, key `Model`): `{"columns": [...], "page_size": 25 | 50 | 100, "sort": "field" | "-field"}`,
-1 to 8 columns. `/api/schema` drops the columns a role can't read and gives `page_size` and `order_by`.
+**List view** (kind `list`, key `Model`): `{"columns": [...], "page_size": 25 | 50 | 100, "sort": "field" | "-field", "open_in": "page" | "panel"}`,
+1 to 8 columns. `/api/schema` drops the columns a role can't read and gives `page_size`, `order_by` and `open_in`.
+`open_in` (Open records in) is optional: a list view saved without it keeps the model's `Meta.open_in`.
 The sort is also the server's order for a list request that names none, when the role can read it.
 
 ### Instance fields
@@ -324,7 +325,7 @@ they are removed on the Models page.
 |---|---|---|
 | `perm` | `apps/<app>/<package>/permissions.py` | `rules = {("editor", Lead): Rule(operations=..., read_fields=..., write_fields=..., scope=...)}`. The `own_customer` preset is written as the public `own_customer()`, or `own_customer(field='id')` on the customer model |
 | `field`, `custom`, `naming` | The file that declares the model, such as `apps/notes/models/item.py` | The field lines as models.py writes them, with the changes merged in, and `Meta.naming = Naming(...)`. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. Arguments set in code, such as a callable default or validator, are written as `...` with a comment to copy them from models.py, so the code always compiles. |
-| `layout`, `list` | `apps/<app>/<package>/views/__init__.py` | `FormView(model=..., layout=Column(children=[FormLayout(...)]))`, `ListView(model=..., columns=..., page_size=..., order_by=...)` |
+| `layout`, `list` | `apps/<app>/<package>/views/__init__.py` | `FormView(model=..., layout=Column(children=[FormLayout(...)]))`, `ListView(model=..., columns=..., page_size=..., order_by=..., open_in=...)` |
 | `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for session length, lockout and minimum password length, which config.py reads (the block keeps what config.py sets today with the overrides on top; restart, then reset the overrides); `two_step_roles = (...)` for `security.two_step_roles`, `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read those three yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
 
 Paste the code, deploy, then reset the overrides. Overrides that no longer apply are left out.

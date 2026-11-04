@@ -22,11 +22,14 @@ def plural_for(label):
     return label + 's'
 
 
+OPEN_IN = ('page', 'panel')
+
+
 def view_for(model):
     meta = getattr(model, 'Meta', None)
     allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments', 'effects',
-               'journal', 'naming', 'mail', 'title'}
+               'journal', 'naming', 'mail', 'title', 'open_in'}
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
             raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
@@ -57,6 +60,10 @@ def view_for(model):
     for value, maximum, names in ((columns, 8, {'id', *visible}), (search, 8, {name for name, field in visible.items() if isinstance(field, Text)} | standard_text)):
         if not isinstance(value, (tuple, list)) or len(value) > maximum or any(not isinstance(name, str) or name not in names for name in value) or len(set(value)) != len(value):
             raise ValueError('View fields must be distinct visible field names, with at most eight entries')
+    # How a list opens its records: the full record page, or a side panel beside the narrowed list.
+    open_in = getattr(meta, 'open_in', 'page')
+    if open_in not in OPEN_IN:
+        raise ValueError('open_in must be "page" or "panel"')
     # Search also finds records by their title and name.
     search = tuple(dict.fromkeys((*search, *(key for key in ('title', 'name') if key in standard_text))))
     layout = getattr(meta, 'layout', (('Details', tuple(visible)),))
@@ -80,7 +87,7 @@ def view_for(model):
     if rest:
         groups.append({'label': 'Other', 'fields': rest})
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
-            'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search)}
+            'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in}
 
 
 def currency_schema(field):
