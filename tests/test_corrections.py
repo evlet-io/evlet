@@ -204,9 +204,11 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     # readable `name` and `title`; Customer.name became customer_name, Project.name the declared title,
     # Invoice.number moved into the named (and so writable) standard name, and test_states renamed its
     # own name fields to title. Before this the table hashed to b1bb34ff....
+    # Re-recorded when Project gained the rich text Brief (0010_project_brief), with the same permissions
+    # as Project.notes; before it the table hashed to 19b87059....
     data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes', 'employee', 'ledgerentry')), 'states': table(Registry(*test_states.MODELS))}
     assert hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest() == \
-        '19b87059b740d3707ec07dd4dad1146f78825b984ea394a0844b6340abd76c1a'
+        'ba143e4877caf43cca2865155f6a3eea778535967e14c9c016aeb9cfe37f5445'
     policy = Policy(Registry(*MODELS))
     assert dict(policy.corrections) == {(Quote, 'void'): {'admin', 'editor'}, (Quote, 'revise'): {'admin', 'editor'},
                                         (Order, 'void'): {'admin'}, (Ticket, 'void'): {'admin'}}

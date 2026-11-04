@@ -6,6 +6,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **`RichText` fields and Evlet's own rich text editor.** `RichText(max_length=20000)` stores
+  formatted text as an HTML subset: paragraphs, headings 2 and 3, bulleted, numbered and check lists
+  nested up to three levels, quotes, code blocks, dividers, bold, italic, underline, strike, inline
+  code, line breaks and http, https and mailto links. The server sanitises every write with a
+  standard-library allowlist parser (`evlet/richtext.py`) and stores the plain text beside it in
+  `<name>_text` for search, filters (`contains`, `icontains`, `nicontains`, `isnull`) and list cells.
+  The browser edits it in a new editor with no dependencies (`frontend/src/evlet/richtext/`):
+  `beforeinput` handling, IME and phone keyboards, its own undo, Markdown-style shortcuts, cleaned
+  paste from Word, Outlook, Google Docs and web pages, a keyboard-reachable toolbar, a floating
+  selection toolbar and a phone toolbar above the keyboard. Print Design prints it formatted. The
+  Playground's projects gain a Brief (migration `0010_project_brief`). Nothing to change for
+  existing models ([docs/model-engine.md](docs/model-engine.md),
+  [docs/ui-framework.md](docs/ui-framework.md#rich-text)).
 - **`Meta.api` sets how much HTTP surface a model gets.** `"full"` is the default and changes
   nothing. `"read"` lets callers (HTTP, MCP, Eva, the connector) read the model but write it in no
   way, for any role and whatever Controls overrides say; only trusted Python (sessions, actions,

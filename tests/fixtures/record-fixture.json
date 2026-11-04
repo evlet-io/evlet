@@ -9,6 +9,7 @@
         "budget": "1250.50",
         "progress": 0,
         "starts_on": null,
+        "brief": null,
         "notes": null,
         "name": null
       }
@@ -25,6 +26,7 @@
     "budget": "1250.50",
     "progress": 0,
     "starts_on": null,
+    "brief": null,
     "notes": null,
     "name": null,
     "children": {

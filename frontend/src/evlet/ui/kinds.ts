@@ -15,6 +15,7 @@ function plainNumber(text: string): string {
   return value;
 }
 import type { FieldSchema } from '../model/schema';
+import { plainOf } from '../richtext/html';
 
 /** A message for the user when typed text is not a valid value. */
 export class InputError extends Error {}
@@ -32,7 +33,7 @@ export interface Kind {
   inputMode?: string;
   placeholder?: string;
   /** How the control is built: a text input (default) or a dedicated control. */
-  control?: 'textarea' | 'switch' | 'select' | 'link' | 'tags' | 'multiselect' | 'readonly';
+  control?: 'textarea' | 'richtext' | 'switch' | 'select' | 'link' | 'tags' | 'multiselect' | 'readonly';
   /** A picker next to the text input (pickers.ts). */
   picker?: 'date' | 'datetime' | 'time' | 'duration';
 }
@@ -166,6 +167,8 @@ const text: Kind = {
 export const KINDS: Record<string, Kind> = {
   text,
   longtext: { ...text, control: 'textarea', parse: (input, meta) => text.parse!(input.replace(/\s+$/, ''), meta) },
+  // Formatted text (richtext/): stored as sanitised HTML; tables and lists show its plain text.
+  richtext: { format: value => empty(value) ? '' : plainOf(String(value)), control: 'richtext' },
   integer: {
     format: value => empty(value) ? '' : formatNumber(String(value), 0),
     edit: value => empty(value) ? '' : String(value),

@@ -25,6 +25,12 @@ production ready, but the rules below hold from 0.3 on.
   JSON and URLs and a `RecordId` in Python; `name` and `title` are reserved field names on record
   models ([model-engine.md](model-engine.md#record-ids)).
 
+- **Rich text storage.** `RichText` values are the HTML subset in
+  [internal/rich-text.md](internal/rich-text.md): the allowed tags and attributes, and the canonical
+  form the server writes, are public, so other clients and stored records keep working. Adding a
+  node type (images, mentions) widens the subset; nothing is removed without a deprecation. The
+  `<name>_text` column is internal.
+
 - **Model `Meta` options.** `tests/test_public_api.py` pins the option names, among them `api`
   (`"full"`, `"read"` or `None`), `period` and `period_scope`. `Session.unlocked_periods(reason)`
   and `Context.unlocked_periods(reason)` are public for trusted code

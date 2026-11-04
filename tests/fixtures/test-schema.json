@@ -621,6 +621,7 @@
         {
           "label": "Notes",
           "fields": [
+            "brief",
             "notes"
           ]
         }
@@ -741,6 +742,20 @@
           "index": false,
           "label": "Starts on",
           "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "brief",
+          "type": "richtext",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 20000,
+          "label": "Brief",
+          "help_text": "Goals, scope and links, with formatting.",
           "placeholder": "",
           "hidden": false,
           "read_only": false,

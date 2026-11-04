@@ -1,6 +1,6 @@
 """A small consumer of Evlet's public API, not an accounting system."""
 
-from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Registry,
+from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Registry, RichText,
                    Rule, Select, Series, Text)
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
@@ -85,7 +85,7 @@ class Project(Model):
     class Meta:
         description = "Track a small project and its customer."
         list_fields = ('title', 'customer', 'status', 'budget')
-        layout = (('Project', ('title', 'customer', 'status')), ('Planning', ('budget', 'progress', 'starts_on')), ('Notes', ('notes',)))
+        layout = (('Project', ('title', 'customer', 'status')), ('Planning', ('budget', 'progress', 'starts_on')), ('Notes', ('brief', 'notes',)))
         open_in = 'panel'
 
     # A declared title is the record title itself.
@@ -96,6 +96,8 @@ class Project(Model):
     budget = Currency(minimum='0', default='0.00', currency='settings.projects.currency')
     progress = Integer(minimum=0, maximum=100, default=0, label='Progress', suffix='%')
     starts_on = Date()
+    # Formatted text: headings, lists, links (evlet/richtext.py sanitises every write).
+    brief = RichText(label='Brief', help_text='Goals, scope and links, with formatting.')
     notes = LongText()
 
 

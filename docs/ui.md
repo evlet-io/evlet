@@ -131,6 +131,9 @@ Currency and decimal values stay exact strings. A Currency field shows its code 
 `currency=` on the field: a fixed code, a field of the record, a field of a linked record or an
 app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)).
 Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-framework.md](ui-framework.md#pickers)).
+A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-framework.md#rich-text)):
+at rest the record shows the formatted text (read only when the record is locked), and list cells
+show its plain text. The Playground's projects have one, Brief.
 
 ### Ids, names and titles
 

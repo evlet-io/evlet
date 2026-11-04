@@ -3,7 +3,7 @@
 from .app import Application
 from .database import ConflictError, Database, NotFoundError
 from .fields import (Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Duration, Email, Integer,
-                     Link, LongText, MultiSelect, Percent, Phone, Reference, Select, State, Tags, Text, Time, URL)
+                     Link, LongText, MultiSelect, Percent, Phone, Reference, RichText, Select, State, Tags, Text, Time, URL)
 from .migrations import (AddField, AddIndex, AddTable, AlterField, CreateModel, DropField, Migration, MigrationPlan, Recompute,
                          RenameField, RetireField, RunData, SchemaError)
 from .models import Model, Registry, ValidationError, Child
@@ -17,7 +17,7 @@ __all__ = [
     "Currency", "CurrentUser", "Database", "Date", "DateTime", "Decimal", "Email", "Integer", "Link",
     "LongText", "Migration", "MigrationPlan", "Model", "MultiSelect", "NotFoundError", "Registry", "RenameField",
     "SchemaError", "Select", "Text", "URL", "ValidationError",
-    "Duration", "Naming", "Percent", "Phone", "Recompute", "Reference", "RetireField", "RunData", "Sequence", "Series", "State", "Tags", "Time",
+    "Duration", "Naming", "Percent", "Phone", "Recompute", "Reference", "RetireField", "RichText", "RunData", "Sequence", "Series", "State", "Tags", "Time",
 ]
 
 from .auth import LocalAuth, User

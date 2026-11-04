@@ -35,6 +35,15 @@ class Contact(Model):
 - `Select` accepts a declared string choice. `Email` performs a basic address
   syntax check, not mailbox verification. `URL` accepts absolute HTTP/HTTPS URLs.
   `LongText` defaults to a 65,535-character limit, which can be overridden.
+- `RichText(max_length=20000)` holds formatted text: headings, lists (nested up to three
+  levels, with checklists), quotes, code, dividers, bold, italic, underline, strike, inline code,
+  links (http, https and mailto) and line breaks. The value is HTML. Every write, from any route or
+  from Python, goes through the server's allowlist sanitiser (`evlet/richtext.py`, standard
+  library `html.parser`): other tags and attributes, scripts, styles, event handlers and unsafe
+  URLs are removed, and the stored HTML is canonical. `max_length` counts the plain text; the HTML
+  may be ten times as long (at least 4,096 characters). A document with no text is stored as null,
+  so `required=True` works. The field uses two columns, `<name>` (HTML) and `<name>_text` (the
+  plain-text extract that search, filters and list cells use); it cannot be unique or indexed.
 - Omitted values use defaults; explicit `None` stays null unless required.
   Callable defaults run when a new record is constructed. A partial update keeps
   omitted values, including their original defaults.
@@ -275,6 +284,7 @@ Each field kind takes these operators (the schema sends them as each field's `op
 | Boolean | `eq` `ne` `isnull` |
 | Tags, MultiSelect | `contains` `isnull` |
 | Reference | `eq` `isnull`, and `ne` with null |
+| RichText | `contains` `icontains` `nicontains` `isnull`, on its plain text |
 
 Any other operator for a field is refused with 422. `evlet.query.operators_for(model, name)`
 returns the same list.

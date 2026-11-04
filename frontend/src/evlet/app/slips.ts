@@ -182,7 +182,7 @@ export function SlipSheet(ctx: AppContext, surface: SlipSurface, source: SlipSou
   };
   const edited = (path: string) => () => { touched.add(path); changed.set(true); void check(); };
 
-  const control = (path: string, field: Local) => fieldFor({ field, links: ctx.links, onCommit: edited(path), full: field.meta.type === 'longtext' });
+  const control = (path: string, field: Local) => fieldFor({ field, links: ctx.links, onCommit: edited(path), full: field.meta.type === 'longtext' || field.meta.type === 'richtext' });
   const tableView = (name: string): Child => {
     const table = tables.get(name)!, { schema } = table;
     const columns = schema.definition.fields.filter(meta => !meta.hidden);
