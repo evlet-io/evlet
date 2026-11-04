@@ -311,11 +311,11 @@ def test_report_sort_and_whole_result_totals(sales):
 
 def test_report_without_given_totals_keeps_page_totals(app):
     class Totalled(Tickets):
-        columns = (Column('id', type='integer'), Column('name'), Column('copies', type='integer', total=True, unit='copies'))
+        columns = (Column('id', type='integer'), Column('title'), Column('copies', type='integer', total=True, unit='copies'))
     app.business.forms.reports['Totalled'] = Totalled
     c = client(app)
-    c('POST', '/api/ticket', {'name': 'One', 'copies': 2})
-    c('POST', '/api/ticket', {'name': 'Two', 'copies': 3})
+    c('POST', '/api/ticket', {'title': 'One', 'copies': 2})
+    c('POST', '/api/ticket', {'title': 'Two', 'copies': 3})
     result = c('POST', '/api/_reports/Totalled', {'limit': 1})[1]
     assert result['totals'] == {'scope': 'page', 'values': {'copies': '2'}} and result['sort'] is None
 
