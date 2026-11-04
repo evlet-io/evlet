@@ -16,6 +16,16 @@ function customers(sent: Sent) {
 }
 
 describe('generated list page', () => {
+  it('offers no New or Delete for a read-only model (Meta.api = "read"), whatever the permissions say', async () => {
+    const schema = copy(screen.schema);
+    const customer = schema.body.models.find((model: { name: string }) => model.name === 'customer');
+    Object.assign(customer, { api: 'read', permissions: { create: true, update: true, delete: true } });
+    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema], ['GET', /\/api\/customer\?/, customers]], '/app/customer');
+    await until(() => expect(text(host.querySelector('.ev-list .summary'))).toBe('55 customers'));
+    expect(byText(host, 'button', /New customer/)).toBeFalsy();
+    expect(host.querySelector('thead [role="checkbox"]')).toBeNull();
+  });
+
   it('shows the list fields with the title pinned first, the total and pages through the server', async () => {
     const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, customers]], '/app/customer');
     await until(() => expect(text(host.querySelector('.ev-list .summary'))).toBe('55 customers'));

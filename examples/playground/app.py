@@ -15,7 +15,7 @@ from evlet import (AI, Action, ApiScope, AppDefinition, Application, ChildTable,
 from evlet import api
 from evlet.routing import resolve_routes
 from evlet.services import Endpoint
-from .models import Customer, Invoice, Project, ProjectTask, registry
+from .models import Customer, Invoice, LedgerEntry, Project, ProjectTask, registry
 from .migrate import configured_database
 from .settings import ProjectPreferences, ProjectSettings
 from .prints import PRINTS, REPORTS as PRINTED_REPORTS
@@ -52,6 +52,18 @@ def complete_project(tx, user, project):
     if not tasks or any(not task.done for task in tasks):
         raise ValidationError({'_form': 'Complete every task before completing the project'})
     tx.update(Project, project.id, status='done', progress=100)
+
+
+def post_invoice(tx, user, invoice):
+    """Post to ledger: the only writer of ledger entries, since LedgerEntry has Meta.api = "read". An
+    invoice or entry dated in a closed period (Controls, Periods) is refused with the lock date."""
+    if invoice.posting_date is None:
+        raise ValidationError({'posting_date': 'Set the posting date before posting'})
+    if tx.count(LedgerEntry, filters={'invoice': invoice.id}):
+        raise ValidationError({'_form': 'This invoice is posted already'})
+    tx.create(LedgerEntry, invoice=invoice.id, customer=invoice.customer, posting_date=invoice.posting_date,
+              amount=invoice.total, memo=invoice.reference)
+    tx.update(Invoice, invoice.id, status='sent')
 
 
 def create_app():
@@ -107,7 +119,8 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=N
                       storage=storage, jobs=jobs, events=events, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
                       actions=(Action(Project, 'start', 'Start project', start_project),
                                Action(Project, 'complete', 'Complete project', complete_project),
-                               Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress)),
+                               Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress),
+                               Action(Invoice, 'post', 'Post to ledger', post_invoice)),
                       attachments=(Project,), slips=SLIPS, reports=(*REPORTS, *PRINTED_REPORTS), apis=SERVICES, ai=ai, prints=PRINTS)
     # Settings > Projects: people who can read projects see it; editors and admins change it.
     app.business.settings.register('projects', ProjectSettings, ProjectPreferences, (Project,))

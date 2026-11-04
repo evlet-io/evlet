@@ -15,6 +15,7 @@ from .declarations import Ref
 from .fields import CurrentUser, MISSING, Link
 from .identity import RecordId
 from .naming import drop_echoes
+from .permissions import trusted
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
@@ -260,6 +261,13 @@ class Context:
     def create(self, model, **values):
         return self._write(model, None, values)
 
+    def unlocked_periods(self, reason):
+        """For migrations and data repairs in trusted code only: write records dated in closed periods inside
+        this block. The reason is required; it is logged and audited (Session.unlocked_periods)."""
+        if self.readonly:
+            raise AccessError(403, 'This context is read only')
+        return self._tx.unlocked_periods(reason)
+
     def update(self, model, record_id, **values):
         return self._write(model, record_id, values)
 
@@ -348,7 +356,8 @@ class Context:
         reaction = getattr(model, 'changed', None)
         if reaction:
             freeze_draft(before)
-            reaction(before, Change('delete', user, freeze(before.stored_values()), None, (), freeze(child_changes)))
+            with trusted():
+                reaction(before, Change('delete', user, freeze(before.stored_values()), None, (), freeze(child_changes)))
         from . import journal
         journal.deleted(self, model, record.id)
         business.changed(tx, model, record_id, deleted=True)
@@ -1428,13 +1437,16 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     outcome = None
     if declared_move is not None:
         if declared_move.run is not None:
-            outcome = getattr(model, declared_move.run)(draft)
+            with trusted():
+                outcome = getattr(model, declared_move.run)(draft)
     elif action is not None:
         method = getattr(model, action, None)
         declaration = getattr(method, '__action__', None)
         if declaration is None or user.role not in declaration['roles']:
             raise AccessError(403, 'Action is unavailable')
-        outcome = method(draft, **states.action_arguments(context, model, method, declaration, arguments, before))
+        arguments = states.action_arguments(context, model, method, declaration, arguments, before)
+        with trusted():
+            outcome = method(draft, **arguments)
     elif before is not None:
         states.check_state_lock(context, draft, before)
     settle(context, draft, complete=True, previous=before, kept=kept)
@@ -1472,6 +1484,9 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         result = business.detail(tx, user, tx.get(model, record_id), row_limit=None)
         if outcome is not None: result['_outcome'] = outcome
         return result
+    # A closed period (Meta.period) refuses the write whether the saved or the new date is in it.
+    from . import periods
+    periods.check(tx, model, before=before._values if before is not None else None, after=draft._values)
     record = write_snapshot(tx, draft, before)
     if plan is not None:
         record_plan(tx, business.registry.name_for(model), record.id, version)
@@ -1487,7 +1502,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     reaction = getattr(model, 'changed', None)
     if reaction is not None:
         freeze_draft(draft)
-        reaction(draft, change)
+        with trusted():
+            reaction(draft, change)
     # The Journal entry of this write: `moved` through the move hook, otherwise `created` or `changed`.
     if declared_move is not None:
         from .effects import post
