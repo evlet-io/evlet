@@ -108,7 +108,7 @@ export class Row {
   private readonly fresh: Cell<boolean>;
 
   constructor(readonly record: RecordStore, readonly model: ModelSchema, readonly parent: Row | null, table: string | null,
-    public key: string, public id: number | null, isNew: boolean, data: Record<string, any>) {
+    public key: string, public id: string | null, isNew: boolean, data: Record<string, any>) {
     this.fresh = cell(isNew);
     this.path = parent ? [...parent.path, table!] : [];
     this.label = parent ? `${parent.label}.${table}[${key}]` : model.name;
@@ -153,8 +153,8 @@ export class Row {
   }
 
   /** Server data replaces this row's draft. */
-  replace(data: RecordData | Record<string, any>, rowIds: Record<string, number>) {
-    this.id = typeof data.id === 'number' ? data.id : this.id;
+  replace(data: RecordData | Record<string, any>, rowIds: Record<string, string>) {
+    this.id = typeof data.id === 'string' ? data.id : this.id;
     this.isNew = false;
     for (const field of this.fields.values()) {
       // A field the response leaves out (for example one this role may no longer read) keeps
@@ -189,7 +189,7 @@ export class Table {
   /** Saved rows in server order. */
   saved: Row[] = [];
   // Rows a partial response left out, kept by id so the page that brings them back reuses them.
-  private parked = new Map<number, Row>();
+  private parked = new Map<string, Row>();
   // New rows removed in the draft, kept so restore() can bring them back until the next save.
   private dropped: Row[] = [];
   private touched?: Derive<boolean>;
@@ -217,8 +217,8 @@ export class Table {
   }
 
   /** The API path of this table: ['lines'] or ['lines', 17, 'parts']. */
-  apiPath(): Array<string | number> {
-    const path: Array<string | number> = [this.name];
+  apiPath(): string[] {
+    const path: string[] = [this.name];
     for (let row: Row | null = this.owner; row?.parent; row = row.parent) path.unshift([...row.parent.tables.values()].find(table => table.rows.peek().includes(row!))!.name, row.id!);
     return path;
   }
@@ -286,8 +286,8 @@ export class Table {
   }
 
   /** Server rows replace this table's draft; rows keep their objects by id or by the _key they were created with. */
-  replace(items: RecordData[], page: { total: number; partial: boolean } | undefined, rowIds: Record<string, number>) {
-    const byId = new Map<number, Row>(), current = [...this.rows.peek(), ...this.removed.peek(), ...this.parked.values()];
+  replace(items: RecordData[], page: { total: number; partial: boolean } | undefined, rowIds: Record<string, string>) {
+    const byId = new Map<string, Row>(), current = [...this.rows.peek(), ...this.removed.peek(), ...this.parked.values()];
     this.parked = new Map();
     this.forgetDropped();
     for (const row of current) {
@@ -416,7 +416,7 @@ export class RecordStore {
   get state() { return this.meta.state ?? null; }
 
   /** Load a saved record. By default every row is paged in so the record can be edited. */
-  async open(id: number, options: { loadAll?: boolean } = {}) {
+  async open(id: string, options: { loadAll?: boolean } = {}) {
     const ticket = ++this.opening;
     const { data, etag } = await this.api.get(this.meta.name, id);
     // A later open (or reload) started meanwhile: its answer wins.

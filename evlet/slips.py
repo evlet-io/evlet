@@ -11,6 +11,7 @@ import re
 from .auth import AccessError
 from .documents import Draft, settle, walk
 from .forms import draft_values, form_draft, metadata
+from .identity import RecordId, jsonable
 from .models import Model, ValidationError, storage_name
 from .reactivity import evaluate, plans
 
@@ -85,9 +86,9 @@ def record_ref(value):
         model, record_id = value._definition, value.id
     else:
         raise ValueError('Name a record as (Model, id) or pass the record itself')
-    if type(record_id) is not int or record_id < 1:
+    if record_id is None:
         raise ValueError('A record reference needs a saved record id')
-    return {'model': storage_name(model), 'id': record_id}
+    return {'model': storage_name(model), 'id': RecordId(record_id)}
 
 
 def present(slip, *, source=None, values=None):
@@ -239,8 +240,11 @@ class Slips:
             model = registry.resolve(source['model'])
         except ValueError:
             raise AccessError(404, 'Record not found') from None
-        record_id = source['id']
-        if model is not slip.__source__ or type(record_id) is not int or not 0 < record_id < 2**63:
+        try:
+            record_id = RecordId(source['id'])
+        except ValueError:
+            record_id = None
+        if model is not slip.__source__ or record_id is None:
             raise ValidationError({'source': 'This slip is presented from a ' + storage_name(slip.__source__) + ' record'})
         permission, operation = slip.permission or (model, 'update')
         policy.require(user, permission, operation)
@@ -300,7 +304,7 @@ class Slips:
                     raise ValueError('hand_in() returns an Outcome, present(...), a dict or None')
             else:
                 outcome = self.convert(context, slip, draft, source)
-            encoded = json.dumps(outcome, allow_nan=False)
+            encoded = json.dumps(jsonable(outcome), allow_nan=False)
             if len(encoded) > RESULT_LIMIT:
                 raise ValueError('Slip outcome exceeds 64 KiB')
             context._tx.connection.execute('INSERT INTO evlet_operations(key,actor,request,result) VALUES (?,?,?,?)',

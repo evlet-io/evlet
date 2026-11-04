@@ -71,10 +71,11 @@ Edits send only fields the user changed. Clearing an optional input sends null;
 changing a required value to an invalid value leaves validation to the backend.
 Failed saves retain entered values and show errors alongside the matching fields.
 
-Browser integer input and record actions support JavaScript's safe integer range
-(up to 9,007,199,254,740,991 in magnitude). Larger stored integers are marked as
-outside that range; unsafe record IDs cannot be read, changed, or deleted by the
-browser. Use the Python API for those values. Decimal and Currency values do not
+Browser integer input supports JavaScript's safe integer range (up to
+9,007,199,254,740,991 in magnitude). Larger stored integers are marked as outside that
+range. Record ids are not numbers in the browser: they travel as 13-character text ids
+(see [model-engine.md](model-engine.md#record-ids)), so every record can be read, changed
+and deleted. Decimal and Currency values do not
 have this browser number limitation because they remain strings.
 
 ## Search, filters, ordering, and pagination

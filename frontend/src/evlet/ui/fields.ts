@@ -77,21 +77,21 @@ const isEmpty = (value: unknown) => value === null || value === undefined || val
 
 // ---------- links ----------
 
-export interface LinkOption { id: number; title: string; subtitle?: string }
+export interface LinkOption { id: string; title: string; subtitle?: string }
 /** Where Link fields find records and their titles. */
 export interface LinkSource {
   search(meta: FieldSchema, query: string): Promise<LinkOption[]>;
   /** The title of a record, as a cell that fills in once it is read. */
-  title(model: string, id: number): Readable<string | null>;
-  remember?(model: string, id: number, title: string): void;
+  title(model: string, id: string): Readable<string | null>;
+  remember?(model: string, id: string, title: string): void;
   /** A record's readable fields, as a cell that fills in once it is read (null until then, or when it can't be read). */
-  record?(model: string, id: number): Readable<RecordData | null>;
+  record?(model: string, id: string): Readable<RecordData | null>;
   /** Forget everything read so far (on sign-out). */
   clear?(): void;
 }
 
 /** What apiLinks may use beyond the list route: a record read already in flight, or its last detail. */
-type LinkApi = ApiClient & { reading?(model: string, id: number): Promise<{ data: RecordData }> | undefined; detail?(model: string, id: number): Readable<RecordData | null> };
+type LinkApi = ApiClient & { reading?(model: string, id: string): Promise<{ data: RecordData }> | undefined; detail?(model: string, id: string): Readable<RecordData | null> };
 
 /**
  * A LinkSource over the API: list search with ?q=, and titles read in batches: the titles a page asks
@@ -102,7 +102,7 @@ type LinkApi = ApiClient & { reading?(model: string, id: number): Promise<{ data
  */
 export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
   let titles = new Map<string, Cell<string | null>>();
-  let wanted = new Map<string, Set<number>>();
+  let wanted = new Map<string, Set<string>>();
   let records = new Map<string, Cell<RecordData | null>>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   const clear = () => { titles = new Map(); wanted = new Map(); records = new Map(); };
@@ -111,15 +111,15 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
     const field = schema.model(model).title_field;
     return String(data[field] ?? `#${data.id}`);
   };
-  const remember = (model: string, id: number, title: string) => {
+  const remember = (model: string, id: string, title: string) => {
     const key = `${model}:${id}`;
     if (titles.has(key)) titles.get(key)!.set(title); else titles.set(key, cell<string | null>(title));
   };
-  const keep = (model: string, id: number, data: RecordData | null) => {
+  const keep = (model: string, id: string, data: RecordData | null) => {
     records.get(`${model}:${id}`)?.set(data);
     remember(model, id, data ? titleOf(model, data) : `#${id}`);
   };
-  const want = (model: string, id: number) => {
+  const want = (model: string, id: string) => {
     if (!wanted.has(model)) wanted.set(model, new Set());
     wanted.get(model)!.add(id);
     // Everything asked for in this turn goes in one request per model.
@@ -130,19 +130,19 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
     const batch = wanted;
     wanted = new Map();
     for (const [model, ids] of batch) {
-      const rest: number[] = [];
+      const rest: string[] = [];
       for (const id of ids) {
         const known = api.detail?.(model, id).peek(), reading = api.reading?.(model, id);
         if (known) keep(model, id, known);
         else if (reading) reading.then(response => keep(model, id, response.data), () => keep(model, id, null));
         else rest.push(id);
       }
-      rest.sort((a, b) => a - b);
+      rest.sort();
       for (let start = 0; start < rest.length; start += 100) {
         const part = rest.slice(start, start + 100);
         // Records this user cannot read are left out of the answer and show their number.
         api.list(model, { filters: { id__in: part }, limit: part.length }).then(page => {
-          const found = new Map(page.items.map(item => [item.id as number, item]));
+          const found = new Map(page.items.map(item => [item.id as string, item]));
           for (const id of part) keep(model, id, found.get(id) ?? null);
         }, () => { for (const id of part) keep(model, id, null); });
       }
@@ -151,7 +151,7 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
   return {
     async search(meta, query) {
       const page = await api.list(meta.target!, { q: query || undefined, limit: 8 });
-      return page.items.map(item => ({ id: item.id as number, title: titleOf(meta.target!, item) }));
+      return page.items.map(item => ({ id: item.id as string, title: titleOf(meta.target!, item) }));
     },
     title(model, id) {
       const key = `${model}:${id}`;
@@ -219,7 +219,7 @@ export function currencyIn(meta: FieldSchema, value: (name: string) => unknown, 
   if (!source.link) return code(value(source.field));
   const id = value(source.link);
   if (id === null || id === undefined || id === '' || !source.model || !links?.record) return fallback;
-  return code(links.record(source.model, Number(id)).get()?.[source.field]);
+  return code(links.record(source.model, String(id)).get()?.[source.field]);
 }
 
 // ---------- display at rest ----------
@@ -240,7 +240,7 @@ export function displayValue(field: FieldLike, options: { links?: LinkSource | n
     case 'link':
       return when(() => !isEmpty(value()), () => {
         const title = derive(() => {
-          const id = Number(value());
+          const id = String(value());
           return links && meta.target ? links.title(meta.target, id).get() ?? '' : `#${id}`;
         });
         return html`<span class="cell-flex">${RecordMark({ name: () => title.get() || '?' })}<span class="tx">${() => title.get() || 'Loading'}</span></span>`;

@@ -6,7 +6,7 @@ import { apiLinks, BaseField, currencyIn, displayValue, localField, setLinkSourc
 import { InlineValue } from '../ui/inline';
 import { addMonths, Calendar, DateRangePanel, Dropdown, rangePresets, rangeText, type DateRange } from '../ui/pickers';
 import { cell } from '../reactive';
-import { server } from './server';
+import { id, server } from './server';
 import { backend, choiceValues, choose, cleanup, key, pick, render } from './ui-helpers';
 
 afterEach(() => { setLinkSource(null); cleanup(); });
@@ -90,7 +90,7 @@ describe('Select', () => {
 
   it('saves at once when edited in place', async () => {
     const { store, sent } = backend();
-    await store.open(1);
+    await store.open(id(1));
     const host = render(() => InlineValue({ field: store.field('stage') }));
     host.querySelector<HTMLButtonElement>('button.fval')!.click();
     pick(host.querySelector<HTMLElement>('.in-select')!, 'Lost');
@@ -302,7 +302,7 @@ describe('side boxes', () => {
   const boxes = (host: HTMLElement, name: string) => [...host.querySelectorAll(`[data-field="${name}"] .in-box`)].map(box => box.textContent);
 
   it('shows the currency from the record, a linked record or the schema, and % for percent fields', async () => {
-    const stub = server([['GET', /\/api\/company\/2$/, { status: 200, etag: null, body: { id: 2, name: 'Gulf Trading', company_currency: 'USD' } }]]);
+    const stub = server([['GET', /\/api\/company\/0000000000002$/, { status: 200, etag: null, body: { id: id(2), name: 'Gulf Trading', company_currency: 'USD' } }]]);
     const api = createClient({ fetch: stub.fetch });
     const links = apiLinks(api, new SchemaIndex(schema));
     setLinkSource(links);
@@ -315,12 +315,12 @@ describe('side boxes', () => {
     expect(boxes(host, 'rate')).toEqual(['%']);
     pick(host.querySelector<HTMLElement>('[data-field="code"] .in-select')!, 'SAR');
     expect(boxes(host, 'own')).toEqual(['SAR']);
-    store.field('company').set(2);
+    store.field('company').set(id(2));
     await flush();
     await flush();
     expect(boxes(host, 'fetched')).toEqual(['USD']);
     // Lists read the same source from the row's values, one batched request per linked model.
-    expect(currencyIn(store.field('fetched').meta, name => ({ company: 2 } as Record<string, unknown>)[name], links)).toBe('USD');
+    expect(currencyIn(store.field('fetched').meta, name => ({ company: id(2) } as Record<string, unknown>)[name], links)).toBe('USD');
     expect(currencyIn(store.field('own').meta, name => ({ code: 'nope' } as Record<string, unknown>)[name], links)).toBe('AED');
     expect(stub.sent.filter(item => item.url.includes('/api/company')).length).toBe(1);
     store.dispose();

@@ -239,7 +239,7 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
 
   it('supplies today and Link lookups through the host API and recomputes only their dependents', () => {
     const document = new FiniteDocument(plans.sale, {customer: 7, issued: '2026-10-28', amount: '100.05'});
-    expect(document.lookupRequests()).toEqual([['customer', 7, ['credit_days', 'rate', 'region', 'since', 'vip']]]);
+    expect(document.lookupRequests()).toEqual([['customer', '0000000000007', ['credit_days', 'rate', 'region', 'since', 'vip']]]);
     document.setLookups('customer', 7, {credit_days: 30, rate: '2.50', vip: true, region: null, since: '2026-10-01'});
     expect(document.lookupRequests()).toEqual([]);
     const snap = document.snapshot();

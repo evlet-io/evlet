@@ -151,7 +151,7 @@ class Budget {
 
 export interface Row {
   handle: string; path: string[]; values: Record<string, any>; parent: Row | null;
-  children: Record<string, Row[]>; id: number | null; key: string; label: string; order: number; created: boolean;
+  children: Record<string, Row[]>; id: RowId | null; key: string; label: string; order: number; created: boolean;
 }
 
 class Scope {
@@ -237,13 +237,28 @@ export function evaluate(node: any, scope: Scope, budget: Budget): Result {
   return guarded(() => operation(values[0], values[1]), scope);
 }
 
+// A Link value as its 13-character text id (as ids.ts writes it; inlined to keep this file pure).
+// The server sends text ids; a whole number reads as a legacy id, so 42 is '000000000001a'.
+type RowId = string | number;
+const ID_ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
+function linkKey(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const text = value.toLowerCase().replace(/[il]/g, '1').replace(/o/g, '0');
+    if (/^[0-7][0-9a-hjkmnp-tv-z]{12}$/.test(text)) return text;
+    if (!/^[1-9][0-9]{0,11}$/.test(value)) return null;
+  } else if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) return null;
+  let number = BigInt(value), text = '';
+  for (let index = 0; index < 13; index += 1) { text = ID_ALPHABET[Number(number % 32n)] + text; number /= 32n; }
+  return text;
+}
+
 // Follow a Link path through host-supplied lookups. A null link is a ready null at that step.
 function hop(node: any, scope: Scope): Result {
   let current = scope.read('self', node.field);
   for (const [model, name, kind] of node.steps) {
     if (current.state !== 'ready' || current.value === null) return current;
-    const id = integer(current.value);
-    if (id === null || id < 1) return failed('COMPUTE_TYPE_ERROR', [scope.at]);
+    const id = linkKey(current.value);
+    if (id === null) return failed('COMPUTE_TYPE_ERROR', [scope.at]);
     const values = scope.document.lookups.get(model)?.get(id), label = '@' + model + '.' + id + '.' + name;
     if (!values || !own(values, name)) { scope.misses.add(model + '\u0000' + id); return pending('COMPUTE_INPUT_MISSING', [label]); }
     current = sourceValue({type: kind}, values[name], label);
@@ -484,7 +499,7 @@ export class FiniteDocument {
   revision = 0; structureRevision = 0; trace: any = {};
   // Host inputs: today's date and Link lookups (model -> id -> field values); misses are lookups still wanted.
   today: unknown = null;
-  lookups = new Map<string, Map<number, Record<string, unknown>>>();
+  lookups = new Map<string, Map<string, Record<string, unknown>>>();
   misses = new Map<Node, Set<string>>();
   readonly lookupFields = new Map<string, Set<string>>();
   root: Row;
@@ -521,8 +536,9 @@ export class FiniteDocument {
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Rows must be objects');
     const entry = this.schema.get(path.join('/'));
     if (!entry) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown collection ' + address(path, ''));
-    const rawId = ownValue(data, 'id') ?? null, id = rawId === null ? null : integer(rawId);
-    if (rawId !== null && (id === null || id < 1)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be positive safe integers');
+    // A row id keeps the form it came in (text from the server, numbers in older fixtures).
+    const rawId = ownValue(data, 'id') ?? null, id: RowId | null = rawId === null || linkKey(rawId) === null ? null : rawId;
+    if (rawId !== null && id === null) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be record ids');
     const handle = this.handle();
     const key = ownValue(data, '_key') ?? null;
     if (key !== null && (typeof key !== 'string' || !KEY.test(key)))
@@ -552,7 +568,7 @@ export class FiniteDocument {
       if (items.length > this.maxRows(path, table))
         throw new CalcError('CALCULATION_LIMIT_EXCEEDED', table + ' exceeds the collection row limit');
       row.children[table] = [];
-      const seen = {keys: new Set<string>(), ids: new Set<number | null>()};
+      const seen = {keys: new Set<string>(), ids: new Set<RowId | null>()};
       for (const item of items) this.place(row, table, this.build(item, [...path, table], row, created), row.children[table].length, seen);
     }
     return row;
@@ -579,7 +595,7 @@ export class FiniteDocument {
   }
 
   /** Insert a row; `seen` (keys and ids of the rows already in the list) makes bulk loads linear. */
-  private place(owner: Row, table: string, row: Row, at: number, seen?: {keys: Set<string>, ids: Set<number | null>}) {
+  private place(owner: Row, table: string, row: Row, at: number, seen?: {keys: Set<string>, ids: Set<RowId | null>}) {
     const items = owner.children[table];
     if (seen ? seen.keys.has(row.key) : items.some(item => item !== row && item.key === row.key))
       throw new CalcError('DOCUMENT_STRUCTURE_ERROR', `Repeated row key ${row.key} in ${table}`);
@@ -770,10 +786,10 @@ export class FiniteDocument {
   }
 
   // Field values of one linked record, as the host read them, for Link path expressions.
-  setLookups(model: string, id: number, values: Record<string, unknown>) {
+  setLookups(model: string, id: string | number, values: Record<string, unknown>) {
     this.checked(() => {
-      const fields = this.lookupFields.get(model), key = integer(id);
-      if (!fields || key === null || key < 1 || !values || typeof values !== 'object' || Array.isArray(values) || Object.keys(values).some(name => !fields.has(name)))
+      const fields = this.lookupFields.get(model), key = linkKey(id);
+      if (!fields || key === null || !values || typeof values !== 'object' || Array.isArray(values) || Object.keys(values).some(name => !fields.has(name)))
         throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'This plan does not look up ' + model);
       // Copy on write so a rolled-back command restores the previous record.
       const records = new Map(this.lookups.get(model) || []);
@@ -784,18 +800,18 @@ export class FiniteDocument {
   }
 
   // [model, id, fields] the current results still wait for, sorted; the host reads and supplies them.
-  lookupRequests(): Array<[string, number, string[]]> {
-    const wanted = new Map<string, Set<number>>();
+  lookupRequests(): Array<[string, string, string[]]> {
+    const wanted = new Map<string, Set<string>>();
     for (const [node, misses] of this.misses) {
       if (!this.deps.has(node)) continue;
       for (const miss of misses) {
         const [model, id] = miss.split('\u0000');
         if (!wanted.has(model)) wanted.set(model, new Set());
-        wanted.get(model)!.add(Number(id));
+        wanted.get(model)!.add(id);
       }
     }
-    return [...wanted.keys()].sort().flatMap(model => [...wanted.get(model)!].sort((a, b) => a - b)
-      .map(id => [model, id, [...this.lookupFields.get(model)!].sort()] as [string, number, string[]]));
+    return [...wanted.keys()].sort().flatMap(model => [...wanted.get(model)!].sort()
+      .map(id => [model, id, [...this.lookupFields.get(model)!].sort()] as [string, string, string[]]));
   }
 
   addRow(owner: string, table: string, values: any = {}) {
@@ -826,11 +842,11 @@ export class FiniteDocument {
       const parent = this.row(owner);
       if (!this.schema.get(parent.path.join('/')).tables.includes(table) || !Array.isArray(items)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown collection ' + table);
       const existing = new Map(parent.children[table].filter(row => row.id !== null).map(row => [row.id, row]));
-      const old = [...parent.children[table]], seen = new Set<number>(), placed = {keys: new Set<string>(), ids: new Set<number | null>()};
+      const old = [...parent.children[table]], seen = new Set<RowId>(), placed = {keys: new Set<string>(), ids: new Set<RowId | null>()};
       parent.children[table] = [];
       for (const data of items) {
-        const rawId = ownValue(data, 'id') ?? null, id = rawId === null ? null : integer(rawId);
-        if (rawId !== null && id === null) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be positive safe integers');
+        const rawId = ownValue(data, 'id') ?? null, id: RowId | null = rawId === null || linkKey(rawId) === null ? null : rawId;
+        if (rawId !== null && id === null) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be record ids');
         let row: Row;
         if (id !== null) {
           if (!existing.has(id) || seen.has(id)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must belong to this collection and appear once');

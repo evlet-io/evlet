@@ -64,13 +64,13 @@ def storage(secured, s3_server, tenant='alpha'):
 
 def test_signed_private_upload_download_delete_and_collection(secured, s3_server):
     store = storage(secured, s3_server)
-    c = client(secured); c('POST', '/api/project', {'name': 'Files'})
-    assert c('POST', '/api/project/1/attachments', {'name': 'private.txt', 'content': 'cHJpdmF0ZQ=='})[0] == 201
-    assert c('GET', '/api/project/1/attachments/1')[1] == b'private'
+    c = client(secured); pid = c('POST', '/api/project', {'name': 'Files'})[1]['id']
+    assert c('POST', f'/api/project/{pid}/attachments', {'name': 'private.txt', 'content': 'cHJpdmF0ZQ=='})[0] == 201
+    assert c('GET', f'/api/project/{pid}/attachments/1')[1] == b'private'
     assert store.collect() == 0
     viewer = client(secured, 'viewer')
-    assert viewer('DELETE', '/api/project/1/attachments/1')[0] == 403
-    assert c('DELETE', '/api/project/1/attachments/1')[0] == 204
+    assert viewer('DELETE', f'/api/project/{pid}/attachments/1')[0] == 403
+    assert c('DELETE', f'/api/project/{pid}/attachments/1')[0] == 204
     assert store.collect() == 1
     assert set(s3_server[1]) == {'evlet/alpha/.evlet-store'}
     assert all(headers['Authorization'].startswith('AWS4-HMAC-SHA256') for _, _, headers in s3_server[2])
@@ -97,21 +97,21 @@ def test_rollback_orphans_corruption_and_original_adapter_guard(secured, s3_serv
             store.add(tx, 'project', 1, 'rollback', b'rollback')
             raise RuntimeError('abort')
     assert store.collect() == 1
-    c = client(secured); c('POST', '/api/project', {'name': 'Files'})
-    c('POST', '/api/project/1/attachments', {'name': 'data', 'content': 'YWJj'})
+    c = client(secured); pid = c('POST', '/api/project', {'name': 'Files'})[1]['id']
+    c('POST', f'/api/project/{pid}/attachments', {'name': 'data', 'content': 'YWJj'})
     with secured.database._connection() as db: row = db.execute('SELECT * FROM evlet_attachments').fetchone()
     local = LocalFileStorage(tmp_path / 'files'); local.initialize(secured.database)
     with pytest.raises(StorageError): local.read(row)
     key = store._key(row['storage_key'])
     s3_server[1][key] = (b'bad', hashlib.sha256(b'abc').hexdigest())
-    status, data, _ = c('GET', '/api/project/1/attachments/1')
+    status, data, _ = c('GET', f'/api/project/{pid}/attachments/1')
     assert status == 503 and 'private-bucket' not in str(data)
     del s3_server[1][key]
-    assert c('GET', '/api/project/1/attachments/1')[0] == 503
+    assert c('GET', f'/api/project/{pid}/attachments/1')[0] == 503
 
 
 def test_old_blob_bytes_work_with_object_storage(secured, s3_server):
-    c = client(secured); c('POST', '/api/project', {'name': 'Old'})
-    c('POST', '/api/project/1/attachments', {'name': 'old', 'content': 'b2xk'})
+    c = client(secured); pid = c('POST', '/api/project', {'name': 'Old'})[1]['id']
+    c('POST', f'/api/project/{pid}/attachments', {'name': 'old', 'content': 'b2xk'})
     storage(secured, s3_server)
-    assert c('GET', '/api/project/1/attachments/1')[1] == b'old'
+    assert c('GET', f'/api/project/{pid}/attachments/1')[1] == b'old'

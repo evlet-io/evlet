@@ -74,10 +74,10 @@ def test_an_upgraded_playground_keeps_old_invoices_and_numbers_new_ones(tmp_path
     old = Database(path, old_registry)
     old.initialize()
     owner = old.create(old_registry.models['customer'], name='Preserved')
-    old.create(old_registry.models['invoice'], customer=owner.id, reference='OLD-1', total='10.00')
+    kept = old.create(old_registry.models['invoice'], customer=owner.id, reference='OLD-1', total='10.00').id
     old.close()
     current = Database(path, registry, migrations=migrations)
     assert '0006_invoice_number' in current.migrate(migrations)
-    assert current.get(Invoice, 1).number is None
+    assert current.get(Invoice, kept).number is None
     created = current.create(Invoice, customer=owner.id, reference='NEW-1', total='20.00', posting_date='2026-06-01')
     assert created.number == 'INV-2026-00001'

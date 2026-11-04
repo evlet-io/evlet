@@ -104,14 +104,14 @@ def test_chat_runs_tools_as_the_person_and_keeps_history_usage_and_the_log(eva):
     script.turns = [[('text', 'Let me look.'), call('list_records', model='project'), usage(1200, 40)],
                     [('text', 'You have '), ('text', 'one project.'), usage(1500, 30, cached=1000)]]
     editor = client(app, 'editor')
-    editor('POST', '/api/project', {'name': 'Fit-out'})
+    project = editor('POST', '/api/project', {'name': 'Fit-out'})[1]['id']
     conversation, run, stored = ask(app, editor, 'How many projects do I have?')
     assert [message['role'] for message in stored['messages']] == ['user', 'assistant', 'assistant']
     assert stored['messages'][-1]['content'] == 'You have one project.'
     assert stored['conversation']['title'] == 'How many projects do I have?'
     [activity] = stored['runs'][0]['activities']
     assert activity['status'] == 'done' and activity['label'] == 'Read project' and activity['summary'] == '1 record'
-    assert activity['records'] == [{'model': 'project', 'id': 1}] and activity['inputs'] == {'model': 'project'}
+    assert activity['records'] == [{'model': 'project', 'id': project}] and activity['inputs'] == {'model': 'project'}
     assert stored['runs'][0]['status'] == 'completed'
     # The provider saw the tools this person may use, and the tool result as data.
     names = {tool['function']['name'] for tool in script.requests[0]['tools']}
@@ -382,8 +382,8 @@ def test_eva_gets_the_same_answers_as_every_other_entry_point(eva):
     editor = client(app, 'editor')
     app.business.policy = Policy(registry, rules={
         ('editor', Customer): Rule(operations=('read', 'update'), read_fields=('name',), write_fields=('name',), scope=lambda user: {'active': True})})
-    visible = app.database.create(Customer, name='Visible', email='seen@example.test', active=True).id
-    hidden = app.database.create(Customer, name='Hidden', email='hidden@example.test', active=False).id
+    visible = str(app.database.create(Customer, name='Visible', email='seen@example.test', active=True).id)
+    hidden = str(app.database.create(Customer, name='Hidden', email='hidden@example.test', active=False).id)
     calls = [('list_records', {'model': 'customer'}), ('get_record', {'model': 'customer', 'id': hidden}),
              ('update_record', {'model': 'customer', 'id': visible, 'values': {'email': 'x@example.test'}}),
              ('delete_record', {'model': 'customer', 'id': visible})]

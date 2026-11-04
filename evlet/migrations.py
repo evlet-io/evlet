@@ -9,6 +9,7 @@ import re
 import sqlite3
 
 from .fields import Field, Integer, Link, MAX_INTEGER, MISSING, Reference
+from .identity import RecordId
 from .models import identifier, storage_name
 
 logger = logging.getLogger(__name__)
@@ -165,7 +166,7 @@ def _check(connection, registry, *, rows=False):
                 try:
                     model._from_row(row)
                 except (ValueError, TypeError, OverflowError) as exc:
-                    raise SchemaError(f'{name} #{row["id"]}: stored data fails validation: {exc}') from exc
+                    raise SchemaError(f'{name} #{RecordId(row["id"])}: stored data fails validation: {exc}') from exc
     if connection.execute('PRAGMA foreign_key_check').fetchone() is not None:
         raise SchemaError('Stored data contains a broken foreign key')
 
@@ -552,7 +553,7 @@ class AlterField:
             row = connection.execute(f'SELECT "id" FROM {table} WHERE {column} > ? OR {column} < ? ORDER BY "id" LIMIT 1',
                                      (limit, -limit)).fetchone()
             if row is not None:
-                raise SchemaError(f'{self.table} #{row[0]}.{self.name}: the value is too large for the new scale')
+                raise SchemaError(f'{self.table} #{RecordId(row[0])}.{self.name}: the value is too large for the new scale')
             connection.execute(f'UPDATE {table} SET {column} = {column} * ? WHERE {column} IS NOT NULL', (factor,))
         # Every stored value must pass the new definition (bounds, length, choices), not only its type.
         after = 0
@@ -565,7 +566,7 @@ class AlterField:
                     try:
                         self.field.validate(self.field.from_storage(stored))
                     except (ValueError, TypeError) as exc:
-                        raise SchemaError(f'{self.table} #{record_id}.{self.name}: stored data fails validation: {exc}') from exc
+                        raise SchemaError(f'{self.table} #{RecordId(record_id)}.{self.name}: stored data fails validation: {exc}') from exc
             after = rows[-1][0]
 
 

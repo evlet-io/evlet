@@ -4,6 +4,7 @@ import pytest
 
 from evlet import (Model, Child, Table, Decimal, Currency, Text, Rule, Registry,
                    Database, LocalAuth, Application, User, ValidationError, action, depends, Ref)
+from evlet.identity import RecordId
 from evlet.reactivity import compile_expression, evaluate
 from test_business import http, client, PASSWORD
 from pathlib import Path
@@ -54,12 +55,13 @@ def test_owned_document_http_and_revision(application):
     assert record['children']['items'][0]['amount'] == '2.50'
     assert record['_row_ids']['row-a'] == record['children']['items'][0]['id']
     assert c('GET', '/api/order_items')[0] == 404
-    assert c('PATCH', '/api/order/1', {'title': 'Changed'})[0] == 428
-    saved = c('GET', '/api/order/1')
-    assert c('POST', '/api/order/1/actions/confirm', {'note': 'Ready'}, headers={b'if-match': saved[2][b'etag']})[0] == 200
-    assert c('PATCH', '/api/order/1', {'title': 'Old'}, headers={b'if-match': saved[2][b'etag']})[0] == 409
-    assert application.database.get(Order, 1).status == 'Confirmed'
-    with pytest.raises(AttributeError): application.database.get(Order, 1).title = 'Invalid'
+    path = f"/api/order/{record['id']}"
+    assert c('PATCH', path, {'title': 'Changed'})[0] == 428
+    saved = c('GET', path)
+    assert c('POST', path + '/actions/confirm', {'note': 'Ready'}, headers={b'if-match': saved[2][b'etag']})[0] == 200
+    assert c('PATCH', path, {'title': 'Old'}, headers={b'if-match': saved[2][b'etag']})[0] == 409
+    assert application.database.get(Order, RecordId(record['id'])).status == 'Confirmed'
+    with pytest.raises(AttributeError): application.database.get(Order, RecordId(record['id'])).title = 'Invalid'
 
 
 def test_partial_preview_unsaved_rows_no_persistence(application):
@@ -139,5 +141,7 @@ def test_negation_keeps_full_precision_before_currency_rounding(tmp_path):
 
 def test_document_contract_fixture(application):
     from scripts.generate_document_fixtures import collect
+    from evlet.identity import sequential_ids
     fixture = json.loads((Path(__file__).resolve().parents[1] / 'tests/fixtures/document-contract.json').read_text())
-    assert collect(application) == fixture
+    with sequential_ids():
+        assert collect(application) == fixture

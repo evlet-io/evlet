@@ -8,6 +8,7 @@ import pytest
 from evlet import (Database, PostgreSQLDatabase, Model, Registry, Text, Integer,
                    Currency, Link, Migration, AddField, RenameField, AddIndex,
                    SchemaError, ConflictError, LocalAuth)
+from evlet.identity import sequential_ids
 from examples.playground.app import build_app
 from examples.playground.models import registry, Project
 from tests.test_business import hashed, PASSWORD, client, http
@@ -85,10 +86,11 @@ def test_declarative_documents_preview_revision_and_child_rollback(pg_dsn):
     status, record, headers = c('POST', '/api/order', payload)
     assert status == 201, record
     assert record['total'] == '0.30'
-    assert c('PATCH', '/api/order/1', {'title': 'no revision'})[0] == 428
+    url = f"/api/order/{record['id']}"
+    assert c('PATCH', url, {'title': 'no revision'})[0] == 428
     payload['children']['items'][0]['qty'] = '0'
-    assert c('PATCH', '/api/order/1', payload, headers={b'if-match': headers[b'etag']})[0] == 422
-    assert c('GET', '/api/order/1')[1]['children']['items'][0]['qty'] == '3.0000'
+    assert c('PATCH', url, payload, headers={b'if-match': headers[b'etag']})[0] == 422
+    assert c('GET', url)[1]['children']['items'][0]['qty'] == '3.0000'
 
 
 class Entry(Model):
@@ -134,7 +136,7 @@ def test_postgres_migrations_history_and_rollback(pg_dsn):
     class Item(Model):
         name = Text(required=True)
     old = PostgreSQLDatabase(pg_dsn, Registry(Item))
-    old.initialize(); old.create(Item, name='Keep')
+    old.initialize(); kept = old.create(Item, name='Keep').id
     class Item(Model):
         title = Text(required=True, index=True)
         note = Text(required=True)
@@ -144,9 +146,9 @@ def test_postgres_migrations_history_and_rollback(pg_dsn):
     with pytest.raises(SchemaError): db.initialize()
     assert db.migrate(plan) == ['rename']
     db.initialize()
-    assert db.get(Item, 1).note == "50% ? 'quote' INTEGER PRIMARY KEY AUTOINCREMENT X''"
+    assert db.get(Item, kept).note == "50% ? 'quote' INTEGER PRIMARY KEY AUTOINCREMENT X''"
     with pytest.raises(SchemaError): db.migrate([Migration('changed', AddIndex('item', 'title'))])
-    assert db.get(Item, 1).title == 'Keep'
+    assert db.get(Item, kept).title == 'Keep'
 
 
 def test_postgres_actions_children_attachments_jobs_events_and_revocation(secured):
@@ -266,7 +268,7 @@ def test_reusing_indexed_field_names_preserves_existing_indexes(pg_dsn, unique):
     Item = type('Item', (Model,), {'code': field()})
     original = PostgreSQLDatabase(pg_dsn, Registry(Item))
     original.initialize()
-    original.create(Item, code='existing')
+    existing = original.create(Item, code='existing').id
     plan = []
     for generation in (1, 2):
         Item = type('Item', (Model,), {
@@ -278,11 +280,11 @@ def test_reusing_indexed_field_names_preserves_existing_indexes(pg_dsn, unique):
         updated = PostgreSQLDatabase(pg_dsn, Registry(Item), migrations=plan)
         assert updated.migrate(plan) == [f'replace_code_{generation}']
         updated.initialize()
-        assert updated.get(Item, 1).code_1 == 'existing'
-        assert updated.get(Item, 1).code is None
+        assert updated.get(Item, existing).code_1 == 'existing'
+        assert updated.get(Item, existing).code is None
         assert updated.migrate(plan) == []
 
-    assert updated.get(Item, 1).code_2 is None
+    assert updated.get(Item, existing).code_2 is None
     updated.create(Item, code='replacement', code_1='old', code_2='middle')
     if unique:
         for values in ({'code': 'replacement'}, {'code_1': 'existing'}, {'code_2': 'middle'}):
@@ -340,8 +342,10 @@ def test_model_names_do_not_collide_with_identity_objects(pg_dsn, suffix, revers
     models = [Item, Other]
     db = PostgreSQLDatabase(pg_dsn, Registry(*(models[::-1] if reverse else models)))
     db.initialize(); db.initialize()
-    assert db.create(Item, name='first').id == 1
-    assert db.create(Other, name='second').id == 1
+    # Each table keeps its own identity sequence; sequential_ids() numbers rows with it.
+    with sequential_ids():
+        assert db.create(Item, name='first').id == 1
+        assert db.create(Other, name='second').id == 1
 
 
 @pytest.mark.parametrize('suffix', ['_id_seq', '_pkey'])
@@ -351,7 +355,8 @@ def test_migration_moves_legacy_identity_names_without_resetting_ids(pg_dsn, suf
     class Item(Model):
         name = Text()
     original = PostgreSQLDatabase(pg_dsn, Registry(Item)); original.initialize()
-    assert original.create(Item, name='preserved').id == 1
+    with sequential_ids():
+        assert original.create(Item, name='preserved').id == 1
     with original.transaction() as tx:
         sequence = tx.connection.execute("SELECT relname FROM pg_class WHERE oid=pg_get_serial_sequence('item','id')::regclass").fetchone()[0]
         primary = tx.connection.execute("SELECT indexrelid::regclass::text FROM pg_index WHERE indrelid='item'::regclass AND indisprimary").fetchone()[0]
@@ -364,8 +369,9 @@ def test_migration_moves_legacy_identity_names_without_resetting_ids(pg_dsn, suf
     assert target.migrate(history) == []
     target.initialize()
     assert target.get(Item, 1).name == 'preserved'
-    assert target.create(Item, name='next').id == 2
-    assert target.create(Other, name='independent').id == 1
+    with sequential_ids():
+        assert target.create(Item, name='next').id == 2
+        assert target.create(Other, name='independent').id == 1
 
 
 def test_playground_migration_cli_uses_postgres_and_preserves_sqlite(pg_dsn, tmp_path, monkeypatch):
@@ -376,7 +382,7 @@ def test_playground_migration_cli_uses_postgres_and_preserves_sqlite(pg_dsn, tmp
     from examples.playground.models import Customer
     old_registry = legacy_registry()
     old = PostgreSQLDatabase(pg_dsn, old_registry); old.initialize()
-    old.create(old_registry.models['customer'], name='Keep PostgreSQL record')
+    kept = old.create(old_registry.models['customer'], name='Keep PostgreSQL record').id
     sqlite_path = tmp_path / 'unselected.sqlite3'
     sqlite_db = Database(sqlite_path, old_registry); sqlite_db.initialize()
     sqlite_db.create(old_registry.models['customer'], name='Keep SQLite record')
@@ -389,7 +395,7 @@ def test_playground_migration_cli_uses_postgres_and_preserves_sqlite(pg_dsn, tmp
         assert result.returncode == 0, result.stderr
         assert expected in result.stdout
     app = create_app(); app.initialize()
-    assert app.database.get(Customer, 1).name == 'Keep PostgreSQL record'
+    assert app.database.get(Customer, kept).name == 'Keep PostgreSQL record'
     assert sqlite_path.read_bytes() == before
     assert not list(tmp_path.glob('*.backup'))
 
@@ -400,7 +406,7 @@ def test_migration_has_its_own_timeout_and_pool_restores_request_limit(pg_dsn, m
     class Item(Model):
         title = Text()
     old = PostgreSQLDatabase(pg_dsn, Registry(Item), timeout=1)
-    old.initialize(); old.create(Item, title='Keep')
+    old.initialize(); kept = old.create(Item, title='Keep').id
     class Item(Model):
         title = Text()
         done = Boolean(default=False)
@@ -412,7 +418,7 @@ def test_migration_has_its_own_timeout_and_pool_restores_request_limit(pg_dsn, m
         original(connection, operation)
     monkeypatch.setattr(schema, 'apply', slower)
     assert db.migrate([Migration('add_done', AddField('item', 'done', Boolean(default=False)))]) == ['add_done']
-    assert db.get(Item, 1).title == 'Keep'
+    assert db.get(Item, kept).title == 'Keep'
     with db._connection() as connection:
         assert connection.execute("SELECT current_setting('statement_timeout')").fetchone()[0] == '1s'
 
@@ -799,6 +805,33 @@ def test_dev_signin_link_on_postgresql(pg_dsn):
     status, _, body = call(wrapped, 'GET', '/api/auth/session', cookie=session_cookie(headers))
     assert b'demo-admin' in body
     assert call(wrapped, 'GET', f'/_dev/signin?token={token}')[0] == 403
+
+
+def test_postgres_record_ids_match_sqlite(pg_dsn, monkeypatch):
+    from evlet.identity import RecordId
+    from examples.playground.models import Customer
+    db = PostgreSQLDatabase(pg_dsn, registry)
+    db.initialize()
+    first = db.create(Customer, name='First')
+    assert isinstance(first.id, RecordId) and first.id > 2**41
+    with db.transaction() as tx:
+        assert tx.connection.execute('SELECT id FROM customer').fetchone()[0] == first.id
+    # A taken id inserts nothing and is drawn again, without aborting the PostgreSQL transaction.
+    drawn = iter([first.id, RecordId(first.id + 1)])
+    monkeypatch.setattr('evlet.database.new_id', lambda: next(drawn))
+    with db.transaction() as tx:
+        second = tx.create(Customer, name='Second')
+        assert second.id == first.id + 1 and tx.get(Customer, str(second.id)).name == 'Second'
+    assert [record.id for record in db.list(Customer, order_by='id')] == [first.id, second.id]
+
+
+def test_postgres_http_sends_text_ids(secured):
+    c = client(secured)
+    status, customer, _ = c('POST', '/api/customer', {'name': 'Acme'})
+    assert status == 201 and isinstance(customer['id'], str) and len(customer['id']) == 13
+    status, invoice, _ = c('POST', '/api/invoice', {'customer': customer['id'].upper(), 'reference': 'PG-1', 'total': '1.00'})
+    assert status == 201 and invoice['customer'] == customer['id']
+    assert c('GET', f"/api/invoice/{invoice['id']}")[1]['id'] == invoice['id']
 
 
 def test_postgres_plan_and_add_table_with_confirmed_documents(pg_dsn):

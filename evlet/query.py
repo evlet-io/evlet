@@ -4,6 +4,7 @@ from copy import copy
 from typing import NamedTuple
 
 from .fields import Integer, Link, Reference, Tags, Text
+from .identity import RecordId, path_id
 from .models import ValidationError, identifier
 
 OPERATORS = {'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'nin', 'isnull',
@@ -42,9 +43,22 @@ class ChildGroup(NamedTuple):
     where: tuple
 
 
+class RecordIdFilter(Integer):
+    """The id column in filters: compared as an integer, given as a text id (or an int from Python)."""
+
+    def validate(self, value):
+        try:
+            return RecordId(value)
+        except ValueError:
+            raise ValueError('Use a record id') from None
+
+
+ID_FIELD = RecordIdFilter(minimum=1)
+
+
 def operators_for(model, name):
     """The operators a filter may use on a field of model: empty when the field is not stored."""
-    field = Integer(minimum=1) if name == 'id' else model.__fields__.get(name)
+    field = ID_FIELD if name == 'id' else model.__fields__.get(name)
     return list(KIND_OPERATORS.get(field.kind, ())) if field is not None else []
 
 
@@ -122,7 +136,7 @@ class SqlQuery:
         if not 1 <= len(parts) <= 4:
             raise ValueError('Use at most three relationship hops')
         name = parts[0]
-        field = Integer(minimum=1) if name == 'id' else model.__fields__.get(name)
+        field = ID_FIELD if name == 'id' else model.__fields__.get(name)
         if field is None:
             raise ValueError(f'Unknown field: {name}')
         if isinstance(field, Reference):
@@ -173,13 +187,16 @@ class SqlQuery:
                 if '\x00' in search:
                     raise ValueError('Search must not contain NUL characters')
                 from .ui.metadata import view_for
-                matches = ['CAST("record"."id" AS TEXT) = ?']
-                values.append(search.removeprefix('#'))
+                matches = []
+                searched_id = path_id(search.removeprefix('#'))
+                if searched_id is not None:
+                    matches.append('"record"."id" = ?')
+                    values.append(searched_id)
                 for name in (view_for(self.model)['search_fields'] if search_fields is None else search_fields):
                     column, _ = self.reference(name)
                     matches.append(f'instr(lower({column}), lower(?)) > 0')
                     values.append(search)
-                clauses.append('(' + ' OR '.join(matches) + ')')
+                clauses.append('(' + (' OR '.join(matches) or '1=0') + ')')
         except (ValueError, UnicodeError) as exc:
             raise ValidationError({'q': str(exc)}) from exc
         return (' WHERE ' + ' AND '.join(clauses)) if clauses else '', values

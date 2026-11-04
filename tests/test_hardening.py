@@ -26,21 +26,25 @@ def test_fifty_concurrent_writers_do_not_lose_read_modify_write_updates(tmp_path
 def test_concurrent_tenant_cookie_replay_and_warmed_route_revocation(tenants):
     catalog, router = tenants
     tokens = {slug: login(router, slug) for slug in ('alpha','beta')}
+    projects = {}
     for slug in tokens:
-        assert call(router, slug+'.localhost:8000', 'POST', '/api/project', {'name': slug}, **tokens[slug])[0] == 201
-    paths = ['/api/project/1', '/api/_discovery', '/api/schema', '/api/_events']
+        status, project, _ = call(router, slug+'.localhost:8000', 'POST', '/api/project', {'name': slug}, **tokens[slug])
+        assert status == 201
+        projects[slug] = f"/api/project/{project['id']}"
+    paths = ['project', '/api/_discovery', '/api/schema', '/api/_events']
     def read(index):
         slug = 'alpha' if index%2 else 'beta'
         other = 'beta' if slug == 'alpha' else 'alpha'
         path = paths[(index//2)%len(paths)]
+        path = projects[slug] if path == 'project' else path
         assert call(router, slug+'.localhost:8000', path=path, **tokens[other])[0] == 401
         assert call(router, slug+'.localhost:8000', path=path, **tokens[slug])[0] == 200
     with ThreadPoolExecutor(max_workers=50) as pool:
         list(pool.map(read, range(100)))
     catalog.set_domain_active('alpha.localhost', False)
     with ThreadPoolExecutor(max_workers=20) as pool:
-        assert all(status == 421 for status in pool.map(lambda _: call(router, 'alpha.localhost:8000', path='/api/project/1', **tokens['alpha'])[0], range(40)))
-    assert call(router, 'beta.localhost:8000', path='/api/project/1', **tokens['beta'])[1]['name'] == 'beta'
+        assert all(status == 421 for status in pool.map(lambda _: call(router, 'alpha.localhost:8000', path=projects['alpha'], **tokens['alpha'])[0], range(40)))
+    assert call(router, 'beta.localhost:8000', path=projects['beta'], **tokens['beta'])[1]['name'] == 'beta'
 
 
 def test_session_cleanup_and_revocation_use_indexes(tenants):

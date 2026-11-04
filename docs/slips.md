@@ -120,7 +120,7 @@ the role cannot write are refused with 403, never dropped.
 ## Present a slip
 
 * **From a record.** A slip with `source = Model` is a button on that model's records.
-  `/app/client/4?slip=start_job` opens it from a link.
+  `/app/client/01hc1sd9vc1ye?slip=start_job` opens it from a link.
 * **From the New menu.** `menu = True`.
 * **From an action.** A model action may return `present(...)`. The record view opens the slip
   after the action:
@@ -153,7 +153,7 @@ All three take JSON and need a signed-in session.
 | `POST /api/_slips/{name}/check` | `{source?, values, revision?}` | The surface, with `revision` echoed |
 | `POST /api/_slips/{name}/hand-in` | `{source?, values, key}` | The outcome |
 
-`source` is `{"model": "client", "id": 4}`. `values` carries scalar fields by name and table rows
+`source` is `{"model": "client", "id": "01hc1sd9vc1ye"}`. `values` carries scalar fields by name and table rows
 under `children: {table: [rows]}`. Each row may carry a `_key`, which names it in errors such as
 `tasks.row-2.title`. `key` is an idempotency key of 8 to 128 characters: a retry with the same
 key and body returns the first outcome without running again; the same key with other input is
@@ -166,7 +166,7 @@ The surface:
 ```json
 {
   "slip": "start_job", "version": 1, "label": "Start a job", "hand_in_label": "Start job",
-  "source": {"model": "client", "id": 4, "title": "Acme", "revision": "\"...\""},
+  "source": {"model": "client", "id": "01hc1sd9vc1ye", "title": "Acme", "revision": "\"...\""},
   "outcome": {"kind": "handler"},
   "layout": [{"label": "Job", "fields": ["name", "client", "starts_on", "billing", "rate"]}],
   "definition": {"fields": [], "children": [{"name": "tasks", "label": "Tasks", "allow_add": true, "definition": {}}]},

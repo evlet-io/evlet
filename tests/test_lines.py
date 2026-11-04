@@ -162,8 +162,14 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
     app = make_app(Order, Product, counting=True)
     c = client(app)
     product = c('POST', '/api/product', {})[1]['id']
-    status, order, _ = c('POST', '/api/order', {'title': 'big', 'children': {'lines': lines(1000, product=product)}})
+    # A thousand rows with a 13-character Link id each pass the 64 KiB body limit, so they go in two
+    # requests, as docs/finite-calculations.md advises for large collections.
+    status, order, _ = c('POST', '/api/order', {'title': 'big', 'children': {'lines': lines(500, product=product)}})
     assert status == 201, order
+    first = order['_row_ids']
+    status, order, _ = edit(c, f"/api/order/{order['id']}", {'children': {'lines': {'create': lines(500, 500, product=product)}}})
+    assert status == 200, order
+    order['_row_ids'] = {**first, **order['_row_ids']}
     assert (order['total'], order['line_count']) == ('2500.00', 1000)
     assert len(order['_row_ids']) == 1000
     assert len(order['children']['lines']) == 100
@@ -509,7 +515,7 @@ def test_hidden_rows_keep_their_stored_positions(make_app):
     def stored():
         zone = next(child.model for child in app.registry.children if child.name == 'zones')
         with app.database.transaction() as tx:
-            return {row.id: row.evlet_position for row in tx.list(zone, limit=100)}
+            return {str(row.id): row.evlet_position for row in tx.list(zone, limit=100)}
     before = stored()
     order = lambda: [row['id'] for row in admin('GET', url)[1]['children']['zones']]
     status, result, _ = edit(editor, url, {'children': {'zones': [{'id': ids['e4']}, {'id': ids['e2']}, {'id': ids['e1']}]}})

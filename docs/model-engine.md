@@ -56,7 +56,7 @@ class Visit(Model):
     labels = Tags()                       # ["vip", "north"]
     days = MultiSelect(["mon", "tue", "wed"], default=["mon"])  # ["mon", "wed"], in the order of the choices
     nights = Integer(default=1, suffix="nights")  # suffix: a unit shown after the input
-    about = Reference()                   # {"model": "customer", "id": 4}, any registered model
+    about = Reference()                   # {"model": "customer", "id": "01hc1sd9vc1ye"}, any registered model
     fee = Currency(currency="AED")        # a fixed code; see "Where a Currency field's code comes from"
     code_field = Text(default="AED")
 ```
@@ -155,6 +155,30 @@ writers; keep transaction bodies short.
 returning `None` for a null link. It works on both `Database` and transaction
 sessions. Reverse traversal uses ordinary filters on the referencing model.
 
+## Record ids
+
+Every record has an `id` that never changes. Links, child rows, revisions, the journal and
+URLs all point to it.
+
+- **In storage** it is a 63-bit integer: 42 bits of milliseconds since 01-01-2026 UTC, then
+  21 random bits, so ids sort in creation order. SQLite keeps it as the `INTEGER PRIMARY KEY`
+  (the rowid) and PostgreSQL as `bigint`. The framework makes every id in one helper and
+  draws again if one is ever taken.
+- **Everywhere else** it is 13 lowercase Crockford base32 characters, such as
+  `01hc1sd9vc1ye`: JSON bodies, Link values, `{"model", "id"}` References, URLs
+  (`/api/invoice/01hc1sd9vc1ye`, `/app/invoice/01hc1sd9vc1ye`), the neutral schema, Eva and
+  MCP tools. Ids are never JSON numbers, because a browser cannot hold 63 bits in a number.
+  Input accepts any case and reads `I` and `L` as `1` and `O` as `0`.
+- **In Python** `record.id` and Link values are `evlet.identity.RecordId`, an `int` whose
+  `str()` is the text form. `database.get(Invoice, "01hc1sd9vc1ye")` and
+  `database.get(Invoice, record.id)` both work. `to_dict()` gives text ids.
+- **Older rows** keep their small ids: 42 reads and writes as `000000000001a`. Nothing is
+  rewritten when an instance upgrades.
+
+Writes also take a JSON integer for a Link or a row id, so older clients keep working;
+responses only ever send text ids. Framework rows that are not records (accounts, journal
+entries, jobs, attachments) keep their own number ids.
+
 ## Queries
 
 ```python
@@ -229,6 +253,8 @@ applying a field's business minimum/maximum or custom validator.
 
 The existing create, list, detail, health, and schema endpoints remain available.
 
+- `{id}` in these routes is the record's text id ([record ids](#record-ids)); a decimal
+  id is not a route.
 - `PATCH /api/{model}/{id}` accepts a partial JSON object and returns the saved
   record (200). Unknown fields and invalid values return 422.
 - `DELETE /api/{model}/{id}` returns 204 with an empty body. A missing record

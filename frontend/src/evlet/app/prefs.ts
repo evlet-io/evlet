@@ -65,7 +65,7 @@ export class Prefs {
   /** This session's recent searches (memory only). */
   get recentSearches() { return this.memory<string[]>('recentQ', []); }
   /** This session's recent records (memory only). */
-  get recentRecords() { return this.memory<Array<{ model: string; id: number; title: string }>>('recents', []); }
+  get recentRecords() { return this.memory<Array<{ model: string; id: string; title: string }>>('recents', []); }
   get quickRows() { return this.cell<1 | 2>('qaRows', 1); }
   get quickIds() { return this.cell<string[] | null>('qaIds', null); }
 

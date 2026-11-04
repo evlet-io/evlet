@@ -13,7 +13,7 @@ import { humanize } from '../ui/kinds';
 import { DialogFooter, openModal, toast } from '../ui/layers';
 import type { AppContext } from './context';
 
-export interface SlipSource { model: string; id: number }
+export interface SlipSource { model: string; id: string }
 /** Present this slip: what an action or a hand-in returns as `present`. */
 export interface Presentation { slip: string; source?: SlipSource | null; values?: Record<string, unknown> }
 /** What a hand-in returns. */

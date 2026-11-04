@@ -10796,7 +10796,7 @@
      "requests": [
       [
        "customer",
-       7,
+       "0000000000007",
        [
         "credit_days",
         "rate",
@@ -10807,7 +10807,7 @@
       ],
       [
        "customer",
-       8,
+       "0000000000008",
        [
         "credit_days",
         "rate",
@@ -10822,30 +10822,30 @@
       "_states": {
        "discount": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "due": {
         "causes": [
-         "@customer.7.credit_days"
+         "@customer.0000000000007.credit_days"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "grace_due": {
         "causes": [
-         "@customer.7.credit_days",
-         "@customer.7.region"
+         "@customer.0000000000007.credit_days",
+         "@customer.0000000000007.region"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "line_discounts": {
         "causes": [
-         "@customer.7.rate",
-         "@customer.8.rate",
+         "@customer.0000000000007.rate",
+         "@customer.0000000000008.rate",
          "lines.r2.discount"
         ],
         "code": "COMPUTE_INPUT_MISSING",
@@ -10853,21 +10853,21 @@
        },
        "loyal": {
         "causes": [
-         "@customer.7.since"
+         "@customer.0000000000007.since"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "net": {
         "causes": [
-         "@customer.7.vip"
+         "@customer.0000000000007.vip"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "vip": {
         "causes": [
-         "@customer.7.vip"
+         "@customer.0000000000007.vip"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
@@ -10881,7 +10881,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.7.rate"
+            "@customer.0000000000007.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -10896,7 +10896,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.8.rate"
+            "@customer.0000000000008.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -10966,7 +10966,7 @@
      "requests": [
       [
        "customer",
-       8,
+       "0000000000008",
        [
         "credit_days",
         "rate",
@@ -10977,7 +10977,7 @@
       ],
       [
        "region",
-       3,
+       "0000000000003",
        [
         "grace"
        ]
@@ -10988,14 +10988,14 @@
       "_states": {
        "grace_due": {
         "causes": [
-         "@region.3.grace"
+         "@region.0000000000003.grace"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "line_discounts": {
         "causes": [
-         "@customer.8.rate",
+         "@customer.0000000000008.rate",
          "lines.r2.discount"
         ],
         "code": "COMPUTE_INPUT_MISSING",
@@ -11016,7 +11016,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.8.rate"
+            "@customer.0000000000008.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -11084,7 +11084,7 @@
      "requests": [
       [
        "region",
-       3,
+       "0000000000003",
        [
         "grace"
        ]
@@ -11095,7 +11095,7 @@
       "_states": {
        "grace_due": {
         "causes": [
-         "@region.3.grace"
+         "@region.0000000000003.grace"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
@@ -11588,14 +11588,14 @@
       "_states": {
        "discount": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "line_discounts": {
         "causes": [
-         "@customer.7.rate",
+         "@customer.0000000000007.rate",
          "lines.r2.discount"
         ],
         "code": "COMPUTE_INPUT_MISSING",
@@ -11603,7 +11603,7 @@
        },
        "net": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
@@ -11617,7 +11617,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.7.rate"
+            "@customer.0000000000007.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -11686,21 +11686,21 @@
       "_states": {
        "discount": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "grace_due": {
         "causes": [
-         "@region.3.grace"
+         "@region.0000000000003.grace"
         ],
         "code": "COMPUTE_TYPE_ERROR",
         "state": "error"
        },
        "line_discounts": {
         "causes": [
-         "@customer.7.rate",
+         "@customer.0000000000007.rate",
          "lines.r2.discount"
         ],
         "code": "COMPUTE_INPUT_MISSING",
@@ -11708,7 +11708,7 @@
        },
        "net": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
@@ -11722,7 +11722,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.7.rate"
+            "@customer.0000000000007.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -11789,21 +11789,21 @@
       "_states": {
        "discount": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "grace_due": {
         "causes": [
-         "@region.3.grace"
+         "@region.0000000000003.grace"
         ],
         "code": "COMPUTE_TYPE_ERROR",
         "state": "error"
        },
        "line_discounts": {
         "causes": [
-         "@customer.7.rate",
+         "@customer.0000000000007.rate",
          "lines.r2.discount"
         ],
         "code": "COMPUTE_INPUT_MISSING",
@@ -11811,7 +11811,7 @@
        },
        "net": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
@@ -11825,7 +11825,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.7.rate"
+            "@customer.0000000000007.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -11884,21 +11884,21 @@
       "_states": {
        "discount": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "grace_due": {
         "causes": [
-         "@region.3.grace"
+         "@region.0000000000003.grace"
         ],
         "code": "COMPUTE_TYPE_ERROR",
         "state": "error"
        },
        "line_discounts": {
         "causes": [
-         "@customer.7.rate",
+         "@customer.0000000000007.rate",
          "lines.r2.discount"
         ],
         "code": "COMPUTE_INPUT_MISSING",
@@ -11906,7 +11906,7 @@
        },
        "net": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
@@ -11920,7 +11920,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.7.rate"
+            "@customer.0000000000007.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -11979,21 +11979,21 @@
       "_states": {
        "discount": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "grace_due": {
         "causes": [
-         "@region.3.grace"
+         "@region.0000000000003.grace"
         ],
         "code": "COMPUTE_TYPE_ERROR",
         "state": "error"
        },
        "line_discounts": {
         "causes": [
-         "@customer.7.rate",
+         "@customer.0000000000007.rate",
          "lines.r2.discount"
         ],
         "code": "COMPUTE_INPUT_MISSING",
@@ -12001,7 +12001,7 @@
        },
        "net": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
@@ -12015,7 +12015,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.7.rate"
+            "@customer.0000000000007.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -12068,7 +12068,7 @@
      "requests": [
       [
        "customer",
-       9,
+       "0000000000009",
        [
         "credit_days",
         "rate",
@@ -12083,29 +12083,29 @@
       "_states": {
        "discount": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "grace_due": {
         "causes": [
-         "@region.3.grace"
+         "@region.0000000000003.grace"
         ],
         "code": "COMPUTE_TYPE_ERROR",
         "state": "error"
        },
        "line_discounts": {
         "causes": [
-         "@customer.7.rate",
-         "@customer.9.rate"
+         "@customer.0000000000007.rate",
+         "@customer.0000000000009.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
        "net": {
         "causes": [
-         "@customer.7.rate"
+         "@customer.0000000000007.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
@@ -12119,7 +12119,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.7.rate"
+            "@customer.0000000000007.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -12140,7 +12140,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.9.rate"
+            "@customer.0000000000009.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -12182,7 +12182,7 @@
      "requests": [
       [
        "customer",
-       9,
+       "0000000000009",
        [
         "credit_days",
         "rate",
@@ -12197,54 +12197,32 @@
       "_states": {
        "discount": {
         "causes": [
-         "discount"
+         "@customer.0000000000007.rate"
         ],
-        "code": "COMPUTE_TYPE_ERROR",
-        "state": "error"
-       },
-       "due": {
-        "causes": [
-         "due"
-        ],
-        "code": "COMPUTE_TYPE_ERROR",
-        "state": "error"
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
        },
        "grace_due": {
         "causes": [
-         "due",
-         "grace_due"
+         "@region.0000000000003.grace"
         ],
         "code": "COMPUTE_TYPE_ERROR",
         "state": "error"
        },
        "line_discounts": {
         "causes": [
-         "@customer.7.rate",
-         "@customer.9.rate"
+         "@customer.0000000000007.rate",
+         "@customer.0000000000009.rate"
         ],
         "code": "COMPUTE_INPUT_MISSING",
         "state": "pending"
        },
-       "loyal": {
-        "causes": [
-         "loyal"
-        ],
-        "code": "COMPUTE_TYPE_ERROR",
-        "state": "error"
-       },
        "net": {
         "causes": [
-         "net"
+         "@customer.0000000000007.rate"
         ],
-        "code": "COMPUTE_TYPE_ERROR",
-        "state": "error"
-       },
-       "vip": {
-        "causes": [
-         "vip"
-        ],
-        "code": "COMPUTE_TYPE_ERROR",
-        "state": "error"
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
        }
       },
       "amount": "100.05",
@@ -12255,7 +12233,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.7.rate"
+            "@customer.0000000000007.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -12276,7 +12254,7 @@
          "_states": {
           "discount": {
            "causes": [
-            "@customer.9.rate"
+            "@customer.0000000000009.rate"
            ],
            "code": "COMPUTE_INPUT_MISSING",
            "state": "pending"
@@ -12290,26 +12268,19 @@
       },
       "customer": "7",
       "discount": null,
-      "due": null,
+      "due": "2026-11-27",
       "grace_due": null,
       "issued": "2026-10-28",
       "line_discounts": null,
-      "loyal": null,
+      "loyal": "27",
       "net": null,
-      "vip": null
+      "vip": true
      },
      "trace": {
-      "changed": [
-       "discount",
-       "due",
-       "grace_due",
-       "loyal",
-       "net",
-       "vip"
-      ],
+      "changed": [],
       "evaluated": 6,
       "skipped": 4,
-      "steps": 18
+      "steps": 21
      }
     }
    ]
@@ -12446,7 +12417,7 @@
      "requests": [
       [
        "customer",
-       7,
+       "0000000000007",
        [
         "credit_days",
         "rate"
@@ -14589,7 +14560,7 @@
      "requests": [
       [
        "customer",
-       7,
+       "0000000000007",
        [
         "credit_days",
         "rate"
@@ -15197,7 +15168,7 @@
      "requests": [
       [
        "customer",
-       7,
+       "0000000000007",
        [
         "credit_days",
         "rate"
@@ -15613,7 +15584,7 @@
      "requests": [
       [
        "customer",
-       8,
+       "0000000000008",
        [
         "credit_days",
         "rate"

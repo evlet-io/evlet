@@ -3,21 +3,21 @@
 // links, a board with one State tab and empty values.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adminRoutes, byText, click, invoice, lastToast, recorded, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
-import { copy, type Sent } from './server';
+import { copy, id, type Sent } from './server';
 
 afterEach(() => { vi.useRealTimers(); stopAll(); try { localStorage.clear(); } catch { /* no storage */ } });
 
 const query = (sent: Sent) => Object.fromEntries(new URL(sent.url, 'http://x').searchParams);
-const idOf = (sent: Sent) => Number(sent.url.split('/').pop());
+const idOf = (sent: Sent) => sent.url.split('/').pop()!;
 const signOut = (host: HTMLElement) => {
   click(host.querySelector('.me'));
   click(byText(document.body, '.pop [role="menuitem"]', 'Sign out'));
 };
 const orderRecord = (): Route[] => [
-  ['GET', /\/api\/order\/1$/, recorded.detail],
-  ['GET', /\/api\/order\/1\/lines\/lines\?/, recorded.lines_page],
-  ['GET', /\/api\/customer\/1$/, { ...recorded.customer, status: 200 }],
-  ['GET', /\/api\/product\/1$/, { ...recorded.product, status: 200 }],
+  ['GET', /\/api\/order\/0000000000001$/, recorded.detail],
+  ['GET', /\/api\/order\/0000000000001\/lines\/lines\?/, recorded.lines_page],
+  ['GET', /\/api\/customer\/0000000000001$/, { ...recorded.customer, status: 200 }],
+  ['GET', /\/api\/product\/0000000000001$/, { ...recorded.product, status: 200 }],
 ];
 
 describe('signing out', () => {
@@ -52,7 +52,7 @@ describe('preferences hold no record data', () => {
     // Left by an earlier build that stored titles and searches.
     localStorage.setItem('evlet.admin.recents', JSON.stringify([{ model: 'order', id: 9, title: 'Old secret' }]));
     localStorage.setItem('evlet.admin.recentQ', JSON.stringify(['old search']));
-    const { host } = start([...adminRoutes(), ...orderRecord(), ['POST', /\/api\/auth\/logout$/, recorded.logout]], '/app/order/1', { storage: localStorage });
+    const { host } = start([...adminRoutes(), ...orderRecord(), ['POST', /\/api\/auth\/logout$/, recorded.logout]], '/app/order/0000000000001', { storage: localStorage });
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toContain('Big order'));
     await until(() => expect(text(byText(host, '.nav-group', /^Recent/))).toContain('Big order'));
     expect(text(host.querySelector('.side'))).not.toContain('Old secret');
@@ -74,24 +74,24 @@ describe('preferences hold no record data', () => {
 describe('bulk changes', () => {
   const page = () => screen.customers_page1.body.items as Array<Record<string, unknown>>;
   const rowsShown = (host: HTMLElement) => host.querySelectorAll('tbody tr[data-key]').length;
-  const pick = (host: HTMLElement, ids: number[]) => ids.forEach(id => click(host.querySelector(`tbody tr[data-key="${id}"] [role="checkbox"]`)));
+  const pick = (host: HTMLElement, ids: number[]) => ids.forEach(n => click(host.querySelector(`tbody tr[data-key="${id(n)}"] [role="checkbox"]`)));
 
   it('leaves records that changed since the list loaded as they are, and says so', async () => {
     const { host, sent } = start([...adminRoutes(),
       ['GET', /\/api\/customer\?/, screen.customers_page1],
-      ['GET', /\/api\/customer\/\d+$/, item => {
+      ['GET', /\/api\/customer\/[0-9a-z]{13}$/, item => {
         const row = { ...page().find(entry => entry.id === idOf(item))! };
-        if (row.id === 2) row.rate = '99.00';
+        if (row.id === id(2)) row.rate = '99.00';
         return { status: 200, etag: `"rev-${row.id}"`, body: row };
       }],
-      ['DELETE', /\/api\/customer\/\d+$/, { status: 204, etag: null, body: null }],
+      ['DELETE', /\/api\/customer\/[0-9a-z]{13}$/, { status: 204, etag: null, body: null }],
     ], '/app/customer');
     await until(() => expect(rowsShown(host)).toBeGreaterThan(0));
     pick(host, [1, 2, 3]);
     click(byText(host.querySelector('.bulk')!, 'button', 'Delete'));
     click(byText(document.body, '.modal-f button', 'Delete'));
     await until(() => expect(lastToast()).toContain('Deleted 2 customers'));
-    expect(requests(sent, 'DELETE', /customer/).map(idOf).sort()).toEqual([1, 3]);
+    expect(requests(sent, 'DELETE', /customer/).map(idOf).sort()).toEqual([id(1), id(3)]);
     expect(lastToast()).toContain('1 customer changed since you loaded the list, so it was left as it is.');
   });
 
@@ -100,13 +100,13 @@ describe('bulk changes', () => {
     const waiting: Array<() => void> = [];
     const { host, sent, router } = start([...adminRoutes(),
       ['GET', /\/api\/customer\?/, screen.customers_page1],
-      ['GET', /\/api\/customer\/\d+$/, async item => {
+      ['GET', /\/api\/customer\/[0-9a-z]{13}$/, async item => {
         open++; most = Math.max(most, open);
         await new Promise<void>(resolve => waiting.push(resolve));
         open--;
         return { status: 200, etag: '"r"', body: page().find(entry => entry.id === idOf(item))! };
       }],
-      ['DELETE', /\/api\/customer\/\d+$/, { status: 204, etag: null, body: null }],
+      ['DELETE', /\/api\/customer\/[0-9a-z]{13}$/, { status: 204, etag: null, body: null }],
     ], '/app/customer');
     await until(() => expect(rowsShown(host)).toBeGreaterThan(0));
     pick(host, [1, 2, 3, 4, 5, 6, 7, 8]);
@@ -123,7 +123,7 @@ describe('bulk changes', () => {
     await new Promise(resolve => setTimeout(resolve, 50));
     waiting.splice(0).forEach(release => release());
     await new Promise(resolve => setTimeout(resolve, 50));
-    expect(requests(sent, 'GET', /customer\/\d+$/).length).toBeLessThanOrEqual(6);
+    expect(requests(sent, 'GET', /customer\/[0-9a-z]{13}$/).length).toBeLessThanOrEqual(6);
     expect(requests(sent, 'DELETE', /customer/).length).toBeLessThanOrEqual(2);
   });
 
@@ -193,7 +193,7 @@ describe('record view', () => {
   it('hides dialog actions, which this screen cannot open', async () => {
     const schema = copy(screen.schema);
     schema.body.models.find((model: any) => model.name === 'order').actions.push({ name: 'reschedule', label: 'Reschedule', dialog: true });
-    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema], ...orderRecord()], '/app/order/1');
+    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema], ...orderRecord()], '/app/order/0000000000001');
     await until(() => expect(byText(host, '.doc-head button', 'Close')).not.toBeNull());
     expect(byText(host, '.doc-head button', 'Reschedule')).toBeNull();
   });
@@ -203,9 +203,9 @@ describe('record view', () => {
     const order = schema.body.models.find((model: any) => model.name === 'order');
     order.fields.find((field: any) => field.name === 'remark').hidden = true;
     const { host, sent } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema],
-      ['GET', /\/api\/customer\/1$/, { ...recorded.customer, status: 200 }],
+      ['GET', /\/api\/customer\/0000000000001$/, { ...recorded.customer, status: 200 }],
       ['POST', /\/api\/order$/, item => ({ status: 201, etag: '"x"', body: { ...item.body, id: 77 } })],
-      ['GET', /\/api\/order\/77$/, { status: 200, etag: '"x"', body: { id: 77, title: 'T' } }],
+      ['GET', /\/api\/order\/000000000002d$/, { status: 200, etag: '"x"', body: { id: 77, title: 'T' } }],
     ] as Route[], '/app/order/new?title=T&remark=planted&due=2030-01-01&total=5');
     const create = () => byText(host, '.ev-savebar button', /^Create/);
     await until(() => expect(create()).not.toBeNull());
@@ -221,7 +221,7 @@ describe('record view', () => {
   it('shows an empty summary value as Not set', async () => {
     const schema = copy(screen.schema);
     schema.body.models.find((model: any) => model.name === 'order').key_fields = ['title', 'remark'];
-    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema], ...orderRecord()], '/app/order/1');
+    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema], ...orderRecord()], '/app/order/0000000000001');
     await until(() => expect([...host.querySelectorAll('.sum-t > span')].map(text)).toContain('Remark'));
     const due = byText(host, '.sum-t', /^Remark/)!;
     expect(text(due.querySelector('b'))).toBe('Not set');
