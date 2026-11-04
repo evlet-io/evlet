@@ -31,7 +31,7 @@ def seed_team(app, password):
     # Employee keeps its history (track_changes), so records are written through a Context, as the demo.
     with app.business.context(User(0, 'team-demo', 'admin')) as context:
         for name, manager, _ in TEAM:
-            ids[name] = context.create(Employee, name=name, reports_to=ids.get(manager))['id']
+            ids[name] = context.create(Employee, full_name=name, reports_to=ids.get(manager))['id']
     for name, _, account in TEAM:
         if account is not None:
             user = app.business.auth.create_user(username=account, password=password, role='viewer')

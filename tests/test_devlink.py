@@ -153,8 +153,8 @@ def test_linked_session_keeps_every_permission_check(playground):
     csrf = json.loads(body)['csrf']
     assert call(app, 'GET', '/api/customer', cookie=cookie)[0] == 200
     protect = [(b'x-evlet-request', b'1')]
-    assert call(app, 'POST', '/api/customer', cookie=cookie, headers=protect, body={'name': 'A'})[0] == 403
-    assert call(app, 'POST', '/api/customer', cookie=cookie, headers=[*protect, (b'x-csrf-token', csrf.encode())], body={'name': 'A'})[0] == 403
+    assert call(app, 'POST', '/api/customer', cookie=cookie, headers=protect, body={'customer_name': 'A'})[0] == 403
+    assert call(app, 'POST', '/api/customer', cookie=cookie, headers=[*protect, (b'x-csrf-token', csrf.encode())], body={'customer_name': 'A'})[0] == 403
     assert call(app, 'GET', '/api/_controls/settings', cookie=cookie)[0] == 404
     # Deactivating the account ends the session like any other.
     playground.business.auth.update_user(1, {'active': False})

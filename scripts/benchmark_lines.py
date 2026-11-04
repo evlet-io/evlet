@@ -25,7 +25,7 @@ ALL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 
 class Product(Model):
     permissions = ALL
-    name = Text(default='product')
+    title = Text(default='product')
 
 
 class Part(Child):

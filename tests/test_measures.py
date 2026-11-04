@@ -21,9 +21,9 @@ ALL = Rule(('read', 'create', 'update', 'delete'))
 
 
 class Customer(Model):
-    permissions = {'admin': ALL, 'editor': Rule(('read',), scope=lambda user: {'name': user.username}),
+    permissions = {'admin': ALL, 'editor': Rule(('read',), scope=lambda user: {'title': user.username}),
                    'viewer': Rule(('read',))}
-    name = Text(default='')
+    title = Text(default='')
 
 
 class Invoice(Model):
@@ -326,7 +326,7 @@ def test_where_compares_dates_with_today_days_and_the_month_start(app, monkeypat
 def test_unsupported_where_expressions_are_rejected(app):
     rejected = [
         (F('total') + 1 > 2, 'not calculations'),
-        (F('customer.name') == 'x', 'Link paths'),
+        (F('customer.title') == 'x', 'Link paths'),
         (F('nope') == 1, 'unknown field nope'),
         (F('total'), 'Boolean condition'),
         (F('posting_date') < today() - days(F('weight')), 'not calculations'),
@@ -367,7 +367,7 @@ def test_meta_measures_are_checked_at_registration():
         ({'n': 'count'}, 'Use Count, CountDistinct'),
         ({}, 'one to 8'),
         ({f'm{index}': Count() for index in range(9)}, 'one to 8'),
-        ({'n': Count(Customer, link='name')}, 'must be a Link'),
+        ({'n': Count(Customer, link='title')}, 'must be a Link'),
     ]
     for measures, message in cases:
         with pytest.raises(ValueError, match=message):
@@ -380,7 +380,7 @@ def test_meta_measures_are_checked_at_registration():
 # Permissions, Context and per-record measures
 
 def seed(app):
-    customers = insert(app, Customer, [{'name': 'editor'}, {'name': 'other'}])
+    customers = insert(app, Customer, [{'title': 'editor'}, {'title': 'other'}])
     invoices = insert(app, Invoice, [
         {'customer': customers[0], 'status': 'issued', 'total': '100.00', 'outstanding': '60.00', 'owner': 'editor', 'secret': '1.00', 'posting_date': '2025-01-10'},
         {'customer': customers[1], 'status': 'issued', 'total': '50.00', 'outstanding': '50.00', 'owner': 'other', 'secret': '2.00', 'posting_date': '2025-02-10'},
@@ -417,7 +417,7 @@ def test_permission_aware_aggregates_apply_row_scope_and_field_rules(app):
                   {'measures': {'n': Count()}, 'group_by': 'customer'}, {'measures': {'n': Count()}, 'filters': {'secret__gt': 0}},
                   # Customers are row scoped for the editor: no measure may count or compare their links.
                   {'measures': {'n': CountDistinct('customer')}}, {'measures': {'n': Count(where=F('customer') == None)}},  # noqa: E711
-                  {'measures': {'n': Count(where=F('customer.name') == 'x')}}, {'measures': {'n': 'customers'}},
+                  {'measures': {'n': Count(where=F('customer.title') == 'x')}}, {'measures': {'n': 'customers'}},
                   # Unknown fields and declared measures look exactly like unreadable ones.
                   {'measures': {'n': Count(where=F('nothing') > 0)}}, {'measures': {'n': 'not_declared'}},
                   {'measures': {'n': 'payments'}}, {'measures': {'n': Sum('nothing')}}, {'measures': {'n': Count()}, 'group_by': 'nothing'}]
@@ -584,7 +584,7 @@ class NumberedLine(Child):
 class NumberedQuote(Model):
     Meta = NumberedMeta
     permissions = {'admin': ALL}
-    name = Text(default='')
+    title = Text(default='')
     lines = Table(NumberedLine, max_rows=10)
     total = Currency(default='0')
     number = Sequence('NQ-{n:03}', assign_on='issued')
@@ -608,7 +608,7 @@ def test_measures_with_void_revise_moves_and_sequences(numbered):
     tag = lambda url: {b'if-match': c('GET', url)[2][b'etag']}
     urls = []
     for name, total in (('A', '10.00'), ('B', '20.00'), ('C', '5.00')):
-        status, record, _ = c('POST', base, {'name': name, 'total': total, 'children': {'lines': [{'note': name}]}})
+        status, record, _ = c('POST', base, {'title': name, 'total': total, 'children': {'lines': [{'note': name}]}})
         assert status == 201, record
         urls.append(f"{base}/{record['id']}")
     # Each route on one model: moves, void, revise, measures, per-record measures, aggregate, lines and related.

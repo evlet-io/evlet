@@ -5,6 +5,8 @@ import re
 from ..fields import CurrentUser, LongText, MISSING, Text
 from ..declarations import Ref
 
+from ..naming import form_hidden, standard
+
 
 def label_for(name):
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name).replace("_", " ").capitalize()
@@ -27,12 +29,18 @@ def view_for(model):
     meta = getattr(model, 'Meta', None)
     allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments', 'effects',
-               'journal', 'naming', 'mail', 'open_in'}
+               'journal', 'naming', 'mail', 'title', 'open_in'}
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
             raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
-    # App fields only: instance fields (x_) differ per database and are added by Controls.
-    visible = {name: field for name, field in model.__app_fields__.items() if not field.hidden}
+    # App fields only: instance fields (x_) differ per database and are added by Controls. The standard
+    # name shows (first) on models whose naming fills it; the standard title follows its source and never shows.
+    from ..naming import standard
+    named = getattr(getattr(meta, 'naming', None), 'field', None) == 'name' and standard(model.__app_fields__.get('name')) == 'name'
+    visible = {name: field for name, field in model.__app_fields__.items()
+               if (standard(field) == 'name' and named) or (not standard(field) and not field.hidden)}
+    if named:
+        visible = {'name': visible.pop('name'), **visible}
     texts = [name for name, field in visible.items() if isinstance(field, Text) and not isinstance(field, LongText)]
     label = getattr(meta, 'label', label_for(model.__name__))
     plural = getattr(meta, 'plural', plural_for(label))
@@ -42,15 +50,22 @@ def view_for(model):
     title = getattr(meta, 'title_field', next((name for name in ('name', 'title', 'reference') if name in texts), texts[0] if texts else 'id'))
     if title != 'id' and title not in texts:
         raise ValueError('title_field must be a visible short text field or id')
+    if not hasattr(meta, 'title_field') and 'title' in model.__app_fields__ and (standard(model.__app_fields__['title']) or 'title' in texts):
+        # Without Meta.title_field, records show their title column (a template, the name or the text
+        # id). With it, that field holds the same text the title does.
+        title = "title"
     columns = getattr(meta, 'list_fields', tuple(name for name, field in visible.items() if not isinstance(field, LongText))[:4])
     search = getattr(meta, 'search_fields', tuple(texts[:8]))
-    for value, maximum, names in ((columns, 8, {'id', *visible}), (search, 8, {name for name, field in visible.items() if isinstance(field, Text)})):
+    standard_text = {key for key, field in model.__app_fields__.items() if standard(field)}
+    for value, maximum, names in ((columns, 8, {'id', *visible}), (search, 8, {name for name, field in visible.items() if isinstance(field, Text)} | standard_text)):
         if not isinstance(value, (tuple, list)) or len(value) > maximum or any(not isinstance(name, str) or name not in names for name in value) or len(set(value)) != len(value):
             raise ValueError('View fields must be distinct visible field names, with at most eight entries')
     # How a list opens its records: the full record page, or a side panel beside the narrowed list.
     open_in = getattr(meta, 'open_in', 'page')
     if open_in not in OPEN_IN:
         raise ValueError('open_in must be "page" or "panel"')
+    # Search also finds records by their title and name.
+    search = tuple(dict.fromkeys((*search, *(key for key in ('title', 'name') if key in standard_text))))
     layout = getattr(meta, 'layout', (('Details', tuple(visible)),))
     used = []
     groups = []
@@ -87,7 +102,8 @@ def field_schema(field):
     result = {**field.metadata(), 'label': field.label or label_for(field.name),
               'help_text': field.help_text, **({'tooltip': field.tooltip} if field.tooltip else {}), 'placeholder': field.placeholder,
               **({'suffix': field.suffix} if field.suffix else {}),
-              'hidden': field.hidden, 'read_only': field.read_only,
+              # Forms leave out the standard title and a name no naming fills (evlet/naming.py); responses keep them.
+              'hidden': field.hidden or form_hidden(field), 'read_only': field.read_only,
               **({'stored': field.stored} if field.compute is not None or field.query is not None or not field.stored else {}),
               **currency_schema(field),
               **({'editable_when_locked': True} if getattr(field, 'editable_when_locked', False) else {}),

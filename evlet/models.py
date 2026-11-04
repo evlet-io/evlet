@@ -6,6 +6,7 @@ from types import MappingProxyType
 from .fields import ACTIVE, Field, Link, MISSING, RULES, Reference, State, active_layer
 from .declarations import Table, ReactiveQuery, DEFAULT_TABLE_ROWS
 from .identity import RecordId
+from .naming import standard
 
 
 def identifier(name):
@@ -98,6 +99,10 @@ class ModelType(type):
                 tables[key] = value
             elif key in fields:
                 raise ValueError(f"Inherited field {key!r} must remain a field")
+        # Every record model has the standard name and title columns (evlet/naming.py); row tables do not.
+        from .naming import add_standard, is_row_table
+        if any(isinstance(base, ModelType) for base in bases) and not is_row_table(namespace, bases, fields):
+            namespace = {**namespace, **add_standard(fields)}
         if len({key.lower() for key in fields}) != len(fields):
             raise ValueError("Field names must be distinct ignoring case")
         columns = [column.lower() for key, value in fields.items() if value.stored for column, _ in value.columns(key)]
@@ -215,8 +220,9 @@ class Model(metaclass=ModelType):
         instance._layer = active_layer()
         instance._values = MappingProxyType({
             name: field.from_columns(row, name) for name, field in cls.__fields__.items()
-            # A column another process just dropped reads as empty.
-            if not getattr(field, 'instance', None) or name in row.keys()
+            # A column another process just dropped reads as empty, and so do the standard name and title
+            # of a table framework step 0003 has not reached yet.
+            if not (getattr(field, 'instance', None) or standard(field)) or name in row.keys()
         })
         instance._id = RecordId(row["id"])
         return instance
@@ -343,6 +349,8 @@ class Registry:
         # Naming series ({model: NamingRules}); Controls replaces an entry when its series are overridden.
         from .sequences import compile_namings
         self.naming = compile_namings(models, child_models)
+        from .naming import configure
+        configure(self, child_models)
         from .measures import compile_declared
         self.measures = MappingProxyType(compile_declared(self, models))
         # Rows documents post to other models (Meta.effects); the targets' rows are read only.
@@ -410,13 +418,14 @@ class Registry:
         """The stored schema app migrations work from. Instance fields (x_) belong to Controls, not to it."""
         return {"version": 1, "models": [
             {"name": name, "label": model.__name__,
-             "fields": [field.metadata() for field in model.__app_stored__.values()]}
+             "fields": [field.metadata() for field in model.__app_stored__.values() if not standard(field)]}
             for name, model in self.models.items()
         ]}
 
 
 class Child(Model):
     """Owned row definition. Register it through a parent's Table declaration."""
+    __row__ = True
 
 
 def check_currency_source(model, field):

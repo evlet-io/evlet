@@ -69,11 +69,11 @@ def test_a_key_follows_its_scope_and_reads_only_unless_it_may_write(secured):
     admin = client(secured)
     read = create(admin, 'Reader', {'access': 'read', 'models': ['Customer']})[1]['token']
     write = create(admin, 'Writer', {'access': 'write', 'models': ['Customer']})[1]['token']
-    assert with_key(secured, read, 'POST', '/api/customer', {'name': 'From a script'})[:2] == (403, {'error': 'This key can only read.'})
-    status, created, _ = with_key(secured, write, 'POST', '/api/customer', {'name': 'From a script'})
-    assert status == 201 and created['name'] == 'From a script'
+    assert with_key(secured, read, 'POST', '/api/customer', {'customer_name': 'From a script'})[:2] == (403, {'error': 'This key can only read.'})
+    status, created, _ = with_key(secured, write, 'POST', '/api/customer', {'customer_name': 'From a script'})
+    assert status == 201 and created['customer_name'] == 'From a script'
     assert with_key(secured, write, 'GET', '/api/project')[0] in (403, 404)
-    assert with_key(secured, write, 'POST', '/api/project', {'name': 'Not in scope'})[0] in (403, 404)
+    assert with_key(secured, write, 'POST', '/api/project', {'title': 'Not in scope'})[0] in (403, 404)
     assert secured.database.count(Project) == 0
     names = [model['name'] for model in with_key(secured, read, 'GET', '/api/schema')[1]['models']]
     assert names == ['customer']
@@ -85,13 +85,13 @@ def test_a_key_follows_its_scope_and_reads_only_unless_it_may_write(secured):
 
 def test_key_requests_keep_row_scopes_and_field_rules(secured):
     db = secured.database
-    visible = db.create(Customer, name='Visible', notes='secretphrase', active=True)
-    hidden = db.create(Customer, name='Hidden', active=False)
-    rule = Rule(('read', 'create', 'update'), read_fields=('name', 'active'), write_fields=('name', 'active'), scope=lambda user: {'active': True})
+    visible = db.create(Customer, customer_name='Visible', notes='secretphrase', active=True)
+    hidden = db.create(Customer, customer_name='Hidden', active=False)
+    rule = Rule(('read', 'create', 'update'), read_fields=('customer_name', 'active'), write_fields=('customer_name', 'active'), scope=lambda user: {'active': True})
     secured.business.policy = Policy(registry, rules={('editor', Customer): rule})
     token = create(client(secured), 'Editor key', {'access': 'write', 'models': None}, user='editor')[1]['token']
     page = with_key(secured, token, 'GET', '/api/customer')[1]
-    assert page['total'] == 1 and page['items'] == [{'id': str(visible.id), 'name': 'Visible', 'active': True}]
+    assert page['total'] == 1 and page['items'] == [{'id': str(visible.id), 'customer_name': 'Visible', 'active': True}]
     assert with_key(secured, token, 'GET', f'/api/customer/{hidden.id}')[0] == 404
     assert with_key(secured, token, 'GET', '/api/customer?' + urlencode({'filters': json.dumps({'notes': 'secretphrase'})}))[0] == 403
     assert with_key(secured, token, 'PATCH', f'/api/customer/{visible.id}', {'notes': 'changed'})[0] == 403
@@ -118,7 +118,7 @@ def test_a_personal_key_cannot_exceed_the_users_own_access(secured):
     # The key follows its user: when the user loses write access, so does the key.
     with secured.database.transaction() as tx:
         tx.connection.execute("UPDATE evlet_users SET role='viewer' WHERE username='editor'")
-    assert with_key(secured, created['token'], 'POST', '/api/customer', {'name': 'After demotion'})[0] == 403
+    assert with_key(secured, created['token'], 'POST', '/api/customer', {'customer_name': 'After demotion'})[0] == 403
     assert with_key(secured, created['token'], 'GET', '/api/customer')[0] == 200
     assert editor('DELETE', f"/api/_settings/me/keys/{created['key']['id']}")[1] == {'items': []}
     assert with_key(secured, created['token'], 'GET', '/api/customer')[0] == 401
@@ -161,7 +161,7 @@ def test_a_valid_key_is_never_throttled_by_other_keys_failures(secured, monkeypa
 
 
 def test_only_a_well_formed_key_skips_the_request_header(secured):
-    status, payload, _ = http(secured, 'POST', '/api/customer', {'name': 'x'}, headers={b'authorization': b'Bearer junk', b'x-evlet-request': b''})
+    status, payload, _ = http(secured, 'POST', '/api/customer', {'customer_name': 'x'}, headers={b'authorization': b'Bearer junk', b'x-evlet-request': b''})
     assert (status, payload) == (403, {'error': 'Missing request protection header'})
 
 
@@ -171,7 +171,7 @@ def test_jobs_queued_with_a_key_keep_its_scope_and_stop_when_it_is_revoked(secur
     jobs = secured.business.jobs
     monkeypatch.setitem(jobs.tasks, 'project_progress', Task('project_progress', lambda tx, job, payload: seen.append(job.user)))
     admin = client(secured)
-    project = admin('POST', '/api/project', {'name': 'Keyed'})[1]
+    project = admin('POST', '/api/project', {'title': 'Keyed'})[1]
     created = create(admin, 'Worker', {'access': 'write', 'models': ['Project']})[1]
     token = created['token']
     assert with_key(secured, token, 'POST', f"/api/project/{project['id']}/actions/refresh_progress")[0] == 202
@@ -190,7 +190,7 @@ def test_guard_checks_are_cached_per_key_scope(secured):
     from types import SimpleNamespace
     from evlet.auth import KeyAccess, User
     from evlet.states import readable
-    guard = SimpleNamespace(reads=(('self', Customer, 'name'),))
+    guard = SimpleNamespace(reads=(('self', Customer, 'customer_name'),))
     policy = secured.business.policy
     assert readable(policy, User(2, 'editor', 'editor'), guard)
     assert not readable(policy, User(2, 'editor', 'editor', access=KeyAccess(True, frozenset({Project}))), guard)

@@ -14,7 +14,7 @@ def test_worker_and_event_routes_keep_tenant_identity_and_disable_state(tenants)
     apps, jobs, projects = {}, {}, {}
     for slug in ('alpha', 'beta'):
         app = apps[slug] = tenant_app(catalog.get(slug)); app.initialize()
-        project = projects[slug] = app.database.create(Project, name=slug)
+        project = projects[slug] = app.database.create(Project, title=slug)
         app.database.create(ProjectTask, project=project.id, title=slug, done=True)
         with app.database.transaction() as tx:
             jobs[slug] = app.business.jobs.enqueue(tx, 'project_progress', {'project_id': project.id}, user=User(1, 'admin', 'admin'), target=(Project, project.id))

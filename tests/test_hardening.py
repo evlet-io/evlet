@@ -28,7 +28,7 @@ def test_concurrent_tenant_cookie_replay_and_warmed_route_revocation(tenants):
     tokens = {slug: login(router, slug) for slug in ('alpha','beta')}
     projects = {}
     for slug in tokens:
-        status, project, _ = call(router, slug+'.localhost:8000', 'POST', '/api/project', {'name': slug}, **tokens[slug])
+        status, project, _ = call(router, slug+'.localhost:8000', 'POST', '/api/project', {'title': slug}, **tokens[slug])
         assert status == 201
         projects[slug] = f"/api/project/{project['id']}"
     paths = ['project', '/api/_discovery', '/api/schema', '/api/_events']
@@ -44,7 +44,7 @@ def test_concurrent_tenant_cookie_replay_and_warmed_route_revocation(tenants):
     catalog.set_domain_active('alpha.localhost', False)
     with ThreadPoolExecutor(max_workers=20) as pool:
         assert all(status == 421 for status in pool.map(lambda _: call(router, 'alpha.localhost:8000', path=projects['alpha'], **tokens['alpha'])[0], range(40)))
-    assert call(router, 'beta.localhost:8000', path=projects['beta'], **tokens['beta'])[1]['name'] == 'beta'
+    assert call(router, 'beta.localhost:8000', path=projects['beta'], **tokens['beta'])[1]['title'] == 'beta'
 
 
 def test_session_cleanup_and_revocation_use_indexes(tenants):

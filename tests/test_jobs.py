@@ -29,18 +29,18 @@ def test_enqueue_and_business_write_commit_or_roll_back_together(secured):
     jobs = queue(secured, lambda tx, context, payload: None)
     with pytest.raises(RuntimeError):
         with secured.database.transaction() as tx:
-            project = tx.create(Project, name='rollback')
+            project = tx.create(Project, title='rollback')
             jobs.enqueue(tx, 'work', {}, target=(Project, project.id))
             raise RuntimeError('abort')
     assert secured.database.count(Project) == 0 and jobs.claim() is None
     with secured.database.transaction() as tx:
-        project = tx.create(Project, name='commit')
+        project = tx.create(Project, title='commit')
         receipt = jobs.enqueue(tx, 'work', {}, target=(Project, project.id))
     assert raw(jobs, receipt.id)['state'] == 'queued'
 
 
 def test_dedupe_matches_payload_and_survives_completion(secured):
-    jobs = queue(secured, lambda tx, context, payload: tx.create(Customer, name=context.tenant))
+    jobs = queue(secured, lambda tx, context, payload: tx.create(Customer, customer_name=context.tenant))
     first = submit(jobs, key='same')
     assert submit(jobs, key='same').id == first.id
     with secured.database.transaction() as tx:
@@ -51,7 +51,7 @@ def test_dedupe_matches_payload_and_survives_completion(secured):
 
 
 def test_competing_workers_claim_once(secured):
-    jobs = queue(secured, lambda tx, context, payload: tx.create(Customer, name='once'))
+    jobs = queue(secured, lambda tx, context, payload: tx.create(Customer, customer_name='once'))
     receipt = submit(jobs)
     with ThreadPoolExecutor(max_workers=4) as pool:
         claims = list(pool.map(lambda _: jobs.claim(), range(4)))
@@ -62,7 +62,7 @@ def test_competing_workers_claim_once(secured):
 
 
 def test_restart_recovers_lease_and_fences_old_worker(secured):
-    jobs = queue(secured, lambda tx, context, payload: tx.create(Customer, name='once'))
+    jobs = queue(secured, lambda tx, context, payload: tx.create(Customer, customer_name='once'))
     now = int(time.time())
     receipt = submit(jobs, run_at=now)
     old = jobs.claim(now=now, lease_seconds=1)
@@ -76,7 +76,7 @@ def test_restart_recovers_lease_and_fences_old_worker(secured):
 
 def test_failed_handler_rolls_back_then_retries_with_backoff(secured):
     def handler(tx, context, payload):
-        tx.create(Customer, name='committed only once')
+        tx.create(Customer, customer_name='committed only once')
         if context.attempt == 1:
             raise RuntimeError('private error details')
     jobs = queue(secured, handler)
@@ -118,7 +118,7 @@ def test_schedules_coalesce_missed_runs_and_disable(secured):
 
 def test_actor_permission_rechecked_and_status_hidden(secured):
     c = client(secured, 'editor')
-    project = c('POST', '/api/project', {'name': 'Job', 'children': {'tasks': [{'title': 'Done', 'done': True}]}})[1]
+    project = c('POST', '/api/project', {'title': 'Job', 'children': {'tasks': [{'title': 'Done', 'done': True}]}})[1]
     status, response, _ = c('POST', f"/api/project/{project['id']}/actions/refresh_progress", {})
     assert status == 202
     job_id = response['job']['id']
@@ -133,7 +133,7 @@ def test_actor_permission_rechecked_and_status_hidden(secured):
 
 def test_project_job_updates_and_publishes_only_after_success(secured):
     c = client(secured)
-    project = c('POST', '/api/project', {'name': 'Job', 'children': {'tasks': [{'title': 'Done', 'done': True}, {'title': 'Pending'}]}})[1]
+    project = c('POST', '/api/project', {'title': 'Job', 'children': {'tasks': [{'title': 'Done', 'done': True}, {'title': 'Pending'}]}})[1]
     response = c('POST', f"/api/project/{project['id']}/actions/refresh_progress", {})[1]
     assert secured.business.jobs.run_one()
     assert secured.database.get(Project, project['id']).progress == 50
@@ -142,7 +142,7 @@ def test_project_job_updates_and_publishes_only_after_success(secured):
 
 
 def test_queue_refuses_other_tenant_namespace_and_pauses_disabled_work(secured):
-    jobs = queue(secured, lambda tx, context, payload: tx.create(Customer, name='work'))
+    jobs = queue(secured, lambda tx, context, payload: tx.create(Customer, customer_name='work'))
     receipt = submit(jobs)
     with pytest.raises(ValueError): queue(secured, lambda *args: None, tenant='other')
     assert not jobs.run_one(active=lambda: False)

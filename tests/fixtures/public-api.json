@@ -69,7 +69,7 @@
     "Month": "class(field)",
     "Move": "class(from_, to, /, label=None, *, roles=('admin', 'editor'), when=None, run=None)",
     "MultiSelect": "class(choices, **kwargs)",
-    "Naming": "class(field, *series, date_field=None)",
+    "Naming": "class(*series, date_field=None, assign_on='create', manual=False)",
     "Negate": "class(*fields)",
     "NotFoundError": "exception",
     "Outcome": "class(message=None, *, open=None, data=None, present=None)",

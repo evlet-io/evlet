@@ -13,11 +13,11 @@ from test_rules_types import ALL, add_user
 
 class Customer(Model):
     permissions = ALL
-    name = Text(required=True)
+    customer_name = Text(required=True)
     notes = LongText(default='')
 
     class Meta:
-        key_fields = ('name',)
+        key_fields = ('customer_name',)
 
 
 class Invoice(Model):
@@ -96,7 +96,7 @@ def test_reverse_links_are_discovered_named_ordered_and_limited():
 
 def test_related_can_hide_a_discovered_relation():
     class Hidden(Model):
-        name = Text(default='')
+        title = Text(default='')
 
         class Meta:
             relations = (Related('ticket', 'hidden', hidden=True),)
@@ -116,7 +116,7 @@ def test_revisions_relation_is_labelled():
         class Meta:
             calculation_language = 'finite-v1'
             revisable = True
-        name = Text(default='')
+        title = Text(default='')
         status = State(('draft', 'sent', 'void'), moves=(Move('draft', 'sent', 'Send'),), locked=('sent', 'void'),
                        final=('void',), voidable=('sent',))
 
@@ -127,8 +127,8 @@ def test_revisions_relation_is_labelled():
     ({'key_fields': ('missing',)}, 'key_fields'),
     ({'key_fields': ('lines',)}, 'key_fields'),
     ({'key_fields': ('hidden_note',)}, 'key_fields'),
-    ({'key_fields': ('name', 'name')}, 'key_fields'),
-    ({'key_fields': 'name'}, 'key_fields'),
+    ({'key_fields': ('title', 'title')}, 'key_fields'),
+    ({'key_fields': 'title'}, 'key_fields'),
     ({'key_fields': tuple(f'f{i}' for i in range(9))}, 'key_fields'),
     ({'relations': Related('note', 'owner')}, 'tuple of Related'),
     ({'relations': (Related('note', 'missing'),)}, 'must be a Link'),
@@ -145,7 +145,7 @@ def test_meaning_metadata_is_validated_at_registration(meta, message):
         text = Text(default='')
 
     fields = {f'f{i}': Text(default='') for i in range(9)}
-    Owner = type('Owner', (Model,), {'name': Text(default=''), 'hidden_note': Text(default='', hidden=True),
+    Owner = type('Owner', (Model,), {'title': Text(default=''), 'hidden_note': Text(default='', hidden=True),
                                      'lines': Table(Row), **fields, 'Meta': type('Meta', (), meta)})
 
     class Note(Model):
@@ -212,7 +212,7 @@ def test_schema_exposes_meaning_filtered_by_permissions(tmp_path):
     assert invoice['relations'][0] == {'name': 'payment.invoice', 'label': 'Payments received', 'model': 'payment',
                                        'link': 'invoice', 'limit': 2, 'order': ['-amount', 'id']}
     assert invoice['attachments'] is True and invoice['attachment_limits'] == {'max_files': 2, 'max_size': 4}
-    assert entry(admin, 'customer')['key_fields'] == ['name']
+    assert entry(admin, 'customer')['key_fields'] == ['customer_name']
     assert 'attachment_limits' not in entry(admin, 'customer') and 'key_fields' not in entry(admin, 'payment')
     # The viewer reads only number and customer of an invoice, cannot read audits, and cannot see
     # the parent or refund Links (an unreadable field hides its relation).
@@ -228,7 +228,7 @@ def test_related_records_respect_row_scope_order_and_limits(tmp_path):
 def check_related(app):
     admin, editor, viewer = client(app), add_user(app, 'editor'), add_user(app, 'viewer')
     editor_id = next(user['id'] for user in admin('GET', '/api/auth/users')[1]['items'] if user['username'] == 'editor')
-    customer = admin('POST', '/api/customer', {'name': 'Acme'})[1]['id']
+    customer = admin('POST', '/api/customer', {'customer_name': 'Acme'})[1]['id']
     invoice = admin('POST', '/api/invoice', {'number': 'INV-1', 'customer': customer})[1]['id']
     other = admin('POST', '/api/invoice', {'number': 'INV-2', 'customer': customer})[1]['id']
     for amount, owner, target in (('5', editor_id, invoice), ('9', 0, invoice), ('7', editor_id, invoice), ('1', editor_id, other)):
@@ -262,7 +262,7 @@ def check_related(app):
 def test_related_records_need_a_readable_owning_record(tmp_path):
     class Account(Model):
         permissions = {**ALL, 'editor': Rule(('read', 'create', 'update'), scope=lambda user: {'owner': user.id})}
-        name = Text(default='')
+        title = Text(default='')
         owner = Integer(default=0)
 
     class Entry(Model):
@@ -272,13 +272,13 @@ def test_related_records_need_a_readable_owning_record(tmp_path):
 
     app = start(tmp_path, Account, Entry)
     admin, editor = client(app), add_user(app, 'editor')
-    hidden = admin('POST', '/api/account', {'name': 'Hidden', 'owner': 0})[1]['id']
+    hidden = admin('POST', '/api/account', {'title': 'Hidden', 'owner': 0})[1]['id']
     admin('POST', '/api/entry', {'account': hidden, 'memo': 'x'})
     # The account is outside the editor's scope, so its related entries are not listed.
     assert editor('GET', f'/api/account/{hidden}/related/entry.account')[0] == 404
     # Filtering entries by a scoped Link stays refused, as before.
     assert editor('GET', '/api/entry?filters=' + quote(json.dumps({'account': hidden})))[0] == 403
-    mine = editor('POST', '/api/account', {'name': 'Mine', 'owner': 2})[1]['id']
+    mine = editor('POST', '/api/account', {'title': 'Mine', 'owner': 2})[1]['id']
     admin('POST', '/api/entry', {'account': mine, 'memo': 'y'})
     page = editor('GET', f'/api/account/{mine}/related/entry.account')[1]
     assert page['total'] == 1 and page['items'][0]['memo'] == 'y'
@@ -299,7 +299,7 @@ def check_attachment_limits(app):
     status, body, _ = admin('POST', path, {'name': 'c.txt', 'content': 'YQ=='})
     assert status == 422 and body['fields']['attachment'] == 'Use at most 2 attachments per record'
     # Customers have no attachments.
-    customer = admin('POST', '/api/customer', {'name': 'Acme'})[1]['id']
+    customer = admin('POST', '/api/customer', {'customer_name': 'Acme'})[1]['id']
     assert admin('GET', f'/api/customer/{customer}/attachments')[0] == 404
 
 
@@ -308,7 +308,7 @@ def test_application_attachments_keep_defaults_and_meta_wins(tmp_path):
     admin = client(app)
     assert entry(admin, 'customer')['attachment_limits'] == {'max_files': 10, 'max_size': 1024 * 1024}
     assert entry(admin, 'invoice')['attachment_limits'] == {'max_files': 2, 'max_size': 4}
-    customer = admin('POST', '/api/customer', {'name': 'Acme'})[1]['id']
+    customer = admin('POST', '/api/customer', {'customer_name': 'Acme'})[1]['id']
     path = f'/api/customer/{customer}/attachments'
     for index in range(10):
         assert admin('POST', path, {'name': f'{index}.txt', 'content': 'YQ=='})[0] == 201
@@ -318,7 +318,7 @@ def test_application_attachments_keep_defaults_and_meta_wins(tmp_path):
 
 def test_child_table_models_are_not_relations_and_cannot_hold_attachments(tmp_path):
     class Folder(Model):
-        name = Text(default='')
+        title = Text(default='')
 
     class Page(Model):
         folder = Link(Folder, required=True)
@@ -344,7 +344,7 @@ def test_child_table_models_are_not_relations_and_cannot_hold_attachments(tmp_pa
         Application(db, auth=auth, children=(ChildTable(Folder, 'books', Book, 'folder', 'Books'),))
 
     class Binder(Model):
-        name = Text(default='')
+        title = Text(default='')
 
         class Meta:
             relations = (Related('sheet', 'binder'),)
@@ -361,7 +361,7 @@ def test_child_table_models_are_not_relations_and_cannot_hold_attachments(tmp_pa
 def test_related_order_skips_links_to_row_scoped_models_in_route_and_schema(tmp_path):
     class Owner(Model):
         permissions = ALL
-        name = Text(default='')
+        title = Text(default='')
 
         class Meta:
             relations = (Related('item', 'owner', order=('-secret', '-amount')),)
@@ -379,7 +379,7 @@ def test_related_order_skips_links_to_row_scoped_models_in_route_and_schema(tmp_
 
     app = start(tmp_path, Owner, Secret, Item)
     admin, editor, viewer = client(app), add_user(app, 'editor'), add_user(app, 'viewer')
-    owner = admin('POST', '/api/owner', {'name': 'a'})[1]['id']
+    owner = admin('POST', '/api/owner', {'title': 'a'})[1]['id']
     secret = admin('POST', '/api/secret', {})[1]['id']
     ids = [admin('POST', '/api/item', {'owner': owner, 'secret': value, 'amount': amount})[1]['id']
            for value, amount in ((None, '1'), (secret, '2'), (None, '3'))]
@@ -396,7 +396,7 @@ def test_related_order_skips_links_to_row_scoped_models_in_route_and_schema(tmp_
 def test_related_schema_order_falls_back_to_id(tmp_path):
     class Folder(Model):
         permissions = ALL
-        name = Text(default='')
+        title = Text(default='')
 
         class Meta:
             relations = (Related('sheet', 'folder', order=('-amount',)),)
@@ -412,23 +412,23 @@ def test_related_schema_order_falls_back_to_id(tmp_path):
     assert entry(client(app), 'folder')['relations'][0]['order'] == ['-amount']
 
 
-@pytest.mark.parametrize('names', [(['name'],), ({'a': 1},), (None,), 'name', ['name', ['x']]])
+@pytest.mark.parametrize('names', [(['title'],), ({'a': 1},), (None,), 'title', ['title', ['x']]])
 def test_key_fields_of_other_types_raise_value_error(names):
-    Owner = type('Owner', (Model,), {'name': Text(default=''), 'Meta': type('Meta', (), {'key_fields': names})})
+    Owner = type('Owner', (Model,), {'title': Text(default=''), 'Meta': type('Meta', (), {'key_fields': names})})
     with pytest.raises(ValueError, match='key_fields'):
         Registry(Owner)
 
 
 def test_size_message_uses_singular_for_one_byte(tmp_path):
     class Note(Model):
-        name = Text(default='')
+        title = Text(default='')
 
         class Meta:
             attachments = Attachments(max_files=1, max_size=1)
 
     app = start(tmp_path, Note)
     admin = client(app)
-    note = admin('POST', '/api/note', {'name': 'x'})[1]['id']
+    note = admin('POST', '/api/note', {'title': 'x'})[1]['id']
     status, body, _ = admin('POST', f'/api/note/{note}/attachments', {'name': 'a.txt', 'content': 'YWI='})
     assert status == 422 and body['fields']['attachment'] == 'Use a nonempty file up to 1 byte'
     assert admin('POST', f'/api/note/{note}/attachments', {'name': 'a.txt', 'content': 'YQ=='})[0] == 201
@@ -439,7 +439,7 @@ def test_size_message_uses_singular_for_one_byte(tmp_path):
 @pytest.mark.parametrize('meta', [{'key_fields': ('title',)}, {'relations': (Related('leaf', 'page'),)}])
 def test_child_table_models_cannot_declare_key_fields_or_relations(tmp_path, meta):
     class Folder(Model):
-        name = Text(default='')
+        title = Text(default='')
 
     Page = type('Page', (Model,), {'folder': Link(Folder, required=True), 'title': Text(default=''),
                                    'Meta': type('Meta', (), meta)})
@@ -455,7 +455,7 @@ def test_child_table_models_cannot_declare_key_fields_or_relations(tmp_path, met
 
 def test_application_attachments_on_a_child_table_model_keep_working(tmp_path):
     class Folder(Model):
-        name = Text(default='')
+        title = Text(default='')
 
     class Page(Model):
         folder = Link(Folder, required=True)
@@ -469,10 +469,10 @@ def test_application_attachments_on_a_child_table_model_keep_working(tmp_path):
 
 def test_subclasses_apply_inherited_relations_that_point_to_them():
     class Base(Model):
-        name = Text(default='')
+        title = Text(default='')
 
         class Meta:
-            key_fields = ('name',)
+            key_fields = ('title',)
             relations = (Related('entry', 'base', label='Entries'),)
 
     class Special(Base):
@@ -486,12 +486,12 @@ def test_subclasses_apply_inherited_relations_that_point_to_them():
     assert [(item.name, item.label) for item in meaning[Base].relations] == [('entry.base', 'Entries')]
     # The inherited Related names Entry.base, which points to Base, so Special keeps the defaults.
     assert [(item.name, item.label) for item in meaning[Special].relations] == [('entry.special', 'Entries')]
-    assert meaning[Special].key_fields == ('name',)
+    assert meaning[Special].key_fields == ('title',)
 
 
 def test_a_subclass_redeclaring_meta_is_checked_strictly():
     class Base(Model):
-        name = Text(default='')
+        title = Text(default='')
 
     class Special(Base):
         class Meta:

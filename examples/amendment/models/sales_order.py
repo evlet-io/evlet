@@ -15,7 +15,7 @@ class SalesOrder(Model):
 
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
-    name = Text(required=True)
+    title = Text(required=True)
     company = Link(Company, required=True)
     warehouse = Link(Warehouse, required=True, filters={'company': Ref('company')})
     status = Text(default='Draft', read_only=True)

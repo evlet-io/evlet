@@ -123,14 +123,14 @@ def main():
                 assert status == 200
                 if production: assert cookie.startswith('__Host-evlet_session=') and '; Secure' in cookie
                 auth = credentials[slug] = {'cookie': cookie.split(';')[0], 'csrf': login['csrf']}
-                status, project, _ = request(slug, '/api/project', 'POST', {'name': slug, 'children': {'tasks': [{'title': slug, 'done': True}]}}, auth)
+                status, project, _ = request(slug, '/api/project', 'POST', {'title': slug, 'children': {'tasks': [{'title': slug, 'done': True}]}}, auth)
                 assert status == 201 and isinstance(project['id'], str)
                 projects[slug] = project['id']
                 assert request(slug, f'/api/project/{projects[slug]}/actions/start', 'POST', {}, auth)[0] == 200
                 assert request(slug, f'/api/project/{projects[slug]}/attachments', 'POST', {'name': 'private.txt', 'content': base64.b64encode(slug.encode()).decode()}, auth)[0] == 201
             for slug, other in (('alpha', 'beta'), ('beta', 'alpha')):
                 auth = credentials[slug]
-                assert request(slug, '/api/project', auth=auth)[1]['items'][0]['name'] == slug
+                assert request(slug, '/api/project', auth=auth)[1]['items'][0]['title'] == slug
                 assert request(slug, '/api/_discovery', auth=auth)[1]['tenant']['slug'] == slug
                 assert request(slug, '/api/_discovery/project', auth=credentials[other])[0] == 401
                 if not production:
@@ -144,7 +144,7 @@ def main():
                     result = subprocess.run([sys.executable, '-m', 'evlet', 'mcp', '--session', str(session_file)], cwd=ROOT,
                                             input=''.join(json.dumps(message) + '\n' for message in messages), capture_output=True, text=True, timeout=15, check=True)
                     replies = [json.loads(line) for line in result.stdout.splitlines()]
-                    assert len(replies) == 2 and replies[1]['result']['structuredContent']['name'] == slug
+                    assert len(replies) == 2 and replies[1]['result']['structuredContent']['title'] == slug
 
                 assert request(slug, f'/api/project/{projects[slug]}/attachments/1', auth=auth)[1] == slug.encode()
                 assert request(slug, f'/api/project/{projects[slug]}/attachments/1', auth=credentials[other])[0] == 401

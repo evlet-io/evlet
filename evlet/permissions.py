@@ -5,6 +5,7 @@ from types import MappingProxyType, SimpleNamespace
 
 from .auth import AccessError, PORTAL, PUBLIC, ROLES
 from .identity import RecordId
+from .naming import title_sources
 from .fields import Link, Reference
 from .models import Model, ValidationError, identifier
 from .query import Condition, SqlQuery, child_tables, conditions
@@ -191,7 +192,9 @@ class Policy:
         role may write, from Controls; a naming field is always among them, because the server fills it.
         """
         self.registry = registry
-        locked = {model: {rules.field} for model, rules in getattr(registry, 'naming', {}).items()}
+        # The field an older Naming("field", ...) fills stays read only; the standard name is writable once
+        # assigned, which the document pipeline checks (evlet/naming.py).
+        locked = {model: {rules.field} for model, rules in getattr(registry, 'naming', {}).items() if rules.field != 'name'}
         for model, names in (read_only or {}).items():
             locked.setdefault(model, set()).update(names)
         self.read_only = MappingProxyType({model: frozenset(names) for model, names in locked.items()})
@@ -350,6 +353,9 @@ class Policy:
         readable = self.presented(user, model)
         if getattr(model, '__declaration_mode__', False):
             readable = {name for name in readable if self.derivation_allowed(user, model, name, _visiting)}
+        # The standard title repeats its source fields, so it is readable only with them (evlet/naming.py).
+        if 'title' in readable and not title_sources(model) <= readable:
+            readable = readable - {'title'}
         if not write:
             return readable
         writable = readable & set(model.__declared_fields__ if rule.write_fields is None else rule.write_fields)

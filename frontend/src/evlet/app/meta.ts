@@ -44,8 +44,8 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   /** The record has a journal (Phase 8): whether entries are hash chained and the kinds this role may post. */
   journal?: { tamper_evident: boolean; kinds: string[] };
   lifecycle?: { confirmable: true; labels: Record<string, string>; permissions: Record<string, boolean> };
-  /** The field a naming series fills when the record is created (docs/sequences.md). */
-  naming?: { field: string };
+  /** The field naming fills (the standard `name`, or an older target field), when, and what it shows until then. */
+  naming?: { field: string; assign_on?: string; manual?: boolean; placeholder?: string | null };
 }
 
 /** Availability keys a detail may carry (outside the ETag). */

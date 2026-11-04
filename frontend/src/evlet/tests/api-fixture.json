@@ -3,7 +3,7 @@
   "body": {
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:7ba3061f8b8bc4d3d41cfe5a1b56e757c6f02ad8db9428cf3627cb1d03d9eaeb"
+    "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3"
    },
    "children": {
     "lines": [
@@ -1030,20 +1030,21 @@
    "id": "0000000000001",
    "issued": "2026-11-01",
    "line_count": 120,
+   "name": null,
    "reason": null,
    "remark": null,
    "stage": "won",
    "title": "Renamed",
    "total": "304.50"
   },
-  "etag": "\"0d65b91dd4921d820530e7609a0a9adcbe09e04fb703c6243b8a761900ad64da\"",
+  "etag": "\"86e146b57b3fdf830d899a89e8567ba9d0e01e6f9439f16bdfe963b9ebcf1ddd\"",
   "status": 200
  },
  "create": {
   "body": {
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:7ba3061f8b8bc4d3d41cfe5a1b56e757c6f02ad8db9428cf3627cb1d03d9eaeb"
+    "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3"
    },
    "_row_ids": {
     "l0": "0000000000001",
@@ -2194,23 +2195,25 @@
    "id": "0000000000001",
    "issued": "2026-11-01",
    "line_count": 120,
+   "name": null,
    "reason": null,
    "remark": null,
    "stage": "open",
    "title": "Big order",
    "total": "300.00"
   },
-  "etag": "\"d4f70a57b15f89d44bcc46727e0bc7d2c5706f6ec91c458ef7dc0cdd1489880a\"",
+  "etag": "\"680aee0ed079f43ce0f230d1ad308589e4e2474fd8ae8e12a0446fb2a9ccb8eb\"",
   "status": 201
  },
  "customer": {
   "body": {
    "credit_days": 45,
    "id": "0000000000001",
-   "name": "Al Sahra Trading",
-   "rate": "12.50"
+   "name": null,
+   "rate": "12.50",
+   "title": "Al Sahra Trading"
   },
-  "etag": "\"33e6b44c973087c8e4577f8b3623dda59505afce8b956a357be7992ae362191d\"",
+  "etag": "\"5922634cd1602b143be79ed7c7a670560e5b19842ebae1ec5b82708c9f81c401\"",
   "status": 201
  },
  "detail": {
@@ -3240,13 +3243,14 @@
    "id": "0000000000001",
    "issued": "2026-11-01",
    "line_count": 120,
+   "name": null,
    "reason": null,
    "remark": null,
    "stage": "open",
    "title": "Big order",
    "total": "300.00"
   },
-  "etag": "\"d4f70a57b15f89d44bcc46727e0bc7d2c5706f6ec91c458ef7dc0cdd1489880a\"",
+  "etag": "\"680aee0ed079f43ce0f230d1ad308589e4e2474fd8ae8e12a0446fb2a9ccb8eb\"",
   "status": 200
  },
  "draft": {
@@ -4721,6 +4725,7 @@
     "id": "0000000000001",
     "issued": "2026-11-01",
     "line_count": 120,
+    "name": null,
     "reason": null,
     "remark": null,
     "stage": "lost",
@@ -4742,7 +4747,7 @@
    ],
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
+    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
    },
    "_deletable": false,
    "_effects": [
@@ -4793,6 +4798,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000003",
+   "name": null,
    "number": "INV-2026-00003",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -4800,9 +4806,10 @@
    "revised_by": null,
    "revises": null,
    "status": "issued",
+   "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"e78be22ba00659bdfeeb56054faaa63a1ef93c56936fa17eb2dfd98e6679a35a\"",
+  "etag": "\"710e4714871611b49e595ee7c000d81a0e3dad3b5d6b675d64bf80b9f42d5c8c\"",
   "status": 200
  },
  "invoice_admin_session": {
@@ -4881,10 +4888,11 @@
   "body": {
    "credit_days": 30,
    "id": "0000000000001",
-   "name": "Al Sahra Trading",
-   "rate": "0.00"
+   "name": null,
+   "rate": "0.00",
+   "title": "Al Sahra Trading"
   },
-  "etag": "\"b9f1c99aac55a18173c24fec0410cb1ffe5af9fb0186f3e11cabbad4ec7e84ef\"",
+  "etag": "\"4ed6e65ba775404eb5a69c62361e4ad26f4633b8237a7645374f6d93be9ea896\"",
   "status": 200
  },
  "invoice_draft": {
@@ -4946,6 +4954,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000003",
+   "name": null,
    "number": null,
    "outstanding": "0.00",
    "posting_date": "2026-11-01",
@@ -4953,9 +4962,10 @@
    "revised_by": null,
    "revises": null,
    "status": "draft",
+   "title": "0000000000003",
    "total": "2680.00"
   },
-  "etag": "\"5fa91e06c671c1308f8edeb66e8a1e964fb90b8fd24be76cf3b479b2d2a31c59\"",
+  "etag": "\"62845e589422f8ab72f81e07cd2209b38f5770c9fb833afe6bb7e4d8de12e31d\"",
   "status": 200
  },
  "invoice_draft_blocked": {
@@ -5003,6 +5013,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000003",
+   "name": null,
    "number": null,
    "outstanding": "0.00",
    "posting_date": "2026-11-01",
@@ -5010,9 +5021,10 @@
    "revised_by": null,
    "revises": null,
    "status": "draft",
+   "title": "0000000000003",
    "total": "0.00"
   },
-  "etag": "\"574bed9d9b1e9f16c7ccc95f5b0492c19f88a7364a49ad23b9de8c5717121024\"",
+  "etag": "\"e91b1c1b703bc047b71776273087f7a9652bc010d56b93a1bf99ae360376a154\"",
   "status": 200
  },
  "invoice_draft_journal": {
@@ -5020,7 +5032,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.449Z",
+     "at": "2026-11-04T03:20:24.053Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5032,7 +5044,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.434Z",
+     "at": "2026-11-04T03:20:24.039Z",
      "data": {
       "fields": {
        "total": {
@@ -5094,7 +5106,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.421Z",
+     "at": "2026-11-04T03:20:24.026Z",
      "data": {
       "fields": {
        "customer": {
@@ -5152,7 +5164,7 @@
    ],
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
+    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
    },
    "_deletable": false,
    "_effects": [
@@ -5203,6 +5215,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000003",
+   "name": null,
    "number": "INV-2026-00003",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -5210,9 +5223,10 @@
    "revised_by": null,
    "revises": null,
    "status": "issued",
+   "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"cc8058a888f81ac58b4a1dc56af36a2a9423b448c80233c9ac133f9446281a41\"",
+  "etag": "\"135f613b06d62972702b3a03b62d75972c387bb67722f8865f10d55ec8b59ffa\"",
   "status": 200
  },
  "invoice_issued_detail": {
@@ -5273,6 +5287,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000003",
+   "name": null,
    "number": "INV-2026-00003",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -5280,9 +5295,10 @@
    "revised_by": null,
    "revises": null,
    "status": "issued",
+   "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"cc8058a888f81ac58b4a1dc56af36a2a9423b448c80233c9ac133f9446281a41\"",
+  "etag": "\"135f613b06d62972702b3a03b62d75972c387bb67722f8865f10d55ec8b59ffa\"",
   "status": 200
  },
  "invoice_journal": {
@@ -5290,7 +5306,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-03T20:56:55.494Z",
+     "at": "2026-11-04T03:20:24.095Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5302,7 +5318,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.493Z",
+     "at": "2026-11-04T03:20:24.094Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5314,7 +5330,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.491Z",
+     "at": "2026-11-04T03:20:24.092Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -5324,7 +5340,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.488Z",
+     "at": "2026-11-04T03:20:24.090Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -5336,7 +5352,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.486Z",
+     "at": "2026-11-04T03:20:24.087Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5345,7 +5361,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.469Z",
+     "at": "2026-11-04T03:20:24.071Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5360,7 +5376,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.460Z",
+     "at": "2026-11-04T03:20:24.063Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5370,7 +5386,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.460Z",
+     "at": "2026-11-04T03:20:24.063Z",
      "data": {
       "targets": [
        {
@@ -5386,12 +5402,16 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.460Z",
+     "at": "2026-11-04T03:20:24.063Z",
      "data": {
       "fields": {
        "outstanding": {
         "new": "2680.00",
         "old": "0.00"
+       },
+       "title": {
+        "new": "INV-2026-00003",
+        "old": "0000000000003"
        }
       },
       "from": "draft",
@@ -5403,7 +5423,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.449Z",
+     "at": "2026-11-04T03:20:24.053Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5415,7 +5435,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.434Z",
+     "at": "2026-11-04T03:20:24.039Z",
      "data": {
       "fields": {
        "total": {
@@ -5477,7 +5497,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.421Z",
+     "at": "2026-11-04T03:20:24.026Z",
      "data": {
       "fields": {
        "customer": {
@@ -5527,7 +5547,7 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-03T20:56:55.488Z",
+   "at": "2026-11-04T03:20:24.090Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5543,7 +5563,7 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-03T20:56:55.491Z",
+   "at": "2026-11-04T03:20:24.092Z",
    "data": {
     "follow_up": 19,
     "text": "Balance due by the end of the month"
@@ -5557,7 +5577,7 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-03T20:56:55.486Z",
+   "at": "2026-11-04T03:20:24.087Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -5617,9 +5637,11 @@
    "amount": "500.00",
    "id": "0000000000001",
    "invoice": "0000000000003",
-   "paid_on": "2026-11-10"
+   "name": null,
+   "paid_on": "2026-11-10",
+   "title": "0000000000001"
   },
-  "etag": "\"ee4a634e163054bdbae5c649b362453d1faa5ff35d1a0a38110e2c96104b5269\"",
+  "etag": "\"7ae6de89db155b93b5aa014c16460cf8c315b29834b4b5be559a6f482fa0e125\"",
   "status": 200
  },
  "invoice_record_measures": {
@@ -5639,7 +5661,9 @@
      "amount": "500.00",
      "id": "0000000000001",
      "invoice": "0000000000003",
-     "paid_on": "2026-11-10"
+     "name": null,
+     "paid_on": "2026-11-10",
+     "title": "0000000000001"
     }
    ],
    "limit": 5,
@@ -5670,7 +5694,7 @@
    ],
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
+    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
    },
    "_deletable": false,
    "_effects": [
@@ -5723,6 +5747,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000005",
+   "name": null,
    "number": "INV-2026-00004",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -5730,9 +5755,10 @@
    "revised_by": null,
    "revises": null,
    "status": "issued",
+   "title": "INV-2026-00004",
    "total": "2680.00"
   },
-  "etag": "\"3565d4025bfe924aa6a7e0d8d4d957a4458849907838cf4ec1ab180ae25e2ffc\"",
+  "etag": "\"473208bb963be7647de3ba636f667a2ff2f4ee6802cc17af43649baa645ea409\"",
   "status": 200
  },
  "invoice_revise_before": {
@@ -5793,6 +5819,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000002",
+   "name": null,
    "number": "INV-2026-00002",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -5800,9 +5827,10 @@
    "revised_by": null,
    "revises": null,
    "status": "issued",
+   "title": "INV-2026-00002",
    "total": "2680.00"
   },
-  "etag": "\"083d9e663c22d534a3108689a3ff39f118d036941ce7bd5d7d70a98912586f8f\"",
+  "etag": "\"ba30d8552cf47eb938f3358107a10717b8b361ec408238874c7ef5b4d9303d75\"",
   "status": 200
  },
  "invoice_revised_original": {
@@ -5859,6 +5887,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000002",
+   "name": null,
    "number": "INV-2026-00002",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -5866,9 +5895,10 @@
    "revised_by": "0000000000004",
    "revises": null,
    "status": "void",
+   "title": "INV-2026-00002",
    "total": "2680.00"
   },
-  "etag": "\"94776d842d14011669676047bf992b980fb5dea30642b4da872e740cd7495659\"",
+  "etag": "\"4d4c527109da0bf72e36366311f173d7f4c40a4fbbc288b04fe7e57efffe20d5\"",
   "status": 200
  },
  "invoice_revision": {
@@ -5883,7 +5913,7 @@
    ],
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
+    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
    },
    "_effects": [
     {
@@ -5935,6 +5965,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000004",
+   "name": null,
    "number": null,
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -5942,9 +5973,10 @@
    "revised_by": null,
    "revises": "0000000000002",
    "status": "draft",
+   "title": "0000000000004",
    "total": "2680.00"
   },
-  "etag": "\"879406ce688f9db9735f7c8c42e2562c4c255ba9257aeb0876a54487453f70cd\"",
+  "etag": "\"248f94e2a1eeabce10b861ed7f0d7e1c90bfa7249af88b6150212bcbd2096392\"",
   "status": 201
  },
  "invoice_schema": {
@@ -5956,7 +5988,8 @@
      "behavior": {
       "credit_days": {},
       "name": {},
-      "rate": {}
+      "rate": {},
+      "title": {}
      },
      "child_only": false,
      "children": [],
@@ -5972,10 +6005,10 @@
        "hidden": false,
        "index": false,
        "initial": null,
-       "label": "Name",
+       "label": "Customer name",
        "locked_when": null,
        "max_length": 255,
-       "name": "name",
+       "name": "title",
        "operators": [
         "eq",
         "ne",
@@ -6063,13 +6096,44 @@
        "stored": true,
        "type": "integer",
        "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
       }
      ],
      "label": "Customer",
      "layout": [
       {
        "fields": [
-        "name",
+        "title",
         "rate",
         "credit_days"
        ],
@@ -6078,16 +6142,17 @@
      ],
      "list_fields": [
       "id",
-      "name",
+      "title",
       "rate",
       "credit_days"
      ],
      "name": "customer",
      "open_in": "page",
      "order": [
-      "name",
+      "title",
       "rate",
-      "credit_days"
+      "credit_days",
+      "name"
      ],
      "permissions": {
       "create": true,
@@ -6119,10 +6184,11 @@
      ],
      "resource": "customer",
      "search_fields": [
+      "title",
       "name"
      ],
      "sources": {},
-     "title_field": "name"
+     "title_field": "title"
     },
     {
      "actions": [],
@@ -6132,8 +6198,10 @@
       "customer": {},
       "debit": {},
       "memo": {},
+      "name": {},
       "reversal": {},
-      "source": {}
+      "source": {},
+      "title": {}
      },
      "child_only": false,
      "children": [],
@@ -6320,6 +6388,68 @@
        "stored": true,
        "type": "boolean",
        "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Title",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
       }
      ],
      "label": "Ledger entry",
@@ -6351,7 +6481,9 @@
       "credit",
       "memo",
       "source",
-      "reversal"
+      "reversal",
+      "name",
+      "title"
      ],
      "permissions": {
       "create": false,
@@ -6361,10 +6493,12 @@
      "plural": "Ledger entries",
      "resource": "ledgerentry",
      "search_fields": [
-      "memo"
+      "memo",
+      "title",
+      "name"
      ],
      "sources": {},
-     "title_field": "memo"
+     "title_field": "title"
     },
     {
      "actions": [
@@ -6444,12 +6578,14 @@
      "behavior": {
       "customer": {},
       "due_on": {},
+      "name": {},
       "number": {},
       "outstanding": {},
       "posting_date": {},
       "remarks": {},
       "revises": {},
       "status": {},
+      "title": {},
       "total": {
        "finite": true
       }
@@ -6460,7 +6596,7 @@
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e",
+      "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -6557,11 +6693,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:2cfaf132bdf3a7858ecc10cdb361633a18a5b7a3b00e8cf21af139579ebc129b",
+       "model_schema_hash": "sha256:7da7b91a87f70a887860a41353bf85fbfabf2b3342ec54c5d769bc1f882ba97a",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "invoice",
-       "source_plan_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e",
+       "source_plan_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990",
        "tables": {
         "$root": {
          "fields": {
@@ -6586,6 +6722,17 @@
            "scale": null,
            "stored": true,
            "type": "date"
+          },
+          "name": {
+           "computed": false,
+           "default": null,
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
           },
           "number": {
            "computed": false,
@@ -6657,6 +6804,17 @@
            "maximum": null,
            "minimum": null,
            "required": true,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "title": {
+           "computed": false,
+           "default": null,
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
            "scale": null,
            "stored": true,
            "type": "text"
@@ -7072,6 +7230,68 @@
        "target": "invoice",
        "type": "link",
        "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Title",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
       }
      ],
      "journal": {
@@ -7184,6 +7404,8 @@
       "outstanding",
       "remarks",
       "revises",
+      "name",
+      "title",
       "lines.item",
       "lines.qty",
       "lines.rate",
@@ -7224,7 +7446,9 @@
      "resource": "invoice",
      "revisable": true,
      "search_fields": [
-      "number"
+      "number",
+      "title",
+      "name"
      ],
      "sources": {},
      "state": {
@@ -7300,7 +7524,9 @@
      "behavior": {
       "amount": {},
       "invoice": {},
-      "paid_on": {}
+      "name": {},
+      "paid_on": {},
+      "title": {}
      },
      "child_only": false,
      "children": [],
@@ -7399,6 +7625,68 @@
        "stored": true,
        "type": "date",
        "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Title",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
       }
      ],
      "label": "Payment",
@@ -7423,7 +7711,9 @@
      "order": [
       "invoice",
       "amount",
-      "paid_on"
+      "paid_on",
+      "name",
+      "title"
      ],
      "permissions": {
       "create": true,
@@ -7432,9 +7722,12 @@
      },
      "plural": "Payments",
      "resource": "payment",
-     "search_fields": [],
+     "search_fields": [
+      "title",
+      "name"
+     ],
      "sources": {},
-     "title_field": "id"
+     "title_field": "title"
     },
     {
      "actions": [],
@@ -7684,7 +7977,7 @@
    ],
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
+    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
    },
    "_deletable": false,
    "_effects": [
@@ -7739,6 +8032,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000005",
+   "name": null,
    "number": "INV-2026-00004",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -7746,9 +8040,10 @@
    "revised_by": null,
    "revises": null,
    "status": "draft",
+   "title": "INV-2026-00004",
    "total": "2680.00"
   },
-  "etag": "\"89e0ace87ddde9330f255a1ffbdbbaee1ab2ed8f2fadbdaff669c47de8e85230\"",
+  "etag": "\"4f1b038cea66b83cb737e1b0f7207d805a89ae3fb3134765710f8674572a96d5\"",
   "status": 200
  },
  "invoice_unpost_before": {
@@ -7811,6 +8106,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000005",
+   "name": null,
    "number": "INV-2026-00004",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -7818,9 +8114,10 @@
    "revised_by": null,
    "revises": null,
    "status": "issued",
+   "title": "INV-2026-00004",
    "total": "2680.00"
   },
-  "etag": "\"3565d4025bfe924aa6a7e0d8d4d957a4458849907838cf4ec1ab180ae25e2ffc\"",
+  "etag": "\"473208bb963be7647de3ba636f667a2ff2f4ee6802cc17af43649baa645ea409\"",
   "status": 200
  },
  "invoice_unpost_editor": {
@@ -7881,6 +8178,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000005",
+   "name": null,
    "number": "INV-2026-00004",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -7888,9 +8186,10 @@
    "revised_by": null,
    "revises": null,
    "status": "issued",
+   "title": "INV-2026-00004",
    "total": "2680.00"
   },
-  "etag": "\"3565d4025bfe924aa6a7e0d8d4d957a4458849907838cf4ec1ab180ae25e2ffc\"",
+  "etag": "\"473208bb963be7647de3ba636f667a2ff2f4ee6802cc17af43649baa645ea409\"",
   "status": 200
  },
  "invoice_unpost_reason_missing": {
@@ -7949,6 +8248,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000003",
+   "name": null,
    "number": "INV-2026-00003",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -7956,9 +8256,10 @@
    "revised_by": null,
    "revises": null,
    "status": "issued",
+   "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"e78be22ba00659bdfeeb56054faaa63a1ef93c56936fa17eb2dfd98e6679a35a\"",
+  "etag": "\"710e4714871611b49e595ee7c000d81a0e3dad3b5d6b675d64bf80b9f42d5c8c\"",
   "status": 200
  },
  "invoice_viewer_journal": {
@@ -7966,7 +8267,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-03T20:56:55.494Z",
+     "at": "2026-11-04T03:20:24.095Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -7978,7 +8279,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.493Z",
+     "at": "2026-11-04T03:20:24.094Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -7990,7 +8291,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.491Z",
+     "at": "2026-11-04T03:20:24.092Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -8000,7 +8301,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.488Z",
+     "at": "2026-11-04T03:20:24.090Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -8012,7 +8313,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.486Z",
+     "at": "2026-11-04T03:20:24.087Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -8021,7 +8322,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.469Z",
+     "at": "2026-11-04T03:20:24.071Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8036,7 +8337,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.460Z",
+     "at": "2026-11-04T03:20:24.063Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -8046,7 +8347,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.460Z",
+     "at": "2026-11-04T03:20:24.063Z",
      "data": {},
      "id": 15,
      "kind": "changed",
@@ -8054,12 +8355,16 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.460Z",
+     "at": "2026-11-04T03:20:24.063Z",
      "data": {
       "fields": {
        "outstanding": {
         "new": "2680.00",
         "old": "0.00"
+       },
+       "title": {
+        "new": "INV-2026-00003",
+        "old": "0000000000003"
        }
       },
       "from": "draft",
@@ -8071,7 +8376,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.449Z",
+     "at": "2026-11-04T03:20:24.053Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -8083,7 +8388,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.434Z",
+     "at": "2026-11-04T03:20:24.039Z",
      "data": {
       "fields": {
        "total": {
@@ -8145,7 +8450,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-03T20:56:55.421Z",
+     "at": "2026-11-04T03:20:24.026Z",
      "data": {
       "fields": {
        "customer": {
@@ -8208,7 +8513,8 @@
      "behavior": {
       "credit_days": {},
       "name": {},
-      "rate": {}
+      "rate": {},
+      "title": {}
      },
      "child_only": false,
      "children": [],
@@ -8224,10 +8530,10 @@
        "hidden": false,
        "index": false,
        "initial": null,
-       "label": "Name",
+       "label": "Customer name",
        "locked_when": null,
        "max_length": 255,
-       "name": "name",
+       "name": "title",
        "operators": [
         "eq",
         "ne",
@@ -8315,13 +8621,44 @@
        "stored": true,
        "type": "integer",
        "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
       }
      ],
      "label": "Customer",
      "layout": [
       {
        "fields": [
-        "name",
+        "title",
         "rate",
         "credit_days"
        ],
@@ -8330,16 +8667,17 @@
      ],
      "list_fields": [
       "id",
-      "name",
+      "title",
       "rate",
       "credit_days"
      ],
      "name": "customer",
      "open_in": "page",
      "order": [
-      "name",
+      "title",
       "rate",
-      "credit_days"
+      "credit_days",
+      "name"
      ],
      "permissions": {
       "create": false,
@@ -8361,10 +8699,11 @@
      ],
      "resource": "customer",
      "search_fields": [
+      "title",
       "name"
      ],
      "sources": {},
-     "title_field": "name"
+     "title_field": "title"
     },
     {
      "actions": [],
@@ -8376,12 +8715,14 @@
      "behavior": {
       "customer": {},
       "due_on": {},
+      "name": {},
       "number": {},
       "outstanding": {},
       "posting_date": {},
       "remarks": {},
       "revises": {},
       "status": {},
+      "title": {},
       "total": {
        "finite": true
       }
@@ -8392,7 +8733,7 @@
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e",
+      "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -8489,11 +8830,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:2cfaf132bdf3a7858ecc10cdb361633a18a5b7a3b00e8cf21af139579ebc129b",
+       "model_schema_hash": "sha256:7da7b91a87f70a887860a41353bf85fbfabf2b3342ec54c5d769bc1f882ba97a",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "invoice",
-       "source_plan_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e",
+       "source_plan_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990",
        "tables": {
         "$root": {
          "fields": {
@@ -8518,6 +8859,17 @@
            "scale": null,
            "stored": true,
            "type": "date"
+          },
+          "name": {
+           "computed": false,
+           "default": null,
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
           },
           "number": {
            "computed": false,
@@ -8589,6 +8941,17 @@
            "maximum": null,
            "minimum": null,
            "required": true,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "title": {
+           "computed": false,
+           "default": null,
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
            "scale": null,
            "stored": true,
            "type": "text"
@@ -8988,6 +9351,68 @@
        "target": "invoice",
        "type": "link",
        "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Title",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
       }
      ],
      "journal": {
@@ -9094,6 +9519,8 @@
       "outstanding",
       "remarks",
       "revises",
+      "name",
+      "title",
       "lines.item",
       "lines.qty",
       "lines.rate",
@@ -9134,7 +9561,9 @@
      "resource": "invoice",
      "revisable": true,
      "search_fields": [
-      "number"
+      "number",
+      "title",
+      "name"
      ],
      "sources": {},
      "state": {
@@ -9210,7 +9639,9 @@
      "behavior": {
       "amount": {},
       "invoice": {},
-      "paid_on": {}
+      "name": {},
+      "paid_on": {},
+      "title": {}
      },
      "child_only": false,
      "children": [],
@@ -9309,6 +9740,68 @@
        "stored": true,
        "type": "date",
        "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Title",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
       }
      ],
      "label": "Payment",
@@ -9333,7 +9826,9 @@
      "order": [
       "invoice",
       "amount",
-      "paid_on"
+      "paid_on",
+      "name",
+      "title"
      ],
      "permissions": {
       "create": false,
@@ -9342,9 +9837,12 @@
      },
      "plural": "Payments",
      "resource": "payment",
-     "search_fields": [],
+     "search_fields": [
+      "title",
+      "name"
+     ],
      "sources": {},
-     "title_field": "id"
+     "title_field": "title"
     },
     {
      "actions": [],
@@ -9594,7 +10092,7 @@
    ],
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:5c05d4da10b2c8847a988902a015e11979979e1e985e77baa488c2ac9d593d0e"
+    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
    },
    "_deletable": false,
    "_effects": [
@@ -9639,6 +10137,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000001",
+   "name": null,
    "number": "INV-2026-00001",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -9646,9 +10145,10 @@
    "revised_by": null,
    "revises": null,
    "status": "void",
+   "title": "INV-2026-00001",
    "total": "2680.00"
   },
-  "etag": "\"91e8bcd17a661d90a51edb7d7f74e043e52be1c7a56860f7c1535dcf38205afb\"",
+  "etag": "\"09ad6c200207f429b0d8d7a504da81f8e527f83a4a9217ed45abc66addb40b0e\"",
   "status": 200
  },
  "invoice_void_before": {
@@ -9709,6 +10209,7 @@
    "customer": "0000000000001",
    "due_on": "2026-12-01",
    "id": "0000000000001",
+   "name": null,
    "number": "INV-2026-00001",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
@@ -9716,9 +10217,10 @@
    "revised_by": null,
    "revises": null,
    "status": "issued",
+   "title": "INV-2026-00001",
    "total": "2680.00"
   },
-  "etag": "\"6f47bf50cb1c1a32f4b8831f62eea9d6e074d4f04bef8e00fbffa0d871820cb3\"",
+  "etag": "\"8a9b0100d585cad778ed0d5a5b23a08d4319d97a27d151acb7dd4623c9449692\"",
   "status": 200
  },
  "invoice_void_reason_missing": {
@@ -9738,36 +10240,42 @@
      "customer": "0000000000001",
      "due_on": "2026-12-01",
      "id": "0000000000003",
+     "name": null,
      "number": null,
      "outstanding": "0.00",
      "posting_date": "2026-11-01",
      "remarks": "",
      "revises": null,
      "status": "draft",
+     "title": "0000000000003",
      "total": "2680.00"
     },
     {
      "customer": "0000000000001",
      "due_on": "2026-12-01",
      "id": "0000000000002",
+     "name": null,
      "number": "INV-2026-00002",
      "outstanding": "2680.00",
      "posting_date": "2026-11-01",
      "remarks": "",
      "revises": null,
      "status": "issued",
+     "title": "INV-2026-00002",
      "total": "2680.00"
     },
     {
      "customer": "0000000000001",
      "due_on": "2026-12-01",
      "id": "0000000000001",
+     "name": null,
      "number": "INV-2026-00001",
      "outstanding": "2680.00",
      "posting_date": "2026-11-01",
      "remarks": "",
      "revises": null,
      "status": "void",
+     "title": "INV-2026-00001",
      "total": "2680.00"
     }
    ],
@@ -10209,6 +10717,7 @@
      "id": "0000000000001",
      "issued": "2026-11-01",
      "line_count": 120,
+     "name": null,
      "reason": null,
      "remark": null,
      "stage": "open",
@@ -10283,10 +10792,11 @@
  "product": {
   "body": {
    "id": "0000000000001",
-   "name": "Support hours",
-   "price": "250.00"
+   "name": null,
+   "price": "250.00",
+   "title": "Support hours"
   },
-  "etag": "\"88a3e9555daaa940cbdc20b47be638fd7778d70becc3fd90c92992ccd128f3dc\"",
+  "etag": "\"d67ba99df16bd8bc7707358546679166f643b2b0b364d31f9021d5cb36a5e032\"",
   "status": 201
  },
  "schema": {
@@ -10298,7 +10808,8 @@
      "behavior": {
       "credit_days": {},
       "name": {},
-      "rate": {}
+      "rate": {},
+      "title": {}
      },
      "child_only": false,
      "children": [],
@@ -10314,10 +10825,10 @@
        "hidden": false,
        "index": false,
        "initial": null,
-       "label": "Name",
+       "label": "Customer name",
        "locked_when": null,
        "max_length": 255,
-       "name": "name",
+       "name": "title",
        "operators": [
         "eq",
         "ne",
@@ -10405,13 +10916,44 @@
        "stored": true,
        "type": "integer",
        "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
       }
      ],
      "label": "Customer",
      "layout": [
       {
        "fields": [
-        "name",
+        "title",
         "rate",
         "credit_days"
        ],
@@ -10420,16 +10962,17 @@
      ],
      "list_fields": [
       "id",
-      "name",
+      "title",
       "rate",
       "credit_days"
      ],
      "name": "customer",
      "open_in": "page",
      "order": [
-      "name",
+      "title",
       "rate",
-      "credit_days"
+      "credit_days",
+      "name"
      ],
      "permissions": {
       "create": true,
@@ -10451,17 +10994,19 @@
      ],
      "resource": "customer",
      "search_fields": [
+      "title",
       "name"
      ],
      "sources": {},
-     "title_field": "name"
+     "title_field": "title"
     },
     {
      "actions": [],
      "attachments": false,
      "behavior": {
       "name": {},
-      "price": {}
+      "price": {},
+      "title": {}
      },
      "child_only": false,
      "children": [],
@@ -10477,10 +11022,10 @@
        "hidden": false,
        "index": false,
        "initial": null,
-       "label": "Name",
+       "label": "Title",
        "locked_when": null,
        "max_length": 255,
-       "name": "name",
+       "name": "title",
        "operators": [
         "eq",
         "ne",
@@ -10534,13 +11079,44 @@
        "stored": true,
        "type": "currency",
        "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
       }
      ],
      "label": "Product",
      "layout": [
       {
        "fields": [
-        "name",
+        "title",
         "price"
        ],
        "label": "Details"
@@ -10548,14 +11124,15 @@
      ],
      "list_fields": [
       "id",
-      "name",
+      "title",
       "price"
      ],
      "name": "product",
      "open_in": "page",
      "order": [
-      "name",
-      "price"
+      "title",
+      "price",
+      "name"
      ],
      "permissions": {
       "create": true,
@@ -10565,10 +11142,11 @@
      "plural": "Products",
      "resource": "product",
      "search_fields": [
+      "title",
       "name"
      ],
      "sources": {},
-     "title_field": "name"
+     "title_field": "title"
     },
     {
      "actions": [
@@ -10602,6 +11180,7 @@
       "line_count": {
        "finite": true
       },
+      "name": {},
       "reason": {},
       "remark": {},
       "stage": {},
@@ -10618,7 +11197,7 @@
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:7ba3061f8b8bc4d3d41cfe5a1b56e757c6f02ad8db9428cf3627cb1d03d9eaeb",
+      "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -10922,11 +11501,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:926a0f2b27c2727f26a2e4662e4cece07c2c9084a0611934b8244b18d101dbe4",
+       "model_schema_hash": "sha256:59541c6c0ac279d6222790a74a5db30da7aebb1b06b7b7ab78142f6b163c298d",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "order",
-       "source_plan_hash": "sha256:7ba3061f8b8bc4d3d41cfe5a1b56e757c6f02ad8db9428cf3627cb1d03d9eaeb",
+       "source_plan_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3",
        "tables": {
         "$root": {
          "fields": {
@@ -10973,6 +11552,17 @@
            "scale": 0,
            "stored": true,
            "type": "decimal"
+          },
+          "name": {
+           "computed": false,
+           "default": null,
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
           },
           "reason": {
            "computed": false,
@@ -11513,6 +12103,37 @@
        "stored": true,
        "type": "integer",
        "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
       }
      ],
      "label": "Order",
@@ -11551,6 +12172,7 @@
       "remark",
       "total",
       "line_count",
+      "name",
       "lines.product",
       "lines.qty",
       "lines.rate",
@@ -11567,7 +12189,8 @@
       "title",
       "stage",
       "reason",
-      "remark"
+      "remark",
+      "name"
      ],
      "sources": {},
      "title_field": "title"
@@ -11921,7 +12544,7 @@
   "body": {
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:7ba3061f8b8bc4d3d41cfe5a1b56e757c6f02ad8db9428cf3627cb1d03d9eaeb"
+    "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3"
    },
    "_row_ids": {
     "n1": "000000000003s"
@@ -12951,13 +13574,14 @@
    "id": "0000000000001",
    "issued": "2026-11-01",
    "line_count": 120,
+   "name": null,
    "reason": null,
    "remark": null,
    "stage": "open",
    "title": "Renamed",
    "total": "304.50"
   },
-  "etag": "\"479cd8578db2650cd7336b7d9792429fea602ad5f03606c1b7d8105b3a73454d\"",
+  "etag": "\"c764bce7d7099659f6b11ee291483121b753574b010ea5999f866f0c1e560c92\"",
   "status": 200
  },
  "validation": {
