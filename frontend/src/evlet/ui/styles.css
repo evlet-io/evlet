@@ -996,7 +996,8 @@ th:hover>.rz::after{background:var(--border-strong)}
 .dt th:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .dt th[draggable="true"]{cursor:grab}
 .table-wrap.scrolled .dt .stk-last{box-shadow:inset -1px 0 0 var(--border),6px 0 10px -6px var(--shadow-edge)}
-.g td:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* The active cell holds the focus; a choice made with the mouse returns it there too, so it shows either way. */
+.g td:focus-visible,.g td.active:focus{outline:2px solid var(--accent);outline-offset:-2px}
 .g td.invalid{box-shadow:inset 0 0 0 1px var(--t-rose)}
 .g td.editing .in-affix,.g td.editing .in-link,.g td.editing .in-tags,.g td.editing .in-select{border:0;border-radius:0;box-shadow:none;height:36px;background:transparent}
 .g td.editing .in-affix>span{display:none}

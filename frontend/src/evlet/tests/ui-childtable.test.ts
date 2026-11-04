@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cell } from '../reactive';
 import { ChildRows, ChildTable } from '../ui/childtable';
 import { emptyPrefs } from '../ui/table';
-import { backend, id, bigOrder, change, cleanup, key, render, watch } from './ui-helpers';
+import { RecordStore } from '../model/record';
+import { backend, id, bigOrder, change, cleanup, key, pick, render, schema, watch } from './ui-helpers';
 
 afterEach(cleanup);
 
@@ -272,5 +273,230 @@ describe('ChildRows: a child table in a narrow column', () => {
     host.querySelector<HTMLButtonElement>('.crow-h')!.click();
     expect(host.querySelector('.crow-ed dl.fields')).not.toBeNull();
     expect(host.querySelector('.crow-ed input')).toBeNull();
+  });
+});
+
+// ---------- focus, click and Tab across every cell kind ----------
+
+/** Lines with a text, a select, a phone, a date and a currency column next to the order's Link, so each cell editor kind is covered. */
+async function entryLines(lines = 2) {
+  const extended = structuredClone(schema) as typeof schema;
+  const model = extended.models.find(item => item.name === 'order_lines')!;
+  const base = model.fields.find(field => field.name === 'qty')!;
+  const field = (name: string, type: string, extra: Record<string, unknown> = {}) =>
+    ({ ...base, name, label: name[0].toUpperCase() + name.slice(1), type, default: null, default_kind: 'none', minimum: null, scale: null, ...extra });
+  model.fields.push(field('note', 'text'), field('kind', 'select', { choices: ['spare', 'service', 'other'] }),
+    field('phone', 'phone'), field('due', 'date'), field('code', 'text', { required: true }));
+  const { api } = backend();
+  const store = new RecordStore({ api, schema: extended, model: 'order', today: () => '2026-11-01' });
+  const rows = Array.from({ length: lines }, (_, index) => ({ _key: `e${index}`, qty: '1', rate: '2.50' }));
+  await store.create({ title: 'Entry', children: { lines: rows } });
+  return store;
+}
+
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+/** A mouse click as a browser delivers it: mousedown focuses the cell, focus moves, then click. */
+async function press(target: HTMLElement) {
+  const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+  target.dispatchEvent(down);
+  if (!down.defaultPrevented) (target.closest<HTMLElement>('button, input, [tabindex]') ?? target).focus();
+  await Promise.resolve();
+  target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+  target.click();
+  await Promise.resolve();
+}
+
+const activeCells = (host: Element) => [...host.querySelectorAll('td.editing, td.active')];
+const focusedCell = () => (document.activeElement as Element | null)?.closest?.('td[data-col]') as HTMLElement | null;
+
+describe('ChildTable focus, click and Tab', () => {
+  const columns = ['note', 'kind', 'phone', 'due', 'rate', 'product', 'amount'];
+
+  it('moves focus to a clicked text cell while another text cell is being edited', async () => {
+    const store = await entryLines();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns }));
+    const row = rowsIn(host)[0];
+    await press(cellOf(row, 'phone'));
+    expect(document.activeElement).toBe(cellOf(row, 'phone').querySelector('input'));
+    await press(cellOf(rowsIn(host)[0], 'note'));
+    const note = cellOf(rowsIn(host)[0], 'note');
+    expect(note.classList.contains('editing')).toBe(true);
+    expect(document.activeElement).toBe(note.querySelector('input'));
+    expect(activeCells(host)).toEqual([note]);
+  });
+
+  it('keeps one active cell, holding focus, when the edited cell cannot be left', async () => {
+    const store = await entryLines();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns }));
+    await press(cellOf(rowsIn(host)[0], 'phone'));
+    const phone = cellOf(rowsIn(host)[0], 'phone');
+    phone.querySelector('input')!.value = '12';
+    await press(cellOf(rowsIn(host)[0], 'note'));
+    // The phone number is too short, so the phone cell keeps editing and keeps focus.
+    expect(phone.classList.contains('editing')).toBe(true);
+    expect(document.activeElement).toBe(phone.querySelector('input'));
+    expect(activeCells(host)).toEqual([phone]);
+    expect(focusedCell()).toBe(phone);
+  });
+
+  it('lets the user click past an empty required cell they did not change', async () => {
+    const store = await entryLines();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['note', 'code', 'phone'] }));
+    await press(cellOf(rowsIn(host)[0], 'code'));
+    await press(cellOf(rowsIn(host)[0], 'note'));
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[0], 'note').querySelector('input'));
+    key(document.activeElement!, 'Tab');
+    key(document.activeElement!, 'Tab');
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[0], 'phone').querySelector('input'));
+    expect(activeCells(host)).toHaveLength(1);
+  });
+
+  it('Tabs from a text cell to the select, then the next text cell, then the next row', async () => {
+    const store = await entryLines();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['note', 'kind', 'phone'] }));
+    await press(cellOf(rowsIn(host)[0], 'note'));
+    key(document.activeElement!, 'Tab');
+    expect(focusedCell()).toBe(cellOf(rowsIn(host)[0], 'kind'));
+    key(document.activeElement!, 'Tab');
+    expect(focusedCell()).toBe(cellOf(rowsIn(host)[0], 'phone'));
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[0], 'phone').querySelector('input'));
+    key(document.activeElement!, 'Tab');
+    expect(focusedCell()).toBe(cellOf(rowsIn(host)[1], 'note'));
+    key(document.activeElement!, 'Tab', { shiftKey: true });
+    expect(focusedCell()).toBe(cellOf(rowsIn(host)[0], 'phone'));
+    expect(activeCells(host)).toHaveLength(1);
+  });
+
+  it('Tabs on from a cell in navigation mode, and out of the table to Add row after the last cell', async () => {
+    const store = await entryLines(1);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['note', 'kind', 'phone'] }));
+    const note = cellOf(rowsIn(host)[0], 'note');
+    note.focus();
+    key(note, 'Tab');
+    expect(focusedCell()).toBe(cellOf(rowsIn(host)[0], 'kind'));
+    key(document.activeElement!, 'Tab');
+    key(document.activeElement!, 'Tab');
+    expect(document.activeElement).toBe(host.querySelector('.g-add'));
+    expect(host.querySelector('td.editing')).toBeNull();
+  });
+
+  it('keeps focus in the table after a dropdown choice; Tab then reaches the next cell and Enter the cell below', async () => {
+    const store = await entryLines();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['note', 'kind', 'phone'] }));
+    await press(cellOf(rowsIn(host)[0], 'kind'));
+    const button = cellOf(rowsIn(host)[0], 'kind').querySelector<HTMLElement>('button')!;
+    pick(button, 'Service');
+    await tick();
+    expect(store.table('lines').rows.peek()[0].field('kind').value.peek()).toBe('service');
+    const kind = cellOf(rowsIn(host)[0], 'kind');
+    expect(document.activeElement).toBe(kind);
+    expect(kind.classList.contains('editing')).toBe(false);
+    key(document.activeElement!, 'Tab');
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[0], 'phone').querySelector('input'));
+
+    // Enter after a choice goes to the cell below, as the footer says.
+    await press(cellOf(rowsIn(host)[1], 'kind'));
+    pick(cellOf(rowsIn(host)[1], 'kind').querySelector<HTMLElement>('button')!, 'Other');
+    await tick();
+    await press(cellOf(rowsIn(host)[0], 'kind'));
+    const again = cellOf(rowsIn(host)[0], 'kind').querySelector<HTMLElement>('button')!;
+    again.click();
+    const option = [...document.querySelectorAll<HTMLElement>('.pop [role="option"]')].find(item => item.textContent?.trim() === 'Spare')!;
+    key(document.querySelector('.pop input') ?? option, 'ArrowUp');
+    option.click();
+    await tick();
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[0], 'kind'));
+    key(document.activeElement!, 'Enter');
+    expect(focusedCell()).toBe(cellOf(rowsIn(host)[1], 'kind'));
+  });
+
+  it('closes an open dropdown on the first Esc and cancels the cell edit on the second', async () => {
+    const store = await entryLines();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['note', 'kind', 'phone'] }));
+    await press(cellOf(rowsIn(host)[0], 'kind'));
+    const button = cellOf(rowsIn(host)[0], 'kind').querySelector<HTMLElement>('button')!;
+    button.click();
+    expect(document.querySelector('.pop')).not.toBeNull();
+    key(document.activeElement!, 'Escape');
+    expect(document.querySelector('.pop')).toBeNull();
+    expect(document.activeElement).toBe(button);
+    expect(cellOf(rowsIn(host)[0], 'kind').classList.contains('editing')).toBe(true);
+    key(document.activeElement!, 'Escape');
+    expect(host.querySelector('td.editing')).toBeNull();
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[0], 'kind'));
+  });
+
+  it('commits and returns focus to a link cell after a choice', async () => {
+    const store = await entryLines();
+    const links = { search: async () => [{ id: id(2), title: 'Licence' }], title: () => cell<string | null>('Licence') };
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['note', 'product', 'phone'], links }));
+    await press(cellOf(rowsIn(host)[0], 'product'));
+    key(cellOf(rowsIn(host)[0], 'product').querySelector('button')!, 'L');
+    await tick();
+    key(document.querySelector<HTMLInputElement>('.link-search input')!, 'Enter');
+    await tick();
+    expect(store.table('lines').rows.peek()[0].field('product').value.peek()).toBe(id(2));
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[0], 'product'));
+    key(document.activeElement!, 'Tab');
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[0], 'phone').querySelector('input'));
+  });
+
+  it('Enter goes to the cell below and Esc cancels, for text, phone, date and currency cells', async () => {
+    const store = await entryLines();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns }));
+    const typed: Record<string, [string, unknown]> = { note: ['Left side', 'Left side'], phone: ['+971 50 123 4567', null], due: ['05-11-2026', '2026-11-05'], rate: ['7', '7.00'] };
+    for (const [col, [text, stored]] of Object.entries(typed)) {
+      await press(cellOf(rowsIn(host)[0], col));
+      const input = cellOf(rowsIn(host)[0], col).querySelector('input')!;
+      expect(document.activeElement).toBe(input);
+      input.value = text;
+      key(input, 'Enter');
+      const value = store.table('lines').rows.peek()[0].field(col).value.peek();
+      if (stored !== null) expect(value).toBe(stored);
+      else expect(value).toBeTruthy();
+      expect(focusedCell()).toBe(cellOf(rowsIn(host)[1], col));
+      const below = document.activeElement as HTMLInputElement;
+      below.value = 'x';
+      key(below, 'Escape');
+      expect(document.activeElement).toBe(cellOf(rowsIn(host)[1], col));
+      expect(host.querySelector('td.editing')).toBeNull();
+    }
+  });
+
+  it('moves focus with a click in focus view and on a phone-width layout', async () => {
+    const store = await entryLines();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns }));
+    host.querySelector<HTMLElement>('.g-bar .btn.sm:last-child')!.click();
+    expect(host.querySelector('.grid.max')).not.toBeNull();
+    await press(cellOf(rowsIn(host)[0], 'phone'));
+    await press(cellOf(rowsIn(host)[1], 'note'));
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[1], 'note').querySelector('input'));
+    expect(activeCells(host)).toHaveLength(1);
+    // A tap on a phone: pointer events without a mouse, then click.
+    const tap = cellOf(rowsIn(host)[0], 'kind');
+    tap.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
+    tap.focus();
+    await Promise.resolve();
+    tap.click();
+    expect(focusedCell()).toBe(cellOf(rowsIn(host)[0], 'kind'));
+    expect(activeCells(host)).toHaveLength(1);
+  });
+
+  it('marks the grid for assistive technology and shows the active cell', async () => {
+    const store = await entryLines();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns }));
+    expect(host.querySelector('table')!.getAttribute('role')).toBe('grid');
+    await press(cellOf(rowsIn(host)[0], 'kind'));
+    const tabbable = host.querySelectorAll('td[data-col][tabindex="0"]');
+    expect(tabbable).toHaveLength(1);
+    expect(tabbable[0]).toBe(cellOf(rowsIn(host)[0], 'kind'));
+    expect([...host.querySelectorAll('td.active')]).toEqual([cellOf(rowsIn(host)[0], 'kind')]);
+    // Esc returns to navigation: the cell itself holds the focus and stays the one active cell.
+    key(document.activeElement!, 'Escape');
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[0], 'kind'));
+    key(document.activeElement!, 'ArrowDown');
+    expect([...host.querySelectorAll('td.active')]).toEqual([document.activeElement]);
+    expect(host.querySelectorAll('td[data-col][tabindex="0"]')).toHaveLength(1);
   });
 });

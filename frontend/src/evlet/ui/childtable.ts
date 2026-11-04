@@ -131,6 +131,10 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   });
   const visible = derive(() => { const { start, end } = view.range.get(); return rows.get().slice(start, end); }, { name: `${table.name} (visible rows)` });
   let scroller!: HTMLElement, grid!: HTMLElement, control: Control | null = null, before: unknown = null;
+  // The text the cell's input started with, so a cell passed through untouched never traps focus.
+  let startText: string | null = null;
+  // The cell a choice (dropdown, link, picker) just committed: Enter there goes to the cell below.
+  let landed: Spot = null;
 
   // ---------- editing ----------
 
@@ -149,10 +153,12 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     if (!row || !editable(row, spot.col)) return false;
     reveal(spot.key);
     before = untrack(() => row.field(spot.col).value.get());
+    landed = null;
     batch(() => { active.set(spot); editing.set(spot); });
     if (control) {
       control.focus();
       const input = control.element.matches('input') ? control.element as HTMLInputElement : control.element.querySelector('input');
+      startText = textIn();
       if (typed !== undefined && control.type) control.type(typed);
       else if (typed !== undefined && input) { input.value = typed; input.setSelectionRange?.(typed.length, typed.length); }
     }
@@ -162,9 +168,30 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const spot = editing.peek();
     editing.set(null);
     control = null;
+    startText = null;
     if (focus && spot) focusCell(spot);
   };
-  const commit = (): boolean => !control || control.commit();
+  const textIn = () => {
+    const input = control?.element.matches('input, textarea') ? control.element as HTMLInputElement : control?.element.querySelector<HTMLInputElement>('input, textarea');
+    return input ? input.value : null;
+  };
+  const editedField = () => {
+    const spot = editing.peek();
+    return spot ? untrack(() => rows.get()).find(item => item.key === spot.key)?.field(spot.col) ?? null : null;
+  };
+  // Commits the cell being edited. A cell the user passed through without changing it (an
+  // empty required cell, say) never blocks moving on: the record checks it when it is saved.
+  const commit = (): boolean => {
+    if (!control || control.commit()) return true;
+    const field = editedField();
+    if (startText !== null && textIn() === startText && field
+      && JSON.stringify(untrack(() => field.value.get()) ?? null) === JSON.stringify(before ?? null)) { field.error.set(null); return true; }
+    return false;
+  };
+  // A cell that could not be committed keeps editing, and keeps the focus.
+  const refocus = () => { if (control && !control.element.contains(document.activeElement)) control.focus(); };
+  // The first control after the table, for Tab past its last cell.
+  const after = () => grid.querySelector<HTMLButtonElement>('.g-under .g-add:not(:disabled)');
   const cancel = () => {
     const spot = editing.peek();
     if (!spot) return;
@@ -269,17 +296,18 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     return th;
   };
 
-  const cellView = (row: Row, column: () => ChildColumn, rowEdit: () => string | null, rowActive: () => string | null) => {
+  const cellView = (row: Row, column: () => ChildColumn, rowEdit: () => string | null, rowActive: () => string | null, rowSpot: () => string | null) => {
     const key = column().key, field = row.field(key), meta = field.meta, kind = kindOf(meta.type);
     const canEdit = () => !column().calculated && !readOnly.get() && field.editable.get();
     const display = RICH.has(meta.type) ? () => displayValue(field, { links: props.links, empty: '' }) : () => textOf(() => kind.format(field.value.get(), meta));
     const td = html`<td role="gridcell" data-col=${key} class=${`num${column().align === 'right' ? ' r' : ''}`} class:ed=${canEdit} class:calc=${() => !canEdit()}
-      class:stk=${isFirst(column)} class:s2=${isFirst(column)} style:left=${pinStyle(column)} class:editing=${() => rowEdit() === key}
+      class:stk=${isFirst(column)} class:s2=${isFirst(column)} style:left=${pinStyle(column)} class:editing=${() => rowEdit() === key} class:active=${() => rowSpot() === key}
       class:invalid=${() => Boolean(field.error.get())} aria-invalid=${() => field.error.get() ? 'true' : null} aria-readonly=${() => canEdit() ? null : 'true'}
       tabindex=${() => rowActive() === key ? '0' : '-1'}>${when(() => rowEdit() === key, () => {
         control = FieldControl(field, {
           commitOn: 'manual', links: props.links, label: `${meta.label}, row ${indexOf(row.key) + 1}`,
-          onCommit: !kind.control || kind.control === 'textarea' ? undefined : () => stopEdit(),
+          // A choice commits the cell and returns the focus to it, ready for Tab or Enter.
+          onCommit: !kind.control || kind.control === 'textarea' ? undefined : () => { const spot = editing.peek(); stopEdit(); landed = spot; },
         });
         return control.element;
       }, display)}</td>` as HTMLElement;
@@ -311,18 +339,16 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   const rowView = (item: () => Row, index: () => number) => {
     const row = item(), number = () => view.range.get().start + index() + 1;
     const rowEdit = derive(() => editing.get()?.key === row.key ? editing.get()!.col : null);
-    const rowActive = derive(() => {
-      const spot = active.get();
-      if (spot) return spot.key === row.key ? spot.col : null;
-      return number() === 1 ? columns.get()[0]?.key ?? null : null;
-    });
+    const rowSpot = derive(() => { const spot = active.get(); return spot?.key === row.key ? spot.col : null; });
+    // The one cell Tab reaches from outside the grid (roving tabindex): the active cell, or the first.
+    const rowActive = derive(() => active.get() ? rowSpot.get() : number() === 1 ? columns.get()[0]?.key ?? null : null);
     const open = () => expanded.get() === row.key;
     const tr = html`<tr role="row" data-key=${row.key} class:sel=${() => selection.get().has(row.key)} class:open=${open}
       aria-rowindex=${() => String(number() + 1)} aria-selected=${() => String(selection.get().has(row.key))}>
       <td class="g-ctl stk" style="left:0" role="gridcell"><div class="g-ci">${Checkbox({ checked: () => selection.get().has(row.key), onChange: on => toggle(row.key, on), ariaLabel: () => `Select row ${number()}` })}
         <button type="button" class="g-exp" aria-expanded=${() => String(open())} aria-label=${() => `${open() ? 'Close' : 'Open'} row ${number()}`}
           on:click=${() => expanded.set(open() ? null : row.key)}><span class="num">${() => String(number())}</span>${Icon('chevron-right', { size: 'xs' })}</button></div></td>
-      ${each(columns, column => column.key, column => cellView(row, column, () => rowEdit.get(), () => rowActive.get()))}</tr>`;
+      ${each(columns, column => column.key, column => cellView(row, column, () => rowEdit.get(), () => rowActive.get(), () => rowSpot.get()))}</tr>`;
     return [tr, when(open, () => expandPanel(row))];
   };
 
@@ -407,20 +433,24 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const td = (event.target as Element).closest?.('td[data-col]') as HTMLElement | null;
     const tr = td?.closest('tr[data-key]') as HTMLElement | null;
     const spot: Spot = td && tr ? { key: tr.dataset.key!, col: td.dataset.col! } : null;
-    const editingNow = editing.peek();
+    const editingNow = editing.peek(), chosen = landed;
+    landed = null;
     if (editingNow) {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(); return; }
       if (event.key === 'Tab') {
         event.preventDefault();
-        if (!commit()) return;
+        if (!commit()) { refocus(); return; }
         const next = step(editingNow, event.shiftKey ? -1 : 1);
-        stopEdit(!next);
+        // Past the last cell, Tab leaves the table for Add row.
+        const out = !next && !event.shiftKey ? after() : null;
+        stopEdit(!next && !out);
         if (next) startEdit(next);
+        else out?.focus();
         return;
       }
       if (event.key === 'Enter' && !event.shiftKey && !(event.target as Element).matches('textarea')) {
         event.preventDefault();
-        if (!commit()) return;
+        if (!commit()) { refocus(); return; }
         const next = below(editingNow);
         stopEdit(!next);
         if (next && !startEdit(next)) moveActive(next);
@@ -439,6 +469,19 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       Home: { key: spot.key, col: cols[0] }, End: { key: spot.key, col: cols[cols.length - 1] },
     };
     if (event.key in moves) { event.preventDefault(); moveActive(moves[event.key]); return; }
+    // Tab and Shift Tab edit the next editable cell; past the last one the browser moves on.
+    if (event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      const next = step(spot, event.shiftKey ? -1 : 1);
+      if (next) { event.preventDefault(); startEdit(next); }
+      return;
+    }
+    // Enter on a cell a choice just committed goes to the cell below, as it does while editing.
+    if (event.key === 'Enter' && sameSpot(chosen, spot)) {
+      event.preventDefault();
+      const next = below(spot);
+      if (next && !startEdit(next)) moveActive(next);
+      return;
+    }
     if (event.key === 'Enter' || event.key === 'F2') { event.preventDefault(); startEdit(spot); return; }
     if ((event.key === 'Delete' || event.key === 'Backspace') && editable(row, spot.col)) { event.preventDefault(); writeValue(row.field(spot.col), null); return; }
     if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey && event.key !== ' ') {
@@ -451,8 +494,17 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const tr = td?.closest('tr[data-key]') as HTMLElement | null;
     if (!td || !tr || td.classList.contains('editing')) return;
     const spot = { key: tr.dataset.key!, col: td.dataset.col! };
-    if (editing.peek()) { if (!commit()) return; stopEdit(false); }
+    landed = null;
+    if (editing.peek()) { if (!commit()) { refocus(); return; } stopEdit(false); }
     if (!startEdit(spot)) moveActive(spot);
+  });
+  // A cell that takes the focus (a click, a tap) becomes the active cell, so the active cell and
+  // the focus never part. While a cell is being edited, the click that follows decides.
+  grid.addEventListener('focusin', event => {
+    const td = event.target as HTMLElement;
+    if (editing.peek() || !td.matches?.('td[data-col]')) return;
+    const tr = td.closest('tr[data-key]') as HTMLElement | null;
+    if (tr) active.set({ key: tr.dataset.key!, col: td.dataset.col! });
   });
   // Leaving the cell being edited commits it (a popover opened from the cell does not count).
   grid.addEventListener('focusout', event => {
@@ -463,6 +515,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       const now = document.activeElement;
       if (now && (cellAt(spot)?.contains(now) || now.closest?.('.pop'))) return;
       if (commit()) stopEdit(false);
+      // A cell that can't be left keeps the focus while it stays in the table.
+      else if (now && grid.contains(now)) refocus();
     });
   });
   // A row that disappears (removed, or the record reloaded) cannot stay selected or open.

@@ -443,8 +443,13 @@ mount(document.querySelector('#app')!, () => DocFrame({
   Reload, which reads the record again and keeps the typed value to save again. A saved value
   confirms with a toast that has Undo.
 - **ChildTable** binds to a record `Table`: click or Enter edits a cell, Tab and Shift Tab move
-  across editable cells and wrap rows, Enter moves down, Esc cancels, arrow keys move between
-  cells, typing starts editing (on a Link cell it opens the search with what was typed), Alt and an
+  across editable cells and wrap rows (from a cell being edited or not; past the last cell Tab
+  goes on to Add row), Enter moves down, Esc cancels, arrow keys move between cells. One cell is
+  active at a time and it holds the focus (a roving `tabindex` in a `role="grid"`): a click or tap
+  focuses the clicked cell, a cell that can't be committed keeps the focus, and an unchanged cell
+  never blocks moving on. A choice from a dropdown, Link search or picker commits the cell and
+  returns the focus to it, so Tab goes to the next cell and Enter to the cell below. Typing starts
+  editing (on a Link cell it opens the search with what was typed), Alt and an
   arrow moves a row. Rows can be added, duplicated
   (with their rows of rows, as new rows), removed with Undo (`Table.restore()` brings back
   the same rows with their ids and rows of rows; Undo is refused with a message while the

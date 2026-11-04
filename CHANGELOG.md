@@ -6,6 +6,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Fix: focus in the editable child table.** Clicking a cell focuses it while another cell is
+  being edited, with one active cell at a time (a cell that can't be committed keeps the focus,
+  and an unchanged cell never blocks). Tab and Shift Tab reach every editable cell from a cell in
+  navigation mode too, then go on to Add row. A choice from a dropdown or Link search returns the
+  focus to its cell, so Tab and Enter continue as the footer says.
 - **Breaking: every record has a standard name and title.** Record models (not Table rows) gain
   two framework columns next to `id`. `name` is the human identifier, unique per model, filled by
   `Meta.naming`: a naming series (which now fills `name` by default), the model's
