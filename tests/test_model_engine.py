@@ -86,11 +86,11 @@ def test_custom_validation_runs_on_partial_update(tmp_path):
 
 
 def test_updates_deletes_relationships_and_rollback(database):
-    customer = database.create(Customer, name='Original')
+    customer = database.create(Customer, customer_name='Original')
     invoice = database.create(Invoice, customer=customer.id, reference='INV', total='10.00')
     payment = database.create(Payment, invoice=invoice.id, reference='PAY', amount='10.00')
     assert database.related(invoice, 'customer').id == customer.id
-    assert database.related(database.related(payment, 'invoice'), 'customer').name == 'Original'
+    assert database.related(database.related(payment, 'invoice'), 'customer').customer_name == 'Original'
     with pytest.raises(ConflictError):
         database.delete(Customer, customer.id)
     with pytest.raises(ConflictError):
@@ -102,7 +102,7 @@ def test_updates_deletes_relationships_and_rollback(database):
             tx.update(Customer, customer.id, name='Rolled back')
             tx.delete(Payment, payment.id)
             raise RuntimeError('cancel')
-    assert database.get(Customer, customer.id).name == 'Original'
+    assert database.get(Customer, customer.id).customer_name == 'Original'
     assert database.get(Payment, payment.id).id == payment.id
     changed = database.update(Invoice, invoice.id, total='12.34')
     assert changed.reference == 'INV' and changed.total == DecimalValue('12.34')
@@ -115,29 +115,29 @@ def test_updates_deletes_relationships_and_rollback(database):
 
 
 def test_queries_use_types_relationship_paths_and_stable_order(database):
-    a = database.create(Customer, name='Alpha 100%_')
-    b = database.create(Customer, name="B'); DROP TABLE customer;--")
+    a = database.create(Customer, customer_name='Alpha 100%_')
+    b = database.create(Customer, customer_name="B'); DROP TABLE customer;--")
     inv_a = database.create(Invoice, customer=a.id, reference='A', total='10.00')
     inv_b = database.create(Invoice, customer=b.id, reference='B', total='2.00')
     payment = database.create(Payment, invoice=inv_a.id, reference='P', amount='10.00')
     assert database.list(Invoice, order_by='total')[0].id == inv_b.id
-    assert database.list(Invoice, filters={'total__gte': '0', 'customer__name__contains': '%_'})[0].id == inv_a.id
-    assert database.list(Payment, filters={'invoice__customer__name__icontains': 'ALPHA'})[0].id == payment.id
-    assert database.list(Invoice, order_by='customer__name')[0].id == inv_a.id
+    assert database.list(Invoice, filters={'total__gte': '0', 'customer__customer_name__contains': '%_'})[0].id == inv_a.id
+    assert database.list(Payment, filters={'invoice__customer__customer_name__icontains': 'ALPHA'})[0].id == payment.id
+    assert database.list(Invoice, order_by='customer__customer_name')[0].id == inv_a.id
     assert database.count(Customer, filters={'email__isnull': True}) == 2
     assert database.count(Customer, filters={'id__in': [a.id, b.id]}) == 2
     assert database.count(Customer, filters={'id__in': []}) == 0
-    assert database.count(Customer, filters={'name': b.name}) == 1
-    assert database.count(Customer, filters={'name__startswith': 'Alpha'}) == 1
+    assert database.count(Customer, filters={'customer_name': b.customer_name}) == 1
+    assert database.count(Customer, filters={'customer_name__startswith': 'Alpha'}) == 1
     assert [x.id for x in database.list(Invoice, order_by=['total'], limit=1, offset=1)] == [inv_a.id]
 
 
 @pytest.mark.parametrize('kwargs', [
-    {'filters': [['name']]}, {'filters': 'name'}, {'filters': {'name; DROP TABLE customer': 'x'}},
-    {'filters': {'name__contains': 5}}, {'filters': {'name__gt': None}},
+    {'filters': [['customer_name']]}, {'filters': 'customer_name'}, {'filters': {'customer_name; DROP TABLE customer': 'x'}},
+    {'filters': {'customer_name__contains': 5}}, {'filters': {'customer_name__gt': None}},
     {'filters': {'id__in': [None]}}, {'filters': {'id__in': list(range(101))}},
-    {'filters': {'name__isnull': 1}}, {'filters': {'name__fake': 'x'}},
-    {'filters': {'name__id': 1}}, {'order_by': 'id DESC; DROP TABLE customer'},
+    {'filters': {'customer_name__isnull': 1}}, {'filters': {'customer_name__fake': 'x'}},
+    {'filters': {'customer_name__id': 1}}, {'order_by': 'id DESC; DROP TABLE customer'},
     {'order_by': []}, {'order_by': [True]},
 ])
 def test_query_rejects_unsafe_or_invalid_inputs(database, kwargs):
@@ -147,16 +147,16 @@ def test_query_rejects_unsafe_or_invalid_inputs(database, kwargs):
 
 
 def test_http_update_delete_and_filters(application):
-    _, customer, _ = request(application, 'POST', '/api/customer', {'name': 'Before'})
+    _, customer, _ = request(application, 'POST', '/api/customer', {'customer_name': 'Before'})
     url = f'/api/customer/{customer["id"]}'
-    assert request(application, 'PATCH', url, {'name': 'After'})[1]['name'] == 'After'
-    assert request(application, 'PATCH', url, {'name': ''})[0] == 422
-    query = urlencode({'filters': '{"name__contains":"Aft"}', 'order_by': 'name', 'limit': 1})
-    assert request(application, 'GET', '/api/customer?' + query)[1]['items'][0]['name'] == 'After'
+    assert request(application, 'PATCH', url, {'customer_name': 'After'})[1]['customer_name'] == 'After'
+    assert request(application, 'PATCH', url, {'customer_name': ''})[0] == 422
+    query = urlencode({'filters': '{"customer_name__contains":"Aft"}', 'order_by': 'customer_name', 'limit': 1})
+    assert request(application, 'GET', '/api/customer?' + query)[1]['items'][0]['customer_name'] == 'After'
     assert request(application, 'DELETE', url)[:2] == (204, None)
     assert request(application, 'GET', url)[0] == 404
-    assert request(application, 'PATCH', url, {'name': 'Missing'})[0] == 404
-    for filters in ('[["name"]]', '"name"', '{"id__in": [null]}', '{"unknown": 1}', '{"id": NaN}'):
+    assert request(application, 'PATCH', url, {'customer_name': 'Missing'})[0] == 404
+    for filters in ('[["customer_name"]]', '"customer_name"', '{"id__in": [null]}', '{"unknown": 1}', '{"id": NaN}'):
         assert request(application, 'GET', '/api/customer?' + urlencode({'filters': filters}))[0] == 422
     assert request(application, 'PATCH', '/api/customer/2', body=b'bad')[0] == 400
     assert request(application, 'PATCH', '/api/customer/2', body=b'x' * 65537)[0] == 413
@@ -164,15 +164,15 @@ def test_http_update_delete_and_filters(application):
 
 def test_concurrent_partial_updates_preserve_other_fields(database):
     from concurrent.futures import ThreadPoolExecutor
-    customer = database.create(Customer, name='Before', email='before@example.test')
+    customer = database.create(Customer, customer_name='Before', email='before@example.test')
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(database.update, Customer, customer.id, **changes) for changes in (
-            {'name': 'After'}, {'email': 'after@example.test'},
+            {'customer_name': 'After'}, {'email': 'after@example.test'},
         )]
         for future in futures:
             future.result()
     saved = database.get(Customer, customer.id)
-    assert saved.name == 'After' and saved.email == 'after@example.test'
+    assert saved.customer_name == 'After' and saved.email == 'after@example.test'
 
 
 def test_extreme_datetimes_are_validation_errors():
@@ -181,7 +181,7 @@ def test_extreme_datetimes_are_validation_errors():
 
 
 def test_delete_has_no_content_headers(application):
-    _, customer, _ = request(application, 'POST', '/api/customer', {'name': 'Delete'})
+    _, customer, _ = request(application, 'POST', '/api/customer', {'customer_name': 'Delete'})
     status, body, headers = request(application, 'DELETE', f'/api/customer/{customer["id"]}')
     assert status == 204 and body is None
     assert b'content-length' not in headers and b'content-type' not in headers

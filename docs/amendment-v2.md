@@ -103,7 +103,7 @@ owned rows. Keep application code on the contextual API:
 
 ```python
 with app.business.context(user) as context:
-    order = context.create(SalesOrder, name="SO-1", children={"items": rows})
+    order = context.create(SalesOrder, title="SO-1", children={"items": rows})
     context.update(SalesOrder, order["id"], warehouse=warehouse_id)
     context.action(SalesOrder, order["id"], "confirm", note="Ready")
 ```

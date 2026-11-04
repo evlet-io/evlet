@@ -33,7 +33,7 @@ class PlanProject(Slip):
 
     def load(self, source):
         self.customer = source.id
-        self.name = f'{source.name} project'
+        self.name = f'{source.customer_name} project'
 
     def validate(self):
         if self.starts_on is not None and self.starts_on < date.today():
@@ -41,7 +41,7 @@ class PlanProject(Slip):
 
     def document(self, source):
         budget = (self.total_hours or 0) * self.hourly_rate if self.billing == 'time' else self.budget
-        return {'name': self.name, 'customer': self.customer, 'starts_on': self.starts_on, 'budget': budget,
+        return {'title': self.name, 'customer': self.customer, 'starts_on': self.starts_on, 'budget': budget,
                 'tasks': [{'title': task.title} for task in self.tasks]}
 
 

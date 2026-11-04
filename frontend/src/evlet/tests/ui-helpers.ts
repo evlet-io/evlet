@@ -91,7 +91,7 @@ export function backend(overrides: Array<[string, RegExp, any]> = []) {
     ['GET', /\/api\/order\/0000000000001\/lines\/lines\?limit=100&offset=100$/, () => responses[saved ? 'lines_page_after_update' : 'lines_page']],
     ['GET', /\/api\/customer\/0000000000001$/, { ...responses.customer, status: 200 }],
     ['GET', /\/api\/product\/0000000000001$/, { ...responses.product, status: 200 }],
-    ['GET', /\/api\/product(\?.*)?$/, { status: 200, etag: null, body: { items: [{ id: id(1), name: 'Support hours', price: '250.00' }, { id: id(2), name: 'Licence <b>bold</b>', price: '90.00' }], total: 2, limit: 8, offset: 0 } }],
+    ['GET', /\/api\/product(\?.*)?$/, { status: 200, etag: null, body: { items: [{ id: id(1), title: 'Support hours', price: '250.00' }, { id: id(2), title: 'Licence <b>bold</b>', price: '90.00' }], total: 2, limit: 8, offset: 0 } }],
     ['PATCH', /\/api\/order\/0000000000001$/, () => { saved = true; return responses.update; }],
   ]);
   const api = createClient({ fetch: stub.fetch });

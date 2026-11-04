@@ -51,17 +51,17 @@ def main():
         raise RuntimeError('Clean wheel check unexpectedly has the optional PostgreSQL driver')
 
     class Product(Model):
-        name = Text(required=True)
+        title = Text(required=True)
         price = Currency(required=True)
 
     with tempfile.TemporaryDirectory() as directory:
         db = Database(Path(directory) / "package.sqlite3", Registry(Product))
         db.initialize()
-        item = db.create(Product, name="Installed package", price="12.50")
+        item = db.create(Product, title="Installed package", price="12.50")
         if db.get(Product, item.id).to_dict()["price"] != "12.50":
             raise RuntimeError("Installed package failed the SQLite round trip")
         UpdatedProduct = type('Product', (Model,), {
-            'name': Text(required=True), 'price': Currency(required=True), 'active': Boolean(default=True),
+            'title': Text(required=True), 'price': Currency(required=True), 'active': Boolean(default=True),
         })
         updated = Database(db.path, Registry(UpdatedProduct))
         updated.migrate([Migration('active', AddField('product', 'active', Boolean(default=True)))])
@@ -71,7 +71,7 @@ def main():
         if updated.count(UpdatedProduct, filters={'price__gte': '15.00'}) != 1:
             raise RuntimeError('Installed package failed query')
         schema = updated.registry.ui_schema()
-        if schema['ui_version'] != 1 or schema['models'][0]['title_field'] != 'name':
+        if schema['ui_version'] != 1 or schema['models'][0]['title_field'] != 'title':
             raise RuntimeError('Installed package failed UI metadata')
         records, total = updated.page(UpdatedProduct, search='installed', limit=1)
         if total != 1 or records[0].id != item.id:
@@ -105,7 +105,7 @@ def main():
         from evlet.discovery import Discovery
         description = Discovery(app.business, User(1, 'viewer', 'viewer')).describe('product')
         assert set(description['schemas']) == {'read'}
-        assert description['fields'][0]['name'] == 'name'
+        assert description['fields'][0]['name'] == 'title'
         client = HTTPClient('http://127.0.0.1:8000')
         protocol = MCPServer(client)
         output = io.BytesIO()

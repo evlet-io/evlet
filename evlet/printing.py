@@ -592,7 +592,7 @@ def document_context(business, tx, user, model, record):
         title_field = view_for(definition).get('title_field', 'id')
         title = result.get(title_field) if title_field in fields else None
         result.setdefault('title', title if title is not None else values.get('id'))
-        result.setdefault('name', result['title'])
+        result.setdefault('name', values.get('id'))
         return result
 
     def tree(definition, values):

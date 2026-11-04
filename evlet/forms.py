@@ -203,7 +203,10 @@ class Forms:
                     raise ValueError('Reports return a bounded rows/total result from context.list')
                 if type(result.get('total')) is not int or result['total'] < len(result['rows']): raise ValueError('Report total must be a nonnegative row count')
                 allowed = {column.name for column in report.columns}
-                if any(not isinstance(row, dict) or set(row) - allowed for row in result['rows']): raise ValueError('Report rows must match declared columns')
+                if any(not isinstance(row, dict) for row in result['rows']): raise ValueError('Report rows must match declared columns')
+                # Rows from context.list carry the standard name and title; a report shows them only as columns.
+                result['rows'] = [{key: value for key, value in row.items() if key in allowed or key not in ('name', 'title')} for row in result['rows']]
+                if any(set(row) - allowed for row in result['rows']): raise ValueError('Report rows must match declared columns')
                 from .fields import Text, Integer, Decimal, Currency, Date, Boolean, Link
                 # A link column holds record ids, which the response writes as text ids.
                 types = {'text': Text, 'integer': Integer, 'decimal': Decimal, 'currency': Currency, 'date': Date, 'boolean': Boolean, 'link': lambda: Link(None)}

@@ -20,17 +20,17 @@ ADMIN = User(1, 'admin', 'admin')
 
 class Company(Model):
     permissions = ALL
-    name = Text(default='')
+    title = Text(default='')
 
 
 class Invoice(Model):
     class Meta:
         # A revision is a new draft without a number; it gets its own when it is issued.
         revisable = True
-    permissions = {**ALL, 'viewer': Rule(('read',), read_fields=('name', 'number', 'status'))}
+    permissions = {**ALL, 'viewer': Rule(('read',), read_fields=('title', 'number', 'status'))}
     company = Link(Company, required=True)
     posting_date = Date(required=True)
-    name = Text(default='')
+    title = Text(default='')
     number = Sequence('INV-{year}-{n:05}', scope=('company',), assign_on='issued', date='posting_date')
     status = State(('draft', 'issued', 'void'), moves=(
         Move('draft', 'issued', 'Issue', run='on_issue'),
@@ -38,17 +38,17 @@ class Invoice(Model):
     ), locked=('issued', 'void'), final=('void',), voidable=('issued',))
 
     def on_issue(self):
-        if self.name == 'fail':
-            raise ValidationError({'name': 'Run failed'})
+        if self.title == 'fail':
+            raise ValidationError({'title': 'Run failed'})
 
     def changed(self, change):
         # Runs after the number is assigned and the record is written, in the same transaction.
-        if change.operation == 'move' and self.name == 'boom':
-            raise ValidationError({'name': 'Rejected after numbering'})
+        if change.operation == 'move' and self.title == 'boom':
+            raise ValidationError({'title': 'Rejected after numbering'})
 
     @action('Rename', inputs={'value': Text(required=True)})
     def rename(self, value):
-        self.name = value
+        self.title = value
 
     @action('Renumber')
     def renumber(self):
@@ -116,8 +116,8 @@ def numbered(tmp_path):
 
 def seed(app):
     c = client(app)
-    one = c('POST', '/api/company', {'name': 'One'})[1]['id']
-    two = c('POST', '/api/company', {'name': 'Two'})[1]['id']
+    one = c('POST', '/api/company', {'title': 'One'})[1]['id']
+    two = c('POST', '/api/company', {'title': 'Two'})[1]['id']
     return app, c, one, two
 
 
@@ -245,7 +245,7 @@ def check_failures_do_not_consume_numbers(numbered):
     app, c, one, two = numbered
     # A run method that fails before assignment, and a reaction that fails after the number is written.
     for name in ('fail', 'boom'):
-        record, url = invoice(c, one, name=name)
+        record, url = invoice(c, one, title=name)
         status, body, _ = move(c, url, 'issued')
         assert status == 422, body
         assert c('GET', url)[1]['number'] is None
@@ -339,7 +339,7 @@ def check_only_the_engine_writes_a_sequence(numbered):
     move(c, url, 'issued')
     saved = move(c, url, 'draft')[1]['number']
     # Sending the saved value back is not a change; anything else is refused.
-    assert c('PATCH', url, {'number': saved, 'name': 'Kept'}, headers=etag(c, url))[1]['name'] == 'Kept'
+    assert c('PATCH', url, {'number': saved, 'title': 'Kept'}, headers=etag(c, url))[1]['title'] == 'Kept'
     assert c('PATCH', url, {'number': 'INV-HAND'}, headers=etag(c, url))[1]['fields'] == {'number': 'This number is assigned by the system'}
     assert c('POST', f'{url}/actions/renumber', {}, headers=etag(c, url))[1]['fields'] == {'number': 'This number is assigned by the system'}
     editor = add_user(app, 'editor')
@@ -432,9 +432,9 @@ def test_counters_live_in_the_framework_table(numbered):
 
 
 def test_clear_for_copy_gives_a_copy_a_fresh_number():
-    values = {'company': 1, 'number': 'INV-2026-00001', 'name': 'Copy'}
-    assert clear_for_copy(Invoice, values) == {'company': 1, 'number': None, 'name': 'Copy'}
-    assert values['number'] == 'INV-2026-00001' and clear_for_copy(Company, {'name': 'x'}) == {'name': 'x'}
+    values = {'company': 1, 'number': 'INV-2026-00001', 'title': 'Copy'}
+    assert clear_for_copy(Invoice, values) == {'company': 1, 'number': None, 'title': 'Copy'}
+    assert values['number'] == 'INV-2026-00001' and clear_for_copy(Company, {'title': 'x'}) == {'title': 'x'}
 
 
 # Migrations
@@ -504,7 +504,7 @@ def test_a_missing_sequence_index_is_reported(tmp_path):
 
 def check_a_caught_failure_leaves_no_trace(app):
     c = client(app)
-    one = c('POST', '/api/company', {'name': 'One'})[1]['id']
+    one = c('POST', '/api/company', {'title': 'One'})[1]['id']
     with app.business.context(ADMIN) as context:
         assert context.create(Pass, holder='Ann')['code'] == 'P1'
         # The unique holder fails after the number is taken; trusted code catches it and commits.
@@ -513,7 +513,7 @@ def check_a_caught_failure_leaves_no_trace(app):
         assert context.create(Pass, holder='Bob')['code'] == 'P2'
     draft = c('POST', '/api/invoice', {'company': one, 'posting_date': '2026-03-10'})[1]
     with app.database.transaction() as tx, tx.maintenance():
-        tx.update(Invoice, draft['id'], name='boom')
+        tx.update(Invoice, draft['id'], title='boom')
     with app.business.context(ADMIN) as context:
         with pytest.raises(ValidationError):
             context.move(Invoice, draft['id'], 'issued')

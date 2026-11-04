@@ -15,11 +15,10 @@ class Asset(Model):
         label = "Asset"
         plural = "Assets"
         description = "Keep track of equipment."
-        title_field = "name"
-        list_fields = ("name", "status", "cost")
-        search_fields = ("name",)
+        list_fields = ("title", "status", "cost")
+        search_fields = ("title",)
 
-    name = Text(required=True, max_length=120, placeholder="Equipment name")
+    title = Text(required=True, max_length=120, placeholder="Equipment name")
     status = Select(["available", "in_use"], default="available")
     cost = Currency(default="0.00", label="Purchase cost")
 

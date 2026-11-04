@@ -1,6 +1,6 @@
 # Record identity: id, name and title
 
-Status: in progress. The owner fixed the design; this note records how Evlet implements it.
+Status: implemented in two pull requests (ids, then name and title). The owner fixed the design; this note records how Evlet implements it.
 
 Every model has three standard columns:
 
@@ -65,60 +65,79 @@ record (`record_id`), that value is a record id and uses the text form.
 
 ## 2. `name`
 
-**Column.** A nullable `TEXT` column `name` on every model that is not a child row, with a unique
-index over the assigned names. Under tenancy each tenant has its own database, so uniqueness is
-per tenant. Row scopes do not change uniqueness: two names never collide across scopes.
+**Column.** A nullable `TEXT` column `name` on every record model (not Table rows, Slips or dialogs),
+with a unique index. Under tenancy each tenant has its own database, so uniqueness is per tenant.
+In Python the standard fields are ordinary fields marked `field.standard` (`evlet/naming.py`). They
+are left out of the app schema that app migrations compare, like `id`.
 
-**Filled by**, in this order:
+**Filled by** `Meta.naming`:
 
-1. A trusted value: `Session.create(name=...)` (imports) or manual entry where `Meta.naming`
-   allows it (`Naming(manual=True)`).
-2. A naming series: `Meta.naming = Naming(Series(...), ...)`. The target defaults to `name`.
-   The older form `Naming("reference", ...)` still names that field; see "Sequences" below.
-3. An autoname hook: `def autoname(self, context) -> str` on the model. It runs inside the write
-   transaction after values are settled. The framework checks the length (140 characters),
-   that it is not blank, and uniqueness; a taken name is a validation error on `name`.
+1. `Naming(Series(...), ...)`: a naming series. The target defaults to `name`. The older form
+   `Naming("reference", ...)` still names that field, on create, and keeps it read only.
+2. `Naming()` with the model's `autoname(self, context) -> str` method, run inside the write
+   transaction. The framework checks it is not blank, at most 140 characters and free.
+3. `Naming(manual=True)`: people type it.
+4. A trusted `Session.create(name=...)` (imports) keeps the name it is given.
 
-**When.** `Naming(..., assign_on="create")` (the default) or `assign_on="confirm"` for a
-confirmable model. Confirm-time naming takes the number in the confirm transaction, so a
-draft never uses a number: document numbers have no gaps. Until then `name` is null and forms
-show "Assigned on save" or "Assigned on confirm".
+Without `Meta.naming` the name stays empty and read only, and forms do not show it.
+
+**When.** `assign_on="create"` (the default), `"confirm"` for a confirmable model, or a state of the
+model. A confirm-time name is taken in the confirm transaction, so drafts never use a number.
+Until then forms show "Assigned on save" or "Assigned on confirm".
 
 **Revisions and amendments.** Following `docs/lifecycle-specification.md`, a lifecycle revision
-(reopen and confirm again) is the same record, so it keeps its id and name. An amendment made by
-`revise` is a new record: its `name` is cleared and assigned again by the same rules, and
-`revises` links it to the original.
+(reopen and confirm again) is the same record, so it keeps its id and name, and the name is fixed
+after the first confirmation. An amendment made by `revise` is a new record: its `name` is cleared
+(revisions clear unique values) and assigned again by the same rules, and `revises` links it to
+the original.
 
-**Changing a name.** `id` is the primary key and the only thing Links, child rows, revisions,
-the journal and URLs point to, so changing `name` is a plain one-row update with no cascade
-(owner, 03-11-2026). Anyone who may write the `name` field changes it through the normal edit
-path: the unique index refuses a taken name, and the journal records the change like any other
-field. The usual protections stay: a confirmed (locked) document stays locked, and a name a
-naming series assigns is read only in forms while it is system assigned (the server fills it).
-`title` is an ordinary stored field too.
+**Changing a name** (owner, 03-11-2026). `id` is the primary key and the only thing Links, child
+rows, revisions, the journal and URLs point to, so changing `name` is a plain one-row update with
+no cascade and no separate Rename feature. A client cannot type a name a series or autoname is
+about to assign (`Assigned on save`); once assigned, anyone who may write the `name` field
+changes it through the normal edit. The unique index refuses a taken name and the journal records
+the change like any field. A confirmed document stays locked as before.
 
 ## 3. `title`
 
-**Column.** A stored, non-unique `TEXT` column `title` on every model that is not a child row.
+**Column.** A stored, non-unique `TEXT` column `title` on every record model. A model may declare
+its own `title` Text field: that field is the title, edited like any field.
 
-**Source.** `Meta.title_field = "full_name"` or a template `Meta.title = "{first_name} {last_name}"`
-of the model's own short fields. The framework fills it on every create and update inside the
-transaction. With neither, `title` is the name, then the text id.
+**Source.** Otherwise `Meta.title_field = "customer_name"` or a template
+`Meta.title = "{first_name} {last_name}"` of the model's own short fields. The framework sets it on
+every write inside the transaction (raw sessions, the document pipeline and posted effects). With
+no source, `title` is the name, then the text id.
 
-**Display.** Link pickers, list rows, search, breadcrumbs, Slips and Eva show `title`. A record
-page shows `title` as its heading and `name`, when there is one, as the document number next to it
-in the mono font.
+**Display.** The schema's `title_field` is `title` for record models, so Link pickers, list rows,
+search, breadcrumbs, Slips and Eva show it. A record page shows `title` as its heading and `name`,
+when the model has naming, as the document number next to it in mono. Search covers `title` and
+`name`.
+
+**Permissions.** A role reads `title` only when it may read the fields it repeats (its source
+fields, or `name` when it falls back to it), so a title never reveals a hidden field.
 
 ## Migrations
 
-- New tables get `id`, `name` and `title` from `CreateModel`.
-- Existing app tables gain `name` and `title` from a framework step in the A4 ledger
-  (`evlet/framework.py`), which `evlet migrate` runs after app migrations, with its backup. The step
-  adds the columns, the unique index and backfills `title`. `name` stays null unless the app
-  backfills it (`evlet.sequences.backfill` or a `RunData` migration).
-- A model that names a field `Sequence` or naming target other than `name` keeps working. To move a
-  number into `name`, an app adds a `RunData` migration that copies it and then retires the field.
-  The Playground does this for `Invoice.number`.
+- Tables are created with `id`, `name` and `title`, from the models at startup or by `CreateModel`
+  and `AddTable`. `CreateModel`'s checksum leaves the standard fields out, so migration histories
+  applied before this change keep their checksums.
+- A model that declares its own `name` field describes the schema from before records had standard
+  columns (a frozen class in migration history, a legacy registry). It gets neither standard field,
+  and its tables are created without them, so a later `RenameField(..., 'name', 'title')` meets the
+  table as it was. Applications refuse such a model.
+- Existing tables gain `name` and `title` in two places that run the same idempotent code
+  (`naming.add_columns` and `naming.fill_titles`): at the end of every app migration batch, and in
+  framework step `0003_record_names` of the A4 ledger (`evlet/framework.py`), which `evlet migrate`
+  and `Application.initialize` run after app migrations, so an instance with no app migration to
+  run gets them too. Steps may now ask for the registry (`FrameworkStep(..., registry=True)`),
+  because filling titles needs the models. Until then, schema checks accept a table without both
+  columns and reads treat them as empty; an instance refuses to serve while the step is pending.
+- `name` stays empty for old rows unless the app fills it. A data migration that moves an older
+  number into `name` calls `session.add_standard_columns(Model)` first, because the batch adds the
+  columns only at its end. The Playground's `0008_record_names` does this for `Invoice.number`,
+  moves its counters, and retires the old field.
+- A record table turned into Table rows keeps its old `name` and `title` columns, unused; schema
+  checks accept them as long as they are nullable.
 
 ## Declared `name` and `title` fields
 
@@ -126,7 +145,10 @@ Decided by the owner on 03-11-2026 ("Yes, reserve name"):
 
 - A model may declare its own `title` field (a short Text). That field is the standard title:
   people edit it directly, and nothing is migrated.
-- `name` is reserved. A model that declares a `name` field fails at definition with a message to
-  rename it (for example to `customer_name` or `full_name`) with a `RenameField` migration. The
-  Playground, testcrm, the examples, the app templates and the docs are updated in the same change,
-  and the CHANGELOG records it as a breaking change.
+- `name` is reserved. An `Application` refuses a record model that declares a `name` field, with a
+  message to rename it (for example to `customer_name` or `full_name`) with a `RenameField`
+  migration. The check runs when the application is built, not when the class is defined, because
+  frozen classes in older migration files describe the schema of their time and must stay
+  importable (the Playground's 0002 `Project` declares `name`). The Playground, testcrm, the
+  examples, the app templates and the docs are updated in the same change, and the CHANGELOG
+  records it as a breaking change.

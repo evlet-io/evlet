@@ -10,10 +10,12 @@ CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
 class Customer(Model):
     class Meta:
         description = "Good work starts with good relationships."
-        list_fields = ('name', 'email', 'active')
-        search_fields = ('name', 'email')
+        # The record title (Link pickers, lists, search) is the customer's name.
+        title_field = 'customer_name'
+        list_fields = ('customer_name', 'email', 'active')
+        search_fields = ('customer_name', 'email')
 
-    name = Text(required=True, max_length=120)
+    customer_name = Text(required=True, max_length=120, label='Customer name')
     email = Text(max_length=254)
     active = Boolean(required=True, default=True)
     currency = Select(CURRENCIES, required=True, default='AED', help_text='Invoices for this customer show amounts in it.')
@@ -23,16 +25,14 @@ class Customer(Model):
 class Invoice(Model):
     class Meta:
         description = "Keep each piece of work connected to a customer."
-        title_field = 'number'
-        list_fields = ('number', 'reference', 'customer', 'total', 'status', 'posting_date')
-        search_fields = ('number', 'reference', 'status')
-        # The server names each new invoice INV-2026-00001, INV-2026-00002, ... in its create transaction.
-        # The year comes from the posting date, or the creation day without one. Controls, Naming can
-        # add series and set the counter.
-        naming = Naming('number', Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date')
+        list_fields = ('name', 'reference', 'customer', 'total', 'status', 'posting_date')
+        search_fields = ('name', 'reference', 'status')
+        # The server names each new invoice INV-2026-00001, INV-2026-00002, ... in its create transaction:
+        # the standard name, shown as the document number. The year comes from the posting date, or the
+        # creation day without one. Controls, Naming can add series and set the counter. With no title
+        # source the title is the name.
+        naming = Naming(Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date')
 
-    # The invoice number. It is empty until the invoice is saved and read only after that.
-    number = Text(unique=True, max_length=40, label='Invoice number', help_text='Given by the naming series when the invoice is saved.')
     customer = Link(Customer, required=True)
     # help_text reads under the input; tooltip sits behind a ? icon at its right end.
     reference = Text(required=True, unique=True, max_length=40, label='Customer reference',
@@ -61,10 +61,11 @@ class Payment(Model):
 class Project(Model):
     class Meta:
         description = "Track a small project and its customer."
-        list_fields = ('name', 'customer', 'status', 'budget')
-        layout = (('Project', ('name', 'customer', 'status')), ('Planning', ('budget', 'progress', 'starts_on')), ('Notes', ('notes',)))
+        list_fields = ('title', 'customer', 'status', 'budget')
+        layout = (('Project', ('title', 'customer', 'status')), ('Planning', ('budget', 'progress', 'starts_on')), ('Notes', ('notes',)))
 
-    name = Text(required=True, max_length=120)
+    # A declared title is the record title itself.
+    title = Text(required=True, max_length=120, label='Project')
     customer = Link(Customer)
     status = Select(['planned', 'active', 'done'], required=True, default='planned', read_only=True)
     # The currency is the Projects app setting "Project currency" (Settings, Projects).
@@ -93,14 +94,15 @@ TEAM = Hierarchy('employee', parent='reports_to')
 class Employee(Model):
     class Meta:
         description = "People and who they report to."
-        list_fields = ('name', 'email', 'reports_to')
-        search_fields = ('name', 'email')
+        title_field = 'full_name'
+        list_fields = ('full_name', 'email', 'reports_to')
+        search_fields = ('full_name', 'email')
 
     # Moving someone changes every team above them, so each save keeps who changed reports_to and when.
     track_changes = True
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete')),
                    'viewer': Rule(('read',), scope=TEAM.team())}
-    name = Text(required=True, max_length=120)
+    full_name = Text(required=True, max_length=120, label='Full name')
     email = Text(max_length=254)
     reports_to = Link('employee', index=True, label='Reports to')
 

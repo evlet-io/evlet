@@ -104,7 +104,7 @@ def test_chat_runs_tools_as_the_person_and_keeps_history_usage_and_the_log(eva):
     script.turns = [[('text', 'Let me look.'), call('list_records', model='project'), usage(1200, 40)],
                     [('text', 'You have '), ('text', 'one project.'), usage(1500, 30, cached=1000)]]
     editor = client(app, 'editor')
-    project = editor('POST', '/api/project', {'name': 'Fit-out'})[1]['id']
+    project = editor('POST', '/api/project', {'title': 'Fit-out'})[1]['id']
     conversation, run, stored = ask(app, editor, 'How many projects do I have?')
     assert [message['role'] for message in stored['messages']] == ['user', 'assistant', 'assistant']
     assert stored['messages'][-1]['content'] == 'You have one project.'
@@ -129,7 +129,7 @@ def test_chat_runs_tools_as_the_person_and_keeps_history_usage_and_the_log(eva):
 
 def test_a_refused_tool_is_reported_and_eva_carries_on(eva):
     app, script = eva
-    script.turns = [[call('create_record', model='project', values={'name': 'Not mine'})], [('text', "Your role can't create projects.")]]
+    script.turns = [[call('create_record', model='project', values={'title': 'Not mine'})], [('text', "Your role can't create projects.")]]
     viewer = client(app, 'viewer')
     _, _, stored = ask(app, viewer, 'Create a project called Not mine')
     [activity] = stored['runs'][0]['activities']
@@ -141,13 +141,13 @@ def test_a_refused_tool_is_reported_and_eva_carries_on(eva):
 def test_changes_that_need_approval_wait_then_run_exactly_once(eva):
     app, script = eva
     editor = client(app, 'editor')
-    project = editor('POST', '/api/project', {'name': 'Approval'})[1]
+    project = editor('POST', '/api/project', {'title': 'Approval'})[1]
     script.turns = [[call('run_action', model='project', id=project['id'], action='start')], [('text', 'Started.')]]
     conversation, run, stored = ask(app, editor, 'Start the Approval project')
     assert stored['runs'][0]['status'] == 'awaiting_approval'
     [activity] = stored['runs'][0]['activities']
     approval = activity['approval']
-    assert activity['status'] == 'approval' and approval['summary']['action'] == 'start' and approval['summary']['record']['name'] == 'Approval'
+    assert activity['status'] == 'approval' and approval['summary']['action'] == 'start' and approval['summary']['record']['title'] == 'Approval'
     assert editor('GET', f"/api/project/{project['id']}")[1]['status'] == 'planned'
     # Another message waits until this is answered; an API key or assistant can't answer it.
     assert editor('POST', f'/api/_eva/conversations/{conversation}/messages', {'text': 'And?'})[0] == 409
@@ -166,7 +166,7 @@ def test_changes_that_need_approval_wait_then_run_exactly_once(eva):
 def test_a_declined_change_is_not_made(eva):
     app, script = eva
     editor = client(app, 'editor')
-    project = editor('POST', '/api/project', {'name': 'Keep'})[1]
+    project = editor('POST', '/api/project', {'title': 'Keep'})[1]
     script.turns = [[call('delete_record', model='project', id=project['id'])], [('text', 'I left it.')]]
     conversation, run, stored = ask(app, editor, 'Delete Keep')
     approval = stored['runs'][0]['activities'][0]['approval']
@@ -248,7 +248,7 @@ def test_files_go_to_the_model_and_eva_can_make_files(eva):
     assert 'Bolt' in sheet and '<v>2.5</v>' in sheet
     assert client(app, 'viewer')('GET', f"/api/_eva/files/{made[0]['id']}")[0] == 404
     # Files on records the person can read can be attached too.
-    project = editor('POST', '/api/project', {'name': 'Docs'})[1]
+    project = editor('POST', '/api/project', {'title': 'Docs'})[1]
     editor('POST', f"/api/project/{project['id']}/attachments", {'name': 'brief.txt', 'content': base64.b64encode(b'Scope').decode()})
     found = editor('GET', '/api/_eva/library?q=brief')[1]['records']
     assert [item['name'] for item in found] == ['brief.txt']
@@ -274,7 +274,7 @@ def test_conversations_can_be_searched_renamed_archived_and_deleted(eva):
 def test_a_record_can_be_the_context_of_a_chat(eva):
     app, script = eva
     editor = client(app, 'editor')
-    project = editor('POST', '/api/project', {'name': 'Context'})[1]
+    project = editor('POST', '/api/project', {'title': 'Context'})[1]
     created = editor('POST', '/api/_eva/conversations', {'title': 'Context', 'context': {'model': 'project', 'id': project['id']}})
     assert created[0] == 201 and created[1]['context'] == {'model': 'project', 'id': project['id']}
     ask(app, editor, 'Why is this late?', created[1]['id'])
@@ -381,9 +381,9 @@ def test_eva_gets_the_same_answers_as_every_other_entry_point(eva):
     app, script = eva
     editor = client(app, 'editor')
     app.business.policy = Policy(registry, rules={
-        ('editor', Customer): Rule(operations=('read', 'update'), read_fields=('name',), write_fields=('name',), scope=lambda user: {'active': True})})
-    visible = str(app.database.create(Customer, name='Visible', email='seen@example.test', active=True).id)
-    hidden = str(app.database.create(Customer, name='Hidden', email='hidden@example.test', active=False).id)
+        ('editor', Customer): Rule(operations=('read', 'update'), read_fields=('customer_name',), write_fields=('customer_name',), scope=lambda user: {'active': True})})
+    visible = str(app.database.create(Customer, customer_name='Visible', email='seen@example.test', active=True).id)
+    hidden = str(app.database.create(Customer, customer_name='Hidden', email='hidden@example.test', active=False).id)
     calls = [('list_records', {'model': 'customer'}), ('get_record', {'model': 'customer', 'id': hidden}),
              ('update_record', {'model': 'customer', 'id': visible, 'values': {'email': 'x@example.test'}}),
              ('delete_record', {'model': 'customer', 'id': visible})]
@@ -392,7 +392,7 @@ def test_eva_gets_the_same_answers_as_every_other_entry_point(eva):
     _, _, stored = ask(app, editor, 'Check customers')
     seen = [json.loads(message['content']) for request in script.requests[1:] for message in request['messages'][-1:]]
     direct = [editor('POST', '/api/_tools/execute', {'tool': name, 'arguments': arguments}) for name, arguments in calls]
-    assert seen[0]['items'] == direct[0][1]['result']['items'] == [{'id': visible, 'name': 'Visible'}]
+    assert seen[0]['items'] == direct[0][1]['result']['items'] == [{'id': visible, 'customer_name': 'Visible'}]
     assert [answer['status'] for answer in seen[1:]] == [status for status, _, _ in direct[1:]] == [404, 403, 403]
     assert [activity['status'] for activity in stored['runs'][0]['activities']] == ['done', 'failed', 'refused', 'refused']
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from evlet import (Application, ChildTable, Column as ReportColumn, Currency, Database, Date, Decimal, Link, LocalAuth, Model,
+from evlet import (Application, ChildTable, Column as ReportColumn, Currency, Database, Date, Decimal, Link, LocalAuth, Model, Naming,
                    Policy, PrintDesign, Registry, Report, Rule, Select, Text)
 from evlet.printing import (Column, Fields, Footnote, Heading, Image, PageBreak, PageNumber, Prints, Table, Text as Words,
                             Totals, Watermark, available, document, document_context, fetcher)
@@ -13,14 +13,16 @@ PX_TO_MM = 25.4 / 96
 
 
 class Customer(Model):
-    name = Text(required=True)
+    class Meta:
+        title_field = 'customer_name'
+    customer_name = Text(required=True)
     note = Text(default='')
 
 
 class SalesInvoice(Model):
     class Meta:
-        title_field = 'number'
-    number = Text(required=True)
+        # The standard name is the invoice number, typed in; the title falls back to it.
+        naming = Naming(manual=True)
     customer = Link(Customer, required=True)
     posting_date = Date()
     status = Select(['draft', 'issued'], default='draft')
@@ -39,7 +41,7 @@ class InvoiceTotals(Report):
     title = 'Invoices by customer'
     roles = ('admin', 'editor')
     status = Select(['draft', 'issued'], default='draft')
-    columns = (ReportColumn('number'), ReportColumn('grand_total', type='currency', total=True, unit='AED'))
+    columns = (ReportColumn('name'), ReportColumn('grand_total', type='currency', total=True, unit='AED'))
 
     def run(self):
         return self.context.list(SalesInvoice, filters={'status': self.status}, limit=self.context.limit, offset=self.context.offset)
@@ -50,7 +52,7 @@ class TaxInvoicePrint(PrintDesign):
     title = 'Tax invoice'
     default = True
     header = (Words('Sample Trading LLC · {{ doc.name }}', weight='bold'),)
-    main = (Heading('Tax Invoice'), Fields(('number', 'Invoice no.'), 'posting_date', 'customer', 'cost'),
+    main = (Heading('Tax Invoice'), Fields(('name', 'Invoice no.'), 'posting_date', 'customer', 'cost'),
             Table('lines', columns=(Column('item', width='60%'), Column('qty'), Column('amount'))),
             Totals(('grand_total', 'Total')))
     footnote = Footnote(Words('Received by ____________'), Words('Signature ____________'))
@@ -62,7 +64,7 @@ class ShortPrint(PrintDesign):
     model = SalesInvoice
     title = 'Short'
     main = (Words('Customer: {{ doc.customer.title }} {{ doc.customer.note }}'),
-            Words(html='<p class="x">{{ doc.customer.name }} {{ doc.cost }}</p>'),
+            Words(html='<p class="x">{{ doc.customer.customer_name }} {{ doc.cost }}</p>'),
             Words('Hidden', show_if='doc.status == "issued"'))
     footer = (PageNumber('{0}/{1}'),)
 
@@ -82,7 +84,7 @@ def make_app(tmp_path, designs=DESIGNS, rules=None):
     database = Database(tmp_path / 'print.sqlite3', registry)
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
     policy = Policy(registry, rules=rules if rules is not None else {
-        ('editor', SalesInvoice): Rule(('read', 'create', 'update', 'print'), read_fields=('number', 'customer', 'posting_date', 'status', 'grand_total')),
+        ('editor', SalesInvoice): Rule(('read', 'create', 'update', 'print'), read_fields=('name', 'title', 'customer', 'posting_date', 'status', 'grand_total')),
         ('editor', InvoiceLine): Rule(('read', 'create', 'update')),
         ('viewer', SalesInvoice): Rule(('read',)),
     })
@@ -102,11 +104,11 @@ def signed_in(app, role='admin'):
     return lambda method, path, body=None: http(app, method, path, body, cookie=cookie, csrf=csrf)
 
 
-def invoice(call, lines=3, *, name='Gulf Horizon', status='draft', item='Item {i}'):
-    status_code, customer, _ = call('POST', '/api/customer', {'name': name, 'note': 'private'})
+def invoice(call, lines=3, *, name='Gulf Horizon', status='draft', item='Item {i}', number='INV-2026-00042'):
+    status_code, customer, _ = call('POST', '/api/customer', {'customer_name': name, 'note': 'private'})
     assert status_code == 201, customer
     status_code, record, _ = call('POST', '/api/salesinvoice', {
-        'number': 'INV-2026-00042', 'customer': customer['id'], 'posting_date': '2026-11-03', 'status': status,
+        'name': number, 'customer': customer['id'], 'posting_date': '2026-11-03', 'status': status,
         'grand_total': '5616.35', 'cost': '1200.00',
         'children': {'lines': [{'item': item.format(i=i), 'qty': '2', 'amount': '10.00'} for i in range(lines)]}})
     assert status_code == 201, record
@@ -236,6 +238,16 @@ def test_unreadable_fields_never_reach_the_template(app):
     assert status == 200 and content.startswith(b'%PDF')
 
 
+def test_unreadable_name_falls_back_to_the_record_id(tmp_path):
+    app = make_app(tmp_path, rules={('editor', SalesInvoice): Rule(('read', 'print'), read_fields=('customer', 'status'))})
+    record = invoice(signed_in(app))
+    business, person = app.business, user(app, 'editor')
+    with business.database.transaction() as tx:
+        doc = document_context(business, tx, person, SalesInvoice, business.policy.record(tx, person, SalesInvoice, record['id']))['doc']
+    assert str(doc['name']) == str(doc['title']) == record['id']
+    assert 'INV-2026-00042' not in repr(doc)
+
+
 @renders
 def test_values_are_escaped_in_text_and_html_blocks(app):
     call = signed_in(app)
@@ -309,10 +321,10 @@ def test_report_prints_filters_rows_and_totals(app):
 @renders
 def test_report_context_reads_every_page(app):
     call = signed_in(app)
-    status, customer, _ = call('POST', '/api/customer', {'name': 'Bulk'})
+    status, customer, _ = call('POST', '/api/customer', {'customer_name': 'Bulk'})
     with app.database.transaction() as tx:
         for index in range(230):
-            tx.create(SalesInvoice, number=f'B-{index:04}', customer=customer['id'], status='issued', grand_total='1.50')
+            tx.create(SalesInvoice, name=f'B-{index:04}', customer=customer['id'], status='issued', grand_total='1.50')
     from evlet.printing import report_context
     with app.business.context(user(app), readonly=True) as context:
         data = report_context(context, InvoiceTotals, {'status': 'issued'})
@@ -417,7 +429,7 @@ def test_watermark_repeats_with_its_size_and_condition(app):
         assert len(marks) == 1 and 'DRAFT' in page_text(page)
         page_width = page._page_box.width
         assert marks[0].border_width() == pytest.approx(page_width * 0.5, rel=0.02)
-    issued = invoice(call, lines=1, status='issued')
+    issued = invoice(call, lines=1, status='issued', number='INV-2026-00043')
     doc = rendered(app, TaxInvoicePrint, issued['id'])
     assert 'DRAFT' not in page_text(doc.pages[0])
 
@@ -542,14 +554,14 @@ def test_print_designs_require_authentication(tmp_path):
 def test_playground_prints_an_invoice_and_a_report(secured):
     from tests.test_business import client
     admin, editor, viewer = client(secured), client(secured, 'editor'), client(secured, 'viewer')
-    status, customer, _ = admin('POST', '/api/customer', {'name': 'Gulf Horizon Contracting', 'currency': 'AED'})
+    status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Gulf Horizon Contracting', 'currency': 'AED'})
     assert status == 201, customer
     status, record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-55120', 'total': '5616.35',
                                                        'posting_date': '2026-11-03', 'status': 'sent'})
     assert status == 201, record
     status, content, headers = editor('GET', f"/api/invoice/{record['id']}/prints/InvoicePrint.pdf")
     assert status == 200 and content.startswith(b'%PDF')
-    assert headers[b'content-disposition'] == f"inline; filename*=UTF-8''{record['number']}.pdf".encode()
+    assert headers[b'content-disposition'] == f"inline; filename*=UTF-8''{record['name']}.pdf".encode()
     assert viewer('GET', f"/api/invoice/{record['id']}/prints/InvoicePrint.pdf")[0] == 403
     status, content, _ = editor('POST', '/api/_reports/InvoicesByStatus/prints/InvoicesByStatusPrint', {'filters': {'status': 'sent'}})
     assert status == 200 and content.startswith(b'%PDF')
@@ -608,7 +620,7 @@ def test_stored_definitions_are_checked(tmp_path, change, message):
 def test_controls_saves_previews_and_removes_a_design(secured):
     from tests.test_business import client
     admin, editor = client(secured), client(secured, 'editor')
-    status, customer, _ = admin('POST', '/api/customer', {'name': 'Gulf <b>Horizon</b>', 'currency': 'AED'})
+    status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Gulf <b>Horizon</b>', 'currency': 'AED'})
     status, invoice_record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-1', 'total': '10.00', 'status': 'draft'})
     status, listing, _ = admin('GET', '/api/_controls/prints')
     assert status == 200 and listing['available'] is True
@@ -616,7 +628,7 @@ def test_controls_saves_previews_and_removes_a_design(secured):
     assert app_design['source'] == 'app' and app_design['definition']['model'] == 'invoice'
     assert 'invoice' in [model['name'] for model in listing['models']] and 'table' in listing['blocks']
     definition = {**app_design['definition'], 'title': 'Statement', 'default': False,
-                  'main': [{'type': 'heading', 'text': 'Statement'}, {'type': 'text', 'html': '<p class="who">{{ doc.customer.name }}</p>'}]}
+                  'main': [{'type': 'heading', 'text': 'Statement'}, {'type': 'text', 'html': '<p class="who">{{ doc.customer.customer_name }}</p>'}]}
     # Preview renders an unsaved definition against a record; the PDF waits under a token for this user only.
     status, preview, _ = admin('POST', '/api/_controls/prints/preview', {'definition': definition, 'record': invoice_record['id']})
     assert status == 200 and preview['url'].startswith('/api/_controls/prints/preview/')
@@ -650,10 +662,10 @@ def test_stored_design_values_are_escaped(secured):
     from tests.test_business import client
     from evlet.printing import Compiler, design_from
     admin = client(secured)
-    status, customer, _ = admin('POST', '/api/customer', {'name': '<script>x</script>', 'currency': 'AED'})
+    status, customer, _ = admin('POST', '/api/customer', {'customer_name': '<script>x</script>', 'currency': 'AED'})
     status, record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-2', 'total': '10.00'})
-    design = design_from('EscapePrint', {'model': 'invoice', 'main': [{'type': 'text', 'html': '<p>{{ doc.customer.name }}</p>'},
-                                                                      {'type': 'text', 'text': '{{ doc.customer.name }}'}]}, secured.business)
+    design = design_from('EscapePrint', {'model': 'invoice', 'main': [{'type': 'text', 'html': '<p>{{ doc.customer.customer_name }}</p>'},
+                                                                      {'type': 'text', 'text': '{{ doc.customer.customer_name }}'}]}, secured.business)
     from examples.playground.models import Invoice
     business, person = secured.business, user(secured)
     with business.database.transaction() as tx:

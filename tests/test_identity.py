@@ -70,11 +70,11 @@ def test_new_ids_are_unique_across_threads():
 
 
 def test_records_get_time_ordered_ids_and_concurrent_writers_never_clash(database):
-    first = database.create(Customer, name='First')
+    first = database.create(Customer, customer_name='First')
     assert first.id > 2**41 and isinstance(first.id, RecordId)
 
     def create(index):
-        return database.create(Customer, name=f'Customer {index}').id
+        return database.create(Customer, customer_name=f'Customer {index}').id
     with ThreadPoolExecutor(6) as pool:
         made = list(pool.map(create, range(60)))
     assert len(set(made)) == 60 and min(made) > first.id
@@ -82,16 +82,16 @@ def test_records_get_time_ordered_ids_and_concurrent_writers_never_clash(databas
 
 
 def test_a_taken_id_is_drawn_again(database, monkeypatch):
-    taken = database.create(Customer, name='Taken')
+    taken = database.create(Customer, customer_name='Taken')
     later = RecordId(taken.id + 1)
     drawn = iter([taken.id, taken.id, later])
     monkeypatch.setattr('evlet.database.new_id', lambda: next(drawn))
-    fresh = database.create(Customer, name='Fresh')
-    assert fresh.id == later and database.get(Customer, taken.id).name == 'Taken'
+    fresh = database.create(Customer, customer_name='Fresh')
+    assert fresh.id == later and database.get(Customer, taken.id).customer_name == 'Taken'
 
 
 def test_other_unique_values_still_conflict(database):
-    customer = database.create(Customer, name='Acme')
+    customer = database.create(Customer, customer_name='Acme')
     database.create(Invoice, customer=customer.id, reference='INV-1', total='1.00')
     from evlet import ConflictError
     with pytest.raises(ConflictError):
@@ -100,18 +100,18 @@ def test_other_unique_values_still_conflict(database):
 
 def test_legacy_rows_keep_working_next_to_new_ones(database):
     with sqlite3.connect(database.path) as connection:
-        connection.execute("INSERT INTO customer(id, name, active, currency) VALUES (42, ?, 1, 'AED')", ('Old customer',))
+        connection.execute("INSERT INTO customer(id, customer_name, active, currency) VALUES (42, ?, 1, 'AED')", ('Old customer',))
     old = database.get(Customer, '000000000001a')
     assert old.id == 42 and str(old.to_dict()['id']) == '000000000001a'
     invoice = database.create(Invoice, customer=42, reference='INV-OLD', total='5.00')
     assert invoice.customer == 42 and identity.jsonable(invoice.to_dict())['customer'] == '000000000001a'
-    new = database.create(Customer, name='New customer')
+    new = database.create(Customer, customer_name='New customer')
     assert [record.id for record in database.list(Customer, order_by='id')] == [42, new.id]
 
 
 def test_http_sends_ids_only_as_text_and_takes_them_in_any_case(secured):
     call = client(secured)
-    status, customer, headers = call('POST', '/api/customer', {'name': 'Acme'})
+    status, customer, headers = call('POST', '/api/customer', {'customer_name': 'Acme'})
     assert status == 201 and isinstance(customer['id'], str) and len(customer['id']) == 13
     assert headers[b'location'] == f"/api/customer/{customer['id']}".encode()
     status, invoice, _ = call('POST', '/api/invoice', {'customer': customer['id'].upper(), 'reference': 'INV-9', 'total': '9.00'})
