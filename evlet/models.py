@@ -362,6 +362,14 @@ class Registry:
         # Record histories: {model: Journal} (evlet/journal.py).
         from .journal import compile_journals
         self.journals = compile_journals(models, child_models, self.effects)
+        # What callers reach of each model ({model: Meta.api}, evlet/permissions.py) and which stored date
+        # places a record in a period that a lock can close ({model: Period}, evlet/periods.py).
+        from .permissions import compile_api
+        self.api = compile_api(self)
+        from .periods import compile_periods
+        self.periods = compile_periods(self)
+        # {name: model} of the models callers reach at all: every model but those with Meta.api = None.
+        self.exposed = MappingProxyType({name: model for name, model in self.models.items() if self.api[model] is not None})
 
     def root_of(self, model):
         owners = {child.model: child.parent for child in self.children}

@@ -65,6 +65,14 @@ export interface TryResult {
   checks: Array<{ id: string; format?: string; when?: string; next?: string }>;
   match: string | null; label?: string; name: string | null; errors?: Record<string, string>; error: string | null;
 }
+/** Controls → Periods (GET /api/_controls/periods): models with Meta.period, the saved locks and their history. */
+export interface PeriodModel { name: string; label: string; field: string; scope: { field: string; model: string; label: string } | null }
+export interface PeriodLock { scope: string; label: string; date: string; changed_by: string | null; changed_at: number }
+export interface PeriodHistory { id: number; at: number; actor: string; target: string; detail: string; before: string | null; after: string | null }
+export interface Periods {
+  models: PeriodModel[]; locks: PeriodLock[]; history: PeriodHistory[]; can_change: boolean;
+  scopes: Array<{ model: string; label: string; records: Array<{ id: string; title: string }> }>;
+}
 export interface AuditRow { id: number; at: number; actor: string; area: string; target: string; detail: string }
 /** A Needs attention item. line is a config line to copy, such as trusted_proxies=("127.0.0.1",). */
 export interface Attention { tone: string; icon: string; page: string; title: string; text: string; line?: string }
@@ -239,6 +247,11 @@ export class ControlsClient extends ApiClient implements KeysApi {
   }
   async audit(query: { area?: string; q?: string; before?: number }) {
     return (await this.request<{ items: AuditRow[]; next: number | null; areas: string[] }>('GET', '/api/_controls/audit', { query })).data;
+  }
+  async periods() { return (await this.request<Periods>('GET', '/api/_controls/periods')).data; }
+  /** Set (date YYYY-MM-DD) or clear (null) the instance lock (scope null) or one scope record's lock. Admin only. */
+  async setPeriod(scope: { model: string; id: string } | null, date: string | null) {
+    return (await this.request<Periods>('POST', '/api/_controls/periods', { body: { scope, date } })).data;
   }
   async routing() { return (await this.request<Routing>('GET', '/api/_controls/routing')).data; }
   // The server takes JSON bodies only: actions without data send {}.

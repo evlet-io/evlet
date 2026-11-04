@@ -34,6 +34,9 @@ class Invoice(Model):
         naming = Naming(Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date')
         # The list opens an invoice in a side panel beside it. People can switch back to the full page.
         open_in = 'panel'
+        # The posting date places an invoice in a period. Once Controls, Periods locks that period, nobody
+        # adds, changes or deletes invoices dated in it, app code included.
+        period = 'posting_date'
 
     customer = Link(Customer, required=True)
     # help_text reads under the input; tooltip sits behind a ? icon at its right end.
@@ -58,6 +61,24 @@ class Payment(Model):
     currency = Select(CURRENCIES, required=True, default='AED')
     amount = Currency(required=True, minimum="0.01", currency='currency')
     received_at = DateTime()
+
+
+class LedgerEntry(Model):
+    class Meta:
+        description = "What posted invoices owe. Only Post to ledger on an invoice writes entries."
+        label = 'Ledger entry'
+        plural = 'Ledger entries'
+        list_fields = ('posting_date', 'customer', 'invoice', 'amount')
+        # Every role reads entries and none writes them, admin included: the Post to ledger action
+        # (app.py) is trusted Python and the only way in. Closed periods apply to entries too.
+        api = 'read'
+        period = 'posting_date'
+
+    invoice = Link(Invoice, required=True, index=True)
+    customer = Link(Customer, required=True)
+    posting_date = Date(required=True)
+    amount = Currency(required=True, currency='customer.currency')
+    memo = Text(max_length=120)
 
 
 class Project(Model):
@@ -119,4 +140,4 @@ class Employee(Model):
 # registry lists every Playground model; items.py links to customers by name, not by import.
 from .items import Item  # noqa: E402
 
-registry = Registry(Customer, Invoice, Payment, Project, ProjectTask, Item, Employee)
+registry = Registry(Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item, Employee)

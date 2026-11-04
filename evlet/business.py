@@ -18,7 +18,7 @@ from .database import ROW_LIMIT, Session, using
 from .fields import Link
 from .ui.metadata import view_for
 from .models import ValidationError, identifier
-from .permissions import CORRECTIONS, Policy
+from .permissions import CORRECTIONS, Policy, calling, read_only, trusted
 from .query import SqlQuery, operators_for
 from .storage import SQLiteStorage
 from .jobs import JobReceipt
@@ -489,7 +489,8 @@ class Business:
     def dispatch(self, scope, body):
         # A request sees one set of instance fields throughout; adding or removing one waits for the rest.
         schema = scope['path'].startswith('/api/_controls/fields/') and scope['method'] in ('POST', 'DELETE')
-        with self.gate.exclusive() if schema else self.gate.shared():
+        # Every route serves a caller, tool calls from MCP and Eva included: Meta.api limits what it reaches.
+        with calling(), self.gate.exclusive() if schema else self.gate.shared():
             if schema:
                 return self._dispatch(scope, body)
             with using(self.database):
@@ -574,8 +575,10 @@ class Business:
         if path.startswith('/api/_draft/') and method == 'POST':
             from .documents import load_draft, settle, source_values, walk
             model = self.registry.resolve(path.removeprefix('/api/_draft/'))
-            if not getattr(model, '__declaration_mode__', False) or model in self.child_models:
+            if not getattr(model, '__declaration_mode__', False) or model in self.child_models or self.registry.api.get(model) is None:
                 raise AccessError(404, 'Draft evaluation is unavailable')
+            if self.registry.api.get(model) == 'read':
+                raise AccessError(403, read_only(model))
             if set(body) - {'id', 'values', 'revision', 'calculation'} or not isinstance(body.get('values', {}), dict):
                 raise ValidationError({'draft': 'Invalid draft request'})
             record_id = body.get('id')
@@ -651,8 +654,11 @@ class Business:
             return 200, self.jobs.status(int(value), user), []
         parts = path.split('/')
         model = self.registry.models.get(parts[2]) if len(parts) >= 3 and parts[:2] == ['', 'api'] else None
-        if model is None or model in self.child_models:
+        if model is None or model in self.child_models or self.registry.api.get(model) is None:
             raise AccessError(404, 'Route not found')
+        if self.registry.api.get(model) == 'read' and scope['method'] not in ('GET', 'HEAD'):
+            # Meta.api = "read": no route writes it, whatever the role or its Controls overrides.
+            raise AccessError(403, read_only(model))
         try:
             return self.model_dispatch(scope, body, user, model, parts)
         except ValidationError as exc:
@@ -790,7 +796,8 @@ class Business:
                 if getattr(model, '__declaration_mode__', False) and b'if-match' not in dict(scope.get('headers', [])):
                     raise AccessError(428, 'A current If-Match revision is required')
                 self.check_revision(scope, tx, user, record)
-                outcome = action.handler(tx, user, record)
+                with trusted():
+                    outcome = action.handler(tx, user, record)
                 self.changed(tx, model, record_id)
                 record = self.policy.record(tx, user, model, record_id)
                 result = self.detail(tx, user, record)

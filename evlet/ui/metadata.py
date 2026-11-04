@@ -23,6 +23,10 @@ def plural_for(label):
 
 
 OPEN_IN = ('page', 'panel')
+# The options a model's Meta may declare; each is public (docs/api-stability.md).
+META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
+                          'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
+                          'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -65,9 +69,7 @@ class Section:
 
 def view_for(model):
     meta = getattr(model, 'Meta', None)
-    allowed = {'label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
-               'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments', 'effects',
-               'journal', 'naming', 'mail', 'title', 'open_in'}
+    allowed = META_OPTIONS
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
             raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
@@ -161,10 +163,12 @@ def field_schema(field):
 
 
 def ui_schema(registry):
+    # A model with Meta.api = None is left out; "read" is stated so screens offer no writes ("full" is the default).
+    api = getattr(registry, 'api', {})
     return {'version': 1, 'ui_version': 1, 'models': [
         {'name': name, **view_for(model), 'fields': [field_schema(field) for field in model.__app_fields__.values()],
-         **behavior(model, registry)}
-        for name, model in registry.models.items()
+         **({'api': 'read'} if api.get(model) == 'read' else {}), **behavior(model, registry)}
+        for name, model in registry.models.items() if api.get(model, 'full') is not None
     ]}
 
 

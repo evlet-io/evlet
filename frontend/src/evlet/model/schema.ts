@@ -85,6 +85,8 @@ export interface ModelSchema {
   children?: ChildSchema[];
   actions?: ActionSchema[];
   permissions?: { create: boolean; update: boolean; delete: boolean };
+  /** "read" when the model's Meta.api is "read": no screen offers a write, for any role. Absent means "full". */
+  api?: 'read';
   child_only?: boolean;
   calculation?: CalculationSchema;
   state?: StateSchema;
