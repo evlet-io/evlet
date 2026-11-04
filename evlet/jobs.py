@@ -14,7 +14,7 @@ from .auth import AccessError, User
 from .identity import text as text_id
 from .database import NotFoundError
 from .models import ValidationError
-from .permissions import Policy
+from .permissions import Policy, trusted
 
 logger = logging.getLogger(__name__)
 
@@ -268,13 +268,16 @@ class JobQueue:
                 started = True
                 tx._business = getattr(self, 'business', None)
                 if not task.external:
-                    task.handler(tx, context, payload)
+                    # Job handlers are trusted app code, even when a request runs the job at once.
+                    with trusted():
+                        task.handler(tx, context, payload)
                     tx.connection.execute("UPDATE evlet_jobs SET state='succeeded',completed_at=?,lease=NULL,lease_until=NULL WHERE id=? AND lease=?", (int(time.time()), job_id, token))
                     if self.events and row['model']:
                         self.events.publish(tx, self.database.registry.models[row['model']], row['record_id'])
             if task.external:
                 # No open database transaction or supplied Session during external I/O.
-                task.handler(context, payload)
+                with trusted():
+                    task.handler(context, payload)
                 with self.database.transaction() as tx:
                     self._bound(tx)
                     completed = tx.connection.execute("UPDATE evlet_jobs SET state='succeeded',completed_at=?,lease=NULL,lease_until=NULL WHERE id=? AND state='running' AND lease=? AND lease_until>?", (int(time.time()), job_id, token, int(time.time()))).rowcount

@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 from .database import ConflictError, NotFoundError
 from .identity import jsonable, path_id
 from .models import ValidationError
-from .permissions import CORRECTIONS
+from .permissions import CALLER, CORRECTIONS, read_only
 from .auth import AccessError
 from .business import Business, Download
 from .storage import StorageError
@@ -89,6 +89,14 @@ class Application:
             raise ValueError('Reports, slips, print designs, APIs, connectors and AI require authentication')
 
     async def __call__(self, scope, receive, send):
+        # A request is a caller: Meta.api limits what it reaches (evlet/permissions.py); app code it runs is trusted.
+        token = CALLER.set(scope.get("type") == "http")
+        try:
+            await self._serve(scope, receive, send)
+        finally:
+            CALLER.reset(token)
+
+    async def _serve(self, scope, receive, send):
         if scope["type"] == "lifespan":
             await self._lifespan(receive, send)
             return
@@ -203,7 +211,7 @@ class Application:
                 return
             raise HTTPError(404, 'Route not found')
         draft = len(parts) == 4 and parts[2] == '_draft'
-        model = self.registry.models.get(parts[3] if draft else parts[2]) if len(parts) >= 3 else None
+        model = self.registry.exposed.get(parts[3] if draft else parts[2]) if len(parts) >= 3 else None
         allowed = [item for item in scopes if model in item.models]
         if model is None or not allowed:
             raise HTTPError(404, 'Route not found')
@@ -383,9 +391,11 @@ class Application:
         parts = path.split("/")
         if len(parts) not in (3, 4) or parts[:2] != ["", "api"]:
             raise HTTPError(404, "Route not found")
-        model = self.registry.models.get(parts[2])
+        model = self.registry.exposed.get(parts[2])
         if model is None:
             raise HTTPError(404, "Model not found")
+        if method != "GET" and self.registry.api.get(model) == "read":
+            raise HTTPError(403, read_only(model))
         if method in ('POST', 'PATCH'):
             errors = {name: 'This field is read-only' for name in body
                       if name in model.__fields__ and model.__fields__[name].read_only}

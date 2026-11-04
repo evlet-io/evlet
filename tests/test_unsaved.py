@@ -333,3 +333,16 @@ def test_the_framework_step_creates_the_table(tmp_path):
     with sqlite3.connect(path) as connection:
         assert [row[1] for row in connection.execute('PRAGMA table_info(evlet_unsaved)')] == [
             'user_id', 'model', 'record_id', 'changes', 'base_revision', 'saved_at', 'size']
+
+
+def test_read_only_api_models_keep_nothing(secured):
+    from evlet.permissions import trusted
+    from examples.playground.models import LedgerEntry
+    with secured.database.transaction() as tx:
+        customer = tx.create(Customer, customer_name='Acme', email='a@example.com')
+        invoice = tx.create(Invoice, customer=customer.id, reference='PO-9', total='5.00')
+        with trusted():
+            entry = tx.create(LedgerEntry, invoice=invoice.id, customer=customer.id, posting_date='2026-11-04', amount='5.00')
+    admin = client(secured)
+    status, _, _ = admin('PUT', f'/api/_unsaved/ledgerentry/{entry.id}', {'changes': {'values': {'memo': 'x'}}, 'base_revision': REVISION})
+    assert status == 403 and rows(secured) == []

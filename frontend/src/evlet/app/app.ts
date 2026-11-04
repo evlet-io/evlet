@@ -217,7 +217,7 @@ function page(ctx: AppContext): Child {
     case 'record': case 'view': return known(route.params.model) ? RecordPage(ctx, route.params.model, route.params.id) : unavailable(ctx);
     case 'create': {
       const model = known(route.params.model);
-      return model && model.permissions?.create !== false ? RecordPage(ctx, model.name, 'new') : unavailable(ctx);
+      return model && model.api !== 'read' && model.permissions?.create !== false ? RecordPage(ctx, model.name, 'new') : unavailable(ctx);
     }
     case 'settings': case 'appSettings': {
       const me = ctx.me.peek();

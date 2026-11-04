@@ -281,6 +281,20 @@ last change: the last name issued and who issued it, or "Set by hand" with its r
 counter needs a reason, writes an audit row and can't go below the number in the last issued
 name. Try it shows which series a record would use and its name; it never changes a counter.
 
+## Periods
+
+Models with `Meta.period` ([model-engine.md](model-engine.md#closed-periods)) are listed on the
+Periods page with the date field that places a record in a period and, with `Meta.period_scope`,
+the model whose records each have their own lock. The page shows every lock (all records, or one
+scope record such as a company), who set it and when, and the last 50 changes.
+
+Only admins set a lock, with the recent two-step code every Controls change asks. A lock saves at
+once and applies to every process and script right away: it is read from `evlet_period_locks` in
+the writing transaction. Each change writes an audit row in area `Periods` ("Locked up to
+31-03-2026" or "Opened") with the earlier and the new date. Overrides in Controls never change
+locks, and trusted code that writes a closed period with `unlocked_periods(reason)` writes an
+audit row too.
+
 ## Apps
 
 Read only. Each app shows its version, source, models, frontends,
@@ -722,7 +736,8 @@ local `evlet mcp` steps. "Can make changes" has effect only while
 overrides, connectors, email accounts, personal mailboxes (connect, disconnect, options), API
 keys, AI assistants (consent, sign-out, "Can make changes", MCP settings), migrations and jobs all
 write to it. Records (area `Records`) lists each unpost and repost of a posted record (who, the
-record and the reason) and each migration run that recalculated posted records (actor `cli`). The Audit log page searches who, what and the detail, filters by area and pages
+record and the reason) and each migration run that recalculated posted records (actor `cli`). Periods lists
+each lock change and each `unlocked_periods` block (actor `python`). The Audit log page searches who, what and the detail, filters by area and pages
 newest first, 50 rows at a time.
 
 ## API
@@ -744,6 +759,8 @@ newest first, 50 rows at a time.
 | `POST /api/_controls/jobs/schedules/<name>` | `{active}`: pause or resume |
 | `POST /api/_controls/jobs/schedules/<name>/run`, `POST /api/_controls/jobs/<id>/retry` | Run now; retry a failed job |
 | `GET /api/_controls/audit?area=&q=&before=` | `{items, next, areas}`, newest first |
+| `GET /api/_controls/periods` | `{models, scopes, locks, history}`: models with `Meta.period`, the records locks can be set for, every lock and the last 50 changes |
+| `POST /api/_controls/periods` | `{"scope": null or {"model", "id"}, "date": "YYYY-MM-DD" or null}`: set or clear one lock. Admin only |
 | `GET /api/_controls/connectors` | Declared connectors with their fields, and every saved connector and email account |
 | `GET/PUT/DELETE /api/_controls/connectors/<id>` | One connector (`whatsapp`) or account (`smtp:accounts`): read, save `{"settings", "secrets"}`, disconnect |
 | `POST /api/_controls/connectors/<id>/test`, `POST .../default` | Test within 10 seconds; make an outgoing account the default |
