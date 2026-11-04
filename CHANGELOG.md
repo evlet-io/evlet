@@ -196,6 +196,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   every nested `span`, which turned the avatar and the rounded-square tile there into flex boxes
   with the letter off-centre. The rule now reaches only the row's own items, and `.avatar` and
   `.org-mark` set `line-height:1`.
+- **Compact Related block on the record page.** The side panel lists each related model as a
+  36px row: icon, name, count and chevron, as real links. Relations with records come first, most
+  records first. Those with none fold into one line, "No records: ...", and each name still opens
+  the Related tab. Five rows show at first and "Show all" expands the rest; the choice is kept per
+  user and model. The count no longer runs into the name.
 
 ## 0.2.0 (02-11-2026)
 
