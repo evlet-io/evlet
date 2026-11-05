@@ -168,11 +168,11 @@ textarea.input{height:auto;padding:8px 10px;resize:vertical;min-height:72px;line
 .search-field .i{position:absolute;left:9px;color:var(--fg-3);pointer-events:none}
 .search-field .input{padding-left:30px;width:220px}
 
-.avatar{width:24px;height:24px;border-radius:50%;display:inline-grid;place-items:center;font-size:10.5px;font-weight:600;flex:none;letter-spacing:.01em}
+.avatar{width:24px;height:24px;border-radius:50%;display:inline-grid;place-items:center;line-height:1;font-size:10.5px;font-weight:600;flex:none;letter-spacing:.01em}
 .avatar.sm{width:20px;height:20px;font-size:9.5px}
 .avatar.lg{width:36px;height:36px;font-size:13px}
 .avatar.xl{width:44px;height:44px;font-size:15px}
-.org-mark{width:20px;height:20px;border-radius:5px;display:inline-grid;place-items:center;font-size:10px;font-weight:650;flex:none}
+.org-mark{width:20px;height:20px;border-radius:5px;display:inline-grid;place-items:center;font-size:10px;font-weight:650;flex:none;line-height:1}
 .org-mark.lg{width:36px;height:36px;border-radius:9px;font-size:14px}
 .avatars{display:flex}
 .avatars .avatar{box-shadow:0 0 0 2px var(--bg)}
@@ -336,7 +336,7 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .rec-head h1:hover{background:var(--bg-subtle)}
 .rec-head h1:focus{background:var(--bg-subtle);box-shadow:0 0 0 2px var(--accent-ring)}
 .rec-meta{display:flex;gap:14px;flex-wrap:wrap;color:var(--fg-3);font-size:12.5px;align-items:center}
-.rec-meta span{display:inline-flex;align-items:center;gap:5px}
+.rec-meta>span{display:inline-flex;align-items:center;gap:5px}
 .rec-meta b{color:var(--fg);font-weight:600}
 .stepper{display:flex;gap:3px;margin-bottom:22px;overflow-x:auto;scrollbar-width:none}
 .step{flex:1;min-width:104px;height:34px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:550;color:var(--fg-3);

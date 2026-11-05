@@ -212,6 +212,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Smaller source distribution.** The sdist no longer carries tests, scripts, lock
   files, internal docs or the browser test fixtures. It keeps what building and
   installing Evlet needs, including the browser interface source.
+- **Fix: letter avatars and record tiles are centred again.** A record page's meta row styled
+  every nested `span`, which turned the avatar and the rounded-square tile there into flex boxes
+  with the letter off-centre. The rule now reaches only the row's own items, and `.avatar` and
+  `.org-mark` set `line-height:1`.
 
 ### Fixes
 
