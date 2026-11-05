@@ -6,6 +6,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **`evlet dev` creates the first admin.** On an instance with no accounts, `evlet dev` creates an
+  active admin (`admin`, or `--user NAME`) with a random password that is never shown and prints a
+  one-time sign-in link, so you type no password or two-step code in development. `--no-link` skips
+  both. `evlet serve`, tenants and deployments never create accounts. New
+  `evlet users set-password <instance> <username>` sets a real password from the server shell. It
+  asks twice, enforces `security.password_min`, ends the user's sessions and is audited as `cli`
+  ([docs/cli.md](docs/cli.md#development-sign-in-links)).
+
+
 - **`Meta.api` sets how much HTTP surface a model gets.** `"full"` is the default and changes
   nothing. `"read"` lets callers (HTTP, MCP, Eva, the connector) read the model but write it in no
   way, for any role and whatever Controls overrides say; only trusted Python (sessions, actions,

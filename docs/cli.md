@@ -57,6 +57,7 @@ evlet proxy acme --caddy --check
 evlet link-user acme buyer customer 42
 evlet controls grant acme mariam
 evlet users reset-two-step acme mariam
+evlet users set-password acme mariam
 evlet secrets rotate acme
 evlet playground --port 8000
 evlet docs --port 8001
@@ -67,7 +68,7 @@ evlet docs --port 8001
 shadowed by files there; run it with `python -P -m evlet` (or set
 `PYTHONSAFEPATH=1`) when working inside an app folder. Project commands that
 delegate to `.venv` already use `-P`. The original `new` command keeps its
-existing contract. `evlet controls grant` makes a user an active admin from the server shell when nobody can open Controls ([controls.md](controls.md)). `evlet users reset-two-step` clears a user's two-step sign-in so they set it up again ([settings.md](settings.md#set-up-at-sign-in-trust-on-first-use)). `evlet secrets rotate` re-encrypts connector secrets, mailbox sign-ins, two-step secrets and backup codes under a new `secret.key` ([controls.md](controls.md)). `login`, `logout`, `describe` and `mcp` are the connector
+existing contract. `evlet controls grant` makes a user an active admin from the server shell when nobody can open Controls ([controls.md](controls.md)). `evlet users set-password <instance> <username>` asks twice for a new password (no echo, never printed), applies the instance's `security.password_min` and the normal password rules, ends the user's sessions, AI assistants and API keys, and is audited as `cli`. `evlet users reset-two-step` clears a user's two-step sign-in so they set it up again ([settings.md](settings.md#set-up-at-sign-in-trust-on-first-use)). `evlet secrets rotate` re-encrypts connector secrets, mailbox sign-ins, two-step secrets and backup codes under a new `secret.key` ([controls.md](controls.md)). `login`, `logout`, `describe` and `mcp` are the connector
 commands described in the [connector guide](connector.md). Each one shows its
 options with `--help`, for example `evlet login --help`.
 `evlet dev` selects the sole instance in a project. With several instances it
@@ -116,10 +117,18 @@ project it serves the project's instance (`--instance` picks one, `--port` match
 
 - The link signs in the user named by `--user NAME`. Without it, the link uses
   the only active admin, or the only active user. With several, pass `--user`.
-- On a Playground with no accounts, the first link creates the administrator
-  `demo-admin` with a random password that is never printed. `evlet dev` never
-  creates accounts: create the first admin in the browser.
-- `--no-link` on `evlet dev` or `evlet playground` skips the startup link.
+- On an instance with no accounts, `evlet dev` creates an active admin named
+  `admin` (or the name given with `--user NAME`, checked by the normal account
+  name rules) and prints its link: `No accounts yet. Created admin "admin" (no
+  password set). Sign in (works once, for 10 minutes): ...`. The password is
+  random and strong, is never printed or logged, and no one knows it. The audit
+  log records the account as created by `cli`. A Playground with no accounts
+  does the same with `demo-admin`. To sign in later without a link, set a real
+  password from the server shell with `evlet users set-password`.
+- `evlet dev-link` never creates accounts. On an instance with no accounts it
+  tells you to start `evlet dev`.
+- `--no-link` on `evlet dev` or `evlet playground` skips the startup link and the
+  account creation. The browser setup page then asks for the first admin.
 - The app itself serves `/_dev/signin` on the same host and port. The route exists
   only under `evlet dev` and `evlet playground`. `evlet serve`, tenant applications
   and deployments answer 404.

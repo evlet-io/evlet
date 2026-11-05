@@ -183,9 +183,10 @@ def test_serve_never_registers_the_link_and_dev_does(instance, monkeypatch):
     monkeypatch.setenv('EVLET_CLI_LINK', '1')
     monkeypatch.setenv('EVLET_CLI_LINK_USER', 'owner')
     factory = serving.development_factory()
-    assert isinstance(factory, DevSignIn) and factory.announce and factory.user == 'owner' and not factory.create_admin
+    assert isinstance(factory, DevSignIn) and factory.announce and factory.user == 'owner' and factory.create_admin == 'owner'
     monkeypatch.setenv('EVLET_CLI_LINK', '0')
-    assert not serving.development_factory().announce
+    factory = serving.development_factory()
+    assert not factory.announce and factory.create_admin is False
 
     # The link works on the development application.
     status, headers, _ = call(DevSignIn(app), 'GET', f'/_dev/signin?token={token}')
@@ -247,8 +248,8 @@ def test_startup_announces_a_link(playground, capsys):
         return sent
     assert asyncio.run(run())[0] == 'lifespan.startup.complete'
     output = capsys.readouterr().out
-    assert 'Sign in as demo-admin (works once, for 10 minutes):' in output and '/_dev/signin?token=' in output
-    assert 'password' not in output.lower()
+    assert 'Created admin "demo-admin" (no password set). Sign in (works once, for 10 minutes):' in output and '/_dev/signin?token=' in output
+    assert 'password' not in output.lower().replace('no password set', '')
 
 
 def test_link_options_parse():
