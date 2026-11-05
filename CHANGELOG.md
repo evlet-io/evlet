@@ -6,6 +6,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Images in rich text.** Paste, drop or upload a PNG, JPEG, GIF or WebP image straight into a
+  `RichText` field; SVG is refused. The browser shrinks it to 2,000 px and re-encodes it before
+  upload. Images are private attachments of the record, stored in the HTML by id only and served
+  through the record's permission-checked download route; an unsaved record's images are held for
+  the person for a day and linked on save, and removing an image from the text deletes it on save.
+  New Controls settings `files.image_max_kb` and `files.images_per_record` set their limits apart
+  from file attachments. Print Design embeds them and record emails send them inline
+  ([docs/business-capabilities.md](docs/business-capabilities.md#images-in-rich-text)).
 - **`RichText` fields and Evlet's own rich text editor.** `RichText(max_length=20000)` stores
   formatted text as an HTML subset: paragraphs, headings 2 and 3, bulleted, numbered and check lists
   nested up to three levels, quotes, code blocks, dividers, bold, italic, underline, strike, inline

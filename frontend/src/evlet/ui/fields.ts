@@ -23,6 +23,7 @@ import { tooltip } from './tooltip';
 import { RichTextEditor } from '../richtext/editor';
 import { parseHTML } from '../richtext/html';
 import { renderView } from '../richtext/render';
+import { recordImages, type ImageSource } from '../richtext/images';
 
 // ---------- the field contract ----------
 
@@ -242,7 +243,7 @@ export function displayValue(field: FieldLike, options: { links?: LinkSource | n
       return when(() => !isEmpty(value()), () => html`<span class="tag-row">${() => ((value() as string[]) ?? []).map(tag => Chip({ label: tag }))}</span>`, blank);
     case 'richtext':
       return when(() => !isEmpty(value()), () => html`<div class="rt-holder" ref=${(holder: HTMLElement) =>
-        effect(() => { holder.replaceChildren(RichTextView(String(value()), { links: !options.plainLinks })); })}></div>`, blank);
+        effect(() => { holder.replaceChildren(RichTextView(String(value()), { links: !options.plainLinks, images: imagesFor(field) })); })}></div>`, blank);
     case 'sequence':
       return when(() => !isEmpty(value()), () => html`<span class="tx mono">${() => String(value())}</span>`, () => html`<span class="muted">${meta.placeholder || 'Not assigned yet'}</span>`);
     case 'link':
@@ -614,6 +615,14 @@ function TagsControl(field: FieldLike, id: string, options: ControlOptions): Con
 
 // Rich text: Evlet's own editor (richtext/editor.ts). It writes on every change, or on commit() when
 // the caller commits by hand (InlineValue), so Esc can still cancel.
+/** The image source of a rich text field on a record (its own fields, not a child row's): the record's
+ * private attachments, or the person's holding area until it is saved. */
+export function imagesFor(field: FieldLike): ImageSource | undefined {
+  const record = recordOf(field);
+  if (!record || !(field instanceof Field) || field.row.parent !== null) return undefined;
+  return recordImages(record.api, record.meta.name, () => record.id);
+}
+
 function RichTextControl(field: FieldLike, id: string, options: ControlOptions): Control {
   const manual = options.commitOn === 'manual';
   let draft: { value: string | null } | null = null;
@@ -621,6 +630,7 @@ function RichTextControl(field: FieldLike, id: string, options: ControlOptions):
     id, value: () => field.value.get() as string | null, label: options.label, labelledBy: options.label ? undefined : `${id}-label`,
     describedBy: options.describedBy, placeholder: field.meta.placeholder, maxLength: field.meta.max_length,
     disabled: () => !field.editable.get(), invalid: () => Boolean(field.error.get()), required: () => field.rules.get().required,
+    images: imagesFor(field),
     onChange: value => {
       if (manual) { draft = { value }; return; }
       if (writeValue(field, value)) options.onCommit?.();
@@ -635,9 +645,9 @@ function RichTextControl(field: FieldLike, id: string, options: ControlOptions):
 }
 
 /** Stored rich text as formatted, read-only DOM. Links stay links; nothing is parsed as markup. */
-export function RichTextView(value: string, options: { links?: boolean } = {}): HTMLElement {
+export function RichTextView(value: string, options: { links?: boolean; images?: ImageSource } = {}): HTMLElement {
   const view = html`<div class="rt-view"></div>` as HTMLElement;
-  view.append(renderView(parseHTML(value), { links: options.links !== false }));
+  view.append(renderView(parseHTML(value), { links: options.links !== false, imageUrl: options.images?.url }));
   return view;
 }
 

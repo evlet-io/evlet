@@ -4,15 +4,15 @@
 // Parsing goes through DOMParser, which never runs scripts or loads images. Nothing parsed here is put
 // into the page as markup: the editor and the read-only view build their DOM from the model.
 
-import { lineBreak, MARKS, normalise, paragraph, plainText, sortMarks, text, tidy, type Block, type Doc, type Inline, type ListKind, type Mark } from './model';
+import { IMAGE_SIZES, lineBreak, MARKS, normalise, paragraph, plainText, sortMarks, text, tidy, type Block, type Doc, type ImageSize, type Inline, type ListKind, type Mark } from './model';
 
 const ALIASES: Record<string, string> = { b: 'strong', i: 'em', strike: 's', del: 's', ins: 'u', tt: 'code', kbd: 'code', samp: 'code',
   h1: 'h2', h4: 'h3', h5: 'h3', h6: 'h3', div: 'p' };
 const DROPPED = new Set(['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math', 'template', 'noscript', 'noembed', 'noframes',
   'textarea', 'select', 'title', 'head', 'frame', 'frameset', 'applet', 'audio', 'video', 'canvas', 'xmp', 'plaintext', 'button', 'map',
-  'picture', 'img', 'meta', 'link', 'base', 'input']);
+  'picture', 'meta', 'link', 'base', 'input']);
 const BOUNDARIES = new Set(['section', 'article', 'header', 'footer', 'nav', 'aside', 'main', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td',
-  'th', 'caption', 'dl', 'dt', 'dd', 'address', 'center', 'details', 'summary', 'figure', 'figcaption', 'fieldset', 'legend', 'form', 'body', 'html']);
+  'th', 'caption', 'dl', 'dt', 'dd', 'address', 'center', 'details', 'summary', 'fieldset', 'legend', 'form', 'body', 'html']);
 const MARK_TAGS = new Set<string>(MARKS);
 const MAX_DEPTH = 3;
 
@@ -53,7 +53,8 @@ interface Context {
   raw: boolean;
 }
 
-interface Building { type: Block['type']; level?: 2 | 3; list?: ListKind; indent?: number; checked?: boolean; content: Inline[]; code: string }
+interface Building { type: Block['type']; level?: 2 | 3; list?: ListKind; indent?: number; checked?: boolean; content: Inline[]; code: string;
+  image?: { attachment: string; alt: string; caption: string; size: ImageSize; source: string | null } }
 
 const SPACES = /[ \t\n\r\f]+/g;
 
@@ -106,6 +107,8 @@ class Reader {
       const element = child as Element;
       const source = element.localName.toLowerCase();
       if (source !== 'pre') ctx = { ...ctx, firstInPre: false };
+      if (source === 'figure' || source === 'img') { if (!ctx.item && !ctx.code) this.image(element, ctx); continue; }
+      if (source === 'figcaption') continue;
       if (DROPPED.has(source)) continue;
       if (ctx.raw && (element.getAttribute('contenteditable') === 'false' || element.hasAttribute('data-rt-filler'))) continue;
       if (ctx.paste && pasteSkips(element)) continue;
@@ -164,9 +167,25 @@ class Reader {
     }
   }
 
+  /** A figure (or a bare img) with a data-attachment id: an image block. Images are never URLs. */
+  image(element: Element, ctx: Context) {
+    const img = element.localName === 'img' ? element : element.querySelector('img');
+    const attachment = img?.getAttribute('data-attachment') ?? '';
+    if (!img || !/^[1-9][0-9]{0,18}$/.test(attachment)) return;
+    const caption = element.localName === 'figure' ? element.querySelector('figcaption')?.textContent ?? '' : '';
+    const classes = element.localName === 'figure' ? (element.getAttribute('class') ?? '').split(/\s+/) : [];
+    const size = IMAGE_SIZES.find(name => classes.includes(name)) ?? 'rt-md';
+    // Copied from an editor, an image names the record it came from (data-record): a paste into another record uploads it again.
+    const source = ctx.paste ? element.getAttribute('data-record') : null;
+    this.end();
+    this.blocks.push({ type: 'image', content: [], code: '', image: { attachment, alt: plainLine(img.getAttribute('alt') ?? ''), caption: plainLine(caption), size, source } });
+    this.end();
+  }
+
   doc(): Doc {
     const blocks: Block[] = [];
     for (const block of this.blocks) {
+      if (block.type === 'image') { const { source, ...image } = block.image!; blocks.push({ type: 'image', content: [], ...image, ...(source ? { source } : {}) } as Block); continue; }
       if (block.type === 'code') {
         const code = block.code.replace(/\r\n?/g, '\n').replace(/\0/g, '');
         if (code) blocks.push({ type: 'code', content: [text(code)] });
@@ -181,6 +200,8 @@ class Reader {
     return normalise({ blocks });
   }
 }
+
+const plainLine = (value: string) => value.replace(/\u00a0/g, ' ').replace(/\0/g, '').replace(SPACES, ' ').trim().slice(0, 300);
 
 /** Collapse whitespace across pieces as HTML shows it, and turn no-break spaces into spaces. */
 function tidyWhitespace(pieces: readonly Inline[]): Inline[] {
@@ -336,7 +357,7 @@ function written(doc: Doc): readonly Block[] {
 }
 
 /** The document as a tree. With nbsp, spaces HTML would collapse become no-break spaces (storage). */
-export function toTree(doc: Doc, options: { nbsp?: boolean } = {}): Tree[] {
+export function toTree(doc: Doc, options: { nbsp?: boolean; resolve?: (attachment: string) => string | null } = {}): Tree[] {
   const blocks = written(doc), out: Tree[] = [];
   const inline = (content: readonly Inline[]) => group(options.nbsp ? spaced(content) : content, 0);
   for (let index = 0; index < blocks.length;) {
@@ -359,6 +380,13 @@ export function toTree(doc: Doc, options: { nbsp?: boolean } = {}): Tree[] {
     else if (block.type === 'heading') out.push({ tag: `h${block.level}`, children: inline(block.content) });
     else if (block.type === 'code') out.push({ tag: 'pre', children: [{ tag: 'code', children: [block.content.map(piece => piece.kind === 'text' ? piece.text : '\n').join('')] }] });
     else if (block.type === 'rule') out.push({ tag: 'hr', children: [] });
+    else if (block.type === 'image') {
+      // An upload still in progress (or one that failed) is not written.
+      const attachment = options.resolve ? options.resolve(block.attachment) : /^[1-9][0-9]*$/.test(block.attachment) ? block.attachment : null;
+      if (attachment) out.push({ tag: 'figure', attrs: { class: block.size }, children: [
+        { tag: 'img', attrs: { 'data-attachment': attachment, alt: block.alt }, children: [] },
+        ...(block.caption ? [{ tag: 'figcaption', children: [block.caption] }] : [])] });
+    }
     index++;
   }
   return out;
@@ -433,7 +461,7 @@ function lists(items: Array<Extract<Block, { type: 'item' }>>, inline: (content:
 
 const escapeText = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/ /g, '&nbsp;');
 const escapeAttribute = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const VOID = new Set(['br', 'hr']);
+const VOID = new Set(['br', 'hr', 'img']);
 
 export function treeToHTML(trees: readonly Tree[]): string {
   return trees.map(tree => {
@@ -444,8 +472,8 @@ export function treeToHTML(trees: readonly Tree[]): string {
 }
 
 /** The canonical stored HTML of a document; '' when it is empty. */
-export function toHTML(doc: Doc): string {
-  return treeToHTML(toTree(doc, { nbsp: true }));
+export function toHTML(doc: Doc, resolve?: (attachment: string) => string | null): string {
+  return treeToHTML(toTree(doc, { nbsp: true, resolve }));
 }
 
 /** Stored HTML as canonical HTML (what the server will store). */

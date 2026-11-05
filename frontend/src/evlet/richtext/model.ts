@@ -18,7 +18,11 @@ export type Block =
   | { type: 'item'; list: ListKind; indent: number; checked: boolean; content: readonly Inline[] }
   | { type: 'quote'; content: readonly Inline[] }
   | { type: 'code'; content: readonly Inline[] }
-  | { type: 'rule'; content: readonly Inline[] };
+  | { type: 'rule'; content: readonly Inline[] }
+  /** An image: a private attachment of the record, by id. While it uploads, attachment is `pending:<token>`. */
+  | { type: 'image'; attachment: string; alt: string; caption: string; size: ImageSize; content: readonly Inline[] };
+export type ImageSize = 'rt-sm' | 'rt-md' | 'rt-full';
+export const IMAGE_SIZES: readonly ImageSize[] = ['rt-sm', 'rt-md', 'rt-full'];
 export type BlockType = Block['type'];
 
 export interface Doc { readonly blocks: readonly Block[] }
@@ -44,7 +48,7 @@ export const blockLength = (block: Block) => block.content.reduce((sum, piece) =
 /** Block content as text, with BREAK for each break. */
 export const blockText = (block: Block) => block.content.map(piece => piece.kind === 'text' ? piece.text : BREAK).join('');
 /** Blocks that hold text the caret can be in (everything but a rule). */
-export const editable = (block: Block) => block.type !== 'rule';
+export const editable = (block: Block) => block.type !== 'rule' && block.type !== 'image';
 
 const sameMarks = (a: readonly Mark[], b: readonly Mark[]) => a.length === b.length && a.every((mark, index) => mark === b[index]);
 export const sameStyle = (a: TextPiece, b: TextPiece) => a.href === b.href && sameMarks(a.marks, b.marks);
@@ -115,7 +119,7 @@ export function linkAt(content: readonly Inline[], offset: number): { href: stri
 
 export function withContent(block: Block, content: readonly Inline[]): Block {
   if (block.type === 'code') return { ...block, content: tidy(content.map(piece => piece.kind === 'text' ? { ...piece, marks: [], href: null } : text('\n'))) };
-  if (block.type === 'rule') return block;
+  if (block.type === 'rule' || block.type === 'image') return block;
   return { ...block, content: tidy(content) } as Block;
 }
 
@@ -168,18 +172,19 @@ export function normalise(doc: Doc): Doc {
     } else previousIndent = -1;
     blocks.push(next);
   }
-  if (!blocks.length || blocks[blocks.length - 1].type === 'rule') blocks.push(paragraph());
+  if (!blocks.length || !editable(blocks[blocks.length - 1])) blocks.push(paragraph());
   return { blocks };
 }
 
 /** True when the document has nothing to store: no text, no rule. */
 export function isEmpty(doc: Doc): boolean {
-  return doc.blocks.every(block => block.type !== 'rule' && block.content.every(piece => piece.kind === 'break'));
+  return doc.blocks.every(block => editable(block) && block.content.every(piece => piece.kind === 'break'));
 }
 
 /** Plain text: a newline between blocks and for each break. What search and list cells show. */
 export function plainText(doc: Doc): string {
-  return doc.blocks.filter(block => block.type !== 'rule').map(block => blockText(block).split(BREAK).join('\n')).join('\n').replace(/^\n+|\n+$/g, '');
+  return doc.blocks.filter(block => block.type !== 'rule' && !(block.type === 'image' && !block.alt))
+    .map(block => block.type === 'image' ? block.alt : blockText(block).split(BREAK).join('\n')).join('\n').replace(/^\n+|\n+$/g, '');
 }
 
 /** Plain-text length, as the server counts it for max_length. */

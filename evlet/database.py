@@ -4,12 +4,12 @@ from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 
-from .fields import ACTIVE, EMPTY_LAYER, Link, MISSING, Reference
+from .fields import ACTIVE, EMPTY_LAYER, Link, MISSING, Reference, RichText
 from .identity import RecordId, new_id, sequential
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .naming import has_title, title_of
-from . import periods
+from . import images, periods
 from .permissions import CALLER
 from .sequences import name_new, raw_write
 
@@ -291,7 +291,9 @@ class Session:
         periods.check(self, model, after=record._values)
         self.check_references(model, record._values)
         names, stored = storage_columns(model, stored_values(model, record._values), model.__fields__)
-        return self.get(model, insert(self.connection, table, names, stored, id_title=has_title(model)))
+        created = insert(self.connection, table, names, stored, id_title=has_title(model))
+        images.settle(self, model, created, record._values)
+        return self.get(model, created)
 
     def get(self, model, record_id):
         try:
@@ -335,6 +337,8 @@ class Session:
             names, stored = storage_columns(model, values, [*changes, *(['title'] if has_title(model) and 'title' not in changes else [])])
             assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
             self.connection.execute(f'UPDATE {table} SET {assignments} WHERE "id" = ?', stored + [current.id])
+            if any(isinstance(model.__fields__.get(name), RichText) for name in changes):
+                images.settle(self, model, current.id, record._values)
         return self.get(model, current.id)
 
     def check_references(self, model, values):

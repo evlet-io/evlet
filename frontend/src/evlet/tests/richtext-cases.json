@@ -115,6 +115,31 @@
    "<ul><li><p>para in item</p></li></ul>",
    "<ul><li>para in item</li></ul>",
    "para in item"
+  ],
+  [
+   "<figure class=\"rt-sm\"><img data-attachment=\"12\" alt=\"Site &quot;plan&quot;\" src=\"https://evil.example/x.png\"><figcaption>Ground floor</figcaption></figure><p>after</p>",
+   "<figure class=\"rt-sm\"><img data-attachment=\"12\" alt=\"Site &quot;plan&quot;\"><figcaption>Ground floor</figcaption></figure><p>after</p>",
+   "Site \"plan\"\nafter"
+  ],
+  [
+   "<p>a<img data-attachment=\"7\" alt=\"x\">b</p>",
+   "<p>a</p><figure class=\"rt-md\"><img data-attachment=\"7\" alt=\"x\"></figure><p>b</p>",
+   "a\nx\nb"
+  ],
+  [
+   "<p><img src=\"data:image/png;base64,AAAA\" alt=\"no id\"></p>",
+   "",
+   ""
+  ],
+  [
+   "<figure class=\"rt-full extra\"><img data-attachment=\"3\"></figure>",
+   "<figure class=\"rt-full\"><img data-attachment=\"3\" alt=\"\"></figure>",
+   ""
+  ],
+  [
+   "<ul><li>item<img data-attachment=\"4\"></li></ul>",
+   "<ul><li>item</li></ul>",
+   "item"
   ]
  ]
 }

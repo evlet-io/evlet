@@ -15,14 +15,15 @@ import { canonical, linkFromInput, parseHTML, parsePastedHTML, parsePlainText, r
 import { History } from './history';
 import {
   BREAK, blockLength, blockText, caret, clampSelection, collapsed, docEnd, emptyDoc, isEmpty, linkAt, marksAt, ordered, pos, samePos,
-  sortMarks, text, textLength, type Block, type Doc, type Inline, type Mark, type Selection,
+  normalise, sortMarks, text, textLength, type Block, type Doc, type ImageSize, type Inline, type Mark, type Selection,
 } from './model';
 import {
   blockMatches, deleteBackward, deleteForward, deleteSelection, hasMark, indent, inputRule, insertBlocks, insertBreak, insertLink, insertRule,
-  insertText, replaceRange, selectedBlocks, selectionBlocks, setLink, splitBlock, toggleBlock, toggleChecked, toggleMark,
+  insertImages, insertText, removeBlock, replaceRange, selectedBlocks, selectionBlocks, setLink, splitBlock, toggleBlock, toggleChecked, toggleMark, updateImage,
   type BlockSpec, type State, type Unit,
 } from './ops';
 import { domText, pointToPos, posToPoint, renderSurface } from './render';
+import { ACCEPT, checkImage, prepareImage, type ImageSource } from './images';
 
 export interface RichTextProps {
   /** The stored HTML (reactive): a change from outside replaces the document. */
@@ -39,6 +40,8 @@ export interface RichTextProps {
   required?: () => boolean;
   /** Plain-text limit (the field's max_length): a counter shows near it. */
   maxLength?: number;
+  /** Where images go (the record's attachments). Without it the editor takes no images. */
+  images?: ImageSource;
 }
 
 export interface RichTextEditor {
@@ -96,7 +99,7 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
   function render() {
     rendering = true;
     try {
-      elements = renderSurface(surface, state.doc, cache);
+      elements = renderSurface(surface, state.doc, cache, { imageUrl: props.images?.url });
       cache = new Map(state.doc.blocks.map((block, index) => [block, elements[index]]));
       surface.classList.toggle('rt-empty', state.doc.blocks.length === 1 && blockLength(state.doc.blocks[0]) === 0 && state.doc.blocks[0].type === 'paragraph');
       if (focused || document.activeElement === surface) writeSelection();
@@ -393,11 +396,122 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
       const href = linkFromInput(single);
       if (href) { apply(setLink(current, href), { message: 'Link added' }); return; }
     }
+    // Image files (a screenshot, a photo from the files app) go in as images.
+    const files = Array.from(data.files ?? []);
+    if (files.length && addFiles(files, range)) return;
     let blocks = markup ? parsePastedHTML(markup) : [];
     if (!blocks.length && plain) blocks = parsePlainText(plain);
+    blocks = copiedImages(blocks);
     if (!blocks.length) return;
     apply(insertBlocks(current, blocks), { message: 'Pasted' });
   }
+
+  // ---------- images ----------
+
+  const imageError = cell('');
+  type ImageBlock = Extract<Block, { type: 'image' }>;
+  const pending = (token: string): ImageBlock => ({ type: 'image', attachment: `pending:${token}`, alt: '', caption: '', size: 'rt-md', content: [] });
+
+  /** Images pasted from an editor: the same record keeps its reference; another record's image is
+   * uploaded again here (never a cross-record reference); an image of unknown origin is left out. */
+  function copiedImages(blocks: Block[]): Block[] {
+    const source = props.images;
+    return blocks.flatMap(block => {
+      if (block.type !== 'image') return [block];
+      const { source: from, ...image } = block as ImageBlock & { source?: string };
+      if (!source || !from) return [];
+      if (from === source.key()) return [image as Block];
+      const token = uid('img');
+      void source.copy(from, image.attachment).then(blob => {
+        if (!blob) throw new Error('This image could not be copied. Add it again.');
+        return transfer(blob, `image.${(blob.type.split('/')[1] || 'png')}`, token, true);
+      }).catch(error => failed(token, error instanceof Error ? error.message : String(error)));
+      return [{ ...pending(token), alt: image.alt, caption: image.caption, size: image.size } as Block];
+    });
+  }
+
+  /** Add image files at the selection. False when none of them is an image. */
+  function addFiles(files: File[], range: Selection = state.selection): boolean {
+    if (!props.images || disabled()) return false;
+    const chosen = files.filter(file => file.type.startsWith('image/') || /\.svgz?$/i.test(file.name));
+    if (!chosen.length) return false;
+    const blocks: ImageBlock[] = [];
+    for (const file of chosen) {
+      try { checkImage(file); } catch (error) { imageError.set((error as Error).message); announce((error as Error).message); continue; }
+      const token = uid('img');
+      blocks.push(pending(token));
+      void transfer(file, file.name, token, false);
+    }
+    if (blocks.length) { imageError.set(''); apply(insertImages({ doc: state.doc, selection: range }, blocks), { message: 'Uploading image' }); }
+    return true;
+  }
+
+  async function transfer(file: Blob, name: string, token: string, prepared: boolean) {
+    try {
+      const ready = prepared ? { blob: file, name } : await prepareImage(file);
+      const id = await props.images!.upload(ready.blob, ready.name, fraction => {
+        const bar = surface.querySelector<HTMLProgressElement>(`[data-upload="${token}"] progress`);
+        if (bar) bar.value = fraction;
+      });
+      settle(token, block => ({ ...block, attachment: id }));
+      announce('Image added');
+    } catch (error) {
+      failed(token, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function failed(token: string, message: string) {
+    settle(token, null);
+    imageError.set(message);
+    announce(message);
+  }
+
+  /** An upload ended: its placeholder becomes the image (or goes), now and in every undo step. */
+  function settle(token: string, change: ((block: ImageBlock) => ImageBlock) | null) {
+    const rewrite = (current: State): State => {
+      const index = current.doc.blocks.findIndex(block => block.type === 'image' && block.attachment === `pending:${token}`);
+      if (index < 0) return current;
+      if (!change) return removeBlock(current, index);
+      return updateImage(current, index, { attachment: change(current.doc.blocks[index] as ImageBlock).attachment });
+    };
+    history.rewrite(rewrite);
+    const next = rewrite(state);
+    if (next === state) return;
+    state = { doc: normalise(next.doc), selection: clampSelection(next.doc, state.selection) };
+    render();
+    emit();
+  }
+
+  function imageTool(button: HTMLElement) {
+    const figure = button.closest('figure');
+    const index = elements.indexOf(figure as HTMLElement);
+    const block = state.doc.blocks[index];
+    if (index < 0 || block?.type !== 'image') return;
+    const action = button.dataset.imageAction!;
+    if (action === 'remove') { apply(removeBlock(state, index), { message: 'Image removed' }); return; }
+    if (action === 'alt') { imageDialog(button, index); return; }
+    apply(updateImage(state, index, { size: action as ImageSize }), { message: action === 'rt-sm' ? 'Small image' : action === 'rt-md' ? 'Medium image' : 'Full width image' });
+  }
+
+  function imageDialog(anchor: HTMLElement, index: number) {
+    const block = state.doc.blocks[index] as ImageBlock;
+    openPopover(anchor, close => {
+      const alt = html`<input class="rt-link-in" maxlength="300" autocomplete="off" aria-label="Alt text">` as HTMLInputElement;
+      const caption = html`<input class="rt-link-in" maxlength="300" autocomplete="off" aria-label="Caption (optional)">` as HTMLInputElement;
+      alt.value = block.alt; caption.value = block.caption;
+      queueMicrotask(() => alt.focus());
+      return html`<form class="rt-link" novalidate on:submit=${(event: Event) => {
+        event.preventDefault();
+        close();
+        apply(updateImage(state, index, { alt: alt.value.replace(/\s+/g, ' ').trim(), caption: caption.value.replace(/\s+/g, ' ').trim() }), { message: 'Image updated' });
+        surface.focus();
+      }}><label class="rt-link-l">Alt text</label>${alt}<span class="muted rt-hint">Says what the image shows, for people who can't see it.</span>
+        <label class="rt-link-l">Caption (optional)</label>${caption}<div class="rt-link-b"><button type="submit" class="btn primary small">Save</button></div></form>`;
+    }, { role: 'dialog', label: 'Image', onClose: () => { if (!surface.contains(document.activeElement)) surface.focus(); } });
+  }
+
+  const picker = html`<input type="file" hidden multiple accept=${ACCEPT.join(',')} tabindex="-1" aria-hidden="true"
+    on:change=${(event: Event) => { const input = event.target as HTMLInputElement; addFiles(Array.from(input.files ?? [])); input.value = ''; }}>` as HTMLInputElement;
 
   function copy(event: ClipboardEvent, cut: boolean) {
     syncSelection();
@@ -405,7 +519,10 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
     event.preventDefault();
     const blocks = selectionBlocks(state);
     const doc: Doc = { blocks };
-    event.clipboardData.setData('text/html', toHTML(doc));
+    // Images say which record they came from, so a paste into another record uploads them again.
+    const key = props.images?.key();
+    const copied = toHTML(doc);
+    event.clipboardData.setData('text/html', key ? copied.replace(/<figure /g, `<figure data-record="${key.replace(/[^a-z0-9_/]/g, '')}" `) : copied);
     event.clipboardData.setData('text/plain', blocks.map(item => item.type === 'code' ? blockText(item) : blockText(item).split(BREAK).join('\n')).join('\n'));
     if (cut && !disabled()) apply(deleteSelection(state));
   }
@@ -458,7 +575,7 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
       tool('code', 'Inline code', '', () => mark('code'), pressedMark('code')), linkButton],
     BLOCK_NAMES.map(([spec, label, icon]) => tool(icon, label, spec.type === 'item' && spec.list === 'ordered' ? `${mod}Shift+7` : spec.type === 'item' && spec.list === 'bullet' ? `${mod}Shift+8` : '',
       () => block(spec), () => String(JSON.stringify(status.get().block) === JSON.stringify(spec)))),
-    [tool('minus', 'Divider', '', () => block('rule')),
+    [...(props.images ? [tool('image', 'Image', '', () => picker.click())] : []), tool('minus', 'Divider', '', () => block('rule')),
       tool('undo-2', 'Undo', `${mod}Z`, () => undo(), undefined, () => status.get().undo), tool('redo-2', 'Redo', isMac() ? '⌘Shift+Z' : 'Ctrl+Y', () => redo(), undefined, () => status.get().redo)],
   ];
   const tools = groups.flat();
@@ -516,7 +633,7 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
     class:over=${() => status.get().length > props.maxLength!}>${() => `${status.get().length.toLocaleString('en')} / ${props.maxLength!.toLocaleString('en')}`}</span>` : null;
 
   const element = html`<div class="rt" class:rt-disabled=${disabled} class:rt-phone=${phone} class:rt-invalid=${() => Boolean(props.invalid?.())}
-    style:--rt-keyboard=${() => `${keyboardBottom.get()}px`}>${toolbar}${surface}${float}${counter}${live}</div>` as HTMLElement;
+    style:--rt-keyboard=${() => `${keyboardBottom.get()}px`}>${toolbar}${surface}${float}${counter}${live}${picker}<span class="err rt-err" role="alert" hidden=${() => !imageError.get()}>${imageError}</span></div>` as HTMLElement;
 
   // ---------- events ----------
 
@@ -554,6 +671,8 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
     paste(event.dataTransfer, at ? caret(clampSelection(state.doc, caret(at)).head) : state.selection);
   }) as EventListener);
   listen(surface, 'mousedown', ((event: MouseEvent) => {
+    const tool = (event.target as Element).closest?.('[data-image-action]') as HTMLElement | null;
+    if (tool && !disabled()) { event.preventDefault(); imageTool(tool); return; }
     const box = (event.target as Element).closest?.('.rt-check');
     if (!box || disabled()) return;
     event.preventDefault();

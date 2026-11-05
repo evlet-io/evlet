@@ -400,3 +400,31 @@ export function inputRule(state: State): State | null {
 }
 
 export { insertAt };
+
+// ---------- images ----------
+
+/** Insert image blocks at the caret, with a paragraph after them for the caret. */
+export function insertImages(state: State, images: ReadonlyArray<Extract<Block, { type: 'image' }>>): State {
+  if (!images.length) return state;
+  const current = collapsed(state.selection) ? state : deleteSelection(state);
+  const at = current.selection.head, block = current.doc.blocks[at.block];
+  if (!editable(block)) return { doc: setBlocks(current.doc, at.block + 1, at.block + 1, images), selection: current.selection };
+  const left = withContent(block, slice(block.content, 0, at.offset)), right = withContent(block, slice(block.content, at.offset));
+  const parts = [...(left.content.length ? [left] : []), ...images, right.content.length ? right : paragraph()];
+  const doc = setBlocks(current.doc, at.block, at.block + 1, parts);
+  return { doc, selection: caret(pos(at.block + parts.length - 1, 0)) };
+}
+
+/** Change an image block (its alt text, caption, size or attachment). */
+export function updateImage(state: State, index: number, patch: Partial<Pick<Extract<Block, { type: 'image' }>, 'alt' | 'caption' | 'size' | 'attachment'>>): State {
+  const block = state.doc.blocks[index];
+  if (block?.type !== 'image') return state;
+  return { doc: replaceBlock(state.doc, index, { ...block, ...patch }), selection: state.selection };
+}
+
+/** Remove a block (an image or a divider). */
+export function removeBlock(state: State, index: number): State {
+  if (!state.doc.blocks[index]) return state;
+  const doc = setBlocks(state.doc, index, index + 1, []);
+  return { doc, selection: clampSelection(doc, caret(pos(Math.min(index, doc.blocks.length - 1), 0))) };
+}

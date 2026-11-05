@@ -159,10 +159,23 @@ lifted to the third level.
 - Copying an image to another record re-uploads it; a cross-record reference is refused by the
   server.
 - Limits: image size and images per record come from instance settings, separate from the
-  general attachment caps, with safe maximums (10 MiB and 50).
+  general attachment caps: 2 MiB and 50 images by default, at most 8 MiB and 200 (Controls settings
+  `files.image_max_kb` and `files.images_per_record`).
 - Sizes small, medium and full width are stored as one class from an allowlist (`rt-sm`, `rt-md`,
   `rt-full`); alt text and an optional caption.
 - Print embeds the image bytes; email templates attach them inline (`cid:`).
+
+### As built
+
+- `evlet/images.py` holds the server side: `upload`, `settle` (called by `Session.create` and
+  `Session.update`, so trusted Python writes link and delete images too), `purge`, `embed` (print)
+  and `for_email`. The person a request writes for comes from a context variable the HTTP layer sets;
+  trusted Python may link any held image.
+- The upload routes take larger bodies than other writes: the image limit as base64.
+- The unsaved-changes store (`docs/internal/unsaved-changes.md`) keeps rich text values as they are,
+  so a restored draft keeps its image references. A new record's draft can live for up to seven
+  days in the browser while held images go after one: a draft restored after a day shows those
+  images as no longer available, and saving it asks to remove them and add them again.
 
 ## PR 3: mentions
 

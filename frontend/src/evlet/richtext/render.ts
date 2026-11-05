@@ -5,13 +5,86 @@
 // Everything is built with createElement from the model: stored HTML is never put into the page.
 
 import { inlineTree, toTree, type Tree } from './html';
+import { Icon } from '../ui/base';
 import { BREAK, blockText, type Block, type Doc, type Pos } from './model';
+
+export interface RenderOptions {
+  /** The address of an image attachment; without it, images show their alt text. */
+  imageUrl?: (attachment: string) => string;
+  /** Show the size, alt text and remove tools on images (the editing surface). */
+  tools?: boolean;
+}
+
+const SIZE_LABELS: Array<[string, string]> = [['rt-sm', 'Small'], ['rt-md', 'Medium'], ['rt-full', 'Full width']];
+
+/** An image element for an attachment id. Its address is built from the id only; a failed load says so. */
+function imageElement(attachment: string, alt: string, options: RenderOptions): HTMLElement {
+  if (!options.imageUrl || !/^[1-9][0-9]{0,18}$/.test(attachment)) {
+    const missing = document.createElement('span');
+    missing.className = 'rt-img-alt';
+    missing.textContent = alt || 'Image';
+    return missing;
+  }
+  const img = document.createElement('img');
+  img.alt = alt;
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  img.addEventListener('error', () => {
+    img.closest('figure')?.classList.add('rt-missing');
+    img.alt = alt ? `${alt} (image no longer available)` : 'Image no longer available';
+  });
+  img.src = options.imageUrl(attachment);
+  return img;
+}
+
+function renderImage(block: Extract<Block, { type: 'image' }>, options: RenderOptions): HTMLElement {
+  const figure = document.createElement('figure');
+  figure.className = `rt-b rt-img ${block.size}`;
+  figure.contentEditable = 'false';
+  if (block.attachment.startsWith('pending:')) {
+    figure.dataset.upload = block.attachment.slice(8);
+    figure.classList.add('rt-pending');
+    const label = document.createElement('span');
+    label.className = 'rt-img-alt';
+    label.textContent = 'Uploading image';
+    const bar = document.createElement('progress');
+    bar.max = 1; bar.value = 0;
+    bar.setAttribute('aria-label', 'Uploading image');
+    figure.append(label, bar);
+    return figure;
+  }
+  figure.append(imageElement(block.attachment, block.alt, options));
+  if (block.caption) { const caption = document.createElement('figcaption'); caption.textContent = block.caption; figure.append(caption); }
+  if (options.tools) {
+    const tools = document.createElement('div');
+    tools.className = 'rt-img-tools';
+    tools.setAttribute('role', 'group');
+    tools.setAttribute('aria-label', 'Image');
+    for (const [size, label] of SIZE_LABELS) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'rt-img-tool'; button.textContent = label;
+      button.dataset.imageAction = size;
+      button.setAttribute('aria-pressed', String(block.size === size));
+      tools.append(button);
+    }
+    for (const [action, label, icon] of [['alt', 'Alt text and caption', 'pencil'], ['remove', 'Remove image', 'trash-2']]) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'rt-img-tool'; button.dataset.imageAction = action;
+      button.setAttribute('aria-label', label); button.title = label;
+      button.append(Icon(icon, { size: 'sm' }));
+      tools.append(button);
+    }
+    figure.append(tools);
+  }
+  return figure;
+}
 
 const BULLETS = ['•', '◦', '▪'];
 export const FILLER = 'data-rt-filler';
 
-function build(tree: Tree, options: { links: boolean }): Node {
+function build(tree: Tree, options: { links: boolean; imageUrl?: (attachment: string) => string }): Node {
   if (typeof tree === 'string') return document.createTextNode(tree);
+  if (tree.tag === 'img') return imageElement(tree.attrs?.['data-attachment'] ?? '', tree.attrs?.alt ?? '', options);
   const tag = tree.tag === 'a' && !options.links ? 'span' : tree.tag;
   const element = document.createElement(tag);
   for (const [name, value] of Object.entries(tree.attrs ?? {})) {
@@ -26,9 +99,10 @@ function build(tree: Tree, options: { links: boolean }): Node {
 const filler = () => { const br = document.createElement('br'); br.setAttribute(FILLER, ''); return br; };
 
 /** One block's element on the editing surface. */
-export function renderBlock(block: Block): HTMLElement {
+export function renderBlock(block: Block, options: RenderOptions = {}): HTMLElement {
   let element: HTMLElement;
   switch (block.type) {
+    case 'image': return renderImage(block, options);
     case 'heading': element = document.createElement(`h${block.level}`); break;
     case 'quote': element = document.createElement('blockquote'); break;
     case 'code': {
@@ -76,8 +150,8 @@ export function renderBlock(block: Block): HTMLElement {
 
 /** Render a document into the surface, reusing the element of every block that did not change
  * (blocks are immutable, so an unchanged block is the same object). Returns the elements in order. */
-export function renderSurface(surface: HTMLElement, doc: Doc, previous: ReadonlyMap<Block, HTMLElement>): HTMLElement[] {
-  const elements = doc.blocks.map(block => previous.get(block) ?? renderBlock(block));
+export function renderSurface(surface: HTMLElement, doc: Doc, previous: ReadonlyMap<Block, HTMLElement>, options: RenderOptions = {}): HTMLElement[] {
+  const elements = doc.blocks.map(block => previous.get(block) ?? renderBlock(block, { ...options, tools: true }));
   const used = new Set(elements);
   for (const child of Array.from(surface.childNodes)) if (!used.has(child as HTMLElement)) child.remove();
   let cursor: ChildNode | null = surface.firstChild;
@@ -104,10 +178,10 @@ function markers(doc: Doc, elements: HTMLElement[]) {
 }
 
 /** The read-only view: semantic HTML (nested lists, real links), built from the model. */
-export function renderView(doc: Doc, options: { links?: boolean } = {}): DocumentFragment {
+export function renderView(doc: Doc, options: { links?: boolean; imageUrl?: (attachment: string) => string } = {}): DocumentFragment {
   const fragment = document.createDocumentFragment();
   // Without links (inside a button that starts editing), a link reads as styled text.
-  for (const tree of toTree(doc)) fragment.append(build(tree, { links: options.links !== false }));
+  for (const tree of toTree(doc)) fragment.append(build(tree, { links: options.links !== false, imageUrl: options.imageUrl }));
   for (const item of Array.from(fragment.querySelectorAll('ul[data-type="checklist"] > li'))) {
     const box = document.createElement('span');
     box.className = 'rt-check';

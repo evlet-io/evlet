@@ -119,6 +119,7 @@ On a document design the template sees `doc`: the record's readable fields as Py
 table as a list of rows. A `RichText` field prints formatted (headings, lists with checkboxes,
 quotes, code, links) in `Fields` and in a template's `{{ doc.brief }}`: the stored HTML is sanitised
 again as it prints and marked safe, so a template never turns other record text into markup.
+Its images are the record's own attachments, embedded in the PDF; an image of another record never is.
 `doc.name` and `doc.title` are always there: when the role cannot read
 them, each is the record's id. On a report design it sees
 `report`: `title`, `filters` (the applied values by name), `rows`, `columns`, `totals` and `total`.
