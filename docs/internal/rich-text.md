@@ -191,6 +191,15 @@ lifted to the third level.
   a mailbox is configured and the user's notification preferences allow it. The table is generic
   so the later notification feed (readiness gap B6) can grow from it.
 
+### As built
+
+- The sanitiser keeps mentions only when asked (`sanitise(html, mentions=True)`, the journal); in a
+  `RichText` field a mention is plain text, so fields and the journal share one schema otherwise.
+- The inbox is `evlet_inbox` (`kind`, `actor`, `model`, `record_id`, `entry_id`, `at`, `read_at`,
+  `email`, `hidden`), generic so readiness gap B6's notification feed can add kinds to it.
+- The browser had no realtime subscription yet; the bell opens one (`EventSource` on the event
+  stream) and checks the count every minute when the stream is unavailable.
+
 ## Tests
 
 - Python: the sanitiser fuzz-style suite (scripts, event handlers, `javascript:` and `data:` URLs,

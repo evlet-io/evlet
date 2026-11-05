@@ -207,8 +207,9 @@ class Business:
             self.eva.initialize()
         self.mailboxes.initialize()
         self.storage.initialize(self.database)
-        from . import images
+        from . import images, mentions
         images.initialize(self.database)
+        mentions.initialize(self.database)
         self.schedule_image_purge()
         self.settings.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
@@ -653,6 +654,9 @@ class Business:
             return 200, Discovery(self, user).describe(path.removeprefix('/api/_discovery/')), []
         if path == '/api/_events' and method == 'GET':
             return 200, self.event_page(scope), []
+        if path == '/api/_inbox' or path.startswith('/api/_inbox/'):
+            from .mentions import route as inbox
+            return inbox(self, scope, body, user)
         if path.startswith('/api/_jobs/') and method == 'GET' and self.jobs:
             value = path.removeprefix('/api/_jobs/')
             if not re.fullmatch('[1-9][0-9]{0,18}', value) or int(value) > 2**63-1:
@@ -720,6 +724,18 @@ class Business:
             if path_id(parts[3]) is None: raise AccessError(404, 'Record not found')
             from .corrections import dispatch
             return dispatch(self, scope, body, user, model, path_id(parts[3]), parts[4])
+        if len(parts) == 5 and parts[4] == 'mentionable':
+            # People to mention in this record's journal, with whether each can open the record.
+            if path_id(parts[3]) is None or method != 'GET': raise AccessError(404, 'Route not found')
+            if model not in self.journals: raise AccessError(404, 'This record has no journal')
+            from urllib.parse import parse_qs
+            from .mentions import mentionable
+            query = parse_qs(scope.get('query_string', b'').decode('latin-1'))
+            with self.database.transaction() as tx:
+                self.policy.record(tx, user, model, path_id(parts[3]))
+                if not self.policy.allows(user, model, 'journal'):
+                    raise AccessError(403, 'Your role cannot write to this journal')
+                return 200, {'items': mentionable(self, tx, user, model, path_id(parts[3]), query.get('q', [''])[0])}, []
         if len(parts) == 5 and parts[4] == 'journal':
             if path_id(parts[3]) is None: raise AccessError(404, 'Record not found')
             from .journal import route

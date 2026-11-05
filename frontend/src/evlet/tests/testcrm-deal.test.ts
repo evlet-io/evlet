@@ -2,7 +2,7 @@
 // (scripts/generate_testcrm_fixtures.py). Lines, totals, rules, moves, the win that creates a task,
 // paging, conflicts and what each role may see.
 import { afterEach, describe, expect, it } from 'vitest';
-import { byText, click, lastToast, press, stopAll, headText, text, typeInto, until } from './screens-helpers';
+import { byText, click, lastToast, press, stopAll, headText, text, typeInto, typeRich, until } from './screens-helpers';
 import { idOf, ids, scenario } from './testcrm-helpers';
 
 afterEach(stopAll);
@@ -297,10 +297,10 @@ describe('testCRM: activity', () => {
     expect([...host.querySelectorAll('.ev-diff')].map(text)).toEqual(expect.arrayContaining(['Lines 1 added, 1 updated', 'Subtotal AED 83,400.00 AED 95,400.00']));
     expect(host.querySelector('.ev-partial')).toBeNull();
     // A note goes to the journal and the history is read again.
-    typeInto(host.querySelector<HTMLTextAreaElement>('.composer textarea')!, 'Kick-off agreed for next week');
+    typeRich(host.querySelector<HTMLElement>('.composer .rt-surface')!, 'Kick-off agreed for next week');
     click(byText(host, '.composer button', 'Save note'));
     await until(() => expect(lastToast()).toBe('Note added'));
-    expect(run.writes.at(-1)!.body).toEqual({ kind: 'note', text: 'Kick-off agreed for next week' });
+    expect(run.writes.at(-1)!.body).toEqual({ kind: 'note', html: '<p>Kick-off agreed for next week</p>' });
     await until(() => expect(headText(host.querySelector('.tl-item .hd'))).toBe('sara added a note'));
     expect(text(host.querySelector('.tl-item .note'))).toBe('Kick-off agreed for next week');
     expect(run.misses).toEqual([]);

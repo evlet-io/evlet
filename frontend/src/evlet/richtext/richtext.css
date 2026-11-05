@@ -109,3 +109,12 @@
 .rt-img-tool[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
 .rt-hint{font-size:12px}
 .rt-err{padding:0 10px 6px}
+
+/* Mentions (the activity composer). */
+.rt-mention{display:inline;padding:0 3px;border-radius:4px;background:var(--accent-soft);color:var(--accent);font-weight:500;white-space:nowrap}
+.rt-mentions{position:fixed;z-index:80;width:272px;max-height:280px;overflow:auto;padding:4px}
+.rt-person{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;width:100%;text-align:left}
+.rt-person-name{font-weight:500}
+.rt-person-warn{flex-basis:100%;font-size:12px;color:var(--t-amber)}
+.rt-warn:empty{display:none}
+.rt-warn p{display:flex;align-items:center;gap:6px;margin:0;padding:4px 10px 6px;font-size:12.5px;color:var(--t-amber)}

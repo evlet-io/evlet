@@ -654,9 +654,12 @@ function RichTextControl(field: FieldLike, id: string, options: ControlOptions):
 }
 
 /** Stored rich text as formatted, read-only DOM. Links stay links; nothing is parsed as markup. */
-export function RichTextView(value: string, options: { links?: boolean; images?: ImageSource } = {}): HTMLElement {
+export function RichTextView(value: string, options: { links?: boolean; images?: ImageSource;
+  /** Show mentions (the activity journal), each with the person's current name where known. */
+  mentions?: (id: string) => string | undefined } = {}): HTMLElement {
   const view = html`<div class="rt-view"></div>` as HTMLElement;
-  view.append(renderView(parseHTML(value), { links: options.links !== false, imageUrl: options.images?.url }));
+  view.append(renderView(parseHTML(value, { mentions: Boolean(options.mentions) }),
+    { links: options.links !== false, imageUrl: options.images?.url, mentionName: options.mentions }));
   return view;
 }
 

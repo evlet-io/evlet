@@ -157,6 +157,34 @@ People add these through `POST /api/{model}/{id}/journal`, with `kind` and its v
   a client that escapes non-ASCII characters (`\u00e9` is six bytes) can pass the request
   limit first and get 413.
 * A `message` is a logged message. Evlet does not send email.
+* A `note` or `message` may send `html` instead of `text`: formatted text from the activity composer
+  (Evlet's rich text editor), at most 40,000 characters. The server sanitises it like a `RichText`
+  field and also keeps mentions, `<span data-mention="<user id>">Name</span>`; it stores the
+  sanitised `html` and derives `text` (a mention reads as `@Name`). Reading the journal names
+  mentioned people in `users` with their current username, so a renamed person shows correctly.
+
+### Mentions
+
+Each active user an entry mentions (other than its author) gets a row in their inbox,
+`evlet_inbox` (kind `mention`), the framework's per-user inbox that later notifications can share.
+
+* **Permission-safe.** A row holds only who mentioned them, when, and which record. When the
+  person reads their inbox, the record's label, title and link are shown only if they can open the
+  record then; otherwise the row says "Omar mentioned you on a record you can't open" and nothing
+  else, not the note.
+* **While composing** `GET /api/{model}/{id}/mentionable?q=` lists up to 20 active desk users whose
+  name or username matches, each with `can_read`, so the composer can warn "Priya can't open this
+  record". It needs the `journal` operation on the record.
+* **The inbox:** `GET /api/_inbox` (`?limit=&offset=`) answers `{items, total, unread}`, newest
+  first; `GET /api/_inbox/count` answers `{unread}`; `POST /api/_inbox/read` takes `{"ids": [...]}`
+  or `{"all": true}`. Each person reads and marks only their own rows. A change sends the event
+  `{"type": "inbox.changed"}` to that person only ([jobs-realtime.md](jobs-realtime.md)).
+* **Preferences** (Settings, Notifications, "Someone mentions me", in Evlet and email, both on by
+  default). With "in Evlet" off there is no inbox row; with email on, an email goes through the
+  mail connector's outgoing account once the entry is committed, to the person's profile email. It
+  has the same text as the inbox row, a link only to a record they can open (when the app has one
+  address), and none of the note. The outcome is kept on the row (`sent`, `failed`, `no_email`,
+  `no_account`). Entries posted from trusted Python create inbox rows but send no email.
 * The `assignee` must be an active user who can read the record (row scopes included).
 * A follow up is completed by appending `follow_up_done` that names it. A follow up of
   another record, or any other entry, is a 422; completing it twice is a 409.

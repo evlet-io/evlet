@@ -9,7 +9,9 @@ export const MARKS: readonly Mark[] = ['strong', 'em', 'u', 's', 'code'];
 
 export interface TextPiece { kind: 'text'; text: string; marks: readonly Mark[]; href: string | null }
 export interface BreakPiece { kind: 'break' }
-export type Inline = TextPiece | BreakPiece;
+/** A mention of a user (the activity journal): one position wide, stored as `<span data-mention="<id>">`. */
+export interface MentionPiece { kind: 'mention'; id: string; name: string }
+export type Inline = TextPiece | BreakPiece | MentionPiece;
 
 export type ListKind = 'bullet' | 'ordered' | 'check';
 export type Block =
@@ -33,6 +35,8 @@ export interface Selection { anchor: Pos; head: Pos }
 export const MAX_INDENT = 2;
 /** The character a break stands for in block text (for diffs and searches). */
 export const BREAK = '';
+/** The character a mention stands for in block text. */
+export const MENTION = '\uE001';
 
 export const text = (value: string, marks: readonly Mark[] = [], href: string | null = null): TextPiece => ({ kind: 'text', text: value, marks: sortMarks(marks), href });
 export const lineBreak = (): BreakPiece => ({ kind: 'break' });
@@ -46,7 +50,7 @@ export function sortMarks(marks: readonly Mark[]): Mark[] {
 export const pieceLength = (piece: Inline) => piece.kind === 'text' ? piece.text.length : 1;
 export const blockLength = (block: Block) => block.content.reduce((sum, piece) => sum + pieceLength(piece), 0);
 /** Block content as text, with BREAK for each break. */
-export const blockText = (block: Block) => block.content.map(piece => piece.kind === 'text' ? piece.text : BREAK).join('');
+export const blockText = (block: Block) => block.content.map(piece => piece.kind === 'text' ? piece.text : piece.kind === 'mention' ? MENTION : BREAK).join('');
 /** Blocks that hold text the caret can be in (everything but a rule). */
 export const editable = (block: Block) => block.type !== 'rule' && block.type !== 'image';
 
@@ -74,7 +78,7 @@ export function slice(content: readonly Inline[], from: number, to: number = Inf
   for (const piece of content) {
     const start = at, end = at + pieceLength(piece);
     at = end;
-    if (piece.kind === 'break') { if (start >= from && end <= to) out.push(piece); continue; }
+    if (piece.kind !== 'text') { if (start >= from && end <= to) out.push(piece); continue; }
     const a = Math.max(from, start), b = Math.min(to, end);
     if (a < b) out.push({ ...piece, text: piece.text.slice(a - start, b - start) });
   }
@@ -118,7 +122,7 @@ export function linkAt(content: readonly Inline[], offset: number): { href: stri
 }
 
 export function withContent(block: Block, content: readonly Inline[]): Block {
-  if (block.type === 'code') return { ...block, content: tidy(content.map(piece => piece.kind === 'text' ? { ...piece, marks: [], href: null } : text('\n'))) };
+  if (block.type === 'code') return { ...block, content: tidy(content.map(piece => piece.kind === 'text' ? { ...piece, marks: [], href: null } : text(piece.kind === 'mention' ? `@${piece.name}` : '\n'))) };
   if (block.type === 'rule' || block.type === 'image') return block;
   return { ...block, content: tidy(content) } as Block;
 }
@@ -184,7 +188,8 @@ export function isEmpty(doc: Doc): boolean {
 /** Plain text: a newline between blocks and for each break. What search and list cells show. */
 export function plainText(doc: Doc): string {
   return doc.blocks.filter(block => block.type !== 'rule' && !(block.type === 'image' && !block.alt))
-    .map(block => block.type === 'image' ? block.alt : blockText(block).split(BREAK).join('\n')).join('\n').replace(/^\n+|\n+$/g, '');
+    .map(block => block.type === 'image' ? block.alt : block.content.map(piece => piece.kind === 'text' ? piece.text : piece.kind === 'mention' ? `@${piece.name}` : '\n').join(''))
+    .join('\n').replace(/^\n+|\n+$/g, '');
 }
 
 /** Plain-text length, as the server counts it for max_length. */

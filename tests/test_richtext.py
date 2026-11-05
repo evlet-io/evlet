@@ -296,3 +296,9 @@ def test_print_renders_sanitised_rich_text(secured):
     # Display sanitises again: a value that never went through the field cannot inject markup.
     shown = display(Project.__fields__['brief'], '<p onclick="x()">a<script>b()</script></p>', {}, None, business, BriefPrint)
     assert str(shown) == '<div class="evlet-rich"><p>a</p></div>'
+
+
+@pytest.mark.parametrize('source, expected, text', json.loads((Path(__file__).parents[1] / 'frontend/src/evlet/tests/richtext-cases.json').read_text())['mention_cases'])
+def test_shared_mention_cases(source, expected, text):
+    assert sanitise(source, mentions=True) == (expected, text)
+    assert sanitise(expected, mentions=True) == (expected, text)

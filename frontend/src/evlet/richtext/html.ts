@@ -4,7 +4,7 @@
 // Parsing goes through DOMParser, which never runs scripts or loads images. Nothing parsed here is put
 // into the page as markup: the editor and the read-only view build their DOM from the model.
 
-import { IMAGE_SIZES, lineBreak, MARKS, normalise, paragraph, plainText, sortMarks, text, tidy, type Block, type Doc, type ImageSize, type Inline, type ListKind, type Mark } from './model';
+import { IMAGE_SIZES, lineBreak, MARKS, MENTION, normalise, paragraph, plainText, sortMarks, text, tidy, type Block, type Doc, type ImageSize, type Inline, type ListKind, type Mark } from './model';
 
 const ALIASES: Record<string, string> = { b: 'strong', i: 'em', strike: 's', del: 's', ins: 'u', tt: 'code', kbd: 'code', samp: 'code',
   h1: 'h2', h4: 'h3', h5: 'h3', h6: 'h3', div: 'p' };
@@ -49,6 +49,8 @@ interface Context {
   marks: readonly Mark[]; href: string | null; list: ListKind | null; depth: number;
   item: { list: ListKind; indent: number; checked: boolean } | null; quote: boolean; code: boolean; pre: boolean; firstInPre: boolean;
   paste: boolean;
+  /** Keep `<span data-mention>` as mentions (the activity journal); otherwise their text is plain text. */
+  mentions: boolean;
   /** Reading the editing surface back: skip widgets and filler breaks. */
   raw: boolean;
 }
@@ -107,6 +109,16 @@ class Reader {
       const element = child as Element;
       const source = element.localName.toLowerCase();
       if (source !== 'pre') ctx = { ...ctx, firstInPre: false };
+      if (source === 'span' && (element.hasAttribute('data-mention') || element.hasAttribute('data-rt-mention'))) {
+        const id = element.getAttribute('data-mention') ?? element.getAttribute('data-rt-mention') ?? '';
+        // The editor shows a mention as @Name; stored HTML holds the name alone.
+        const shown = element.textContent ?? '';
+        const name = plainLine(element.hasAttribute('data-rt-mention') ? shown.replace(/^@/, '') : shown).slice(0, 100);
+        if (ctx.mentions && /^[1-9][0-9]{0,18}$/.test(id) && !ctx.code && !ctx.pre) this.target(ctx).content.push({ kind: 'mention', id, name });
+        else if (ctx.mentions && ctx.raw && /^[1-9][0-9]{0,18}$/.test(id)) this.target(ctx).content.push({ kind: 'mention', id, name });
+        else this.addText(name, ctx);
+        continue;
+      }
       if (source === 'figure' || source === 'img') { if (!ctx.item && !ctx.code) this.image(element, ctx); continue; }
       if (source === 'figcaption') continue;
       if (DROPPED.has(source)) continue;
@@ -210,6 +222,7 @@ function tidyWhitespace(pieces: readonly Inline[]): Inline[] {
   const trimLast = () => { const last = out[out.length - 1]; if (last?.kind === 'text') out[out.length - 1] = { ...last, text: last.text.replace(/ +$/, '') }; };
   for (const piece of pieces) {
     if (piece.kind === 'break') { trimLast(); out.push(piece); afterSpace = true; continue; }
+    if (piece.kind === 'mention') { out.push(piece); afterSpace = false; continue; }
     let value = piece.text;
     if (afterSpace) value = value.replace(/^ +/, '');
     if (!value) continue;
@@ -257,12 +270,12 @@ function wordList(element: Element): { list: ListKind; level: number } | null {
 
 // ---------- reading ----------
 
-const base: Context = { marks: [], href: null, list: null, depth: 0, item: null, quote: false, code: false, pre: false, firstInPre: false, paste: false, raw: false };
+const base: Context = { marks: [], href: null, list: null, depth: 0, item: null, quote: false, code: false, pre: false, firstInPre: false, paste: false, raw: false, mentions: false };
 
-function parseWith(markup: string, paste: boolean): Doc {
+function parseWith(markup: string, paste: boolean, mentions = false): Doc {
   const body = new DOMParser().parseFromString(markup.replace(/\0/g, ''), 'text/html').body;
   const reader = new Reader();
-  reader.walk(body, { ...base, paste });
+  reader.walk(body, { ...base, paste, mentions });
   return reader.doc();
 }
 
@@ -280,14 +293,14 @@ export function plainOf(markup: string): string {
 }
 
 /** Stored HTML (or any HTML) as a document, cleaned to the schema. */
-export function parseHTML(markup: string | null | undefined): Doc {
-  return parseWith(markup ?? '', false);
+export function parseHTML(markup: string | null | undefined, options: { mentions?: boolean } = {}): Doc {
+  return parseWith(markup ?? '', false, Boolean(options.mentions));
 }
 
 /** Pasted HTML as blocks, cleaned to the schema: also reads Word list paragraphs and styled spans. */
-export function parsePastedHTML(markup: string): Block[] {
+export function parsePastedHTML(markup: string, options: { mentions?: boolean } = {}): Block[] {
   // Word wraps a paste in <!--StartFragment--> comments and conditional comments; DOMParser drops them.
-  return trimEmpty(parseWith(markup, true).blocks);
+  return trimEmpty(parseWith(markup, true, Boolean(options.mentions)).blocks);
 }
 
 const URL_PATTERN = /\b(?:https?:\/\/|www\.)[^\s<>"]+[^\s<>".,;:!?)\]'’]/gi;
@@ -332,7 +345,7 @@ export function readSurface(surface: Element): Doc {
     if (tag === 'pre') { const code = (element.textContent ?? '').replace(/\r\n?/g, '\n'); if (code) blocks.push({ type: 'code', content: [text(code)] }); continue; }
     const reader = new Reader();
     const item = { list: 'bullet' as ListKind, indent: 0, checked: false };
-    reader.walk(element, { ...base, raw: true, pre: true, item });
+    reader.walk(element, { ...base, raw: true, pre: true, item, mentions: true });
     const content = tidy(reader.blocks.flatMap((block, index) => index ? [lineBreak(), ...block.content] : block.content));
     const data = (element as HTMLElement).dataset ?? {};
     if (tag === 'h2' || tag === 'h3') blocks.push({ type: 'heading', level: tag === 'h2' ? 2 : 3, content });
@@ -397,12 +410,13 @@ function spaced(content: readonly Inline[]): Inline[] {
   const chars: Array<{ index: number; char: string | null }> = [];
   content.forEach((piece, index) => {
     if (piece.kind === 'text') for (let at = 0; at < piece.text.length; at++) chars.push({ index, char: piece.text[at] });
-    else chars.push({ index, char: null });
+    else chars.push({ index, char: piece.kind === 'mention' ? MENTION : null });
   });
   const encoded: string[][] = content.map(() => []);
   let previousPlain = true; // the start of a line
   chars.forEach((item, position) => {
     if (item.char === null) { previousPlain = true; return; }
+    if (item.char === MENTION) { previousPlain = false; return; }
     if (item.char === ' ') {
       const following = chars[position + 1]?.char ?? null;
       if (previousPlain || following === null) { encoded[item.index].push('\u00a0'); previousPlain = false; }
@@ -419,18 +433,22 @@ const keyOf = (piece: Inline, level: number): string | null => {
   return piece.marks.includes(mark) ? mark : null;
 };
 
+/** A break, or a mention: `<span data-mention="<user id>">Name</span>`. */
+const atom = (piece: Inline): Tree => piece.kind === 'mention'
+  ? { tag: 'span', attrs: { 'data-mention': piece.id }, children: [piece.name] } : { tag: 'br', children: [] };
+
 /** Inline content as a tree (marks nested canonically), for the editing surface. */
 export const inlineTree = (content: readonly Inline[]): Tree[] => group(content, 0);
 
 /** Wrap runs that share the link, then each mark in MARKS order, so the nesting is canonical. */
 function group(pieces: readonly Inline[], level: number): Tree[] {
-  if (level > MARKS.length) return pieces.map(piece => piece.kind === 'text' ? piece.text : { tag: 'br', children: [] });
+  if (level > MARKS.length) return pieces.map(piece => piece.kind === 'text' ? piece.text : atom(piece));
   const out: Tree[] = [];
   for (let index = 0; index < pieces.length;) {
     const key = keyOf(pieces[index], level);
     let end = index + 1;
     while (end < pieces.length && keyOf(pieces[end], level) === key && (key !== null || (pieces[end].kind === 'text' && pieces[index].kind === 'text'))) end++;
-    if (pieces[index].kind !== 'text') out.push({ tag: 'br', children: [] });
+    if (pieces[index].kind !== 'text') out.push(atom(pieces[index]));
     else if (key === null) out.push(...group(pieces.slice(index, end), level + 1));
     else if (level === 0) out.push({ tag: 'a', attrs: { href: key }, children: group(pieces.slice(index, end), 1) });
     else out.push({ tag: key, children: group(pieces.slice(index, end), level + 1) });
