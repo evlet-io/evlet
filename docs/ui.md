@@ -146,6 +146,42 @@ Currency and decimal values stay exact strings. A Currency field shows its code 
 app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)).
 Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-framework.md](ui-framework.md#pickers)).
 
+### Collapsible sections
+
+Sections declared with `evlet.Section`, or set to Can collapse in Controls, open and close
+from their heading: a real button with `aria-expanded` and `aria-controls`, so Enter and Space
+toggle it, and Tab skips the fields of a closed section. A closed section shows how many of its
+fields are filled ("3 of 5 filled"), or "Required missing" when a required field is empty, and
+a badge with the number of fields that have errors.
+
+- **Starting state.** The app's `collapsed` value, unless the person chose: open and closed are
+  remembered per user and model in their browser preferences, by section title, and the record page
+  and the side panel share them. Sections closed in a side panel before this release carry over once.
+  Reset layout in the record's More menu forgets those choices.
+- **Phones.** Below 760 px, collapsible sections after the first start closed unless the person's
+  saved choice says otherwise. This is the default behaviour.
+- **Errors and focus.** A field error opens its section. A refused save opens every section with an
+  error, then scrolls to and focuses the first one. A `#field` address
+  (`/app/project/01hc1sd9vc1ye#starts_on`) opens that field's section and focuses it; code can do the
+  same with `revealField(root, name)`.
+- **Same everywhere.** New, read-only and locked records fold the same way. In the narrow side panel
+  every section can close. Print and PDF show everything: the browser's print style opens closed
+  sections, and the server's print designs never use the form layout.
+- Height animates only when the device does not ask for reduced motion.
+
+### Field and tab order
+
+The DOM order of a form is its visual order, and nothing uses a positive `tabindex`. A section with
+`flow="columns"` lists its fields down the left column, then the right, so Tab goes the same way.
+Tab skips values that can't change (read only, locked or calculated); a click still focuses them,
+showing why, and screen readers read them. Record tabs follow `Meta.tabs` or the Controls tab order,
+and a record opens on its default tab, which the address then leaves out (`?tab=` names the others).
+
+**Enter moves to the next field** (Settings, Appearance, off by default) makes Enter go to the next
+field of a form and Shift+Enter to the one before, skipping fields that can't change. It never
+applies in long text or rich text, on buttons, or while a picker or list is open, and Ctrl or Cmd
+Enter still saves. On a saved record, where each value saves on its own, Enter keeps saving the value.
+
 ### Ids, names and titles
 
 Record addresses use the record's text id, `/app/invoice/01hc1sd9vc1ye`, so changing a name never

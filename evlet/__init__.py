@@ -59,8 +59,9 @@ from .postgres import PostgreSQLDatabase
 __all__ += ["PostgreSQLDatabase"]
 
 from .ui.application import App
+from .ui.metadata import Section
 
-__all__ += ["App"]
+__all__ += ["App", "Section"]
 
 from .instances import AppDefinition, Instance, Schedule
 from .auth import Security

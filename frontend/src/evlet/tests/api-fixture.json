@@ -5128,7 +5128,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.723Z",
+     "at": "2026-11-05T05:40:46.382Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5140,7 +5140,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.709Z",
+     "at": "2026-11-05T05:40:46.367Z",
      "data": {
       "fields": {
        "total": {
@@ -5202,7 +5202,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.696Z",
+     "at": "2026-11-05T05:40:46.354Z",
      "data": {
       "fields": {
        "customer": {
@@ -5426,7 +5426,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-05T05:37:39.765Z",
+     "at": "2026-11-05T05:40:46.427Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5438,7 +5438,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.764Z",
+     "at": "2026-11-05T05:40:46.426Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5450,7 +5450,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.762Z",
+     "at": "2026-11-05T05:40:46.424Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -5460,7 +5460,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.760Z",
+     "at": "2026-11-05T05:40:46.421Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -5472,7 +5472,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.757Z",
+     "at": "2026-11-05T05:40:46.418Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5481,7 +5481,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.741Z",
+     "at": "2026-11-05T05:40:46.401Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5496,7 +5496,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.733Z",
+     "at": "2026-11-05T05:40:46.392Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5506,7 +5506,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.733Z",
+     "at": "2026-11-05T05:40:46.392Z",
      "data": {
       "targets": [
        {
@@ -5522,7 +5522,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.732Z",
+     "at": "2026-11-05T05:40:46.392Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5543,7 +5543,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.723Z",
+     "at": "2026-11-05T05:40:46.382Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5555,7 +5555,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.709Z",
+     "at": "2026-11-05T05:40:46.367Z",
      "data": {
       "fields": {
        "total": {
@@ -5617,7 +5617,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.696Z",
+     "at": "2026-11-05T05:40:46.354Z",
      "data": {
       "fields": {
        "customer": {
@@ -5667,7 +5667,7 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-05T05:37:39.760Z",
+   "at": "2026-11-05T05:40:46.421Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5683,7 +5683,7 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-05T05:37:39.762Z",
+   "at": "2026-11-05T05:40:46.424Z",
    "data": {
     "follow_up": 19,
     "text": "Balance due by the end of the month"
@@ -5697,7 +5697,7 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-05T05:37:39.757Z",
+   "at": "2026-11-05T05:40:46.418Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -6173,6 +6173,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -6312,11 +6313,14 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -6368,6 +6372,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -6385,6 +6390,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "effect_target": true,
@@ -6635,6 +6641,8 @@
      "label": "Ledger entry",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "customer",
         "debit",
@@ -6643,6 +6651,7 @@
         "source",
         "reversal"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -6678,6 +6687,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -7094,6 +7104,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "effects": [
@@ -7492,6 +7503,8 @@
      "label": "Invoice",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "number",
         "customer",
@@ -7499,15 +7512,19 @@
         "due_on",
         "status"
        ],
+       "flow": "rows",
        "label": "Invoice"
       },
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "total",
         "outstanding",
         "remarks",
         "revises"
        ],
+       "flow": "rows",
        "label": "Amounts"
       }
      ],
@@ -7695,6 +7712,7 @@
        "issued"
       ]
      },
+     "tabs": [],
      "title_field": "number",
      "unpostable": true,
      "voidable": true
@@ -7711,6 +7729,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7873,11 +7892,14 @@
      "label": "Payment",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "invoice",
         "amount",
         "paid_on"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -7908,6 +7930,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -7923,6 +7946,7 @@
      },
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -8090,12 +8114,15 @@
      "label": "Invoice line",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "item",
         "qty",
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -8120,6 +8147,7 @@
       "item"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "item"
     }
    ],
@@ -8496,7 +8524,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-05T05:37:39.765Z",
+     "at": "2026-11-05T05:40:46.427Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -8508,7 +8536,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.764Z",
+     "at": "2026-11-05T05:40:46.426Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -8520,7 +8548,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.762Z",
+     "at": "2026-11-05T05:40:46.424Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -8530,7 +8558,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.760Z",
+     "at": "2026-11-05T05:40:46.421Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -8542,7 +8570,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.757Z",
+     "at": "2026-11-05T05:40:46.418Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -8551,7 +8579,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.741Z",
+     "at": "2026-11-05T05:40:46.401Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8566,7 +8594,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.733Z",
+     "at": "2026-11-05T05:40:46.392Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -8576,7 +8604,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.733Z",
+     "at": "2026-11-05T05:40:46.392Z",
      "data": {},
      "id": 15,
      "kind": "changed",
@@ -8584,7 +8612,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.732Z",
+     "at": "2026-11-05T05:40:46.392Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8605,7 +8633,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.723Z",
+     "at": "2026-11-05T05:40:46.382Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -8617,7 +8645,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.709Z",
+     "at": "2026-11-05T05:40:46.367Z",
      "data": {
       "fields": {
        "total": {
@@ -8679,7 +8707,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:37:39.696Z",
+     "at": "2026-11-05T05:40:46.354Z",
      "data": {
       "fields": {
        "customer": {
@@ -8747,6 +8775,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -8886,11 +8915,14 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -8932,6 +8964,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -9280,6 +9313,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -9656,6 +9690,8 @@
      "label": "Invoice",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "number",
         "customer",
@@ -9663,15 +9699,19 @@
         "due_on",
         "status"
        ],
+       "flow": "rows",
        "label": "Invoice"
       },
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "total",
         "outstanding",
         "remarks",
         "revises"
        ],
+       "flow": "rows",
        "label": "Amounts"
       }
      ],
@@ -9859,6 +9899,7 @@
        "issued"
       ]
      },
+     "tabs": [],
      "title_field": "number",
      "unpostable": true,
      "voidable": true
@@ -9875,6 +9916,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -10037,11 +10079,14 @@
      "label": "Payment",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "invoice",
         "amount",
         "paid_on"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -10072,6 +10117,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -10087,6 +10133,7 @@
      },
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -10254,12 +10301,15 @@
      "label": "Invoice line",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "item",
         "qty",
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -10284,6 +10334,7 @@
       "item"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "item"
     }
    ],
@@ -11079,6 +11130,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -11218,11 +11270,14 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -11264,6 +11319,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -11276,6 +11332,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -11381,10 +11438,13 @@
      "label": "Product",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "price"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -11412,6 +11472,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -12012,6 +12073,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -12405,6 +12467,8 @@
      "label": "Order",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "customer",
@@ -12416,6 +12480,7 @@
         "total",
         "line_count"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -12459,6 +12524,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -12485,6 +12551,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -12658,12 +12725,15 @@
      "label": "Line",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "product",
         "qty",
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -12686,6 +12756,7 @@
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
+     "tabs": [],
      "title_field": "id"
     },
     {
@@ -12693,6 +12764,7 @@
      "attachments": false,
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "fields": [
       {
@@ -12734,9 +12806,12 @@
      "label": "Part",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "hours"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -12753,6 +12828,7 @@
      },
      "plural": "Parts",
      "search_fields": [],
+     "tabs": [],
      "title_field": "id"
     }
    ],

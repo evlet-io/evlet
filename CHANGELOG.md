@@ -25,6 +25,26 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `0011_invoice_payment_status` adds both columns. Because the invoice now has a calculated field,
   an update to a Playground invoice sends `If-Match` with its ETag, as every calculated document does.
   Badge colours are display only: changing `colors` needs no migration.
+- **Field order, record tabs and Enter to move on.** `Section(..., flow="columns")` lists a
+  section's fields down the left column, then the right (full-width fields break the run); the DOM
+  and Tab follow the same order. `Meta.tabs` and `Meta.default_tab` order the record page's tabs and
+  choose the one it opens on, validated at registration. The schema adds `flow` per layout entry and
+  `tabs` and `default_tab` per model (additive). The Controls form layout gets Fields go, drag to
+  reorder fields and sections (mouse, touch and keyboard, with announcements) and a Record tabs card;
+  a layout with a tab order is saved as `{"sections", "tabs", "default_tab"}`, and plain lists load as
+  before. Tab skips read-only and calculated values. A new Appearance setting, "Enter moves to the
+  next field" (`enter_next`, off by default), speeds up data entry. The Playground's Customer uses
+  `flow="columns"` and Project sets `Meta.tabs`.
+- **Collapsible form sections.** `evlet.Section(title, fields, *, collapsible=True, collapsed=False)`
+  in `Model.Meta.layout` is a section people can open and close; `collapsed` is `False` (open),
+  `True` (closed) or `'empty'` (closed when every field is empty on an existing record). Plain
+  `('Title', fields)` groups still work and always show. Each UI schema layout entry gains
+  `collapsible` and `collapsed` (additive). The Controls form layout gets Can collapse and Starts
+  per section, stored as optional `collapsible` and `collapsed`; older saved layouts load as before.
+  Record pages remember each person's choice per model, with Reset layout in the More menu; on phones
+  sections after the first start closed. Migration checksums do not change. The Playground's Project
+  shows all three starting states, so its Planning group is split into Planning and Schedule
+  ([docs/business-capabilities.md](docs/business-capabilities.md#collapsible-sections)).
 - **Created and last modified on every record.** Every model table gains four framework columns,
   `evlet_created_at`, `evlet_created_by`, `evlet_modified_at` and `evlet_modified_by` (UTC times and
   user ids), filled in the same statement as every write: the record routes, the document pipeline,

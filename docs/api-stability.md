@@ -8,7 +8,7 @@ production ready, but the rules below hold from 0.3 on.
 
 - **Root exports.** Every name in `evlet.__all__`: fields, `Model`, `Child`, `Registry`,
   migrations, permissions (`Policy`, `Rule`, `own_customer`, `SCOPES`), lifecycle
-  (`State`, `Move`, `action`, `validate`), slips, measures, settings, connectors, storage,
+  (`State`, `Move`, `action`, `validate`), form sections (`Section`), slips, measures, settings, connectors, storage,
   jobs, routing and the application classes. Import them from `evlet`, not from the
   module that defines them.
 - **Field keywords.** The keywords every field takes (`required`, `default`, `label`,

@@ -9,7 +9,10 @@
             "title",
             "status",
             "total"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Order",
@@ -28,6 +31,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "fields": [
         {
           "name": "title",
@@ -240,7 +245,10 @@
             "rate",
             "amount",
             "stock"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Item",
@@ -256,6 +264,8 @@
       ],
       "search_fields": [],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "fields": [
         {
           "name": "qty",

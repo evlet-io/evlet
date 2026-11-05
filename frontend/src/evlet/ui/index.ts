@@ -10,6 +10,7 @@ export * from './kinds';
 export * from './explain';
 export * from './fields';
 export * from './inline';
+export * from './fold';
 export * from './table';
 export * from './childtable';
 export * from './split';

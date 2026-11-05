@@ -279,6 +279,8 @@ mark only.
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type, `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
 | `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
+| `fold.ts` | FoldSection, Folds, `foldSummary`, `revealField`, `revealFirstError` ([collapsible sections](ui.md#collapsible-sections)), `flowGrid` (rows or columns) |
+| `draglist.ts` | `dragList(root, { kind, move, label, zoneLabel })`: reorder by mouse, touch or keyboard, with announcements |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table`, and ChildRows for a narrow column |
 | `split.ts` | SplitView: a main area and a resizable side panel |
@@ -516,7 +518,20 @@ mount(document.querySelector('#app')!, () => DocFrame({
 - **ChildRows** shows a record `Table` in a narrow column: one line per row with its first value
   and its last amount, the other numbers under it; a row opens in place with its fields, and Add
   row, Remove row and Open full table sit around it. Locked lines show values only.
-- **FormSection** with `collapsible` opens and closes from its heading (`aria-expanded`).
+- **FormSection** with `fold` is a **FoldSection**: a heading button with `aria-expanded`, `aria-controls` and a chevron, a summary and an error
+  count while closed, and `hidden` on the closed body so Tab skips it. A `Folds` holds one form's state: the
+  person's choices (a preferences cell of title to open) over each section's start (`collapsed`, the phone rule,
+  `'empty'`); `reveal(title)` opens one for now and `reset()` forgets the choices. `revealField(root, name)`
+  opens the section holding a field and focuses it. `flowGrid(cells, flow)` lays a section's fields out
+  across then down, or down each column with full-width fields as breaks, in DOM order.
+- **dragList** reorders items in one or more lists. Mark items `data-drag-item="<kind>"` with
+  `data-drag-id`, the lists they may sit in `data-drop-zone="<kind>"` with `data-zone`, and give each item a
+  handle button `data-drag-handle="<kind>"`. Pointer (mouse, pen, touch): press a handle and move past
+  4 px; the item under the pointer shows where it lands. Keyboard: Space or Enter lifts, arrows move
+  (across list edges), Space or Enter drops, Escape puts it back. Every step is announced in a polite
+  live region. Listeners sit on `root`, so the lists may be redrawn after each `move`.
+- **enterMovesToNextField(root, on)** makes Enter and Shift+Enter move between the `[data-field]` blocks
+  under `root` while `on()` is true.
 - Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
   first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
   polite live region that the app creates at mount with `mountToasts()`. A popover stays open
@@ -670,7 +685,8 @@ a title opens the full page in a new browser tab.
 - The panel is the record view with `DocFrame`'s panel variant: the same sections in one column.
   The header keeps two buttons and puts the rest in More; key facts sit under the title; the side
   column's Files and Record info close the Details tab and Related is a tab; sections close from
-  their heading (remembered per model); child tables are ChildRows with Open full table; the save
+  their heading with the same FoldSection and saved state as the record page (`form.<model>.open`, by
+  section title; [collapsible sections](ui.md#collapsible-sections)), and in the panel every section can close; child tables are ChildRows with Open full table; the save
   bar is pinned to the bottom of the panel. Tabs that do not fit scroll sideways.
 - Unsaved changes follow the record page: another tab of the record does not ask; another row,
   Close, Escape, Back or leaving the list does (`confirmLeave` with `stays`). Expand opens the
@@ -726,7 +742,7 @@ Documents in the sidebar, the others as Records.
 Appearance, region, start page and sidebar counts are the person's Settings, kept on the server
 ([settings.md](settings.md)), and so is the theme ([Themes](#themes)). Layout preferences (sidebar, list column
 widths, child table columns, quick access, how each list opens records, the side panel's width and
-the panel sections a person closed) are kept in browser storage under `evlet.<username>.`.
+which form sections a person opened or closed) are kept in browser storage under `evlet.<username>.`.
 They never hold record data: recent records and recent searches stay in memory for the signed-in
 session and go on sign-out. The account area is at the bottom of the sidebar; the top bar keeps
 search and notifications.

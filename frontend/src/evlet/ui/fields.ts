@@ -7,7 +7,7 @@
 // says where it came from until the user edits it.
 
 import { html, when, type Child } from '../dom';
-import { cell, derive, untrack, type Cell, type Readable } from '../reactive';
+import { cell, derive, onCleanup, untrack, type Cell, type Readable } from '../reactive';
 import type { ApiClient, RecordData } from '../api';
 import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '../model/record';
 import { linkScope } from '../model/links';
@@ -272,7 +272,7 @@ export function FieldHints(field: FieldLike): Node[] {
   const meta = field.meta, label = labelsOf(field);
   const hints: Node[] = [];
   if (field.calculated) {
-    const hint = html`<span class="ff-hint calc" tabindex="0">ƒ calculated</span>` as HTMLElement;
+    const hint = html`<span class="ff-hint calc" tabindex="-1">ƒ calculated</span>` as HTMLElement;
     const rule = `= ${formula(meta.compute)}`;
     tooltip(hint, () => {
       const result = field.result?.get();
@@ -290,7 +290,7 @@ export function FieldHints(field: FieldLike): Node[] {
     }));
   }
   hints.push(when(() => field.rules.get().locked || meta.read_only, () => {
-    const hint = html`<span class="ff-hint" tabindex="0">${Icon('lock', { size: 'xs' })}${meta.read_only ? 'read only' : 'locked'}</span>` as HTMLElement;
+    const hint = html`<span class="ff-hint" tabindex="-1">${Icon('lock', { size: 'xs' })}${meta.read_only ? 'read only' : 'locked'}</span>` as HTMLElement;
     tooltip(hint, meta.locked_when && !meta.read_only ? `Locked when ${phrase(meta.locked_when, label)}` : meta.read_only ? 'This value can’t be changed here' : 'Locked');
     return hint;
   }));
@@ -714,4 +714,40 @@ export function ComputedField(props: FieldProps): HTMLElement {
 /** The field component for any field, chosen by its type. */
 export function fieldFor(props: FieldProps): HTMLElement {
   return props.field.calculated ? ComputedField(props) : BaseField(props);
+}
+
+/**
+ * Enter moves to the next field and Shift+Enter to the one before, for fast data entry, while `on()`
+ * says so (the person's "Enter moves to the next field" setting). Never in a text area or rich text,
+ * on buttons, or while a picker or list is open; Ctrl or Cmd Enter still saves. Fields are the
+ * [data-field] blocks under `root` that show and can be edited, in DOM order, which is the order on screen.
+ */
+export function enterMovesToNextField(root: HTMLElement, on: () => boolean): () => void {
+  const focusable = (block: Element) => block.closest('[hidden]') ? null
+    : block.querySelector<HTMLElement>('input:not([type=hidden]):not(:disabled), select:not(:disabled), button.in-select:not(:disabled), button.in-link:not(:disabled), button[role=switch]:not(:disabled), textarea:not(:disabled)');
+  const handler = (event: KeyboardEvent) => {
+    if (event.key !== 'Enter' || event.metaKey || event.ctrlKey || event.altKey || event.isComposing || !on()) return;
+    const target = event.target as HTMLElement;
+    if (target.tagName === 'TEXTAREA' || target.isContentEditable || target.closest('.pop, [role=listbox], [role=dialog] [role=listbox]')) return;
+    if (target.getAttribute('aria-expanded') === 'true') return;
+    if (target.tagName === 'BUTTON' && !target.matches('button.in-select, button.in-link, button[role=switch]')) return;
+    const block = target.closest('[data-field]');
+    if (!block || !root.contains(block)) return;
+    const blocks = [...root.querySelectorAll('[data-field]')].filter(item => !item.parentElement?.closest('[data-field]'));
+    const step = event.shiftKey ? -1 : 1;
+    for (let index = blocks.indexOf(block) + step; index >= 0 && index < blocks.length; index += step) {
+      const next = focusable(blocks[index]);
+      if (next) {
+        event.preventDefault();
+        // A typed value is kept when the field is left, as with Tab.
+        next.focus();
+        if (next instanceof HTMLInputElement && typeof next.select === 'function') next.select();
+        return;
+      }
+    }
+  };
+  root.addEventListener('keydown', handler);
+  const stop = () => root.removeEventListener('keydown', handler);
+  onCleanup(stop);
+  return stop;
 }

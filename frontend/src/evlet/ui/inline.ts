@@ -8,6 +8,7 @@ import { batch, cell, untrack } from '../reactive';
 import { Button, Icon } from './base';
 import { uid } from './core';
 import { phrase, labeller } from './explain';
+import { flowGrid, FoldSection, type Flow, type Folds, type FoldStart } from './fold';
 import { displayValue, FieldControl, FieldHints, recordOf, siblingsOf, type Control, type FieldLike, type LinkSource } from './fields';
 import { kindOf } from './kinds';
 import { toast } from './layers';
@@ -158,7 +159,8 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
     }}>${when(editing, editor, () => {
       const at = html`<button type="button" class="fval" aria-labelledby=${props.labelledBy ?? null}
         aria-label=${props.labelledBy ? null : () => `Edit ${meta.label}`} on:click=${start}>${rest()}${Icon('pencil', { size: 'xs', className: 'pen' })}</button>` as HTMLElement;
-      const readOnly = html`<div class="fval ro" tabindex="0" aria-labelledby=${props.labelledBy ?? null}>${rest()}</div>` as HTMLElement;
+      // Tab skips a value that can't change; a click still focuses it (and shows why) and screen readers read it.
+      const readOnly = html`<div class="fval ro" tabindex="-1" aria-labelledby=${props.labelledBy ?? null}>${rest()}</div>` as HTMLElement;
       tooltip(readOnly, () => lockReason(field));
       return when(field.editable, () => at, () => readOnly);
     })}</div>` as HTMLElement;
@@ -175,23 +177,23 @@ export function KeyValueList(items: Array<FieldLike | { label: string; field: Fi
 
 /** A titled group of fields in two columns; long text spans both. */
 export function FormSection(props: { title: string; note?: string; fields: FieldLike[]; save?: Save; links?: LinkSource | null; extra?: Child;
-  /** A heading that opens and closes the section (a narrow side panel). */
-  collapsible?: { collapsed: () => boolean; toggle: () => void } }): HTMLElement {
+  /** rows (default): across then down; columns: down the left column, then the right. */
+  flow?: Flow;
+  /** A collapsible form section (FoldSection): its form's Folds, how it starts and its place in the form. */
+  fold?: { folds: Folds; collapsible: boolean; collapsed: FoldStart; index: number } }): HTMLElement {
+  const wide = (field: FieldLike) => Boolean(field.meta.wide ?? field.meta.type === 'longtext');
   const cells = props.fields.map(field => {
     const id = uid('ff');
     return html`<div class="ff" class:full=${field.meta.wide ?? field.meta.type === 'longtext'} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}>
       <label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
-      <div class="ff-v">${InlineValue({ field, save: props.save, labelledBy: id, links: props.links })}</div></div>`;
+      <div class="ff-v">${InlineValue({ field, save: props.save, labelledBy: id, links: props.links })}</div></div>` as Node;
   });
-  const fold = props.collapsible;
-  if (fold) {
-    const id = uid('fs');
-    return html`<section class="fs fs-fold" class:closed=${fold.collapsed} aria-label=${props.title}><div class="fs-h"><h3><button type="button" class="fs-toggle"
-      aria-expanded=${() => String(!fold.collapsed())} aria-controls=${id} on:click=${fold.toggle}>${Icon('chevron-down', { size: 'xs', className: 'fs-chev' })}${props.title}</button></h3>
-      ${props.note ? html`<p>${props.note}</p>` : null}</div>
-      <div id=${id} hidden=${fold.collapsed}>${cells.length ? html`<div class="fs-g">${cells}</div>` : null}${props.extra ?? null}</div></section>` as HTMLElement;
+  const grid = flowGrid(cells.map((node, index) => ({ node, wide: wide(props.fields[index]) })), props.flow);
+  if (props.fold) {
+    return FoldSection({ title: props.title, note: props.note, fields: props.fields, folds: props.fold.folds, collapsible: props.fold.collapsible,
+      collapsed: props.fold.collapsed, index: props.fold.index, body: [grid, props.extra ?? null] });
   }
   return html`<section class="fs" aria-label=${props.title}><div class="fs-h"><h3>${props.title}</h3>${props.note ? html`<p>${props.note}</p>` : null}</div>
-    ${cells.length ? html`<div class="fs-g">${cells}</div>` : null}${props.extra ?? null}</section>` as HTMLElement;
+    ${grid}${props.extra ?? null}</section>` as HTMLElement;
 }
 

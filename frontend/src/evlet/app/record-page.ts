@@ -14,7 +14,8 @@ import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildRows, ChildTable } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
-import { displayValue, fieldFor, localField, stateTint, statusTint, type FieldLike } from '../ui/fields';
+import { displayValue, enterMovesToNextField, fieldFor, localField, stateTint, statusTint, type FieldLike } from '../ui/fields';
+import { flowGrid, FoldSection, Folds, revealField, revealFirstError } from '../ui/fold';
 import { FormSection, KeyValueList } from '../ui/inline';
 import { humanize } from '../ui/kinds';
 import { copyText, DialogFooter, MenuButton, openDrawer, openModal, toast, type MenuItem } from '../ui/layers';
@@ -23,7 +24,7 @@ import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { JournalEntry, JournalPage } from './client';
-import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, numberField, screenModel, sections, sequenceField,
+import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, numberField, orderTabs, screenModel, sections, sequenceField,
   summaryFields, titleOf, LIST_KEYS, type ActionMeta, type AuditPerson, type DetailExtras, type RecordAudit, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { RelatedPanel } from './related-panel';
@@ -227,6 +228,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     try { ok = await store.save(); } catch (error) { toast((error as Error).message, { icon: 'info' }); return false; }
     if (!ok) {
       toast(store.conflict.peek() ? 'Not saved: this record changed since you opened it.' : 'Not saved. Check the highlighted values.', { icon: 'info' });
+      showErrors();
       return false;
     }
     if (created) {
@@ -373,6 +375,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const moreItems = (): MenuItem[] => {
     const items: MenuItem[] = [{ label: 'Copy link', icon: 'link', onSelect: () => void copyText(location.href, 'the link') }];
     if (!isNew) items.push({ label: 'Reload', icon: 'rotate-ccw', onSelect: () => void store.reload().catch(() => {}) });
+    if (foldable) items.push({ label: 'Reset layout', icon: 'layout-grid', disabled: !folds.changed, onSelect: () => folds.reset() });
     const now = extras.peek();
     if (now._revise) items.push({ label: `Revise ${model.label.toLowerCase()}`, icon: 'copy', disabled: !now._revise.allowed, onSelect: () => correct('revise') });
     if (now._void) items.push({ label: `Void ${model.label.toLowerCase()}`, icon: 'circle-x', danger: true, disabled: !now._void.allowed, onSelect: () => correct('void') });
@@ -570,18 +573,22 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // A record that has posted nothing yet still lists each target, with zero rows.
   const postings = !isNew && model.effects?.length ? derive(() => extras.get()._effects?.some(item => item.rows || item.reversals) ? extras.get()._effects! : null) : null;
   if (postings) tabItems.push({ id: 'postings', label: 'Postings', count: () => postings.get()?.length ? postings.get()!.reduce((sum, item) => sum + item.rows + item.reversals, 0) : null });
+  // The app's tab order and default tab (Meta.tabs, Meta.default_tab, or the Controls tab order).
+  const ordered = orderTabs(model, tabItems);
+  tabItems.splice(0, tabItems.length, ...ordered.tabs);
+  const home = ordered.home;
   const wanted = panel ? panel.tab : options.query.tab;
-  const active = cell(tabItems.some(tab => tab.id === wanted) ? wanted! : tabItems[0].id, { name: `${name} tab` });
+  const active = cell(tabItems.some(tab => tab.id === wanted) ? wanted! : home, { name: `${name} tab` });
   effect(() => {
     const tab = active.get();
     untrack(() => {
       // In a side panel the tab is the list address's rtab.
-      if (panel) { if ((panel.tab ?? tabItems[0].id) !== tab) panel.setTab(tab === tabItems[0].id ? null : tab); panel.tab = tab === tabItems[0].id ? undefined : tab; return; }
+      if (panel) { if ((panel.tab ?? home) !== tab) panel.setTab(tab === home ? null : tab); panel.tab = tab === home ? undefined : tab; return; }
       const current = router.route.peek();
       if (!current || current.name !== (isNew ? 'create' : 'record')) return;
-      if ((current.query.tab ?? tabItems[0].id) === tab) return;
+      if ((current.query.tab ?? home) === tab) return;
       const next = { ...current.query };
-      if (tab === tabItems[0].id) delete next.tab; else next.tab = tab;
+      if (tab === home) delete next.tab; else next.tab = tab;
       void router.navigate(router.href(current.name as 'record', current.params as any, next), { replace: true });
     });
   });
@@ -597,17 +604,32 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         <span class="muted">${() => sums.map(meta => `${meta.label} ${formatOf(meta, store.field(meta.name).value.get())}`).join(' · ') || child.label}</span></span>${Icon('chevron-right', { size: 'sm', className: 'muted' })}</button>`;
     }) : null;
     // A new record shows the fields it can fill in, and the naming series field saying it is assigned on save.
-    if (isNew) return html`<div class="ev-new-form">${groups.map(section => html`<section class="fs" aria-label=${section.label}><div class="fs-h"><h3>${section.label}</h3></div>
-      <div class="fs-g">${section.fields.filter(meta => (!meta.read_only || meta.name === model.naming?.field) && !meta.compute && !isStateField(model, meta)).map(meta => fieldFor({ field: view(meta.name), links: ctx.links }))}</div></section>`)}</div>`;
+    if (isNew) return html`<div class="ev-new-form">${groups.map((section, index) => {
+      const fields = section.fields.filter(meta => (!meta.read_only || meta.name === model.naming?.field) && !meta.compute && !isStateField(model, meta)).map(meta => view(meta.name));
+      return FoldSection({ title: section.label, fields, folds, ...foldOf(section, index),
+        body: flowGrid(fields.map(field => ({ node: fieldFor({ field, links: ctx.links }), wide: Boolean(field.meta.wide ?? field.meta.type === 'longtext') })), section.flow) });
+    })}</div>`;
     const sectionsShown = groups.map((section, index) => FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
-      extra: index === groups.length - 1 ? childLinks : null, collapsible: panel ? fold(section.label) : undefined }));
+      extra: index === groups.length - 1 ? childLinks : null, flow: section.flow, fold: { folds, ...foldOf(section, index) } }));
     // The full page's side column folds into the panel: Files and Record info close the Details tab.
     return panel ? [...sectionsShown, html`<div class="ev-panel-blocks">${SidePanel(ctx, model, store, view, relations, active, true)}</div>`] : sectionsShown;
   };
-  // Sections a person closed in the side panel, remembered per model.
-  const closedSections = prefs.cell<string[]>(`panel.${name}.closed`, []);
-  const fold = (title: string) => ({ collapsed: () => closedSections.get().includes(title),
-    toggle: () => closedSections.set(closedSections.peek().includes(title) ? closedSections.peek().filter(item => item !== title) : [...closedSections.peek(), title]) });
+  // Sections people open and close (evlet.Section), remembered per user and model by title; the app's
+  // collapsed value is where they start. In the narrow side panel every section can close.
+  const folds = new Folds(prefs.formSections(name), isNew);
+  const foldOf = (section: { collapsible?: boolean; collapsed?: boolean | 'empty' }, index: number) =>
+    ({ collapsible: Boolean(section.collapsible || panel), collapsed: section.collapsible ? section.collapsed ?? false : false, index });
+  const foldable = Boolean(panel) || sections(model).some(section => section.collapsible);
+  // A refused save: open the sections with errors, then scroll to and focus the first one.
+  const showErrors = () => {
+    const fields = sections(model).flatMap(section => section.fields).filter(meta => has(meta.name)).map(meta => view(meta.name));
+    if (!fields.some(field => field.error.peek())) return;
+    if (active.peek() !== 'details') active.set('details');
+    revealFirstError(frame, fields);
+  };
+  // A #field address (/app/invoice/7#due) opens that field's section and focuses it.
+  const fromHash = () => { let target = ''; try { target = decodeURIComponent(location.hash.slice(1)); } catch { /* not a field name */ } if (target && has(target)) { if (active.peek() !== 'details') active.set('details'); revealField(frame, target); } };
+  if (!panel) { queueMicrotask(fromHash); window.addEventListener('hashchange', fromHash); onCleanup(() => window.removeEventListener('hashchange', fromHash)); }
   const lockedText = () => model.fields.some(field => (field as any).editable_when_locked) ? `Locked. Lines can’t change while it is ${humanize(stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
   const tablePanel = (child: { name: string; label: string }) => panel ? ChildRows({ table: store.table(child.name), title: child.label,
     locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, onOpenFull: () => expand(`t-${child.name}`),
@@ -647,6 +669,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
     main: [panelBar, header, options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
+  // The person's "Enter moves to the next field" setting (Settings, Appearance).
+  enterMovesToNextField(frame, () => Boolean(ctx.me.get()?.prefs.enter_next));
   frame.addEventListener('keydown', event => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && (isNew || store.dirty.peek())) { event.preventDefault(); void save(); }
   });
