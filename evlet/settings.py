@@ -24,6 +24,8 @@ PORTAL_PAGES = ('profile', 'security', 'notifications')
 APPEARANCE = {
     'theme': 'system', 'density': 'comfortable', 'text': 'default', 'start': '', 'counts': False, 'lang': 'en',
     'tz': 'Asia/Dubai', 'date': 'dd-MM-yyyy', 'num': '1,234.56', 'week': 'mon',
+    # Enter moves to the next field in forms (Shift+Enter to the one before), for fast data entry.
+    'enter_next': False,
     # Keep unsaved changes when I leave a record (evlet.unsaved); off brings back the leave prompt.
     'keep_unsaved': True,
 }
@@ -601,7 +603,7 @@ class Settings:
             raise ValueError('Choose a known preference.')
         if key in CHOICES and value not in CHOICES[key]:
             raise ValueError('Choose one of the options.')
-        if key in ('counts', 'keep_unsaved') and type(value) is not bool:
+        if key in ('counts', 'enter_next', 'keep_unsaved') and type(value) is not bool:
             raise ValueError('Use true or false.')
         if key == 'start' and (not isinstance(value, str) or value and value != 'docs' and (
                 value not in self.business.registry.models or not self.business.policy.allows(user, self.business.registry.models[value], 'read'))):

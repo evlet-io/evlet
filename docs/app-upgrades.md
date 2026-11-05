@@ -48,7 +48,7 @@ version too. `apps.lock` and the database's installed manifest record the Evlet
 version and the last framework migration an instance was migrated with:
 
 ```json
-{"apps": {...}, "evlet": {"version": "0.3.0", "schema": "0003_record_names"}}
+{"apps": {...}, "evlet": {"version": "0.3.0", "schema": "0004_record_times"}}
 ```
 
 After you update Evlet in the environment, `evlet serve` and `evlet dev` refuse to
@@ -73,7 +73,9 @@ where Evlet makes changes that can move or drop data. `0002_tool_calls` moves th
 MCP call log (`evlet_mcp_calls`) into the Tool Engine's `evlet_tool_calls` and drops
 the old table. `0003_record_names` gives every record table the standard `name` and
 `title` columns ([model-engine.md](model-engine.md#name-and-title)) and fills each title
-from the models; names stay empty for existing rows. Steps never run while an instance is served.
+from the models; names stay empty for existing rows. `0004_record_times` adds the created and
+modified time and user columns to every model table and fills them from the Journal or the record id
+([model-engine.md](model-engine.md#record-times)). Steps never run while an instance is served.
 `evlet migrate acme --plan` lists the pending ones without writing anything. If a step fails, the staged copy is
 discarded and the database and lock stay as they were; restore the earlier Evlet
 before restarting.

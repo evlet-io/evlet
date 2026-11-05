@@ -1,6 +1,18 @@
 {
  "action": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T06:02:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "admin"
+    },
+    "modified_at": "2026-11-04T08:08:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "admin"
+    }
+   },
    "_calculation": {
     "language": "finite-v1",
     "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3"
@@ -1042,6 +1054,18 @@
  },
  "create": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T06:02:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "admin"
+    },
+    "modified_at": "2026-11-04T06:02:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "admin"
+    }
+   },
    "_calculation": {
     "language": "finite-v1",
     "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3"
@@ -2207,6 +2231,18 @@
  },
  "customer": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T06:00:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "admin"
+    },
+    "modified_at": "2026-11-04T06:00:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "admin"
+    }
+   },
    "credit_days": 45,
    "id": "0000000000001",
    "name": null,
@@ -2218,6 +2254,18 @@
  },
  "detail": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T06:02:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "admin"
+    },
+    "modified_at": "2026-11-04T06:02:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "admin"
+    }
+   },
    "children": {
     "lines": [
      {
@@ -4745,6 +4793,18 @@
      "name": "record_payment"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:28:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:36:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_calculation": {
     "language": "finite-v1",
     "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
@@ -4886,6 +4946,18 @@
  },
  "invoice_customer": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T08:09:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "admin"
+    },
+    "modified_at": "2026-11-04T08:09:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "admin"
+    }
+   },
    "credit_days": 30,
    "id": "0000000000001",
    "name": null,
@@ -4905,6 +4977,18 @@
      "reason": "The condition for this action is not met"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:28:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:29:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_effects": [
     {
      "balanced": true,
@@ -4978,6 +5062,18 @@
      "reason": "The condition for this action is not met"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:28:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:28:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_effects": [
     {
      "balanced": true,
@@ -5032,7 +5128,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.018Z",
+     "at": "2026-11-05T05:45:10.169Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5044,7 +5140,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:13.980Z",
+     "at": "2026-11-05T05:45:10.154Z",
      "data": {
       "fields": {
        "total": {
@@ -5106,7 +5202,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:13.950Z",
+     "at": "2026-11-05T05:45:10.139Z",
      "data": {
       "fields": {
        "customer": {
@@ -5162,6 +5258,18 @@
      "name": "record_payment"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:28:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:32:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_calculation": {
     "language": "finite-v1",
     "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
@@ -5238,6 +5346,18 @@
      "name": "record_payment"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:28:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:32:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_deletable": false,
    "_effects": [
     {
@@ -5306,7 +5426,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-04T12:19:14.152Z",
+     "at": "2026-11-05T05:45:10.214Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5318,7 +5438,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.144Z",
+     "at": "2026-11-05T05:45:10.213Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5330,7 +5450,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.137Z",
+     "at": "2026-11-05T05:45:10.211Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -5340,7 +5460,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.130Z",
+     "at": "2026-11-05T05:45:10.208Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -5352,7 +5472,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.123Z",
+     "at": "2026-11-05T05:45:10.206Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5361,7 +5481,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.063Z",
+     "at": "2026-11-05T05:45:10.188Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5376,7 +5496,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.042Z",
+     "at": "2026-11-05T05:45:10.180Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5386,7 +5506,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.042Z",
+     "at": "2026-11-05T05:45:10.180Z",
      "data": {
       "targets": [
        {
@@ -5402,7 +5522,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.042Z",
+     "at": "2026-11-05T05:45:10.180Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5423,7 +5543,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.018Z",
+     "at": "2026-11-05T05:45:10.169Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5435,7 +5555,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:13.980Z",
+     "at": "2026-11-05T05:45:10.154Z",
      "data": {
       "fields": {
        "total": {
@@ -5497,7 +5617,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:13.950Z",
+     "at": "2026-11-05T05:45:10.139Z",
      "data": {
       "fields": {
        "customer": {
@@ -5547,7 +5667,7 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-04T12:19:14.130Z",
+   "at": "2026-11-05T05:45:10.208Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5563,7 +5683,7 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-04T12:19:14.137Z",
+   "at": "2026-11-05T05:45:10.211Z",
    "data": {
     "follow_up": 19,
     "text": "Balance due by the end of the month"
@@ -5577,7 +5697,7 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-04T12:19:14.123Z",
+   "at": "2026-11-05T05:45:10.206Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -5634,6 +5754,18 @@
  },
  "invoice_payment": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T08:37:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "admin"
+    },
+    "modified_at": "2026-11-04T08:37:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "admin"
+    }
+   },
    "amount": "500.00",
    "id": "0000000000001",
    "invoice": "0000000000003",
@@ -5692,6 +5824,18 @@
      "name": "record_payment"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:45:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:56:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "admin"
+    }
+   },
    "_calculation": {
     "language": "finite-v1",
     "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
@@ -5770,6 +5914,18 @@
      "name": "record_payment"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:21:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:24:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_deletable": false,
    "_effects": [
     {
@@ -5843,6 +5999,18 @@
      "reason": "The condition for this action is not met"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:21:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:38:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_deletable": false,
    "_effects": [
     {
@@ -5911,6 +6079,18 @@
      "reason": "The condition for this action is not met"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:42:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:42:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_calculation": {
     "language": "finite-v1",
     "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
@@ -5994,6 +6174,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -6133,11 +6314,14 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -6189,6 +6373,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -6207,6 +6392,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "effect_target": true,
@@ -6457,6 +6643,8 @@
      "label": "Ledger entry",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "customer",
         "debit",
@@ -6465,6 +6653,7 @@
         "source",
         "reversal"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -6500,6 +6689,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -6917,6 +7107,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "effects": [
@@ -7315,6 +7506,8 @@
      "label": "Invoice",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "number",
         "customer",
@@ -7322,15 +7515,19 @@
         "due_on",
         "status"
        ],
+       "flow": "rows",
        "label": "Invoice"
       },
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "total",
         "outstanding",
         "remarks",
         "revises"
        ],
+       "flow": "rows",
        "label": "Amounts"
       }
      ],
@@ -7517,6 +7714,7 @@
        "issued"
       ]
      },
+     "tabs": [],
      "title_field": "number",
      "unpostable": true,
      "voidable": true
@@ -7534,6 +7732,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7696,11 +7895,14 @@
      "label": "Payment",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "invoice",
         "amount",
         "paid_on"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -7731,6 +7933,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -7747,6 +7950,7 @@
      },
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7914,12 +8118,15 @@
      "label": "Invoice line",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "item",
         "qty",
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -7944,6 +8151,7 @@
       "item"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "item"
     }
    ],
@@ -7980,6 +8188,18 @@
      "reason": "The condition for this action is not met"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:45:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:52:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "admin"
+    }
+   },
    "_calculation": {
     "language": "finite-v1",
     "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
@@ -8060,6 +8280,18 @@
      "name": "record_payment"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:45:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:48:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_deletable": false,
    "_effects": [
     {
@@ -8134,6 +8366,18 @@
      "name": "record_payment"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:45:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:48:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_deletable": false,
    "_effects": [
     {
@@ -8210,6 +8454,18 @@
  "invoice_viewer_detail": {
   "body": {
    "_actions": [],
+   "_audit": {
+    "created_at": "2026-11-04T08:28:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:36:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_deletable": false,
    "_journal": {
     "count": 12,
@@ -8272,7 +8528,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-04T12:19:14.152Z",
+     "at": "2026-11-05T05:45:10.214Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -8284,7 +8540,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.144Z",
+     "at": "2026-11-05T05:45:10.213Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -8296,7 +8552,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.137Z",
+     "at": "2026-11-05T05:45:10.211Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -8306,7 +8562,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.130Z",
+     "at": "2026-11-05T05:45:10.208Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -8318,7 +8574,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.123Z",
+     "at": "2026-11-05T05:45:10.206Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -8327,7 +8583,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.063Z",
+     "at": "2026-11-05T05:45:10.188Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8342,7 +8598,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.042Z",
+     "at": "2026-11-05T05:45:10.180Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -8352,7 +8608,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.042Z",
+     "at": "2026-11-05T05:45:10.180Z",
      "data": {},
      "id": 15,
      "kind": "changed",
@@ -8360,7 +8616,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.042Z",
+     "at": "2026-11-05T05:45:10.180Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8381,7 +8637,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:14.018Z",
+     "at": "2026-11-05T05:45:10.169Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -8393,7 +8649,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:13.980Z",
+     "at": "2026-11-05T05:45:10.154Z",
      "data": {
       "fields": {
        "total": {
@@ -8455,7 +8711,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-04T12:19:13.950Z",
+     "at": "2026-11-05T05:45:10.139Z",
      "data": {
       "fields": {
        "customer": {
@@ -8524,6 +8780,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -8663,11 +8920,14 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -8709,6 +8969,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -9058,6 +9319,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -9434,6 +9696,8 @@
      "label": "Invoice",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "number",
         "customer",
@@ -9441,15 +9705,19 @@
         "due_on",
         "status"
        ],
+       "flow": "rows",
        "label": "Invoice"
       },
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "total",
         "outstanding",
         "remarks",
         "revises"
        ],
+       "flow": "rows",
        "label": "Amounts"
       }
      ],
@@ -9636,6 +9904,7 @@
        "issued"
       ]
      },
+     "tabs": [],
      "title_field": "number",
      "unpostable": true,
      "voidable": true
@@ -9653,6 +9922,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -9815,11 +10085,14 @@
      "label": "Payment",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "invoice",
         "amount",
         "paid_on"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -9850,6 +10123,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -9866,6 +10140,7 @@
      },
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -10033,12 +10308,15 @@
      "label": "Invoice line",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "item",
         "qty",
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -10063,6 +10341,7 @@
       "item"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "item"
     }
    ],
@@ -10099,6 +10378,18 @@
      "reason": "The condition for this action is not met"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:10:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:17:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_calculation": {
     "language": "finite-v1",
     "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
@@ -10169,6 +10460,18 @@
      "name": "record_payment"
     }
    ],
+   "_audit": {
+    "created_at": "2026-11-04T08:10:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:13:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
    "_deletable": false,
    "_effects": [
     {
@@ -10800,6 +11103,18 @@
  },
  "product": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T06:01:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "admin"
+    },
+    "modified_at": "2026-11-04T06:01:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "admin"
+    }
+   },
    "id": "0000000000001",
    "name": null,
    "price": "250.00",
@@ -10823,6 +11138,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -10962,11 +11278,14 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -11008,6 +11327,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -11021,6 +11341,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -11126,10 +11447,13 @@
      "label": "Product",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "price"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -11157,6 +11481,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -11758,6 +12083,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -12151,6 +12477,8 @@
      "label": "Order",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "customer",
@@ -12162,6 +12490,7 @@
         "total",
         "line_count"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -12205,6 +12534,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -12232,6 +12562,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -12405,12 +12736,15 @@
      "label": "Line",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "product",
         "qty",
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -12433,6 +12767,7 @@
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
+     "tabs": [],
      "title_field": "id"
     },
     {
@@ -12441,6 +12776,7 @@
      "autosave": true,
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "fields": [
       {
@@ -12482,9 +12818,12 @@
      "label": "Part",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "hours"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -12501,6 +12840,7 @@
      },
      "plural": "Parts",
      "search_fields": [],
+     "tabs": [],
      "title_field": "id"
     }
    ],
@@ -12556,6 +12896,18 @@
  },
  "update": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T06:02:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "admin"
+    },
+    "modified_at": "2026-11-04T08:05:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "admin"
+    }
+   },
    "_calculation": {
     "language": "finite-v1",
     "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3"

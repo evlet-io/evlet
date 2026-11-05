@@ -349,6 +349,17 @@
                     {
                       "bindings": {},
                       "events": {},
+                      "id": "project",
+                      "props": {
+                        "field": "project"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
                       "id": "reference",
                       "props": {
                         "field": "reference"
@@ -462,6 +473,17 @@
                       "id": "customer",
                       "props": {
                         "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "project",
+                      "props": {
+                        "field": "project"
                       },
                       "slots": {},
                       "type": "Field",
@@ -584,6 +606,17 @@
                       "id": "customer",
                       "props": {
                         "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "project",
+                      "props": {
+                        "field": "project"
                       },
                       "slots": {},
                       "type": "Field",
@@ -1352,7 +1385,22 @@
                       "slots": {},
                       "type": "Field",
                       "version": 1
-                    },
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_3",
+                "props": {
+                  "gap": 16,
+                  "title": "Schedule"
+                },
+                "slots": {
+                  "children": [
                     {
                       "bindings": {},
                       "events": {},
@@ -1372,7 +1420,7 @@
               {
                 "bindings": {},
                 "events": {},
-                "id": "section_3",
+                "id": "section_4",
                 "props": {
                   "gap": 16,
                   "title": "Notes"
@@ -1504,7 +1552,22 @@
                       "slots": {},
                       "type": "Field",
                       "version": 1
-                    },
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_3",
+                "props": {
+                  "gap": 16,
+                  "title": "Schedule"
+                },
+                "slots": {
+                  "children": [
                     {
                       "bindings": {},
                       "events": {},
@@ -1524,7 +1587,7 @@
               {
                 "bindings": {},
                 "events": {},
-                "id": "section_3",
+                "id": "section_4",
                 "props": {
                   "gap": 16,
                   "title": "Notes"
@@ -1655,7 +1718,22 @@
                       "slots": {},
                       "type": "Field",
                       "version": 1
-                    },
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_3",
+                "props": {
+                  "gap": 16,
+                  "title": "Schedule"
+                },
+                "slots": {
+                  "children": [
                     {
                       "bindings": {},
                       "events": {},
@@ -1675,7 +1753,7 @@
               {
                 "bindings": {},
                 "events": {},
-                "id": "section_3",
+                "id": "section_4",
                 "props": {
                   "gap": 16,
                   "title": "Notes"
@@ -11149,7 +11227,10 @@
             "active",
             "currency",
             "notes"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "columns"
         }
       ],
       "label": "Customer",
@@ -11169,6 +11250,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -11454,12 +11537,16 @@
           "fields": [
             "name",
             "customer",
+            "project",
             "reference",
             "total",
             "posting_date",
             "status",
             "tax_rate"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Invoice",
@@ -11482,6 +11569,8 @@
         "title"
       ],
       "open_in": "panel",
+      "tabs": [],
+      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -11495,6 +11584,35 @@
           "target": "customer",
           "label": "Customer",
           "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "project",
+          "type": "link",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "minimum": 1,
+          "maximum": null,
+          "target": "project",
+          "label": "Project",
+          "help_text": "One of this customer's projects.",
           "placeholder": "",
           "hidden": false,
           "read_only": false,
@@ -11744,6 +11862,18 @@
           "locked_when": null
         }
       ],
+      "behavior": {
+        "project": {
+          "filters": {
+            "customer": {
+              "$expr": "ref",
+              "args": [
+                "customer"
+              ]
+            }
+          }
+        }
+      },
       "naming": {
         "field": "name",
         "assign_on": "create",
@@ -11805,7 +11935,10 @@
             "currency",
             "amount",
             "received_at"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Payment",
@@ -11826,6 +11959,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "autosave": false,
       "fields": [
         {
@@ -12073,7 +12208,10 @@
             "posting_date",
             "amount",
             "memo"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Ledger entry",
@@ -12093,6 +12231,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -12335,21 +12475,38 @@
             "title",
             "customer",
             "status"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "Planning",
           "fields": [
             "budget",
-            "progress",
+            "progress"
+          ],
+          "collapsible": true,
+          "collapsed": false,
+          "flow": "rows"
+        },
+        {
+          "label": "Schedule",
+          "fields": [
             "starts_on"
-          ]
+          ],
+          "collapsible": true,
+          "collapsed": true,
+          "flow": "rows"
         },
         {
           "label": "Notes",
           "fields": [
             "notes"
-          ]
+          ],
+          "collapsible": true,
+          "collapsed": "empty",
+          "flow": "rows"
         }
       ],
       "label": "Project",
@@ -12369,6 +12526,12 @@
         "name"
       ],
       "open_in": "panel",
+      "tabs": [
+        "details",
+        "related",
+        "activity"
+      ],
+      "default_tab": "details",
       "autosave": true,
       "fields": [
         {
@@ -12663,7 +12826,19 @@
       "attachment_limits": {
         "max_files": 10,
         "max_size": 1048576
-      }
+      },
+      "relations": [
+        {
+          "name": "invoice.project",
+          "label": "Invoices",
+          "model": "invoice",
+          "link": "project",
+          "limit": 10,
+          "order": [
+            "-id"
+          ]
+        }
+      ]
     },
     {
       "name": "projecttask",
@@ -12674,7 +12849,10 @@
             "project",
             "title",
             "done"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Project task",
@@ -12691,6 +12869,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -12833,7 +13013,10 @@
             "brand",
             "standard_rate",
             "disabled"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "Details",
@@ -12857,7 +13040,10 @@
             "valuation_method",
             "lead_time_days",
             "tax_category"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "GCC markets",
@@ -12922,7 +13108,10 @@
             "kuwait_discount",
             "kuwait_promo_price",
             "kuwait_status"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "Other markets",
@@ -12967,7 +13156,10 @@
             "export_discount",
             "export_promo_price",
             "export_status"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "Warehouses",
@@ -13020,7 +13212,10 @@
             "doha_stocked",
             "doha_counted_on",
             "doha_safety_stock"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         },
         {
           "label": "Specifications",
@@ -13055,7 +13250,10 @@
             "flavour",
             "fragrance",
             "gauge"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Item",
@@ -13077,6 +13275,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -20051,7 +20251,10 @@
             "full_name",
             "email",
             "reports_to"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Employee",
@@ -20071,6 +20274,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -20288,7 +20493,10 @@
             "rate",
             "min_qty",
             "valid_from"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Price",
@@ -20307,6 +20515,8 @@
         "currency"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -20527,7 +20737,10 @@
           "fields": [
             "barcode",
             "barcode_type"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Barcode",
@@ -20544,6 +20757,8 @@
         "barcode_type"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "autosave": true,
       "fields": [
         {

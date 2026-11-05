@@ -60,12 +60,28 @@ export class Prefs {
     });
   }
 
+  /** Open and closed form sections of a model, by section title (true is open), for the record page and
+   * the side panel alike. Sections closed in a side panel before this key (`panel.<model>.closed`) carry over once. */
+  formSections(model: string): Cell<Record<string, boolean>> {
+    const name = `form.${model}.open`, fresh = !this.cells.has(name);
+    const value = this.cell<Record<string, boolean>>(name, {});
+    const old = fresh ? this.read<unknown>(`panel.${model}.closed`, null) : null;
+    if (Array.isArray(old)) {
+      const carried = Object.fromEntries(old.filter((title): title is string => typeof title === 'string').map(title => [title, false]));
+      value.set({ ...carried, ...value.peek() });
+      try { this.storage?.removeItem(this.key(`panel.${model}.closed`)); } catch { /* blocked */ }
+    }
+    return value;
+  }
+
   get collapsed() { return this.cell('collapsed', false); }
   get density() { return this.cell<Density>('density', 'comfortable'); }
   /** This session's recent searches (memory only). */
   get recentSearches() { return this.memory<string[]>('recentQ', []); }
   /** This session's recent records (memory only). */
   get recentRecords() { return this.memory<Array<{ model: string; id: string; title: string }>>('recents', []); }
+  /** Record info shows exact times instead of relative ones ("2 hours ago"). */
+  get exactTimes() { return this.cell<boolean>('exactTimes', false); }
   get quickRows() { return this.cell<1 | 2>('qaRows', 1); }
   get quickIds() { return this.cell<string[] | null>('qaIds', null); }
 

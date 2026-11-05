@@ -1,7 +1,7 @@
 """A small consumer of Evlet's public API, not an accounting system."""
 
-from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Registry,
-                   Rule, Select, Series, Text)
+from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Ref, Registry,
+                   Rule, Section, Select, Series, Text)
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
 CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
@@ -14,6 +14,9 @@ class Customer(Model):
         title_field = 'customer_name'
         list_fields = ('customer_name', 'email', 'active')
         search_fields = ('customer_name', 'email')
+        # flow='columns': down the left column (name, email, active), then the right (currency); Tab goes the
+        # same way, and notes, full width, sits below both columns.
+        layout = (Section('Details', ('customer_name', 'email', 'active', 'currency', 'notes'), collapsible=False, flow='columns'),)
 
     customer_name = Text(required=True, max_length=120, label='Customer name')
     email = Text(max_length=254)
@@ -39,6 +42,9 @@ class Invoice(Model):
         period = 'posting_date'
 
     customer = Link(Customer, required=True)
+    # Only projects of the invoice's customer. Changing the customer clears a project of another one,
+    # with a note under the field; the server names the mismatch if one is saved anyway.
+    project = Link('project', filters={'customer': Ref('customer')}, help_text="One of this customer's projects.")
     # help_text reads under the input; tooltip sits behind a ? icon at its right end.
     reference = Text(required=True, unique=True, max_length=40, label='Customer reference',
                      help_text="The customer's reference for this invoice.",
@@ -88,7 +94,15 @@ class Project(Model):
     class Meta:
         description = "Track a small project and its customer."
         list_fields = ('title', 'customer', 'status', 'budget')
-        layout = (('Project', ('title', 'customer', 'status')), ('Planning', ('budget', 'progress', 'starts_on')), ('Notes', ('notes',)))
+        # A plain ('Title', fields) group always shows; a Section can be opened and closed. Planning
+        # starts open, Schedule starts closed and Notes starts closed when it is empty.
+        layout = (('Project', ('title', 'customer', 'status')),
+                  Section('Planning', ('budget', 'progress')),
+                  Section('Schedule', ('starts_on',), collapsed=True),
+                  Section('Notes', ('notes',), collapsed='empty'))
+        # The record page's tabs: Details first, then the project's tasks (Related) and its history.
+        tabs = ('details', 'related', 'activity')
+        default_tab = 'details'
         open_in = 'panel'
 
     # A declared title is the record title itself.

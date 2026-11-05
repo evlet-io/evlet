@@ -9,7 +9,10 @@
             "title",
             "status",
             "total"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Order",
@@ -28,6 +31,8 @@
         "name"
       ],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -241,7 +246,10 @@
             "rate",
             "amount",
             "stock"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
         }
       ],
       "label": "Item",
@@ -257,6 +265,8 @@
       ],
       "search_fields": [],
       "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -581,6 +591,18 @@
           "amount": "2.50"
         }
       ]
+    },
+    "_audit": {
+      "created_at": "2026-11-04T06:00:00.000Z",
+      "created_by": {
+        "id": 1,
+        "name": "admin"
+      },
+      "modified_at": "2026-11-04T06:00:00.000Z",
+      "modified_by": {
+        "id": 1,
+        "name": "admin"
+      }
     }
   },
   "etag": "\"e7c37c8a86dcf2ce2877cecc7d86f4efbb1766b8f0188b8e3202accb8b4b52ce\""

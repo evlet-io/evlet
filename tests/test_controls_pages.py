@@ -273,8 +273,9 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     app = build(tmp_path, *models())
     add_user(app, 'admin', 'admin')
     admin = client(app)
-    sections = [{'title': 'Main', 'fields': [{'name': 'title', 'width': 6}, {'name': 'source', 'width': 6}]},
-                {'title': 'More', 'fields': [{'name': 'value', 'width': 6}, {'name': 'customer', 'width': 6}, {'name': 'notes', 'width': 12}]}]
+    sections = [{'title': 'Main', 'fields': [{'name': 'title', 'width': 6}, {'name': 'source', 'width': 6}], 'flow': 'columns'},
+                {'title': 'More', 'fields': [{'name': 'value', 'width': 6}, {'name': 'customer', 'width': 6}, {'name': 'notes', 'width': 12}],
+                 'collapsible': True, 'collapsed': 'empty'}]
     series = [{'id': 'large', 'label': 'Large', 'format': 'LG-{YYYY}-{####}', 'when': 'total >= 1000'},
               {'id': 'default', 'label': 'Invoices', 'format': 'INV-{YYYY}-{####}', 'when': ''}]
     perm = {'ops': ['read', 'update'], 'read': None, 'write': ['title', 'value'], 'scope': None}
@@ -283,7 +284,7 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
                               ('field', 'Lead.value', {'required': True, 'label': 'Expected value'}),
                               ('field', 'Lead.source', {'options_add': ['exhibition'], 'default': 'web'}),
                               ('field', 'Lead.x_lpo', {'help_text': 'From the purchase order', 'tooltip': 'Ask the customer if it is missing'}),
-                              ('layout', 'Lead', sections), ('list', 'Lead', {'columns': ['title', 'value'], 'page_size': 25, 'sort': 'title', 'open_in': 'panel'}),
+                              ('layout', 'Lead', {'sections': sections, 'tabs': ['details', 'activity'], 'default_tab': 'details'}), ('list', 'Lead', {'columns': ['title', 'value'], 'page_size': 25, 'sort': 'title', 'open_in': 'panel'}),
                               ('naming', 'Invoice', series), ('setting', 'security.controls_ips', ['127.0.0.0/8']), ('setting', 'security.lockout', 4))
     assert status == 200, payload
     exported = {item['file']: item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1]}
@@ -292,6 +293,10 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
                                 f'{folder}/permissions.py', f'{folder}/views/__init__.py']
     for file, code in exported.items():
         compile(code, file, 'exec')
+    # FormLayout has no collapse options, so the export says where they go.
+    assert "    # Meta.layout: Section('More', ..., collapsed='empty')" in exported[f'{folder}/views/__init__.py']
+    assert "    # Meta.layout: Section('Main', ..., flow='columns')" in exported[f'{folder}/views/__init__.py']
+    assert "# Meta.tabs = ('details', 'activity')\n# Meta.default_tab = 'details'\n" in exported[f'{folder}/views/__init__.py']
 
     Customer, Lead, Invoice, _ = (app.registry.models[name] for name in ('customer', 'lead', 'invoice', 'order'))
     names = {**{key: getattr(evlet, key) for key in evlet.__all__}, 'Customer': Customer, 'Lead': Lead, 'Invoice': Invoice}

@@ -8,7 +8,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 - **Unsaved changes are kept when you leave a record, and the record is never written.** Leaving
   a saved record with unsaved edits keeps the edited fields in the new framework table
-  `evlet_unsaved` (framework migration `0004_unsaved_changes`, so run `evlet migrate`), and the
+  `evlet_unsaved` (framework migration `0005_unsaved_changes`, so run `evlet migrate`), and the
   next visit offers Restore or Discard, with a per-field choice when the record changed in the
   meantime. Unsaved new records stay in the browser. Only Save writes the record, so no validator,
   event, number or history runs on leave. New routes `GET /api/_unsaved` and
@@ -20,6 +20,65 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   leave prompt), which `/api/schema` shows as `autosave`. What to change: nothing, unless a model
   should keep the leave prompt; then set `Meta.autosave = False`. Database tools that list
   framework tables see one more ([docs/ui.md](docs/ui.md#unsaved-changes)).
+- **Field order, record tabs and Enter to move on.** `Section(..., flow="columns")` lists a
+  section's fields down the left column, then the right (full-width fields break the run); the DOM
+  and Tab follow the same order. `Meta.tabs` and `Meta.default_tab` order the record page's tabs and
+  choose the one it opens on, validated at registration. The schema adds `flow` per layout entry and
+  `tabs` and `default_tab` per model (additive). The Controls form layout gets Fields go, drag to
+  reorder fields and sections (mouse, touch and keyboard, with announcements) and a Record tabs card;
+  a layout with a tab order is saved as `{"sections", "tabs", "default_tab"}`, and plain lists load as
+  before. Tab skips read-only and calculated values. A new Appearance setting, "Enter moves to the
+  next field" (`enter_next`, off by default), speeds up data entry. The Playground's Customer uses
+  `flow="columns"` and Project sets `Meta.tabs`.
+- **Collapsible form sections.** `evlet.Section(title, fields, *, collapsible=True, collapsed=False)`
+  in `Model.Meta.layout` is a section people can open and close; `collapsed` is `False` (open),
+  `True` (closed) or `'empty'` (closed when every field is empty on an existing record). Plain
+  `('Title', fields)` groups still work and always show. Each UI schema layout entry gains
+  `collapsible` and `collapsed` (additive). The Controls form layout gets Can collapse and Starts
+  per section, stored as optional `collapsible` and `collapsed`; older saved layouts load as before.
+  Record pages remember each person's choice per model, with Reset layout in the More menu; on phones
+  sections after the first start closed. Migration checksums do not change. The Playground's Project
+  shows all three starting states, so its Planning group is split into Planning and Schedule
+  ([docs/business-capabilities.md](docs/business-capabilities.md#collapsible-sections)).
+- **Created and last modified on every record.** Every model table gains four framework columns,
+  `evlet_created_at`, `evlet_created_by`, `evlet_modified_at` and `evlet_modified_by` (UTC times and
+  user ids), filled in the same statement as every write: the record routes, the document pipeline,
+  actions, moves, effects, void, unpost, repost and revise, `business.context(user)` and raw sessions
+  (as the engine, or `session.actor`). Record details carry them as `_audit`, outside the ETag, with
+  who as `{"id", "name"}` (null for the engine and for portal roles). The record page's Record info
+  shows "Created 2 hours ago · Aslam" and "Last modified", with the exact time on hover and a click to
+  switch to exact times, remembered per person; the Activity tab's times are relative too. A new
+  browser component, `RelativeTime`, shares one minute clock that pauses in a hidden tab
+  ([docs/model-engine.md](docs/model-engine.md#record-times), [docs/ui-framework.md](docs/ui-framework.md#relative-times)).
+  What to change: run `evlet migrate`; framework migration `0004_record_times` adds the columns and
+  fills them from the Journal, or from the time in the record id. A model may not declare a field with
+  one of these names. Fixture scripts that need stable output wrap generation in
+  `evlet.audit.fixed_times()`, as they do with `sequential_ids()`.
+- **Columns menu with drag and a pinned range.** Child tables and reports share one Columns menu:
+  drag a grip (mouse, touch, or Space and the arrow keys) to reorder, and drag columns above a
+  divider, or use the pin button, to pin any number of them on the left. `TablePrefs` gains an
+  optional `pinned` count; prefs saved without it keep the first column pinned. The up and down
+  arrow buttons are gone. A child table's Focus view keeps a compact record header (mark, type,
+  title, number, Back to form) above the table and the save bar below it (the `heading` option of `ChildTable`).
+- **Fix: focus in the editable child table.** Clicking a cell focuses it while another cell is
+  being edited, with one active cell at a time (a cell that can't be committed keeps the focus,
+  and an unchanged cell never blocks). Tab and Shift Tab reach every editable cell from a cell in
+  navigation mode too, then go on to Add row. A choice from a dropdown or Link search returns the
+  focus to its cell, so Tab and Enter continue as the footer says.
+- **Link filters that read another field follow it in the form.** For a Link such as
+  `branch = Link(Branch, filters={"company": Ref("company")})`, the picker now lists only records
+  that fit the form's current, unsaved values (before, it ignored `filters`), and asks for an empty
+  referenced field first. Changing a field checks every Link whose filters read it, on the same row
+  and on Table rows through `Ref("parent.<field>")`: a value that still fits stays, one that no
+  longer fits is cleared with a note such as "Cleared because Company changed", and chains clear
+  together. The field error is plainer: "Port office is not in Summit Services." with one filter
+  and readable titles, "Choose Company first." for an empty referenced field, and otherwise "This
+  Branch doesn't fit the other values on this form." It never shows a title the role cannot read.
+  What to change: code or tests that match the old text "The selected record does not match the
+  current filters" match the new messages; the error stays a field error with status 422. The
+  schema sends `behavior.<field>.filters` for models with no other rules too. The Playground's
+  Invoice has a Project limited to the customer's projects (migration `0010_invoice_project`)
+  ([docs/business-capabilities.md](docs/business-capabilities.md#link-filters), [docs/ui.md](docs/ui.md#link-filters)).
 - **`evlet dev` creates the first admin.** On an instance with no accounts, `evlet dev` creates an
   active admin (`admin`, or `--user NAME`) with a random password that is never shown and prints a
   one-time sign-in link, so you type no password or two-step code in development. `--no-link` skips

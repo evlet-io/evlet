@@ -40,6 +40,18 @@
  },
  "contact_create": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T09:59:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "owner"
+    },
+    "modified_at": "2026-11-04T09:59:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "owner"
+    }
+   },
    "email": "mariam@example.com",
    "id": "0000000000001",
    "name": null,
@@ -52,6 +64,18 @@
  },
  "contact_detail": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T09:59:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "owner"
+    },
+    "modified_at": "2026-11-04T09:59:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "owner"
+    }
+   },
    "email": "mariam@example.com",
    "id": "0000000000001",
    "name": null,
@@ -913,6 +937,18 @@
  },
  "quote_create": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T10:00:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "owner"
+    },
+    "modified_at": "2026-11-04T10:00:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "owner"
+    }
+   },
    "customer": "0000000000001",
    "id": "0000000000001",
    "issued": "2026-10-20",
@@ -925,6 +961,18 @@
  },
  "quote_detail": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T10:00:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "owner"
+    },
+    "modified_at": "2026-11-04T10:00:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "owner"
+    }
+   },
    "customer": "0000000000001",
    "id": "0000000000001",
    "issued": "2026-10-20",
@@ -1134,6 +1182,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -1273,11 +1322,14 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -1307,6 +1359,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     }
    ],
@@ -1524,6 +1577,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -1663,11 +1717,14 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -1719,6 +1776,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -1732,6 +1790,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -1837,10 +1896,13 @@
      "label": "Product",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "price"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -1868,6 +1930,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -2469,6 +2532,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -2862,6 +2926,8 @@
      "label": "Order",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "customer",
@@ -2873,6 +2939,7 @@
         "total",
         "line_count"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -2916,6 +2983,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -2955,6 +3023,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -3117,12 +3186,15 @@
      "label": "Contact",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "email",
         "phone",
         "notes"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -3155,6 +3227,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -3170,6 +3243,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -3328,11 +3402,14 @@
      "label": "Quote",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "number",
         "customer",
         "issued"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -3370,6 +3447,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "number"
     },
     {
@@ -3397,6 +3475,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -3570,12 +3649,15 @@
      "label": "Line",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "product",
         "qty",
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -3598,6 +3680,7 @@
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
+     "tabs": [],
      "title_field": "id"
     },
     {
@@ -3606,6 +3689,7 @@
      "autosave": true,
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "fields": [
       {
@@ -3647,9 +3731,12 @@
      "label": "Part",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "hours"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -3666,6 +3753,7 @@
      },
      "plural": "Parts",
      "search_fields": [],
+     "tabs": [],
      "title_field": "id"
     }
    ],
@@ -4086,6 +4174,7 @@
     "counts": false,
     "date": "dd-MM-yyyy",
     "density": "comfortable",
+    "enter_next": false,
     "keep_unsaved": true,
     "lang": "en",
     "num": "1,234.56",
@@ -4557,6 +4646,18 @@
  },
  "slip_customer": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T10:01:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "owner"
+    },
+    "modified_at": "2026-11-04T10:01:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "owner"
+    }
+   },
    "credit_days": 30,
    "id": "0000000000001",
    "name": null,
@@ -5064,6 +5165,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -5203,11 +5305,14 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -5244,6 +5349,7 @@
       }
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -5257,6 +5363,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -5362,10 +5469,13 @@
      "label": "Product",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "price"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -5393,6 +5503,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     }
    ],
@@ -5428,6 +5539,18 @@
  },
  "viewer_contact_detail": {
   "body": {
+   "_audit": {
+    "created_at": "2026-11-04T09:59:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "Owner"
+    },
+    "modified_at": "2026-11-04T09:59:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "Owner"
+    }
+   },
    "email": "mariam@example.com",
    "id": "0000000000001",
    "title": "Mariam Haddad"
@@ -5466,6 +5589,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -5605,11 +5729,14 @@
      "label": "Customer",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -5661,6 +5788,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -5674,6 +5802,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -5779,10 +5908,13 @@
      "label": "Product",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "price"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -5810,6 +5942,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -6391,6 +6524,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -6784,6 +6918,8 @@
      "label": "Order",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "customer",
@@ -6795,6 +6931,7 @@
         "total",
         "line_count"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -6838,6 +6975,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -6854,6 +6992,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -6923,10 +7062,13 @@
      "label": "Contact",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "title",
         "email"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -6953,6 +7095,7 @@
       "email"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -6968,6 +7111,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7126,11 +7270,14 @@
      "label": "Quote",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "number",
         "customer",
         "issued"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -7168,6 +7315,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "number"
     },
     {
@@ -7195,6 +7343,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7368,12 +7517,15 @@
      "label": "Line",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "product",
         "qty",
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -7396,6 +7548,7 @@
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
+     "tabs": [],
      "title_field": "id"
     },
     {
@@ -7404,6 +7557,7 @@
      "autosave": true,
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "fields": [
       {
@@ -7445,9 +7599,12 @@
      "label": "Part",
      "layout": [
       {
+       "collapsed": false,
+       "collapsible": false,
        "fields": [
         "hours"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -7464,6 +7621,7 @@
      },
      "plural": "Parts",
      "search_fields": [],
+     "tabs": [],
      "title_field": "id"
     }
    ],

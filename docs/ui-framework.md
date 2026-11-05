@@ -279,12 +279,15 @@ mark only.
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type, `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
 | `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
+| `fold.ts` | FoldSection, Folds, `foldSummary`, `revealField`, `revealFirstError` ([collapsible sections](ui.md#collapsible-sections)), `flowGrid` (rows or columns) |
+| `draglist.ts` | `dragList(root, { kind, move, label, zoneLabel })`: reorder by mouse, touch or keyboard, with announcements |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table`, and ChildRows for a narrow column |
 | `split.ts` | SplitView: a main area and a resizable side panel |
 | `doc.ts` | DocFrame (page or panel variant), DocHeader, MoveButton, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
 | `theme.ts` | `applyTheme`, `resolveTheme`, `systemScheme`, `currentTheme`, `THEMES`, `isTheme` ([Themes](#themes)) |
+| `time.ts` | `RelativeTime`, `relativeTime`, `exactTime`, `zoneLabel`, `RELATIVE_STEPS`, `minuteClock` ([Relative times](#relative-times)) |
 | `../app/filters.ts` | The list filter builder: filterBuilder, FilterPanel, FilterChips, filterFields, conditionsFor, encode, decode, compact |
 | `library.ts` | The Library page; open `/evlet.html` on the dev server (`npm run dev`) |
 
@@ -296,6 +299,37 @@ a lock hint says why ("Locked when Stage is won"), a calculated value shows its 
 GST date-times, exact decimals, `1h 30m` durations) and a wrong value stays in the input with
 a message that says how to fix it. `localField()` makes the same cells for forms that are not
 records, such as action dialogs.
+
+### Relative times
+
+`RelativeTime({ at, exact?, onToggle?, className? })` shows a moment as words relative to now, in a
+`<time datetime="...">` element. Hover or keyboard focus shows the exact time in a tooltip, in the
+person's date format and zone: `04-11-2026 14:05 GST` (GST unless they chose another zone in
+Settings). Its accessible name holds both forms.
+
+| Time since | Words |
+|---|---|
+| under 1 minute | just now |
+| under 1 hour | 1 minute ago, 2 minutes ago ... |
+| under 24 hours | 1 hour ago, 2 hours ago ... |
+| under 7 days | yesterday (24 to 48 hours), 2 days ago ... |
+| under 5 weeks | last week (7 to 13 days), 2 weeks ago ... |
+| 5 weeks or more | the date, such as 30-09-2026 |
+
+The thresholds live in one list, `RELATIVE_STEPS`, and the words come from `Intl.RelativeTimeFormat`
+with no library. A time slightly in the future (another clock) reads "just now".
+
+All RelativeTimes on a page share one minute clock (`minuteClock()`): one timer while any is shown,
+none while the tab is hidden, and a catch-up the moment it shows again, so "just now" becomes "1 minute
+ago" by itself. With `exact` the element shows the exact time and the tooltip the words; with
+`onToggle` it is a button (`aria-pressed`) that switches them.
+
+The record page's Record info block shows **Created** and **Last modified** from the detail's
+`_audit` ([model-engine.md](model-engine.md#record-times)): `2 hours ago · Aslam`. Clicking a
+time switches every time in Record info between relative and exact, remembered per person
+(`prefs.exactTimes`). Who is the person's display name, a link to Controls Users for people who may
+open Controls and plain text otherwise; it is absent for engine writes and for portal roles. The
+Activity tab's entry times use RelativeTime too, without the toggle.
 
 ### Typing dates and times
 
@@ -443,19 +477,36 @@ mount(document.querySelector('#app')!, () => DocFrame({
   Reload, which reads the record again and keeps the typed value to save again. A saved value
   confirms with a toast that has Undo.
 - **ChildTable** binds to a record `Table`: click or Enter edits a cell, Tab and Shift Tab move
-  across editable cells and wrap rows, Enter moves down, Esc cancels, arrow keys move between
-  cells, typing starts editing (on a Link cell it opens the search with what was typed), Alt and an
+  across editable cells and wrap rows (from a cell being edited or not; past the last cell Tab
+  goes on to Add row), Enter moves down, Esc cancels, arrow keys move between cells. One cell is
+  active at a time and it holds the focus (a roving `tabindex` in a `role="grid"`): a click or tap
+  focuses the clicked cell, a cell that can't be committed keeps the focus, and an unchanged cell
+  never blocks moving on. A choice from a dropdown, Link search or picker commits the cell and
+  returns the focus to it, so Tab goes to the next cell and Enter to the cell below. Typing starts
+  editing (on a Link cell it opens the search with what was typed), Alt and an
   arrow moves a row. Rows can be added, duplicated
   (with their rows of rows, as new rows), removed with Undo (`Table.restore()` brings back
   the same rows with their ids and rows of rows; Undo is refused with a message while the
   record saves or the lines are locked), opened in place with every field and their nested
-  tables, and the table can take over the view (focus view). Under 480 px the control column
+  tables, and the table can take over the view (focus view). With `heading` (the record's type,
+  icon, mark, title, number and a `footer` such as the form's save bar), focus view keeps a compact
+  record header above the table and the save bar below it, outside the rows that scroll; on a phone
+  the header is one line. Esc or Back to form returns to the form. Under 480 px the control column
   and the first column get narrower. The footer and the totals under it come from the parent's calculated
   sums over the table (`total = lines.sum("amount")`). Only rows in view are in the DOM.
 - **DataTable** sorts (exact for decimals), resizes (double click resets), reorders columns
-  (drag a header, or Alt and an arrow), pins the first column, selects rows, moves with the
-  arrow keys and opens with Enter. Widths, order and hidden columns live in a `TablePrefs`
-  cell the screen saves per user. When the frame is wider than the columns, the last column
+  (drag a header, or Alt and an arrow, within the pinned or the scrolling range), pins columns on
+  the left (`pinned`, default 1, or the saved range), selects rows, moves with the arrow keys and
+  opens with Enter. Widths, order, hidden columns and the pinned count (`pinned`) live in a
+  `TablePrefs` cell the screen saves per user; prefs saved without `pinned` keep the table's
+  default.
+- **ColumnsMenu** is the Columns menu of ChildTable and the report page: show or hide each column
+  (one stays shown), drag a grip to reorder (mouse, touch, or the keyboard: Space lifts, the arrow
+  keys move, Space or Enter drops, Esc cancels, announced as "Phone, position 3 of 5"), and a
+  Pinned range at the top whose divider can be dragged too. The pin button pins a column at the end
+  of the range or unpins it to the start of the rest. One column always stays unpinned, and the
+  menu warns, without blocking, when pinned columns take more than 60% of the table's width.
+  Every pinned column is sticky, with its own left offset, in the header, cells and totals. When the frame is wider than the columns, the last column
   takes the spare width, so the header and row rules reach the edge; the child table does the same.
   `current` marks the row open beside the table (`aria-current`) and keeps it in view; `onMove`
   reports the row the arrow keys move to, so a side panel can follow.
@@ -467,7 +518,20 @@ mount(document.querySelector('#app')!, () => DocFrame({
 - **ChildRows** shows a record `Table` in a narrow column: one line per row with its first value
   and its last amount, the other numbers under it; a row opens in place with its fields, and Add
   row, Remove row and Open full table sit around it. Locked lines show values only.
-- **FormSection** with `collapsible` opens and closes from its heading (`aria-expanded`).
+- **FormSection** with `fold` is a **FoldSection**: a heading button with `aria-expanded`, `aria-controls` and a chevron, a summary and an error
+  count while closed, and `hidden` on the closed body so Tab skips it. A `Folds` holds one form's state: the
+  person's choices (a preferences cell of title to open) over each section's start (`collapsed`, the phone rule,
+  `'empty'`); `reveal(title)` opens one for now and `reset()` forgets the choices. `revealField(root, name)`
+  opens the section holding a field and focuses it. `flowGrid(cells, flow)` lays a section's fields out
+  across then down, or down each column with full-width fields as breaks, in DOM order.
+- **dragList** reorders items in one or more lists. Mark items `data-drag-item="<kind>"` with
+  `data-drag-id`, the lists they may sit in `data-drop-zone="<kind>"` with `data-zone`, and give each item a
+  handle button `data-drag-handle="<kind>"`. Pointer (mouse, pen, touch): press a handle and move past
+  4 px; the item under the pointer shows where it lands. Keyboard: Space or Enter lifts, arrows move
+  (across list edges), Space or Enter drops, Escape puts it back. Every step is announced in a polite
+  live region. Listeners sit on `root`, so the lists may be redrawn after each `move`.
+- **enterMovesToNextField(root, on)** makes Enter and Shift+Enter move between the `[data-field]` blocks
+  under `root` while `on()` is true.
 - Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
   first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
   polite live region that the app creates at mount with `mountToasts()`. A popover stays open
@@ -621,7 +685,8 @@ a title opens the full page in a new browser tab.
 - The panel is the record view with `DocFrame`'s panel variant: the same sections in one column.
   The header keeps two buttons and puts the rest in More; key facts sit under the title; the side
   column's Files and Record info close the Details tab and Related is a tab; sections close from
-  their heading (remembered per model); child tables are ChildRows with Open full table; the save
+  their heading with the same FoldSection and saved state as the record page (`form.<model>.open`, by
+  section title; [collapsible sections](ui.md#collapsible-sections)), and in the panel every section can close; child tables are ChildRows with Open full table; the save
   bar is pinned to the bottom of the panel. Tabs that do not fit scroll sideways.
 - Unsaved changes follow the record page: another tab of the record does not ask; another row,
   Close, Escape, Back or leaving the list does (`confirmLeave` with `stays`). Expand opens the
@@ -659,7 +724,8 @@ a title opens the full page in a new browser tab.
 | `Meta.relations` (Phase 10) | The Related tab and side block |
 | `attachments` | The Files side block, with upload for roles that can update while the record is not locked |
 | `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
-| Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system"), field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
+| Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
+| Every record (`_audit`) | Created and Last modified in the Record info side block, as relative times with who ([Relative times](#relative-times)) |
 
 A section appears only when the schema or the detail carries its key. The screen tests replay
 these keys as the engine sends them, recorded from an invoice with a State, a Sequence, effects,
@@ -676,7 +742,7 @@ Documents in the sidebar, the others as Records.
 Appearance, region, start page and sidebar counts are the person's Settings, kept on the server
 ([settings.md](settings.md)), and so is the theme ([Themes](#themes)). Layout preferences (sidebar, list column
 widths, child table columns, quick access, how each list opens records, the side panel's width and
-the panel sections a person closed) are kept in browser storage under `evlet.<username>.`.
+which form sections a person opened or closed) are kept in browser storage under `evlet.<username>.`.
 They never hold record data: recent records and recent searches stay in memory for the signed-in
 session and go on sign-out. The account area is at the bottom of the sidebar; the top bar keeps
 search and notifications.

@@ -329,7 +329,7 @@ def test_the_framework_step_creates_the_table(tmp_path):
         body = Text()
     database = Database(path, Registry(Memo))
     database.initialize()
-    assert '0004_unsaved_changes' in upgrade(database)
+    assert '0005_unsaved_changes' in upgrade(database)
     with sqlite3.connect(path) as connection:
         assert [row[1] for row in connection.execute('PRAGMA table_info(evlet_unsaved)')] == [
             'user_id', 'model', 'record_id', 'changes', 'base_revision', 'saved_at', 'size']

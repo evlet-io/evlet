@@ -26,7 +26,53 @@ OPEN_IN = ('page', 'panel')
 # The options a model's Meta may declare; each is public (docs/api-stability.md).
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
-                          'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'autosave'))
+                          'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave'))
+
+# How a collapsible section starts: open, closed, or closed when every field in it is empty.
+COLLAPSED = (False, True, 'empty')
+# How a section orders its fields, on screen and for Tab: across then down, or down the left column then the right.
+FLOWS = ('rows', 'columns')
+# The record page's own tabs. Meta.tabs also names Table fields (their child tables); a tab a record doesn't
+# have (Activity without a journal, say) is skipped.
+TABS = ('activity', 'details', 'revisions', 'related', 'postings')
+
+
+def starts_valid(value):
+    """Whether value is one of COLLAPSED exactly: 1 and 0 are not True and False here."""
+    return value is True or value is False or (type(value) is str and value == 'empty')
+
+
+class Section:
+    """A form section in Model.Meta.layout that a person can open and close.
+
+    `collapsed` is where it starts: False (open), True (closed) or 'empty' (closed when every field in
+    it is empty on an existing record; a new record shows it open). A person's own choice wins after that.
+    A plain ('Title', fields) pair is a section that can't collapse."""
+
+    __slots__ = ('title', 'fields', 'collapsible', 'collapsed', 'flow')
+
+    def __init__(self, title, fields, *, collapsible=True, collapsed=False, flow='rows'):
+        self.title, self.fields, self.collapsible, self.collapsed, self.flow = title, fields, collapsible, collapsed, flow
+
+    def __repr__(self):
+        return (f'Section({self.title!r}, {self.fields!r}, collapsible={self.collapsible!r}, collapsed={self.collapsed!r}'
+                + (f', flow={self.flow!r})' if self.flow != 'rows' else ')'))
+
+    def check(self, model):
+        """Raise ValueError naming the model and the section when the options can't work."""
+        where = f'{model} layout section {self.title!r}'
+        if not isinstance(self.title, str) or not self.title.strip():
+            raise ValueError(f'{model} layout: give every Section a title')
+        if not isinstance(self.fields, (tuple, list)):
+            raise ValueError(f'{where}: list its fields as a tuple of field names')
+        if type(self.collapsible) is not bool:
+            raise ValueError(f'{where}: collapsible must be True or False')
+        if not starts_valid(self.collapsed):
+            raise ValueError(f"{where}: collapsed must be False, True or 'empty', not {self.collapsed!r}")
+        if not self.collapsible and self.collapsed is not False:
+            raise ValueError(f'{where}: collapsed needs collapsible=True, because this section always shows')
+        if type(self.flow) is not str or self.flow not in FLOWS:
+            raise ValueError(f"{where}: flow must be 'rows' or 'columns', not {self.flow!r}")
 
 
 def view_for(model):
@@ -66,6 +112,13 @@ def view_for(model):
     open_in = getattr(meta, 'open_in', 'page')
     if open_in not in OPEN_IN:
         raise ValueError('open_in must be "page" or "panel"')
+    tabs, default_tab = getattr(meta, 'tabs', ()), getattr(meta, 'default_tab', None)
+    if not isinstance(tabs, (tuple, list)) or any(type(name) is not str or not name for name in tabs) or len(set(tabs)) != len(tabs):
+        raise ValueError(f'{model.__name__}.Meta.tabs: list tab names once each, such as ("details", "lines", "activity")')
+    if default_tab is not None and type(default_tab) is not str:
+        raise ValueError(f'{model.__name__}.Meta.default_tab: name one tab, such as "details"')
+    if default_tab is not None and tabs and default_tab not in tabs:
+        raise ValueError(f'{model.__name__}.Meta.default_tab: {default_tab} is not in Meta.tabs')
     # Leaving a record keeps its unsaved edits apart from it (evlet.unsaved); False keeps the leave prompt.
     from ..unsaved import autosave as keeps_unsaved
     autosave = keeps_unsaved(model)
@@ -77,8 +130,12 @@ def view_for(model):
     if not isinstance(layout, (tuple, list)) or len(layout) > 8:
         raise ValueError('Use at most eight layout groups')
     for group in layout:
+        section = group if isinstance(group, Section) else None
+        if section is not None:
+            section.check(model.__name__)
+            group = (section.title, section.fields)
         if not isinstance(group, (tuple, list)) or len(group) != 2 or not isinstance(group[0], str) or not group[0] or not isinstance(group[1], (tuple, list)):
-            raise ValueError('Layout groups are (label, field names) pairs')
+            raise ValueError('Layout groups are (label, field names) pairs or Section(title, fields)')
         unknown = [str(name) for name in group[1] if not isinstance(name, str) or name not in visible]
         if unknown:
             raise ValueError(f'Layout group {group[0]} names unknown or hidden fields: {", ".join(unknown)}')
@@ -86,14 +143,25 @@ def view_for(model):
             if name in used:
                 raise ValueError(f'Layout lists {name} more than once')
             used.append(name)
-        groups.append({'label': group[0], 'fields': list(group[1])})
+        # A plain (label, fields) pair is a section that can't collapse.
+        groups.append({'label': group[0], 'fields': list(group[1]), 'collapsible': bool(section and section.collapsible),
+                       'collapsed': section.collapsed if section and section.collapsible else False, 'flow': section.flow if section else 'rows'})
     # Visible fields the layout leaves out follow under Other, in declaration order.
     rest = [name for name in visible if name not in used]
     if rest:
-        groups.append({'label': 'Other', 'fields': rest})
+        groups.append({'label': 'Other', 'fields': rest, 'collapsible': False, 'collapsed': False, 'flow': 'rows'})
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in,
+            'tabs': list(tabs), 'default_tab': default_tab,
             'autosave': autosave}
+
+
+def check_tabs(tables, tabs, default_tab, where):
+    """Raise ValueError when tab names are neither record page tabs nor this model's Table fields."""
+    known = (*TABS, *tables)
+    unknown = [name for name in (*tabs, *((default_tab,) if default_tab else ())) if name not in known]
+    if unknown:
+        raise ValueError(f'{where} names unknown tabs: {", ".join(dict.fromkeys(unknown))}. Use {", ".join(known)}')
 
 
 def currency_schema(field):
@@ -133,9 +201,12 @@ def ui_schema(registry):
 
 
 def behavior(model, registry):
-    if not getattr(model, '__declaration_mode__', False):
-        return {}
     from ..reactivity import plans, serialized, graph
+    if not getattr(model, '__declaration_mode__', False):
+        # A plain model still tells the form which other fields its Link filters read.
+        filters = {name: {'filters': {key: serialized(value) for key, value in entry['filters'].items()}}
+                   for name, entry in plans(model).items() if entry.get('filters')}
+        return {'behavior': filters} if filters else {}
     nodes, order = ({}, []) if any(child.model is model for child in registry.children) else graph(registry, model)
     fields = plans(model)
     return {'document_version': 1, 'resource': getattr(model, '__resource_id__', registry.name_for(model)),
