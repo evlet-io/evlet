@@ -74,7 +74,9 @@ options with `--help`, for example `evlet login --help`.
 `evlet dev` selects the sole instance in a project. With several instances it
 asks in a terminal; automation must pass `--instance`. Development rebuilds/reloads
 Python, TS/JS and configuration changes, including file additions/deletions, and
-runs the existing queue. It never applies model migrations
+runs the existing queue. It watches `apps/` and the instance folder; when Evlet itself
+runs from a source checkout or an editable install (`pip install -e`), it watches the
+Evlet package too, so framework edits reload the same way. It never applies model migrations
 implicitly. Stop the server and run `migrate` after adding a migration.
 `migrate --plan` writes nothing: it builds the apps against a temporary copy of the
 instance database and prints the pending migrations, the pending Evlet framework migrations
