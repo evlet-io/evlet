@@ -57,6 +57,7 @@
           "open_in": "page",
           "tabs": [],
           "default_tab": null,
+          "autosave": true,
           "fields": [
             {
               "name": "number",
@@ -313,6 +314,7 @@
           "open_in": "page",
           "tabs": [],
           "default_tab": null,
+          "autosave": true,
           "fields": [
             {
               "name": "description",

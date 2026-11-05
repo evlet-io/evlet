@@ -4,6 +4,8 @@
 
 import { ApiClient, type ApiResponse, type ClientOptions, type Page, type RecordData, type RequestOptions, type Session } from '../api';
 import { cell, type Cell } from '../reactive';
+import { isRecordId } from '../ids';
+import type { NodeChanges } from '../model/unsaved';
 
 const DETAIL = /^\/api\/([A-Za-z][A-Za-z0-9_]*)\/(\d+)(?:\/(?:moves\/[^/]+|actions\/[^/]+|void|revise|unpost|repost|confirm|cancel|reopen))?$/;
 const NAME = /^[A-Za-z][A-Za-z0-9_.]*$/;
@@ -98,6 +100,30 @@ export class AppClient extends ApiClient {
     return (await this.request<JournalEntry>('POST', `/api/${model}/${id}/journal`, { body: { kind: 'note', text } })).data;
   }
 
+  /** Add a note written with the rich text composer: sanitised HTML, mentions kept (docs/journal.md). */
+  async addRichNote(model: string, id: string, html: string) {
+    return (await this.request<JournalEntry>('POST', `/api/${model}/${id}/journal`, { body: { kind: 'note', html } })).data;
+  }
+
+  /** Active people to mention on a record, with whether each can open it. */
+  async mentionable(model: string, id: string, q: string) {
+    return (await this.request<{ items: Array<{ id: number; name: string; username: string; can_read: boolean }> }>(
+      'GET', `/api/${model}/${id}/mentionable`, { query: { q } })).data.items;
+  }
+
+  /** The person's inbox: mentions, newest first, and the unread count. */
+  async inbox(page: { limit?: number; offset?: number } = {}) {
+    return (await this.request<InboxPage>('GET', '/api/_inbox', { query: page })).data;
+  }
+
+  async inboxCount() {
+    return (await this.request<{ unread: number }>('GET', '/api/_inbox/count')).data.unread;
+  }
+
+  async inboxRead(ids: number[] | 'all') {
+    return (await this.request<{ unread: number }>('POST', '/api/_inbox/read', { body: ids === 'all' ? { all: true } : { ids } })).data.unread;
+  }
+
   async lifecycle(model: string, id: string, operation: 'confirm' | 'cancel' | 'reopen', etag: string | null, reason?: string) {
     return this.request<RecordData>('POST', `/api/${model}/${id}/${operation}`, {
       body: operation === 'cancel' ? { reason } : {}, ifMatch: etag,
@@ -177,7 +203,30 @@ export class AppClient extends ApiClient {
   async repost(model: string, id: string, reason: string, etag: string | null) {
     return this.request<RecordData>('POST', `/api/${model}/${id}/repost`, { body: reason ? { reason } : {}, ifMatch: etag });
   }
+
+  // ---------- unsaved changes (docs/ui.md, Unsaved changes) ----------
+
+  /** The person's limits, how many entries they have, and whether they keep unsaved changes. */
+  async unsavedInfo() { return (await this.request<UnsavedInfo>('GET', '/api/_unsaved')).data; }
+  /** The person's own kept changes on a record, or null. */
+  async unsaved(model: string, id: string) { return (await this.request<UnsavedRead>('GET', unsavedPath(model, id))).data; }
+  /** Keep the draft's changes apart from the record. The record itself is not written. */
+  async keepUnsaved(model: string, id: string, changes: NodeChanges, baseRevision: string) {
+    return (await this.request<{ saved_at: number | null; size: number; dropped: string[] }>('PUT', unsavedPath(model, id), { body: { changes, base_revision: baseRevision } })).data;
+  }
+  async discardUnsaved(model: string, id: string) { await this.request<null>('DELETE', unsavedPath(model, id)); }
 }
+
+function unsavedPath(model: string, id: string) {
+  if (!NAME.test(model) || !isRecordId(id)) throw new Error('Use a model and a record id');
+  return `/api/_unsaved/${model}/${id}`;
+}
+
+export interface UnsavedLimits { server_days: number; server_entries: number; browser_days: number; browser_entries: number; entry_kb: number }
+export interface UnsavedInfo { limits: UnsavedLimits; count: number; enabled: boolean }
+export interface UnsavedEntry { changes: NodeChanges; base_revision: string; saved_at: number; size: number; stale: boolean }
+/** `dropped`: fields the person can no longer write, or "record" when they can no longer change it. */
+export interface UnsavedRead { entry: UnsavedEntry | null; dropped: string[] | 'record' }
 
 const reportName = (name: string) => { if (!NAME.test(name)) throw new Error(`Unknown report ${name}`); return name; };
 
@@ -194,5 +243,9 @@ export interface ReportPage { rows: Array<Record<string, unknown>>; total: numbe
  * the caller sees only in part; `done` is set on follow ups (the completing entry's id, or null). */
 /** `via` names the AI assistant a person's write came through; `actor` stays the person. */
 export interface JournalEntry { id: number; kind: string; actor: number | null; at: string; data: Record<string, any>; partial?: true; done?: number | null; via?: string }
+/** One inbox row. `record` is null when the person cannot open the record: then nothing about it is sent. */
+export interface InboxItem { id: number; kind: string; at: number; read: boolean; actor: string; text: string
+  record: { model: string; id: string; label: string; title: string } | null }
+export interface InboxPage { items: InboxItem[]; total: number; unread: number }
 /** A page of a journal: `users` names the actors and assignees on it by user id. */
 export interface JournalPage extends Page<JournalEntry> { users: Record<string, string> }

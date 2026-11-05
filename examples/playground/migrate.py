@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 
 from evlet import (AddField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
-                   Link, LongText, Migration, Model, PostgreSQLDatabase, Recompute, Registry, RenameField, RetireField, RunData, Select, Text)
+                   Link, LongText, Migration, Model, PostgreSQLDatabase, Recompute, Registry, RenameField, RetireField, RichText, RunData, Select, Text)
 from .items import core_fields, item_fields
 from .models import Customer, Invoice, registry
 
@@ -125,12 +125,14 @@ class LedgerEntry(Model):
 
 migrations.append(Migration('0009_ledger', CreateModel(LedgerEntry)))
 
-
 # Invoice.project: a Link whose filters read the invoice's customer (Ref('customer')).
 migrations.append(Migration('0010_invoice_project', AddField('invoice', 'project', Link(Project))))
 
+# Rich text: a project's brief (docs/internal/rich-text.md).
+migrations.append(Migration('0011_project_brief', AddField('project', 'brief', RichText(label='Brief'))))
+
 # What has been paid on an invoice, and the payment status calculated from it (the header badge).
-migrations.append(Migration('0011_invoice_payment_status',
+migrations.append(Migration('0012_invoice_payment_status',
     AddField('invoice', 'amount_paid', Currency(minimum='0', default='0.00')),
     AddField('invoice', 'payment_status', Select(['unpaid', 'partly_paid', 'paid'])),
     Recompute('invoice', ('payment_status',)),

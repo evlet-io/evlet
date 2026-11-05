@@ -3,7 +3,7 @@
 from copy import copy
 from typing import NamedTuple
 
-from .fields import Integer, Link, Reference, Tags, Text
+from .fields import Integer, Link, LongText, Reference, RichText, Tags, Text
 from .identity import RecordId, path_id
 from .models import ValidationError, identifier
 
@@ -24,6 +24,8 @@ KIND_OPERATORS = {
     'date': _ORDERED, 'datetime': _ORDERED, 'time': _ORDERED,
     'boolean': ('eq', 'ne', 'isnull'), 'tags': ('contains', 'isnull'), 'multiselect': ('contains', 'isnull'),
     'reference': ('eq', 'ne', 'isnull'),
+    # Rich text filters and searches its plain-text extract (the <name>_text column).
+    'richtext': ('contains', 'icontains', 'nicontains', 'isnull'),
 }
 
 
@@ -54,6 +56,14 @@ class RecordIdFilter(Integer):
 
 
 ID_FIELD = RecordIdFilter(minimum=1)
+
+
+class RichTextColumn(LongText):
+    """A RichText field's plain-text column in filters and search: values are compared as plain text."""
+    kind = 'richtext'
+
+
+RICH_TEXT_COLUMN = RichTextColumn(max_length=1000)
 
 
 def operators_for(model, name):
@@ -144,6 +154,10 @@ class SqlQuery:
                 raise ValueError(f'{name} is a Reference; filter it by value instead of following it')
             # A reference has two columns: the model name and the record ID.
             return tuple(f'{identifier(alias)}.{identifier(column)}' for column, _ in field.columns(name)), field
+        if isinstance(field, RichText):
+            if len(parts) > 1:
+                raise ValueError(f'{name} is rich text, not a Link')
+            return f'{identifier(alias)}.{identifier(name + "_text")}', RICH_TEXT_COLUMN
         column = f'{identifier(alias)}.{identifier(name)}'
         if len(parts) == 1:
             return column, field

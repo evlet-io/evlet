@@ -41,6 +41,14 @@ class EventStore:
         tx.connection.execute('DELETE FROM evlet_events WHERE id<=?', (event_id - self.retention,))
         return token
 
+    def publish_user(self, tx, channel, user_id):
+        """Tell one person's open browsers that something of theirs changed (their inbox): only they
+        receive it, as {"type": "<channel without _>.changed"}, with no other detail."""
+        token = secrets.token_hex(24)
+        event_id = tx.connection.execute('INSERT INTO evlet_events(token,model,record_id,deleted) VALUES (?,?,?,0)', (token, channel, user_id)).lastrowid
+        tx.connection.execute('DELETE FROM evlet_events WHERE id<=?', (event_id - self.retention,))
+        return token
+
     def page(self, user, policy, *, after=None):
         if after is not None and after != '0' and (not isinstance(after, str) or not re.fullmatch('[0-9a-f]{48}', after)):
             raise ValidationError({'cursor': 'Invalid event cursor'})
@@ -63,6 +71,10 @@ class EventStore:
             for row in rows:
                 if row['model'] == '_config':
                     items.append({'type': 'config.changed', 'version': row['record_id']})
+                    continue
+                if row['model'] == '_inbox':
+                    if row['record_id'] == user.id:
+                        items.append({'type': 'inbox.changed'})
                     continue
                 model = self.database.registry.models.get(row['model'])
                 if model is None or not policy.allows(user, model, 'read'):

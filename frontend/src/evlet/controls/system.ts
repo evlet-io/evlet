@@ -9,6 +9,7 @@ import { Callout, Head, plural, stamp, type ControlsContext } from './app';
 import type { AppInfo, AuditRow, CodeFile, HostCheck, Jobs, OverrideItem, Routing } from './client';
 import { describe, idOf } from './drafts';
 import { message, Select } from './people';
+import { UnsavedSection } from './unsaved';
 
 const copy = (text: string) => void navigator.clipboard?.writeText(text).then(() => toast('Copied'), () => toast('Copy it by hand', { icon: 'info' }));
 const CodeBlock = (file: string, code: string) => html`<div class="ctl-codefile"><div class="ctl-line"><span class="mono muted ctl-small grow">${file}</span>
@@ -160,6 +161,7 @@ export function JobsPage(ctx: ControlsContext): HTMLElement {
           <td class="muted num">${stamp(job.run_at)}</td><td class="r num">${job.attempts}</td>
           <td class="r">${job.state === 'failed' ? Button({ label: 'Retry', icon: 'rotate-ccw', size: 'small', onClick: () => void act(() => ctx.api.retryJob(job.id), `Job #${job.id} queued again`) }) : null}</td></tr>`)
           : html`<tr><td colspan="7"><div class="ctl-empty">No jobs yet.</div></td></tr>`}</tbody></table></div></section>`]; }}
+    ${UnsavedSection(ctx)}
   </div>` as HTMLElement;
 }
 

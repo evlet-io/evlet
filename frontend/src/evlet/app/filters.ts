@@ -43,11 +43,11 @@ const CHOICE = [condition('in', 'in', 'list'), condition('nin', 'not in', 'list'
 const CHECK = [condition('yes', 'is yes', 'none', ['eq']), condition('no', 'is no', 'none', ['eq'])];
 const TAGS = [condition('contains', 'has', 'one'), ...SET];
 const CONDITIONS: Record<string, Condition[]> = {
-  text: TEXT, email: TEXT, url: TEXT, phone: TEXT, longtext: TEXT,
+  text: TEXT, email: TEXT, url: TEXT, phone: TEXT, longtext: TEXT, richtext: TEXT,
   integer: NUMBER, decimal: NUMBER, currency: NUMBER, percent: NUMBER, duration: NUMBER,
   date: DATE, datetime: MOMENT, time: MOMENT, link: LINK, select: CHOICE, boolean: CHECK, tags: TAGS, multiselect: TAGS,
 };
-const TEXTUAL = new Set(['text', 'email', 'url', 'phone', 'longtext', 'tags']);
+const TEXTUAL = new Set(['text', 'email', 'url', 'phone', 'longtext', 'richtext', 'tags']);
 
 /** The conditions a field offers: its type's, less any the server does not take for it. */
 export function conditionsFor(meta: FieldSchema): Condition[] {

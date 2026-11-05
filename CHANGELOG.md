@@ -22,9 +22,51 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `slate`. A legacy string formula may now calculate a Select. The schema adds `status` on the model
   (for roles that can read the field) and `colors` on the field. The Playground invoice shows a
   calculated payment status (Unpaid, Partly paid, Paid) from a new `amount_paid` field; migration
-  `0011_invoice_payment_status` adds both columns. Because the invoice now has a calculated field,
+  `0012_invoice_payment_status` adds both columns. Because the invoice now has a calculated field,
   an update to a Playground invoice sends `If-Match` with its ETag, as every calculated document does.
   Badge colours are display only: changing `colors` needs no migration.
+- **Unsaved changes are kept when you leave a record, and the record is never written.** Leaving
+  a saved record with unsaved edits keeps the edited fields in the new framework table
+  `evlet_unsaved` (framework migration `0005_unsaved_changes`, so run `evlet migrate`), and the
+  next visit offers Restore or Discard, with a per-field choice when the record changed in the
+  meantime. Unsaved new records stay in the browser. Only Save writes the record, so no validator,
+  event, number or history runs on leave. New routes `GET /api/_unsaved` and
+  `GET/PUT/DELETE /api/_unsaved/<model>/<id>` (signed-in sessions only, own entries only), and
+  Controls `GET /api/_controls/unsaved` and `POST /api/_controls/unsaved/clear` (counts only).
+  New instance settings `unsaved.server_days`, `unsaved.server_entries`, `unsaved.browser_days`,
+  `unsaved.browser_entries` and `unsaved.entry_kb`, the framework schedule `evlet_unsaved_purge`,
+  the personal setting `keep_unsaved`, and `Meta.autosave` (`True` by default; `False` keeps the
+  leave prompt), which `/api/schema` shows as `autosave`. What to change: nothing, unless a model
+  should keep the leave prompt; then set `Meta.autosave = False`. Database tools that list
+  framework tables see one more ([docs/ui.md](docs/ui.md#unsaved-changes)).
+- **Mentions in the activity composer, and a Mentions inbox.** Notes on a record are written with
+  the rich text editor; `@` opens a picker of active people, warning when someone can't open the
+  record. Journal `note` and `message` entries take `html` (sanitised, mentions kept) beside `text`.
+  Mentioned people get a row in the new per-user inbox (`evlet_inbox`, `/api/_inbox`), shown under
+  the bell in the top bar with a live unread count, and an email when their notification preferences
+  ask for one. Someone who can't open the record learns only that they were mentioned
+  ([docs/journal.md](docs/journal.md#mentions)).
+- **Images in rich text.** Paste, drop or upload a PNG, JPEG, GIF or WebP image straight into a
+  `RichText` field; SVG is refused. The browser shrinks it to 2,000 px and re-encodes it before
+  upload. Images are private attachments of the record, stored in the HTML by id only and served
+  through the record's permission-checked download route; an unsaved record's images are held for
+  the person for a day and linked on save, and removing an image from the text deletes it on save.
+  New Controls settings `files.image_max_kb` and `files.images_per_record` set their limits apart
+  from file attachments. Print Design embeds them and record emails send them inline
+  ([docs/business-capabilities.md](docs/business-capabilities.md#images-in-rich-text)).
+- **`RichText` fields and Evlet's own rich text editor.** `RichText(max_length=20000)` stores
+  formatted text as an HTML subset: paragraphs, headings 2 and 3, bulleted, numbered and check lists
+  nested up to three levels, quotes, code blocks, dividers, bold, italic, underline, strike, inline
+  code, line breaks and http, https and mailto links. The server sanitises every write with a
+  standard-library allowlist parser (`evlet/richtext.py`) and stores the plain text beside it in
+  `<name>_text` for search, filters (`contains`, `icontains`, `nicontains`, `isnull`) and list cells.
+  The browser edits it in a new editor with no dependencies (`frontend/src/evlet/richtext/`):
+  `beforeinput` handling, IME and phone keyboards, its own undo, Markdown-style shortcuts, cleaned
+  paste from Word, Outlook, Google Docs and web pages, a keyboard-reachable toolbar, a floating
+  selection toolbar and a phone toolbar above the keyboard. Print Design prints it formatted. The
+  Playground's projects gain a Brief (migration `0011_project_brief`). Nothing to change for
+  existing models ([docs/model-engine.md](docs/model-engine.md),
+  [docs/ui-framework.md](docs/ui-framework.md#rich-text)).
 - **Field order, record tabs and Enter to move on.** `Section(..., flow="columns")` lists a
   section's fields down the left column, then the right (full-width fields break the run); the DOM
   and Tab follow the same order. `Meta.tabs` and `Meta.default_tab` order the record page's tabs and

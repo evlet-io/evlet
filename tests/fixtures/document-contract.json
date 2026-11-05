@@ -33,6 +33,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "title",
@@ -266,6 +267,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "qty",

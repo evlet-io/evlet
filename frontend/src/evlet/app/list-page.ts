@@ -256,7 +256,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const columns: Column<RecordData>[] = fields.map((meta, index) => ({
     key: meta.name, label: meta.label, align: ['currency', 'decimal', 'integer', 'percent', 'duration'].includes(meta.type) ? 'right' : 'left',
     width: index === 0 ? 240 : meta.type === 'currency' ? 140 : 160, value: (row: RecordData) => row[meta.name],
-    sortable: meta.stored !== false && meta.type !== 'tags' && meta.type !== 'longtext',
+    sortable: meta.stored !== false && meta.type !== 'tags' && meta.type !== 'longtext' && meta.type !== 'richtext',
     render: index === 0 && meta.name === model.title_field
       ? (row: () => RecordData) => html`<a class="ev-row-link" href=${() => router.href('record', { model: name, id: String(row().id) })}
           on:click=${(event: MouseEvent) => { if (openIn.peek() === 'panel' && plainClick(event)) { event.preventDefault(); open(row()); } }}>${() => titleOf(model, row())}</a>${showNumber

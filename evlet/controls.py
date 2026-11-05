@@ -28,15 +28,21 @@ SETTINGS = MappingProxyType({
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
     'mcp.enabled': True, 'mcp.allow_writes': False, 'mcp.rate': 60, 'mcp.disabled_tools': [], 'mcp.hidden_models': [],
     'mail.personal': False,
+    # Images in rich text (evlet/richtext.py): separate from the general attachment limits.
+    'files.image_max_kb': 2048, 'files.images_per_record': 50,
     # Eva (evlet.eva). Only used when config.py turns AI on; the switch here can only narrow that.
     'eva.enabled': False, 'eva.model': '', 'eva.choose_model': False, 'eva.disabled_tools': [],
     'eva.confirm': {'create': 'never', 'update': 'never', 'confirm': 'ask', 'action': 'ask'},
     'eva.instance_limit': {'amount': None, 'unit': 'aed', 'period': 'month'},
     'eva.user_limit': {'amount': None, 'unit': 'aed', 'period': 'week'},
     'eva.person_limits': {}, 'eva.task_reserve': 10, 'eva.max_steps': 12, 'eva.max_tools': 30, 'eva.max_seconds': 120, 'eva.rates': {},
+    # Unsaved changes kept when someone leaves a record (evlet.unsaved): expiry, caps and entry size.
+    'unsaved.server_days': 30, 'unsaved.server_entries': 200, 'unsaved.browser_days': 7, 'unsaved.browser_entries': 20, 'unsaved.entry_kb': 256,
 })
+# Safe bounds of the rich text image limits: up to 8 MiB an image (what private storage reads back) and 200 a record.
+IMAGE_LIMITS = {'files.image_max_kb': (64, 8192), 'files.images_per_record': (1, 200)}
 # Audit areas of setting overrides by key prefix; other settings are Security.
-SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email', 'eva': 'Eva'}
+SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email', 'eva': 'Eva', 'files': 'Files', 'unsaved': 'Records'}
 NOT_FOUND = 'Route not found'
 AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming'}
 # A paused schedule is a setting override: schedule.<name>.active = false.
@@ -205,12 +211,18 @@ def strictest(key, value, roles, file=None):
         return False
     if key == 'mcp.rate':
         return min(max(value, 1), 60) if number else 1
+    if key in IMAGE_LIMITS:
+        low, high = IMAGE_LIMITS[key]
+        return min(max(value, low), high) if number else file
     if key in ('mcp.disabled_tools', 'mcp.hidden_models'):
         # Names are kept as they are; a value that is not a list turns every tool off or hides every model ('*').
         from .tools import NAMES
         if isinstance(value, list):
             return [item for item in value if isinstance(item, str)]
         return list(NAMES) if key == 'mcp.disabled_tools' else ['*']
+    if key.startswith('unsaved.'):
+        from .unsaved import strictest as unsaved_strictest
+        return unsaved_strictest(key, value)
     if key.startswith('eva.'):
         from .eva import strictest as eva_strictest
         return eva_strictest(key, value)
@@ -578,8 +590,14 @@ class Controls:
             value = list(dict.fromkeys(networks))
         if key in ('mcp.enabled', 'mcp.allow_writes', 'mail.personal') and type(value) is not bool:
             raise ValueError('Use on or off.')
+        if key in IMAGE_LIMITS and not (number and IMAGE_LIMITS[key][0] <= value <= IMAGE_LIMITS[key][1]):
+            low, high = IMAGE_LIMITS[key]
+            raise ValueError(f'Use a whole number from {low} to {high}.')
         if key == 'mcp.rate' and not (number and 1 <= value <= 60):
             raise ValueError('Use 1 to 60 tool calls a minute. The framework allows at most 60.')
+        if key.startswith('unsaved.'):
+            from .unsaved import check_setting as unsaved_setting
+            return unsaved_setting(key, value)
         if key.startswith('eva.'):
             from .eva import check_setting as eva_setting
             return eva_setting(key, value, self.business)
@@ -1186,6 +1204,11 @@ class Controls:
             return 200, self.system.check_hosts(user), []
         if path == '/jobs' and method == 'GET':
             return 200, self.system.jobs(), []
+        # Unsaved changes: counts and sizes only, never what was changed.
+        if path == '/unsaved' and method == 'GET':
+            return 200, self.business.unsaved.summary(), []
+        if path == '/unsaved/clear' and method == 'POST':
+            return 200, self.business.unsaved.clear_older(user, body), []
         match = re.fullmatch(r'/jobs/schedules/([a-z][a-z0-9_]{0,63})(/run)?', path)
         if match and method == 'POST':
             return 200, self.system.run_schedule(user, match[1]) if match[2] else self.system.set_schedule(user, match[1], body), []

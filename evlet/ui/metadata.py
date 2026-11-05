@@ -26,7 +26,7 @@ OPEN_IN = ('page', 'panel')
 # The options a model's Meta may declare; each is public (docs/api-stability.md).
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
-                          'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab',
+                          'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
                           'status'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
@@ -120,6 +120,9 @@ def view_for(model):
         raise ValueError(f'{model.__name__}.Meta.default_tab: name one tab, such as "details"')
     if default_tab is not None and tabs and default_tab not in tabs:
         raise ValueError(f'{model.__name__}.Meta.default_tab: {default_tab} is not in Meta.tabs')
+    # Leaving a record keeps its unsaved edits apart from it (evlet.unsaved); False keeps the leave prompt.
+    from ..unsaved import autosave as keeps_unsaved
+    autosave = keeps_unsaved(model)
     # Search also finds records by their title and name.
     search = tuple(dict.fromkeys((*search, *(key for key in ('title', 'name') if key in standard_text))))
     layout = getattr(meta, 'layout', (('Details', tuple(visible)),))
@@ -150,7 +153,8 @@ def view_for(model):
         groups.append({'label': 'Other', 'fields': rest, 'collapsible': False, 'collapsed': False, 'flow': 'rows'})
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in,
-            'tabs': list(tabs), 'default_tab': default_tab}
+            'tabs': list(tabs), 'default_tab': default_tab,
+            'autosave': autosave}
 
 
 def check_tabs(tables, tabs, default_tab, where):

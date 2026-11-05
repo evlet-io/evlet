@@ -869,3 +869,64 @@ class Reference(Field):
 
     def serialize(self, value):
         return None if value is None else {"model": value[0], "id": RecordId(value[1])}
+
+
+class RichText(LongText):
+    """Formatted text, stored as the canonical HTML the server's sanitiser writes (evlet/richtext.py)
+    in <name> and its plain-text extract in <name>_text, for search, filters and list cells.
+
+    max_length limits the plain text; the HTML may be ten times as long (at least 4,096 characters).
+    Every write is sanitised here, whatever route it came through: the browser is never trusted.
+    """
+    kind = "richtext"
+
+    def __init__(self, *, max_length=20000, **kwargs):
+        super().__init__(max_length=max_length, **kwargs)
+        if self.unique or self.index:
+            raise ValueError("RichText fields cannot be unique or indexed")
+
+    @property
+    def html_limit(self):
+        return max(4096, self.max_length * 10)
+
+    def clean(self, value):
+        if value is MISSING:
+            value = self.default() if callable(self.default) else self.default
+        value = None if value is MISSING or value is None else self.validate(value)
+        if value is None:
+            if self.required:
+                raise ValueError("This field is required")
+            return None
+        if self.validator is not None:
+            self.validator(value)
+        return value
+
+    def validate(self, value):
+        from .richtext import sanitise
+        if not isinstance(value, str):
+            raise ValueError("Expected HTML text")
+        try:
+            value.encode("utf-8")
+        except UnicodeError as exc:
+            raise ValueError("Expected valid Unicode text") from exc
+        # Refuse oversized input before parsing it.
+        if len(value) > self.html_limit * 4:
+            raise ValueError(f"Use at most {self.max_length} characters")
+        markup, text = sanitise(value)
+        if not markup:
+            return None
+        if len(text) > self.max_length:
+            raise ValueError(f"Use at most {self.max_length} characters")
+        if len(markup) > self.html_limit:
+            raise ValueError("This text has too much formatting to save. Remove some formatting and try again.")
+        return markup
+
+    def columns(self, name):
+        return ((name, "TEXT"), (name + "_text", "TEXT"))
+
+    def to_columns(self, value):
+        from .richtext import plain_text
+        return (None, None) if value is None else (value, plain_text(value))
+
+    def from_columns(self, row, name):
+        return self.from_storage(row[name])

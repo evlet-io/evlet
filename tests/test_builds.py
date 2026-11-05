@@ -217,7 +217,7 @@ def test_reference_app_full_public_flow(project):
     native_url = schema['native_panels'][0]['url']
     assert c('GET', native_url)[0] == 200
     with app.database.transaction() as tx:
-        assert tx.connection.execute('SELECT count(*) FROM evlet_schedules').fetchone()[0] == 1
+        assert tx.connection.execute("SELECT count(*) FROM evlet_schedules WHERE name<>'evlet_unsaved_purge'").fetchone()[0] == 1
         assert tx.connection.execute('SELECT count(*) FROM evlet_jobs').fetchone()[0] == 0
     install(project, 'acme', trust=True)
 

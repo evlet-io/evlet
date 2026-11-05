@@ -1,6 +1,6 @@
 """A small consumer of Evlet's public API, not an accounting system."""
 
-from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Ref, Registry,
+from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Ref, Registry, RichText,
                    Rule, Section, Select, Series, Text)
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
@@ -67,6 +67,9 @@ class Invoice(Model):
 class Payment(Model):
     class Meta:
         description = "Record payments and the invoices they belong to."
+        # A payment is entered in one go, so leaving one with unsaved edits asks to discard them
+        # instead of keeping them for later (docs/ui.md, Unsaved changes).
+        autosave = False
 
     invoice = Link(Invoice, required=True)
     reference = Text(required=True, unique=True, max_length=40)
@@ -103,7 +106,7 @@ class Project(Model):
         layout = (('Project', ('title', 'customer', 'status')),
                   Section('Planning', ('budget', 'progress')),
                   Section('Schedule', ('starts_on',), collapsed=True),
-                  Section('Notes', ('notes',), collapsed='empty'))
+                  Section('Notes', ('brief', 'notes'), collapsed='empty'))
         # The record page's tabs: Details first, then the project's tasks (Related) and its history.
         tabs = ('details', 'related', 'activity')
         default_tab = 'details'
@@ -117,6 +120,8 @@ class Project(Model):
     budget = Currency(minimum='0', default='0.00', currency='settings.projects.currency')
     progress = Integer(minimum=0, maximum=100, default=0, label='Progress', suffix='%')
     starts_on = Date()
+    # Formatted text: headings, lists, links (evlet/richtext.py sanitises every write).
+    brief = RichText(label='Brief', help_text='Goals, scope and links, with formatting.')
     notes = LongText()
 
 

@@ -2,7 +2,7 @@
 // State and moves, Sequence, void and revise, effects, measures, meaning metadata, files and the
 // journal.
 import { afterEach, describe, expect, it } from 'vitest';
-import { byText, click, invoice, lastToast, requests, start, stopAll, headText, text, typeInto, until, type Route } from './screens-helpers';
+import { byText, click, invoice, lastToast, requests, start, stopAll, headText, text, typeInto, typeRich, until, type Route } from './screens-helpers';
 import { copy, type Recorded, type Sent } from './server';
 
 afterEach(stopAll);
@@ -54,7 +54,7 @@ describe('transaction document (recorded fixtures)', () => {
     expect([...changed.querySelectorAll('.ev-diff')].map(text)).toEqual(['Total AED 0.00 AED 2,680.00', 'Lines 2 added']);
     expect(host.querySelector('.ev-partial')).toBeNull();
     expect(text(host.querySelector('.eff-note'))).toContain('Append-only history');
-    expect(host.querySelector('.composer textarea')).not.toBeNull();
+    expect(host.querySelector('.composer .rt-surface')).not.toBeNull();
     // Side panel: key fields, related counts, files and record info.
     await until(() => expect(text(byText(host, '.side-sec', /^Related/))).toContain('Payments1'));
     expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf');
@@ -268,14 +268,14 @@ describe('transaction document (recorded fixtures)', () => {
     let reloaded = false;
     const { host, sent } = start([...routes(invoice.invoice_issued_detail),
       ['POST', path(draft, '/journal$'), () => { reloaded = true; return copy(invoice.invoice_journal_note); }]], `/app/invoice/${draft}`);
-    await until(() => expect(host.querySelector('.composer textarea')).not.toBeNull());
-    typeInto(host.querySelector<HTMLTextAreaElement>('.composer textarea')!, 'Customer asked for a copy by email');
+    await until(() => expect(host.querySelector('.composer .rt-surface')).not.toBeNull());
+    typeRich(host.querySelector<HTMLElement>('.composer .rt-surface')!, 'Customer asked for a copy by email');
     click(byText(host, '.composer button', 'Save note'));
     await until(() => expect(lastToast()).toBe('Note added'));
     expect(reloaded).toBe(true);
-    expect(requests(sent, 'POST', /\/journal$/)[0].body).toEqual({ kind: 'note', text: 'Customer asked for a copy by email' });
+    expect(requests(sent, 'POST', /\/journal$/)[0].body).toEqual({ kind: 'note', html: '<p>Customer asked for a copy by email</p>' });
     await until(() => expect(requests(sent, 'GET', /\/journal/)).toHaveLength(2));
-    expect((host.querySelector('.composer textarea') as HTMLTextAreaElement).value).toBe('');
+    expect(host.querySelector('.composer .rt-surface')!.textContent).toBe('');
   });
 
   it('shows a viewer the entries it may only partly see, with no note box', async () => {

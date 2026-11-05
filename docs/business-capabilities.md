@@ -318,7 +318,7 @@ header ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).
 
 The Playground's invoice shows this: `payment_status` is calculated from `amount_paid` against
 `total` (Unpaid, Partly paid, Paid), named by `Meta.status` and coloured by `colors`. Nobody
-writes it; migration `0011_invoice_payment_status` adds both columns and calculates it for
+writes it; migration `0012_invoice_payment_status` adds both columns and calculates it for
 existing invoices.
 
 The Playground's Start action moves a planned Project to active. Complete requires
@@ -346,6 +346,33 @@ attachment disposition, nosniff, and a restrictive content security policy. Pare
 deletions remove attachments in the same transaction. Back up the entire database
 to preserve accounts, records, and files together. Virus scanning and external/object
 storage are not implemented.
+
+## Images in rich text
+
+A model with a `RichText` field takes images in its text, without enabling attachments. Each image
+is a private attachment of the record (`evlet_attachments` with purpose `image`), and the stored
+HTML holds only its id: `<figure class="rt-md"><img data-attachment="12" alt="..."></figure>`, never
+a URL or a `data:` URI ([internal/rich-text.md](internal/rich-text.md)).
+
+- `POST /api/{model}/{id}/attachments` with `{"name", "content", "purpose": "image"}` adds an image
+  to a saved record; it needs update access and write access to one of its rich text fields.
+  `POST /api/{model}/_images` holds an image for a record not saved yet, for the person who added
+  it (`GET /api/{model}/_images/{image id}` shows it to them only); it needs create access.
+- The type comes from the bytes: PNG, JPEG, GIF or WebP. SVG and anything else are refused. The
+  browser shrinks images to at most 2,000 px on the long side and re-encodes them before upload.
+  Size and count limits are Controls settings (`files.image_max_kb`, default 2 MiB, at most 8 MiB;
+  `files.images_per_record`, default 50, at most 200), separate from the file limits.
+- `GET /api/{model}/{id}/attachments/{image id}` serves an image inline with its own type,
+  `nosniff`, a sandbox policy and private caching, to whoever can read the record. Images do not
+  appear in the record's file list or count towards its files.
+- Saving a record links the held images its rich text refers to and deletes the record's images no
+  rich text refers to any more, in the save transaction. A reference to another record's image, to
+  someone else's held image or to a purged one is refused with a field error. Images belong to the
+  record's own fields; a child table row's rich text takes none.
+- Held images nobody saved are purged after 24 hours: on every upload, and by the hourly framework
+  task `evlet_image_purge` when the application runs jobs.
+- Print Design embeds a record's images in its PDF, and `Mailboxes.send_mail(..., html=..., record=...)`
+  sends them inline (`cid:`), never as links.
 
 ## Layout metadata
 

@@ -38,6 +38,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "customer_name",
@@ -359,6 +360,7 @@
       "open_in": "panel",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "customer",
@@ -895,6 +897,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": false,
       "fields": [
         {
           "name": "invoice",
@@ -1166,6 +1169,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "invoice",
@@ -1434,6 +1438,7 @@
         {
           "label": "Notes",
           "fields": [
+            "brief",
             "notes"
           ],
           "collapsible": true,
@@ -1464,6 +1469,7 @@
         "activity"
       ],
       "default_tab": "details",
+      "autosave": true,
       "fields": [
         {
           "name": "title",
@@ -1659,6 +1665,32 @@
           "locked_when": null
         },
         {
+          "name": "brief",
+          "type": "richtext",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 20000,
+          "label": "Brief",
+          "help_text": "Goals, scope and links, with formatting.",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "contains",
+            "icontains",
+            "nicontains",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
           "name": "notes",
           "type": "longtext",
           "required": false,
@@ -1802,6 +1834,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "project",
@@ -2207,6 +2240,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "item_code",
@@ -9205,6 +9239,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "full_name",
@@ -9445,6 +9480,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "price_list",
@@ -9686,6 +9722,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "barcode",

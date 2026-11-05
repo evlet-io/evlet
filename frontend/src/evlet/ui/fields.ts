@@ -7,7 +7,7 @@
 // says where it came from until the user edits it.
 
 import { html, when, type Child } from '../dom';
-import { cell, derive, onCleanup, untrack, type Cell, type Readable } from '../reactive';
+import { cell, derive, effect, onCleanup, untrack, type Cell, type Readable } from '../reactive';
 import type { ApiClient, RecordData } from '../api';
 import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '../model/record';
 import { linkScope } from '../model/links';
@@ -21,6 +21,10 @@ import { DatePanel, DateTimePanel, Dropdown, DurationPanel, focusCalendar, TimeP
 import { formatDate, formatMoney, zoneOffset } from '../model/format';
 import { parseClock, parseDay, parseDayTime, parseLength } from './dateparse';
 import { tooltip } from './tooltip';
+import { RichTextEditor } from '../richtext/editor';
+import { parseHTML } from '../richtext/html';
+import { renderView } from '../richtext/render';
+import { recordImages, type ImageSource } from '../richtext/images';
 
 // ---------- the field contract ----------
 
@@ -234,7 +238,9 @@ export function currencyIn(meta: FieldSchema, value: (name: string) => unknown, 
 // ---------- display at rest ----------
 
 /** A field's value as it reads at rest: pills for states, chips for tags, record titles for links. */
-export function displayValue(field: FieldLike, options: { links?: LinkSource | null; empty?: string } = {}): Node {
+export function displayValue(field: FieldLike, options: { links?: LinkSource | null; empty?: string;
+  /** Rich text links read as text (inside a button that starts editing). */
+  plainLinks?: boolean } = {}): Node {
   const meta = field.meta, kind = kindOf(meta.type);
   const blank = () => html`<span class="muted">${options.empty ?? 'Not set'}</span>`;
   const value = () => field.value.get();
@@ -244,6 +250,9 @@ export function displayValue(field: FieldLike, options: { links?: LinkSource | n
       return when(() => !isEmpty(value()), () => StatusPill({ label: () => humanize(String(value())), tint: () => stateTint(String(value())) }), blank);
     case 'tags':
       return when(() => !isEmpty(value()), () => html`<span class="tag-row">${() => ((value() as string[]) ?? []).map(tag => Chip({ label: tag }))}</span>`, blank);
+    case 'richtext':
+      return when(() => !isEmpty(value()), () => html`<div class="rt-holder" ref=${(holder: HTMLElement) =>
+        effect(() => { holder.replaceChildren(RichTextView(String(value()), { links: !options.plainLinks, images: imagesFor(field) })); })}></div>`, blank);
     case 'sequence':
       return when(() => !isEmpty(value()), () => html`<span class="tx mono">${() => String(value())}</span>`, () => html`<span class="muted">${meta.placeholder || 'Not assigned yet'}</span>`);
     case 'link':
@@ -375,6 +384,7 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
   if (kind.control === 'link') return LinkControl(field, id, options);
   if (kind.control === 'tags') return TagsControl(field, id, options);
   if (kind.control === 'multiselect') return MultiSelectControl(field, id, options);
+  if (kind.control === 'richtext') return RichTextControl(field, id, options);
 
   // Text-like inputs: text, numbers, money, dates, times, durations, email, url, phone, long text.
   const textarea = kind.control === 'textarea';
@@ -617,6 +627,47 @@ function TagsControl(field: FieldLike, id: string, options: ControlOptions): Con
   return { element, commit: () => { const ok = add(input.value); if (ok) input.value = ''; return ok; }, focus: () => input.focus() };
 }
 
+// Rich text: Evlet's own editor (richtext/editor.ts). It writes on every change, or on commit() when
+// the caller commits by hand (InlineValue), so Esc can still cancel.
+/** The image source of a rich text field on a record (its own fields, not a child row's): the record's
+ * private attachments, or the person's holding area until it is saved. */
+export function imagesFor(field: FieldLike): ImageSource | undefined {
+  const record = recordOf(field);
+  if (!record || !(field instanceof Field) || field.row.parent !== null) return undefined;
+  return recordImages(record.api, record.meta.name, () => record.id);
+}
+
+function RichTextControl(field: FieldLike, id: string, options: ControlOptions): Control {
+  const manual = options.commitOn === 'manual';
+  let draft: { value: string | null } | null = null;
+  const editor = RichTextEditor({
+    id, value: () => field.value.get() as string | null, label: options.label, labelledBy: options.label ? undefined : `${id}-label`,
+    describedBy: options.describedBy, placeholder: field.meta.placeholder, maxLength: field.meta.max_length,
+    disabled: () => !field.editable.get(), invalid: () => Boolean(field.error.get()), required: () => field.rules.get().required,
+    images: imagesFor(field),
+    onChange: value => {
+      if (manual) { draft = { value }; return; }
+      if (writeValue(field, value)) options.onCommit?.();
+    },
+  });
+  const commit = () => {
+    if (draft) { const { value } = draft; draft = null; return writeValue(field, value); }
+    if (untrack(() => field.rules.get().required) && isEmpty(untrack(() => field.value.get()))) { field.error.set(`${field.meta.label} is required`); return false; }
+    return true;
+  };
+  return { element: editor.element, commit, focus: () => editor.focus() };
+}
+
+/** Stored rich text as formatted, read-only DOM. Links stay links; nothing is parsed as markup. */
+export function RichTextView(value: string, options: { links?: boolean; images?: ImageSource;
+  /** Show mentions (the activity journal), each with the person's current name where known. */
+  mentions?: (id: string) => string | undefined } = {}): HTMLElement {
+  const view = html`<div class="rt-view"></div>` as HTMLElement;
+  view.append(renderView(parseHTML(value, { mentions: Boolean(options.mentions) }),
+    { links: options.links !== false, imageUrl: options.images?.url, mentionName: options.mentions }));
+  return view;
+}
+
 // MultiSelect: one chip per choice; pressing a chip adds or removes it. Saved in the order of the choices.
 function MultiSelectControl(field: FieldLike, id: string, options: ControlOptions): Control {
   const chosen = () => (field.value.get() as string[] | null) ?? [];
@@ -658,7 +709,7 @@ export function BaseField(props: FieldProps): HTMLElement {
   const star = html`<span class="req" aria-hidden="true">*</span>` as HTMLElement;
   if (meta.required_when) tooltip(star, `Required when ${phrase(meta.required_when, labelsOf(field))}`);
   const labelled = ['switch', 'link', 'select'].includes(kindOf(meta.type).control ?? '') || control.element.tagName !== 'DIV' || control.element.classList.contains('in-affix') || control.element.classList.contains('in-tags');
-  return html`<div class="fld" class:full=${Boolean(props.full) || meta.type === 'longtext'} class:invalid=${() => Boolean(field.error.get())}
+  return html`<div class="fld" class:full=${Boolean(props.full) || meta.type === 'longtext' || meta.type === 'richtext'} class:invalid=${() => Boolean(field.error.get())}
     hidden=${() => !field.rules.get().applies} data-field=${meta.name}>
     <label for=${labelled ? id : null} id=${`${id}-label`}>${label}${when(() => field.rules.get().required && !field.calculated, () => star)}${FieldHints(field)}${props.hint ?? null}</label>
     ${meta.tooltip ? withTip(control.element, meta.tooltip, meta.label) : control.element}<span class="err" id=${errorId} role="alert">${() => field.error.get() ?? ''}</span>${field.note
@@ -685,6 +736,7 @@ const typed = (type: string) => (props: FieldProps) => {
 
 export const TextField = typed('text');
 export const LongTextField = typed('longtext');
+export const RichTextField = typed('richtext');
 export const IntegerField = typed('integer');
 export const DecimalField = typed('decimal');
 export const CurrencyField = typed('currency');

@@ -43,7 +43,8 @@ ENGINE_KINDS = ('created', 'changed', 'moved', 'voided', 'revised', 'unposted', 
 STATE_KINDS = ('voided', 'revised', 'unposted', 'reposted', 'effects')
 # Kinds people write through HTTP (or journal.post), and the values each takes.
 USER_KINDS = ('note', 'message', 'call', 'follow_up', 'follow_up_done')
-VALUES = {'note': ('text',), 'message': ('text', 'subject', 'party', 'direction'),
+HTML_LENGTH = 40000
+VALUES = {'note': ('text', 'html'), 'message': ('text', 'html', 'subject', 'party', 'direction'),
           'call': ('text', 'party', 'direction', 'minutes'), 'follow_up': ('text', 'due', 'assignee'),
           'follow_up_done': ('follow_up', 'text')}
 # The actor of entries written without a signed in user (jobs, schedules, system sessions).
@@ -384,7 +385,19 @@ def clean_entry(business, tx, model, record_id, kind, values):
         raise ValidationError({'kind': 'Use one of ' + ', '.join(USER_KINDS)})
     if set(values) - set(VALUES[kind]):
         raise ValidationError({'_form': f'A {kind} takes only ' + ', '.join(VALUES[kind])})
+    if values.get('html') is not None:
+        # Written with the rich text composer: sanitised (mentions kept), and the plain text derived from it.
+        from .richtext import sanitise
+        markup = values['html']
+        if not isinstance(markup, str) or len(markup) > HTML_LENGTH:
+            raise ValidationError({'html': f'Use formatted text of at most {HTML_LENGTH} characters'})
+        markup, plain = sanitise(markup, mentions=True)
+        values = {**values, 'text': plain}
+    else:
+        markup = None
     data = {'text': clean_text(values, 'text', required=kind != 'follow_up_done')}
+    if markup:
+        data['html'] = markup
     if kind in ('message', 'call'):
         for name in ('subject', 'party') if kind == 'message' else ('party',):
             data[name] = clean_text(values, name, limit=SHORT_LENGTH)
@@ -475,6 +488,10 @@ def add(context, model, record_id, kind, values):
         raise AccessError(403, 'Your role cannot write to this journal')
     data = clean_entry(business, tx, model, record_id, kind, values)
     entry_id = append(business, tx, user, model, record_id, kind, data)
+    if data.get('html'):
+        # Mentions: inbox rows now, emails once the entry is committed (route() sends them).
+        from .mentions import record as mentioned
+        context.__dict__.setdefault('_mention_emails', []).extend(mentioned(business, tx, user, model, record_id, entry_id, data['html']))
     business.changed(tx, model, record_id, journal=True)
     row = tx.connection.execute('SELECT id, kind, actor, at, data FROM evlet_journal WHERE id=?', (entry_id,)).fetchone()
     return shown(business, tx, user, model, record_id, [row])[0]
@@ -701,6 +718,9 @@ def entries(context, model, record_id, *, limit=PAGE, offset=0, kind=None):
     items = shown(business, tx, user, model, record_id, rows)
     ids = {item['actor'] for item in items if item['actor'] is not None}
     ids |= {item['data']['assignee'] for item in items if item['kind'] == 'follow_up' and item['data'].get('assignee')}
+    # People a note mentions show with their current name.
+    from .richtext import mention_ids
+    ids |= {user_id for item in items if isinstance(item.get('data'), dict) and item['data'].get('html') for user_id in mention_ids(item['data']['html'])}
     users = {}
     if ids:
         ids = sorted(ids)
@@ -738,7 +758,12 @@ def route(business, scope, body, user, model, record_id):
         values = dict(body)
         kind = values.pop('kind')
         with business.context(user) as context:
-            return 201, post(context, model, record_id, kind, **values), []
+            entry = post(context, model, record_id, kind, **values)
+            emails = list(getattr(context, '_mention_emails', ()))
+        if emails:
+            from .mentions import send_emails
+            send_emails(business, emails)
+        return 201, entry, []
     if method != 'GET':
         raise AccessError(405, 'Method not allowed')
     try:

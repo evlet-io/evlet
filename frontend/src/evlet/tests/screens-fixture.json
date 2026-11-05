@@ -1173,6 +1173,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "credit_days": {},
       "name": {},
@@ -1567,6 +1568,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "credit_days": {},
       "name": {},
@@ -1780,6 +1782,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "name": {},
       "price": {},
@@ -1953,6 +1956,7 @@
       }
      ],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "customer": {},
       "due": {
@@ -3009,6 +3013,7 @@
       "max_size": 1048576
      },
      "attachments": true,
+     "autosave": true,
      "behavior": {
       "email": {},
       "name": {},
@@ -3228,6 +3233,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "customer": {},
       "issued": {},
@@ -3447,6 +3453,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "amount": {
        "finite": true
@@ -3679,6 +3686,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "child_only": true,
      "children": [],
      "default_tab": null,
@@ -4167,6 +4175,7 @@
     "date": "dd-MM-yyyy",
     "density": "comfortable",
     "enter_next": false,
+    "keep_unsaved": true,
     "lang": "en",
     "num": "1,234.56",
     "start": "",
@@ -4205,6 +4214,17 @@
      "required": false,
      "since": null,
      "verified": false
+    }
+   },
+   "unsaved": {
+    "count": 0,
+    "enabled": true,
+    "limits": {
+     "browser_days": 7,
+     "browser_entries": 20,
+     "entry_kb": 256,
+     "server_days": 30,
+     "server_entries": 200
     }
    },
    "user": {
@@ -5136,6 +5156,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "credit_days": {},
       "name": {},
@@ -5334,6 +5355,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "name": {},
       "price": {},
@@ -5558,6 +5580,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "credit_days": {},
       "name": {},
@@ -5771,6 +5794,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "name": {},
       "price": {},
@@ -5924,6 +5948,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "customer": {},
       "due": {
@@ -6960,6 +6985,7 @@
       "max_size": 1048576
      },
      "attachments": true,
+     "autosave": true,
      "behavior": {
       "email": {},
       "title": {}
@@ -7075,6 +7101,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "customer": {},
       "issued": {},
@@ -7294,6 +7321,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "amount": {
        "finite": true
@@ -7526,6 +7554,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "child_only": true,
      "children": [],
      "default_tab": null,

@@ -17,7 +17,7 @@ person used, kept on the server: `GET /settings` redirects to `/settings/<last p
 | Path | What it holds | Saves |
 | --- | --- | --- |
 | `/settings/profile` | Photo, full name, short name, job title, mobile, email signature, email (through a link) and the read-only username | Instantly |
-| `/settings/appearance` | Theme (light, dark or match my device), density, text size, start page, sidebar counts, Enter moves to the next field, language (Arabic is right-to-left), time zone, date format, number format, first day of the week | Instantly |
+| `/settings/appearance` | Theme (light, dark or match my device), density, text size, start page, sidebar counts, Enter moves to the next field, language (Arabic is right-to-left), time zone, date format, number format, first day of the week, keep unsaved changes when I leave a record | Instantly |
 | `/settings/security` | Password, two-step sign-in, where you are signed in | On submit |
 | `/settings/notifications` | Event by channel (in Evlet, email), quiet hours | Instantly |
 | `/settings/email` | Your own mailbox: connect Microsoft 365, Google or another mailbox, send from it, link replies to records, sync and disconnect ([controls.md](controls.md#personal-mailboxes)). Desk only | Instantly |
@@ -65,8 +65,14 @@ switch between light and dark; a refused save puts the earlier theme back. The t
 presentation only: models and the API know nothing of it
 ([ui-framework.md](ui-framework.md#themes)).
 
-**Notifications.** Only the choices are stored for now. Security emails (a new device, a
-changed password) can't be turned off.
+**Keep unsaved changes.** `keep_unsaved`, on by default. Leaving a record with unsaved edits
+keeps them for later instead of asking to discard them ([ui.md](ui.md#unsaved-changes)).
+Turning it off brings back the "Discard your changes?" prompt and deletes the edits kept on the
+server for that person. Portal people don't have it.
+
+**Notifications.** "Someone mentions me" is used: mentions in a record's activity go to the
+Mentions inbox in the top bar ("in Evlet") and by email through the mail connector ([journal.md](journal.md#mentions)).
+The other choices are stored for later. Security emails (a new device, a changed password) can't be turned off.
 
 ## Two-step sign-in
 
@@ -220,9 +226,9 @@ sign-in, appearance and the other pages answer 404.
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/_settings/me` | Profile, preferences, notifications, security (two-step state, sessions, active `api_keys`), pages, apps with their labels, the last page, whether Controls opens |
+| `GET /api/_settings/me` | Profile, preferences, notifications, `unsaved` (limits and how many unsaved changes the person has kept; desk only), security (two-step state, sessions, active `api_keys`), pages, apps with their labels, the last page, whether Controls opens |
 | `PATCH /api/_settings/me/profile` | `full_name`, `short_name`, `title`, `phone`, `signature` |
-| `PATCH /api/_settings/me/prefs` | Appearance and region keys, `notify.<event>` as `[in Evlet, email]`, `quiet` as `{on, from, to}`, `last_page` |
+| `PATCH /api/_settings/me/prefs` | Appearance and region keys, `keep_unsaved`, `notify.<event>` as `[in Evlet, email]`, `quiet` as `{on, from, to}`, `last_page` |
 | `GET/POST/DELETE /api/_settings/me/photo` | `{"type", "data"}` with base64 data |
 | `POST /api/_settings/me/email`, `POST /api/_settings/me/email/confirm` | Ask for a link (`{"email", "code"}` with two-step on, `{"email", "password"}` without); confirm with `{"token"}` |
 | `POST /api/_settings/me/password` | `{"current", "new", "code"?, "revoke_keys"?}`: `code` when two-step is on; `revoke_keys` defaults to false. Answers `{"changed", "revoked_keys"}` |

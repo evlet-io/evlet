@@ -18,6 +18,7 @@ and `ui-final/05-remove-solid` of [handoff-plan.md](internal/handoff-plan.md)). 
 | `model/finite.ts` | The finite-v1 evaluator, the browser twin of `evlet/calc.py` |
 | `model/schema.ts` | Types for `GET /api/schema` |
 | `ui/` | Components, their stylesheet and the Library page (see Components) |
+| `richtext/` | The rich text editor: model, operations, HTML reading and writing, rendering, undo ([Rich text](#rich-text)) |
 
 There is no virtual DOM. A template builds DOM once, and each dynamic value in it is bound
 to one effect that updates one node, attribute or property.
@@ -276,7 +277,7 @@ mark only.
 | `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, Stat, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
 | `tooltip.ts` | `tooltip(element, text)`: one page-wide tooltip on hover and focus, never on touch |
 | `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `openModal`, `openDrawer`, `toast` (with Undo), `copyText` |
-| `fields.ts`, `kinds.ts` | BaseField and one component per field type, `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
+| `fields.ts`, `kinds.ts` | BaseField and one component per field type (RichTextField and RichTextView for rich text), `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
 | `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
 | `fold.ts` | FoldSection, Folds, `foldSummary`, `revealField`, `revealFirstError` ([collapsible sections](ui.md#collapsible-sections)), `flowGrid` (rows or columns) |
@@ -299,6 +300,60 @@ a lock hint says why ("Locked when Stage is won"), a calculated value shows its 
 GST date-times, exact decimals, `1h 30m` durations) and a wrong value stays in the input with
 a message that says how to fix it. `localField()` makes the same cells for forms that are not
 records, such as action dialogs.
+
+### Rich text
+
+A `RichText` field (`type: "richtext"` in the schema) edits in `RichTextEditor`
+(`frontend/src/evlet/richtext/editor.ts`), Evlet's own editor with no dependencies. The design is in
+[internal/rich-text.md](internal/rich-text.md).
+
+```ts
+import { RichTextEditor } from './evlet/richtext/editor';
+
+const brief = cell<string | null>('<p>Fit out the <strong>Dubai</strong> office.</p>');
+const editor = RichTextEditor({ value: () => brief.get(), onChange: html => brief.set(html), label: 'Brief', maxLength: 20000 });
+document.body.append(editor.element);
+```
+
+- The document is a flat list of blocks (paragraph, heading 2 and 3, bulleted, numbered and check
+  list items nested up to three levels, quote, code block, divider) with marks (bold, italic,
+  underline, strike, inline code) and links (http, https, mailto) on its text. `onChange` gets the
+  canonical HTML, the same the server stores, or null for an empty document.
+- The surface is `contenteditable` with `role="textbox"` and `aria-multiline`, but the browser never
+  edits it on its own: each `beforeinput` is cancelled and applied to the model, which renders.
+  During IME composition, and for the input phone keyboards send without letting it be cancelled,
+  the browser edits the text node and the editor reads the changed block back, keeping its marks.
+  Spellcheck and autocorrect replacements arrive as `insertReplacementText` or through that path.
+- Undo and redo are the editor's own: a burst of typing (until a pause of a second, a new word, a
+  caret move or another kind of change) is one step, up to 200 steps.
+- Keys: Ctrl or Cmd with B, I, U (marks) and K (link), Shift+Ctrl+7 numbered and Shift+Ctrl+8
+  bulleted list, Ctrl+Z and Ctrl+Shift+Z or Ctrl+Y. Tab and Shift+Tab indent inside lists only;
+  elsewhere Tab leaves the editor. Ctrl or Cmd Enter is left to the form (an InlineValue saves).
+  Typing `# `, `## `, `### `, `- `, `1. `, `> `, `[] `, `[x] `, three backticks or `---` at the
+  start of a paragraph formats it, and text between backticks becomes inline code; Backspace or
+  Undo right after gives the typed characters back.
+- Paste keeps the schema only: Word and Outlook (list paragraphs become lists), Google Docs (its
+  bold wrapper is ignored, styled spans become marks, `aria-level` nests lists) and web pages.
+  Styles, classes, scripts, frames, images and unsafe links never survive. Plain text keeps
+  paragraphs and lines, and web addresses become links. A web address pasted over selected text
+  links it. Copy writes canonical HTML and plain text.
+- The toolbar is one Tab stop (arrow keys, Home and End move; disabled buttons are skipped) and
+  shows what is on with `aria-pressed`. On desktop a small toolbar floats over selected text; on a
+  phone the toolbar sits above the on-screen keyboard. Formatting changes are announced in a polite
+  live region ("Bold on", "Bulleted list").
+- `RichTextView(html)` (`ui/fields.ts`) shows stored rich text read only, with nested lists and real
+  links. Stored HTML is parsed with `DOMParser` and rebuilt from the model, never assigned as markup.
+- The server is the security boundary: it sanitises every write ([model-engine.md](model-engine.md)).
+- Images (`images: ImageSource`, given by fields on a record through `recordImages()` in
+  `richtext/images.ts`): the Image button, a pasted or dropped image file, or an image copied from
+  another record's text go in at the caret as a placeholder with a progress bar. The browser
+  refuses SVG and anything but PNG, JPEG, GIF and WebP, shrinks the image to 2,000 px on the long side
+  and re-encodes it (WebP when it can, else JPEG, or PNG to keep transparency; a GIF that fits is
+  kept, so it stays animated), then uploads it to the record, or to the person's holding area before
+  the record is saved. Only the attachment id is stored. Each image has tools for small, medium and
+  full width, alt text and caption, and remove. Copy marks images with their record, so a paste into
+  the same record keeps the reference and a paste into another record uploads the image again. An
+  image that can no longer be loaded says so. Undo after an upload brings back the image itself.
 
 ### Relative times
 
@@ -709,6 +764,7 @@ a title opens the full page in a new browser tab.
 | `Meta.search_fields` | The list search box and record search in the palette |
 | `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other |
 | `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
+| `Meta.autosave` | `True` (default): leaving a record with unsaved edits keeps them for later instead of asking to discard them; `False` keeps the leave prompt ([ui.md](ui.md#unsaved-changes)) |
 | `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |

@@ -43,6 +43,11 @@ def value_schema(field, *, read=False):
         value = {'anyOf': [{'type': 'string', 'pattern': r'^P(?:[0-9]+D)?(?:T(?:[0-9]+H)?(?:[0-9]+M)?(?:[0-9]+S)?)?$'},
                            {'type': 'integer', 'minimum': 0, 'maximum': 2**63 - 1}],
                  'description': 'An ISO 8601 duration such as PT1H30M, or whole seconds.'}
+    elif kind == 'richtext':
+        # The editor's HTML subset; the server sanitises every write (docs/internal/rich-text.md).
+        value = {'type': 'string', 'contentMediaType': 'text/html', 'maxLength': max(4096, field['max_length'] * 10),
+                 'description': f"HTML: p, h2, h3, ul, ol, li, blockquote, pre, code, hr, br, strong, em, u, s and a href "
+                                f"(http, https, mailto). Other markup is removed. At most {field['max_length']} characters of text."}
     else:
         value = {'type': 'string'}
         if field.get('max_length'):

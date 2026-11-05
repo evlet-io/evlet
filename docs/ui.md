@@ -31,7 +31,7 @@ pinning keep the first column pinned. A child table's Focus view keeps the recor
 save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
-`layout`, `key_fields`, `relations`, `measures`, `open_in` and `status`. See "What the model decides" in
+`layout`, `key_fields`, `relations`, `measures`, `open_in`, `autosave` and `status`. See "What the model decides" in
 [ui-framework.md](ui-framework.md).
 
 A record's State shows as a coloured badge in the header by default, with its moves as header
@@ -145,6 +145,12 @@ Currency and decimal values stay exact strings. A Currency field shows its code 
 `currency=` on the field: a fixed code, a field of the record, a field of a linked record or an
 app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)).
 Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-framework.md](ui-framework.md#pickers)).
+A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-framework.md#rich-text)):
+at rest the record shows the formatted text (read only when the record is locked), and list cells
+show its plain text. The Playground's projects have one, Brief.
+A record's Activity tab writes notes with the same editor; typing `@` mentions a person, with a
+warning when they can't open the record. The bell in the top bar is the Mentions inbox, with the
+unread count kept live by the event stream ([journal.md](journal.md#mentions)).
 
 ### Collapsible sections
 
@@ -181,6 +187,46 @@ and a record opens on its default tab, which the address then leaves out (`?tab=
 field of a form and Shift+Enter to the one before, skipping fields that can't change. It never
 applies in long text or rich text, on buttons, or while a picker or list is open, and Ctrl or Cmd
 Enter still saves. On a saved record, where each value saves on its own, Enter keeps saving the value.
+
+### Unsaved changes
+
+Leaving a record with unsaved edits never saves it. Only Save writes the record. Leaving means
+going to another page or record, closing the side panel, going back to the list, or hiding the
+tab. On a saved record the form keeps the edited fields (and the changed child rows) on the
+server, apart from the record, and shows "Unsaved changes kept, restore when you return". The
+next time the person opens that record a bar offers "Restore" or "Discard". Restore puts the
+edits back in the form as unsaved edits; Save is still needed. If someone saved the record in
+the meantime, the bar lists each field both of them changed, with both values, and the person
+keeps theirs or the saved one per field, or discards all of it.
+
+An unsaved new record stays in the browser only, so no record is created and no number is used
+until Save. Opening New for that model again asks "Restore your unfinished new ...?" with
+Restore and Start fresh. Signing out, or another person signing in on that browser, clears it.
+
+Server entries are kept for 30 days (200 per person), browser ones for 7 days (20 per person);
+an entry over 256 KB is not kept and stays only in the open tab. These are instance settings in
+Controls, Jobs ([controls.md](controls.md#unsaved-changes)). Only the person who left the edits
+can read them: API keys, Eva, MCP, the Tool Engine, connectors, reports and exports never see
+them.
+
+`Meta.autosave = False` on a model keeps the "Discard your changes?" prompt for it instead (the
+Playground's Payment does this). Each person can turn it off for themselves in Settings,
+Appearance ("Keep unsaved changes when I leave a record"), which also deletes what was kept
+([settings.md](settings.md)).
+
+| Route | What it does |
+|---|---|
+| `GET /api/_unsaved` | The person's limits, entry count and whether the setting is on (also `unsaved` in `GET /api/_settings/me`) |
+| `PUT /api/_unsaved/<model>/<id>` | `{"changes", "base_revision"}`: keep the edits; answers `{saved_at, size, dropped}` |
+| `GET /api/_unsaved/<model>/<id>` | `{entry, dropped}`: the person's own entry with `stale` when the record moved on |
+| `DELETE /api/_unsaved/<model>/<id>` | Discard the person's own entry |
+
+They need a signed-in browser session and its CSRF token, and that the person can read and
+update the record now. Fields the person may not write are left out and named in `dropped`;
+unknown fields are refused. Keeping edits never runs validators, events, numbering or history.
+A save removes the saver's entry, and deleting a record removes everyone's, in the same
+transaction. The format of `changes` is in
+[internal/unsaved-changes.md](internal/unsaved-changes.md).
 
 ### Ids, names and titles
 

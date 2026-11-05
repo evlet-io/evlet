@@ -78,6 +78,14 @@ def _record_times(connection, postgres, registry):
         add_columns(connection, postgres, table)
 
 
+def _unsaved_changes(connection, postgres):
+    """The table of unsaved changes people leave on saved records (evlet/unsaved.py)."""
+    from .unsaved import ensure
+    # It refers to evlet_users; on a new database startup creates both, users first.
+    if _exists(connection, postgres, 'evlet_users'):
+        ensure(connection, postgres)
+
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -85,6 +93,7 @@ STEPS = (
                   _record_names, registry=True),
     FrameworkStep('0004_record_times', 'Add the created and modified time and user columns to record tables and fill them.',
                   _record_times, registry=True),
+    FrameworkStep('0005_unsaved_changes', 'Add evlet_unsaved, the unsaved changes people leave on saved records.', _unsaved_changes),
 )
 
 LEDGER = ('CREATE TABLE IF NOT EXISTS evlet_framework_migrations (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, '

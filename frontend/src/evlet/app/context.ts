@@ -9,6 +9,7 @@ import type { LinkSource } from '../ui/fields';
 import type { AppClient } from './client';
 import { readConfig } from './config';
 import type { Prefs } from './prefs';
+import type { LocalUnsaved } from './unsaved';
 import type { Me } from './settings';
 import type { EvaStatus } from '../eva/client';
 
@@ -65,6 +66,8 @@ export interface AppContext {
   session: Session;
   user: User;
   prefs: Prefs;
+  /** Unsaved new records kept in this browser for this person (app/unsaved.ts). */
+  unsaved: LocalUnsaved;
   /** The person's settings from /api/_settings/me; null on a server without them. */
   me: Cell<Me | null>;
   /** Bumped when the photo changes, so its address changes. */
