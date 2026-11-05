@@ -79,3 +79,30 @@ describe('collapsible record sections', () => {
     await until(() => expect(document.activeElement!.closest('[data-field]')?.getAttribute('data-field')).toBe('issued'));
   });
 });
+
+describe('record tab order', () => {
+  it('shows the tabs in the model order and opens on its default tab, which the address then leaves out', async () => {
+    const value = schema();
+    Object.assign(value.body.models.find((model: any) => model.name === 'order'), { tabs: ['lines', 'details'], default_tab: 'lines' });
+    const { host, router } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, value], ...routes().slice(2)], '/app/order/0000000000001');
+    await until(() => expect([...host.querySelectorAll('.doc-tabs [role="tab"]')].map(text)).toEqual(['Lines120', 'Details']));
+    expect(host.querySelector('.doc-tabs [role="tab"][aria-selected="true"]')!.textContent).toContain('Lines');
+    expect(router.route.peek()?.query.tab).toBeUndefined();
+    click(byText(host, '.doc-tabs [role="tab"]', 'Details'));
+    await until(() => expect(router.route.peek()?.query.tab).toBe('details'));
+  });
+
+  it('keeps the usual order without Meta.tabs', async () => {
+    const { host } = start(routes(), '/app/order/0000000000001');
+    await until(() => expect([...host.querySelectorAll('.doc-tabs [role="tab"]')].map(text)).toEqual(['Details', 'Lines120']));
+    expect(host.querySelector('.doc-tabs [role="tab"][aria-selected="true"]')!.textContent).toBe('Details');
+  });
+
+  it('a #field address switches to Details when another tab opens first', async () => {
+    const value = schema();
+    Object.assign(value.body.models.find((model: any) => model.name === 'order'), { tabs: ['lines', 'details'], default_tab: 'lines' });
+    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, value], ...routes().slice(2)], '/app/order/0000000000001#issued');
+    await until(() => expect(document.activeElement?.closest('[data-field]')?.getAttribute('data-field')).toBe('issued'));
+    expect(host.querySelector('.doc-tabs [role="tab"][aria-selected="true"]')!.textContent).toBe('Details');
+  });
+});

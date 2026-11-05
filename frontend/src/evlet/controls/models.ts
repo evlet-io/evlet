@@ -7,7 +7,9 @@ import { cell, derive, type Cell } from '../reactive';
 import { Button, Checkbox, Icon, IconButton, Switch } from '../ui/base';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
 import { Callout, Head, plural, type ControlsContext } from './app';
-import type { FieldInfo, FieldOverride, FieldProps, LayoutSection, ListValue, ModelInfo } from './client';
+import type { FieldInfo, FieldOverride, FieldProps, LayoutSection, LayoutValue, ListValue, ModelInfo } from './client';
+import { dragList } from '../ui/draglist';
+import { flowGrid } from '../ui/fold';
 import { idOf } from './drafts';
 import { field, message, Select } from './people';
 
@@ -283,9 +285,21 @@ function addField(ctx: ControlsContext, model: ModelInfo) {
 
 // ---------- form layout ----------
 
+/** A layout value as sections plus the record tab order: older layouts and layouts without tabs are a plain list. */
+export function layoutValue(value: LayoutValue | null | undefined): { sections: LayoutSection[]; tabs: string[]; default_tab: string | null } {
+  if (Array.isArray(value)) return { sections: value, tabs: [], default_tab: null };
+  return { sections: value?.sections ?? [], tabs: value?.tabs ?? [], default_tab: value?.default_tab ?? null };
+}
+
+/** The value to save: a plain list unless it orders the record tabs, so layouts without tabs keep their old shape. */
+export function layoutToSave(sections: LayoutSection[], tabs: string[], default_tab: string | null): LayoutValue {
+  return tabs.length || default_tab ? { sections, tabs, default_tab } : sections;
+}
+
 /** The layout people see: the override (or file) with fields placed nowhere added to the last section. */
 export function layoutOf(ctx: ControlsContext, model: ModelInfo): LayoutSection[] {
-  const sections = structuredClone(ctx.drafts.value<LayoutSection[]>(idOf('layout', model.name)) ?? [{ title: 'Details', fields: [] }]);
+  const found = structuredClone(layoutValue(ctx.drafts.value<LayoutValue>(idOf('layout', model.name))).sections);
+  const sections = found.length ? found : [{ title: 'Details', fields: [] }];
   const placeable = model.fields_detail.filter(info => !(ctx.drafts.item(idOf('field', `${model.name}.${info.name}`))?.file as FieldProps)?.hidden);
   const placed = new Set(sections.flatMap(section => section.fields.map(item => item.name)));
   for (const section of sections) section.fields = section.fields.filter(item => placeable.some(info => info.name === item.name));
@@ -306,6 +320,13 @@ export function moveField(sections: LayoutSection[], name: string, to: number, b
   return sections;
 }
 
+/** Move an item of a list before another one (or to the end). */
+export function moveBefore<T>(list: T[], item: T, before: T | null): T[] {
+  const rest = list.filter(entry => entry !== item), at = before === null ? -1 : rest.indexOf(before);
+  rest.splice(at < 0 ? rest.length : at, 0, item);
+  return rest;
+}
+
 /** Move a field one place earlier or later, across section edges. */
 export function nudge(sections: LayoutSection[], name: string, step: -1 | 1) {
   const at = sections.findIndex(section => section.fields.some(item => item.name === name));
@@ -321,10 +342,13 @@ export function nudge(sections: LayoutSection[], name: string, step: -1 | 1) {
 /** Where a section starts in the form: open, closed, or closed when every field in it is empty. */
 export const STARTS: Array<[string, string]> = [['open', 'Open'], ['closed', 'Closed'], ['empty', 'Closed when empty']];
 export const startsOf = (section: LayoutSection) => !section.collapsible ? 'open' : section.collapsed === true ? 'closed' : section.collapsed === 'empty' ? 'empty' : 'open';
+/** How a section orders its fields, on screen and for Tab. */
+export const FLOWS: Array<[string, string]> = [['rows', 'Across, then down'], ['columns', 'Down each column']];
 
-/** Can collapse, and how the section starts. Layouts saved before these options read as sections that always show. */
-function sectionFold(section: LayoutSection, index: number, change: (fn: (draft: LayoutSection[]) => void) => void): HTMLElement {
-  const starts = `ctl-ls-starts-${index}`;
+/** Can collapse, how the section starts, and how its fields flow. Layouts saved before these options read as
+ * sections that always show and fill across. */
+function sectionOptions(section: LayoutSection, index: number, change: (fn: (draft: LayoutSection[]) => void) => void): HTMLElement {
+  const starts = `ctl-ls-starts-${index}`, flow = `ctl-ls-flow-${index}`;
   return html`<div class="ctl-lsec-fold">${Switch({ on: Boolean(section.collapsible), label: 'Can collapse',
     onChange: next => change(draft => {
       // A section that always shows carries neither option, as layouts saved before them.
@@ -332,30 +356,37 @@ function sectionFold(section: LayoutSection, index: number, change: (fn: (draft:
       else { delete draft[index].collapsible; delete draft[index].collapsed; }
     }) })}
     <label class="muted ctl-small" for=${starts}>Starts</label>${Select({ id: starts, label: 'Starts', value: () => startsOf(section), options: () => STARTS, disabled: !section.collapsible,
-      onChange: next => change(draft => { draft[index].collapsed = next === 'closed' ? true : next === 'empty' ? 'empty' : false; }) })}</div>` as HTMLElement;
+      onChange: next => change(draft => { draft[index].collapsed = next === 'closed' ? true : next === 'empty' ? 'empty' : false; }) })}
+    <label class="muted ctl-small" for=${flow}>Fields go</label>${Select({ id: flow, label: 'Fields go', value: () => section.flow ?? 'rows', options: () => FLOWS,
+      onChange: next => change(draft => { if (next === 'columns') draft[index].flow = 'columns'; else delete draft[index].flow; }) })}</div>` as HTMLElement;
 }
+
+/** A stable key per section for dragging: its title, numbered when titles repeat. */
+const sectionKeys = (sections: LayoutSection[]) => {
+  const seen = new Map<string, number>();
+  return sections.map(section => { const count = (seen.get(section.title) ?? 0) + 1; seen.set(section.title, count); return count > 1 ? `${section.title}#${count}` : section.title; });
+};
 
 function LayoutTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
   const id = idOf('layout', model.name);
   const sections = () => layoutOf(ctx, model);
-  const save = (next: LayoutSection[]) => ctx.drafts.set(id, next);
+  const value = () => layoutValue(ctx.drafts.value<LayoutValue>(id));
+  const save = (next: LayoutSection[]) => ctx.drafts.set(id, layoutToSave(next, value().tabs, value().default_tab));
   const change = (fn: (draft: LayoutSection[]) => void) => { const draft = sections(); fn(draft); save(draft); };
-  let dragged: string | null = null;
   const label = (name: string) => effective(ctx, model.name, name).label;
+  const saveTabs = (tabs: string[], home: string | null) => ctx.drafts.set(id, layoutToSave(sections(), tabs, home));
   const chip = (item: LayoutSection['fields'][number], index: number, position: number, count: number, total: number) => html`<div class="ctl-lf" class:full=${item.width === 12}
-    class:off=${() => effective(ctx, model.name, item.name).hidden} draggable="true" data-field=${item.name}
-    on:dragstart=${(event: DragEvent) => { dragged = item.name; event.dataTransfer?.setData('text/plain', item.name); }}
-    on:dragend=${() => { dragged = null; }}
-    on:drop=${(event: DragEvent) => { event.preventDefault(); event.stopPropagation(); if (dragged && dragged !== item.name) change(draft => moveField(draft, dragged!, index, item.name)); }}>
-    <span class="ctl-grip">${Icon('grip-vertical', { size: 'xs' })}</span>
+    class:off=${() => effective(ctx, model.name, item.name).hidden} data-field=${item.name} data-drag-item="field" data-drag-id=${item.name}>
+    <button type="button" class="ctl-grip" data-drag-handle="field" aria-label=${`Move ${label(item.name)}`}
+      aria-roledescription="draggable field" aria-describedby="ctl-drag-help">${Icon('grip-vertical', { size: 'xs' })}</button>
     <span class="grow"><strong>${() => label(item.name)}${() => effective(ctx, model.name, item.name).required ? html` <span class="ctl-req">*</span>` : null}</strong>
       <span class="ctl-sub mono">${item.name}${() => effective(ctx, model.name, item.name).hidden ? ' · hidden' : ''}</span></span>
     <button type="button" class="ctl-wbtn" title="Width" on:click=${() => change(draft => { draft[index].fields[position].width = item.width === 12 ? 6 : 12; })}>${item.width === 12 ? 'Full' : 'Half'}</button>
     ${IconButton({ icon: 'arrow-up', tip: 'Move earlier', size: 'small', disabled: index === 0 && position === 0, onClick: () => change(draft => nudge(draft, item.name, -1)) })}
     ${IconButton({ icon: 'arrow-down', tip: 'Move later', size: 'small', disabled: index === total - 1 && position === count - 1, onClick: () => change(draft => nudge(draft, item.name, 1)) })}</div>`;
-  const editor = () => sections().map((section, index, all) => html`<section class="ctl-lsec" on:dragover=${(event: DragEvent) => { if (dragged) event.preventDefault(); }}
-    on:drop=${(event: DragEvent) => { event.preventDefault(); if (dragged) change(draft => moveField(draft, dragged!, index, null)); }}>
-    <div class="ctl-lsec-head"><span class="mono muted ctl-small">${sectionId(index)}</span>
+  const editor = () => { const all = sections(), keys = sectionKeys(all); return all.map((section, index) => html`<section class="ctl-lsec" data-drag-item="section" data-drag-id=${keys[index]}>
+    <div class="ctl-lsec-head"><button type="button" class="ctl-grip" data-drag-handle="section" aria-label=${`Move section ${section.title}`}
+      aria-roledescription="draggable section" aria-describedby="ctl-drag-help">${Icon('grip-vertical', { size: 'xs' })}</button><span class="mono muted ctl-small">${sectionId(index)}</span>
       <input class="input" aria-label="Section title" prop:value=${section.title} on:change=${(event: Event) => {
         const input = event.target as HTMLInputElement, title = input.value.trim();
         if (!title) { toast('A section needs a title', { icon: 'info' }); input.value = section.title; return; }
@@ -367,28 +398,65 @@ function LayoutTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
         change(draft => { const target = index > 0 ? index - 1 : 1; draft[target].fields.push(...draft[index].fields); draft.splice(index, 1); });
         toast(`Section removed. Its fields moved to ${sections()[Math.max(index - 1, 0)].title}.`);
       } })}</div>
-    ${sectionFold(section, index, change)}
-    <div class="ctl-lgrid">${section.fields.length ? section.fields.map((item, position) => chip(item, index, position, section.fields.length, all.length))
-      : html`<div class="ctl-lempty">Drop fields here</div>`}</div></section>`);
+    ${sectionOptions(section, index, change)}
+    <div class="ctl-lgrid" data-drop-zone="field" data-zone=${String(index)}>${section.fields.length ? section.fields.map((item, position) => chip(item, index, position, section.fields.length, all.length))
+      : html`<div class="ctl-lempty">Drop fields here</div>`}</div></section>`); };
   const preview = () => {
     const shown = sections().map(section => ({ ...section, fields: section.fields.filter(item => !effective(ctx, model.name, item.name).hidden) }));
     const hidden = sections().flatMap(section => section.fields).filter(item => effective(ctx, model.name, item.name).hidden).length;
     return [shown.filter(section => section.fields.length).map(section => html`<div class="ctl-pvsec"><h3>${section.title}${section.collapsible
-      ? html` <span class="muted ctl-small">· ${STARTS.find(([key]) => key === startsOf(section))![1].toLowerCase()}</span>` : null}</h3><div class="ctl-pvgrid">${section.fields.map(item => {
+      ? html` <span class="muted ctl-small">· ${STARTS.find(([key]) => key === startsOf(section))![1].toLowerCase()}</span>` : null}</h3>${flowGrid(section.fields.map(item => {
       const value = effective(ctx, model.name, item.name);
-      return html`<div class="ctl-field" class:full=${item.width === 12}><span class="lbl">${value.label}${value.required ? html` <span class="ctl-req">*</span>` : null}</span>
-        <span class="input ctl-mock" class:ro=${value.read_only}>${value.placeholder || ''}</span>${value.help_text ? html`<span class="ctl-hint">${value.help_text}</span>` : null}</div>`;
-    })}</div></div>`), hidden ? html`<p class="muted ctl-small">${plural(hidden, 'hidden field')} not shown.</p>` : null];
+      return { wide: item.width === 12, node: html`<div class="ctl-field" class:full=${item.width === 12}><span class="lbl">${value.label}${value.required ? html` <span class="ctl-req">*</span>` : null}</span>
+        <span class="input ctl-mock" class:ro=${value.read_only}>${value.placeholder || ''}</span>${value.help_text ? html`<span class="ctl-hint">${value.help_text}</span>` : null}</div>` as Node };
+    }), section.flow ?? 'rows')}</div>`), hidden ? html`<p class="muted ctl-small">${plural(hidden, 'hidden field')} not shown.</p>` : null];
   };
-  return html`<div>
-    <div class="toolbar"><span class="muted ctl-small">Drag fields between sections, or use the arrows. The preview updates as you go.</span><span class="grow"></span>
+  const element = html`<div>
+    <div class="toolbar"><span class="muted ctl-small" id="ctl-drag-help">Drag fields and sections by their grip, or press Space on a grip, move with the arrow keys and press Space again. The preview updates as you go.</span><span class="grow"></span>
       ${() => ctx.drafts.overridden(id) ? Button({ label: 'Reset to file', icon: 'rotate-ccw', size: 'small', variant: 'ghost', onClick: () => ctx.drafts.reset(id) }) : null}
       ${Button({ label: 'Add section', icon: 'plus', size: 'small', onClick: () => change(draft => { draft.push({ title: `Section ${draft.length + 1}`, fields: [] }); }) })}</div>
     ${when(() => ctx.drafts.errors.get().has(id), () => Callout('err', 'info', () => ctx.drafts.errors.get().get(id)))}
-    <div class="ctl-lwrap"><div class="ctl-stack">${editor}</div>
+    <div class="ctl-lwrap"><div class="ctl-stack"><div class="ctl-stack" data-drop-zone="section" data-zone="sections">${editor}</div>${() => TabsCard(model, value, saveTabs)}</div>
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Preview</h2><p>${`New ${model.name.toLowerCase()} form, as people will see it`}</p></div>
         <span class="ctl-badge">${() => ctx.drafts.overridden(id) ? 'Changed here' : 'From the app'}</span></div><div class="ctl-pad">${preview}</div></section></div>
   </div>` as HTMLElement;
+  // One drag helper per kind: fields between sections, and the sections themselves.
+  dragList(element, { kind: 'field', label, zoneLabel: zone => sections()[Number(zone)]?.title ?? zone,
+    move: (name, zone, before) => change(draft => moveField(draft, name, Number(zone), before)) });
+  dragList(element, { kind: 'section', label: key => `Section ${key}`,
+    move: (key, _zone, before) => change(draft => {
+      const keys = sectionKeys(draft), moved = draft[keys.indexOf(key)], next = before === null ? null : draft[keys.indexOf(before)] ?? null;
+      draft.splice(0, draft.length, ...moveBefore(draft, moved, next));
+    }) });
+  dragList(element, { kind: 'tab', label: name => `${model.tabs?.find(tab => tab.name === name)?.label ?? name} tab`,
+    move: (name, _zone, before) => saveTabs(moveBefore(tabOrder(model, value().tabs), name, before), value().default_tab) });
+  return element;
+}
+
+/** The record page's tabs in order, and the one a record opens on. Drag to reorder. */
+/** The model's record tabs in the saved order, the rest after them. */
+export function tabOrder(model: ModelInfo, saved: string[]): string[] {
+  const known = (model.tabs ?? []).map(tab => tab.name);
+  return [...saved.filter(name => known.includes(name)), ...known.filter(name => !saved.includes(name))];
+}
+
+function TabsCard(model: ModelInfo, value: () => ReturnType<typeof layoutValue>, save: (tabs: string[], home: string | null) => void): HTMLElement | null {
+  const known = model.tabs ?? [];
+  if (!known.length) return null;
+  const labelOf = (name: string) => known.find(tab => tab.name === name)?.label ?? name;
+  const current = value();
+  const order = tabOrder(model, current.tabs);
+  const home = current.default_tab ?? 'details';
+  const card = html`<section class="ctl-card ctl-tabs"><div class="ctl-card-head"><div><h2>Record tabs</h2>
+      <p>The order of the tabs on a record, and the one it opens on. A record shows only the tabs it has.</p></div></div>
+    <div class="ctl-pad"><ol class="ctl-tablist" data-drop-zone="tab" data-zone="tabs">${order.map((name, index) => html`<li class="ctl-tabrow" data-drag-item="tab" data-drag-id=${name}>
+      <button type="button" class="ctl-grip" data-drag-handle="tab" aria-label=${`Move ${labelOf(name)} tab`} aria-roledescription="draggable tab" aria-describedby="ctl-drag-help">${Icon('grip-vertical', { size: 'xs' })}</button>
+      <span class="grow">${labelOf(name)}</span>${name === home ? html`<span class="ctl-badge">Opens first</span>` : null}
+      ${IconButton({ icon: 'arrow-up', tip: 'Move earlier', size: 'small', disabled: index === 0, onClick: () => save(moveBefore(order, name, order[index - 1]), current.default_tab) })}
+      ${IconButton({ icon: 'arrow-down', tip: 'Move later', size: 'small', disabled: index === order.length - 1, onClick: () => save(moveBefore(order, name, order[index + 2] ?? null), current.default_tab) })}</li>`)}</ol>
+      ${field('Open records on', 'ctl-tabs-home', Select({ id: 'ctl-tabs-home', label: 'Open records on', value: () => home, options: () => order.map(name => [name, labelOf(name)]),
+        onChange: next => save(order, next === 'details' && !current.default_tab ? null : next) }))}</div></section>` as HTMLElement;
+  return card;
 }
 
 // ---------- list view ----------

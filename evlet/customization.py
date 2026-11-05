@@ -22,7 +22,7 @@ from .fields import (ACTIVE, MISSING, Boolean, Currency, CurrentUser, Date, Deci
                      State, Text, active_layer)
 from .database import ConflictError
 from .models import ValidationError, identifier
-from .ui.metadata import OPEN_IN, label_for, starts_valid, view_for
+from .ui.metadata import FLOWS, OPEN_IN, label_for, starts_valid, view_for
 
 PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default', 'options_add', 'options_hidden')
 DISPLAY = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden')
@@ -131,9 +131,20 @@ def file_field(field, name):
 
 
 def fold(section):
-    """collapsible and collapsed of a layout section, kept only when it can collapse: a section that always
-    shows is stored and compared as before these options existed."""
-    return {'collapsible': True, 'collapsed': section.get('collapsed', False)} if section.get('collapsible') else {}
+    """collapsible and collapsed of a layout section, kept only when it can collapse, and flow only when it is
+    columns: a plain section is stored and compared as before these options existed."""
+    return {**({'collapsible': True, 'collapsed': section.get('collapsed', False)} if section.get('collapsible') else {}),
+            **({'flow': 'columns'} if section.get('flow') == 'columns' else {})}
+
+
+def sections_of(value):
+    """The sections of a layout value: the list itself, or its "sections" when it also orders the record tabs."""
+    return value['sections'] if isinstance(value, dict) else value
+
+
+def tabs_of(value):
+    """The record tab order and default tab of a layout value ([] and None when it sets neither)."""
+    return (value.get('tabs', []), value.get('default_tab')) if isinstance(value, dict) else ([], None)
 
 
 def width(field):
@@ -147,7 +158,7 @@ class Customization:
         self.controls, self.business = controls, controls.business
         self.registry = controls.registry
         self.effective, self.defaults, self.choices = {}, {}, {}
-        self.layouts, self.lists, self.read_only = {}, {}, {}
+        self.layouts, self.lists, self.read_only, self.tabs = {}, {}, {}, {}
         self.file_naming = dict(self.registry.naming)
         self.naming = MappingProxyType(self.file_naming)
         self.drop = None
@@ -178,9 +189,10 @@ class Customization:
         if kind == 'field':
             return file_field(model.__declared_fields__[name], name)
         if kind == 'layout':
-            fields = model.__declared_fields__
-            return [{'title': group['label'], 'fields': [{'name': key, 'width': width(fields[key])} for key in group['fields']], **fold(group)}
-                    for group in view_for(model)['layout']]
+            fields, view = model.__declared_fields__, view_for(model)
+            sections = [{'title': group['label'], 'fields': [{'name': key, 'width': width(fields[key])} for key in group['fields']], **fold(group)}
+                        for group in view['layout']]
+            return {'sections': sections, 'tabs': view['tabs'], 'default_tab': view['default_tab']} if view['tabs'] or view['default_tab'] else sections
         if kind == 'list':
             view = view_for(model)
             return {'columns': [key for key in view['list_fields'] if key != 'id'], 'page_size': 50, 'sort': '-id', 'open_in': view['open_in']}
@@ -304,7 +316,29 @@ class Customization:
         return {prop: item for prop, item in out.items() if item != file.get(prop, False if prop in ('hidden', 'required', 'read_only') else [])
                 and not (prop in ('options_add', 'options_hidden') and not item)}
 
+    def tab_names(self, model):
+        """Tabs a record page of the model can show, in their usual order: Activity, Details, Revisions, its child
+        tables, Related and Postings. Meta.tabs and the Controls tab order name these."""
+        tables = [child.name for child in self.registry.children if child.parent is model]
+        return ['activity', 'details', 'revisions', *tables, 'related', 'postings']
+
     def check_layout(self, model, _, value):
+        tabs = default_tab = None
+        if isinstance(value, dict):
+            # The record tab order rides along with the sections; a plain list is a layout without one.
+            if not {'sections'} <= set(value) <= {'sections', 'tabs', 'default_tab'}:
+                raise ValueError('Send the layout as a list of sections, or as sections, tabs and default_tab.')
+            tabs, default_tab = value.get('tabs', []), value.get('default_tab')
+            known = self.tab_names(model)
+            if not isinstance(tabs, list) or any(name not in known for name in tabs) or len(set(tabs)) != len(tabs):
+                raise ValueError(f'List record tabs of {model.__name__} once each, from {", ".join(known)}.')
+            if default_tab is not None and (default_tab not in known or (tabs and default_tab not in tabs)):
+                raise ValueError('Open records on one of the record tabs.')
+            value = value['sections']
+        sections = self.check_sections(model, value)
+        return {'sections': sections, 'tabs': list(tabs), 'default_tab': default_tab} if tabs or default_tab else sections
+
+    def check_sections(self, model, value):
         fields = self.fields(model)
         placeable = {name for name, field in fields.items() if not field.hidden}
         if not isinstance(value, list) or not 1 <= len(value) <= 12:
@@ -312,9 +346,9 @@ class Customization:
         seen, out = set(), []
         for section in value:
             # collapsible and collapsed are optional: layouts saved before them have sections that always show.
-            if not isinstance(section, dict) or not {'title', 'fields'} <= set(section) <= {'title', 'fields', 'collapsible', 'collapsed'} \
+            if not isinstance(section, dict) or not {'title', 'fields'} <= set(section) <= {'title', 'fields', 'collapsible', 'collapsed', 'flow'} \
                     or not isinstance(section['fields'], list):
-                raise ValueError('Send each section as a title and a list of fields, and optionally collapsible and collapsed.')
+                raise ValueError('Send each section as a title and a list of fields, and optionally collapsible, collapsed and flow.')
             title = section['title']
             if not isinstance(title, str) or not title.strip() or len(title) > 60:
                 raise ValueError('Give every section a title of at most 60 characters.')
@@ -325,6 +359,8 @@ class Customization:
                 raise ValueError(f'Section {title.strip()}: Starts must be open (false), closed (true) or closed when empty ("empty").')
             if not collapsible and collapsed is not False:
                 raise ValueError(f"Section {title.strip()} can't collapse, so it starts open. Turn on Can collapse first.")
+            if section.get('flow', 'rows') not in FLOWS:
+                raise ValueError(f'Section {title.strip()}: fill fields in rows ("rows") or down each column ("columns").')
             items = []
             for item in section['fields']:
                 if not isinstance(item, dict) or set(item) != {'name', 'width'} or item['name'] not in placeable or item['width'] not in (6, 12):
@@ -388,7 +424,7 @@ class Customization:
 
     def apply(self, stored, problems):
         """Build the effective field, layout, list and naming values from saved overrides."""
-        effective, defaults, choices, read_only, layouts, lists = {}, {}, {}, {}, {}, {}
+        effective, defaults, choices, read_only, layouts, lists, tabs = {}, {}, {}, {}, {}, {}, {}
         naming = dict(self.file_naming)
         models = self.controls.models()
         for model in models.values():
@@ -424,7 +460,8 @@ class Customization:
                 if props.get('default') is not None:
                     defaults.setdefault(model, {})[name] = props['default']
             elif kind == 'layout':
-                layouts[model] = checked
+                layouts[model] = sections_of(checked)
+                tabs[model] = tabs_of(checked)
             elif kind == 'list':
                 lists[model] = checked
             else:
@@ -436,14 +473,14 @@ class Customization:
             for model, values in defaults.items():
                 defaults[model] = {name: model.__declared_fields__[name].validate(value) for name, value in values.items()}
         self.effective, self.defaults, self.choices, self.read_only = effective, defaults, MappingProxyType(choices), read_only
-        self.layouts, self.lists, self.naming = layouts, lists, MappingProxyType(naming)
+        self.layouts, self.lists, self.naming, self.tabs = layouts, lists, MappingProxyType(naming), tabs
 
     def layout(self, model):
         """The effective layout. Fields placed nowhere (instance fields, fields an app adds later) go to the
         last section of a Controls layout. Without one, they follow the app file's rule: a declared
         Meta.layout leaves them to an Other group, and the default Details group takes every field."""
         override = self.layouts.get(model)
-        sections = override or self.file_value('layout', model)
+        sections = override or sections_of(self.file_value('layout', model))
         fields = self.fields(model)
         # The standard title and a name no naming fills are not form fields (evlet/naming.py).
         placeable = [name for name, field in fields.items() if not field.hidden and not form_hidden(field)]
@@ -482,11 +519,14 @@ class Customization:
             # Sections with nothing this role can read are left out, titles included.
             entry['layout'] = [{'label': section['title'], 'fields': [item['name'] for item in section['fields'] if item['name'] in readable],
                                 'wide': [item['name'] for item in section['fields'] if item['width'] == 12 and item['name'] in readable],
-                                'collapsible': section.get('collapsible', False), 'collapsed': section.get('collapsed', False)}
+                                'collapsible': section.get('collapsible', False), 'collapsed': section.get('collapsed', False),
+                                'flow': section.get('flow', 'rows')}
                                for section in self.layout(model) if any(item['name'] in readable for item in section['fields'])]
             wide = {name for section in entry['layout'] for name in section['wide']}
             for field in entry['fields']:
                 field['wide'] = field['name'] in wide
+        if model in self.tabs:
+            entry['tabs'], entry['default_tab'] = self.tabs[model]
         if model in self.lists:
             value = self.lists[model]
             entry['list_fields'] = ['id', *(name for name in value['columns'] if name in readable)]
@@ -698,11 +738,11 @@ class Customization:
             value = json.loads(raw)
             if kind == 'field':
                 write(kind, key, None)
-            elif kind == 'layout' and any(item['name'] == name for section in value for item in section['fields']):
+            elif kind == 'layout' and any(item['name'] == name for section in sections_of(value) for item in section['fields']):
                 # Sections left empty go, so the rest keep their places; with none left the layout goes back to the file.
-                kept = [{**section, 'fields': [item for item in section['fields'] if item['name'] != name]} for section in value]
+                kept = [{**section, 'fields': [item for item in section['fields'] if item['name'] != name]} for section in sections_of(value)]
                 kept = [section for section in kept if section['fields']]
-                write(kind, key, kept or None)
+                write(kind, key, ({**value, 'sections': kept} if isinstance(value, dict) else kept) if kept else None)
             elif kind == 'list' and (name in value['columns'] or value['sort'].removeprefix('-') == name):
                 columns = [item for item in value['columns'] if item != name]
                 write(kind, key, {**value, 'columns': columns, 'sort': '-id' if value['sort'].removeprefix('-') == name else value['sort']} if columns else None)
@@ -865,7 +905,10 @@ class Customization:
         with self.business.database._connection() as connection:
             count = connection.execute(f'SELECT count(*) FROM {identifier(table)}').fetchone()[0]
         rules = self.naming.get(model)
-        return {'table': table, 'records': count, 'fields_detail': fields,
+        # Record page tabs the form layout can order: the record's own tabs, then each child table with its label.
+        labels = {child.name: child.label for child in self.registry.children if child.parent is model}
+        tabs = [{'name': name, 'label': labels.get(name, name.capitalize())} for name in self.tab_names(model)]
+        return {'table': table, 'records': count, 'fields_detail': fields, 'tabs': tabs,
                 'naming': None if rules is None else {'field': rules.field, 'date_field': rules.date_field}}
 
 

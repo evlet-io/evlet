@@ -381,7 +381,30 @@ and the section. The group rules above apply to sections too, and Other always s
 `collapsed` is only the starting point: each person's own choice is remembered per model
 ([ui.md](ui.md#collapsible-sections)). Each layout entry in the UI schema carries
 `collapsible` and `collapsed` (`false` for plain groups). Controls can change both per
-section ([controls.md](controls.md)). The UI schema retains version 1 with additive layout,
+section ([controls.md](controls.md)).
+
+### Field order and record tabs
+
+`Section(..., flow="rows" | "columns")` sets how a section's fields are ordered on screen and
+for Tab. `"rows"`, the default and the only order for a plain group, fills across, then down.
+`"columns"` goes down the left column, then the right; a full-width field (long text, or
+`width: 12` in Controls) ends the run like a section break, and the next run starts below it. The
+browser puts fields in the DOM in this order, so Tab, screen readers and a phone's single column all
+follow it. Each UI schema layout entry carries `flow`.
+
+`Meta.tabs` orders the record page's tabs and `Meta.default_tab` names the one a record opens on:
+
+```python
+class Meta:
+    tabs = ("details", "lines", "activity", "related")
+    default_tab = "details"
+```
+
+Names are `activity`, `details`, `revisions`, `related`, `postings` and the model's Table fields.
+Tabs left out follow in their usual order, and a tab a record doesn't have (Activity without a
+journal) is skipped. An unknown name, a name listed twice, or a `default_tab` missing from `tabs`
+fails registration naming the model. The schema adds `tabs` (`[]` without one) and `default_tab`
+(`null`). Controls can change both per site. The UI schema retains version 1 with additive layout,
 permissions, actions, children, child_only, and attachments metadata. Presentation
 changes do not alter migration checksums.
 

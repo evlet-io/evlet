@@ -5128,7 +5128,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.381Z",
+     "at": "2026-11-05T05:12:58.740Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5140,7 +5140,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.364Z",
+     "at": "2026-11-05T05:12:58.721Z",
      "data": {
       "fields": {
        "total": {
@@ -5202,7 +5202,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.351Z",
+     "at": "2026-11-05T05:12:58.706Z",
      "data": {
       "fields": {
        "customer": {
@@ -5426,7 +5426,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-05T05:11:36.430Z",
+     "at": "2026-11-05T05:12:58.788Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5438,7 +5438,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.428Z",
+     "at": "2026-11-05T05:12:58.787Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5450,7 +5450,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.426Z",
+     "at": "2026-11-05T05:12:58.785Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -5460,7 +5460,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.423Z",
+     "at": "2026-11-05T05:12:58.782Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -5472,7 +5472,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.421Z",
+     "at": "2026-11-05T05:12:58.780Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5481,7 +5481,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.402Z",
+     "at": "2026-11-05T05:12:58.761Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5496,7 +5496,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.393Z",
+     "at": "2026-11-05T05:12:58.751Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5506,7 +5506,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.393Z",
+     "at": "2026-11-05T05:12:58.751Z",
      "data": {
       "targets": [
        {
@@ -5522,7 +5522,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.393Z",
+     "at": "2026-11-05T05:12:58.751Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5543,7 +5543,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.381Z",
+     "at": "2026-11-05T05:12:58.740Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5555,7 +5555,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.364Z",
+     "at": "2026-11-05T05:12:58.721Z",
      "data": {
       "fields": {
        "total": {
@@ -5617,7 +5617,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.351Z",
+     "at": "2026-11-05T05:12:58.706Z",
      "data": {
       "fields": {
        "customer": {
@@ -5667,7 +5667,7 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-05T05:11:36.423Z",
+   "at": "2026-11-05T05:12:58.782Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5683,7 +5683,7 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-05T05:11:36.426Z",
+   "at": "2026-11-05T05:12:58.785Z",
    "data": {
     "follow_up": 19,
     "text": "Balance due by the end of the month"
@@ -5697,7 +5697,7 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-05T05:11:36.421Z",
+   "at": "2026-11-05T05:12:58.780Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -6173,6 +6173,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -6319,6 +6320,7 @@
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -6370,6 +6372,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -6387,6 +6390,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "effect_target": true,
@@ -6647,6 +6651,7 @@
         "source",
         "reversal"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -6682,6 +6687,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -7098,6 +7104,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "effects": [
@@ -7505,6 +7512,7 @@
         "due_on",
         "status"
        ],
+       "flow": "rows",
        "label": "Invoice"
       },
       {
@@ -7516,6 +7524,7 @@
         "remarks",
         "revises"
        ],
+       "flow": "rows",
        "label": "Amounts"
       }
      ],
@@ -7702,6 +7711,7 @@
        "issued"
       ]
      },
+     "tabs": [],
      "title_field": "number",
      "unpostable": true,
      "voidable": true
@@ -7718,6 +7728,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7887,6 +7898,7 @@
         "amount",
         "paid_on"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -7917,6 +7929,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -7932,6 +7945,7 @@
      },
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -8107,6 +8121,7 @@
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -8131,6 +8146,7 @@
       "item"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "item"
     }
    ],
@@ -8507,7 +8523,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-05T05:11:36.430Z",
+     "at": "2026-11-05T05:12:58.788Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -8519,7 +8535,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.428Z",
+     "at": "2026-11-05T05:12:58.787Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -8531,7 +8547,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.426Z",
+     "at": "2026-11-05T05:12:58.785Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -8541,7 +8557,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.423Z",
+     "at": "2026-11-05T05:12:58.782Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -8553,7 +8569,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.421Z",
+     "at": "2026-11-05T05:12:58.780Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -8562,7 +8578,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.402Z",
+     "at": "2026-11-05T05:12:58.761Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8577,7 +8593,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.393Z",
+     "at": "2026-11-05T05:12:58.751Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -8587,7 +8603,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.393Z",
+     "at": "2026-11-05T05:12:58.751Z",
      "data": {},
      "id": 15,
      "kind": "changed",
@@ -8595,7 +8611,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.393Z",
+     "at": "2026-11-05T05:12:58.751Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8616,7 +8632,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.381Z",
+     "at": "2026-11-05T05:12:58.740Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -8628,7 +8644,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.364Z",
+     "at": "2026-11-05T05:12:58.721Z",
      "data": {
       "fields": {
        "total": {
@@ -8690,7 +8706,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:11:36.351Z",
+     "at": "2026-11-05T05:12:58.706Z",
      "data": {
       "fields": {
        "customer": {
@@ -8758,6 +8774,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -8904,6 +8921,7 @@
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -8945,6 +8963,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -9293,6 +9312,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -9678,6 +9698,7 @@
         "due_on",
         "status"
        ],
+       "flow": "rows",
        "label": "Invoice"
       },
       {
@@ -9689,6 +9710,7 @@
         "remarks",
         "revises"
        ],
+       "flow": "rows",
        "label": "Amounts"
       }
      ],
@@ -9875,6 +9897,7 @@
        "issued"
       ]
      },
+     "tabs": [],
      "title_field": "number",
      "unpostable": true,
      "voidable": true
@@ -9891,6 +9914,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -10060,6 +10084,7 @@
         "amount",
         "paid_on"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -10090,6 +10115,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -10105,6 +10131,7 @@
      },
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -10280,6 +10307,7 @@
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -10304,6 +10332,7 @@
       "item"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "item"
     }
    ],
@@ -11099,6 +11128,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -11245,6 +11275,7 @@
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -11286,6 +11317,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -11298,6 +11330,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -11409,6 +11442,7 @@
         "title",
         "price"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -11436,6 +11470,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -12036,6 +12071,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -12442,6 +12478,7 @@
         "total",
         "line_count"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -12485,6 +12522,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -12511,6 +12549,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -12692,6 +12731,7 @@
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -12714,6 +12754,7 @@
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
+     "tabs": [],
      "title_field": "id"
     },
     {
@@ -12721,6 +12762,7 @@
      "attachments": false,
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "fields": [
       {
@@ -12767,6 +12809,7 @@
        "fields": [
         "hours"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -12783,6 +12826,7 @@
      },
      "plural": "Parts",
      "search_fields": [],
+     "tabs": [],
      "title_field": "id"
     }
    ],

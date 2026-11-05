@@ -14,6 +14,9 @@ class Customer(Model):
         title_field = 'customer_name'
         list_fields = ('customer_name', 'email', 'active')
         search_fields = ('customer_name', 'email')
+        # flow='columns': down the left column (name, email, active), then the right (currency); Tab goes the
+        # same way, and notes, full width, sits below both columns.
+        layout = (Section('Details', ('customer_name', 'email', 'active', 'currency', 'notes'), collapsible=False, flow='columns'),)
 
     customer_name = Text(required=True, max_length=120, label='Customer name')
     email = Text(max_length=254)
@@ -94,6 +97,9 @@ class Project(Model):
                   Section('Planning', ('budget', 'progress')),
                   Section('Schedule', ('starts_on',), collapsed=True),
                   Section('Notes', ('notes',), collapsed='empty'))
+        # The record page's tabs: Details first, then the project's tasks (Related) and its history.
+        tabs = ('details', 'related', 'activity')
+        default_tab = 'details'
         open_in = 'panel'
 
     # A declared title is the record title itself.

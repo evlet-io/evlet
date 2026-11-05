@@ -1181,6 +1181,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -1327,6 +1328,7 @@
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -1356,6 +1358,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     }
    ],
@@ -1572,6 +1575,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -1718,6 +1722,7 @@
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -1769,6 +1774,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -1781,6 +1787,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -1892,6 +1899,7 @@
         "title",
         "price"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -1919,6 +1927,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -2519,6 +2528,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -2925,6 +2935,7 @@
         "total",
         "line_count"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -2968,6 +2979,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -3006,6 +3018,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -3176,6 +3189,7 @@
         "phone",
         "notes"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -3208,6 +3222,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -3222,6 +3237,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -3387,6 +3403,7 @@
         "customer",
         "issued"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -3424,6 +3441,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "number"
     },
     {
@@ -3450,6 +3468,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -3631,6 +3650,7 @@
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -3653,6 +3673,7 @@
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
+     "tabs": [],
      "title_field": "id"
     },
     {
@@ -3660,6 +3681,7 @@
      "attachments": false,
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "fields": [
       {
@@ -3706,6 +3728,7 @@
        "fields": [
         "hours"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -3722,6 +3745,7 @@
      },
      "plural": "Parts",
      "search_fields": [],
+     "tabs": [],
      "title_field": "id"
     }
    ],
@@ -4142,6 +4166,7 @@
     "counts": false,
     "date": "dd-MM-yyyy",
     "density": "comfortable",
+    "enter_next": false,
     "lang": "en",
     "num": "1,234.56",
     "start": "",
@@ -5119,6 +5144,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -5265,6 +5291,7 @@
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -5301,6 +5328,7 @@
       }
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -5313,6 +5341,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -5424,6 +5453,7 @@
         "title",
         "price"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -5451,6 +5481,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     }
    ],
@@ -5535,6 +5566,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -5681,6 +5713,7 @@
         "rate",
         "credit_days"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -5732,6 +5765,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -5744,6 +5778,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -5855,6 +5890,7 @@
         "title",
         "price"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -5882,6 +5918,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -6462,6 +6499,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -6868,6 +6906,7 @@
         "total",
         "line_count"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -6911,6 +6950,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -6926,6 +6966,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7001,6 +7042,7 @@
         "title",
         "email"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -7027,6 +7069,7 @@
       "email"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "title"
     },
     {
@@ -7041,6 +7084,7 @@
      },
      "child_only": false,
      "children": [],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7206,6 +7250,7 @@
         "customer",
         "issued"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -7243,6 +7288,7 @@
       "name"
      ],
      "sources": {},
+     "tabs": [],
      "title_field": "number"
     },
     {
@@ -7269,6 +7315,7 @@
        "row_changes": true
       }
      ],
+     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7450,6 +7497,7 @@
         "rate",
         "amount"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -7472,6 +7520,7 @@
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
+     "tabs": [],
      "title_field": "id"
     },
     {
@@ -7479,6 +7528,7 @@
      "attachments": false,
      "child_only": true,
      "children": [],
+     "default_tab": null,
      "description": "",
      "fields": [
       {
@@ -7525,6 +7575,7 @@
        "fields": [
         "hours"
        ],
+       "flow": "rows",
        "label": "Details"
       }
      ],
@@ -7541,6 +7592,7 @@
      },
      "plural": "Parts",
      "search_fields": [],
+     "tabs": [],
      "title_field": "id"
     }
    ],
