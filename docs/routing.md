@@ -68,7 +68,7 @@ so it can show its own sign-in screen; its data still goes through the API check
 Every page the framework serves gets one non-executable block in `<head>`:
 
 ```html
-<script id="evlet-config" type="application/json">{"frontend":"crm.customer_portal","base":"/","api":"/api","realm":"portal","host":"portal.acme.com","docs":null,"theme":"system","version":"0.2.0"}</script>
+<script id="evlet-config" type="application/json">{"frontend":"crm.customer_portal","base":"/","api":"/api","realm":"portal","host":"portal.acme.com","docs":null,"theme":"system","version":"0.3.0"}</script>
 ```
 
 The desk shell's router and API client read `base`, `docs` and `api` from it, so one
