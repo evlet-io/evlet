@@ -8,6 +8,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Change password from the account menu.** It opens the Sign-in & security password form
+  in a small dialog; both use one shared form.
 - **Files can be removed from a record.** Each file in the Files block has a remove button,
   shown to roles that can upload. It asks first, and a locked record shows none.
 

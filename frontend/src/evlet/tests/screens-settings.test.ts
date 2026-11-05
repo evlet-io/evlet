@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { adminRoutes, byText, click, lastToast, recorded, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
+import { adminRoutes, byText, click, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
 import { choiceValues, choose } from './ui-helpers';
 import { copy } from './server';
 import { setRegion } from '../model/format';
@@ -20,7 +20,7 @@ describe('the account area', () => {
     // The name block is styled apart from the avatar, so the avatar keeps its centred letter.
     expect(document.querySelector('.me-head .me-who strong')).not.toBeNull();
     expect(document.querySelector('.me-head .me-who .avatar')).toBeNull();
-    expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['Your profile', 'Appearance', 'Sign-in & security', 'Dark theme', 'All settings', 'Controls↗', 'Sign out']);
+    expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['Your profile', 'Appearance', 'Sign-in & security', 'Change password', 'Dark theme', 'All settings', 'Controls↗', 'Sign out']);
     click(byText(document.body, '.pop [role="menuitem"]', 'All settings'));
     await until(() => expect(location.pathname).toBe('/settings/profile'));
     stopAll();
@@ -28,6 +28,79 @@ describe('the account area', () => {
     await until(() => expect(viewer.host.querySelector('.me')).not.toBeNull());
     click(viewer.host.querySelector('.me'));
     expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).not.toContain('Controls↗');
+  });
+});
+
+describe('change password from the account menu', () => {
+  const PASSWORD = /\/api\/_settings\/me\/password$/;
+  const openDialog = async (extra: Route[] = [], settings = me()) => {
+    const started = start(routes(extra, settings), '/docs');
+    await until(() => expect(started.host.querySelector('.me')).not.toBeNull());
+    await until(() => expect(text(started.host.querySelector('.me .n'))).toBe('Owner'));
+    click(started.host.querySelector('.me'));
+    click(byText(document.body, '.pop [role="menuitem"]', 'Change password'));
+    await until(() => expect(text(document.querySelector('.modal h2'))).toBe('Change password'));
+    return started;
+  };
+  const fill = (current: string, next: string, again: string) => {
+    typeInto(document.querySelector<HTMLInputElement>('.modal #pw-cur')!, current);
+    typeInto(document.querySelector<HTMLInputElement>('.modal #pw-new')!, next);
+    typeInto(document.querySelector<HTMLInputElement>('.modal #pw-again')!, again);
+  };
+  const send = () => click(byText(document.body, '.modal-f button', 'Change password'));
+
+  it('opens a dialog with labelled fields, the workspace rule and focus on the first field; Esc closes it', async () => {
+    await openDialog();
+    const inputs = [...document.querySelectorAll<HTMLInputElement>('.modal input')];
+    expect(inputs.map(input => [input.id, input.type, input.autocomplete])).toEqual([
+      ['pw-cur', 'password', 'current-password'], ['pw-new', 'password', 'new-password'], ['pw-again', 'password', 'new-password']]);
+    for (const input of inputs) expect(document.querySelector(`.modal label[for="${input.id}"]`)).not.toBeNull();
+    expect(document.activeElement?.id).toBe('pw-cur');
+    expect(text(document.querySelector('.modal #pw-rules'))).toBe('At least 15 characters.');
+    press(document.activeElement!, 'Escape');
+    expect(document.querySelector('.modal')).toBeNull();
+  });
+
+  it('is hidden where Settings has no password change', async () => {
+    const { host } = start(routes([], me(body => { body.pages = ['profile', 'appearance', 'notifications']; })), '/docs');
+    await until(() => expect(text(host.querySelector('.me .n'))).toBe('Owner'));
+    click(host.querySelector('.me'));
+    expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).not.toContain('Change password');
+  });
+
+  it('checks a short password and a mismatch before sending anything', async () => {
+    const { sent } = await openDialog();
+    fill('fake current value', 'short', 'short');
+    send();
+    expect(text(document.querySelector('.modal #pw-new-err'))).toBe('Your workspace needs at least 15 characters.');
+    expect(document.querySelector('.modal #pw-new-err')!.getAttribute('role')).toBe('alert');
+    expect(document.querySelector('.modal #pw-new')!.getAttribute('aria-invalid')).toBe('true');
+    fill('fake current value', 'a fake new long value', 'a different fake value');
+    send();
+    expect(text(document.querySelector('.modal #pw-again-err'))).toBe("The two new passwords don't match.");
+    expect(requests(sent, 'POST', /password$/)).toHaveLength(0);
+  });
+
+  it('shows the server error under the field it names, and a general one as from the server', async () => {
+    let reply: any = { status: 422, etag: null, body: { error: 'Validation failed', fields: { current: 'That password is not right.' } } };
+    const { sent } = await openDialog([['POST', PASSWORD, () => reply]]);
+    fill('a wrong fake value', 'a fake new long value', 'a fake new long value');
+    send();
+    await until(() => expect(text(document.querySelector('.modal #pw-cur-err'))).toBe('That password is not right.'));
+    expect(document.querySelector('.modal')).not.toBeNull();
+    reply = { status: 409, etag: null, body: { error: 'Your password changed meanwhile. Reload the page.' } };
+    send();
+    await until(() => expect(text(document.querySelector('.modal [role="alert"]'))).toBe('The server said: Your password changed meanwhile. Reload the page.'));
+    expect(requests(sent, 'POST', /password$/)).toHaveLength(2);
+  });
+
+  it('sends the change, closes and says other devices were signed out', async () => {
+    const { sent } = await openDialog([['POST', PASSWORD, { status: 200, etag: null, body: { changed: true, revoked_keys: 0 } }]]);
+    fill('fake current value', 'a fake new long value', 'a fake new long value');
+    send();
+    await until(() => expect(document.querySelector('.modal')).toBeNull());
+    expect(requests(sent, 'POST', /password$/)[0].body).toEqual({ current: 'fake current value', new: 'a fake new long value' });
+    expect(lastToast()).toBe('Password changed. Other devices were signed out.');
   });
 });
 
@@ -147,7 +220,7 @@ describe('personal pages', () => {
     click(byText(host, 'button', 'Update password'));
     await until(() => expect(requests(sent, 'POST', /password$/)).toHaveLength(1));
     expect(requests(sent, 'POST', /password$/)[0].body).toEqual({ current: 'old password here', new: 'a brand new long password', code: '123456', revoke_keys: true });
-    await until(() => expect(lastToast()).toBe('Password updated. Other devices were signed out and your API keys revoked.'));
+    await until(() => expect(lastToast()).toBe('Password changed. Other devices were signed out and your API keys revoked.'));
   });
 
   it('cannot turn two-step sign-in off when the role requires it', async () => {

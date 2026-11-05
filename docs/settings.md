@@ -7,8 +7,10 @@ bar keeps search and notifications only.
 ## Account menu
 
 Clicking the name at the bottom of the sidebar opens, in this order: name and email, Your
-profile, Appearance, Sign-in & security, All settings, Controls (only for roles that open
-Controls; it opens in a new tab) and Sign out. All settings opens the last settings page the
+profile, Appearance, Sign-in & security, Change password, All settings, Controls (only for
+roles that open Controls; it opens in a new tab) and Sign out. Change password shows only when
+the person's settings pages include Sign-in & security, and opens the same form as that page in
+a small dialog. All settings opens the last settings page the
 person used, kept on the server: `GET /settings` redirects to `/settings/<last page>`, and
 `/settings/profile` the first time.
 
@@ -49,6 +51,9 @@ codes. API keys are kept unless the person ticks "Also revoke API keys (N active
 `"revoke_keys": true`; it is unticked by default and shown when they have active keys
 ([controls.md](controls.md#ending-access)). Wrong current passwords count against the account's
 sign-in lockout (`security.lockout`, 5 unless config.py's `Security(...)` sets it).
+The form checks the minimum length and the repeated password before sending, shows a server
+error under the field it names (or as "The server said: ..." when it names none), and on success
+toasts "Password changed. Other devices were signed out."
 
 **Start page.** Only Docs or a model the person can read.
 

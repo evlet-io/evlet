@@ -11,7 +11,7 @@ import { MenuButton, mountToasts, openModal, openPopover, Menu, closePopover, ty
 import { Lockup, Logo } from './login';
 import { resolveTheme, systemScheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
-import { displayName, PersonMark } from './settings';
+import { canChangePassword, displayName, openPasswordDialog, PersonMark } from './settings';
 import { presentSlip } from './slips';
 import { InboxButton } from './inbox';
 import { RecentsButton } from './recents';
@@ -72,6 +72,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     const page = (label: string, icon: string, target: string): MenuItem => ({ label, icon, onSelect: () => void goSettings(router, target) });
     const items: MenuItem[] = me ? [
       page('Your profile', 'user', 'profile'), ...(me.portal ? [] : [page('Appearance', 'sun', 'appearance')]), page('Sign-in & security', 'lock', 'security'),
+      ...(canChangePassword(me) ? [{ label: 'Change password', icon: 'lock', onSelect: () => openPasswordDialog(ctx.api, settings) }] : []),
       ...(me.portal ? [] : [{ label: dark() ? 'Light theme' : 'Dark theme', icon: dark() ? 'sun' : 'moon', onSelect: flipTheme }]),
       'separator', page('All settings', 'settings', me.last_page || 'profile'),
       ...(me.controls ? ['separator' as const, { label: 'Controls', icon: 'sliders-horizontal', hint: '↗', onSelect: () => { window.open('/controls', '_blank', 'noopener'); } }] : []),
