@@ -22,7 +22,7 @@ from .fields import (ACTIVE, MISSING, Boolean, Currency, CurrentUser, Date, Deci
                      State, Text, active_layer)
 from .database import ConflictError
 from .models import ValidationError, identifier
-from .ui.metadata import OPEN_IN, label_for, view_for
+from .ui.metadata import OPEN_IN, label_for, starts_valid, view_for
 
 PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default', 'options_add', 'options_hidden')
 DISPLAY = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden')
@@ -130,6 +130,12 @@ def file_field(field, name):
             'default': shown_default(field), 'options': list(field.choices) if isinstance(field, Select) else None}
 
 
+def fold(section):
+    """collapsible and collapsed of a layout section, kept only when it can collapse: a section that always
+    shows is stored and compared as before these options existed."""
+    return {'collapsible': True, 'collapsed': section.get('collapsed', False)} if section.get('collapsible') else {}
+
+
 def width(field):
     return 12 if isinstance(field, LongText) else 6
 
@@ -173,7 +179,7 @@ class Customization:
             return file_field(model.__declared_fields__[name], name)
         if kind == 'layout':
             fields = model.__declared_fields__
-            return [{'title': group['label'], 'fields': [{'name': key, 'width': width(fields[key])} for key in group['fields']]}
+            return [{'title': group['label'], 'fields': [{'name': key, 'width': width(fields[key])} for key in group['fields']], **fold(group)}
                     for group in view_for(model)['layout']]
         if kind == 'list':
             view = view_for(model)
@@ -305,11 +311,20 @@ class Customization:
             raise ValueError('Keep between 1 and 12 sections.')
         seen, out = set(), []
         for section in value:
-            if not isinstance(section, dict) or set(section) != {'title', 'fields'} or not isinstance(section['fields'], list):
-                raise ValueError('Send each section as a title and a list of fields.')
+            # collapsible and collapsed are optional: layouts saved before them have sections that always show.
+            if not isinstance(section, dict) or not {'title', 'fields'} <= set(section) <= {'title', 'fields', 'collapsible', 'collapsed'} \
+                    or not isinstance(section['fields'], list):
+                raise ValueError('Send each section as a title and a list of fields, and optionally collapsible and collapsed.')
             title = section['title']
             if not isinstance(title, str) or not title.strip() or len(title) > 60:
                 raise ValueError('Give every section a title of at most 60 characters.')
+            collapsible, collapsed = section.get('collapsible', False), section.get('collapsed', False)
+            if type(collapsible) is not bool:
+                raise ValueError(f'Section {title.strip()}: use true or false for Can collapse.')
+            if not starts_valid(collapsed):
+                raise ValueError(f'Section {title.strip()}: Starts must be open (false), closed (true) or closed when empty ("empty").')
+            if not collapsible and collapsed is not False:
+                raise ValueError(f"Section {title.strip()} can't collapse, so it starts open. Turn on Can collapse first.")
             items = []
             for item in section['fields']:
                 if not isinstance(item, dict) or set(item) != {'name', 'width'} or item['name'] not in placeable or item['width'] not in (6, 12):
@@ -320,7 +335,7 @@ class Customization:
                 items.append({'name': item['name'], 'width': item['width']})
             if not items:
                 raise ValueError('Every section needs at least one field, so section ids stay in place.')
-            out.append({'title': title.strip(), 'fields': items})
+            out.append({'title': title.strip(), 'fields': items, **fold(section)})
         return out
 
     def check_list(self, model, _, value):
@@ -433,7 +448,8 @@ class Customization:
         # The standard title and a name no naming fills are not form fields (evlet/naming.py).
         placeable = [name for name, field in fields.items() if not field.hidden and not form_hidden(field)]
         placed = {item['name'] for section in sections for item in section['fields']}
-        result = [{'title': section['title'], 'fields': [item for item in section['fields'] if item['name'] in placeable]} for section in sections]
+        result = [{'title': section['title'], 'fields': [item for item in section['fields'] if item['name'] in placeable],
+                   **fold(section)} for section in sections]
         rest = [{'name': name, 'width': width(fields[name])} for name in placeable if name not in placed]
         declared = getattr(getattr(model, 'Meta', None), 'layout', None) is not None
         if rest and not override and declared and result[-1]['title'] != 'Other':
@@ -465,7 +481,8 @@ class Customization:
         if model in self.layouts or any(getattr(field, 'instance', None) for field in model.__declared_fields__.values()):
             # Sections with nothing this role can read are left out, titles included.
             entry['layout'] = [{'label': section['title'], 'fields': [item['name'] for item in section['fields'] if item['name'] in readable],
-                                'wide': [item['name'] for item in section['fields'] if item['width'] == 12 and item['name'] in readable]}
+                                'wide': [item['name'] for item in section['fields'] if item['width'] == 12 and item['name'] in readable],
+                                'collapsible': section.get('collapsible', False), 'collapsed': section.get('collapsed', False)}
                                for section in self.layout(model) if any(item['name'] in readable for item in section['fields'])]
             wide = {name for section in entry['layout'] for name in section['wide']}
             for field in entry['fields']:

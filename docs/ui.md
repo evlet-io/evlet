@@ -138,6 +138,29 @@ Currency and decimal values stay exact strings. A Currency field shows its code 
 app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)).
 Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-framework.md](ui-framework.md#pickers)).
 
+### Collapsible sections
+
+Sections declared with `evlet.Section`, or set to Can collapse in Controls, open and close
+from their heading: a real button with `aria-expanded` and `aria-controls`, so Enter and Space
+toggle it, and Tab skips the fields of a closed section. A closed section shows how many of its
+fields are filled ("3 of 5 filled"), or "Required missing" when a required field is empty, and
+a badge with the number of fields that have errors.
+
+- **Starting state.** The app's `collapsed` value, unless the person chose: open and closed are
+  remembered per user and model in their browser preferences, by section title, and the record page
+  and the side panel share them. Sections closed in a side panel before this release carry over once.
+  Reset layout in the record's More menu forgets those choices.
+- **Phones.** Below 760 px, collapsible sections after the first start closed unless the person's
+  saved choice says otherwise. This is the default behaviour.
+- **Errors and focus.** A field error opens its section. A refused save opens every section with an
+  error, then scrolls to and focuses the first one. A `#field` address
+  (`/app/project/01hc1sd9vc1ye#starts_on`) opens that field's section and focuses it; code can do the
+  same with `revealField(root, name)`.
+- **Same everywhere.** New, read-only and locked records fold the same way. In the narrow side panel
+  every section can close. Print and PDF show everything: the browser's print style opens closed
+  sections, and the server's print designs never use the form layout.
+- Height animates only when the device does not ask for reduced motion.
+
 ### Ids, names and titles
 
 Record addresses use the record's text id, `/app/invoice/01hc1sd9vc1ye`, so changing a name never

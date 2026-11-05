@@ -318,6 +318,23 @@ export function nudge(sections: LayoutSection[], name: string, step: -1 | 1) {
   return sections;
 }
 
+/** Where a section starts in the form: open, closed, or closed when every field in it is empty. */
+export const STARTS: Array<[string, string]> = [['open', 'Open'], ['closed', 'Closed'], ['empty', 'Closed when empty']];
+export const startsOf = (section: LayoutSection) => !section.collapsible ? 'open' : section.collapsed === true ? 'closed' : section.collapsed === 'empty' ? 'empty' : 'open';
+
+/** Can collapse, and how the section starts. Layouts saved before these options read as sections that always show. */
+function sectionFold(section: LayoutSection, index: number, change: (fn: (draft: LayoutSection[]) => void) => void): HTMLElement {
+  const starts = `ctl-ls-starts-${index}`;
+  return html`<div class="ctl-lsec-fold">${Switch({ on: Boolean(section.collapsible), label: 'Can collapse',
+    onChange: next => change(draft => {
+      // A section that always shows carries neither option, as layouts saved before them.
+      if (next) { draft[index].collapsible = true; draft[index].collapsed = draft[index].collapsed ?? false; }
+      else { delete draft[index].collapsible; delete draft[index].collapsed; }
+    }) })}
+    <label class="muted ctl-small" for=${starts}>Starts</label>${Select({ id: starts, label: 'Starts', value: () => startsOf(section), options: () => STARTS, disabled: !section.collapsible,
+      onChange: next => change(draft => { draft[index].collapsed = next === 'closed' ? true : next === 'empty' ? 'empty' : false; }) })}</div>` as HTMLElement;
+}
+
 function LayoutTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
   const id = idOf('layout', model.name);
   const sections = () => layoutOf(ctx, model);
@@ -350,12 +367,14 @@ function LayoutTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
         change(draft => { const target = index > 0 ? index - 1 : 1; draft[target].fields.push(...draft[index].fields); draft.splice(index, 1); });
         toast(`Section removed. Its fields moved to ${sections()[Math.max(index - 1, 0)].title}.`);
       } })}</div>
+    ${sectionFold(section, index, change)}
     <div class="ctl-lgrid">${section.fields.length ? section.fields.map((item, position) => chip(item, index, position, section.fields.length, all.length))
       : html`<div class="ctl-lempty">Drop fields here</div>`}</div></section>`);
   const preview = () => {
-    const shown = sections().map(section => ({ title: section.title, fields: section.fields.filter(item => !effective(ctx, model.name, item.name).hidden) }));
+    const shown = sections().map(section => ({ ...section, fields: section.fields.filter(item => !effective(ctx, model.name, item.name).hidden) }));
     const hidden = sections().flatMap(section => section.fields).filter(item => effective(ctx, model.name, item.name).hidden).length;
-    return [shown.filter(section => section.fields.length).map(section => html`<div class="ctl-pvsec"><h3>${section.title}</h3><div class="ctl-pvgrid">${section.fields.map(item => {
+    return [shown.filter(section => section.fields.length).map(section => html`<div class="ctl-pvsec"><h3>${section.title}${section.collapsible
+      ? html` <span class="muted ctl-small">· ${STARTS.find(([key]) => key === startsOf(section))![1].toLowerCase()}</span>` : null}</h3><div class="ctl-pvgrid">${section.fields.map(item => {
       const value = effective(ctx, model.name, item.name);
       return html`<div class="ctl-field" class:full=${item.width === 12}><span class="lbl">${value.label}${value.required ? html` <span class="ctl-req">*</span>` : null}</span>
         <span class="input ctl-mock" class:ro=${value.read_only}>${value.placeholder || ''}</span>${value.help_text ? html`<span class="ctl-hint">${value.help_text}</span>` : null}</div>`;

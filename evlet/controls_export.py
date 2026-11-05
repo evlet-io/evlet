@@ -149,6 +149,9 @@ class Exporter:
         for index, section in enumerate(sections):
             fields = ', '.join(call('Field', (item['name'],), {'id': item['name'], **({'width': 12} if item['width'] == 12 else {})}) for item in section['fields'])
             children.append(f"    FormLayout(id={'main_details' if index == 0 else f'section_{index + 1}'!r}, title={section['title']!r}, children=[{fields}]),")
+            if section.get('collapsible'):
+                # FormLayout has no collapse options; Meta.layout carries them as Section(...).
+                children.append(f"    # Meta.layout: Section({section['title']!r}, ..., collapsed={section.get('collapsed', False)!r})")
         return (f'{self.folder(model)}/views/__init__.py',
                 f'{name.lower()}_form = FormView(model={name}, layout=Column(children=[\n' + '\n'.join(children) + '\n]))')
 

@@ -1385,7 +1385,22 @@
                       "slots": {},
                       "type": "Field",
                       "version": 1
-                    },
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_3",
+                "props": {
+                  "gap": 16,
+                  "title": "Schedule"
+                },
+                "slots": {
+                  "children": [
                     {
                       "bindings": {},
                       "events": {},
@@ -1405,7 +1420,7 @@
               {
                 "bindings": {},
                 "events": {},
-                "id": "section_3",
+                "id": "section_4",
                 "props": {
                   "gap": 16,
                   "title": "Notes"
@@ -1537,7 +1552,22 @@
                       "slots": {},
                       "type": "Field",
                       "version": 1
-                    },
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_3",
+                "props": {
+                  "gap": 16,
+                  "title": "Schedule"
+                },
+                "slots": {
+                  "children": [
                     {
                       "bindings": {},
                       "events": {},
@@ -1557,7 +1587,7 @@
               {
                 "bindings": {},
                 "events": {},
-                "id": "section_3",
+                "id": "section_4",
                 "props": {
                   "gap": 16,
                   "title": "Notes"
@@ -1688,7 +1718,22 @@
                       "slots": {},
                       "type": "Field",
                       "version": 1
-                    },
+                    }
+                  ]
+                },
+                "type": "FormLayout",
+                "version": 1
+              },
+              {
+                "bindings": {},
+                "events": {},
+                "id": "section_3",
+                "props": {
+                  "gap": 16,
+                  "title": "Schedule"
+                },
+                "slots": {
+                  "children": [
                     {
                       "bindings": {},
                       "events": {},
@@ -1708,7 +1753,7 @@
               {
                 "bindings": {},
                 "events": {},
-                "id": "section_3",
+                "id": "section_4",
                 "props": {
                   "gap": 16,
                   "title": "Notes"
@@ -11182,7 +11227,9 @@
             "active",
             "currency",
             "notes"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         }
       ],
       "label": "Customer",
@@ -11492,7 +11539,9 @@
             "posting_date",
             "status",
             "tax_rate"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         }
       ],
       "label": "Invoice",
@@ -11878,7 +11927,9 @@
             "currency",
             "amount",
             "received_at"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         }
       ],
       "label": "Payment",
@@ -12145,7 +12196,9 @@
             "posting_date",
             "amount",
             "memo"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         }
       ],
       "label": "Ledger entry",
@@ -12406,21 +12459,34 @@
             "title",
             "customer",
             "status"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         },
         {
           "label": "Planning",
           "fields": [
             "budget",
-            "progress",
+            "progress"
+          ],
+          "collapsible": true,
+          "collapsed": false
+        },
+        {
+          "label": "Schedule",
+          "fields": [
             "starts_on"
-          ]
+          ],
+          "collapsible": true,
+          "collapsed": true
         },
         {
           "label": "Notes",
           "fields": [
             "notes"
-          ]
+          ],
+          "collapsible": true,
+          "collapsed": "empty"
         }
       ],
       "label": "Project",
@@ -12756,7 +12822,9 @@
             "project",
             "title",
             "done"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         }
       ],
       "label": "Project task",
@@ -12914,7 +12982,9 @@
             "brand",
             "standard_rate",
             "disabled"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         },
         {
           "label": "Details",
@@ -12938,7 +13008,9 @@
             "valuation_method",
             "lead_time_days",
             "tax_category"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         },
         {
           "label": "GCC markets",
@@ -13003,7 +13075,9 @@
             "kuwait_discount",
             "kuwait_promo_price",
             "kuwait_status"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         },
         {
           "label": "Other markets",
@@ -13048,7 +13122,9 @@
             "export_discount",
             "export_promo_price",
             "export_status"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         },
         {
           "label": "Warehouses",
@@ -13101,7 +13177,9 @@
             "doha_stocked",
             "doha_counted_on",
             "doha_safety_stock"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         },
         {
           "label": "Specifications",
@@ -13136,7 +13214,9 @@
             "flavour",
             "fragrance",
             "gauge"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         }
       ],
       "label": "Item",
@@ -20131,7 +20211,9 @@
             "full_name",
             "email",
             "reports_to"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         }
       ],
       "label": "Employee",
@@ -20367,7 +20449,9 @@
             "rate",
             "min_qty",
             "valid_from"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         }
       ],
       "label": "Price",
@@ -20605,7 +20689,9 @@
           "fields": [
             "barcode",
             "barcode_type"
-          ]
+          ],
+          "collapsible": false,
+          "collapsed": false
         }
       ],
       "label": "Barcode",

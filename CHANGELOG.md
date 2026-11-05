@@ -6,6 +6,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Collapsible form sections.** `evlet.Section(title, fields, *, collapsible=True, collapsed=False)`
+  in `Model.Meta.layout` is a section people can open and close; `collapsed` is `False` (open),
+  `True` (closed) or `'empty'` (closed when every field is empty on an existing record). Plain
+  `('Title', fields)` groups still work and always show. Each UI schema layout entry gains
+  `collapsible` and `collapsed` (additive). The Controls form layout gets Can collapse and Starts
+  per section, stored as optional `collapsible` and `collapsed`; older saved layouts load as before.
+  Record pages remember each person's choice per model, with Reset layout in the More menu; on phones
+  sections after the first start closed. Migration checksums do not change. The Playground's Project
+  shows all three starting states, so its Planning group is split into Planning and Schedule
+  ([docs/business-capabilities.md](docs/business-capabilities.md#collapsible-sections)).
 - **Created and last modified on every record.** Every model table gains four framework columns,
   `evlet_created_at`, `evlet_created_by`, `evlet_modified_at` and `evlet_modified_by` (UTC times and
   user ids), filled in the same statement as every write: the record routes, the document pipeline,

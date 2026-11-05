@@ -15,6 +15,7 @@ import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote,
 import { ChildRows, ChildTable } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
 import { displayValue, fieldFor, localField, stateTint, type FieldLike } from '../ui/fields';
+import { FoldSection, Folds, revealField, revealFirstError } from '../ui/fold';
 import { FormSection, KeyValueList } from '../ui/inline';
 import { humanize } from '../ui/kinds';
 import { copyText, DialogFooter, MenuButton, openDrawer, openModal, toast, type MenuItem } from '../ui/layers';
@@ -227,6 +228,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     try { ok = await store.save(); } catch (error) { toast((error as Error).message, { icon: 'info' }); return false; }
     if (!ok) {
       toast(store.conflict.peek() ? 'Not saved: this record changed since you opened it.' : 'Not saved. Check the highlighted values.', { icon: 'info' });
+      showErrors();
       return false;
     }
     if (created) {
@@ -373,6 +375,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const moreItems = (): MenuItem[] => {
     const items: MenuItem[] = [{ label: 'Copy link', icon: 'link', onSelect: () => void copyText(location.href, 'the link') }];
     if (!isNew) items.push({ label: 'Reload', icon: 'rotate-ccw', onSelect: () => void store.reload().catch(() => {}) });
+    if (foldable) items.push({ label: 'Reset layout', icon: 'layout-grid', disabled: !folds.changed, onSelect: () => folds.reset() });
     const now = extras.peek();
     if (now._revise) items.push({ label: `Revise ${model.label.toLowerCase()}`, icon: 'copy', disabled: !now._revise.allowed, onSelect: () => correct('revise') });
     if (now._void) items.push({ label: `Void ${model.label.toLowerCase()}`, icon: 'circle-x', danger: true, disabled: !now._void.allowed, onSelect: () => correct('void') });
@@ -585,17 +588,31 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         <span class="muted">${() => sums.map(meta => `${meta.label} ${formatOf(meta, store.field(meta.name).value.get())}`).join(' · ') || child.label}</span></span>${Icon('chevron-right', { size: 'sm', className: 'muted' })}</button>`;
     }) : null;
     // A new record shows the fields it can fill in, and the naming series field saying it is assigned on save.
-    if (isNew) return html`<div class="ev-new-form">${groups.map(section => html`<section class="fs" aria-label=${section.label}><div class="fs-h"><h3>${section.label}</h3></div>
-      <div class="fs-g">${section.fields.filter(meta => (!meta.read_only || meta.name === model.naming?.field) && !meta.compute && !isStateField(model, meta)).map(meta => fieldFor({ field: view(meta.name), links: ctx.links }))}</div></section>`)}</div>`;
+    if (isNew) return html`<div class="ev-new-form">${groups.map((section, index) => {
+      const fields = section.fields.filter(meta => (!meta.read_only || meta.name === model.naming?.field) && !meta.compute && !isStateField(model, meta)).map(meta => view(meta.name));
+      return FoldSection({ title: section.label, fields, folds, ...foldOf(section, index), body: html`<div class="fs-g">${fields.map(field => fieldFor({ field, links: ctx.links }))}</div>` });
+    })}</div>`;
     const sectionsShown = groups.map((section, index) => FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
-      extra: index === groups.length - 1 ? childLinks : null, collapsible: panel ? fold(section.label) : undefined }));
+      extra: index === groups.length - 1 ? childLinks : null, fold: { folds, ...foldOf(section, index) } }));
     // The full page's side column folds into the panel: Files and Record info close the Details tab.
     return panel ? [...sectionsShown, html`<div class="ev-panel-blocks">${SidePanel(ctx, model, store, view, relations, active, true)}</div>`] : sectionsShown;
   };
-  // Sections a person closed in the side panel, remembered per model.
-  const closedSections = prefs.cell<string[]>(`panel.${name}.closed`, []);
-  const fold = (title: string) => ({ collapsed: () => closedSections.get().includes(title),
-    toggle: () => closedSections.set(closedSections.peek().includes(title) ? closedSections.peek().filter(item => item !== title) : [...closedSections.peek(), title]) });
+  // Sections people open and close (evlet.Section), remembered per user and model by title; the app's
+  // collapsed value is where they start. In the narrow side panel every section can close.
+  const folds = new Folds(prefs.formSections(name), isNew);
+  const foldOf = (section: { collapsible?: boolean; collapsed?: boolean | 'empty' }, index: number) =>
+    ({ collapsible: Boolean(section.collapsible || panel), collapsed: section.collapsible ? section.collapsed ?? false : false, index });
+  const foldable = Boolean(panel) || sections(model).some(section => section.collapsible);
+  // A refused save: open the sections with errors, then scroll to and focus the first one.
+  const showErrors = () => {
+    const fields = sections(model).flatMap(section => section.fields).filter(meta => has(meta.name)).map(meta => view(meta.name));
+    if (!fields.some(field => field.error.peek())) return;
+    if (active.peek() !== 'details') active.set('details');
+    revealFirstError(frame, fields);
+  };
+  // A #field address (/app/invoice/7#due) opens that field's section and focuses it.
+  const fromHash = () => { let target = ''; try { target = decodeURIComponent(location.hash.slice(1)); } catch { /* not a field name */ } if (target && has(target) && active.peek() === 'details') revealField(frame, target); };
+  if (!panel) { queueMicrotask(fromHash); window.addEventListener('hashchange', fromHash); onCleanup(() => window.removeEventListener('hashchange', fromHash)); }
   const lockedText = () => model.fields.some(field => (field as any).editable_when_locked) ? `Locked. Lines can’t change while it is ${humanize(stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
   const tablePanel = (child: { name: string; label: string }) => panel ? ChildRows({ table: store.table(child.name), title: child.label,
     locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, onOpenFull: () => expand(`t-${child.name}`),
