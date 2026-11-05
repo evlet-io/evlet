@@ -204,9 +204,11 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     # readable `name` and `title`; Customer.name became customer_name, Project.name the declared title,
     # Invoice.number moved into the named (and so writable) standard name, and test_states renamed its
     # own name fields to title. Before this the table hashed to b1bb34ff....
+    # Re-recorded when Invoice.project (0010_invoice_project) was added: an ordinary Link every role reads
+    # and admin and editor write, like Invoice.customer. Without it the table hashes to 19b87059....
     data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes', 'employee', 'ledgerentry')), 'states': table(Registry(*test_states.MODELS))}
     assert hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest() == \
-        '19b87059b740d3707ec07dd4dad1146f78825b984ea394a0844b6340abd76c1a'
+        '6db2817902ab2156d697698970e4073d8771e5a1044a91527612ba46447fae88'
     policy = Policy(Registry(*MODELS))
     assert dict(policy.corrections) == {(Quote, 'void'): {'admin', 'editor'}, (Quote, 'revise'): {'admin', 'editor'},
                                         (Order, 'void'): {'admin'}, (Ticket, 'void'): {'admin'}}

@@ -16,8 +16,9 @@
 
 import { compare, parse, type FiniteDocument } from './finite';
 import { ApiError, ConflictError, ValidationError, type ApiClient, type DraftResult, type FieldErrors, type RecordData, type User } from '../api';
-import { batch, cell, derive, getOwner, runWithOwner, scope, type Cell, type Derive } from '../reactive';
+import { batch, cell, derive, getOwner, runWithOwner, scope, untrack, type Cell, type Derive } from '../reactive';
 import { buildChanges, findField } from './changes';
+import { dependentsOf, fitsRecord, linkScope } from './links';
 import { todayGst } from './format';
 import { Session } from './session';
 import { isCalculated, SchemaIndex, type AppSchema, type ChildSchema, type FieldSchema, type ModelSchema } from './schema';
@@ -50,6 +51,8 @@ export class Field {
   readonly server: Cell<unknown>;
   /** The server's or a rule's message for this field. */
   readonly error: Cell<string | null>;
+  /** Why the form changed this value itself, such as "Cleared because Company changed". */
+  readonly note: Cell<string | null>;
   /** applies_when, required_when and locked_when as they stand now. */
   readonly rules: Cell<Rules>;
   /** For calculated fields: ready, or pending/error with a code such as COMPUTE_INPUT_MISSING. */
@@ -65,6 +68,7 @@ export class Field {
     this.value = cell(value, { name });
     this.server = cell(value, { name: `${name} (saved)` });
     this.error = cell<string | null>(null, { name: `${name} (error)` });
+    this.note = cell<string | null>(null, { name: `${name} (note)` });
     this.rules = cell<Rules>({ applies: true, required: meta.required, locked: false }, { name: `${name} (rules)`, equals: sameRules });
     this.result = cell<Outcome>(READY, { name: `${name} (result)`, equals: sameOutcome });
     this.calculated = isCalculated(meta);
@@ -163,6 +167,7 @@ export class Row {
       field.value.set(field.server.peek());
       field.touched = false;
       field.error.set(null);
+      field.note.set(null);
       field.result.set(READY);
     }
     for (const [name, table] of this.tables) {
@@ -172,7 +177,7 @@ export class Row {
   }
 
   revert() {
-    for (const field of this.fields.values()) { field.value.set(field.server.peek()); field.touched = false; field.error.set(null); field.result.set(READY); }
+    for (const field of this.fields.values()) { field.value.set(field.server.peek()); field.touched = false; field.error.set(null); field.note.set(null); field.result.set(READY); }
     for (const table of this.tables.values()) table.revert();
   }
 }
@@ -383,6 +388,9 @@ export class RecordStore {
   private keys = 0;
   private claimed = new Set<string>();
   private opening = 0;
+  // Link filter checks in flight: the latest ticket per field, and their promises for idle().
+  private checks = new WeakMap<Field, number>();
+  private checking = new Set<Promise<void>>();
   private readonly stop: () => void;
 
   constructor(options: RecordOptions) {
@@ -589,8 +597,11 @@ export class RecordStore {
       ...(calculation ? { calculation: { language: calculation.language, model_schema_hash: calculation.model_schema_hash } } : {}) });
   }
 
-  /** Wait until lookups and other background reads settle. */
-  async idle() { await this.session?.idle(); }
+  /** Wait until lookups, Link filter checks and other background reads settle. */
+  async idle() {
+    await this.session?.idle();
+    while (this.checking.size) await Promise.all([...this.checking]);
+  }
 
   dispose() {
     this.detach();
@@ -630,8 +641,54 @@ export class RecordStore {
     batch(() => {
       field.value.set(value);
       field.error.set(null);
+      field.note.set(null);
       this.session?.set(field.row, field.name, value);
     });
+    this.checkDependents(field);
+  }
+
+  /**
+   * Check the Links whose filters read `changed` (`filters={'company': Ref('company')}`) against
+   * its new value, and clear the ones that no longer fit, with a note. A value that still fits is
+   * kept. The browser decides from the record it already holds; otherwise it asks the list route
+   * (the role's row and field permissions apply). When it cannot tell, the value stays and the
+   * server checks it on save.
+   */
+  private checkDependents(changed: Field) {
+    for (const field of dependentsOf(changed)) {
+      const check = this.recheck(field, changed);
+      this.checking.add(check);
+      void check.finally(() => this.checking.delete(check));
+    }
+  }
+
+  private async recheck(field: Field, cause: Field) {
+    const id = field.value.peek(), target = field.meta.target;
+    if (id === null || id === undefined || id === '' || !target) return;
+    const scope = untrack(() => linkScope(field));
+    if (!scope) return;
+    const ticket = (this.checks.get(field) ?? 0) + 1;
+    this.checks.set(field, ticket);
+    let fits: boolean | null = scope.missing.length ? false
+      : fitsRecord(scope.filters, (this.api as ApiClient & { detail?(model: string, id: string): { peek(): RecordData | null } }).detail?.(target, String(id)).peek());
+    if (fits === null) {
+      try {
+        const page = await this.api.list(target, { filters: { ...scope.filters, id__in: [id] }, limit: 1 });
+        fits = page.items.length > 0;
+      } catch { return; }
+    }
+    // A later change asked again, or the person chose another value meanwhile.
+    if (fits || this.checks.get(field) !== ticket || field.value.peek() !== id) return;
+    const rules = field.rules.peek();
+    if (field.calculated || field.meta.read_only || !rules.applies || rules.locked || !this.ready.peek() || this.saving.peek()) return;
+    field.touched = true;
+    batch(() => {
+      field.value.set(null);
+      field.error.set(null);
+      field.note.set(`Cleared because ${cause.label} changed`);
+      this.session?.set(field.row, field.name, null);
+    });
+    this.checkDependents(field);
   }
 
   /** Rebuild the calculation session from the current rows (after rows of rows join or return). */

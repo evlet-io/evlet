@@ -93,6 +93,12 @@ export interface ModelSchema {
   slips?: SlipSchema[];
   /** Print designs the role may print a record of this model with, the default first. */
   prints?: PrintSchema[];
+  /**
+   * Per-field behavior. `filters` are a Link's selection filters: a literal value, or
+   * `{"$expr": "ref", "args": ["company"]}` for another field of the form (`parent.company` from a
+   * row). `filters_blocked` means they read a field the role cannot, so only the server applies them.
+   */
+  behavior?: Record<string, { filters?: Record<string, unknown>; filters_blocked?: boolean } & Record<string, unknown>>;
 }
 
 /** A print design (evlet.PrintDesign) the role may print with; the PDF comes from the server. */
