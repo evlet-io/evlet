@@ -196,6 +196,8 @@ class Business:
         # Rows of a ChildTable are journaled with their parent, like Table rows.
         self.journals = {model: journal for model, journal in self.registry.journals.items() if model not in self.child_models}
         self.mailboxes = Mailboxes(self)
+        from .unsaved import Unsaved
+        self.unsaved = Unsaved(self)
 
     def initialize(self):
         self.auth.initialize()
@@ -212,6 +214,7 @@ class Business:
         mentions.initialize(self.database)
         self.schedule_image_purge()
         self.settings.initialize()
+        self.unsaved.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
             with self.database.transaction() as tx:
                 tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_public_limits (client TEXT NOT NULL, period INTEGER NOT NULL, calls INTEGER NOT NULL, resets INTEGER NOT NULL, PRIMARY KEY (client, period))')
@@ -255,6 +258,7 @@ class Business:
         if self.jobs:
             self.jobs.policy = self.policy
             self.jobs.initialize()
+            self.unsaved.schedule()
             if self.application is not None:
                 with self.database._connection() as connection:
                     namespace = connection.execute('SELECT namespace FROM evlet_job_namespace WHERE id=1').fetchone()[0]
@@ -540,7 +544,7 @@ class Business:
             user = self.assistants.narrow(user)
         if user.access is not None:
             assistant = user.access.assistant is not None or user.access.origin is not None
-            if path.startswith(('/api/auth/', '/api/_settings/', '/api/_oauth/', '/api/_eva', '/api/_tools/approvals', '/api/_tools/calls')):
+            if path.startswith(('/api/auth/', '/api/_settings/', '/api/_oauth/', '/api/_eva', '/api/_tools/approvals', '/api/_tools/calls', '/api/_unsaved')):
                 raise AccessError(403, 'AI assistants cannot use this.' if assistant else 'API keys cannot be used here. Sign in instead.')
             # Tool calls are POST; the Tool Engine checks each write itself, and its run_report only reads.
             inner = scope.get('evlet.assistant') is not None
@@ -562,6 +566,8 @@ class Business:
             return self.mailboxes.api(scope, body, user)
         if path == '/api/_controls' or path.startswith('/api/_controls/'):
             return self.controls.dispatch(scope, body, user)
+        if path == '/api/_unsaved' or path.startswith('/api/_unsaved/'):
+            return self.unsaved.api(scope, body, user)
         if path.startswith('/api/_settings/'):
             return self.settings.dispatch(scope, body, user)
         if path.startswith('/api/_services/'):
@@ -780,6 +786,9 @@ class Business:
                     self.check_revision(scope, context._tx, user, record)
                 result = context._write(model, record_id, {} if action else body, action=action,
                                         arguments=body if action else None, move=move)
+                if record_id and not (action or move):
+                    # A save replaces the saver's unsaved changes (docs/internal/unsaved-changes.md).
+                    self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id)
                 extra = self.availability(context, model, context._tx.get(model, result['id']))
             # The write returns every readable row; the ETag covers them all and the body embeds the first page.
             etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome')})
@@ -849,6 +858,7 @@ class Business:
                 self.changed(tx, model, record_id, deleted=True)
                 tx.delete(model, record_id)
                 tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (parts[2], record_id))
+                self.unsaved.record_deleted(tx.connection, parts[2], record_id)
                 return 204, None, []
             if method == 'PATCH':
                 values, children = self.split_body(body)
@@ -859,6 +869,7 @@ class Business:
                 self.policy.record(tx, user, model, record_id, 'update')
                 self.save_children(tx, user, record, children)
                 self.changed(tx, model, record_id)
+                self.unsaved.record_saved(tx.connection, user, parts[2], record_id)
             loaded = {} if method == 'GET' else None
             result = self.detail(tx, user, record, row_limit=None, loaded=loaded)
             extra = self.availability(Context(self, tx, user, readonly=True), model, record, loaded) if method == 'GET' else {}

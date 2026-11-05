@@ -11285,6 +11285,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "customer_name",
@@ -11603,6 +11604,7 @@
       "open_in": "panel",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "customer",
@@ -11992,6 +11994,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": false,
       "fields": [
         {
           "name": "invoice",
@@ -12263,6 +12266,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "invoice",
@@ -12562,6 +12566,7 @@
         "activity"
       ],
       "default_tab": "details",
+      "autosave": true,
       "fields": [
         {
           "name": "title",
@@ -12926,6 +12931,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "project",
@@ -13331,6 +13337,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "item_code",
@@ -20329,6 +20336,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "full_name",
@@ -20569,6 +20577,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "price_list",
@@ -20810,6 +20819,7 @@
       "open_in": "page",
       "tabs": [],
       "default_tab": null,
+      "autosave": true,
       "fields": [
         {
           "name": "barcode",

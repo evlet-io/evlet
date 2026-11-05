@@ -36,11 +36,13 @@ SETTINGS = MappingProxyType({
     'eva.instance_limit': {'amount': None, 'unit': 'aed', 'period': 'month'},
     'eva.user_limit': {'amount': None, 'unit': 'aed', 'period': 'week'},
     'eva.person_limits': {}, 'eva.task_reserve': 10, 'eva.max_steps': 12, 'eva.max_tools': 30, 'eva.max_seconds': 120, 'eva.rates': {},
+    # Unsaved changes kept when someone leaves a record (evlet.unsaved): expiry, caps and entry size.
+    'unsaved.server_days': 30, 'unsaved.server_entries': 200, 'unsaved.browser_days': 7, 'unsaved.browser_entries': 20, 'unsaved.entry_kb': 256,
 })
 # Safe bounds of the rich text image limits: up to 8 MiB an image (what private storage reads back) and 200 a record.
 IMAGE_LIMITS = {'files.image_max_kb': (64, 8192), 'files.images_per_record': (1, 200)}
 # Audit areas of setting overrides by key prefix; other settings are Security.
-SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email', 'eva': 'Eva', 'files': 'Files'}
+SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email', 'eva': 'Eva', 'files': 'Files', 'unsaved': 'Records'}
 NOT_FOUND = 'Route not found'
 AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming'}
 # A paused schedule is a setting override: schedule.<name>.active = false.
@@ -218,6 +220,9 @@ def strictest(key, value, roles, file=None):
         if isinstance(value, list):
             return [item for item in value if isinstance(item, str)]
         return list(NAMES) if key == 'mcp.disabled_tools' else ['*']
+    if key.startswith('unsaved.'):
+        from .unsaved import strictest as unsaved_strictest
+        return unsaved_strictest(key, value)
     if key.startswith('eva.'):
         from .eva import strictest as eva_strictest
         return eva_strictest(key, value)
@@ -590,6 +595,9 @@ class Controls:
             raise ValueError(f'Use a whole number from {low} to {high}.')
         if key == 'mcp.rate' and not (number and 1 <= value <= 60):
             raise ValueError('Use 1 to 60 tool calls a minute. The framework allows at most 60.')
+        if key.startswith('unsaved.'):
+            from .unsaved import check_setting as unsaved_setting
+            return unsaved_setting(key, value)
         if key.startswith('eva.'):
             from .eva import check_setting as eva_setting
             return eva_setting(key, value, self.business)
@@ -1196,6 +1204,11 @@ class Controls:
             return 200, self.system.check_hosts(user), []
         if path == '/jobs' and method == 'GET':
             return 200, self.system.jobs(), []
+        # Unsaved changes: counts and sizes only, never what was changed.
+        if path == '/unsaved' and method == 'GET':
+            return 200, self.business.unsaved.summary(), []
+        if path == '/unsaved/clear' and method == 'POST':
+            return 200, self.business.unsaved.clear_older(user, body), []
         match = re.fullmatch(r'/jobs/schedules/([a-z][a-z0-9_]{0,63})(/run)?', path)
         if match and method == 'POST':
             return 200, self.system.run_schedule(user, match[1]) if match[2] else self.system.set_schedule(user, match[1], body), []

@@ -29,6 +29,7 @@ import { Shell } from './shell';
 import { useSlips } from './slips';
 import { evaStatus, type EvaStatus } from '../eva/client';
 import { EvaPage } from '../eva/chat';
+import { instanceKey, LocalUnsaved } from './unsaved';
 import { TasksPage } from '../eva/tasks';
 
 export interface AppOptions {
@@ -60,11 +61,16 @@ export function App(options: AppOptions): Node {
     if (!alive) return;
     context.peek()?.prefs.dispose();
     const prefs = options.storage === undefined ? new Prefs(current.user!.username) : new Prefs(current.user!.username, options.storage);
+    const unsaved = options.storage === undefined ? new LocalUnsaved(instanceKey(current), current.user!.username)
+      : new LocalUnsaved(instanceKey(current), current.user!.username, options.storage);
+    // Another person signed in on this browser last: their unsaved new records go. Expired ones go too.
+    unsaved.signedIn();
+    unsaved.purge(settings?.unsaved?.limits);
     applyMe(settings);
     const links = apiLinks(api, schema);
     setLinkSource(links);
     const ctx: AppContext = {
-      api, router, schema, session: current, user: current.user!, prefs, links, dev: Boolean(options.dev), libraryHref: options.libraryHref ?? '/evlet.html',
+      api, router, schema, session: current, user: current.user!, prefs, unsaved, links, dev: Boolean(options.dev), libraryHref: options.libraryHref ?? '/evlet.html',
       me: cell<Me | null>(settings, { name: 'app.me' }), photo: cell(0), eva: cell<EvaStatus | null>(eva, { name: 'app.eva' }),
       ...newPageState(),
       openPalette: () => openPalette(ctx),
@@ -148,6 +154,8 @@ export function App(options: AppOptions): Node {
       // valid, so the user stays signed in and can try again.
       if (!(failure instanceof ApiError && failure.kind === 'auth')) { signOutFailed(failure instanceof ApiError ? failure.message : 'The server did not answer.'); return; }
     }
+    // Unsaved new records kept in this browser go with the session; server entries stay the person's.
+    context.peek()?.unsaved.clearInstance();
     endSession('');
     // Cached record titles and other session data are dropped (apiLinks listens for this).
     window.dispatchEvent(new Event('evlet-session-ended'));

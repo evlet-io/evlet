@@ -86,6 +86,9 @@ export const SETTING_LABELS: Record<string, string> = {
   'mcp.enabled': 'MCP server', 'mcp.allow_writes': 'Allow writes', 'mcp.rate': 'Tool calls per minute',
   'mcp.disabled_tools': 'Disabled tools', 'mcp.hidden_models': 'Hidden models',
   'mail.personal': 'People connect their own mailbox',
+  'unsaved.server_days': 'Unsaved changes kept on the server for', 'unsaved.server_entries': 'Unsaved changes per person',
+  'unsaved.browser_days': 'Unsaved new records kept in the browser for', 'unsaved.browser_entries': 'Unsaved new records per person in one browser',
+  'unsaved.entry_kb': 'Largest unsaved changes entry',
 };
 
 export function permSummary(value: PermValue | null | undefined, scopes: Record<string, string>) {
@@ -102,6 +105,8 @@ export function settingText(key: string, value: unknown) {
   if (key === 'security.session_hours') return `${value} hours`;
   if (key === 'security.password_min') return `${value} characters`;
   if (key === 'security.lockout') return `${value} attempts`;
+  if (key === 'unsaved.server_days' || key === 'unsaved.browser_days') return `${value} days`;
+  if (key === 'unsaved.entry_kb') return `${value} KB`;
   return String(value);
 }
 

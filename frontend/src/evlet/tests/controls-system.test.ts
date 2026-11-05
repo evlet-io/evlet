@@ -33,6 +33,9 @@ const audit = (before?: string) => ({ areas: ['Jobs', 'Security'], next: before 
   items: before ? [{ id: 8, at: 1789000000, actor: 'owner', area: 'Security', target: 'security.lockout', detail: 'Changed' }]
     : [{ id: 10, at: 1790000000, actor: 'owner', area: 'Jobs', target: 'nightly', detail: 'Paused' }] });
 const reply = (body: unknown, status = 200) => ({ status, body, etag: null });
+// Counts and sizes only: the summary never carries what was changed.
+const unsaved = (entries = 3) => ({ entries, bytes: 24 * entries, oldest: 1790000000, limits: { server_days: 30 },
+  people: [{ id: 2, username: 'sara', entries: entries - 1, bytes: 24 * (entries - 1), latest: 1790000500 }, { id: 3, username: 'omar', entries: 1, bytes: 24, latest: 1790000100 }] });
 const periods = (date = '2026-03-31') => ({ can_change: true,
   models: [{ name: 'invoice', label: 'Invoice', field: 'posting_date', scope: null }], scopes: [],
   locks: date ? [{ scope: '', label: 'All records', date, changed_by: 'owner', changed_at: 1790000000 }] : [],
@@ -57,6 +60,8 @@ function open(path: string) {
     ['POST', /\/api\/_controls\/jobs\/schedules\/nightly$/, () => reply({ ...jobs(), schedules: [{ ...jobs().schedules[0], active: true, paused: false }] })],
     ['POST', /\/api\/_controls\/jobs\/schedules\/nightly\/run$/, () => reply({ ...jobs(), job: 8 })],
     ['POST', /\/api\/_controls\/jobs\/7\/retry$/, () => reply(jobs(false))],
+    ['GET', /\/api\/_controls\/unsaved$/, () => reply(unsaved())],
+    ['POST', /\/api\/_controls\/unsaved\/clear$/, () => reply({ ...unsaved(2), cleared: 1 })],
     ['GET', /\/api\/_controls\/periods$/, () => reply(periods())],
     ['POST', /\/api\/_controls\/periods$/, (sent: Sent) => reply(periods((sent.body as any).date))],
     ['GET', /\/api\/_controls\/audit/, (sent: Sent) => reply(audit(new URL(sent.url, 'http://x').searchParams.get('before') ?? undefined))],
@@ -115,6 +120,23 @@ describe('Controls system pages', () => {
     expect(text(byText(host, 'tr', /Reserved/))).toContain('/report, /print');
     click(byText(host, 'button', 'Proxy config'));
     await until(() => expect(text(document.querySelector('.modal pre'))).toContain('respond @primary_only 404'));
+  });
+
+  it('shows unsaved changes as counts per person and clears old entries after asking', async () => {
+    const { host, sent } = open('/controls/jobs');
+    const section = () => host.querySelector('.ctl-unsaved');
+    await until(() => expect(text(section()?.querySelector('.ctl-unsaved-total'))).toContain('3 entries, 72 B'));
+    expect([...section()!.querySelectorAll('tbody tr')].map(row => text(row.querySelector('td')))).toEqual(['sara', 'omar']);
+    expect(section()!.querySelector<HTMLInputElement>('input[aria-label="Kept on the server for"]')).not.toBeNull();
+    const days = section()!.querySelector<HTMLInputElement>('input[aria-label="Clear entries older than"]')!;
+    days.value = '5';
+    days.dispatchEvent(new Event('change'));
+    click(byText(section()!, 'button', 'Clear'));
+    await until(() => expect(text(document.querySelector('.modal'))).toContain('older than 5 days'));
+    click(byText(document, '.modal button', 'Clear'));
+    await until(() => expect(lastToast()).toBe('Cleared 1 entry'));
+    expect(requests(sent, 'POST', /unsaved\/clear$/)[0].body).toEqual({ days: 5 });
+    await until(() => expect(text(section()?.querySelector('.ctl-unsaved-total'))).toContain('2 entries'));
   });
 
   it('pauses and resumes schedules, runs one now and retries failed jobs only', async () => {

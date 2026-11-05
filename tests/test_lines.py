@@ -192,15 +192,16 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
     assert status == 200 and saved['title'] == 'renamed' and saved['total'] == '2500.00'
     if make_app.backend == 'sqlite':
         # 2,021 for 100 rows before batching; two of these open and release the operation savepoint,
-        # one names who created and changed the record.
-        assert statements <= 35, statements
+        # one names who created and changed the record, and one removes the saver's unsaved changes
+        # (evlet/unsaved.py).
+        assert statements <= 36, statements
 
     last = order['_row_ids']['l999']
     headers = {b'if-match': c('GET', url)[2][b'etag']}
     (status, saved, _), statements = counted(c, 'PATCH', url, {'children': {'lines': {'update': [{'id': last, 'qty': '3'}]}}}, headers=headers)
     assert status == 200 and saved['total'] == '2505.00' and saved['line_count'] == 1000
     if make_app.backend == 'sqlite':
-        assert statements <= 37, statements
+        assert statements <= 38, statements
     assert page(c, url, limit=1, offset=999)[1]['items'][0]['qty'] == '3.0000'
 
     status, error, _ = edit(c, url, {'children': {'lines': {'create': [{'qty': '1'}]}}})

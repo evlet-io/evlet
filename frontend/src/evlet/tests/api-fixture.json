@@ -5128,7 +5128,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.740Z",
+     "at": "2026-11-05T05:52:41.517Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5140,7 +5140,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.721Z",
+     "at": "2026-11-05T05:52:41.502Z",
      "data": {
       "fields": {
        "total": {
@@ -5202,7 +5202,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.706Z",
+     "at": "2026-11-05T05:52:41.490Z",
      "data": {
       "fields": {
        "customer": {
@@ -5426,7 +5426,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-05T05:12:58.788Z",
+     "at": "2026-11-05T05:52:41.561Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5438,7 +5438,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.787Z",
+     "at": "2026-11-05T05:52:41.560Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5450,7 +5450,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.785Z",
+     "at": "2026-11-05T05:52:41.558Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -5460,7 +5460,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.782Z",
+     "at": "2026-11-05T05:52:41.556Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -5472,7 +5472,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.780Z",
+     "at": "2026-11-05T05:52:41.553Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5481,7 +5481,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.761Z",
+     "at": "2026-11-05T05:52:41.536Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5496,7 +5496,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.751Z",
+     "at": "2026-11-05T05:52:41.527Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5506,7 +5506,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.751Z",
+     "at": "2026-11-05T05:52:41.527Z",
      "data": {
       "targets": [
        {
@@ -5522,7 +5522,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.751Z",
+     "at": "2026-11-05T05:52:41.527Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5543,7 +5543,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.740Z",
+     "at": "2026-11-05T05:52:41.517Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5555,7 +5555,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.721Z",
+     "at": "2026-11-05T05:52:41.502Z",
      "data": {
       "fields": {
        "total": {
@@ -5617,7 +5617,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.706Z",
+     "at": "2026-11-05T05:52:41.490Z",
      "data": {
       "fields": {
        "customer": {
@@ -5667,7 +5667,7 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-05T05:12:58.782Z",
+   "at": "2026-11-05T05:52:41.556Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5683,7 +5683,7 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-05T05:12:58.785Z",
+   "at": "2026-11-05T05:52:41.558Z",
    "data": {
     "follow_up": 19,
     "text": "Balance due by the end of the month"
@@ -5697,7 +5697,7 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-05T05:12:58.780Z",
+   "at": "2026-11-05T05:52:41.553Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -6165,6 +6165,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "credit_days": {},
       "name": {},
@@ -6378,6 +6379,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "credit": {},
       "customer": {},
@@ -6765,6 +6767,7 @@
       "max_size": 262144
      },
      "attachments": true,
+     "autosave": true,
      "behavior": {
       "customer": {},
       "due_on": {},
@@ -7719,6 +7722,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "amount": {},
       "invoice": {},
@@ -7935,6 +7939,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "amount": {
        "finite": true
@@ -8523,7 +8528,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-05T05:12:58.788Z",
+     "at": "2026-11-05T05:52:41.561Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -8535,7 +8540,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.787Z",
+     "at": "2026-11-05T05:52:41.560Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -8547,7 +8552,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.785Z",
+     "at": "2026-11-05T05:52:41.558Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -8557,7 +8562,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.782Z",
+     "at": "2026-11-05T05:52:41.556Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -8569,7 +8574,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.780Z",
+     "at": "2026-11-05T05:52:41.553Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -8578,7 +8583,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.761Z",
+     "at": "2026-11-05T05:52:41.536Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8593,7 +8598,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.751Z",
+     "at": "2026-11-05T05:52:41.527Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -8603,7 +8608,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.751Z",
+     "at": "2026-11-05T05:52:41.527Z",
      "data": {},
      "id": 15,
      "kind": "changed",
@@ -8611,7 +8616,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.751Z",
+     "at": "2026-11-05T05:52:41.527Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8632,7 +8637,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.740Z",
+     "at": "2026-11-05T05:52:41.517Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -8644,7 +8649,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.721Z",
+     "at": "2026-11-05T05:52:41.502Z",
      "data": {
       "fields": {
        "total": {
@@ -8706,7 +8711,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-05T05:12:58.706Z",
+     "at": "2026-11-05T05:52:41.490Z",
      "data": {
       "fields": {
        "customer": {
@@ -8766,6 +8771,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "credit_days": {},
       "name": {},
@@ -8973,6 +8979,7 @@
       "max_size": 262144
      },
      "attachments": true,
+     "autosave": true,
      "behavior": {
       "customer": {},
       "due_on": {},
@@ -9905,6 +9912,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "amount": {},
       "invoice": {},
@@ -10121,6 +10129,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "amount": {
        "finite": true
@@ -11120,6 +11129,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "credit_days": {},
       "name": {},
@@ -11323,6 +11333,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "name": {},
       "price": {},
@@ -11496,6 +11507,7 @@
       }
      ],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "customer": {},
       "due": {
@@ -12528,6 +12540,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "behavior": {
       "amount": {
        "finite": true
@@ -12760,6 +12773,7 @@
     {
      "actions": [],
      "attachments": false,
+     "autosave": true,
      "child_only": true,
      "children": [],
      "default_tab": null,

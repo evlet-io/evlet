@@ -136,7 +136,7 @@ const TOPICS: Topic[] = [
   { id: 'state', title: 'Rules and actions', render: () => html`<article class="ev-doc-article">
     ${section('The model decides; the screen explains', p('Calculated values show their rule. Rules hide and clear fields, make them required, or lock them, and say why in place. The browser evaluates the same finite rules as the server, and the server checks every write again.'), code(rulesCode))}
     ${section('Moves and actions', p('A State changes only through its moves. A move that is not allowed stays visible, dims and says why. Actions with inputs open a small dialog that checks its values before it runs. Server actions keep their normal role, record and field checks.'))}
-    ${section('Saving', p('Values save one at a time when you leave them, with Undo. Lines are saved together with Save. If the record changed since you opened it, your draft stays and you can reload.'))}
+    ${section('Saving', p('Values save one at a time when you leave them, with Undo. Lines are saved together with Save. If the record changed since you opened it, your draft stays and you can reload. Leaving a record before Save never saves it: your unsaved changes are kept for you to restore or discard when you come back, and a new record waits in this browser.'))}
     ${section('Slips', p('A slip is a form with the fields of a model that saves nothing by itself. It opens from a record, the New menu, an action or browser code. The server checks every change. When it is handed in, its values go to the slip\'s hand_in() method, or become a record through the normal create path. See docs/slips.md.'), code(slipCode))}
   </article>` },
   { id: 'extensions', title: 'Customization', render: ctx => html`<article class="ev-doc-article">

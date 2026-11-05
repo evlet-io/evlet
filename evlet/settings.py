@@ -26,6 +26,8 @@ APPEARANCE = {
     'tz': 'Asia/Dubai', 'date': 'dd-MM-yyyy', 'num': '1,234.56', 'week': 'mon',
     # Enter moves to the next field in forms (Shift+Enter to the one before), for fast data entry.
     'enter_next': False,
+    # Keep unsaved changes when I leave a record (evlet.unsaved); off brings back the leave prompt.
+    'keep_unsaved': True,
 }
 CHOICES = {
     'theme': ('light', 'dark', 'system'), 'density': ('comfortable', 'compact'), 'text': ('default', 'large'), 'lang': ('en', 'ar'),
@@ -382,6 +384,8 @@ class Settings:
             'profile': {key: row[key] for key in ('full_name', 'short_name', 'title', 'phone', 'email', 'signature')} | {'photo': row['photo_file'] is not None},
             'prefs': {key: prefs.get(key, value) for key, value in APPEARANCE.items()},
             'notifications': {'events': events, 'quiet': prefs.get('quiet', QUIET)},
+            # Unsaved changes kept on leave (evlet.unsaved): limits and how many this person has.
+            **({} if portal else {'unsaved': self.business.unsaved.info(user)}),
             'security': {
                 'password_min': self.business.auth.password_min,
                 'two_step': {'on': row['two_step_secret'] is not None, 'since': row['two_step_since'], 'agent': row['two_step_agent'], 'codes': codes,
@@ -575,6 +579,10 @@ class Settings:
             for key, value in clean.items():
                 tx.connection.execute("INSERT INTO evlet_user_prefs(user_id,scope,key,value) VALUES (?,'core',?,?) ON CONFLICT(user_id,scope,key) DO UPDATE SET value=excluded.value",
                                       (user.id, key, json.dumps(value)))
+            if clean.get('keep_unsaved') is False:
+                # Turning it off forgets what was kept, in the same transaction.
+                from .unsaved import Unsaved
+                Unsaved.clear_user(tx.connection, user.id)
         return {'saved': sorted(clean)}
 
     def check_pref(self, key, value, events, portal, scope, user):
@@ -595,7 +603,7 @@ class Settings:
             raise ValueError('Choose a known preference.')
         if key in CHOICES and value not in CHOICES[key]:
             raise ValueError('Choose one of the options.')
-        if key in ('counts', 'enter_next') and type(value) is not bool:
+        if key in ('counts', 'enter_next', 'keep_unsaved') and type(value) is not bool:
             raise ValueError('Use true or false.')
         if key == 'start' and (not isinstance(value, str) or value and value != 'docs' and (
                 value not in self.business.registry.models or not self.business.policy.allows(user, self.business.registry.models[value], 'read'))):

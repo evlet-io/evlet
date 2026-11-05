@@ -4,6 +4,8 @@
 
 import { ApiClient, type ApiResponse, type ClientOptions, type Page, type RecordData, type RequestOptions, type Session } from '../api';
 import { cell, type Cell } from '../reactive';
+import { isRecordId } from '../ids';
+import type { NodeChanges } from '../model/unsaved';
 
 const DETAIL = /^\/api\/([A-Za-z][A-Za-z0-9_]*)\/(\d+)(?:\/(?:moves\/[^/]+|actions\/[^/]+|void|revise|unpost|repost|confirm|cancel|reopen))?$/;
 const NAME = /^[A-Za-z][A-Za-z0-9_.]*$/;
@@ -201,7 +203,30 @@ export class AppClient extends ApiClient {
   async repost(model: string, id: string, reason: string, etag: string | null) {
     return this.request<RecordData>('POST', `/api/${model}/${id}/repost`, { body: reason ? { reason } : {}, ifMatch: etag });
   }
+
+  // ---------- unsaved changes (docs/ui.md, Unsaved changes) ----------
+
+  /** The person's limits, how many entries they have, and whether they keep unsaved changes. */
+  async unsavedInfo() { return (await this.request<UnsavedInfo>('GET', '/api/_unsaved')).data; }
+  /** The person's own kept changes on a record, or null. */
+  async unsaved(model: string, id: string) { return (await this.request<UnsavedRead>('GET', unsavedPath(model, id))).data; }
+  /** Keep the draft's changes apart from the record. The record itself is not written. */
+  async keepUnsaved(model: string, id: string, changes: NodeChanges, baseRevision: string) {
+    return (await this.request<{ saved_at: number | null; size: number; dropped: string[] }>('PUT', unsavedPath(model, id), { body: { changes, base_revision: baseRevision } })).data;
+  }
+  async discardUnsaved(model: string, id: string) { await this.request<null>('DELETE', unsavedPath(model, id)); }
 }
+
+function unsavedPath(model: string, id: string) {
+  if (!NAME.test(model) || !isRecordId(id)) throw new Error('Use a model and a record id');
+  return `/api/_unsaved/${model}/${id}`;
+}
+
+export interface UnsavedLimits { server_days: number; server_entries: number; browser_days: number; browser_entries: number; entry_kb: number }
+export interface UnsavedInfo { limits: UnsavedLimits; count: number; enabled: boolean }
+export interface UnsavedEntry { changes: NodeChanges; base_revision: string; saved_at: number; size: number; stale: boolean }
+/** `dropped`: fields the person can no longer write, or "record" when they can no longer change it. */
+export interface UnsavedRead { entry: UnsavedEntry | null; dropped: string[] | 'record' }
 
 const reportName = (name: string) => { if (!NAME.test(name)) throw new Error(`Unknown report ${name}`); return name; };
 

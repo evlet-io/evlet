@@ -32,6 +32,8 @@ import { RelatedPanel } from './related-panel';
 import { Revisions } from './revisions';
 import { presentSlip, takePrefill } from './slips';
 import { openEvaPanel } from '../eva/chat';
+import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden } from './unsaved';
+import { UnsavedBar } from './unsaved-bar';
 
 const RESERVED = new Set(['tab', 'slip']);
 // A reactive part inside a list of children (arrays are read once; a template hole stays live).
@@ -52,11 +54,12 @@ function gate(field: Field, locked: Readable<boolean>, canWrite: boolean): Field
 }
 
 /** Ask before discarding unsaved changes; resolves true to leave. */
-export function confirmDiscard(): Promise<boolean> {
+export function confirmDiscard(reason?: string): Promise<boolean> {
   return new Promise(resolve => {
     let answered = false;
     openModal({ title: 'Discard unsaved changes?', icon: 'info', tint: 'amber', narrow: true,
-      body: () => html`<p>Your changes have not been saved. Leave this page and discard them?</p>`,
+      // A reason says why they could not be kept for later (app/unsaved.ts).
+      body: () => html`<p>${reason ? `Your changes could not be kept for later. ${reason} ` : ''}Your changes have not been saved. Leave this page and discard them?</p>`,
       footer: done => DialogFooter({ cancel: () => { answered = true; resolve(false); done(); }, submit: { label: 'Discard changes', variant: 'danger', onClick: () => { answered = true; resolve(true); done(); } } }),
       onClose: () => { if (!answered) resolve(false); } });
   });
@@ -212,7 +215,22 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   let leaving = false;
   const changedNew = () => [...store.root.fields.values()].some(field => field.touched) || [...store.root.tables.values()].some(table => table.rows.peek().length > 0);
   // In a side panel, leaving the record (another row, Close, Back) asks; the list's own changes do not.
-  router.confirmLeave(() => !leaving && (isNew ? changedNew() : store.dirty.peek()), () => confirmDiscard(), panel ? { stays: to => panel.stays(to) } : {});
+  const unsaved = () => !leaving && (isNew ? changedNew() : store.dirty.peek());
+  // With autosave, leaving keeps the edits apart from the record instead (app/unsaved.ts); if they can't be kept, it asks.
+  const leave = async () => {
+    if (!keepsUnsaved(ctx, model)) return confirmDiscard();
+    const failed = await keepChanges(ctx, model, store, isNew);
+    if (failed !== null) return confirmDiscard(failed);
+    toast(KEPT);
+    return true;
+  };
+  router.confirmLeave(unsaved, () => leave(), panel ? { stays: to => panel.stays(to) } : {});
+  keepWhenHidden(ctx, model, store, isNew, unsaved);
+  // Discard and Cancel mean the kept copy goes too.
+  const forget = () => {
+    if (isNew) ctx.unsaved.remove(name);
+    else if (keepsUnsaved(ctx, model) && store.id) void ctx.api.discardUnsaved(name, store.id).catch(() => undefined);
+  };
   // Expand: the record page takes this store, unsaved edits included, so it does not ask.
   const expand = (tab: string | null) => {
     handoff = { model: name, id: isNew ? 'new' : String(store.id), store };
@@ -234,6 +252,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     }
     if (created) {
       leaving = true;
+      ctx.unsaved.remove(name);
       toast(`${model.label} created`);
       if (panel) panel.show(store.id!);
       else void router.go('record', { model: name, id: String(store.id) }, {}, { replace: true });
@@ -643,12 +662,12 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // ---------- save bar ----------
 
   const saveBarView = () => isNew
-    ? html`<div class="ev-savebar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => panel ? panel.close() : void router.go('list', { model: name }) })}
+    ? html`<div class="ev-savebar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => { forget(); panel ? panel.close() : void router.go('list', { model: name }); } })}
         <span class="grow muted">${Icon('info', { size: 'sm' })} Values are checked again when you create it.</span>
         ${Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check', disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save() })}</div>`
     : when(() => store.dirty.get(), () => html`<div class="ev-savebar" role="region" aria-label="Unsaved changes">
         <span class="grow">${Icon('pencil', { size: 'sm' })} Unsaved changes</span>
-        ${Button({ label: 'Discard', variant: 'ghost', onClick: () => void store.revert() })}
+        ${Button({ label: 'Discard', variant: 'ghost', onClick: () => { forget(); void store.revert(); } })}
         ${Button({ label: () => store.saving.get() ? 'Saving…' : 'Save', variant: 'primary', icon: 'check', disabled: () => store.saving.get(), onClick: () => void save() })}</div>`);
   const saveBar = saveBarView();
 
@@ -657,7 +676,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const side = isNew || panel ? undefined : SidePanel(ctx, model, store, view, relations, active);
 
   const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
-    main: [panelBar, header, options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
+    main: [panelBar, header, UnsavedBar(ctx, model, store, { isNew }), options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
   // The person's "Enter moves to the next field" setting (Settings, Appearance).
   enterMovesToNextField(frame, () => Boolean(ctx.me.get()?.prefs.enter_next));
   frame.addEventListener('keydown', event => {
