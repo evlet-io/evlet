@@ -57,6 +57,8 @@ describe('transaction document (recorded fixtures)', () => {
     expect(host.querySelector('.composer .rt-surface')).not.toBeNull();
     // Side panel: key fields, related counts, files and record info.
     await until(() => expect(text(byText(host, '.side-sec', /^Related/))).toContain('Payments1'));
+    // Payments are named after their model, so the count reads in its words.
+    expect(byText(host, '.side-sec', /^Related/)!.querySelector('.rel-row')!.getAttribute('aria-label')).toBe('Payments, 1 payment');
     expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf');
     click(byText(host, '.doc-tabs [role="tab"]', 'Related'));
     // A payment has no text field, so its title is its id.

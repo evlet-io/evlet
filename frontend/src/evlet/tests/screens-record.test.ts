@@ -17,6 +17,28 @@ const rowsIn = (host: Element) => [...host.querySelectorAll<HTMLElement>('.grid 
 const cellOf = (row: Element, col: string) => [...row.querySelectorAll<HTMLElement>('td[data-col]')].find(td => td.dataset.col === col)!;
 
 describe('generated record view', () => {
+  const customerRoutes = (orders: number, quotes = 0): Route[] => {
+    const page = (total: number) => ({ status: 200, etag: null, body: { items: [], total, limit: 10, offset: 0 } });
+    return [...adminRoutes(), ['GET', /\/api\/customer\/0000000000001$/, { ...recorded.customer, status: 200 }],
+      ['GET', /\/api\/customer\/0000000000001\/related\/order\.customer/, page(orders)], ['GET', /\/api\/customer\/0000000000001\/related\/quote\.customer/, page(quotes)]];
+  };
+
+  it('shows an empty related list as one line, without a table of headers or a 0', async () => {
+    const { host } = start(customerRoutes(0), '/app/customer/0000000000001');
+    await until(() => expect(byText(host, '.doc-tabs [role="tab"]', 'Related')).not.toBeNull());
+    click(byText(host, '.doc-tabs [role="tab"]', 'Related'));
+    await until(() => expect(text(host.querySelector('.ev-related[aria-label="Orders"] .ev-related-empty'))).toBe('No orders yet.'));
+    expect(host.querySelector('.ev-related[aria-label="Orders"] table')).toBeNull();
+    expect(text(host.querySelector('.ev-related[aria-label="Orders"] .panel-h .num'))).toBe('');
+  });
+
+  it('counts a related list named after its model in that model\'s words', async () => {
+    for (const [total, expected] of [[1, 'Orders, 1 order'], [3, 'Orders, 3 orders']] as const) {
+      const { host } = start(customerRoutes(total), '/app/customer/0000000000001');
+      await until(() => expect(host.querySelector('.rel-row')?.getAttribute('aria-label')).toBe(expected));
+      stopAll();
+    }
+  });
   it('lays out the header, summary, Details sections and a tab per Table from the schema', async () => {
     const { host } = start(orderRoutes(), '/app/order/0000000000001');
     await until(() => expect(text(host.querySelector('.doc-head .eyebrow'))).toBe('Order'));

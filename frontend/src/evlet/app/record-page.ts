@@ -758,7 +758,8 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
         void ctx.api.related(model.name, store.id!, relation.name, { limit: 1 }).then(page => total.set(page.total), () => total.set(null));
       });
       const target = screenModel(ctx.schema, relation.model);
-      return { key: relation.name, label: relation.label, href: ctx.router.href('record', { model: model.name, id: String(store.id) }, { tab: 'related' }), icon: identity(target).icon, tint: identity(target).tint, count: total };
+      return { key: relation.name, label: relation.label, href: ctx.router.href('record', { model: model.name, id: String(store.id) }, { tab: 'related' }), icon: identity(target).icon, tint: identity(target).tint, count: total,
+        noun: relatedNoun(relation.label, target) };
     }) }) }));
   if (model.attachments) blocks.push(SideBlock({ title: 'Files', body: Files(ctx, model, store) }));
   const revises = has('revises') ? view('revises') : null;
@@ -847,6 +848,12 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
 
 // ---------- related ----------
 
+/** A relation named after its model counts in that model's words ('1 invoice', 'No invoices yet'); any other
+ * name ('Revisions', 'Open tasks') stays neutral, so its count never reads as something it is not. */
+function relatedNoun(label: string, target: ScreenModel) {
+  return label === target.plural ? { one: target.label.toLowerCase(), many: target.plural.toLowerCase() } : undefined;
+}
+
 function Related(ctx: AppContext, model: ScreenModel, id: string, relations: NonNullable<ScreenModel['relations']>): Child {
   return relations.map(relation => {
     const target = screenModel(ctx.schema, relation.model);
@@ -860,10 +867,13 @@ function Related(ctx: AppContext, model: ScreenModel, id: string, relations: Non
       render: index === 0 ? (row: () => RecordData) => html`<a class="ev-row-link" href=${() => ctx.router.href('record', { model: target.name, id: String(row().id) })}>${() => titleOf(target, row())}</a>`
         : (row: () => RecordData) => cellView(ctx, target, meta, row),
     }));
-    return html`<section class="panel ev-related" aria-label=${relation.label}><div class="panel-h"><h3>${relation.label}</h3><span class="muted num">${() => total.get() === null ? '' : String(total.get())}</span></div>
+    const none = `No ${relation.label.toLowerCase()} yet.`;
+    // An empty relation is one short line: no table of headers over nothing, and no 0 in the heading.
+    return html`<section class="panel ev-related" aria-label=${relation.label}><div class="panel-h"><h3>${relation.label}</h3><span class="muted num">${() => total.get() ? String(total.get()) : ''}</span></div>
       ${() => problem.get() ? html`<p class="muted" style="padding:12px">${problem.get()}</p>` : null}
-      ${DataTable<RecordData>({ columns, rows, key: row => row.id, label: relation.label, onOpen: row => void ctx.router.go('record', { model: target.name, id: String(row.id) }), height: 300,
-        empty: () => html`<span class="muted">${`No ${relation.label.toLowerCase()} yet.`}</span>` })}
+      ${when(() => total.get() === 0 && !problem.get(), () => html`<p class="ev-related-empty">${none}</p>`)}
+      ${when(() => total.get() !== 0, () => DataTable<RecordData>({ columns, rows, key: row => row.id, label: relation.label, onOpen: row => void ctx.router.go('record', { model: target.name, id: String(row.id) }), height: 300,
+        empty: () => html`<span class="muted">${none}</span>` }))}
       ${when(() => (total.get() ?? 0) > rows.get().length, () => html`<div class="ev-more">${Button({ label: 'Show more', size: 'small', onClick: () => more(rows.peek().length) })}</div>`)}</section>`;
   });
 }
