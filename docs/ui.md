@@ -12,7 +12,8 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 
 - Sign-in and first-run setup (the first administrator account).
 - Docs after sign-in, with its topics.
-- The shell: sidebar with the models, recent records, search palette and New menu.
+- The shell: sidebar with the models; a top bar with a history button for recent records (left of
+  search), the search palette and the New menu.
 - Generated model screens: lists, boards for models with a State, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
   files.

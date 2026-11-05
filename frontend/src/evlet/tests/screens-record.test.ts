@@ -53,9 +53,16 @@ describe('generated record view', () => {
     expect(field(host, 'reason')!.hidden).toBe(true);
     expect(text(field(host, 'total')!.querySelector('label'))).toContain('ƒ calculated');
     expect(text(host.querySelector('.fs-link'))).toContain('120 rows');
-    // The action from the schema is a header button; the record is remembered in the sidebar.
+    // The action from the schema is a header button; the record is remembered under the history button
+    // left of search, not in the sidebar.
     expect(byText(host, '.doc-head button', 'Close')).not.toBeNull();
-    await until(() => expect(text(byText(host, '.nav-group', /^Recent/))).toContain('Big order'));
+    expect(byText(host, '.nav-group', /^Recent/)).toBeNull();
+    const history = host.querySelector<HTMLElement>('.top-actions .rec-btn')!;
+    expect(history.nextElementSibling!.classList.contains('top-search')).toBe(true);
+    click(history);
+    const recent = document.querySelector('.rec-pop .rec-item');
+    expect(text(recent)).toContain('Big order');
+    expect(text(recent)).toContain('just now');
   });
 
   it('saves one field in place with the record revision and offers Undo', async () => {

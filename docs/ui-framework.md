@@ -692,7 +692,8 @@ not part of the build.
 | Module | What it does |
 |---|---|
 | `app.ts` | Session, sign in and first-run setup, the shell and the route table |
-| `shell.ts` | Sidebar (models grouped, recent records, Library in development, the account and the theme button), top bar, keyboard |
+| `shell.ts` | Sidebar (models grouped, Library in development, the account and the theme button), top bar, keyboard |
+| `recents.ts` | The history button left of search in the top bar: this session's recent records, newest first, with the model and when each was opened |
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
 | `record-page.ts` | Record (doc) view, new records, action, void, revise, unpost and repost dialogs |
@@ -801,8 +802,9 @@ Appearance, region, start page and sidebar counts are the person's Settings, kep
 widths, child table columns, quick access, how each list opens records, the side panel's width and
 which form sections a person opened or closed) are kept in browser storage under `evlet.<username>.`.
 They never hold record data: recent records and recent searches stay in memory for the signed-in
-session and go on sign-out. The account area is at the bottom of the sidebar; the top bar keeps
-search and notifications.
+session and go on sign-out. Each recent record keeps when it was last opened; the history button left
+of search lists them with the relative time and the exact time on hover. The account area is at the
+bottom of the sidebar; the top bar keeps recent records, search and notifications.
 
 Signing out ends the local session only after the server confirms it (or answers that the
 session had already ended). If the request fails, the user stays signed in and a dialog says so,
