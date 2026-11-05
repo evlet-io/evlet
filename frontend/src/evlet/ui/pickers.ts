@@ -402,12 +402,12 @@ export function Stepper(props: StepperProps): HTMLElement {
     event.preventDefault();
     set(next);
   };
-  return html`<div class="stepper">
+  return html`<div class="time-stepper">
     <button type="button" class="icon-btn" tabindex="-1" aria-label=${`More ${props.label.toLowerCase()}`} on:click=${() => nudge(1)}>${Icon('chevron-down', { size: 'sm', className: 'flip' })}</button>
-    <span class="stepper-v num" role="spinbutton" tabindex="0" aria-label=${props.label} aria-valuemin=${props.min} aria-valuemax=${props.max}
+    <span class="time-stepper-v num" role="spinbutton" tabindex="0" aria-label=${props.label} aria-valuemin=${props.min} aria-valuemax=${props.max}
       aria-valuenow=${() => props.value.get()} style:min-width=${props.width ? `${props.width}ch` : null} on:keydown=${keys}>${() => pad(props.value.get())}</span>
     <button type="button" class="icon-btn" tabindex="-1" aria-label=${`Fewer ${props.label.toLowerCase()}`} on:click=${() => nudge(-1)}>${Icon('chevron-down', { size: 'sm' })}</button>
-    <span class="stepper-l" aria-hidden="true">${props.label}</span></div>` as HTMLElement;
+    <span class="time-stepper-l" aria-hidden="true">${props.label}</span></div>` as HTMLElement;
 }
 
 /** Hours and minutes steppers. Minute buttons move by 5. */
