@@ -787,7 +787,6 @@ th:hover>.rz::after{background:var(--border-strong)}
 .col-grip{cursor:grab;touch-action:none}
 .col-grip[aria-pressed="true"]{cursor:grabbing;color:var(--accent);background:var(--accent-soft,var(--bg-muted))}
 .col-list{display:grid;gap:1px}
-.col-row.lift,.col-edge.lift{background:var(--bg-muted);box-shadow:0 2px 8px var(--shadow-edge)}
 .col-edge{display:flex;align-items:center;gap:6px;height:30px;padding:0 4px;font-size:11.5px;border-radius:6px}
 .col-edge .col-line{width:18px;border-top:2px solid var(--accent);flex:none}
 .col-edge .muted{flex:1;border-top:1px dashed var(--border-strong);padding-top:2px}

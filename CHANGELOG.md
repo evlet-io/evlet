@@ -44,7 +44,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   drag a grip (mouse, touch, or Space and the arrow keys) to reorder, and drag columns above a
   divider, or use the pin button, to pin any number of them on the left. `TablePrefs` gains an
   optional `pinned` count; prefs saved without it keep the first column pinned. The up and down
-  arrow buttons are gone. A child table's Focus view keeps a compact record header (mark, type,
+  arrow buttons are gone. Its dragging uses the shared `dragList`, as the form layout editor does. A child table's Focus view keeps a compact record header (mark, type,
   title, number, Back to form) above the table and the save bar below it (the `heading` option of `ChildTable`).
 - **Fix: focus in the editable child table.** Clicking a cell focuses it while another cell is
   being edited, with one active cell at a time (a cell that can't be committed keeps the focus,
