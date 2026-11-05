@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import re
 from urllib.parse import parse_qs, quote
 
+from .audit import actor_id, detail as audit_detail
 from .auth import AccessError
 from .identity import RecordId, checked as item_id, path_id
 from .naming import drop_echoes
@@ -381,8 +382,9 @@ class Business:
                 used_sources = {}
                 for path in (path for name in readable for path in references(plans(model)[name].get('compute'))):
                     if path.count('.') == 1: used_sources.setdefault(path.split('.')[0], set()).add(path.split('.')[1])
-                entry['sources'] = {name: {key: value for key, value in outputs.items() if key in used_sources[name]}
-                                    for name, outputs in entry.get('sources', {}).items() if name in used_sources}
+                if 'sources' in entry:
+                    entry['sources'] = {name: {key: value for key, value in outputs.items() if key in used_sources[name]}
+                                        for name, outputs in entry['sources'].items() if name in used_sources}
                 def ordered(key):
                     head, _, rest = key.partition('.')
                     if not rest:
@@ -394,7 +396,8 @@ class Business:
                     """Readable fields of an owned table's rows, or None when the rows are hidden."""
                     child = next((item.model for item in self.children.values() if item.parent is model and item.name == name), None)
                     return self.policy.fields(user, child) if child is not None and self.policy.allows(user, child, 'read') else None
-                entry['order'] = [key for key in entry.get('order', []) if ordered(key)]
+                if 'order' in entry:
+                    entry['order'] = [key for key in entry['order'] if ordered(key)]
             expressions = self.field_expressions(user, model)
             # operators: what a list filter may use on the field (evlet.query); none when it is not stored.
             entry['fields'] = [{**field, 'read_only': field['name'] not in writable, 'stored': model.__declared_fields__[field['name']].stored,
@@ -795,6 +798,7 @@ class Business:
             if body:
                 raise ValidationError({'_form': 'This action takes no arguments'})
             with self.database.transaction() as tx:
+                tx.actor = actor_id(user)
                 record = self.policy.record(tx, user, model, record_id, 'update')
                 if getattr(model, '__declaration_mode__', False) and b'if-match' not in dict(scope.get('headers', [])):
                     raise AccessError(428, 'A current If-Match revision is required')
@@ -811,6 +815,7 @@ class Business:
             raise AccessError(405, 'Method not allowed')
         from .documents import Context
         with self.database.transaction() as tx:
+            tx.actor = actor_id(user)
             record = self.policy.record(tx, user, model, record_id, {'GET': 'read', 'PATCH': 'update', 'DELETE': 'delete'}[method])
             if method != 'GET': self.check_revision(scope, tx, user, record)
             if method == 'DELETE':
@@ -973,6 +978,8 @@ class Business:
 
     @staticmethod
     def revision(detail):
+        # `_audit` names people by their current display name, which must not change the record's revision.
+        detail = {key: value for key, value in detail.items() if key != '_audit'}
         encoded = json.dumps(detail, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
         return ('"' + hashlib.sha256(encoded).hexdigest() + '"').encode()
 
@@ -1033,6 +1040,7 @@ class Business:
     def create_plain(self, tx, user, model, body):
         """POST /api/{model} for a model that is not declarative: permissions, Controls, naming, child rows."""
         self.policy.require(user, model, 'create')
+        tx.actor = actor_id(user)
         values, children = self.split_body(body)
         from .documents import drop_empty_name, host_today
         from .sequences import name_new, naming_rules
@@ -1138,6 +1146,9 @@ class Business:
             # The other direction of `revises`, found by a lookup; there is no column for it.
             from .corrections import revised_by
             result['revised_by'] = revised_by(self, tx, user, type(record), record.id)
+        info = audit_detail(self, tx, user, record)
+        if info is not None:
+            result['_audit'] = info
         return result
 
     def embed(self, tx, user, model, results, row_limit=EMBEDDED_ROWS, loaded=None):

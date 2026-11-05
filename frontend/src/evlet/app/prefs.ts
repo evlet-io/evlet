@@ -66,6 +66,8 @@ export class Prefs {
   get recentSearches() { return this.memory<string[]>('recentQ', []); }
   /** This session's recent records (memory only). */
   get recentRecords() { return this.memory<Array<{ model: string; id: string; title: string }>>('recents', []); }
+  /** Record info shows exact times instead of relative ones ("2 hours ago"). */
+  get exactTimes() { return this.cell<boolean>('exactTimes', false); }
   get quickRows() { return this.cell<1 | 2>('qaRows', 1); }
   get quickIds() { return this.cell<string[] | null>('qaIds', null); }
 

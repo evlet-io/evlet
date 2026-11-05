@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from evlet.identity import sequential_ids
+from evlet.audit import fixed_times
 
 from examples.playground.lifecycle.app import create_app
 from tests.test_business import client, http, PASSWORD
@@ -24,7 +25,7 @@ def normalize(value, key=None):
 
 
 def record():
-    with TemporaryDirectory() as folder, sequential_ids():
+    with TemporaryDirectory() as folder, sequential_ids(), fixed_times():
         app = create_app(Path(folder) / 'test.sqlite3')
         app.initialize()
         http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})

@@ -2,7 +2,7 @@
 // (scripts/generate_testcrm_fixtures.py). Lines, totals, rules, moves, the win that creates a task,
 // paging, conflicts and what each role may see.
 import { afterEach, describe, expect, it } from 'vitest';
-import { byText, click, lastToast, press, stopAll, text, typeInto, until } from './screens-helpers';
+import { byText, click, lastToast, press, stopAll, headText, text, typeInto, until } from './screens-helpers';
 import { idOf, ids, scenario } from './testcrm-helpers';
 
 afterEach(stopAll);
@@ -280,7 +280,7 @@ describe('testCRM: activity', () => {
     const { host } = run.start(`/app/deal/${id}`);
     await until(() => expect(text(host.querySelector('.doc-tabs [role="tab"]'))).toBe('Activity'));
     await until(() => expect(host.querySelectorAll('.tl-item').length).toBeGreaterThan(6));
-    const heads = [...host.querySelectorAll('.tl-item .hd')].map(item => text(item).replace(/\d\d:\d\d.*$/, ''));
+    const heads = [...host.querySelectorAll('.tl-item .hd')].map(item => headText(item));
     expect(heads.slice(0, 5)).toEqual([
       'sara completed a follow-up',
       'sara planned a follow-up',
@@ -305,7 +305,7 @@ describe('testCRM: activity', () => {
     click(byText(host, '.composer button', 'Save note'));
     await until(() => expect(lastToast()).toBe('Note added'));
     expect(run.writes.at(-1)!.body).toEqual({ kind: 'note', text: 'Kick-off agreed for next week' });
-    await until(() => expect(text(host.querySelector('.tl-item .hd')).replace(/\d\d:\d\d.*$/, '')).toBe('sara added a note'));
+    await until(() => expect(headText(host.querySelector('.tl-item .hd'))).toBe('sara added a note'));
     expect(text(host.querySelector('.tl-item .note'))).toBe('Kick-off agreed for next week');
     expect(run.misses).toEqual([]);
   });

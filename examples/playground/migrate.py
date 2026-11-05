@@ -125,8 +125,12 @@ class LedgerEntry(Model):
 
 migrations.append(Migration('0009_ledger', CreateModel(LedgerEntry)))
 
+
+# Invoice.project: a Link whose filters read the invoice's customer (Ref('customer')).
+migrations.append(Migration('0010_invoice_project', AddField('invoice', 'project', Link(Project))))
+
 # What has been paid on an invoice, and the payment status calculated from it (the header badge).
-migrations.append(Migration('0010_invoice_payment_status',
+migrations.append(Migration('0011_invoice_payment_status',
     AddField('invoice', 'amount_paid', Currency(minimum='0', default='0.00')),
     AddField('invoice', 'payment_status', Select(['unpaid', 'partly_paid', 'paid'])),
     Recompute('invoice', ('payment_status',)),

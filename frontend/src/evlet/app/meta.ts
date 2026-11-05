@@ -71,7 +71,12 @@ export interface DetailExtras {
   _effects?: Array<{ target: string; rows: number; reversals: number; balanced?: boolean }>;
   revised_by?: number | null;
   _original?: number;
+  /** When and by whom the record was created and last changed (UTC). Who is null for the engine and for portal roles. */
+  _audit?: RecordAudit;
 }
+
+export interface AuditPerson { id: number; name: string }
+export interface RecordAudit { created_at: string | null; created_by: AuditPerson | null; modified_at: string | null; modified_by: AuditPerson | null }
 
 export const screenModel = (index: SchemaIndex, name: string) => index.model(name) as unknown as ScreenModel;
 export const extrasOf = (data: RecordData | null | undefined): DetailExtras => (data ?? {}) as DetailExtras;

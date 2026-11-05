@@ -12,6 +12,7 @@ import tempfile
 
 from evlet import Database, LocalAuth
 from evlet.identity import sequential_ids
+from evlet.audit import fixed_times
 from examples.playground.app import build_app
 from examples.playground.models import registry
 
@@ -61,7 +62,7 @@ async def collect(app):
 
 
 def generate():
-    with tempfile.TemporaryDirectory(prefix='evlet-ui-contract-') as directory, sequential_ids():
+    with tempfile.TemporaryDirectory(prefix='evlet-ui-contract-') as directory, sequential_ids(), fixed_times():
         database = Database(Path(directory) / 'contracts.sqlite3', registry)
         auth = LocalAuth(database, origins=('http://127.0.0.1:8000',),
                          secure_cookies=False, allow_setup=True)

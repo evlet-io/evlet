@@ -5,6 +5,8 @@ import sys
 
 import pytest
 
+from evlet.audit import COLUMNS as AUDIT_COLUMNS
+
 from evlet import (AddTable, Child, CreateModel, Database, Integer, Migration, Model, Registry, SchemaError, Table, Text,
                    User)
 from evlet.cli.app import create_app
@@ -207,7 +209,8 @@ def test_add_table_matches_the_registry_and_keeps_rows(tmp_path):
     with sqlite3.connect(path) as connection:
         columns = {row[1] for row in connection.execute('PRAGMA table_info(order_lines)')}
         links = connection.execute('PRAGMA foreign_key_list(order_lines)').fetchall()
-    assert columns == {'id', 'item', 'quantity', 'evlet_owner', 'evlet_position'}
+    # Table rows get the record time columns too (evlet/audit.py).
+    assert columns == {'id', 'item', 'quantity', 'evlet_owner', 'evlet_position', *AUDIT_COLUMNS}
     assert [(row[2], row[3]) for row in links] == [('order', 'evlet_owner')]
     Database(path, orders(lines=True), migrations=[migration]).initialize()
 

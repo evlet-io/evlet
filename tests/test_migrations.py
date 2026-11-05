@@ -3,6 +3,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from evlet.audit import COLUMNS as AUDIT_COLUMNS
+
 from evlet import (AddField, AddIndex, Boolean, CreateModel, Currency, Database, Decimal,
                    Link, Migration, Model, Registry, RenameField, SchemaError, Text)
 
@@ -50,7 +52,7 @@ def test_failed_migration_rolls_back_ddl_data_and_history(tmp_path):
     with pytest.raises(SchemaError, match='rolled back'):
         target.migrate([Migration('bad', AddField('contact', 'code', Text(required=True, unique=True), backfill='same'))])
     with sqlite3.connect(path) as connection:
-        assert [row[1] for row in connection.execute('PRAGMA table_info(contact)')] == ['id', 'name']
+        assert [row[1] for row in connection.execute('PRAGMA table_info(contact)')] == ['id', 'name', *AUDIT_COLUMNS]
         assert connection.execute('SELECT count(*) FROM evlet_migrations').fetchone()[0] == 0
         assert connection.execute('SELECT count(*) FROM contact').fetchone()[0] == 2
     db.initialize()
@@ -150,7 +152,7 @@ def test_multiple_pending_migrations_roll_back_together(tmp_path):
             Migration('two', AddIndex('contact', 'name', unique=True)),
         ])
     with sqlite3.connect(path) as c:
-        assert [row[1] for row in c.execute('PRAGMA table_info(contact)')] == ['id', 'name']
+        assert [row[1] for row in c.execute('PRAGMA table_info(contact)')] == ['id', 'name', *AUDIT_COLUMNS]
         assert c.execute('SELECT count(*) FROM evlet_migrations').fetchone()[0] == 0
     db.initialize()
 

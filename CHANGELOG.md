@@ -22,9 +22,48 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `slate`. A legacy string formula may now calculate a Select. The schema adds `status` on the model
   (for roles that can read the field) and `colors` on the field. The Playground invoice shows a
   calculated payment status (Unpaid, Partly paid, Paid) from a new `amount_paid` field; migration
-  `0010_invoice_payment_status` adds both columns. Because the invoice now has a calculated field,
+  `0011_invoice_payment_status` adds both columns. Because the invoice now has a calculated field,
   an update to a Playground invoice sends `If-Match` with its ETag, as every calculated document does.
   Badge colours are display only: changing `colors` needs no migration.
+- **Created and last modified on every record.** Every model table gains four framework columns,
+  `evlet_created_at`, `evlet_created_by`, `evlet_modified_at` and `evlet_modified_by` (UTC times and
+  user ids), filled in the same statement as every write: the record routes, the document pipeline,
+  actions, moves, effects, void, unpost, repost and revise, `business.context(user)` and raw sessions
+  (as the engine, or `session.actor`). Record details carry them as `_audit`, outside the ETag, with
+  who as `{"id", "name"}` (null for the engine and for portal roles). The record page's Record info
+  shows "Created 2 hours ago · Aslam" and "Last modified", with the exact time on hover and a click to
+  switch to exact times, remembered per person; the Activity tab's times are relative too. A new
+  browser component, `RelativeTime`, shares one minute clock that pauses in a hidden tab
+  ([docs/model-engine.md](docs/model-engine.md#record-times), [docs/ui-framework.md](docs/ui-framework.md#relative-times)).
+  What to change: run `evlet migrate`; framework migration `0004_record_times` adds the columns and
+  fills them from the Journal, or from the time in the record id. A model may not declare a field with
+  one of these names. Fixture scripts that need stable output wrap generation in
+  `evlet.audit.fixed_times()`, as they do with `sequential_ids()`.
+- **Columns menu with drag and a pinned range.** Child tables and reports share one Columns menu:
+  drag a grip (mouse, touch, or Space and the arrow keys) to reorder, and drag columns above a
+  divider, or use the pin button, to pin any number of them on the left. `TablePrefs` gains an
+  optional `pinned` count; prefs saved without it keep the first column pinned. The up and down
+  arrow buttons are gone. A child table's Focus view keeps a compact record header (mark, type,
+  title, number, Back to form) above the table and the save bar below it (the `heading` option of `ChildTable`).
+- **Fix: focus in the editable child table.** Clicking a cell focuses it while another cell is
+  being edited, with one active cell at a time (a cell that can't be committed keeps the focus,
+  and an unchanged cell never blocks). Tab and Shift Tab reach every editable cell from a cell in
+  navigation mode too, then go on to Add row. A choice from a dropdown or Link search returns the
+  focus to its cell, so Tab and Enter continue as the footer says.
+- **Link filters that read another field follow it in the form.** For a Link such as
+  `branch = Link(Branch, filters={"company": Ref("company")})`, the picker now lists only records
+  that fit the form's current, unsaved values (before, it ignored `filters`), and asks for an empty
+  referenced field first. Changing a field checks every Link whose filters read it, on the same row
+  and on Table rows through `Ref("parent.<field>")`: a value that still fits stays, one that no
+  longer fits is cleared with a note such as "Cleared because Company changed", and chains clear
+  together. The field error is plainer: "Port office is not in Summit Services." with one filter
+  and readable titles, "Choose Company first." for an empty referenced field, and otherwise "This
+  Branch doesn't fit the other values on this form." It never shows a title the role cannot read.
+  What to change: code or tests that match the old text "The selected record does not match the
+  current filters" match the new messages; the error stays a field error with status 422. The
+  schema sends `behavior.<field>.filters` for models with no other rules too. The Playground's
+  Invoice has a Project limited to the customer's projects (migration `0010_invoice_project`)
+  ([docs/business-capabilities.md](docs/business-capabilities.md#link-filters), [docs/ui.md](docs/ui.md#link-filters)).
 - **`evlet dev` creates the first admin.** On an instance with no accounts, `evlet dev` creates an
   active admin (`admin`, or `--user NAME`) with a random password that is never shown and prints a
   one-time sign-in link, so you type no password or two-step code in development. `--no-link` skips
