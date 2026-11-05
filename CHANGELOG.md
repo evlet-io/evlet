@@ -16,6 +16,31 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   sections after the first start closed. Migration checksums do not change. The Playground's Project
   shows all three starting states, so its Planning group is split into Planning and Schedule
   ([docs/business-capabilities.md](docs/business-capabilities.md#collapsible-sections)).
+- **Created and last modified on every record.** Every model table gains four framework columns,
+  `evlet_created_at`, `evlet_created_by`, `evlet_modified_at` and `evlet_modified_by` (UTC times and
+  user ids), filled in the same statement as every write: the record routes, the document pipeline,
+  actions, moves, effects, void, unpost, repost and revise, `business.context(user)` and raw sessions
+  (as the engine, or `session.actor`). Record details carry them as `_audit`, outside the ETag, with
+  who as `{"id", "name"}` (null for the engine and for portal roles). The record page's Record info
+  shows "Created 2 hours ago · Aslam" and "Last modified", with the exact time on hover and a click to
+  switch to exact times, remembered per person; the Activity tab's times are relative too. A new
+  browser component, `RelativeTime`, shares one minute clock that pauses in a hidden tab
+  ([docs/model-engine.md](docs/model-engine.md#record-times), [docs/ui-framework.md](docs/ui-framework.md#relative-times)).
+  What to change: run `evlet migrate`; framework migration `0004_record_times` adds the columns and
+  fills them from the Journal, or from the time in the record id. A model may not declare a field with
+  one of these names. Fixture scripts that need stable output wrap generation in
+  `evlet.audit.fixed_times()`, as they do with `sequential_ids()`.
+- **Columns menu with drag and a pinned range.** Child tables and reports share one Columns menu:
+  drag a grip (mouse, touch, or Space and the arrow keys) to reorder, and drag columns above a
+  divider, or use the pin button, to pin any number of them on the left. `TablePrefs` gains an
+  optional `pinned` count; prefs saved without it keep the first column pinned. The up and down
+  arrow buttons are gone. A child table's Focus view keeps a compact record header (mark, type,
+  title, number, Back to form) above the table and the save bar below it (the `heading` option of `ChildTable`).
+- **Fix: focus in the editable child table.** Clicking a cell focuses it while another cell is
+  being edited, with one active cell at a time (a cell that can't be committed keeps the focus,
+  and an unchanged cell never blocks). Tab and Shift Tab reach every editable cell from a cell in
+  navigation mode too, then go on to Add row. A choice from a dropdown or Link search returns the
+  focus to its cell, so Tab and Enter continue as the footer says.
 - **Link filters that read another field follow it in the form.** For a Link such as
   `branch = Link(Branch, filters={"company": Ref("company")})`, the picker now lists only records
   that fit the form's current, unsaved values (before, it ignored `filters`), and asks for an empty

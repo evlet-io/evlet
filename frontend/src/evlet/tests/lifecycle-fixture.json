@@ -453,6 +453,18 @@
         "revision": 0,
         "confirmation_id": null
       },
+      "_audit": {
+        "created_at": "2026-11-04T06:00:00.000Z",
+        "created_by": {
+          "id": 1,
+          "name": "admin"
+        },
+        "modified_at": "2026-11-04T06:00:00.000Z",
+        "modified_by": {
+          "id": 1,
+          "name": "admin"
+        }
+      },
       "_row_ids": {
         "row-0": "0000000000001",
         "row-1": "0000000000002"
@@ -498,6 +510,18 @@
         "state": "confirmed",
         "revision": 1,
         "confirmation_id": "fixture-confirmation_id"
+      },
+      "_audit": {
+        "created_at": "2026-11-04T06:00:00.000Z",
+        "created_by": {
+          "id": 1,
+          "name": "admin"
+        },
+        "modified_at": "2026-11-04T06:03:00.000Z",
+        "modified_by": {
+          "id": 1,
+          "name": "admin"
+        }
       },
       "_journal": {
         "count": 2,
@@ -580,6 +604,18 @@
         "revision": 1,
         "confirmation_id": "fixture-confirmation_id"
       },
+      "_audit": {
+        "created_at": "2026-11-04T06:00:00.000Z",
+        "created_by": {
+          "id": 1,
+          "name": "admin"
+        },
+        "modified_at": "2026-11-04T06:04:00.000Z",
+        "modified_by": {
+          "id": 1,
+          "name": "admin"
+        }
+      },
       "_journal": {
         "count": 3,
         "open_follow_ups": 0
@@ -622,6 +658,18 @@
         "revision": 1,
         "confirmation_id": "fixture-confirmation_id"
       },
+      "_audit": {
+        "created_at": "2026-11-04T06:00:00.000Z",
+        "created_by": {
+          "id": 1,
+          "name": "admin"
+        },
+        "modified_at": "2026-11-04T06:05:00.000Z",
+        "modified_by": {
+          "id": 1,
+          "name": "admin"
+        }
+      },
       "_journal": {
         "count": 4,
         "open_follow_ups": 0
@@ -663,6 +711,18 @@
         "state": "draft",
         "revision": 1,
         "confirmation_id": "fixture-confirmation_id"
+      },
+      "_audit": {
+        "created_at": "2026-11-04T06:00:00.000Z",
+        "created_by": {
+          "id": 1,
+          "name": "admin"
+        },
+        "modified_at": "2026-11-04T06:06:00.000Z",
+        "modified_by": {
+          "id": 1,
+          "name": "admin"
+        }
       },
       "_row_ids": {
         "row-0": "0000000000003"
@@ -708,6 +768,18 @@
         "state": "confirmed",
         "revision": 2,
         "confirmation_id": "fixture-confirmation_id"
+      },
+      "_audit": {
+        "created_at": "2026-11-04T06:00:00.000Z",
+        "created_by": {
+          "id": 1,
+          "name": "admin"
+        },
+        "modified_at": "2026-11-04T06:09:00.000Z",
+        "modified_by": {
+          "id": 1,
+          "name": "admin"
+        }
       },
       "_journal": {
         "count": 6,

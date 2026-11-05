@@ -490,7 +490,7 @@ def write(engine, bound, draft):
                                  if isinstance(field, Reference) and name != SOURCE})
     names, values = storage_columns(target, stored_values(target, draft._values), target.__fields__)
     table = identifier(business.registry.name_for(target))
-    record_id = insert(tx.connection, table, names, values, id_title=has_title(target))
+    record_id = insert(tx.connection, table, names, values, id_title=has_title(target), actor=tx.actor)
     if business.registry.plan_for(target) is not None:
         record_plan(tx, business.registry.name_for(target), record_id, business.registry.formula_hashes.get(target))
     business.changed(tx, target, record_id)

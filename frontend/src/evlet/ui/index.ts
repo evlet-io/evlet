@@ -18,3 +18,4 @@ export * from './doc';
 export * from './list';
 export * from './pickers';
 export * from './theme';
+export * from './time';

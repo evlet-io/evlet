@@ -118,13 +118,16 @@ describe('reports', () => {
     expect(requests(sent, 'POST', /prints\/CustomerRatesPrint$/)[0].body).toEqual({ filters: { min_days: 20, search: '' } });
   });
 
-  it('chooses columns per person and keeps the first one', async () => {
+  it('chooses and pins columns per person in the shared Columns menu', async () => {
     start(routes(), '/reports/CustomerRates?min_days=20');
     await until(() => expect(cells()).toHaveLength(3));
     click(byText(page(), 'button', 'Columns'));
     const chooser = document.querySelector<HTMLElement>('.ev-columns')!;
-    expect(byText(chooser, 'button', 'Customer')!.hasAttribute('disabled')).toBe(true);
-    click(byText(chooser, 'button', 'Credit days'));
+    expect(chooser.querySelector('.cols-menu [role="list"]')).not.toBeNull();
+    expect(chooser.querySelector('[aria-label="Unpin Customer"]')).not.toBeNull();
+    click(chooser.querySelector<HTMLElement>('[aria-label="Pin Credit days"]')!);
+    await until(() => expect(page().querySelector('th[data-key="credit_days"]')!.classList.contains('stk')).toBe(true));
+    click(chooser.querySelector<HTMLElement>('[aria-label="Hide Credit days"]')!);
     await until(() => expect(page().querySelector('th[data-key="credit_days"]')).toBeNull());
     click(byText(chooser, 'button', 'Chart'));
     await until(() => expect(page().querySelector('.ev-report-chart')).toBeNull());

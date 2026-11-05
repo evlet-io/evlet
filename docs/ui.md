@@ -24,6 +24,12 @@ The previous SolidJS interface and the Vue regression harness have been removed.
   model, when the server has the print extra (in a side panel, Print is in the More menu). It opens a drawer with the server's PDF in the browser's
   own viewer, a choice of design, Download, and File a copy on records that keep attachments.
 
+Tables keep per-person column choices. The Columns menu of a record's child tables and of a report
+orders columns by dragging (or the keyboard), shows or hides them, and pins any number on the left:
+columns above the menu's divider stay in place while the table scrolls sideways. Prefs saved before
+pinning keep the first column pinned. A child table's Focus view keeps the record's header and its
+save bar in view ([ui-framework.md](ui-framework.md)).
+
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout`, `key_fields`, `relations`, `measures` and `open_in`. See "What the model decides" in
 [ui-framework.md](ui-framework.md).
@@ -164,6 +170,16 @@ the model has naming, its `name` next to it in a monospaced font, or "Assigned o
 "Assigned on confirm" until it has one. Link pickers, list rows, search and the recent records
 show titles; the schema's `title_field` is `title` for every record model
 ([model-engine.md](model-engine.md#name-and-title)).
+
+### Created and last modified
+
+The Record info block of every record page shows when the record was created and last changed, and
+by whom: `Created 2 hours ago · Aslam`. Hover or focus a time for the exact time in your zone
+(`04-11-2026 12:05 GST`); click it to show every time there exactly, which is remembered for you. The
+times move on by themselves while the page is open. Who links to Controls Users for people who may
+open Controls. Portal users see the times only. See
+[model-engine.md](model-engine.md#record-times) for what is recorded and
+[ui-framework.md](ui-framework.md#relative-times) for the `RelativeTime` component.
 
 ### Link filters
 

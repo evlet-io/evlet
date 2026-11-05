@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import re
 from urllib.parse import parse_qs, quote
 
+from .audit import actor_id, detail as audit_detail
 from .auth import AccessError
 from .identity import RecordId, checked as item_id, path_id
 from .naming import drop_echoes
@@ -794,6 +795,7 @@ class Business:
             if body:
                 raise ValidationError({'_form': 'This action takes no arguments'})
             with self.database.transaction() as tx:
+                tx.actor = actor_id(user)
                 record = self.policy.record(tx, user, model, record_id, 'update')
                 if getattr(model, '__declaration_mode__', False) and b'if-match' not in dict(scope.get('headers', [])):
                     raise AccessError(428, 'A current If-Match revision is required')
@@ -810,6 +812,7 @@ class Business:
             raise AccessError(405, 'Method not allowed')
         from .documents import Context
         with self.database.transaction() as tx:
+            tx.actor = actor_id(user)
             record = self.policy.record(tx, user, model, record_id, {'GET': 'read', 'PATCH': 'update', 'DELETE': 'delete'}[method])
             if method != 'GET': self.check_revision(scope, tx, user, record)
             if method == 'DELETE':
@@ -972,6 +975,8 @@ class Business:
 
     @staticmethod
     def revision(detail):
+        # `_audit` names people by their current display name, which must not change the record's revision.
+        detail = {key: value for key, value in detail.items() if key != '_audit'}
         encoded = json.dumps(detail, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
         return ('"' + hashlib.sha256(encoded).hexdigest() + '"').encode()
 
@@ -1032,6 +1037,7 @@ class Business:
     def create_plain(self, tx, user, model, body):
         """POST /api/{model} for a model that is not declarative: permissions, Controls, naming, child rows."""
         self.policy.require(user, model, 'create')
+        tx.actor = actor_id(user)
         values, children = self.split_body(body)
         from .documents import drop_empty_name, host_today
         from .sequences import name_new, naming_rules
@@ -1137,6 +1143,9 @@ class Business:
             # The other direction of `revises`, found by a lookup; there is no column for it.
             from .corrections import revised_by
             result['revised_by'] = revised_by(self, tx, user, type(record), record.id)
+        info = audit_detail(self, tx, user, record)
+        if info is not None:
+            result['_audit'] = info
         return result
 
     def embed(self, tx, user, model, results, row_limit=EMBEDDED_ROWS, loaded=None):

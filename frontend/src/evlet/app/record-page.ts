@@ -20,11 +20,12 @@ import { FormSection, KeyValueList } from '../ui/inline';
 import { humanize } from '../ui/kinds';
 import { copyText, DialogFooter, MenuButton, openDrawer, openModal, toast, type MenuItem } from '../ui/layers';
 import { DataTable, emptyPrefs, type Column } from '../ui/table';
+import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { JournalEntry, JournalPage } from './client';
 import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, numberField, screenModel, sections, sequenceField,
-  summaryFields, titleOf, LIST_KEYS, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
+  summaryFields, titleOf, LIST_KEYS, type ActionMeta, type AuditPerson, type DetailExtras, type RecordAudit, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { RelatedPanel } from './related-panel';
 import { Revisions } from './revisions';
@@ -618,6 +619,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     totals: model.fields.filter(meta => (meta.compute as any)?.$expr === 'aggregate' && (meta.compute as any).table === child.name && has(meta.name))
       .map(meta => ({ label: meta.label, value: () => formatOf(meta, store.field(meta.name).value.get()) })) }) : ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
     locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, crumb: () => titleText.get(),
+    // Focus view keeps a compact copy of this header, and the save bar, above and below the lines.
+    heading: { type: model.label, icon: look.icon, title: () => titleText.get(),
+      number: numberText ?? (naming ? () => { const value = store.field('name').value.get(); return value && String(value) !== titleText.get() ? String(value) : ''; } : null),
+      mark: () => look.person ? Avatar({ name: markName, size: 'sm' }) : RecordMark({ name: markName, size: 'sm', tint: look.tint }), footer: () => saveBarView() },
     prefs: prefs.cell(`grid.${name}.${child.name}`, emptyPrefs()) });
 
   const panels = [
@@ -631,7 +636,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- save bar ----------
 
-  const saveBar = isNew
+  const saveBarView = () => isNew
     ? html`<div class="ev-savebar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => panel ? panel.close() : void router.go('list', { model: name }) })}
         <span class="grow muted">${Icon('info', { size: 'sm' })} Values are checked again when you create it.</span>
         ${Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check', disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save() })}</div>`
@@ -639,6 +644,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         <span class="grow">${Icon('pencil', { size: 'sm' })} Unsaved changes</span>
         ${Button({ label: 'Discard', variant: 'ghost', onClick: () => void store.revert() })}
         ${Button({ label: () => store.saving.get() ? 'Saving…' : 'Save', variant: 'primary', icon: 'check', disabled: () => store.saving.get(), onClick: () => void save() })}</div>`);
+  const saveBar = saveBarView();
 
   // ---------- side panel ----------
 
@@ -722,8 +728,24 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
     <dt>ID</dt><dd class="num mono">${String(store.id)}</dd>
     ${revises ? when(() => Boolean(revises.value.get()), () => html`<dt>Revises</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(revises.value.get()) })}>${() => `${model.label} ${revises.value.get()}`}</a></dd>`) : null}
     ${when(() => Boolean(extras().revised_by), () => html`<dt>Revised by</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(extras().revised_by) })}>${() => `${model.label} ${extras().revised_by}`}</a></dd>`)}
+    ${RecordTimes(ctx, () => extras()._audit)}
     </dl>` }));
   return blocks;
+}
+
+/** Created and Last modified in Record info: relative times that a click switches to exact ones (for every time
+ * there, remembered per person), with who as a link to Controls Users for people who may open it. */
+function RecordTimes(ctx: AppContext, audit: () => RecordAudit | undefined): Child {
+  const exact = ctx.prefs.exactTimes;
+  const toggle = () => exact.set(!exact.peek());
+  const who = (person: AuditPerson | null) => person === null ? null : ctx.me.get()?.controls
+    ? html`<a class="link-q" href="/controls/users" target="_blank" rel="noopener">${person.name}</a>` : html`<span>${person.name}</span>`;
+  const row = (label: string, at: 'created_at' | 'modified_at', by: 'created_by' | 'modified_by') => when(() => Boolean(audit()?.[at]),
+    () => html`<dt>${label}</dt><dd class="ev-record-time">${RelativeTime({ at: () => audit()?.[at], exact, onToggle: toggle })}${() => {
+      const person = who(audit()?.[by] ?? null);
+      return person ? [html`<span class="muted" aria-hidden="true"> · </span>`, person] : null;
+    }}</dd>`);
+  return [row('Created', 'created_at', 'created_by'), row('Last modified', 'modified_at', 'modified_by')];
 }
 
 /** The print preview: the PDF the server renders for this person, with Download and File a copy. */
@@ -906,7 +928,7 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
     const [icon, tint] = KINDS[item.kind] ?? ['activity', 'slate'];
     const hidden = item.partial ? html`<span class="muted ev-partial" title="Parts of this entry are hidden from your role">${Icon('eye-off', { size: 'xs' })} Some details are hidden</span>` : null;
     return html`<div class="tl-item"><span class=${`ic b-${tint}`}>${Icon(icon, { size: 'sm' })}</span><div class="bd">
-      <div class="hd"><b>${person(item.actor) ?? 'The system'}</b> ${sentence(item)}${item.via ? ` via ${item.via}` : ''}<span class="tm">${formatDateTime(item.at).slice(11)}</span></div>${body(item)}${hidden}</div></div>`;
+      <div class="hd"><b>${person(item.actor) ?? 'The system'}</b> ${sentence(item)}${item.via ? ` via ${item.via}` : ''}${RelativeTime({ at: item.at, className: 'tm' })}</div>${body(item)}${hidden}</div></div>`;
   };
   return [
     InfoNote(model.journal?.tamper_evident ? 'Append-only history, chained so tampering shows. Entries are never edited or removed.' : 'Append-only history. Entries are never edited or removed.', 'lock'),

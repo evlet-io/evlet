@@ -37,6 +37,10 @@ def test_team_changes_are_on_record(secured):
     url = f"/api/employee/{accounts['member']}"
     status, _, _ = editor('PATCH', url, {'reports_to': accounts['outsider']}, headers={b'if-match': editor('GET', url)[2][b'etag']})
     assert status == 200
+    # Record info: the demo wrote the records as the engine, the editor changed this one.
+    audit = editor('GET', url)[1]['_audit']
+    assert audit['created_by'] is None and audit['modified_by'] == {'id': 2, 'name': 'editor'}
+    assert audit['modified_at'] > audit['created_at']
     history = editor('GET', url + '/history')
     assert history[0] == 200, history[1]
     assert 'reports_to' in json.dumps(history[1])
