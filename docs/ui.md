@@ -24,6 +24,12 @@ The previous SolidJS interface and the Vue regression harness have been removed.
   model, when the server has the print extra (in a side panel, Print is in the More menu). It opens a drawer with the server's PDF in the browser's
   own viewer, a choice of design, Download, and File a copy on records that keep attachments.
 
+Tables keep per-person column choices. The Columns menu of a record's child tables and of a report
+orders columns by dragging (or the keyboard), shows or hides them, and pins any number on the left:
+columns above the menu's divider stay in place while the table scrolls sideways. Prefs saved before
+pinning keep the first column pinned. A child table's Focus view keeps the record's header and its
+save bar in view ([ui-framework.md](ui-framework.md)).
+
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout`, `key_fields`, `relations`, `measures` and `open_in`. See "What the model decides" in
 [ui-framework.md](ui-framework.md).

@@ -454,13 +454,25 @@ mount(document.querySelector('#app')!, () => DocFrame({
   (with their rows of rows, as new rows), removed with Undo (`Table.restore()` brings back
   the same rows with their ids and rows of rows; Undo is refused with a message while the
   record saves or the lines are locked), opened in place with every field and their nested
-  tables, and the table can take over the view (focus view). Under 480 px the control column
+  tables, and the table can take over the view (focus view). With `heading` (the record's type,
+  icon, mark, title, number and a `footer` such as the form's save bar), focus view keeps a compact
+  record header above the table and the save bar below it, outside the rows that scroll; on a phone
+  the header is one line. Esc or Back to form returns to the form. Under 480 px the control column
   and the first column get narrower. The footer and the totals under it come from the parent's calculated
   sums over the table (`total = lines.sum("amount")`). Only rows in view are in the DOM.
 - **DataTable** sorts (exact for decimals), resizes (double click resets), reorders columns
-  (drag a header, or Alt and an arrow), pins the first column, selects rows, moves with the
-  arrow keys and opens with Enter. Widths, order and hidden columns live in a `TablePrefs`
-  cell the screen saves per user. When the frame is wider than the columns, the last column
+  (drag a header, or Alt and an arrow, within the pinned or the scrolling range), pins columns on
+  the left (`pinned`, default 1, or the saved range), selects rows, moves with the arrow keys and
+  opens with Enter. Widths, order, hidden columns and the pinned count (`pinned`) live in a
+  `TablePrefs` cell the screen saves per user; prefs saved without `pinned` keep the table's
+  default.
+- **ColumnsMenu** is the Columns menu of ChildTable and the report page: show or hide each column
+  (one stays shown), drag a grip to reorder (mouse, touch, or the keyboard: Space lifts, the arrow
+  keys move, Space or Enter drops, Esc cancels, announced as "Phone, position 3 of 5"), and a
+  Pinned range at the top whose divider can be dragged too. The pin button pins a column at the end
+  of the range or unpins it to the start of the rest. One column always stays unpinned, and the
+  menu warns, without blocking, when pinned columns take more than 60% of the table's width.
+  Every pinned column is sticky, with its own left offset, in the header, cells and totals. When the frame is wider than the columns, the last column
   takes the spare width, so the header and row rules reach the edge; the child table does the same.
   `current` marks the row open beside the table (`aria-current`) and keeps it in view; `onMove`
   reports the row the arrow keys move to, so a side panel can follow.
