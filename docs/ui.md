@@ -142,6 +142,23 @@ the model has naming, its `name` next to it in a monospaced font, or "Assigned o
 show titles; the schema's `title_field` is `title` for every record model
 ([model-engine.md](model-engine.md#name-and-title)).
 
+### Link filters
+
+A Link with `filters` ([business-capabilities.md](business-capabilities.md#link-filters)) is
+handled in the form with the values the person has entered, saved or not:
+
+- The picker lists only records that fit, by sending the filters to the list route. While a field
+  the filters read is empty, it lists nothing and says "Choose Company first.".
+- When a field changes, every Link whose filters read it is checked again: on the same row, and
+  `Ref("parent.<field>")` Links on the rows of its tables. A value that still fits is kept. One that
+  no longer fits is cleared, with a note under the field (a tooltip in a table cell) such as
+  "Cleared because Company changed". Clearing a Link checks the Links that read it in turn, so a
+  chain such as company, branch, floor clears together. The browser decides from a record it
+  already holds; otherwise it asks the list route (`id__in` and the filters), so the role's row and
+  field permissions apply. When it cannot tell, the value stays and the save reports it.
+
+The server still checks every Link on preview and save; the form only avoids keeping a stale value.
+
 ### Filters
 
 A list's Filter button (with a count of active filters) opens a panel of filter rows under the
