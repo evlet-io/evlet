@@ -6,6 +6,20 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Created and last modified on every record.** Every model table gains four framework columns,
+  `evlet_created_at`, `evlet_created_by`, `evlet_modified_at` and `evlet_modified_by` (UTC times and
+  user ids), filled in the same statement as every write: the record routes, the document pipeline,
+  actions, moves, effects, void, unpost, repost and revise, `business.context(user)` and raw sessions
+  (as the engine, or `session.actor`). Record details carry them as `_audit`, outside the ETag, with
+  who as `{"id", "name"}` (null for the engine and for portal roles). The record page's Record info
+  shows "Created 2 hours ago · Aslam" and "Last modified", with the exact time on hover and a click to
+  switch to exact times, remembered per person; the Activity tab's times are relative too. A new
+  browser component, `RelativeTime`, shares one minute clock that pauses in a hidden tab
+  ([docs/model-engine.md](docs/model-engine.md#record-times), [docs/ui-framework.md](docs/ui-framework.md#relative-times)).
+  What to change: run `evlet migrate`; framework migration `0004_record_times` adds the columns and
+  fills them from the Journal, or from the time in the record id. A model may not declare a field with
+  one of these names. Fixture scripts that need stable output wrap generation in
+  `evlet.audit.fixed_times()`, as they do with `sequential_ids()`.
 - **Columns menu with drag and a pinned range.** Child tables and reports share one Columns menu:
   drag a grip (mouse, touch, or Space and the arrow keys) to reorder, and drag columns above a
   divider, or use the pin button, to pin any number of them on the left. `TablePrefs` gains an

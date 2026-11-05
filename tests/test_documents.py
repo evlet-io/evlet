@@ -141,7 +141,8 @@ def test_negation_keeps_full_precision_before_currency_rounding(tmp_path):
 
 def test_document_contract_fixture(application):
     from scripts.generate_document_fixtures import collect
+    from evlet.audit import fixed_times
     from evlet.identity import sequential_ids
     fixture = json.loads((Path(__file__).resolve().parents[1] / 'tests/fixtures/document-contract.json').read_text())
-    with sequential_ids():
+    with sequential_ids(), fixed_times():
         assert collect(application) == fixture

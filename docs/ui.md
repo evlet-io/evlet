@@ -148,6 +148,16 @@ the model has naming, its `name` next to it in a monospaced font, or "Assigned o
 show titles; the schema's `title_field` is `title` for every record model
 ([model-engine.md](model-engine.md#name-and-title)).
 
+### Created and last modified
+
+The Record info block of every record page shows when the record was created and last changed, and
+by whom: `Created 2 hours ago · Aslam`. Hover or focus a time for the exact time in your zone
+(`04-11-2026 12:05 GST`); click it to show every time there exactly, which is remembered for you. The
+times move on by themselves while the page is open. Who links to Controls Users for people who may
+open Controls. Portal users see the times only. See
+[model-engine.md](model-engine.md#record-times) for what is recorded and
+[ui-framework.md](ui-framework.md#relative-times) for the `RelativeTime` component.
+
 ### Link filters
 
 A Link with `filters` ([business-capabilities.md](business-capabilities.md#link-filters)) is

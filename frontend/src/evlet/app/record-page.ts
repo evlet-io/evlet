@@ -19,11 +19,12 @@ import { FormSection, KeyValueList } from '../ui/inline';
 import { humanize } from '../ui/kinds';
 import { copyText, DialogFooter, MenuButton, openDrawer, openModal, toast, type MenuItem } from '../ui/layers';
 import { DataTable, emptyPrefs, type Column } from '../ui/table';
+import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { JournalEntry, JournalPage } from './client';
 import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, numberField, screenModel, sections, sequenceField,
-  summaryFields, titleOf, LIST_KEYS, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
+  summaryFields, titleOf, LIST_KEYS, type ActionMeta, type AuditPerson, type DetailExtras, type RecordAudit, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { RelatedPanel } from './related-panel';
 import { Revisions } from './revisions';
@@ -710,8 +711,24 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
     <dt>ID</dt><dd class="num mono">${String(store.id)}</dd>
     ${revises ? when(() => Boolean(revises.value.get()), () => html`<dt>Revises</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(revises.value.get()) })}>${() => `${model.label} ${revises.value.get()}`}</a></dd>`) : null}
     ${when(() => Boolean(extras().revised_by), () => html`<dt>Revised by</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(extras().revised_by) })}>${() => `${model.label} ${extras().revised_by}`}</a></dd>`)}
+    ${RecordTimes(ctx, () => extras()._audit)}
     </dl>` }));
   return blocks;
+}
+
+/** Created and Last modified in Record info: relative times that a click switches to exact ones (for every time
+ * there, remembered per person), with who as a link to Controls Users for people who may open it. */
+function RecordTimes(ctx: AppContext, audit: () => RecordAudit | undefined): Child {
+  const exact = ctx.prefs.exactTimes;
+  const toggle = () => exact.set(!exact.peek());
+  const who = (person: AuditPerson | null) => person === null ? null : ctx.me.get()?.controls
+    ? html`<a class="link-q" href="/controls/users" target="_blank" rel="noopener">${person.name}</a>` : html`<span>${person.name}</span>`;
+  const row = (label: string, at: 'created_at' | 'modified_at', by: 'created_by' | 'modified_by') => when(() => Boolean(audit()?.[at]),
+    () => html`<dt>${label}</dt><dd class="ev-record-time">${RelativeTime({ at: () => audit()?.[at], exact, onToggle: toggle })}${() => {
+      const person = who(audit()?.[by] ?? null);
+      return person ? [html`<span class="muted" aria-hidden="true"> · </span>`, person] : null;
+    }}</dd>`);
+  return [row('Created', 'created_at', 'created_by'), row('Last modified', 'modified_at', 'modified_by')];
 }
 
 /** The print preview: the PDF the server renders for this person, with Download and File a copy. */
@@ -894,7 +911,7 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
     const [icon, tint] = KINDS[item.kind] ?? ['activity', 'slate'];
     const hidden = item.partial ? html`<span class="muted ev-partial" title="Parts of this entry are hidden from your role">${Icon('eye-off', { size: 'xs' })} Some details are hidden</span>` : null;
     return html`<div class="tl-item"><span class=${`ic b-${tint}`}>${Icon(icon, { size: 'sm' })}</span><div class="bd">
-      <div class="hd"><b>${person(item.actor) ?? 'The system'}</b> ${sentence(item)}${item.via ? ` via ${item.via}` : ''}<span class="tm">${formatDateTime(item.at).slice(11)}</span></div>${body(item)}${hidden}</div></div>`;
+      <div class="hd"><b>${person(item.actor) ?? 'The system'}</b> ${sentence(item)}${item.via ? ` via ${item.via}` : ''}${RelativeTime({ at: item.at, className: 'tm' })}</div>${body(item)}${hidden}</div></div>`;
   };
   return [
     InfoNote(model.journal?.tamper_evident ? 'Append-only history, chained so tampering shows. Entries are never edited or removed.' : 'Append-only history. Entries are never edited or removed.', 'lock'),

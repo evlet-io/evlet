@@ -42,6 +42,18 @@
           "name": null
         }
       ]
+    },
+    "_audit": {
+      "created_at": "2026-11-04T06:01:00.000Z",
+      "created_by": {
+        "id": 1,
+        "name": "owner"
+      },
+      "modified_at": "2026-11-04T06:01:00.000Z",
+      "modified_by": {
+        "id": 1,
+        "name": "owner"
+      }
     }
   },
   "events": {
