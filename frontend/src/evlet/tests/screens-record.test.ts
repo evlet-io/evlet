@@ -296,3 +296,40 @@ describe('printing a record', () => {
     }
   });
 });
+
+describe('Record info times', () => {
+  afterEach(() => { try { localStorage.clear(); } catch { /* no storage */ } });
+  const info = (host: Element) => byText(host, '.side-sec', /^Record info/)!;
+  const rows = (host: Element) => {
+    const block = info(host), terms = [...block.querySelectorAll('dt')].map(text);
+    return Object.fromEntries([...block.querySelectorAll('dd')].map((dd, index) => [terms[index], text(dd)]));
+  };
+
+  it('shows Created and Last modified relative to now, with who, and switches every time to exact on a click', async () => {
+    // Recorded at 06:02 UTC; two hours later here.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-04T08:02:30Z'));
+    const { host } = start([...orderRoutes(), ['GET', /\/api\/_settings\/me$/, screen.settings_me]], '/app/order/0000000000001', { storage: localStorage });
+    await until(() => expect(rows(host)['Created']).toBe('2 hours ago · admin'));
+    expect(rows(host)['Last modified']).toBe('2 hours ago · admin');
+    const times = [...info(host).querySelectorAll<HTMLButtonElement>('button.ev-time-toggle')];
+    expect(times.map(button => button.querySelector('time')!.getAttribute('datetime'))).toEqual(['2026-11-04T06:02:00.000Z', '2026-11-04T06:02:00.000Z']);
+    expect(times[0].getAttribute('aria-label')).toBe('2 hours ago, 04-11-2026 10:02 GST. Show exact times');
+    // Who links to Controls Users for a person who may open Controls.
+    await until(() => expect(info(host).querySelectorAll('dd a.link-q[href="/controls/users"]').length).toBe(2));
+    click(times[0]);
+    await until(() => expect(rows(host)['Created']).toBe('04-11-2026 10:02 GST · admin'));
+    expect(rows(host)['Last modified']).toBe('04-11-2026 10:02 GST · admin');
+    expect(times.map(button => button.getAttribute('aria-pressed'))).toEqual(['true', 'true']);
+    expect(localStorage.getItem('evlet.admin.exactTimes')).toBe('true');
+  });
+
+  it('opens with exact times when the person chose them before', async () => {
+    localStorage.setItem('evlet.admin.exactTimes', 'true');
+    const { host } = start(orderRoutes(), '/app/order/0000000000001', { storage: localStorage });
+    await until(() => expect(rows(host)['Created']).toBe('04-11-2026 10:02 GST · admin'));
+    // Without Controls, who is plain text.
+    expect(info(host).querySelector('dd a.link-q[href="/controls/users"]')).toBeNull();
+  });
+});
+

@@ -165,8 +165,9 @@ socket):
 ```
 
 `tests/test_lines.py` counts statements with `sqlite3` trace callbacks and asserts upper
-bounds: 10 for a detail of 1,000 rows or of 100 rows with 9 nested rows each, 32 for a
-title-only PATCH, and 35 for a one-row change set.
+bounds: 12 for a detail of 1,000 rows and 10 for one of 100 rows with 9 nested rows each, 35 for a
+title-only PATCH, and 37 for a one-row change set. A detail costs one statement to name who created
+and last changed the record ([model-engine.md](model-engine.md#record-times)), once per request.
 
 ### Local results, 1 November 2026
 

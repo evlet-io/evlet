@@ -8,6 +8,7 @@ import logging
 import re
 import sqlite3
 
+from .audit import COLUMNS as AUDIT_COLUMNS, add_columns as add_audit_columns, column_sql as audit_column_sql
 from .fields import Field, Integer, Link, MAX_INTEGER, MISSING, Reference
 from .identity import RecordId
 from .models import identifier, storage_name
@@ -80,6 +81,7 @@ def _create(connection, table, model):
     fields = {name: field for name, field in model.__fields__.items() if framework or not standard(field)}
     columns = ['"id" INTEGER PRIMARY KEY AUTOINCREMENT']
     columns.extend(sql for name, field in fields.items() for sql in _column(name, field))
+    columns.extend(audit_column_sql(False))
     connection.execute(f'CREATE TABLE {identifier(table)} ({", ".join(columns)})')
     for name, field in fields.items():
         if field.index or field.unique:
@@ -129,6 +131,15 @@ def leftover_standard(model, nullable):
     return {key for key in ('name', 'title') if nullable.get(key) and key not in model.__fields__}
 
 
+def audit_columns(table, names):
+    """The framework's created and modified columns (evlet/audit.py), which schema checks leave alone. A table
+    gets all four at once, from framework step 0004 or the next migration batch, so some but not all is an error."""
+    present = set(AUDIT_COLUMNS) & set(names)
+    if present and present != set(AUDIT_COLUMNS):
+        raise SchemaError(f'{table}: the record time columns are incomplete; run evlet migrate')
+    return present
+
+
 def standard_fields(model):
     """The framework's name and title fields of a model, as {name: field}."""
     return {key: field for key, field in model.__app_stored__.items() if standard(field)}
@@ -153,7 +164,7 @@ def _check(connection, registry, *, rows=False):
         columns = connection.execute(f'PRAGMA table_info({table})').fetchall()
         names = [row['name'] for row in columns]
         skip = added.get(name, set()) | {column for field in retired.get(name, ()) for column in stored_columns(names, field)} \
-            | leftover_standard(model, {row['name']: not row['notnull'] for row in columns})
+            | leftover_standard(model, {row['name']: not row['notnull'] for row in columns}) | audit_columns(name, names)
         actual = {row['name']: (row['type'].upper(), bool(row['notnull']), row['pk']) for row in columns if row['name'] not in skip}
         # A table made before records had standard columns gets them from framework step 0003 (evlet migrate).
         framework = standard_fields(model)
@@ -1059,6 +1070,11 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             pending = migrations[len(history):]
             if not pending and saved and not _same(saved[0], database.registry):
                 raise SchemaError('Changed model definitions require a new migration')
+            if not fresh:
+                # Data migrations write through Session, which fills the record time columns, so existing
+                # tables get them before any step runs (framework step 0004 does the same without migrations).
+                for table in sorted(_tables(connection)):
+                    add_audit_columns(connection, False, table)
             for position, migration in enumerate(pending, len(history) + 1):
                 if not fresh and not baseline:
                     for operation in migration.operations:

@@ -319,12 +319,12 @@ def test_generated_form_preserves_model_layout_groups(secured):
     assert [group["props"]["title"] for group in groups] == [
         "Project",
         "Planning",
+        "Schedule",
         "Notes",
     ]
     assert [node["props"]["field"] for node in groups[1]["slots"]["children"]] == [
         "budget",
         "progress",
-        "starts_on",
     ]
     assert groups[0]["id"] == "main_details"
 

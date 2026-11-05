@@ -227,6 +227,62 @@ empty name unless the app fills them. A data migration that moves an older numbe
 invoice numbers. A model that declares its own `name` (a frozen class in older migrations) has
 neither standard column, as its table had neither then.
 
+## Record times
+
+Every model table, Table rows included, has four more framework columns: when the record was created
+and last changed, and by whom.
+
+| Column | Holds |
+|---|---|
+| `evlet_created_at` | UTC time of the create, such as `2026-11-04T08:15:30.125Z` |
+| `evlet_created_by` | the user id, or empty for the engine |
+| `evlet_modified_at` | UTC time of the last write that changed the record |
+| `evlet_modified_by` | the user id of that write, or empty for the engine |
+
+They are not fields. They never appear in a model's fields, forms, lists, filters, imports or the
+schema, and no request or `Session.create` can write them (an unknown field is refused). A model may
+not declare a field with one of these names.
+
+**Filled on every write**, in the same statement as the write and so in the same transaction:
+
+- the record routes and the document pipeline (create, update, actions, moves, confirm and cancel),
+  under the person who sent them, an API key's user included;
+- the rows an [effect](effects.md) posts, under the person whose move posted them;
+- void, unpost and repost, which change only the State, and revise, whose copy is a new record;
+- trusted Python: `business.context(user)` writes under that user. A raw `Session` writes as the
+  engine unless code sets `session.actor` to a user id first;
+- imports and data migrations, which write through `Session`.
+
+A record route or document write that changes nothing leaves the times alone. A change to a Table row counts as a
+change of its document. A note, message, file or other Journal entry does not change the record, so
+it does not move "Last modified". `sequences.backfill()` and `Recompute` migrations are repairs and
+leave the times alone.
+
+**Why columns and not the Journal.** The [Journal](journal.md) records who and when, but only for
+models that journal (a State, effects or `Meta.journal`), and raw `Session` writes, data migrations
+and `sequences.backfill()` write no entries. Columns are right for every write path and cost nothing
+to read: they come with the row the detail already loads.
+
+**Details** carry them as `_audit`, outside the record's ETag, so a person renaming themselves does not
+make open records stale:
+
+```json
+"_audit": {"created_at": "2026-11-04T06:02:00.000Z", "created_by": {"id": 1, "name": "Aslam"},
+           "modified_at": "2026-11-04T08:01:12.410Z", "modified_by": {"id": 2, "name": "Priya S."}}
+```
+
+`name` is the person's short name, then full name, then username, as Settings shows it. `created_by`
+and `modified_by` are `null` for engine writes, and always `null` for portal roles, who may see when a
+record changed but not which staff member changed it. Every desk reader of the record sees them, as
+the Journal already shows actors to readers. Lists do not carry `_audit`. Discovery's read schema describes
+`_audit`, so MCP clients and the connector can check record output against it.
+
+**Existing databases.** Framework migration `0004_record_times` (`evlet migrate`) adds the columns and
+fills them: from the record's Journal where it has one (the first entry that changed the record, and
+the last), otherwise from the time in the record's [id](#record-ids), with no one as who. Rows whose
+id holds no time (small ids from before time-ordered ids) stay empty, and screens show nothing for
+them. The next app migration batch adds them too, before its first step, so data migrations can write.
+
 ## Queries
 
 ```python
