@@ -73,6 +73,15 @@ def test_plain_routes_record_who_and_when_and_details_show_it(app):
     assert '_audit' not in admin('GET', '/api/note')[1]['items'][0]
 
 
+def test_discovery_describes_audit_so_tool_clients_validate_it(app):
+    """MCP and the connector check record output against Discovery's read schema, which allows no other keys."""
+    c = client(app)
+    note = c('POST', '/api/note', {'title': 'x'})[1]
+    schema = c('GET', '/api/_discovery/note')[1]['schemas']['read']
+    assert schema['properties']['_audit']['required'] == ['created_at', 'created_by', 'modified_at', 'modified_by']
+    pytest.importorskip('jsonschema').validate(c('GET', f"/api/note/{note['id']}")[1], schema)
+
+
 def test_the_columns_are_not_fields_and_cannot_be_written(app):
     c = client(app)
     assert all(column not in Note.__fields__ for column in audit.COLUMNS)

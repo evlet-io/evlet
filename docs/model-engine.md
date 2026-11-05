@@ -265,7 +265,8 @@ make open records stale:
 `name` is the person's short name, then full name, then username, as Settings shows it. `created_by`
 and `modified_by` are `null` for engine writes, and always `null` for portal roles, who may see when a
 record changed but not which staff member changed it. Every desk reader of the record sees them, as
-the Journal already shows actors to readers. Lists do not carry `_audit`.
+the Journal already shows actors to readers. Lists do not carry `_audit`. Discovery's read schema describes
+`_audit`, so MCP clients and the connector can check record output against it.
 
 **Existing databases.** Framework migration `0004_record_times` (`evlet migrate`) adds the columns and
 fills them: from the record's Journal where it has one (the first entry that changed the record, and
