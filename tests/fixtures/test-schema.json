@@ -155,6 +155,7 @@
           "fields": [
             "name",
             "customer",
+            "project",
             "reference",
             "total",
             "posting_date",
@@ -200,6 +201,22 @@
           "target": "customer",
           "label": "Customer",
           "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "project",
+          "type": "link",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "minimum": 1,
+          "maximum": null,
+          "target": "project",
+          "label": "Project",
+          "help_text": "One of this customer's projects.",
           "placeholder": "",
           "hidden": false,
           "read_only": false,
@@ -318,7 +335,19 @@
           "read_only": true,
           "default_kind": "none"
         }
-      ]
+      ],
+      "behavior": {
+        "project": {
+          "filters": {
+            "customer": {
+              "$expr": "ref",
+              "args": [
+                "customer"
+              ]
+            }
+          }
+        }
+      }
     },
     {
       "name": "payment",

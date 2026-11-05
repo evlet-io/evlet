@@ -126,6 +126,10 @@ class LedgerEntry(Model):
 migrations.append(Migration('0009_ledger', CreateModel(LedgerEntry)))
 
 
+# Invoice.project: a Link whose filters read the invoice's customer (Ref('customer')).
+migrations.append(Migration('0010_invoice_project', AddField('invoice', 'project', Link(Project))))
+
+
 def legacy_registry():
     """Frozen Milestone 1 definitions used only to validate a legacy baseline."""
     class Customer(Model):

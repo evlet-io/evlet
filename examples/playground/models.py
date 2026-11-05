@@ -1,6 +1,6 @@
 """A small consumer of Evlet's public API, not an accounting system."""
 
-from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Registry,
+from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Ref, Registry,
                    Rule, Section, Select, Series, Text)
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
@@ -42,6 +42,9 @@ class Invoice(Model):
         period = 'posting_date'
 
     customer = Link(Customer, required=True)
+    # Only projects of the invoice's customer. Changing the customer clears a project of another one,
+    # with a note under the field; the server names the mismatch if one is saved anyway.
+    project = Link('project', filters={'customer': Ref('customer')}, help_text="One of this customer's projects.")
     # help_text reads under the input; tooltip sits behind a ? icon at its right end.
     reference = Text(required=True, unique=True, max_length=40, label='Customer reference',
                      help_text="The customer's reference for this invoice.",
