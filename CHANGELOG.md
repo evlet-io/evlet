@@ -16,6 +16,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   longer clips it.
 - **The note composer shows one focus ring.** The editor inside it no longer draws its own
   border and ring, and the ring matches rich text form fields.
+- **Recent records moved from the sidebar to a history button left of search.** It lists them
+  newest first with the model and when each was opened, and has a Clear action.
 
 ## 0.3.0 (05-11-2026)
 

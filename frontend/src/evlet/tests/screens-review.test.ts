@@ -54,8 +54,10 @@ describe('preferences hold no record data', () => {
     localStorage.setItem('evlet.admin.recentQ', JSON.stringify(['old search']));
     const { host } = start([...adminRoutes(), ...orderRecord(), ['POST', /\/api\/auth\/logout$/, recorded.logout]], '/app/order/0000000000001', { storage: localStorage });
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toContain('Big order'));
-    await until(() => expect(text(byText(host, '.nav-group', /^Recent/))).toContain('Big order'));
-    expect(text(host.querySelector('.side'))).not.toContain('Old secret');
+    click(host.querySelector('.rec-btn'));
+    await until(() => expect(text(document.querySelector('.rec-pop'))).toContain('Big order'));
+    expect(text(document.querySelector('.rec-pop'))).not.toContain('Old secret');
+    click(host.querySelector('.rec-btn'));
     document.documentElement.dataset.theme = 'dark';
 
     const stored = () => Object.fromEntries(Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)!).map(key => [key, localStorage.getItem(key)]));

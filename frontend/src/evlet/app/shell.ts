@@ -1,6 +1,6 @@
 // The app shell (docs/ui-design/README.md section 4): sidebar with the Evlet brand, the app switcher,
-// the models grouped and recent records, and an edge button that collapses it; the top bar with
-// breadcrumbs, search, shortcuts and New; one scrolling view. Under 760 px the sidebar is a drawer
+// the models grouped, and an edge button that collapses it; the top bar with breadcrumbs, recent
+// records, search, shortcuts and New; one scrolling view. Under 760 px the sidebar is a drawer
 // opened from the top bar.
 
 import { html, listen, when, type Child } from '../dom';
@@ -14,6 +14,7 @@ import { docsOn, goSettings, type AppContext } from './context';
 import { displayName, PersonMark } from './settings';
 import { presentSlip } from './slips';
 import { InboxButton } from './inbox';
+import { RecentsButton } from './recents';
 import { groupOf, identity, rootModels, type ScreenModel } from './meta';
 import { REPORT_ICON, reportGroups, reportsOf } from './report-page';
 
@@ -62,7 +63,6 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
       ? html`<span class="count">${(n => n > 999 ? `${(n / 1000).toFixed(1)}k` : String(n))(counts.get()[model.name])}</span>` : null;
     return navItem({ href: router.href('list', { model: model.name }), icon, tint, label: model.plural, active: () => activeModel.get() === model.name, count });
   };
-  const recents = derive(() => prefs.recentRecords.get().filter(item => models.some(model => model.name === item.model)).slice(0, 5));
 
   // The one account area, at the bottom of the sidebar. Its menu follows the Settings design order.
   const settings = ctx.me;
@@ -110,11 +110,6 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
           group && reportGroups(reports).length > 1 ? html`<div class="nav-sub">${group}</div>` : null,
           list.map(report => navItem({ href: router.href('report', { report: report.name }), icon: REPORT_ICON, tint: 'rose', label: report.label,
             active: () => route.get()?.name === 'report' && route.get()?.params.report === report.name }))])}</div>` : null}
-        ${when(() => recents.get().length > 0, () => html`<div class="nav-group"><div class="nav-label">Recent</div>${() => recents.get().map(item => {
-          const model = models.find(entry => entry.name === item.model)!;
-          return navItem({ href: router.href('record', { model: item.model, id: String(item.id) }), icon: identity(model).icon, tint: 'slate', label: item.title,
-            active: () => route.get()?.name === 'record' && route.get()?.params.model === item.model && route.get()?.params.id === String(item.id) });
-        })}</div>`)}
       </nav>
       ${ctx.dev ? html`<div class="side-bottom"><a class="nav-item" href=${ctx.libraryHref} rel="external" ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? 'Library' : null, 'right')}>
         ${Icon('layers', { tint: 'violet' })}<span class="lbl">Library</span></a></div>` : null}
@@ -133,6 +128,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     <span class="mobile-only">${IconButton({ icon: 'panel-left', tip: 'Menu', onClick: () => ctx.toggleSidebar() })}</span>
     <nav class="crumbs" aria-label="Breadcrumbs">${crumbs}</nav>
     <div class="top-actions">
+      ${RecentsButton(ctx, models)}
       <button type="button" class="top-search desktop-only" on:click=${() => ctx.openPalette()}>${Icon('search', { size: 'sm' })}<span>Search</span>${Key('⌘K')}</button>
       <span class="mobile-only">${IconButton({ icon: 'search', tip: 'Search', onClick: () => ctx.openPalette() })}</span>
       ${when(() => Boolean(ctx.me.get() && !ctx.me.get()!.portal), () => InboxButton(ctx))}

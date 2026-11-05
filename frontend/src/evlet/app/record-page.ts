@@ -204,7 +204,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   if (!panel) effect(() => ctx.crumbs.set([{ label: model.plural, href: router.href('list', { model: name }) }, { label: titleText.get() }]));
   if (!isNew) {
     const remember = () => {
-      const entry = { model: name, id: store.id!, title: untrack(() => titleText.get()) };
+      const entry = { model: name, id: store.id!, title: untrack(() => titleText.get()), at: Date.now() };
       prefs.recentRecords.set([entry, ...prefs.recentRecords.peek().filter(item => !(item.model === name && item.id === entry.id))].slice(0, 8));
     };
     remember();
