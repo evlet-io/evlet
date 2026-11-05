@@ -122,8 +122,10 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
   background:var(--surface);box-shadow:var(--shadow-md);padding-bottom:max(10px,env(safe-area-inset-bottom,0px))}
 .ev-savebar .grow{flex:1;display:inline-flex;align-items:center;gap:6px;color:var(--fg-2);font-size:13px}
 .ev-new-form .fs-g .fld{min-width:0}
-.ev-related{margin-bottom:16px}
+/* The table sits flush in the panel, which clips it to its rounded corners. An empty list is one line. */
+.ev-related{margin-bottom:16px;overflow:hidden}
 .ev-related .table-wrap{border:0;border-radius:0}
+.ev-related-empty{margin:0;padding:14px 16px 16px;color:var(--fg-3)}
 .ev-more{padding:10px 12px;border-top:1px solid var(--divider)}
 .ev-files{display:grid;gap:10px}
 .ev-print-body{display:grid;gap:12px;min-height:0}

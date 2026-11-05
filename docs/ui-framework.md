@@ -778,7 +778,7 @@ a title opens the full page in a new browser tab.
 | `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.status`, `Select(colors=...)` | A status badge in the record header and the same badge in the list column; never a button unless it is the State with moves to offer |
 | `Meta.key_fields` (Phase 10) | Header facts, the summary strip and the Key fields side block (without it: the first fields) |
-| `Meta.relations` (Phase 10) | The Related tab and side block |
+| `Meta.relations` (Phase 10) | The Related tab and side block. A relation named after its model counts in that model's words ("Payments, 1 payment"), any other name counts records; an empty relation is one line in the tab, with no table or 0 |
 | `attachments` | The Files side block, with upload for roles that can update while the record is not locked |
 | `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
 | Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |

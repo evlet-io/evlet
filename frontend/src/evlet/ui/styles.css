@@ -200,6 +200,8 @@ textarea.input{height:auto;padding:8px 10px;resize:vertical;min-height:72px;line
 .tabs button{display:flex;align-items:center;gap:6px;padding:8px 10px 9px;font-weight:500;color:var(--fg-3);position:relative;white-space:nowrap;font-size:13px}
 .tabs button:hover{color:var(--fg)}
 .tabs button.on{color:var(--fg)}
+/* Drawn inside the tab: the scrolling tab strip would clip an outline outside it. */
+.tabs button:focus-visible{outline-offset:-2px;border-radius:6px}
 .tabs button.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;background:var(--accent);border-radius:2px}
 .tabs .n{font-size:11.5px;color:var(--fg-3);background:var(--bg-muted);border-radius:5px;padding:0 5px;line-height:17px}
 .tabs .add{color:var(--fg-4)}

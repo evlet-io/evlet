@@ -16,9 +16,12 @@ export interface RelatedItem {
   tint: string;
   /** Null until the count has loaded. */
   count: Readable<number | null>;
+  /** What one and several of its records are called ('invoice', 'invoices'); 'record' and 'records' without it. */
+  noun?: { one: string; many: string };
 }
 
-const noun = (count: number) => `${count} ${count === 1 ? 'record' : 'records'}`;
+/** '1 invoice', '3 invoices'; '1 record', '3 records' for a relation without its own noun. */
+export const countText = (count: number, noun = { one: 'record', many: 'records' }) => `${count} ${count === 1 ? noun.one : noun.many}`;
 
 /** With records first (most to fewest, then by label), then the ones still loading; empty ones apart. */
 export function arrangeRelated(items: RelatedItem[]) {
@@ -38,7 +41,7 @@ export function RelatedPanel(props: { items: RelatedItem[]; expanded: Cell<boole
   };
   const row = (item: RelatedItem) => {
     const count = item.count.get();
-    return html`<li><a class="rel-row" href=${item.href} aria-label=${count === null ? item.label : `${item.label}, ${noun(count)}`} on:click=${open(item)}>
+    return html`<li><a class="rel-row" href=${item.href} aria-label=${count === null ? item.label : `${item.label}, ${countText(count, item.noun)}`} on:click=${open(item)}>
       <span class="rel-ic b-${item.tint}" aria-hidden="true">${Icon(item.icon, { size: 'xs' })}</span><span class="rel-nm">${item.label}</span>${count === null ? null : html`<span class="rel-ct num">${String(count)}</span>`}${Icon('chevron-right', { size: 'sm', className: 'muted' })}</a></li>`;
   };
   return html`<div class="rel">${() => {
