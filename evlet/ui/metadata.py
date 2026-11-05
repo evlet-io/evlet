@@ -129,9 +129,12 @@ def ui_schema(registry):
 
 
 def behavior(model, registry):
-    if not getattr(model, '__declaration_mode__', False):
-        return {}
     from ..reactivity import plans, serialized, graph
+    if not getattr(model, '__declaration_mode__', False):
+        # A plain model still tells the form which other fields its Link filters read.
+        filters = {name: {'filters': {key: serialized(value) for key, value in entry['filters'].items()}}
+                   for name, entry in plans(model).items() if entry.get('filters')}
+        return {'behavior': filters} if filters else {}
     nodes, order = ({}, []) if any(child.model is model for child in registry.children) else graph(registry, model)
     fields = plans(model)
     return {'document_version': 1, 'resource': getattr(model, '__resource_id__', registry.name_for(model)),

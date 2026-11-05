@@ -20,6 +20,20 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   fills them from the Journal, or from the time in the record id. A model may not declare a field with
   one of these names. Fixture scripts that need stable output wrap generation in
   `evlet.audit.fixed_times()`, as they do with `sequential_ids()`.
+- **Link filters that read another field follow it in the form.** For a Link such as
+  `branch = Link(Branch, filters={"company": Ref("company")})`, the picker now lists only records
+  that fit the form's current, unsaved values (before, it ignored `filters`), and asks for an empty
+  referenced field first. Changing a field checks every Link whose filters read it, on the same row
+  and on Table rows through `Ref("parent.<field>")`: a value that still fits stays, one that no
+  longer fits is cleared with a note such as "Cleared because Company changed", and chains clear
+  together. The field error is plainer: "Port office is not in Summit Services." with one filter
+  and readable titles, "Choose Company first." for an empty referenced field, and otherwise "This
+  Branch doesn't fit the other values on this form." It never shows a title the role cannot read.
+  What to change: code or tests that match the old text "The selected record does not match the
+  current filters" match the new messages; the error stays a field error with status 422. The
+  schema sends `behavior.<field>.filters` for models with no other rules too. The Playground's
+  Invoice has a Project limited to the customer's projects (migration `0010_invoice_project`)
+  ([docs/business-capabilities.md](docs/business-capabilities.md#link-filters), [docs/ui.md](docs/ui.md#link-filters)).
 - **`evlet dev` creates the first admin.** On an instance with no accounts, `evlet dev` creates an
   active admin (`admin`, or `--user NAME`) with a random password that is never shown and prints a
   one-time sign-in link, so you type no password or two-step code in development. `--no-link` skips

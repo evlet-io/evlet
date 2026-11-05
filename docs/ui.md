@@ -152,6 +152,23 @@ open Controls. Portal users see the times only. See
 [model-engine.md](model-engine.md#record-times) for what is recorded and
 [ui-framework.md](ui-framework.md#relative-times) for the `RelativeTime` component.
 
+### Link filters
+
+A Link with `filters` ([business-capabilities.md](business-capabilities.md#link-filters)) is
+handled in the form with the values the person has entered, saved or not:
+
+- The picker lists only records that fit, by sending the filters to the list route. While a field
+  the filters read is empty, it lists nothing and says "Choose Company first.".
+- When a field changes, every Link whose filters read it is checked again: on the same row, and
+  `Ref("parent.<field>")` Links on the rows of its tables. A value that still fits is kept. One that
+  no longer fits is cleared, with a note under the field (a tooltip in a table cell) such as
+  "Cleared because Company changed". Clearing a Link checks the Links that read it in turn, so a
+  chain such as company, branch, floor clears together. The browser decides from a record it
+  already holds; otherwise it asks the list route (`id__in` and the filters), so the role's row and
+  field permissions apply. When it cannot tell, the value stays and the save reports it.
+
+The server still checks every Link on preview and save; the form only avoids keeping a stale value.
+
 ### Filters
 
 A list's Filter button (with a count of active filters) opens a panel of filter rows under the

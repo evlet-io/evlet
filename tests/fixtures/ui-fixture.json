@@ -349,6 +349,17 @@
                     {
                       "bindings": {},
                       "events": {},
+                      "id": "project",
+                      "props": {
+                        "field": "project"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
                       "id": "reference",
                       "props": {
                         "field": "reference"
@@ -462,6 +473,17 @@
                       "id": "customer",
                       "props": {
                         "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "project",
+                      "props": {
+                        "field": "project"
                       },
                       "slots": {},
                       "type": "Field",
@@ -584,6 +606,17 @@
                       "id": "customer",
                       "props": {
                         "field": "customer"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "project",
+                      "props": {
+                        "field": "project"
                       },
                       "slots": {},
                       "type": "Field",
@@ -11453,6 +11486,7 @@
           "fields": [
             "name",
             "customer",
+            "project",
             "reference",
             "total",
             "posting_date",
@@ -11493,6 +11527,35 @@
           "target": "customer",
           "label": "Customer",
           "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "project",
+          "type": "link",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "minimum": 1,
+          "maximum": null,
+          "target": "project",
+          "label": "Project",
+          "help_text": "One of this customer's projects.",
           "placeholder": "",
           "hidden": false,
           "read_only": false,
@@ -11742,6 +11805,18 @@
           "locked_when": null
         }
       ],
+      "behavior": {
+        "project": {
+          "filters": {
+            "customer": {
+              "$expr": "ref",
+              "args": [
+                "customer"
+              ]
+            }
+          }
+        }
+      },
       "naming": {
         "field": "name",
         "assign_on": "create",
@@ -12658,7 +12733,19 @@
       "attachment_limits": {
         "max_files": 10,
         "max_size": 1048576
-      }
+      },
+      "relations": [
+        {
+          "name": "invoice.project",
+          "label": "Invoices",
+          "model": "invoice",
+          "link": "project",
+          "limit": 10,
+          "order": [
+            "-id"
+          ]
+        }
+      ]
     },
     {
       "name": "projecttask",
