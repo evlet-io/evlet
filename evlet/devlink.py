@@ -50,22 +50,31 @@ def _choose(connection, username):
 def issue(database, user=None, *, create_admin=False, minutes=MINUTES):
     """Store the hash of a new single-use token for user and return (token, username).
 
-    create_admin=True adds the demo-admin administrator when the database has no accounts yet;
-    only the Playground asks for it. The token itself is never stored."""
-    from .auth import password_hash
+    create_admin adds an administrator when the database has no accounts yet: True names it demo-admin
+    (the Playground), a string names it (evlet dev: admin, or --user NAME). Its random password is never
+    shown. The token itself is never stored."""
+    from .auth import check_username, password_hash
+    from .models import ValidationError
     with database.transaction() as tx:
         connection = tx.connection
         ensure(connection)
         now = int(time.time())
         connection.execute('DELETE FROM evlet_dev_links WHERE expires<=?', (now,))
-        if create_admin and user is None and not connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone():
+        empty = not connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone()
+        if create_admin and empty and (user is None or isinstance(create_admin, str)):
+            name = create_admin if isinstance(create_admin, str) else DEMO_ADMIN
+            try:
+                check_username(name)
+            except ValidationError as exc:
+                raise ValueError(f'Cannot create the first admin: {exc.errors["username"]}') from None
             connection.execute("INSERT INTO evlet_users(username,password,role) VALUES (?,?,'admin')",
-                               (DEMO_ADMIN, password_hash(secrets.token_urlsafe(32))))
+                               (name.lower(), password_hash(secrets.token_urlsafe(32))))
             if database.columns(connection, 'evlet_audit'):
                 from .controls import audit
-                audit(connection, 'cli', 'Users', DEMO_ADMIN, 'Development administrator created for a sign-in link · Random password, never shown')
-        elif not connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone():
-            raise ValueError('This app has no users yet. Open it in a browser and create the first admin.')
+                audit(connection, 'cli', 'Users', name.lower(), 'Development administrator created by the development server · Random password, never shown')
+            user = name
+        elif empty:
+            raise ValueError('This app has no users yet. Start it with evlet dev to create the first admin, or open it in a browser.')
         account = _choose(connection, user)
         token = secrets.token_urlsafe(32)
         connection.execute('INSERT INTO evlet_dev_links(hash,user_id,expires) VALUES (?,?,?)', (_digest(token), account['id'], now + minutes * 60))
@@ -135,7 +144,13 @@ def sign_in(business, scope):
 def announce(application, user=None, *, create_admin=False):
     """Print a fresh link for a started development application; problems are printed, not raised."""
     try:
+        with application.database._connection() as connection:
+            empty = not connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone()
         token, username = issue(application.database, user, create_admin=create_admin)
+        if empty and create_admin:
+            print(f'No accounts yet. Created admin "{username}" (no password set). Sign in (works once, for {MINUTES} minutes):\n  '
+                  + link(local_origin(application.business.auth), token), flush=True)
+            return
         print(f'Sign in as {username} (works once, for {MINUTES} minutes):\n  {link(local_origin(application.business.auth), token)}', flush=True)
     except ValueError as exc:
         print(f'No sign-in link: {exc}', flush=True)
