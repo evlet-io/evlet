@@ -14,6 +14,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   heading shows no 0.
 - **Record tabs show their keyboard focus ring inside the tab**, so the scrolling tab strip no
   longer clips it.
+- **The note composer shows one focus ring.** The editor inside it no longer draws its own
+  border and ring, and the ring matches rich text form fields.
 
 ## 0.3.0 (05-11-2026)
 
