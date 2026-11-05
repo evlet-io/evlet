@@ -143,14 +143,21 @@ class Exporter:
             lines.append('        )')
         return '\n'.join(lines)
 
-    def layout(self, name, sections):
-        model = self.models[name]
+    def layout(self, name, value):
+        from .customization import sections_of, tabs_of
+        model, sections, (tabs, default_tab) = self.models[name], sections_of(value), tabs_of(value)
         children = []
         for index, section in enumerate(sections):
             fields = ', '.join(call('Field', (item['name'],), {'id': item['name'], **({'width': 12} if item['width'] == 12 else {})}) for item in section['fields'])
             children.append(f"    FormLayout(id={'main_details' if index == 0 else f'section_{index + 1}'!r}, title={section['title']!r}, children=[{fields}]),")
+            if section.get('collapsible'):
+                # FormLayout has no collapse options; Meta.layout carries them as Section(...).
+                children.append(f"    # Meta.layout: Section({section['title']!r}, ..., collapsed={section.get('collapsed', False)!r})")
+            if section.get('flow') == 'columns':
+                children.append(f"    # Meta.layout: Section({section['title']!r}, ..., flow='columns')")
+        notes = ''.join(f'# Meta.{key} = {value!r}\n' for key, value in (('tabs', tuple(tabs)), ('default_tab', default_tab)) if value)
         return (f'{self.folder(model)}/views/__init__.py',
-                f'{name.lower()}_form = FormView(model={name}, layout=Column(children=[\n' + '\n'.join(children) + '\n]))')
+                notes + f'{name.lower()}_form = FormView(model={name}, layout=Column(children=[\n' + '\n'.join(children) + '\n]))')
 
     def list_view(self, name, value):
         return (f'{self.folder(self.models[name])}/views/__init__.py',

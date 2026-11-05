@@ -11,6 +11,15 @@ from .query import OPERATORS
 ID = dict(ID_SCHEMA)
 
 
+# `_audit` of a record detail (evlet/audit.py): UTC times, and who as {"id", "name"} or null.
+_PERSON = {'anyOf': [{'type': 'object', 'properties': {'id': {'type': 'integer'}, 'name': {'type': 'string'}},
+                      'required': ['id', 'name'], 'additionalProperties': False}, {'type': 'null'}]}
+_TIME = {'anyOf': [{'type': 'string', 'format': 'date-time'}, {'type': 'null'}]}
+AUDIT = {'type': 'object', 'description': 'When and by whom the record was created and last changed. Who is null for the engine.',
+         'properties': {'created_at': _TIME, 'created_by': _PERSON, 'modified_at': _TIME, 'modified_by': _PERSON},
+         'required': ['created_at', 'created_by', 'modified_at', 'modified_by'], 'additionalProperties': False}
+
+
 def object_schema(properties, required=()):
     return {'type': 'object', 'properties': properties, 'required': list(required), 'additionalProperties': False}
 
@@ -116,6 +125,8 @@ class Discovery:
             fields.append({key: field[key] for key in keys if key in field})
             fields[-1]['read_only'] = field['read_only'] or not any(entry['permissions'][operation] for operation in ('create', 'update'))
         schemas = {'read': object_schema({'id': dict(ID), **{field['name']: value_schema(field, read=True) for field in entry['fields']}}, ('id',))}
+        if not entry['child_only']:
+            schemas['read']['properties']['_audit'] = AUDIT
         if not entry['child_only']:
             for operation in ('create', 'update'):
                 if entry['permissions'][operation]:

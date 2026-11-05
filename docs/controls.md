@@ -217,12 +217,24 @@ role in the API. Added options and defaults apply on every write path. `/api/sch
 show the merged values (`choices` lists the shown options and `retired_choices` the hidden ones);
 sections and labels of fields a role can't read are left out.
 
-**Form layout** (kind `layout`, key `Model`): `[{"title": ..., "fields": [{"name": ..., "width": 6 | 12}]}]`,
+**Form layout** (kind `layout`, key `Model`): `[{"title": ..., "fields": [{"name": ..., "width": 6 | 12}], "collapsible": true, "collapsed": false | true | "empty"}]`,
 1 to 12 sections, each with a title and at least one field, each field placed once. Fields placed nowhere, such as a field an
 app adds later or an instance field, go to the last section. Without a Controls layout the app file's rule holds: a declared
 `Meta.layout` leaves such fields to its Other group (added when the file layout has none), and the default Details group
 takes every field. Section ids stay positional (`main_details`, `section_2`, ...).
 The browser renders forms from this layout; `width: 12` makes a field full width.
+Each section has **Can collapse** (`collapsible`) and **Starts**: open (`collapsed: false`), closed (`true`)
+or closed when empty (`"empty"`), as `evlet.Section` has ([business-capabilities.md](business-capabilities.md#collapsible-sections)).
+Both are optional and kept only on sections that can collapse, so layouts saved before them still load, as
+sections that always show. A Starts value other than these, or Starts on a section that can't collapse, is refused.
+**Fields go** sets `"flow": "columns"` (down each column) on a section; across, then down (`rows`) is the default and
+is not stored. Fields and sections move by dragging their grip with a mouse or a finger, or from the keyboard: Space on a
+grip lifts it, the arrow keys move it (across section edges), Space drops it and Escape puts it back, each step
+announced to screen readers. The arrow buttons still work.
+**Record tabs** orders the record page's tabs the same way and chooses **Open records on**. A layout that sets them is
+saved as `{"sections": [...], "tabs": ["details", ...], "default_tab": "details" | null}`; without them it stays the
+plain list of sections. Tab names are the record's own tabs and the model's child tables (`tabs` in each model of
+`GET /api/_controls/state`). The export writes them as `Meta.tabs` and `Meta.default_tab` notes.
 
 **List view** (kind `list`, key `Model`): `{"columns": [...], "page_size": 25 | 50 | 100, "sort": "field" | "-field", "open_in": "page" | "panel"}`,
 1 to 8 columns. `/api/schema` drops the columns a role can't read and gives `page_size`, `order_by` and `open_in`.

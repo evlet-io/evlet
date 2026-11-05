@@ -61,6 +61,12 @@ export function stopAll() {
 export const until = (check: () => void, timeout = 2000) => vi.waitFor(check, { timeout, interval: 5 });
 
 export const text = (node: Element | null | undefined) => (node?.textContent ?? '').replace(/\s+/g, ' ').trim();
+/** An activity entry's heading without its time (a RelativeTime, which reads differently as the clock moves). */
+export const headText = (node: Element | null | undefined) => {
+  const copy = node?.cloneNode(true) as Element | undefined;
+  copy?.querySelectorAll('time').forEach(time => time.remove());
+  return text(copy);
+};
 export const lastToast = () => text([...document.querySelectorAll('.toast')].pop());
 export const requests = (sent: Sent[], method: string, pattern: RegExp) => sent.filter(item => item.method === method && pattern.test(item.url));
 export const byText = <T extends Element = HTMLElement>(root: ParentNode, selector: string, wanted: string | RegExp) =>

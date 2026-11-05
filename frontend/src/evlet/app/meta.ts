@@ -67,7 +67,12 @@ export interface DetailExtras {
   _effects?: Array<{ target: string; rows: number; reversals: number; balanced?: boolean }>;
   revised_by?: number | null;
   _original?: number;
+  /** When and by whom the record was created and last changed (UTC). Who is null for the engine and for portal roles. */
+  _audit?: RecordAudit;
 }
+
+export interface AuditPerson { id: number; name: string }
+export interface RecordAudit { created_at: string | null; created_by: AuditPerson | null; modified_at: string | null; modified_by: AuditPerson | null }
 
 export const screenModel = (index: SchemaIndex, name: string) => index.model(name) as unknown as ScreenModel;
 export const extrasOf = (data: RecordData | null | undefined): DetailExtras => (data ?? {}) as DetailExtras;
@@ -125,14 +130,14 @@ export function keyFields(model: ScreenModel): FieldSchema[] {
 }
 
 /** Details sections: Meta.layout, or one section with every visible field. Unknown names (not readable) drop out. */
-export function sections(model: ScreenModel): Array<{ label: string; fields: FieldSchema[] }> {
+export function sections(model: ScreenModel): Array<{ label: string; fields: FieldSchema[]; collapsible?: boolean; collapsed?: boolean | 'empty'; flow?: 'rows' | 'columns' }> {
   const layout = model.layout?.length ? model.layout : [{ label: 'Details', fields: visible(model).map(field => field.name) }];
   const seen = new Set<string>();
-  const result = layout.map(section => ({ label: section.label, fields: section.fields.map(name => fieldOf(model, name))
+  const result = layout.map(section => ({ label: section.label, collapsible: section.collapsible, collapsed: section.collapsed, flow: section.flow, fields: section.fields.map(name => fieldOf(model, name))
     .filter((field): field is FieldSchema => Boolean(field && !field.hidden && !seen.has(field.name) && seen.add(field.name))) }));
   // Readable fields the layout leaves out still show, last.
   const rest = visible(model).filter(field => !seen.has(field.name));
-  if (rest.length) result.push({ label: 'Other', fields: rest });
+  if (rest.length) result.push({ label: 'Other', collapsible: false, collapsed: false, flow: 'rows', fields: rest });
   return result.filter(section => section.fields.length);
 }
 
@@ -169,3 +174,19 @@ export function measureText(index: SchemaIndex, model: ScreenModel, measure: Mea
 }
 
 export const measureLabel = (measure: MeasureSchema) => measure.name.replace(/_/g, ' ').replace(/^./, char => char.toUpperCase());
+
+/** The record page tab id of a Meta.tabs name: a record tab keeps its name, a Table field's tab is t-<name>. */
+const tabId = (name: string) => ['activity', 'details', 'revisions', 'related', 'postings'].includes(name) ? name : `t-${name}`;
+
+/**
+ * Record page tabs in the model's order (Meta.tabs or the Controls tab order): the tabs it names first,
+ * the rest after them in their usual order. Also the tab a record opens on: its default_tab when the
+ * record has that tab, else the first.
+ */
+export function orderTabs<T extends { id: string }>(model: ScreenModel, items: T[]): { tabs: T[]; home: string } {
+  const order = (model.tabs ?? []).map(tabId);
+  const rank = (item: T) => { const at = order.indexOf(item.id); return at < 0 ? order.length : at; };
+  const tabs = items.map((item, index) => ({ item, index })).sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index).map(entry => entry.item);
+  const wanted = model.default_tab ? tabId(model.default_tab) : null;
+  return { tabs, home: tabs.some(tab => tab.id === wanted) ? wanted! : tabs[0]?.id ?? 'details' };
+}

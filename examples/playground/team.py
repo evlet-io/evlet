@@ -7,6 +7,9 @@ From the checkout, after the Playground database exists:
 Sign in as manager, member or outsider with the password you type. The manager sees themselves and
 everyone below them in Employees, the member sees themselves and their report, the outsider only
 themselves. Admins and editors (HR) see everyone.
+
+Each employee's Record info shows when it was created and last changed. The demo writes as a system
+user, so Created names no one; change a record as HR and Last modified names you.
 """
 
 import getpass
