@@ -202,9 +202,9 @@ function Shell(ctx: ControlsContext): HTMLElement {
   };
   const s = state.peek();
   const side = html`<aside class="ctl-side" class:open=${open} aria-label="Controls navigation">
-    <div class="ctl-brand">${Lockup()}<small>Controls</small></div>
-    <div class="ctl-ws"><span class="ctl-ws-letter">${(s.instance.name || 'E').slice(0, 1).toUpperCase()}</span>
-      <span><strong>${s.instance.name}</strong><small>${s.instance.host}</small></span></div>
+    <div class="ctl-side-head"><div class="ctl-brand">${Lockup()}<small>Controls</small></div>
+      <div class="ctl-ws"><span class="ctl-ws-letter">${(s.instance.name || 'E').slice(0, 1).toUpperCase()}</span>
+        <span><strong>${s.instance.name}</strong><small>${s.instance.host}</small></span></div></div>
     <nav class="ctl-nav">${NAV.map(([group, items]) => [group ? html`<div class="ctl-nav-label">${group}</div>` : null,
       items.map(([id, label, icon]) => html`<a class="ctl-nav-item" class:on=${() => route.get() === id} aria-current=${() => route.get() === id ? 'page' : null}
         href=${router.href(id, {})} on:click=${() => open.set(false)}>${Icon(icon, { size: 'sm' })}<span>${label}</span>

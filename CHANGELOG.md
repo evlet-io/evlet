@@ -31,6 +31,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   bar, grouped by day, that closes on a click anywhere else or Esc. A click on an item marks it
   read; Go to opens its record when the person can open it. New items slide in as popups at the
   top right while the panel is closed.
+- **Only the Controls nav list scrolls.** The brand and workspace at the top of the Controls
+  sidebar and the account card at the bottom stay in place, like the app sidebar, also in the
+  phone drawer.
 - **Recent records moved from the sidebar to a history button left of search.** It lists them
   newest first with the model and when each was opened, and has a Clear action.
 
