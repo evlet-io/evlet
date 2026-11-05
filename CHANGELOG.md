@@ -213,6 +213,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   files, internal docs or the browser test fixtures. It keeps what building and
   installing Evlet needs, including the browser interface source.
 
+### Fixes
+
+- The record state bar no longer stacks vertically: the time picker's spinner had reused its `.stepper` class and now uses `.time-stepper`.
+
 ## 0.2.0 (02-11-2026)
 
 This release replaces the browser interface with Evlet's own UI framework, adds the

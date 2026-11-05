@@ -1066,12 +1066,12 @@ th:hover>.rz::after{background:var(--border-strong)}
 .pick-time{display:flex;align-items:center;justify-content:center;gap:10px;color:var(--fg-3);border-top:1px solid var(--divider);padding-top:8px}
 .time-steppers{display:flex;align-items:center;justify-content:center;gap:6px}
 .time-steppers .colon{font-weight:600;color:var(--fg-3);padding-bottom:16px}
-.stepper{display:flex;flex-direction:column;align-items:center;gap:1px}
-.stepper .icon-btn{width:34px;height:22px}
-.stepper .flip{transform:rotate(180deg)}
-.stepper-v{min-width:2.4ch;padding:3px 6px;border-radius:var(--r-sm);text-align:center;font-size:18px;font-weight:600;color:var(--fg);outline:none}
-.stepper-v:focus-visible{box-shadow:0 0 0 2px var(--accent-ring);background:var(--accent-soft)}
-.stepper-l{font-size:10.5px;color:var(--fg-3);font-weight:550;text-transform:uppercase;letter-spacing:.03em}
+.time-stepper{display:flex;flex-direction:column;align-items:center;gap:1px}
+.time-stepper .icon-btn{width:34px;height:22px}
+.time-stepper .flip{transform:rotate(180deg)}
+.time-stepper-v{min-width:2.4ch;padding:3px 6px;border-radius:var(--r-sm);text-align:center;font-size:18px;font-weight:600;color:var(--fg);outline:none}
+.time-stepper-v:focus-visible{box-shadow:0 0 0 2px var(--accent-ring);background:var(--accent-soft)}
+.time-stepper-l{font-size:10.5px;color:var(--fg-3);font-weight:550;text-transform:uppercase;letter-spacing:.03em}
 .pick-chips{display:flex;flex-wrap:wrap;gap:5px;justify-content:center}
 .pick-chips .chip{height:24px;padding:0 8px;cursor:pointer}
 .pick-chips .chip:hover{background:var(--bg-subtle);color:var(--fg)}
