@@ -4,6 +4,13 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Added
+
+- **Files can be removed from a record.** Each file in the Files block has a remove button,
+  shown to roles that can upload. It asks first, and a locked record shows none.
+
 ## 0.3.0 (05-11-2026)
 
 This release adds rich text with images and mentions, unsaved changes that survive leaving a

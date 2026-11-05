@@ -74,6 +74,8 @@ describe('records in a side panel beside the list', () => {
     click(byText(panel(host)!, '[role="tab"]', 'Details'));
     await until(() => expect(byText(panel(host)!, '.side-sec h4', /^Record info/)).not.toBeNull());
     expect(byText(panel(host)!, '.side-sec h4', /^Key fields/)).toBeNull();
+    // The draft's files in the panel offer the same remove as the full page.
+    await until(() => expect(panel(host)!.querySelector('.ev-file-remove')).not.toBeNull());
     expect(panel(host)!.getAttribute('aria-label')).toBe('Invoice Draft invoice');
     expect(text(host.querySelector('.ev-list-split .ev-sr'))).toBe('Opened Invoice Draft invoice');
     // The divider is a separator a keyboard can move.
