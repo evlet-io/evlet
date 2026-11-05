@@ -185,7 +185,8 @@ def test_upgrade_adds_and_fills_the_columns_from_the_journal_and_the_id(tmp_path
         # A database from before this release: no time columns, a legacy id, a time-ordered id, and one with a journal.
         for column in audit.COLUMNS:
             connection.execute(f'ALTER TABLE note DROP COLUMN {column}')
-        connection.execute("DELETE FROM evlet_framework_migrations WHERE name='0004_record_times'")
+        # Roll the framework ledger back to before 0004, so the later steps run again too.
+        connection.execute("DELETE FROM evlet_framework_migrations WHERE position >= (SELECT position FROM evlet_framework_migrations WHERE name='0004_record_times')")
         connection.execute("INSERT INTO note (id, title) VALUES (42, 'Legacy')")
         connection.execute("INSERT INTO note (id, title) VALUES (?, 'Recent')", (recent,))
         connection.execute("INSERT INTO note (id, title) VALUES (?, 'Journaled')", (recent + 1,))
@@ -198,7 +199,7 @@ def test_upgrade_adds_and_fills_the_columns_from_the_journal_and_the_id(tmp_path
                                (recent + 1, kind, actor, at))
     database = Database(path, Registry(Note))
     database.initialize()  # A table without the time columns is accepted until the framework step runs.
-    assert upgrade(database) == ['0004_record_times']
+    assert upgrade(database) == ['0004_record_times', '0005_unsaved_changes']
     with sqlite3.connect(path) as connection:
         rows = {row[0]: row[1:] for row in connection.execute(f'SELECT id, {", ".join(audit.COLUMNS)} FROM note')}
     assert rows[42] == (None, None, None, None)
@@ -251,10 +252,11 @@ def test_postgresql_records_times_and_backfills_them(pg_dsn, clock):
     with app.database.transaction() as tx:
         for column in audit.COLUMNS:
             tx.connection.execute(f'ALTER TABLE note DROP COLUMN {column}')
-        tx.connection.execute("DELETE FROM evlet_framework_migrations WHERE name='0004_record_times'")
+        tx.connection.execute("DELETE FROM evlet_framework_migrations WHERE position >= "
+                              "(SELECT position FROM evlet_framework_migrations WHERE name='0004_record_times')")
         tx.connection.execute("INSERT INTO evlet_journal (model, record_id, kind, actor, at, data) VALUES ('note', ?, 'created', '2', "
                               "'2026-10-01T10:00:00.000Z', '{}')", (RecordId(note['id']),))
     app.database.initialize()
-    assert upgrade(app.database) == ['0004_record_times']
+    assert upgrade(app.database) == ['0004_record_times', '0005_unsaved_changes']
     assert stamps(app, 'note', note['id']) == ('2026-10-01T10:00:00.000Z', 2, '2026-10-01T10:00:00.000Z', 2)
     assert upgrade(app.database) == []
