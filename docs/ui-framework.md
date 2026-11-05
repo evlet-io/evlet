@@ -780,7 +780,7 @@ a title opens the full page in a new browser tab.
 | `Meta.status`, `Select(colors=...)` | A status badge in the record header and the same badge in the list column; never a button unless it is the State with moves to offer |
 | `Meta.key_fields` (Phase 10) | Header facts, the summary strip and the Key fields side block (without it: the first fields) |
 | `Meta.relations` (Phase 10) | The Related tab and side block. A relation named after its model counts in that model's words ("Payments, 1 payment"), any other name counts records; an empty relation is one line in the tab, with no table or 0 |
-| `attachments` | The Files side block, with upload for roles that can update while the record is not locked |
+| `attachments` | The Files side block, with upload and a remove button on each file (asks first) for roles that can update while the record is not locked |
 | `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
 | Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
 | Every record (`_audit`) | Created and Last modified in the Record info side block, as relative times with who ([Relative times](#relative-times)) |

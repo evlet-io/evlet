@@ -6,6 +6,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Added
+
+- **Files can be removed from a record.** Each file in the Files block has a remove button,
+  shown to roles that can upload. It asks first, and a locked record shows none.
+
 ### Changed
 
 - **Related counts use the model's words.** In the side block, a relation named after its model

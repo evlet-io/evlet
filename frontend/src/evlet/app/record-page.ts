@@ -815,10 +815,10 @@ export function openPrint(ctx: AppContext, model: ScreenModel, id: string, title
 function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
   const files = cell<Array<{ id: number; name: string; size: number }> | null>(null);
   const problem = cell('');
-  const load = () => void ctx.api.attachments(model.name, store.id!).then(items => files.set(items), error => problem.set(error instanceof ApiError ? error.message : 'Files could not be loaded.'));
+  const load = () => ctx.api.attachments(model.name, store.id!).then(items => { files.set(items); }, error => { problem.set(error instanceof ApiError ? error.message : 'Files could not be loaded.'); });
   load();
   // A filed print copy is a new attachment of this record.
-  const changed = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.model === model.name && detail?.id === store.id) load(); };
+  const changed = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.model === model.name && detail?.id === store.id) void load(); };
   window.addEventListener('evlet-files-changed', changed);
   onCleanup(() => window.removeEventListener('evlet-files-changed', changed));
   const canWrite = model.api !== 'read' && model.permissions?.update !== false;
@@ -834,16 +834,39 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
     const reader = new FileReader();
     reader.onload = () => {
       const content = String(reader.result).split(',')[1] ?? '';
-      ctx.api.upload(model.name, store.id!, file.name, content).then(() => { toast(`${file.name} attached`, { icon: 'paperclip' }); load(); },
+      ctx.api.upload(model.name, store.id!, file.name, content).then(() => { toast(`${file.name} attached`, { icon: 'paperclip' }); void load(); },
         error => toast(error instanceof ApiError ? `Not attached: ${error.fields.attachment ?? error.message}` : 'Not attached.', { icon: 'info' }));
     };
     reader.readAsDataURL(file);
   };
-  return html`<div class="ev-files">
+  const box = html`<div class="ev-files" tabindex="-1">
     ${() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : files.get() === null ? html`<p class="muted">Loading…</p>` : files.get()!.length === 0
-      ? html`<p class="muted">No files yet.</p>` : html`<div class="files">${files.get()!.map(file => html`<div class="file">${Icon('paperclip', { size: 'sm', className: 'muted' })}
-        <div style="flex:1;min-width:0"><a class="link" rel="external" href=${ctx.api.url(`/api/${model.name}/${store.id}/attachments/${file.id}`)}>${file.name}</a><div class="muted" style="font-size:12px">${size(file.size)}</div></div></div>`)}</div>`}
-    ${canWrite ? when(() => !locked(), () => html`<label class="btn sm ev-upload">${Icon('upload', { size: 'sm', className: 'tint' })}Attach a file<input type="file" hidden on:change=${upload}></label>`) : null}</div>`;
+      ? html`<p class="muted">No files yet.</p>` : html`<div class="files">${files.get()!.map((file, index) => html`<div class="file">${Icon('paperclip', { size: 'sm', className: 'muted' })}
+        <div style="flex:1;min-width:0"><a class="link" rel="external" href=${ctx.api.url(`/api/${model.name}/${store.id}/attachments/${file.id}`)}>${file.name}</a><div class="muted" style="font-size:12px">${size(file.size)}</div></div>
+        ${canWrite ? when(() => !locked(), () => removeButton(file, index)) : null}</div>`)}</div>`}
+    ${canWrite ? when(() => !locked(), () => html`<label class="btn sm ev-upload">${Icon('upload', { size: 'sm', className: 'tint' })}Attach a file<input type="file" hidden on:change=${upload}></label>`) : null}</div>` as HTMLElement;
+  // After a removal, focus moves to the remove button now in the same place, else the one before it, else the block.
+  const refocus = (index: number) => {
+    const buttons = [...box.querySelectorAll<HTMLButtonElement>('.ev-file-remove')];
+    (buttons[Math.min(index, buttons.length - 1)] ?? box).focus();
+  };
+  const remove = (file: { id: number; name: string }, index: number) => openModal({ title: `Remove ${file.name}?`, icon: 'trash-2', tint: 'rose', narrow: true,
+    body: () => html`<p>This can’t be undone.</p>`,
+    footer: close => DialogFooter({ cancel: close, submit: { label: 'Remove', variant: 'danger', icon: 'trash-2', onClick: async () => {
+      try {
+        await ctx.api.removeAttachment(model.name, store.id!, file.id);
+        close();
+        toast(`${file.name} removed`, { icon: 'trash-2' });
+        await load();
+        refocus(index);
+      } catch (error) { close(); toast(error instanceof ApiError ? `Not removed: ${error.fields.attachment ?? error.message}` : 'Not removed.', { icon: 'info' }); }
+    } } }) });
+  const removeButton = (file: { id: number; name: string }, index: number) => {
+    const button = IconButton({ icon: 'trash-2', tip: `Remove ${file.name}`, size: 'small', onClick: () => remove(file, index) });
+    button.classList.add('ev-file-remove');
+    return button;
+  };
+  return box;
 }
 
 // ---------- related ----------
