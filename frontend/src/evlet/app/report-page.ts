@@ -18,7 +18,7 @@ import { fieldFor, localField } from '../ui/fields';
 import { humanize } from '../ui/kinds';
 import { copyText, DialogFooter, openDrawer, openModal, openPopover, toast } from '../ui/layers';
 import { PageHeader, Toolbar } from '../ui/list';
-import { DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
+import { ColumnsMenu, DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import type { ReportPage as Page } from './client';
 import type { AppContext } from './context';
 
@@ -351,12 +351,13 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
     totalsLabel: () => result.get()?.totals?.scope === 'page' && (result.get()?.total ?? 0) > dataRows.get().length ? 'Total, this page' : 'Total',
     empty: () => EmptyState({ icon: 'search', tint: 'slate', title: 'No rows match', text: 'Try different filters.' }) });
 
-  const chooser = (anchor: HTMLElement) => openPopover(anchor, () => html`<div class="ev-columns" role="group" aria-label="Columns">
-    ${report.columns.map((column, index) => Checkbox({ label: columnLabel(column), disabled: index === 0,
-      checked: () => !tablePrefs.get().hidden.includes(column.name),
-      onChange: on => { const now = tablePrefs.peek(); tablePrefs.set({ ...now, hidden: on ? now.hidden.filter(key => key !== column.name) : [...now.hidden, column.name] }); } }))}
-    ${report.chart ? html`<hr>${Checkbox({ label: 'Chart', checked: chartOn, onChange: on => chartOn.set(on) })}` : null}
-    <p class="muted">Kept for you on this device. Drag a header to move a column.</p></div>`, { label: 'Columns', role: 'dialog' });
+  // The same Columns menu as a record's lines: order, show or hide, and pin columns on the left.
+  const chooser = (anchor: HTMLElement) => openPopover(anchor, () => html`<div class="ev-columns">${ColumnsMenu({ columns, prefs: tablePrefs, pinned: 1,
+    widthOf: key => tablePrefs.peek().widths[key] ?? columns.find(column => column.key === key)?.width ?? 160,
+    viewWidth: () => anchor.closest('.page')?.querySelector<HTMLElement>('.table-wrap')?.clientWidth ?? 0,
+    note: 'Kept for you on this device. Drag a grip, or a header, to move a column.',
+    extra: report.chart ? html`<hr>${Checkbox({ label: 'Chart', checked: chartOn, onChange: on => chartOn.set(on) })}` : null })}</div>`,
+  { label: 'Columns', role: 'dialog', className: 'cols-pop' });
 
   const pages = derive(() => Math.max(1, Math.ceil((result.get()?.total ?? 0) / PAGE)));
   const pager = html`<nav class="ev-pager" aria-label="Pages" hidden=${() => (result.get()?.total ?? 0) <= PAGE}>

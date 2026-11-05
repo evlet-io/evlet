@@ -4,15 +4,18 @@
 // Column widths and order live in a prefs cell the caller saves per user.
 
 import { each, html, type Child } from '../dom';
-import { cell, derive, effect, onCleanup, untrack, type Cell, type Derive, type Readable } from '../reactive';
+import { cell, derive, effect, getOwner, onCleanup, runWithOwner, untrack, type Cell, type Derive, type Readable } from '../reactive';
 import { compare as compareNumbers, parse as parseNumber } from '../model/finite';
 import { Checkbox, Icon } from './base';
-import { read, type Prop } from './core';
+import { read, uid, type Prop } from './core';
 
 // ---------- shared by DataTable and ChildTable ----------
 
-/** Per-user column preferences: widths, order and hidden columns. */
-export interface TablePrefs { widths: Record<string, number>; order: string[]; hidden: string[] }
+/**
+ * Per-user column preferences: widths, order and hidden columns, and how many columns at the start
+ * of the order are pinned. Prefs saved before `pinned` existed keep the table's default.
+ */
+export interface TablePrefs { widths: Record<string, number>; order: string[]; hidden: string[]; pinned?: number }
 export const emptyPrefs = (): TablePrefs => ({ widths: {}, order: [], hidden: [] });
 
 /** Columns in the user's order (new columns keep their place at the end), without hidden ones. */
@@ -112,6 +115,210 @@ export function moveColumn(prefs: Cell<TablePrefs>, all: string[], key: string, 
   prefs.set({ ...prefs.peek(), order });
 }
 
+// ---------- pinned columns ----------
+
+/** How many columns at the start of the full order are pinned: the saved count, else the table's
+ * default, always leaving at least one column to scroll. */
+export const pinnedCount = (prefs: TablePrefs, all: string[], fallback: number) =>
+  Math.max(0, Math.min(prefs.pinned ?? fallback, all.length - 1));
+
+/** The keys of the pinned columns, hidden ones included. */
+export const pinnedKeys = (prefs: TablePrefs, all: string[], fallback: number) =>
+  new Set(fullOrder(prefs, all).slice(0, pinnedCount(prefs, all, fallback)));
+
+export type PinAt = { left: number; last: boolean };
+
+/**
+ * Left offsets of the pinned columns among those shown, by key, starting after `start` pixels
+ * (a checkbox or row control column), and a per-key reader that changes only when that column's
+ * own offset does, so a cell binds once to its pinned state.
+ */
+export function pinTracker<C extends { key: string }>(shown: () => C[], pinned: () => Set<string>, widthOf: (column: C) => number, start: () => number) {
+  const pins = derive(() => {
+    const map = new Map<string, PinAt>(), keys = pinned(), list = shown().filter(column => keys.has(column.key));
+    let left = start();
+    list.forEach((column, index) => { map.set(column.key, { left, last: index === list.length - 1 }); left += widthOf(column); });
+    return map;
+  });
+  // The readers belong to the table, not to the first cell that asks, so a rebuilt cell can't end them.
+  const cache = new Map<string, Derive<PinAt | null>>(), home = getOwner();
+  const pin = (key: string) => {
+    let item = cache.get(key);
+    if (!item) cache.set(key, item = runWithOwner(home, () => derive(() => pins.get().get(key) ?? null, { equals: (a, b) => a === b || (Boolean(a) && Boolean(b) && a!.left === b!.left && a!.last === b!.last) })));
+    return item;
+  };
+  return { pins, pin };
+}
+
+// ---------- the Columns menu ----------
+
+export interface ColumnsMenuProps {
+  columns: Array<{ key: string; label: string }>;
+  prefs: Cell<TablePrefs>;
+  /** Pinned columns when the prefs say nothing (the table's default). */
+  pinned: number;
+  /** A column's width and the table's visible width, to warn when pinned columns crowd the table. */
+  widthOf?: (key: string) => number;
+  viewWidth?: () => number;
+  /** More choices under the columns, such as a chart switch. */
+  extra?: Child;
+  note?: string;
+}
+
+const EDGE = '\u0000pinned';
+
+/**
+ * Columns menu shared by the tables: show or hide each column, drag its grip to reorder (mouse,
+ * touch, or the keyboard: Space lifts, arrows move, Space or Enter drops, Esc cancels), and a
+ * pinned range at the top whose edge can be dragged too. A pin button is the way without
+ * dragging. At least one column stays shown and one stays unpinned.
+ */
+export function ColumnsMenu(props: ColumnsMenuProps): HTMLElement {
+  const all = props.columns.map(column => column.key);
+  const labels = new Map(props.columns.map(column => [column.key, column.label]));
+  const { prefs } = props;
+  const count = () => pinnedCount(prefs.get(), all, props.pinned);
+  const entries = derive(() => { const order = fullOrder(prefs.get(), all), n = count(); return [...order.slice(0, n), EDGE, ...order.slice(n)]; });
+  const said = cell(''), hintId = uid('cm');
+  let refused = '';
+  const shownCount = () => all.filter(key => !prefs.get().hidden.includes(key)).length;
+  const say = (text: string) => { said.set(''); queueMicrotask(() => said.set(text)); };
+  const describe = (key: string) => {
+    const list = entries.peek(), n = list.indexOf(EDGE);
+    if (key === EDGE) return n === 0 ? 'No columns pinned' : `Pinned range, ${n} ${n === 1 ? 'column' : 'columns'}`;
+    const at = list.filter(item => item !== EDGE).indexOf(key);
+    return `${labels.get(key)}, position ${at + 1} of ${all.length}, ${list.indexOf(key) < n ? 'pinned' : 'not pinned'}`;
+  };
+  // Writes a new order of entries (columns and the pinned edge) to the prefs, if it keeps a column unpinned.
+  const write = (list: string[]) => {
+    const n = list.indexOf(EDGE);
+    if (n > all.length - 1) { refused = 'Keep at least one column unpinned.'; say(refused); return false; }
+    prefs.set({ ...prefs.peek(), order: list.filter(item => item !== EDGE), pinned: n });
+    return true;
+  };
+  const moveTo = (key: string, to: number) => {
+    const list = entries.peek().filter(item => item !== key);
+    to = Math.max(0, Math.min(list.length, to));
+    if (entries.peek().indexOf(key) === to) return false;
+    list.splice(to, 0, key);
+    return write(list);
+  };
+  const grip = (key: string) => () => listEl.querySelector<HTMLElement>(`[data-entry="${key === EDGE ? 'edge' : CSS.escape(key)}"] .col-grip`);
+  const refocus = (key: string) => queueMicrotask(() => grip(key)()?.focus());
+  const togglePin = (key: string) => {
+    const list = entries.peek().filter(item => item !== key), n = entries.peek().indexOf(EDGE), pinnedNow = entries.peek().indexOf(key) < n;
+    // Pinning adds to the end of the pinned range; unpinning starts the rest.
+    list.splice(list.indexOf(EDGE) + (pinnedNow ? 1 : 0), 0, key);
+    if (write(list)) say(describe(key));
+  };
+
+  // ---------- dragging ----------
+
+  let lifted: { key: string; before: TablePrefs; pointer: boolean } | null = null;
+  const dragging = cell<string | null>(null);
+  const finish = (keep: boolean) => {
+    if (!lifted) return;
+    const { key, before } = lifted;
+    lifted = null;
+    dragging.set(null);
+    window.removeEventListener('keydown', escape, true);
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onCancel);
+    if (!keep) prefs.set(before);
+    say(keep ? `${refused ? `${refused} ` : ''}${describe(key)}. Dropped.` : `Move cancelled. ${describe(key)}`);
+  };
+  // Esc while a column is lifted cancels the move, before the popover sees it.
+  const escape = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !lifted) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const key = lifted.key;
+    finish(false);
+    refocus(key);
+  };
+  const lift = (key: string, pointer: boolean) => {
+    lifted = { key, before: prefs.peek(), pointer };
+    refused = '';
+    dragging.set(key);
+    window.addEventListener('keydown', escape, true);
+    say(`${describe(key)}. Lifted. ${pointer ? '' : 'Use the arrow keys to move, Space to drop, Escape to cancel.'}`.trim());
+  };
+  // The entry under the pointer: the number of other rows whose middle is above it.
+  const onMove = (event: PointerEvent) => {
+    if (!lifted) return;
+    const rows = [...listEl.querySelectorAll<HTMLElement>('[data-entry]')].filter(row => row.dataset.entry !== (lifted!.key === EDGE ? 'edge' : lifted!.key));
+    const to = rows.filter(row => { const box = row.getBoundingClientRect(); return box.top + box.height / 2 < event.clientY; }).length;
+    moveTo(lifted.key, to);
+  };
+  const onUp = () => finish(true);
+  const onCancel = () => finish(false);
+  const startPointer = (key: string) => (event: PointerEvent) => {
+    if (event.button !== 0 || lifted) return;
+    event.preventDefault();
+    lift(key, true);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onCancel);
+  };
+  const gripKeys = (key: string) => (event: KeyboardEvent) => {
+    if (!lifted) {
+      if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); lift(key, false); }
+      return;
+    }
+    if (lifted.key !== key) return;
+    const at = entries.peek().indexOf(key), last = entries.peek().length - 1;
+    const to = ({ ArrowUp: at - 1, ArrowDown: at + 1, Home: 0, End: last } as Record<string, number>)[event.key];
+    if (to !== undefined) {
+      event.preventDefault();
+      if (moveTo(key, to)) say(describe(key));
+      refocus(key);
+    } else if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); finish(true); refocus(key); }
+    else if (event.key === 'Tab') finish(true);
+  };
+  const gripButton = (key: string, label: string) => html`<button type="button" class="col-grip" aria-label=${label} aria-describedby=${hintId}
+    aria-pressed=${() => String(dragging.get() === key)} on:pointerdown=${startPointer(key)} on:keydown=${gripKeys(key)}
+    on:blur=${() => { if (lifted?.key === key && !lifted.pointer) finish(true); }}>${Icon('grip-vertical', { size: 'sm' })}</button>`;
+
+  // ---------- rows ----------
+
+  const row = (item: () => string) => {
+    const key = item();
+    if (key === EDGE) return html`<div class="col-edge" role="listitem" data-entry="edge" class:lift=${() => dragging.get() === EDGE}>
+      ${gripButton(EDGE, 'Move the end of the pinned columns')}<span class="col-line" aria-hidden="true"></span>
+      <span class="muted">${() => count() === 0 ? 'Nothing pinned. Drag a column above this line.' : 'Below this line, columns scroll'}</span></div>`;
+    const label = labels.get(key)!;
+    const hidden = () => prefs.get().hidden.includes(key);
+    const pinnedNow = () => entries.get().indexOf(key) < entries.get().indexOf(EDGE);
+    const lastShown = () => !hidden() && shownCount() <= 1;
+    const lastUnpinned = () => !pinnedNow() && count() >= all.length - 1;
+    return html`<div class="col-row" role="listitem" data-entry=${key} class:hid=${hidden} class:pinned=${pinnedNow} class:lift=${() => dragging.get() === key}>
+      ${gripButton(key, `Move ${label}`)}
+      <span class="lbl">${label}</span>
+      <button type="button" class="col-pin" aria-pressed=${() => String(pinnedNow())} disabled=${lastUnpinned}
+        aria-label=${() => pinnedNow() ? `Unpin ${label}` : lastUnpinned() ? `${label} stays unpinned` : `Pin ${label}`}
+        on:click=${() => togglePin(key)}>${Icon('pin', { size: 'sm' })}</button>
+      <button type="button" class="col-eye" disabled=${lastShown} aria-pressed=${() => String(!hidden())}
+        aria-label=${() => lastShown() ? `${label} stays shown` : `${hidden() ? 'Show' : 'Hide'} ${label}`}
+        on:click=${() => { const now = prefs.peek(); prefs.set({ ...now, hidden: hidden() ? now.hidden.filter(item => item !== key) : [...now.hidden, key] }); }}>${() => Icon(hidden() ? 'eye-off' : 'eye', { size: 'sm' })}</button></div>`;
+  };
+  const crowded = () => {
+    if (!props.widthOf || !props.viewWidth) return false;
+    const view = props.viewWidth(), keys = entries.get().slice(0, count()).filter(key => !prefs.get().hidden.includes(key));
+    return view > 0 && keys.reduce((sum, key) => sum + props.widthOf!(key), 0) > view * 0.6;
+  };
+  const listEl = html`<div class="col-list" role="list" aria-label="Columns in order">${each(entries, key => key, row)}</div>` as HTMLElement;
+  const menu = html`<div class="cols-menu">
+    <div class="mh">Pinned · saved for you</div>${listEl}
+    ${() => crowded() ? html`<p class="col-warn" role="status">${Icon('info', { size: 'xs' })}Pinned columns take most of the table's width, so little is left to scroll.</p>` : null}
+    <p class="muted col-hint" id=${hintId}>${props.note ?? 'Drag a grip to move a column, or focus it and press Space, then the arrow keys.'}</p>
+    <div class="col-said" aria-live="polite" role="status">${said}</div>
+    ${props.extra ?? null}
+    <hr><button type="button" class="mi" on:click=${() => prefs.set(emptyPrefs())}>${Icon('rotate-ccw', { size: 'sm' })}<span>Reset columns</span></button></div>` as HTMLElement;
+  onCleanup(() => finish(false));
+  return menu;
+}
+
 /** Compare two cell values for sorting: exact for numbers, natural for text, empty last. */
 const isBlank = (value: unknown) => value === null || value === undefined || value === '';
 export function compareValues(a: unknown, b: unknown): number {
@@ -146,7 +353,7 @@ export interface DataTableProps<T> {
   key: (row: T) => string | number;
   /** Accessible name of the table. */
   label: string;
-  /** Data columns pinned while scrolling sideways (default 1). */
+  /** Data columns pinned while scrolling sideways when the prefs don't say (default 1). */
   pinned?: number;
   selectable?: boolean;
   selection?: Cell<Set<string | number>>;
@@ -195,16 +402,12 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
       return flip * compareValues(x, y);
     });
   }, { name: `${props.label} (rows)` });
-  // Left offsets of pinned columns, by key.
-  const pins: Derive<Map<string, { left: number; last: boolean }>> = derive(() => {
-    const map = new Map<string, { left: number; last: boolean }>();
-    let left = props.selectable ? CHECK_WIDTH : 0;
-    columns.get().slice(0, pinned).forEach((column, index) => { map.set(column.key, { left, last: index === pinned - 1 }); left += widthOf(column); });
-    return map;
-  });
-  const pinOf = (key: string) => derive(() => pins.get().get(key) ?? null, { equals: (a, b) => a === b || (Boolean(a) && Boolean(b) && a!.left === b!.left && a!.last === b!.last) });
-  const pinCache = new Map<string, Derive<{ left: number; last: boolean } | null>>();
-  const pin = (key: string) => { let item = pinCache.get(key); if (!item) pinCache.set(key, item = pinOf(key)); return item; };
+  // Pinned columns (the prefs' range, else the first `pinned`) and their left offsets.
+  const allKeys = props.columns.map(column => column.key);
+  const pinnedNow = derive(() => pinnedKeys(prefs.get(), allKeys, pinned));
+  const { pin } = pinTracker(() => columns.get(), () => pinnedNow.get(), widthOf, () => props.selectable ? CHECK_WIDTH : 0);
+  // Dragging a header moves a column within its range; the Columns menu pins and unpins.
+  const sameRange = (a: string, b: string) => pinnedNow.peek().has(a) === pinnedNow.peek().has(b);
   // One binding per cell for its pinned state: sticky class, last-pinned hairline and left offset.
   const bindPin = (element: HTMLElement, key: string) => effect(() => {
     const at = pin(key).get();
@@ -233,7 +436,7 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
     const key = column().key, sortable = column().sortable !== false;
     const th = html`<th scope="col" class=${column().align === 'right' ? 'r' : ''} class:sortable=${sortable} class:stk=${() => Boolean(pin(key).get())}
       class:stk-last=${() => Boolean(pin(key).get()?.last)} style:left=${() => pin(key).get() ? `${pin(key).get()!.left}px` : null}
-      draggable=${pinned > 0 && columns.get()[0]?.key === key ? 'false' : 'true'}
+      draggable="true"
       aria-sort=${() => sort.get()?.key === key ? (sort.get()!.dir === 'asc' ? 'ascending' : 'descending') : sortable ? 'none' : null}
       tabindex="0" data-key=${key}><span>${column().label}</span>${() => sort.get()?.key === key
         ? html`<span class="si">${Icon(sort.get()!.dir === 'asc' ? 'arrow-up' : 'arrow-down', { size: 'xs' })}</span>` : null}</th>` as HTMLElement;
@@ -250,7 +453,7 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
       else if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
         event.preventDefault();
         const at = shown.indexOf(key), target = shown[at + (event.key === 'ArrowLeft' ? -1 : 1)];
-        if (!target || (pinned > 0 && (at === 0 || shown.indexOf(target) === 0))) return;
+        if (!target || !sameRange(key, target)) return;
         moveColumn(prefs, all, key, fullOrder(prefs.peek(), all).indexOf(target));
         queueMicrotask(() => byKey(scroller, 'th', key)?.focus());
       }
@@ -261,9 +464,8 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLElement {
       const from = event.dataTransfer?.getData('text/x-evlet-column');
       if (!from || from === key) return;
       event.preventDefault();
-      const all = props.columns.map(item => item.key), order = fullOrder(prefs.peek(), all);
-      if (pinned > 0 && order.indexOf(key) === 0) return;
-      moveColumn(prefs, all, from, order.indexOf(key));
+      if (!sameRange(from, key)) return;
+      moveColumn(prefs, allKeys, from, fullOrder(prefs.peek(), allKeys).indexOf(key));
     });
     return th;
   };
