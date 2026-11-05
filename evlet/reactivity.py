@@ -248,7 +248,8 @@ def template(registry, model):
             for kind in ('compute', 'visible_if', 'required_if', 'read_only_if'):
                 if kind not in entry: continue
                 result_type = expression_type(entry[kind], reference_type)
-                target_type = 'number' if field.kind in ('decimal', 'currency', 'integer') else field.kind
+                # A Select holds text: a formula may calculate it (one of its choices, which validation checks).
+                target_type = 'number' if field.kind in ('decimal', 'currency', 'integer') else 'text' if field.kind == 'select' else field.kind
                 if kind == 'compute' and result_type not in (target_type, 'null'):
                     raise ValueError(f'{model.__name__}.{prefix}{name}: expression type {result_type} does not match {target_type}')
     return nodes, order, inputs, owners

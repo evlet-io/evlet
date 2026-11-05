@@ -48,7 +48,7 @@ class Quote(Model):
         Move('sent', 'won', 'Mark won'),
         Move('sent', 'lost', 'Mark lost'),
         Move(('sent', 'lost'), 'draft', 'Reopen', roles=('admin',)),
-    ), locked=('sent', 'won', 'lost', 'void'), final=('won', 'void'), voidable=('sent',))
+    ), locked=('sent', 'won', 'lost', 'void'), final=('won', 'void'), voidable=('sent',), show='bar')
     # The quote number is given when a quote is first sent, counted per year (Q-2026-0001). A reopened
     # and resent quote keeps its number; only the engine writes it.
     number = Sequence('Q-{year}-{n:04}', assign_on='sent')

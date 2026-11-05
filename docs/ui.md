@@ -31,8 +31,16 @@ pinning keep the first column pinned. A child table's Focus view keeps the recor
 save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
-`layout`, `key_fields`, `relations`, `measures`, `open_in` and `autosave`. See "What the model decides" in
+`layout`, `key_fields`, `relations`, `measures`, `open_in`, `autosave` and `status`. See "What the model decides" in
 [ui-framework.md](ui-framework.md).
+
+A record's State shows as a coloured badge in the header by default, with its moves as header
+buttons; `State(..., show="bar")` draws the stage bar instead, for pipelines, and `show="none"`
+draws neither. `Meta.status` adds a status badge for a Select the system sets, such as a
+payment status, coloured by `Select(..., colors={...})`. Badges and bar steps offer only the
+moves this person may take now; everything else is plain text. Lists draw the same badges. The
+badge wraps with the key facts in the side panel and on a phone; the bar scrolls sideways there.
+See [states-actions.md](states-actions.md#how-a-state-and-a-status-show).
 
 ## Not rendered by this interface
 

@@ -489,10 +489,16 @@ class DateTime(Field):
         return None if value is None else self.validate(value)
 
 
+# Colours a status badge may take (Select colors=), the tints of Evlet's UI.
+COLORS = ("blue", "green", "amber", "rose", "violet", "teal", "slate")
+
+
 class Select(Text):
+    """One of fixed choices. `colors` maps choices to badge colours (COLORS) for status badges;
+    choices it leaves out take the UI's usual tint."""
     kind = "select"
 
-    def __init__(self, choices, **kwargs):
+    def __init__(self, choices, *, colors=None, **kwargs):
         if not isinstance(choices, (list, tuple)) or not choices or any(not isinstance(x, str) or not x for x in choices):
             raise ValueError("choices must be a nonempty list of strings")
         if len(set(choices)) != len(choices):
@@ -501,6 +507,12 @@ class Select(Text):
         self.choices = tuple(choices)
         for choice in choices:
             Text.validate(self, choice)
+        if colors is not None:
+            if not isinstance(colors, dict) or set(colors) - set(self.choices):
+                raise ValueError("Select colors maps some of its choices to colours")
+            if any(color not in COLORS for color in colors.values()):
+                raise ValueError("Select colors are " + ", ".join(COLORS))
+        self.colors = dict(colors) if colors else None
 
     def validate(self, value):
         value = super().validate(value)
@@ -510,7 +522,7 @@ class Select(Text):
         return value
 
     def metadata(self):
-        return {**super().metadata(), "choices": list(self.choices)}
+        return {**super().metadata(), "choices": list(self.choices), **({"colors": dict(self.colors)} if self.colors else {})}
 
 
 class State(Select):
@@ -520,13 +532,20 @@ class State(Select):
     states refuse ordinary writes to the record and its Table rows, `final` states have no moves
     out and `voidable` names the states a void (and a revise) may start from. A State with voidable
     states must have a "void" state that is locked and final.
-    """
-    OPTIONS = ("label", "help_text", "tooltip", "placeholder", "hidden", "index", "max_length")
 
-    def __init__(self, choices, *, default=MISSING, moves=(), locked=(), final=(), voidable=(), **kwargs):
+    `show` is how the record page draws it: "badge" (a status badge in the header, the default),
+    "bar" (the stage bar, for pipelines such as draft, submitted, approved) or "none".
+    """
+    OPTIONS = ("label", "help_text", "tooltip", "placeholder", "hidden", "index", "max_length", "colors")
+    SHOW = ("badge", "bar", "none")
+
+    def __init__(self, choices, *, default=MISSING, moves=(), locked=(), final=(), voidable=(), show="badge", **kwargs):
         from .declarations import Move
         if set(kwargs) - set(self.OPTIONS):
-            raise ValueError("State takes choices, default, moves, locked, final, voidable and " + ", ".join(self.OPTIONS))
+            raise ValueError("State takes choices, default, moves, locked, final, voidable, show and " + ", ".join(self.OPTIONS))
+        if show not in self.SHOW:
+            raise ValueError('State show is "badge", "bar" or "none"')
+        self.show = show
         if default is MISSING and isinstance(choices, (list, tuple)) and choices:
             default = choices[0]
         super().__init__(choices, default=default, required=True, read_only=True, **kwargs)

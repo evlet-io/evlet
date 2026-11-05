@@ -328,7 +328,9 @@
             "total",
             "posting_date",
             "status",
-            "tax_rate"
+            "tax_rate",
+            "amount_paid",
+            "payment_status"
           ],
           "collapsible": false,
           "collapsed": false,
@@ -345,6 +347,7 @@
         "reference",
         "customer",
         "total",
+        "payment_status",
         "status",
         "posting_date"
       ],
@@ -586,6 +589,83 @@
           "locked_when": null
         },
         {
+          "name": "amount_paid",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": "0",
+          "maximum": null,
+          "label": "Amount paid",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "0.00",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull",
+            "in",
+            "nin"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "currency_source": {
+            "link": "customer",
+            "field": "currency",
+            "model": "customer"
+          }
+        },
+        {
+          "name": "payment_status",
+          "type": "select",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "unpaid",
+            "partly_paid",
+            "paid"
+          ],
+          "colors": {
+            "unpaid": "rose",
+            "partly_paid": "amber",
+            "paid": "green"
+          },
+          "label": "Payment status",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": true,
+          "default_kind": "none",
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
           "name": "name",
           "type": "text",
           "required": false,
@@ -648,7 +728,10 @@
           "locked_when": null
         }
       ],
+      "document_version": 1,
+      "resource": "invoice",
       "behavior": {
+        "customer": {},
         "project": {
           "filters": {
             "customer": {
@@ -658,8 +741,74 @@
               ]
             }
           }
-        }
+        },
+        "reference": {},
+        "total": {},
+        "posting_date": {},
+        "status": {},
+        "tax_rate": {},
+        "amount_paid": {},
+        "payment_status": {
+          "compute": {
+            "$expr": "choose",
+            "args": [
+              {
+                "$expr": "gte",
+                "args": [
+                  {
+                    "$expr": "ref",
+                    "args": [
+                      "amount_paid"
+                    ]
+                  },
+                  {
+                    "$expr": "ref",
+                    "args": [
+                      "total"
+                    ]
+                  }
+                ]
+              },
+              "paid",
+              {
+                "$expr": "choose",
+                "args": [
+                  {
+                    "$expr": "gt",
+                    "args": [
+                      {
+                        "$expr": "ref",
+                        "args": [
+                          "amount_paid"
+                        ]
+                      },
+                      0
+                    ]
+                  },
+                  "partly_paid",
+                  "unpaid"
+                ]
+              }
+            ]
+          }
+        },
+        "name": {},
+        "title": {}
       },
+      "order": [
+        "customer",
+        "project",
+        "reference",
+        "total",
+        "posting_date",
+        "status",
+        "tax_rate",
+        "amount_paid",
+        "payment_status",
+        "name",
+        "title"
+      ],
+      "sources": {},
       "naming": {
         "field": "name",
         "assign_on": "create",
@@ -687,6 +836,7 @@
         }
       ],
       "attachments": false,
+      "status": "payment_status",
       "relations": [
         {
           "name": "ledgerentry.invoice",

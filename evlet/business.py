@@ -472,6 +472,9 @@ class Business:
             meaning = self.registry.meaning[model]
             if meaning.key_fields:
                 entry['key_fields'] = [name for name in meaning.key_fields if name in readable]
+            # The status badge (Meta.status), only for roles that can read its field.
+            if meaning.status is not None and meaning.status in readable:
+                entry['status'] = meaning.status
             relations = [relation.public(self.registry, self.relation_order(user, relation))
                          for relation in self.visible_relations(user, model)]
             if relations:

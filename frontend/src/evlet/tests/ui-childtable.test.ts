@@ -514,7 +514,13 @@ describe('Columns menu', () => {
       const at = [...this.parentElement!.querySelectorAll(':scope > [data-entry]')].indexOf(this);
       return { top: at * ROWH, bottom: at * ROWH + ROWH, height: ROWH, left: 0, right: 200, width: 200, x: 0, y: at * ROWH, toJSON: () => ({}) } as DOMRect;
     };
-    return () => { HTMLElement.prototype.getBoundingClientRect = original; };
+    // dragList finds the entry under the pointer.
+    const hadPoint = 'elementFromPoint' in document, point = document.elementFromPoint;
+    document.elementFromPoint = (_x: number, y: number) => document.querySelectorAll<HTMLElement>('.cols-pop [data-entry]')[Math.floor(y / ROWH)] ?? null;
+    return () => {
+      HTMLElement.prototype.getBoundingClientRect = original;
+      if (hadPoint) document.elementFromPoint = point; else delete (document as any).elementFromPoint;
+    };
   };
   let restore = () => {};
   afterEach(() => restore());
@@ -530,13 +536,17 @@ describe('Columns menu', () => {
   const entries = (menu: Element) => [...menu.querySelectorAll<HTMLElement>('[data-entry]')].map(row => row.dataset.entry);
   const headers = (host: Element) => [...host.querySelectorAll('thead th[data-key]')].map(th => th.getAttribute('data-key'));
   const gripOf = (menu: Element, entry: string) => menu.querySelector<HTMLElement>(`[data-entry="${entry}"] .col-grip`)!;
+  // A press on the grip, a move to y and a release, as dragList reads them (events bubble from the grip).
   const drag = (menu: Element, entry: string, toY: number, pointerType = 'mouse') => {
-    const grip = gripOf(menu, entry);
-    grip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType, clientY: 0 }));
-    document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType, clientY: toY }));
-    document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType, clientY: toY }));
+    const grip = gripOf(menu, entry), from = entries(menu).indexOf(entry) * ROWH + ROWH / 2;
+    const at = (type: string, y: number) => grip.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType, clientX: 20, clientY: y }));
+    at('pointerdown', from);
+    at('pointermove', toY);
+    at('pointerup', toY);
   };
+  // The menu's own status (pins, refusals) and the drag announcements.
   const said = async (menu: Element) => { await Promise.resolve(); await Promise.resolve(); return menu.querySelector('.col-said')!.textContent; };
+  const announced = (menu: Element) => menu.querySelector('[data-drag-live="column"]')!.textContent;
 
   it('shows the pinned range above a divider, with labelled grips, pins and eyes', async () => {
     const { menu } = await open();
@@ -558,7 +568,7 @@ describe('Columns menu', () => {
     expect(entries(menu)).toEqual(['product', 'edge', 'qty', 'amount', 'rate']);
     expect(prefs.peek()).toMatchObject({ order: ['product', 'qty', 'amount', 'rate'], pinned: 1 });
     expect(headers(host)).toEqual(['product', 'qty', 'amount', 'rate']);
-    expect(await said(menu)).toBe('Amount, position 3 of 4, not pinned. Dropped.');
+    expect(announced(menu)).toBe('Amount (not pinned) dropped. Amount (not pinned), position 4 of 5.');
   });
 
   it('pins by dragging a column above the divider, by touch too, and unpins by dragging below it', async () => {
@@ -589,7 +599,7 @@ describe('Columns menu', () => {
     const pinAmount = menu.querySelector<HTMLButtonElement>('[data-entry="amount"] .col-pin')!;
     expect(pinAmount.disabled).toBe(true);
     expect(pinAmount.getAttribute('aria-label')).toBe('Amount stays unpinned');
-    drag(menu, 'edge', 9 * ROWH);
+    drag(menu, 'edge', 4 * ROWH + 20);
     expect(prefs.peek().pinned).toBe(3);
     expect(await said(menu)).toContain('Keep at least one column unpinned');
   });
@@ -600,7 +610,7 @@ describe('Columns menu', () => {
     grip.focus();
     key(grip, ' ');
     expect(grip.getAttribute('aria-pressed')).toBe('true');
-    expect(await said(menu)).toContain('Rate, position 3 of 4, not pinned. Lifted.');
+    expect(announced(menu)).toContain('Rate (not pinned) lifted. Rate (not pinned), position 4 of 5.');
     key(grip, 'ArrowUp');
     await Promise.resolve();
     expect(entries(menu)).toEqual(['product', 'edge', 'rate', 'qty', 'amount']);
@@ -608,7 +618,7 @@ describe('Columns menu', () => {
     key(document.activeElement!, 'ArrowUp');
     await Promise.resolve();
     expect(entries(menu)).toEqual(['product', 'rate', 'edge', 'qty', 'amount']);
-    expect(await said(menu)).toBe('Rate, position 2 of 4, pinned');
+    expect(announced(menu)).toBe('Rate (pinned), position 2 of 5');
     key(document.activeElement!, 'Enter');
     expect(prefs.peek()).toMatchObject({ order: ['product', 'rate', 'qty', 'amount'], pinned: 2 });
     expect(gripOf(menu, 'rate').getAttribute('aria-pressed')).toBe('false');
@@ -617,14 +627,14 @@ describe('Columns menu', () => {
     grip = gripOf(menu, 'amount');
     grip.focus();
     key(grip, ' ');
-    key(grip, 'Home');
+    for (let step = 0; step < 4; step++) key(document.activeElement!, 'ArrowUp');
     await Promise.resolve();
     expect(headers(host)[0]).toBe('amount');
     key(document.activeElement!, 'Escape');
     expect(document.querySelector('.cols-pop')).not.toBeNull();
     expect(prefs.peek()).toMatchObject({ order: ['product', 'rate', 'qty', 'amount'], pinned: 2 });
     expect(headers(host)).toEqual(['product', 'rate', 'qty', 'amount']);
-    expect(await said(menu)).toContain('Move cancelled');
+    expect(announced(menu)).toContain('Move cancelled');
   });
 
   it('sets sticky offsets for two and three pinned columns, in header, cells and totals', async () => {

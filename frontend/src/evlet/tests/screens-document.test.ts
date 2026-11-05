@@ -71,8 +71,9 @@ describe('transaction document (recorded fixtures)', () => {
     expect(issue.getAttribute('aria-disabled')).toBe('true');
     click(issue);
     expect(lastToast()).toBe('The condition for this move is not met');
+    // The bar offers only moves this person can take now: with the guard not met, Issued is a plain step.
+    expect(byText(host, '.stepper .step', 'Issued')!.querySelector('button')).toBeNull();
     click(byText(host, '.stepper .step', 'Issued'));
-    expect(lastToast()).toBe('The condition for this move is not met');
     expect(requests(sent, 'POST', /moves/)).toHaveLength(0);
   });
 

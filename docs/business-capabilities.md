@@ -310,7 +310,16 @@ Do not expose an arbitrary method dispatcher.
 Model actions declared with `@action` on a document may also take validated `inputs`
 and declare `available_when`. A `State` field with `Move` declarations changes a
 document's state through `POST /api/{model}/{id}/moves/{to}` and can lock it against
-ordinary writes. See [states-actions.md](states-actions.md).
+ordinary writes. See [states-actions.md](states-actions.md). The record page shows the
+State as a header badge by default; declare `show="bar"` on a pipeline (draft, submitted,
+approved) for the stage bar, or `show="none"`. `Meta.status = "<field>"` shows a Select the
+system sets, such as a calculated payment status, as a badge that is never edited from the
+header ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).
+
+The Playground's invoice shows this: `payment_status` is calculated from `amount_paid` against
+`total` (Unpaid, Partly paid, Paid), named by `Meta.status` and coloured by `colors`. Nobody
+writes it; migration `0012_invoice_payment_status` adds both columns and calculates it for
+existing invoices.
 
 The Playground's Start action moves a planned Project to active. Complete requires
 an active Project with at least one task and every task done, then writes status

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { html } from '../dom';
 import { cell } from '../reactive';
 import { RecordMark } from '../ui/base';
-import { DocFrame, DocHeader, flowFromState, LockBanner, MoveButton, SideBlock, StatusFlow, TabPanel, Tabs, type Lifecycle } from '../ui/doc';
+import { DocFrame, DocHeader, flowFromState, LockBanner, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type Lifecycle } from '../ui/doc';
 import { ENTRIES, LibraryPage, builtIds } from '../ui/library';
 import { Board, BoardCard, BulkBar, Filters, PageHeader, type ActiveFilter } from '../ui/list';
 import { tipText } from '../ui/tooltip';
@@ -31,25 +32,71 @@ describe('doc view blocks', () => {
     expect(tabs[2].getAttribute('aria-controls')).toBe(panel.id);
   });
 
-  it('StatusFlow marks done and current steps, runs allowed moves and explains blocked ones', () => {
+  it('StatusFlow marks done and current steps, runs moves this person may take and explains a passing block', () => {
     vi.useFakeTimers();
     const current = cell('draft');
     const moved = vi.fn((to: string) => current.set(to));
     const { steps, good, bad } = flowFromState({ field: 'status', states: ['draft', 'issued', 'paid', 'void'], moves: [], final: ['paid', 'void'] });
     expect(good).toEqual(['paid']);
     expect(bad).toEqual(['void']);
-    const host = render(() => StatusFlow({ steps, good, bad, current, onMove: moved, blocked: to => to === 'paid' ? 'Outstanding is AED 25,200' : null }));
-    const buttons = [...host.querySelectorAll<HTMLElement>('.step')];
-    expect(buttons[0].getAttribute('aria-current')).toBe('step');
-    buttons[2].click();
+    const dirty = cell(true);
+    const host = render(() => StatusFlow({ steps, good, bad, current, onMove: moved, canMove: to => to === 'issued',
+      blocked: () => dirty.get() ? 'Save or discard your changes first' : null }));
+    const items = [...host.querySelectorAll<HTMLElement>('.step')];
+    expect(items.map(item => item.getAttribute('role'))).toEqual(['listitem', 'listitem', 'listitem', 'listitem']);
+    expect(items[0].getAttribute('aria-current')).toBe('step');
+    // Only Issued can be chosen: the current step and states this person cannot move to are plain.
+    expect(items.map(item => item.querySelector('button') !== null)).toEqual([false, true, false, false]);
+    expect(items.map(item => item.classList.contains('plain'))).toEqual([true, false, true, true]);
+    expect(items[2].querySelector('.step-tx')!.getAttribute('aria-label')).toBe('Paid');
+    expect(items[1].querySelector('button')!.getAttribute('aria-label')).toBe('Issued. Move to Issued');
+    items[1].querySelector('button')!.click();
     expect(moved).not.toHaveBeenCalled();
-    expect(lastToast()).toContain('Outstanding is AED 25,200');
-    buttons[1].click();
+    expect(lastToast()).toContain('Save or discard your changes first');
+    dirty.set(false);
+    items[1].querySelector('button')!.click();
     expect(moved).toHaveBeenCalledWith('issued');
-    expect(buttons[0].classList.contains('done')).toBe(true);
-    expect(buttons[0].querySelector('svg')).not.toBeNull();
-    expect(buttons[1].classList.contains('cur')).toBe(true);
-    expect(buttons[3].classList.contains('lost')).toBe(true);
+    expect(items[0].classList.contains('done')).toBe(true);
+    expect(items[0].querySelector('svg')).not.toBeNull();
+    expect(items[0].querySelector('.step-tx')!.getAttribute('aria-label')).toBe('Draft, done');
+    expect(items[1].classList.contains('cur')).toBe(true);
+    expect(items[1].querySelector('button')).toBeNull();
+    expect(items[3].classList.contains('lost')).toBe(true);
+  });
+
+  it('StatusBadge is plain text without moves and a menu of the moves this person may take with them', () => {
+    vi.useFakeTimers();
+    const value = cell<string | null>('active');
+    const moves = cell([{ to: 'left', label: 'Mark as left' }]);
+    const moved = vi.fn((to: string) => value.set(to));
+    const host = render(() => html`<div>${StatusBadge({ value, tint: v => v === 'active' ? 'green' : 'slate', moves: () => moves.get(), onMove: moved })}</div>`);
+    const badge = () => host.querySelector<HTMLElement>('.ev-status')!;
+    expect(badge().tagName).toBe('BUTTON');
+    expect(badge().className).toContain('b-green');
+    expect(badge().getAttribute('aria-label')).toBe('Status: Active. Change status');
+    expect(badge().getAttribute('aria-haspopup')).toBe('menu');
+    badge().click();
+    const item = document.querySelector<HTMLElement>('[role="menuitem"]')!;
+    expect(item.textContent).toBe('Mark as left');
+    item.click();
+    expect(moved).toHaveBeenCalledWith('left');
+    // No move into or out of this state for this person: plain text, named, with no button.
+    moves.set([]);
+    expect(badge().tagName).toBe('SPAN');
+    expect(badge().getAttribute('role')).toBe('img');
+    expect(badge().getAttribute('aria-label')).toBe('Status: Left');
+    expect(badge().className).toContain('b-slate');
+    expect(badge().querySelector('button')).toBeNull();
+    value.set(null);
+    expect(host.querySelector('.ev-status')).toBeNull();
+  });
+
+  it('StatusBadge names other statuses by their label and never offers moves without onMove', () => {
+    const host = render(() => html`<div>${StatusBadge({ value: 'partly_paid', tint: () => 'amber', name: 'Payment status', moves: () => [{ to: 'paid', label: 'Paid' }] })}</div>`);
+    const badge = host.querySelector<HTMLElement>('.ev-status')!;
+    expect(badge.tagName).toBe('SPAN');
+    expect(badge.getAttribute('aria-label')).toBe('Payment status: Partly paid');
+    expect(badge.className).toContain('b-amber');
   });
 
   it('a blocked MoveButton stays visible, dims, and says why instead of running', () => {

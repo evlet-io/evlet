@@ -87,8 +87,8 @@ def test_a_source_the_person_cannot_read_is_left_out(secured):
     business = secured.business
     original = business.policy.fields
 
-    def fields(user, model, write=False):
-        names = original(user, model, write=write)
+    def fields(user, model, write=False, **options):
+        names = original(user, model, write=write, **options)
         return {name for name in names if not (model.__name__ == 'Customer' and name == 'currency')}
     business.policy.fields = fields
     try:
