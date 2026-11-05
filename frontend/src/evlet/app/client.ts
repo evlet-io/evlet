@@ -98,6 +98,30 @@ export class AppClient extends ApiClient {
     return (await this.request<JournalEntry>('POST', `/api/${model}/${id}/journal`, { body: { kind: 'note', text } })).data;
   }
 
+  /** Add a note written with the rich text composer: sanitised HTML, mentions kept (docs/journal.md). */
+  async addRichNote(model: string, id: string, html: string) {
+    return (await this.request<JournalEntry>('POST', `/api/${model}/${id}/journal`, { body: { kind: 'note', html } })).data;
+  }
+
+  /** Active people to mention on a record, with whether each can open it. */
+  async mentionable(model: string, id: string, q: string) {
+    return (await this.request<{ items: Array<{ id: number; name: string; username: string; can_read: boolean }> }>(
+      'GET', `/api/${model}/${id}/mentionable`, { query: { q } })).data.items;
+  }
+
+  /** The person's inbox: mentions, newest first, and the unread count. */
+  async inbox(page: { limit?: number; offset?: number } = {}) {
+    return (await this.request<InboxPage>('GET', '/api/_inbox', { query: page })).data;
+  }
+
+  async inboxCount() {
+    return (await this.request<{ unread: number }>('GET', '/api/_inbox/count')).data.unread;
+  }
+
+  async inboxRead(ids: number[] | 'all') {
+    return (await this.request<{ unread: number }>('POST', '/api/_inbox/read', { body: ids === 'all' ? { all: true } : { ids } })).data.unread;
+  }
+
   async lifecycle(model: string, id: string, operation: 'confirm' | 'cancel' | 'reopen', etag: string | null, reason?: string) {
     return this.request<RecordData>('POST', `/api/${model}/${id}/${operation}`, {
       body: operation === 'cancel' ? { reason } : {}, ifMatch: etag,
@@ -194,5 +218,9 @@ export interface ReportPage { rows: Array<Record<string, unknown>>; total: numbe
  * the caller sees only in part; `done` is set on follow ups (the completing entry's id, or null). */
 /** `via` names the AI assistant a person's write came through; `actor` stays the person. */
 export interface JournalEntry { id: number; kind: string; actor: number | null; at: string; data: Record<string, any>; partial?: true; done?: number | null; via?: string }
+/** One inbox row. `record` is null when the person cannot open the record: then nothing about it is sent. */
+export interface InboxItem { id: number; kind: string; at: number; read: boolean; actor: string; text: string
+  record: { model: string; id: string; label: string; title: string } | null }
+export interface InboxPage { items: InboxItem[]; total: number; unread: number }
 /** A page of a journal: `users` names the actors and assignees on it by user id. */
 export interface JournalPage extends Page<JournalEntry> { users: Record<string, string> }

@@ -134,6 +134,9 @@ Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-fr
 A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-framework.md#rich-text)):
 at rest the record shows the formatted text (read only when the record is locked), and list cells
 show its plain text. The Playground's projects have one, Brief.
+A record's Activity tab writes notes with the same editor; typing `@` mentions a person, with a
+warning when they can't open the record. The bell in the top bar is the Mentions inbox, with the
+unread count kept live by the event stream ([journal.md](journal.md#mentions)).
 
 ### Ids, names and titles
 

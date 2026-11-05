@@ -42,6 +42,16 @@ export interface RichTextProps {
   maxLength?: number;
   /** Where images go (the record's attachments). Without it the editor takes no images. */
   images?: ImageSource;
+  /** People to mention with @ (the activity composer). Without it, @ is just text. */
+  mentions?: MentionSource;
+}
+
+export interface Person { id: string; name: string; username: string; can_read: boolean }
+export interface MentionSource {
+  /** Active people matching typed text, with whether each can open the record. */
+  search(query: string): Promise<Person[]>;
+  /** A mentioned person's current name, when known. */
+  name?(id: string): string | undefined;
 }
 
 export interface RichTextEditor {
@@ -99,7 +109,7 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
   function render() {
     rendering = true;
     try {
-      elements = renderSurface(surface, state.doc, cache, { imageUrl: props.images?.url });
+      elements = renderSurface(surface, state.doc, cache, { imageUrl: props.images?.url, mentionName: props.mentions?.name });
       cache = new Map(state.doc.blocks.map((block, index) => [block, elements[index]]));
       surface.classList.toggle('rt-empty', state.doc.blocks.length === 1 && blockLength(state.doc.blocks[0]) === 0 && state.doc.blocks[0].type === 'paragraph');
       if (focused || document.activeElement === surface) writeSelection();
@@ -117,6 +127,8 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
     const link = Boolean(linkAt(head.content, state.selection.head.offset)) && head.type !== 'code';
     status.set({ marks, block, link, undo: history.canUndo, redo: history.canRedo, length: textLength(state.doc) });
     updateFloating();
+    checkMention();
+    if (props.mentions) refreshMentioned();
   }
 
   /** Apply a change: record it for undo (group joins typing bursts), render and report the value. */
@@ -133,7 +145,7 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
   }
 
   function load(value: string | null | undefined) {
-    const doc = parseHTML(value ?? '');
+    const doc = parseHTML(value ?? '', { mentions: Boolean(props.mentions) });
     // A document opened for editing puts the caret at its end, ready to add to it.
     state = { doc, selection: caret(docEnd(doc)) };
     history.clear();
@@ -399,7 +411,7 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
     // Image files (a screenshot, a photo from the files app) go in as images.
     const files = Array.from(data.files ?? []);
     if (files.length && addFiles(files, range)) return;
-    let blocks = markup ? parsePastedHTML(markup) : [];
+    let blocks = markup ? parsePastedHTML(markup, { mentions: Boolean(props.mentions) }) : [];
     if (!blocks.length && plain) blocks = parsePlainText(plain);
     blocks = copiedImages(blocks);
     if (!blocks.length) return;
@@ -529,7 +541,93 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
 
   // ---------- keys ----------
 
+  // ---------- mentions ----------
+
+  interface Picking { block: number; start: number; query: string; items: Person[]; active: number }
+  const picking = cell<Picking | null>(null);
+  const known = new Map<string, Person>();
+  const mentioned = cell<Person[]>([]);
+  const listId = `${id}-people`;
+  let searchTimer = 0, searchToken = 0;
+
+  /** Open, update or close the picker from the text before the caret: @ at a word start, then the query. */
+  function checkMention() {
+    if (!props.mentions || composing || !collapsed(state.selection)) { closePicker(); return; }
+    const at = state.selection.head, block = state.doc.blocks[at.block];
+    if (!block || block.type === 'code' || block.type === 'rule' || block.type === 'image') { closePicker(); return; }
+    const before = blockText(block).slice(0, at.offset);
+    const match = /(?:^|[\s(\uE000\uE001])@([^\s@\uE000\uE001]{0,30})$/.exec(before);
+    if (!match) { closePicker(); return; }
+    const start = at.offset - match[1].length - 1, query = match[1];
+    const current = picking.peek();
+    if (current && current.block === at.block && current.start === start && current.query === query) return;
+    picking.set({ block: at.block, start, query, items: current?.items ?? [], active: 0 });
+    window.clearTimeout(searchTimer);
+    const token = ++searchToken;
+    searchTimer = window.setTimeout(() => {
+      void props.mentions!.search(query).then(items => {
+        if (token !== searchToken || !picking.peek()) return;
+        picking.set({ ...picking.peek()!, items: items.slice(0, 8), active: 0 });
+        announce(items.length ? `${Math.min(items.length, 8)} ${items.length === 1 ? 'person' : 'people'}. Up and down to choose, Enter to mention.` : 'No one matches');
+      }, () => { if (token === searchToken && picking.peek()) picking.set({ ...picking.peek()!, items: [] }); });
+    }, 120);
+  }
+
+  function closePicker() { if (picking.peek()) { picking.set(null); searchToken++; } }
+
+  /** Put the chosen person in place of @query, then a space. */
+  function choose(person: Person) {
+    const current = picking.peek();
+    if (!current) return;
+    known.set(person.id, person);
+    const range = { anchor: pos(current.block, current.start), head: state.selection.head };
+    const { doc, end } = replaceRange(state.doc, range.anchor, range.head, [{ kind: 'mention', id: person.id, name: person.name }, text(' ')]);
+    closePicker();
+    apply({ doc, selection: caret(end) }, { message: person.can_read ? `Mentioned ${person.name}` : `Mentioned ${person.name}, who can't open this record` });
+  }
+
+  /** People mentioned in the text that the picker said cannot open the record. */
+  function refreshMentioned() {
+    const ids = new Set<string>();
+    for (const block of state.doc.blocks) for (const piece of block.content) if (piece.kind === 'mention') ids.add(piece.id);
+    mentioned.set([...ids].map(item => known.get(item)).filter((person): person is Person => Boolean(person) && !person!.can_read));
+  }
+
+  const caretRect = (): DOMRect | null => {
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return null;
+    const rect = selection.getRangeAt(0).getBoundingClientRect?.();
+    return rect && (rect.width || rect.height || rect.top) ? rect : surface.getBoundingClientRect();
+  };
+
+  const mentionsPicker = props.mentions ? html`<div class="rt-mentions pop show" role="listbox" id=${listId} aria-label="People to mention"
+    hidden=${() => !picking.get() || !picking.get()!.items.length}
+    style:top=${() => { void picking.get(); const rect = caretRect(); return rect ? `${rect.bottom + 6}px` : null; }}
+    style:left=${() => { void picking.get(); const rect = caretRect(); return rect ? `${Math.max(8, Math.min(window.innerWidth - 280, rect.left))}px` : null; }}>${() =>
+      (picking.get()?.items ?? []).map((person, index) => html`<button type="button" class="mi rt-person" role="option" id=${`${listId}-${index}`} tabindex="-1"
+        aria-selected=${() => String(picking.get()?.active === index)} class:on=${() => picking.get()?.active === index}
+        on:mousedown=${(event: MouseEvent) => event.preventDefault()} on:click=${() => choose(person)}>
+        <span class="rt-person-name">${person.name}</span><span class="muted">@${person.username}</span>${person.can_read ? null
+          : html`<span class="rt-person-warn">Can't open this record</span>`}</button>`)}</div>` as HTMLElement : null;
+
+  const warnings = props.mentions ? html`<div class="rt-warn" role="status">${() => mentioned.get().map(person =>
+    html`<p>${Icon('info', { size: 'xs' })} ${person.name} can't open this record. They'll only be told they were mentioned.</p>`)}</div>` as HTMLElement : null;
+
   function onKeyDown(event: KeyboardEvent) {
+    const open = picking.peek();
+    if (open && open.items.length) {
+      const count = open.items.length;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const active = (open.active + (event.key === 'ArrowDown' ? 1 : count - 1)) % count;
+        picking.set({ ...open, active });
+        const person = open.items[active];
+        announce(`${person.name}${person.can_read ? '' : ", can't open this record"}`);
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); choose(open.items[open.active]); return; }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closePicker(); return; }
+    }
     if (composing || event.isComposing) return;
     const mod = isMac() ? event.metaKey : event.ctrlKey;
     const key = event.key.toLowerCase();
@@ -633,7 +731,7 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
     class:over=${() => status.get().length > props.maxLength!}>${() => `${status.get().length.toLocaleString('en')} / ${props.maxLength!.toLocaleString('en')}`}</span>` : null;
 
   const element = html`<div class="rt" class:rt-disabled=${disabled} class:rt-phone=${phone} class:rt-invalid=${() => Boolean(props.invalid?.())}
-    style:--rt-keyboard=${() => `${keyboardBottom.get()}px`}>${toolbar}${surface}${float}${counter}${live}${picker}<span class="err rt-err" role="alert" hidden=${() => !imageError.get()}>${imageError}</span></div>` as HTMLElement;
+    style:--rt-keyboard=${() => `${keyboardBottom.get()}px`}>${toolbar}${surface}${float}${counter}${live}${picker}${mentionsPicker}${warnings}<span class="err rt-err" role="alert" hidden=${() => !imageError.get()}>${imageError}</span></div>` as HTMLElement;
 
   // ---------- events ----------
 
@@ -708,7 +806,7 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
     const value = props.value() ?? null;
     untrack(() => {
       if (value === lastEmitted) return;
-      if (lastEmitted !== undefined && value !== null && lastEmitted !== null && canonical(value) === lastEmitted) { lastEmitted = value; return; }
+      if (lastEmitted !== undefined && value !== null && lastEmitted !== null && toHTML(parseHTML(value, { mentions: Boolean(props.mentions) })) === lastEmitted) { lastEmitted = value; return; }
       if (composing) return;
       load(value);
     });

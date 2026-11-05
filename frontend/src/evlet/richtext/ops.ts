@@ -27,8 +27,9 @@ function codeToLines(content: readonly Inline[]): Inline[] {
 export function replaceRange(doc: Doc, from: Pos, to: Pos, pieces: readonly Inline[]): { doc: Doc; end: Pos } {
   if (compare(from, to) > 0) [from, to] = [to, from];
   const first = doc.blocks[from.block], last = doc.blocks[to.block];
-  const inserted = first.type === 'code' ? pieces.map(piece => piece.kind === 'break' ? text('\n') : { ...piece, marks: [], href: null }) : pieces;
-  const tail = first.type === 'code' && last.type !== 'code' ? slice(last.content, to.offset).map(piece => piece.kind === 'break' ? text('\n') : piece)
+  const plain = (piece: Inline): Inline => piece.kind === 'break' ? text('\n') : piece.kind === 'mention' ? text(`@${piece.name}`) : { ...piece, marks: [], href: null };
+  const inserted = first.type === 'code' ? pieces.map(plain) : pieces;
+  const tail = first.type === 'code' && last.type !== 'code' ? slice(last.content, to.offset).map(plain)
     : first.type !== 'code' && last.type === 'code' ? codeToLines(slice(last.content, to.offset)) : slice(last.content, to.offset);
   const content = [...slice(first.content, 0, from.offset), ...inserted, ...tail];
   const length = inserted.reduce((sum, piece) => sum + (piece.kind === 'text' ? piece.text.length : 1), 0);

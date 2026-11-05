@@ -13,6 +13,7 @@ import { resolveTheme, systemScheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { displayName, PersonMark } from './settings';
 import { presentSlip } from './slips';
+import { InboxButton } from './inbox';
 import { groupOf, identity, rootModels, type ScreenModel } from './meta';
 import { REPORT_ICON, reportGroups, reportsOf } from './report-page';
 
@@ -134,6 +135,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     <div class="top-actions">
       <button type="button" class="top-search desktop-only" on:click=${() => ctx.openPalette()}>${Icon('search', { size: 'sm' })}<span>Search</span>${Key('⌘K')}</button>
       <span class="mobile-only">${IconButton({ icon: 'search', tip: 'Search', onClick: () => ctx.openPalette() })}</span>
+      ${when(() => Boolean(ctx.me.get() && !ctx.me.get()!.portal), () => InboxButton(ctx))}
       <span class="desktop-only">${IconButton({ icon: 'circle-help', tip: 'Shortcuts  ?', onClick: () => openShortcuts(docsOn(ctx.session)) })}</span>
       ${creatable.length || menuSlips.length ? [html`<span class="sep desktop-only"></span>`, MenuButton({ label: 'New', icon: 'plus', variant: 'primary', size: 'small', hideLabelOnPhone: true, menuLabel: 'New',
         items: (): MenuItem[] => [...creatable.map(model => ({ label: `New ${model.label.toLowerCase()}`, icon: identity(model).icon, tint: identity(model).tint,

@@ -81,3 +81,14 @@ describe('links', () => {
     expect(linkFromInput('  ')).toBeNull();
   });
 });
+
+describe('shared mention cases with evlet/richtext.py (the activity journal)', () => {
+  for (const [source, expected, text] of (cases as any).mention_cases as Array<[string, string, string]>) {
+    it(source.slice(0, 60), () => {
+      const doc = parseHTML(source, { mentions: true });
+      expect(toHTML(doc)).toBe(expected);
+      expect(plainText(doc)).toBe(text);
+      expect(toHTML(parseHTML(expected, { mentions: true }))).toBe(expected);
+    });
+  }
+});

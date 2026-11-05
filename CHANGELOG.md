@@ -6,6 +6,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Mentions in the activity composer, and a Mentions inbox.** Notes on a record are written with
+  the rich text editor; `@` opens a picker of active people, warning when someone can't open the
+  record. Journal `note` and `message` entries take `html` (sanitised, mentions kept) beside `text`.
+  Mentioned people get a row in the new per-user inbox (`evlet_inbox`, `/api/_inbox`), shown under
+  the bell in the top bar with a live unread count, and an email when their notification preferences
+  ask for one. Someone who can't open the record learns only that they were mentioned
+  ([docs/journal.md](docs/journal.md#mentions)).
 - **Images in rich text.** Paste, drop or upload a PNG, JPEG, GIF or WebP image straight into a
   `RichText` field; SVG is refused. The browser shrinks it to 2,000 px and re-encodes it before
   upload. Images are private attachments of the record, stored in the HTML by id only and served

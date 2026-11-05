@@ -6,9 +6,11 @@
 
 import { inlineTree, toTree, type Tree } from './html';
 import { Icon } from '../ui/base';
-import { BREAK, blockText, type Block, type Doc, type Pos } from './model';
+import { BREAK, blockText, MENTION, type Block, type Doc, type Pos } from './model';
 
 export interface RenderOptions {
+  /** A mentioned person's current name, by user id. */
+  mentionName?: (id: string) => string | undefined;
   /** The address of an image attachment; without it, images show their alt text. */
   imageUrl?: (attachment: string) => string;
   /** Show the size, alt text and remove tools on images (the editing surface). */
@@ -82,8 +84,18 @@ function renderImage(block: Extract<Block, { type: 'image' }>, options: RenderOp
 const BULLETS = ['•', '◦', '▪'];
 export const FILLER = 'data-rt-filler';
 
-function build(tree: Tree, options: { links: boolean; imageUrl?: (attachment: string) => string }): Node {
+function build(tree: Tree, options: { links: boolean; imageUrl?: (attachment: string) => string; mentionName?: (id: string) => string | undefined; surface?: boolean }): Node {
   if (typeof tree === 'string') return document.createTextNode(tree);
+  if (tree.tag === 'span' && tree.attrs?.['data-mention']) {
+    // A mention reads as @Name, with the person's current name where it is known.
+    const id = tree.attrs['data-mention'], stored = typeof tree.children[0] === 'string' ? tree.children[0] : '';
+    const element = document.createElement('span');
+    element.className = 'rt-mention';
+    element.setAttribute(options.surface ? 'data-rt-mention' : 'data-mention', id);
+    if (options.surface) element.contentEditable = 'false';
+    element.textContent = `@${options.mentionName?.(id) || stored}`;
+    return element;
+  }
   if (tree.tag === 'img') return imageElement(tree.attrs?.['data-attachment'] ?? '', tree.attrs?.alt ?? '', options);
   const tag = tree.tag === 'a' && !options.links ? 'span' : tree.tag;
   const element = document.createElement(tag);
@@ -142,7 +154,7 @@ export function renderBlock(block: Block, options: RenderOptions = {}): HTMLElem
   }
   element.classList.add('rt-b');
   if (block.type === 'item') element.classList.add('rt-li');
-  for (const tree of inlineTree(block.content)) element.append(build(tree, { links: true }));
+  for (const tree of inlineTree(block.content)) element.append(build(tree, { links: true, surface: true, mentionName: options.mentionName }));
   const last = block.content[block.content.length - 1];
   if (!last || last.kind === 'break') element.append(filler());
   return element;
@@ -178,10 +190,10 @@ function markers(doc: Doc, elements: HTMLElement[]) {
 }
 
 /** The read-only view: semantic HTML (nested lists, real links), built from the model. */
-export function renderView(doc: Doc, options: { links?: boolean; imageUrl?: (attachment: string) => string } = {}): DocumentFragment {
+export function renderView(doc: Doc, options: { links?: boolean; imageUrl?: (attachment: string) => string; mentionName?: (id: string) => string | undefined } = {}): DocumentFragment {
   const fragment = document.createDocumentFragment();
   // Without links (inside a button that starts editing), a link reads as styled text.
-  for (const tree of toTree(doc)) fragment.append(build(tree, { links: options.links !== false, imageUrl: options.imageUrl }));
+  for (const tree of toTree(doc)) fragment.append(build(tree, { links: options.links !== false, imageUrl: options.imageUrl, mentionName: options.mentionName }));
   for (const item of Array.from(fragment.querySelectorAll('ul[data-type="checklist"] > li'))) {
     const box = document.createElement('span');
     box.className = 'rt-check';
@@ -196,6 +208,8 @@ export function renderView(doc: Doc, options: { links?: boolean; imageUrl?: (att
 // ---------- positions ----------
 
 const skipped = (node: Node) => node.nodeType === 1 && (node as Element).getAttribute('contenteditable') === 'false';
+/** A mention on the surface: one position in the model, whatever its text. */
+const isMention = (node: Node) => node.nodeType === 1 && (node as Element).hasAttribute('data-rt-mention');
 const isFiller = (node: Node) => node.nodeType === 1 && (node as Element).hasAttribute(FILLER);
 
 /** The text of a rendered block as the model counts it: BREAK for each break, nothing for widgets. */
@@ -203,6 +217,7 @@ export function domText(element: Element, code = false): string {
   let out = '';
   const visit = (node: Node) => {
     if (node.nodeType === 3) { out += (node as Text).data; return; }
+    if (isMention(node)) { out += MENTION; return; }
     if (node.nodeType !== 1 || skipped(node)) return;
     if ((node as Element).tagName === 'BR') { if (!isFiller(node)) out += code ? '\n' : BREAK; return; }
     node.childNodes.forEach(visit);
@@ -218,6 +233,11 @@ export function offsetIn(element: Element, node: Node, offset: number): number {
     if (current === node && current.nodeType === 3) { result = count + Math.min(offset, (current as Text).data.length); return true; }
     if (current.nodeType === 3) { count += (current as Text).data.length; return false; }
     if (current.nodeType !== 1) return false;
+    if (isMention(current)) {
+      if (current === node || current.contains(node)) { result = count + (current === node && offset > 0 ? 1 : 0); return true; }
+      count += 1;
+      return false;
+    }
     if (skipped(current) && current !== node) return current.contains(node) ? (result = count, true) : false;
     if ((current as Element).tagName === 'BR') { if (current === node) { result = count; return true; } if (!isFiller(current)) count += 1; return false; }
     if (current === node) {
@@ -263,6 +283,13 @@ export function posToPoint(element: Element, offset: number): [Node, number] {
       const length = (node as Text).data.length;
       if (offset <= count + length) { found = [node, offset - count]; return true; }
       count += length;
+      return false;
+    }
+    if (isMention(node)) {
+      if (offset <= count) { found = [node.parentNode!, Array.from(node.parentNode!.childNodes).indexOf(node as ChildNode)]; return true; }
+      count += 1;
+      // Right after a mention: the point after it in its parent.
+      if (offset === count && !node.nextSibling) { found = [node.parentNode!, Array.from(node.parentNode!.childNodes).indexOf(node as ChildNode) + 1]; return true; }
       return false;
     }
     if (node.nodeType !== 1 || skipped(node)) return false;

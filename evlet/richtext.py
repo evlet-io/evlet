@@ -19,7 +19,7 @@ from html.parser import HTMLParser
 import re
 from urllib.parse import urlsplit
 
-__all__ = ['sanitise', 'plain_text', 'image_ids', 'Document']
+__all__ = ['sanitise', 'plain_text', 'image_ids', 'mention_ids', 'Document']
 
 MARKS = ('strong', 'em', 'u', 's', 'code')  # outermost first, after the link
 ALIASES = {'b': 'strong', 'i': 'em', 'strike': 's', 'del': 's', 'ins': 'u', 'tt': 'code', 'kbd': 'code', 'samp': 'code',
@@ -40,6 +40,8 @@ IMAGES = frozenset(('figure', 'img', 'figcaption'))
 SIZES = ('rt-sm', 'rt-md', 'rt-full')
 ATTACHMENT = re.compile(r'[1-9][0-9]{0,18}')
 MAX_ALT = 300
+MAX_NAME = 100
+MENTION = object()
 MAX_DEPTH = 3
 SPACES = re.compile(r'[ \t\n\r\f]+')
 CONTROL = re.compile(r'[\x00-\x20\x7f-\x9f]')
@@ -101,6 +103,14 @@ class _Reader(HTMLParser):
                 self.skip.append(tag)
             return
         name = ALIASES.get(tag, tag)
+        if tag == 'span' and not self.skip:
+            values = {key.lower(): value for key, value in attrs if isinstance(key, str)}
+            if ATTACHMENT.fullmatch(values.get('data-mention') or ''):
+                # A mention of a user (the activity journal): kept only when the caller allows mentions.
+                node = _Node('mention', {'data-mention': values['data-mention']})
+                self.node().children.append(node)
+                self.stack.append((tag, node))
+                return
         if tag == 'img':
             # Only a reference to an attachment: the image itself is never a URL.
             values = {key.lower(): value for key, value in attrs if isinstance(key, str)}
@@ -152,9 +162,10 @@ def _block(kind, **extra):
 class Document:
     """A flat list of blocks built from a tree; see docs/internal/rich-text.md."""
 
-    def __init__(self):
+    def __init__(self, mentions=False):
         self.blocks = []
         self.current = None
+        self.mentions = mentions
 
     # Building ----------------------------------------------------------------------------------
 
@@ -226,6 +237,12 @@ class Document:
                 continue
             if tag == 'br':
                 self.line_break(ctx)
+            elif tag == 'mention':
+                name = _plain(_text_of(child))[:MAX_NAME]
+                if self.mentions and not ctx['code'] and not ctx['pre']:
+                    self.inline_target(ctx)['content'].append(['mention', int(child.attrs['data-mention']), name])
+                else:
+                    self.add_text(name, ctx)
             elif tag == 'a':
                 self.walk(child, {**ctx, 'href': safe_href(child.attrs.get('href')) or ctx['href']})
             elif tag in MARKS:
@@ -305,11 +322,11 @@ class Document:
         self.end()
 
     @classmethod
-    def parse(cls, markup):
+    def parse(cls, markup, mentions=False):
         reader = _Reader()
         reader.feed(markup)
         reader.close()
-        document = cls()
+        document = cls(mentions)
         document.walk(reader.root, {'marks': (), 'href': None, 'list': None, 'depth': 0, 'item': None, 'quote': False,
                                     'code': False, 'pre': False, 'first_in_pre': False})
         document.normalise()
@@ -390,7 +407,8 @@ class Document:
                 if block['alt']:
                     lines.append(block['alt'])
             elif block['type'] != 'rule':
-                lines.append(''.join(piece[1] if piece[0] == 'text' else '\n' for piece in block['content']))
+                lines.append(''.join(piece[1] if piece[0] == 'text' else '@' + piece[2] if piece[0] == 'mention' else '\n'
+                                     for piece in block['content']))
         return '\n'.join(lines).strip('\n')
 
 
@@ -404,6 +422,10 @@ def _tidy(pieces):
                 out[-1][1] = out[-1][1].rstrip(' ')
             out.append(['break'])
             after_space = True
+            continue
+        if piece[0] == 'mention':
+            out.append(piece)
+            after_space = False
             continue
         text = piece[1]
         if after_space:
@@ -446,6 +468,14 @@ def _plain(value):
     return SPACES.sub(' ', value.replace('\u00a0', ' ').replace('\x00', '')).strip()
 
 
+def mention_ids(markup):
+    """The user ids sanitised rich text mentions, in order, each once."""
+    if not markup:
+        return []
+    return list(dict.fromkeys(piece[1] for block in Document.parse(markup, True).blocks
+                              for piece in block.get('content', ()) if piece[0] == 'mention'))
+
+
 def image_ids(markup):
     """The attachment ids the images of stored rich text refer to, in order, each once."""
     if not markup:
@@ -469,6 +499,8 @@ def _spaced(pieces):
     for index, piece in enumerate(pieces):
         if piece[0] == 'text':
             flat.extend((index, char) for char in piece[1])
+        elif piece[0] == 'mention':
+            flat.append((index, MENTION))
         else:
             flat.append((index, None))
     encoded = {index: [] for index in range(len(pieces))}
@@ -476,6 +508,9 @@ def _spaced(pieces):
     for position, (index, char) in enumerate(flat):
         if char is None:
             previous_plain_space = True
+            continue
+        if char is MENTION:
+            previous_plain_space = False
             continue
         if char == ' ':
             following = flat[position + 1][1] if position + 1 < len(flat) else None
@@ -501,7 +536,7 @@ def _group(pieces, level):
     """Wrap runs that share the link (level 0), then each mark in MARKS order (levels 1 to 5), so the
     nesting is canonical: the same text and marks always give the same HTML."""
     if level > len(MARKS):
-        return ''.join('<br>' if piece[0] != 'text' else piece[1] for piece in pieces)
+        return ''.join(_atom(piece) if piece[0] != 'text' else piece[1] for piece in pieces)
     out, index = [], 0
     while index < len(pieces):
         key = _key(pieces[index], level)
@@ -509,7 +544,7 @@ def _group(pieces, level):
         while end < len(pieces) and _key(pieces[end], level) == key and (key is not None or pieces[end][0] == pieces[index][0] == 'text'):
             end += 1
         if pieces[index][0] != 'text':
-            out.append('<br>')
+            out.append(_atom(pieces[index]))
         elif key is None:
             out.append(_group(pieces[index:end], level + 1))
         elif level == 0:
@@ -518,6 +553,13 @@ def _group(pieces, level):
             out.append(f'<{key}>{_group(pieces[index:end], level + 1)}</{key}>')
         index = end
     return ''.join(out)
+
+
+def _atom(piece):
+    """A break, or a mention: `<span data-mention="<user id>">Name</span>` (shown with the current name)."""
+    if piece[0] == 'mention':
+        return f'<span data-mention="{piece[1]}">{_text(piece[2])}</span>'
+    return '<br>'
 
 
 def _key(piece, level):
@@ -555,11 +597,12 @@ def _list_tag(kind):
     return 'ol' if kind == 'ordered' else 'ul'
 
 
-def sanitise(markup):
-    """Canonical safe HTML for any input text, and its plain-text extract: (html, text)."""
+def sanitise(markup, *, mentions=False):
+    """Canonical safe HTML for any input text, and its plain-text extract: (html, text). With mentions,
+    `<span data-mention="<user id>">` nodes are kept (the activity journal); otherwise they are text."""
     if not isinstance(markup, str):
         raise ValueError('Expected HTML text')
-    document = Document.parse(markup.replace('\x00', ''))
+    document = Document.parse(markup.replace('\x00', ''), mentions)
     if document.empty():
         return '', ''
     return document.html(), document.text()

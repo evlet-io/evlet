@@ -77,6 +77,12 @@ export function press(target: Element | Document, key: string, init: KeyboardEve
   return event;
 }
 
+/** Type into a rich text editor's surface, as the browser sends it (one cancellable beforeinput). */
+export function typeRich(surface: HTMLElement, value: string) {
+  surface.focus();
+  surface.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: value, bubbles: true, cancelable: true }));
+}
+
 export function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
   input.value = value;
   input.dispatchEvent(new Event('input', { bubbles: true }));

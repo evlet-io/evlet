@@ -30,7 +30,7 @@ production ready, but the rules below hold from 0.3 on.
   form the server writes, are public, so other clients and stored records keep working. Adding a
   node type (images, then mentions) widens the subset; nothing is removed without a deprecation.
   Images are `<figure class="rt-sm|rt-md|rt-full"><img data-attachment="<id>" alt="...">` with an
-  optional `<figcaption>`. The
+  optional `<figcaption>`. Journal notes and messages also keep mentions, `<span data-mention="<user id>">`. The
   `<name>_text` column is internal.
 
 - **Model `Meta` options.** `tests/test_public_api.py` pins the option names, among them `api`

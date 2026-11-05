@@ -65,8 +65,9 @@ switch between light and dark; a refused save puts the earlier theme back. The t
 presentation only: models and the API know nothing of it
 ([ui-framework.md](ui-framework.md#themes)).
 
-**Notifications.** Only the choices are stored for now. Security emails (a new device, a
-changed password) can't be turned off.
+**Notifications.** "Someone mentions me" is used: mentions in a record's activity go to the
+Mentions inbox in the top bar ("in Evlet") and by email through the mail connector ([journal.md](journal.md#mentions)).
+The other choices are stored for later. Security emails (a new device, a changed password) can't be turned off.
 
 ## Two-step sign-in
 

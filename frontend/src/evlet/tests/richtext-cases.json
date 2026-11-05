@@ -141,5 +141,32 @@
    "<ul><li>item</li></ul>",
    "item"
   ]
+ ],
+ "mention_cases": [
+  [
+   "<p>Hi <span data-mention=\"3\" class=\"x\">Priya  Nair</span>, see <b>this</b><span data-mention=\"4\">Omar</span></p>",
+   "<p>Hi <span data-mention=\"3\">Priya Nair</span>, see <strong>this</strong><span data-mention=\"4\">Omar</span></p>",
+   "Hi @Priya Nair, see this@Omar"
+  ],
+  [
+   "<p><span data-mention=\"0\">Zero</span> <span data-mention=\"x\">Bad</span></p>",
+   "<p>Zero Bad</p>",
+   "Zero Bad"
+  ],
+  [
+   "<p><strong>bold <span data-mention=\"5\">Ana</span> text</strong></p>",
+   "<p><strong>bold </strong><span data-mention=\"5\">Ana</span><strong> text</strong></p>",
+   "bold @Ana text"
+  ],
+  [
+   "<pre><code><span data-mention=\"3\">P</span></code></pre>",
+   "<pre><code>P</code></pre>",
+   "P"
+  ],
+  [
+   "<ul><li><span data-mention=\"7\">Li</span> does it</li></ul>",
+   "<ul><li><span data-mention=\"7\">Li</span> does it</li></ul>",
+   "@Li does it"
+  ]
  ]
 }
