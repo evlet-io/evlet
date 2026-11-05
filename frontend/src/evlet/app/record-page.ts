@@ -26,6 +26,7 @@ import type { JournalEntry, JournalPage } from './client';
 import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, numberField, screenModel, sections, sequenceField,
   summaryFields, titleOf, LIST_KEYS, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
 import { cellView } from './list-page';
+import { RelatedPanel } from './related-panel';
 import { Revisions } from './revisions';
 import { presentSlip, takePrefill } from './slips';
 import { openEvaPanel } from '../eva/chat';
@@ -687,17 +688,17 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
   const blocks: Child[] = [];
   if (keys.length) blocks.push(SideBlock({ title: 'Key fields', action: html`<button type="button" class="h-link" on:click=${() => active.set('details')}>All fields</button>`,
     body: KeyValueList(keys.map(meta => view(meta.name)), { links: ctx.links }) }));
-  if (relations.length && !narrow) blocks.push(SideBlock({ title: 'Related', body: html`<div>${relations.map(relation => {
-    const total = cell<number | null>(null);
-    // Counted again after every write of this record: a move or an action may add related records.
-    effect(() => {
-      store.etag.get();
-      void ctx.api.related(model.name, store.id!, relation.name, { limit: 1 }).then(page => total.set(page.total), () => total.set(null));
-    });
-    const target = screenModel(ctx.schema, relation.model);
-    return html`<button type="button" class="mini-card" on:click=${() => active.set('related')}>${IconTile(identity(target).icon, { tint: identity(target).tint, size: 28 })}
-      <span class="grow"><span class="nm">${relation.label}</span><span class="sub">${() => total.get() === null ? 'Open to see them' : `${total.get()} ${total.get() === 1 ? 'record' : 'records'}`}</span></span>${Icon('chevron-right', { size: 'sm', className: 'muted' })}</button>`;
-  })}</div>` }));
+  if (relations.length && !narrow) blocks.push(SideBlock({ title: 'Related', body: RelatedPanel({ expanded: ctx.prefs.cell(`related.all.${model.name}`, false), onOpen: () => active.set('related'),
+    items: relations.map(relation => {
+      const total = cell<number | null>(null);
+      // Counted again after every write of this record: a move or an action may add related records.
+      effect(() => {
+        store.etag.get();
+        void ctx.api.related(model.name, store.id!, relation.name, { limit: 1 }).then(page => total.set(page.total), () => total.set(null));
+      });
+      const target = screenModel(ctx.schema, relation.model);
+      return { key: relation.name, label: relation.label, href: ctx.router.href('record', { model: model.name, id: String(store.id) }, { tab: 'related' }), icon: identity(target).icon, tint: identity(target).tint, count: total };
+    }) }) }));
   if (model.attachments) blocks.push(SideBlock({ title: 'Files', body: Files(ctx, model, store) }));
   const revises = has('revises') ? view('revises') : null;
   const extras = () => extrasOf(ctx.api.detail(model.name, store.id!).get());

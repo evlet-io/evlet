@@ -34,6 +34,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   Playground's projects gain a Brief (migration `0010_project_brief`). Nothing to change for
   existing models ([docs/model-engine.md](docs/model-engine.md),
   [docs/ui-framework.md](docs/ui-framework.md#rich-text)).
+- **`evlet dev` creates the first admin.** On an instance with no accounts, `evlet dev` creates an
+  active admin (`admin`, or `--user NAME`) with a random password that is never shown and prints a
+  one-time sign-in link, so you type no password or two-step code in development. `--no-link` skips
+  both. `evlet serve`, tenants and deployments never create accounts. New
+  `evlet users set-password <instance> <username>` sets a real password from the server shell. It
+  asks twice, enforces `security.password_min`, ends the user's sessions and is audited as `cli`
+  ([docs/cli.md](docs/cli.md#development-sign-in-links)).
 - **`Meta.api` sets how much HTTP surface a model gets.** `"full"` is the default and changes
   nothing. `"read"` lets callers (HTTP, MCP, Eva, the connector) read the model but write it in no
   way, for any role and whatever Controls overrides say; only trusted Python (sessions, actions,
@@ -240,6 +247,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Smaller source distribution.** The sdist no longer carries tests, scripts, lock
   files, internal docs or the browser test fixtures. It keeps what building and
   installing Evlet needs, including the browser interface source.
+- **Fix: letter avatars and record tiles are centred again.** A record page's meta row styled
+  every nested `span`, which turned the avatar and the rounded-square tile there into flex boxes
+  with the letter off-centre. The rule now reaches only the row's own items, and `.avatar` and
+  `.org-mark` set `line-height:1`.
+- **Compact Related block on the record page.** The side panel lists each related model as a
+  36px row: icon, name, count and chevron, as real links. Relations with records come first, most
+  records first. Those with none fold into one line, "No records: ...", and each name still opens
+  the Related tab. Five rows show at first and "Show all" expands the rest; the choice is kept per
+  user and model. The count no longer runs into the name.
+
+### Fixes
+
+- The record state bar no longer stacks vertically: the time picker's spinner had reused its `.stepper` class and now uses `.time-stepper`.
 
 ## 0.2.0 (02-11-2026)
 

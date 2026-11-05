@@ -84,8 +84,10 @@ Sign in as demo-admin (works once, for 10 minutes):
   http://127.0.0.1:8000/_dev/signin?token=...
 ```
 
-Open it to sign straight in. On an empty Playground it first creates the
-administrator `demo-admin` with a random password that is never shown. Run
+Open it to sign straight in. On an instance with no accounts, `evlet dev` first creates an
+admin named `admin` (`--user NAME` picks another name) with a random password that is never
+shown; on an empty Playground it is `demo-admin`. Set a real password later with
+`evlet users set-password`. Run
 `evlet dev-link` in another terminal for a fresh link once the first one is used or
 expired. Use `--user NAME` to sign in as someone else, or `--no-link` to skip the
 link. Links exist only under `evlet playground` and `evlet dev`, never under
