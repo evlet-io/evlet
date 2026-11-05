@@ -551,7 +551,7 @@ def test_rows_are_validated_without_any_role(branches):
     closed = editor('POST', '/api/branch', {'title': 'closed', 'open': False})[1]['id']
     url = f"/api/branchorder/{editor('POST', '/api/branchorder', {'branch': closed})[1]['id']}"
     assert move(editor, url, 'done')[1]['fields'] == {
-        '_effects': 'BranchEntry row 1 is not valid: branch: The selected record does not match the current filters'}
+        '_effects': "BranchEntry row 1 is not valid: branch: This Branch doesn't fit the other values on this form."}
 
 
 def test_links_to_missing_records_are_field_errors(branches):

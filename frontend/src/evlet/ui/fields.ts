@@ -10,6 +10,7 @@ import { html, when, type Child } from '../dom';
 import { cell, derive, untrack, type Cell, type Readable } from '../reactive';
 import type { ApiClient, RecordData } from '../api';
 import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '../model/record';
+import { linkScope } from '../model/links';
 import type { FieldSchema, SchemaIndex } from '../model/schema';
 import { Chip, Icon, IconButton, RecordMark, StatusPill, Switch } from './base';
 import { read, tintFor, uid, type Prop, type Tint } from './core';
@@ -28,6 +29,8 @@ export interface FieldLike {
   readonly meta: FieldSchema;
   readonly value: Readable<unknown>;
   readonly error: Cell<string | null>;
+  /** Why the form changed the value itself, such as "Cleared because Company changed" (record fields only). */
+  readonly note?: Readable<string | null>;
   readonly rules: Readable<Rules>;
   readonly result?: Readable<Outcome>;
   readonly calculated: boolean;
@@ -80,7 +83,8 @@ const isEmpty = (value: unknown) => value === null || value === undefined || val
 export interface LinkOption { id: string; title: string; subtitle?: string }
 /** Where Link fields find records and their titles. */
 export interface LinkSource {
-  search(meta: FieldSchema, query: string): Promise<LinkOption[]>;
+  /** Records to choose from; `filters` are the Link's filters with the form's current values. */
+  search(meta: FieldSchema, query: string, filters?: Record<string, unknown>): Promise<LinkOption[]>;
   /** The title of a record, as a cell that fills in once it is read. */
   title(model: string, id: string): Readable<string | null>;
   remember?(model: string, id: string, title: string): void;
@@ -149,8 +153,8 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
     }
   };
   return {
-    async search(meta, query) {
-      const page = await api.list(meta.target!, { q: query || undefined, limit: 8 });
+    async search(meta, query, filters) {
+      const page = await api.list(meta.target!, { q: query || undefined, limit: 8, filters });
       return page.items.map(item => ({ id: item.id as string, title: titleOf(meta.target!, item) }));
     },
     title(model, id) {
@@ -543,14 +547,18 @@ function LinkControl(field: FieldLike, id: string, options: ControlOptions): Con
 }
 
 function LinkSearch(field: FieldLike, links: LinkSource | null, choose: (option: LinkOption | null) => void, typed = ''): Node {
-  const meta = field.meta, query = cell(typed), results = cell<LinkOption[]>([]), active = cell(0), state = cell<'loading' | 'ready' | 'error'>('loading');
+  const meta = field.meta, query = cell(typed), results = cell<LinkOption[]>([]), active = cell(0), state = cell<'loading' | 'ready' | 'error' | 'waiting'>('loading');
   const listId = uid('lb');
+  // Only records that fit the Link's filters, read with the form's current values (Ref('company')).
+  const scope = field instanceof Field ? untrack(() => linkScope(field)) : null;
+  const waiting = scope?.missing.length ? `Choose ${scope.missing.map(source => source.label).join(' and ')} first.` : '';
   let asked = 0;
   const search = async (text: string) => {
     const mine = ++asked;
+    if (waiting) { results.set([]); state.set('waiting'); return; }
     state.set('loading');
     try {
-      const found = links ? await links.search(meta, text) : [];
+      const found = links ? await links.search(meta, text, scope && Object.keys(scope.filters).length ? scope.filters : undefined) : [];
       if (mine !== asked) return;
       results.set(found); active.set(0); state.set('ready');
     } catch { if (mine === asked) state.set('error'); }
@@ -569,7 +577,8 @@ function LinkSearch(field: FieldLike, links: LinkSource | null, choose: (option:
   const list = html`<div class="link-list" role="listbox" id=${listId} aria-label=${meta.label}>${() => results.get().map((option, index) => html`<button type="button" tabindex="-1"
     class="mi" class:on=${() => active.get() === index} role="option" id=${optionId(index)} aria-selected=${() => String(active.get() === index)}
     on:click=${() => choose(option)} on:mouseenter=${() => active.set(index)}>${RecordMark({ name: option.title })}<span>${option.title}</span>${option.subtitle ? html`<span class="muted">${option.subtitle}</span>` : null}</button>`)}</div>`;
-  const status = () => state.get() === 'loading' ? 'Searching' : state.get() === 'error' ? 'Could not search. Try again.' : results.get().length ? '' : 'No matches. Try another name.';
+  const status = () => state.get() === 'loading' ? 'Searching' : state.get() === 'error' ? 'Could not search. Try again.' : state.get() === 'waiting' ? waiting
+    : results.get().length ? '' : scope ? 'No matches for the other values on this form.' : 'No matches. Try another name.';
   input.value = typed;
   search(typed);
   queueMicrotask(() => { input.focus(); input.setSelectionRange?.(typed.length, typed.length); });
@@ -636,9 +645,10 @@ export interface FieldProps {
  * (an error takes its place) and tooltip behind a ? icon at the input's right end.
  */
 export function BaseField(props: FieldProps): HTMLElement {
-  const { field } = props, meta = field.meta, id = uid('f'), errorId = `${id}-err`, helpId = `${id}-help`;
+  const { field } = props, meta = field.meta, id = uid('f'), errorId = `${id}-err`, helpId = `${id}-help`, noteId = `${id}-note`;
   const label = props.label ?? meta.label;
-  const describedBy = meta.help_text ? `${errorId} ${helpId}` : errorId;
+  const note = () => field.error.get() ? '' : field.note?.get() ?? '';
+  const describedBy = [errorId, field.note ? noteId : '', meta.help_text ? helpId : ''].filter(Boolean).join(' ');
   const control = FieldControl(field, { id, describedBy, links: props.links, onCommit: props.onCommit });
   const star = html`<span class="req" aria-hidden="true">*</span>` as HTMLElement;
   if (meta.required_when) tooltip(star, `Required when ${phrase(meta.required_when, labelsOf(field))}`);
@@ -646,7 +656,8 @@ export function BaseField(props: FieldProps): HTMLElement {
   return html`<div class="fld" class:full=${Boolean(props.full) || meta.type === 'longtext'} class:invalid=${() => Boolean(field.error.get())}
     hidden=${() => !field.rules.get().applies} data-field=${meta.name}>
     <label for=${labelled ? id : null} id=${`${id}-label`}>${label}${when(() => field.rules.get().required && !field.calculated, () => star)}${FieldHints(field)}${props.hint ?? null}</label>
-    ${meta.tooltip ? withTip(control.element, meta.tooltip, meta.label) : control.element}<span class="err" id=${errorId} role="alert">${() => field.error.get() ?? ''}</span>${meta.help_text
+    ${meta.tooltip ? withTip(control.element, meta.tooltip, meta.label) : control.element}<span class="err" id=${errorId} role="alert">${() => field.error.get() ?? ''}</span>${field.note
+      ? html`<span class="fld-note" id=${noteId} role="status" hidden=${() => !note()}>${note}</span>` : null}${meta.help_text
       ? html`<span class="fld-help" id=${helpId} hidden=${() => Boolean(field.error.get())}>${meta.help_text}</span>` : null}</div>` as HTMLElement;
 }
 

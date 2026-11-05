@@ -302,7 +302,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const display = RICH.has(meta.type) ? () => displayValue(field, { links: props.links, empty: '' }) : () => textOf(() => kind.format(field.value.get(), meta));
     const td = html`<td role="gridcell" data-col=${key} class=${`num${column().align === 'right' ? ' r' : ''}`} class:ed=${canEdit} class:calc=${() => !canEdit()}
       class:stk=${isFirst(column)} class:s2=${isFirst(column)} style:left=${pinStyle(column)} class:editing=${() => rowEdit() === key} class:active=${() => rowSpot() === key}
-      class:invalid=${() => Boolean(field.error.get())} aria-invalid=${() => field.error.get() ? 'true' : null} aria-readonly=${() => canEdit() ? null : 'true'}
+      class:invalid=${() => Boolean(field.error.get())} class:noted=${() => !field.error.get() && Boolean(field.note.get())} aria-invalid=${() => field.error.get() ? 'true' : null} aria-readonly=${() => canEdit() ? null : 'true'}
       tabindex=${() => rowActive() === key ? '0' : '-1'}>${when(() => rowEdit() === key, () => {
         control = FieldControl(field, {
           commitOn: 'manual', links: props.links, label: `${meta.label}, row ${indexOf(row.key) + 1}`,
@@ -311,7 +311,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
         });
         return control.element;
       }, display)}</td>` as HTMLElement;
-    tooltip(td, () => field.error.get());
+    tooltip(td, () => field.error.get() ?? field.note.get());
     return td;
   };
 
