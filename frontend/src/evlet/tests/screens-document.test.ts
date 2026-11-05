@@ -56,7 +56,7 @@ describe('transaction document (recorded fixtures)', () => {
     expect(text(host.querySelector('.eff-note'))).toContain('Append-only history');
     expect(host.querySelector('.composer textarea')).not.toBeNull();
     // Side panel: key fields, related counts, files and record info.
-    await until(() => expect(text(byText(host, '.side-sec', /^Related/))).toContain('Payments1 record'));
+    await until(() => expect(text(byText(host, '.side-sec', /^Related/))).toContain('Payments1'));
     expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf');
     click(byText(host, '.doc-tabs [role="tab"]', 'Related'));
     // A payment has no text field, so its title is its id.

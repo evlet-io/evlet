@@ -48,7 +48,8 @@ evlet serve acme
 ```
 
 Open **http://127.0.0.1:8000**. Create the first administrator using a username and
-a password of at least 15 characters. Sign in, open **Items** under Models and
+a password of at least 15 characters. (Under `evlet dev` in step 5 this is automatic.)
+Sign in, open **Items** under Models and
 create a record. Docs is the first page after sign-in.
 
 Press Control-C to stop the server. Run the same command to return to your site;
@@ -64,8 +65,11 @@ evlet dev --instance acme
 ```
 
 Python changes reload while you work. At startup it prints a one-time sign-in link
-for your account; open it to skip the sign-in form, and run `evlet dev-link` for a
-fresh one ([details](cli.md#development-sign-in-links)). A database field change also needs an
+for your account; open it to skip the sign-in form. On an instance with no accounts, it first
+creates an admin named `admin` (`--user NAME` picks another name) with a random password
+that nobody sees, so you never type a password or a two-step code in development. To sign in
+without a link later, run `evlet users set-password acme admin`. Run `evlet dev-link` for a
+fresh link ([details](cli.md#development-sign-in-links)). A database field change also needs an
 explicit migration. Follow [What you can customize](customizing.md) for a complete
 example, then stop the server and run `evlet migrate acme` before restarting.
 

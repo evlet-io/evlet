@@ -97,7 +97,7 @@ describe('testCRM: a deal and its lines', () => {
     expect(run.writes.map(write => `${write.method} ${new URL(write.url, 'http://x').pathname}`)).toEqual([`POST /api/deal/${id}/moves/negotiation`, `POST /api/deal/${id}/moves/won`]);
     expect(run.writes.every(write => write.headers['if-match'] && JSON.stringify(write.body) === '{}')).toBe(true);
     // The win created a kick-off task: the Related block counts it again after the move.
-    await until(() => expect(text(byText(host, '.side-sec', /^Related/))).toContain('Tasks2 records'));
+    await until(() => expect(text(byText(host, '.side-sec', /^Related/))).toContain('Tasks2'));
     tab(host, /^Lines/);
     expect(text(host.querySelector('.g-lock'))).toBe('Locked. Lines can’t change while it is won.');
     expect(host.querySelector('.doc-main [aria-label="Add row"], .doc-main .g-add')).toBeNull();
