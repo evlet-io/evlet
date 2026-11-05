@@ -28,9 +28,12 @@ def main():
     opener = build_opener(HTTPCookieProcessor(CookieJar()))
     csrf = ''
 
-    def request(path, data=None, expected=200, method=None):
+    def request(path, data=None, expected=200, method=None, if_match=None):
         body = None if data is None else json.dumps(data).encode()
-        req = Request(base + path, data=body, method=method, headers={"Content-Type": "application/json", "X-Evlet-Request": "1", "X-CSRF-Token": csrf})
+        headers = {"Content-Type": "application/json", "X-Evlet-Request": "1", "X-CSRF-Token": csrf}
+        if if_match:
+            headers["If-Match"] = if_match
+        req = Request(base + path, data=body, method=method, headers=headers)
         try:
             response = opener.open(req, timeout=10)
         except HTTPError as exc:
@@ -39,6 +42,12 @@ def main():
             payload = None if response.status == 204 else json.load(response)
             check(response.status == expected, f"{path}: expected {expected}, got {response.status}: {payload}")
             return payload
+
+    def etag(path):
+        """The record's current ETag: a calculated document's update sends it as If-Match."""
+        req = Request(base + path, headers={"X-Evlet-Request": "1", "X-CSRF-Token": csrf})
+        with opener.open(req, timeout=10) as response:
+            return response.headers["ETag"]
 
     check(request("/health") == {"status": "ok"}, "Health check failed")
     state = request('/api/auth/session')
@@ -71,7 +80,7 @@ def main():
     request("/api/invoice", {"customer": 2**63-1, "reference": f"ORPHAN-{suffix}", "total": "1.00"}, 404)
     updated = request(f'/api/invoice/{invoice["id"]}', {
         'total': '124.56', 'posting_date': '2026-10-28', 'status': 'sent', 'tax_rate': '5.1234',
-    }, method='PATCH')
+    }, method='PATCH', if_match=etag(f'/api/invoice/{invoice["id"]}'))
     check(updated['total'] == '124.56' and updated['tax_rate'] == '5.1234', 'Update lost precision')
     query = urlencode({'filters': json.dumps({'invoice': invoice['id']}), 'order_by': 'amount'})
     check(request('/api/payment?' + query)['items'][0]['id'] == payment['id'], 'Relationship query failed')
@@ -96,7 +105,7 @@ def main():
     request(f'/api/project/{project["id"]}', expected=204, method='DELETE')
     request(f'/api/customer/{customer["id"]}', expected=409, method='DELETE')
     request(f'/api/payment/{payment["id"]}', expected=204, method='DELETE')
-    request(f'/api/invoice/{invoice["id"]}', expected=204, method='DELETE')
+    request(f'/api/invoice/{invoice["id"]}', expected=204, method='DELETE', if_match=etag(f'/api/invoice/{invoice["id"]}'))
     request(f'/api/customer/{customer["id"]}', expected=204, method='DELETE')
     request(f'/api/customer/{customer["id"]}', expected=404)
     request('/api/auth/logout', {}, 204)
