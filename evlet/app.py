@@ -20,6 +20,11 @@ MAX_BODY_BYTES = 64 * 1024
 UNSAVED_BODY = 1024 * 1024 + 4096
 
 
+def image_limit(business):
+    from .images import limits
+    return limits(business)[0]
+
+
 class HTTPError(Exception):
     def __init__(self, status, message, headers=()):
         self.status = status
@@ -143,7 +148,9 @@ class Application:
                         return
                     data.extend(event.get("body", b""))
                     # Print designs carry their images as data: URIs (a design is at most 256 KiB).
-                    maximum = (1500000 if scope['path'].endswith('/attachments') or scope['path'] == '/api/_eva/files' else 2900000 if scope['path'] == '/api/_settings/me/photo'
+                    # Attachment routes also take rich text images, up to the Controls image limit (as base64).
+                    uploads = max(1500000, image_limit(self.business) * 4 // 3 + 4096) if self.business else 1500000
+                    maximum = (uploads if scope['path'].endswith(('/attachments', '/_images')) else 1500000 if scope['path'] == '/api/_eva/files' else 2900000 if scope['path'] == '/api/_settings/me/photo'
                                else 300000 if scope['path'].startswith('/api/_controls/prints')
                                else UNSAVED_BODY if scope['path'].startswith('/api/_unsaved/') else MAX_BODY_BYTES) if self.business else MAX_BODY_BYTES
                     if len(data) > maximum:

@@ -581,7 +581,7 @@ class AlterField:
     def signature(self):
         identifier(self.table)
         identifier(self.name)
-        if self.field.kind == 'reference' or not self.field.stored:
+        if len(self.field.columns(self.name)) != 1 or not self.field.stored:
             raise SchemaError('AlterField changes a stored field with one column')
         return {'operation': 'alter_field', 'table': self.table, 'name': self.name, 'field': self.field.metadata()}
 

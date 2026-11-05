@@ -92,6 +92,7 @@
     "Request": "class(path: str, query: str, host: str, user: object, params: dict) -> None",
     "Response": "class(body: str | bytes, status: int = 200, content_type: str = 'text/html; charset=utf-8') -> None",
     "RetireField": "class(table: str, name: str) -> None",
+    "RichText": "class(*, max_length=20000, **kwargs)",
     "Rule": "class(operations: tuple = ('read',), read_fields: tuple | None = None, write_fields: tuple | None = None, scope: object = None) -> None",
     "RunData": "class(function: object, name: str = None, maintenance: bool = False) -> None",
     "S3Storage": "class(client, *, bucket, prefix, tenant)",

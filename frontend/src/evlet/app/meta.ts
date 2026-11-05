@@ -116,7 +116,7 @@ const visible = (model: ScreenModel) => model.fields.filter(field => !field.hidd
 /** List columns: Meta.list_fields (without id) or the first eight visible fields; the title first. */
 export function listFields(model: ScreenModel): FieldSchema[] {
   const named = (model.list_fields ?? []).filter(name => name !== 'id').map(name => fieldOf(model, name)).filter((field): field is FieldSchema => Boolean(field && !field.hidden));
-  let fields = named.length ? named : visible(model).filter(field => field.type !== 'longtext');
+  let fields = named.length ? named : visible(model).filter(field => field.type !== 'longtext' && field.type !== 'richtext');
   const title = fieldOf(model, model.title_field);
   if (title && !title.hidden && !fields.includes(title)) fields = [title, ...fields];
   return fields.slice(0, 8);
@@ -126,7 +126,7 @@ export function listFields(model: ScreenModel): FieldSchema[] {
 export function keyFields(model: ScreenModel): FieldSchema[] {
   const named = (model.key_fields ?? []).map(name => fieldOf(model, name)).filter((field): field is FieldSchema => Boolean(field));
   if (named.length) return named;
-  return visible(model).filter(field => field.name !== model.title_field && field.type !== 'longtext').slice(0, 6);
+  return visible(model).filter(field => field.name !== model.title_field && field.type !== 'longtext' && field.type !== 'richtext').slice(0, 6);
 }
 
 /** Details sections: Meta.layout, or one section with every visible field. Unknown names (not readable) drop out. */

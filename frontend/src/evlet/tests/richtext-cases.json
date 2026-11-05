@@ -1,0 +1,172 @@
+{
+ "note": "Shared by tests/test_richtext.py and frontend richtext tests: input HTML, canonical HTML, plain text. Regenerate the expected values only for a deliberate change.",
+ "cases": [
+  [
+   "<p>Hello <b>world</b></p>",
+   "<p>Hello <strong>world</strong></p>",
+   "Hello world"
+  ],
+  [
+   "<p onclick=\"steal()\" style=\"color:red\" class=\"x\">a  b </p>",
+   "<p>a b</p>",
+   "a b"
+  ],
+  [
+   "<p><a href=\"javascript:alert(1)\">x</a></p>",
+   "<p>x</p>",
+   "x"
+  ],
+  [
+   "<p><a href=\"https://example.com/?a=1&amp;b=2\">ok</a> and <a href=\"mailto:me@example.com\">mail</a></p>",
+   "<p><a href=\"https://example.com/?a=1&amp;b=2\">ok</a> and <a href=\"mailto:me@example.com\">mail</a></p>",
+   "ok and mail"
+  ],
+  [
+   "<ul><li>one<ul><li>two<ul><li>three<ul><li>four</li></ul></li></ul></li></ul></li><li>back</li></ul>",
+   "<ul><li>one<ul><li>two<ul><li>three</li><li>four</li></ul></li></ul></li><li>back</li></ul>",
+   "one\ntwo\nthree\nfour\nback"
+  ],
+  [
+   "<ul data-type=\"checklist\"><li data-checked=\"true\">done</li><li>todo</li></ul>",
+   "<ul data-type=\"checklist\"><li data-checked=\"true\">done</li><li>todo</li></ul>",
+   "done\ntodo"
+  ],
+  [
+   "<blockquote><p>q1</p><p>q2</p></blockquote><pre><code>a\n  b &lt;tag&gt;</code></pre><hr>",
+   "<blockquote><p>q1</p><p>q2</p></blockquote><pre><code>a\n  b &lt;tag&gt;</code></pre><hr>",
+   "q1\nq2\na\n  b <tag>"
+  ],
+  [
+   "<p>&nbsp;lead&nbsp;&nbsp; two&nbsp;</p>",
+   "<p>&nbsp;lead &nbsp; two&nbsp;</p>",
+   " lead   two "
+  ],
+  [
+   "<p></p>",
+   "",
+   ""
+  ],
+  [
+   "<p><strong>bold <em>both</em></strong><em> it</em></p>",
+   "<p><strong>bold <em>both</em></strong><em> it</em></p>",
+   "bold both it"
+  ],
+  [
+   "<h1>Title</h1><h2>Two</h2><h3>Three</h3><h4>Four</h4>",
+   "<h2>Title</h2><h2>Two</h2><h3>Three</h3><h3>Four</h3>",
+   "Title\nTwo\nThree\nFour"
+  ],
+  [
+   "<p><i>i</i><u>u</u><s>s</s><del>d</del><code>c</code></p>",
+   "<p><em>i</em><u>u</u><s>sd</s><code>c</code></p>",
+   "iusdc"
+  ],
+  [
+   "<div>block<span style=\"font-weight:bold\">span</span></div>",
+   "<p>blockspan</p>",
+   "blockspan"
+  ],
+  [
+   "<ol><li>first</li><li>second</li></ol><ul><li>bullet</li></ul>",
+   "<ol><li>first</li><li>second</li></ol><ul><li>bullet</li></ul>",
+   "first\nsecond\nbullet"
+  ],
+  [
+   "<p>line<br>break</p>",
+   "<p>line<br>break</p>",
+   "line\nbreak"
+  ],
+  [
+   "<p>a <a href=\"https://x.io\"><strong>bold link</strong> plain</a></p>",
+   "<p>a <a href=\"https://x.io\"><strong>bold link</strong> plain</a></p>",
+   "a bold link plain"
+  ],
+  [
+   "<script>alert(1)</script><style>p{}</style><iframe src=\"https://x.io\"></iframe><p>kept</p>",
+   "<p>kept</p>",
+   "kept"
+  ],
+  [
+   "<svg><a href=\"https://x.io\">y</a></svg><p>after</p>",
+   "<p>after</p>",
+   "after"
+  ],
+  [
+   "<p><img src=\"x\" onerror=\"alert(1)\">text</p>",
+   "<p>text</p>",
+   "text"
+  ],
+  [
+   "<table><tr><td>a</td><td>b</td></tr></table>",
+   "<p>a</p><p>b</p>",
+   "a\nb"
+  ],
+  [
+   "<p>1 &lt; 2 &amp; 3 &gt; 2 \"quoted\"</p>",
+   "<p>1 &lt; 2 &amp; 3 &gt; 2 \"quoted\"</p>",
+   "1 < 2 & 3 > 2 \"quoted\""
+  ],
+  [
+   "<ol><li>one</li></ol><ol><li>again</li></ol>",
+   "<ol><li>one</li><li>again</li></ol>",
+   "one\nagain"
+  ],
+  [
+   "<ul><li><p>para in item</p></li></ul>",
+   "<ul><li>para in item</li></ul>",
+   "para in item"
+  ],
+  [
+   "<figure class=\"rt-sm\"><img data-attachment=\"12\" alt=\"Site &quot;plan&quot;\" src=\"https://evil.example/x.png\"><figcaption>Ground floor</figcaption></figure><p>after</p>",
+   "<figure class=\"rt-sm\"><img data-attachment=\"12\" alt=\"Site &quot;plan&quot;\"><figcaption>Ground floor</figcaption></figure><p>after</p>",
+   "Site \"plan\"\nafter"
+  ],
+  [
+   "<p>a<img data-attachment=\"7\" alt=\"x\">b</p>",
+   "<p>a</p><figure class=\"rt-md\"><img data-attachment=\"7\" alt=\"x\"></figure><p>b</p>",
+   "a\nx\nb"
+  ],
+  [
+   "<p><img src=\"data:image/png;base64,AAAA\" alt=\"no id\"></p>",
+   "",
+   ""
+  ],
+  [
+   "<figure class=\"rt-full extra\"><img data-attachment=\"3\"></figure>",
+   "<figure class=\"rt-full\"><img data-attachment=\"3\" alt=\"\"></figure>",
+   ""
+  ],
+  [
+   "<ul><li>item<img data-attachment=\"4\"></li></ul>",
+   "<ul><li>item</li></ul>",
+   "item"
+  ]
+ ],
+ "mention_cases": [
+  [
+   "<p>Hi <span data-mention=\"3\" class=\"x\">Priya  Nair</span>, see <b>this</b><span data-mention=\"4\">Omar</span></p>",
+   "<p>Hi <span data-mention=\"3\">Priya Nair</span>, see <strong>this</strong><span data-mention=\"4\">Omar</span></p>",
+   "Hi @Priya Nair, see this@Omar"
+  ],
+  [
+   "<p><span data-mention=\"0\">Zero</span> <span data-mention=\"x\">Bad</span></p>",
+   "<p>Zero Bad</p>",
+   "Zero Bad"
+  ],
+  [
+   "<p><strong>bold <span data-mention=\"5\">Ana</span> text</strong></p>",
+   "<p><strong>bold </strong><span data-mention=\"5\">Ana</span><strong> text</strong></p>",
+   "bold @Ana text"
+  ],
+  [
+   "<pre><code><span data-mention=\"3\">P</span></code></pre>",
+   "<pre><code>P</code></pre>",
+   "P"
+  ],
+  [
+   "<ul><li><span data-mention=\"7\">Li</span> does it</li></ul>",
+   "<ul><li><span data-mention=\"7\">Li</span> does it</li></ul>",
+   "@Li does it"
+  ]
+ ]
+}

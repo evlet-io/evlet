@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 
 from evlet import (AddField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
-                   Link, LongText, Migration, Model, PostgreSQLDatabase, Registry, RenameField, RetireField, RunData, Select, Text)
+                   Link, LongText, Migration, Model, PostgreSQLDatabase, Registry, RenameField, RetireField, RichText, RunData, Select, Text)
 from .items import core_fields, item_fields
 from .models import Customer, Invoice, registry
 
@@ -125,9 +125,11 @@ class LedgerEntry(Model):
 
 migrations.append(Migration('0009_ledger', CreateModel(LedgerEntry)))
 
-
 # Invoice.project: a Link whose filters read the invoice's customer (Ref('customer')).
 migrations.append(Migration('0010_invoice_project', AddField('invoice', 'project', Link(Project))))
+
+# Rich text: a project's brief (docs/internal/rich-text.md).
+migrations.append(Migration('0011_project_brief', AddField('project', 'brief', RichText(label='Brief'))))
 
 
 def legacy_registry():

@@ -69,7 +69,7 @@ function Series(ctx: ControlsContext, model: ModelInfo): HTMLElement {
         ${IconButton({ icon: 'arrow-down', tip: 'Check later', size: 'small', disabled: index >= all.length - 2, onClick: () => move(index, 1) })}
         ${Button({ label: 'Edit', size: 'small', onClick: () => editSeries(ctx, model, index, values) })}</div></div>`;
   };
-  const inputs = () => model.fields_detail.filter(info => info.name !== model.naming!.field && info.stored && info.type !== 'link' && info.type !== 'longtext').slice(0, 6);
+  const inputs = () => model.fields_detail.filter(info => info.name !== model.naming!.field && info.stored && info.type !== 'link' && info.type !== 'longtext' && info.type !== 'richtext').slice(0, 6);
   const input = (name: string) => {
     const value = effective(ctx, model.name, name);
     const choices = value.options ? [...(value.options ?? []).filter(option => !value.options_hidden.includes(option)), ...value.options_add] : null;

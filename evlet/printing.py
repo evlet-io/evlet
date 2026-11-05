@@ -13,7 +13,9 @@ from importlib import resources
 import re
 
 from .auth import AccessError
+from .fields import RichText
 from .models import Model, ValidationError
+from .richtext import sanitise
 
 INSTALL = 'Printing is not installed on this server (pip install evlet[print])'
 # Report designs read the report page by page, up to this many rows.
@@ -499,7 +501,7 @@ class Prints:
         if len(content) > limits.max_size:
             raise ValidationError({'attachment': f'The PDF is larger than {size_text(limits.max_size)}'})
         name = business.registry.name_for(model)
-        if tx.connection.execute('SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=?', (name, record_id)).fetchone()[0] >= limits.max_files:
+        if tx.connection.execute("SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=? AND (purpose IS NULL OR purpose <> 'image')", (name, record_id)).fetchone()[0] >= limits.max_files:
             raise ValidationError({'attachment': f'Use at most {limits.max_files} attachment{"s" if limits.max_files > 1 else ""} per record'})
         file_id = business.storage.add(tx, name, record_id, filename, content)
         from .journal import file
@@ -586,6 +588,13 @@ def document_context(business, tx, user, model, record):
             value = values[name]
             if isinstance(field, Link) and value is not None and follow_links:
                 value = follow(business.registry.resolve(field.target), value)
+            elif isinstance(field, RichText) and value is not None:
+                # Sanitised again here, so a template's {{ doc.brief }} is safe markup, never raw HTML; the
+                # record's own images are embedded as data: URIs (evlet/images.py).
+                from markupsafe import Markup
+                from .images import embed
+                value = Markup(embed(business, tx, definition, values.get('id'), sanitise(value)[0])) \
+                    if isinstance(value, str) and values.get('id') is not None else Markup(sanitise(value)[0]) if isinstance(value, str) else None
             else:
                 value = python_value(field, value)
             result[name] = value
@@ -712,6 +721,11 @@ def display(field, value, row, formats, business, design):
     from .fields import Boolean, Currency, Date as DateField, DateTime as DateTimeField, Decimal as DecimalField, Integer, Link, Percent
     if value is None or value == '':
         return ''
+    if isinstance(field, RichText):
+        from markupsafe import Markup
+        # Markup came from document_context: sanitised there, with the record's images embedded.
+        body = str(value) if isinstance(value, Markup) else sanitise(str(value))[0]
+        return Markup('<div class="evlet-rich">' + body + '</div>')
     if isinstance(field, Link) or isinstance(value, dict):
         return '' if not isinstance(value, dict) else str(value.get('title') or '')
     if isinstance(field, Currency):
@@ -1017,6 +1031,23 @@ h1 {{ font-size: 1.6em; margin: 0 0 1mm; }}
 .evlet-fields {{ width: 100%; border-collapse: collapse; break-inside: avoid; }}
 .evlet-fields td {{ vertical-align: top; padding: 0.6mm 3mm 0.6mm 0; }}
 .evlet-label {{ display: block; font-size: 0.8em; color: #666; }}
+.evlet-rich > :first-child {{ margin-top: 0; }}
+.evlet-rich p, .evlet-rich ul, .evlet-rich ol, .evlet-rich blockquote, .evlet-rich pre {{ margin: 0 0 1.5mm; }}
+.evlet-rich h2 {{ font-size: 1.2em; margin: 2mm 0 1mm; }}
+.evlet-rich h3 {{ font-size: 1.05em; margin: 2mm 0 1mm; }}
+.evlet-rich ul, .evlet-rich ol {{ padding-left: 5mm; }}
+.evlet-rich ul[data-type="checklist"] {{ list-style: none; padding-left: 1mm; }}
+.evlet-rich ul[data-type="checklist"] > li::before {{ content: "\2610  "; }}
+.evlet-rich ul[data-type="checklist"] > li[data-checked="true"]::before {{ content: "\2611  "; }}
+.evlet-rich blockquote {{ border-left: 0.8pt solid #999; padding-left: 3mm; color: #444; }}
+.evlet-rich pre, .evlet-rich code {{ font-family: monospace; font-size: 0.9em; white-space: pre-wrap; }}
+.evlet-rich hr {{ border: 0; border-top: 0.4pt solid #999; }}
+.evlet-rich figure {{ margin: 0 0 2mm; break-inside: avoid; }}
+.evlet-rich figure img {{ max-width: 100%; }}
+.evlet-rich figure.rt-sm img {{ width: 33%; }}
+.evlet-rich figure.rt-md img {{ width: 66%; }}
+.evlet-rich figure.rt-full img {{ width: 100%; }}
+.evlet-rich figcaption {{ font-size: 0.85em; color: #555; }}
 .evlet-table {{ width: 100%; border-collapse: collapse; }}
 .evlet-table th {{ text-align: left; font-weight: 700; border-bottom: 0.8pt solid #333; padding: 1.2mm 1.5mm; }}
 .evlet-table td {{ border-bottom: 0.4pt solid #ccc; padding: 1.1mm 1.5mm; vertical-align: top; overflow-wrap: anywhere; }}

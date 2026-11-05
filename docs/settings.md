@@ -70,8 +70,9 @@ keeps them for later instead of asking to discard them ([ui.md](ui.md#unsaved-ch
 Turning it off brings back the "Discard your changes?" prompt and deletes the edits kept on the
 server for that person. Portal people don't have it.
 
-**Notifications.** Only the choices are stored for now. Security emails (a new device, a
-changed password) can't be turned off.
+**Notifications.** "Someone mentions me" is used: mentions in a record's activity go to the
+Mentions inbox in the top bar ("in Evlet") and by email through the mail connector ([journal.md](journal.md#mentions)).
+The other choices are stored for later. Security emails (a new device, a changed password) can't be turned off.
 
 ## Two-step sign-in
 

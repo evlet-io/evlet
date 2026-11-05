@@ -209,6 +209,10 @@ class Business:
             self.eva.initialize()
         self.mailboxes.initialize()
         self.storage.initialize(self.database)
+        from . import images, mentions
+        images.initialize(self.database)
+        mentions.initialize(self.database)
+        self.schedule_image_purge()
         self.settings.initialize()
         self.unsaved.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
@@ -656,6 +660,9 @@ class Business:
             return 200, Discovery(self, user).describe(path.removeprefix('/api/_discovery/')), []
         if path == '/api/_events' and method == 'GET':
             return 200, self.event_page(scope), []
+        if path == '/api/_inbox' or path.startswith('/api/_inbox/'):
+            from .mentions import route as inbox
+            return inbox(self, scope, body, user)
         if path.startswith('/api/_jobs/') and method == 'GET' and self.jobs:
             value = path.removeprefix('/api/_jobs/')
             if not re.fullmatch('[1-9][0-9]{0,18}', value) or int(value) > 2**63-1:
@@ -668,8 +675,12 @@ class Business:
         if self.registry.api.get(model) == 'read' and scope['method'] not in ('GET', 'HEAD'):
             # Meta.api = "read": no route writes it, whatever the role or its Controls overrides.
             raise AccessError(403, read_only(model))
+        from . import images
         try:
-            return self.model_dispatch(scope, body, user, model, parts)
+            with images.writing(user.id, images.limits(self)):
+                if len(parts) >= 4 and parts[3] == '_images':
+                    return self.images(user, model, parts[4:], scope['method'], body)
+                return self.model_dispatch(scope, body, user, model, parts)
         except ValidationError as exc:
             raise ValidationError(self.visible_errors(user, model, exc.errors)) from None
 
@@ -719,6 +730,18 @@ class Business:
             if path_id(parts[3]) is None: raise AccessError(404, 'Record not found')
             from .corrections import dispatch
             return dispatch(self, scope, body, user, model, path_id(parts[3]), parts[4])
+        if len(parts) == 5 and parts[4] == 'mentionable':
+            # People to mention in this record's journal, with whether each can open the record.
+            if path_id(parts[3]) is None or method != 'GET': raise AccessError(404, 'Route not found')
+            if model not in self.journals: raise AccessError(404, 'This record has no journal')
+            from urllib.parse import parse_qs
+            from .mentions import mentionable
+            query = parse_qs(scope.get('query_string', b'').decode('latin-1'))
+            with self.database.transaction() as tx:
+                self.policy.record(tx, user, model, path_id(parts[3]))
+                if not self.policy.allows(user, model, 'journal'):
+                    raise AccessError(403, 'Your role cannot write to this journal')
+                return 200, {'items': mentionable(self, tx, user, model, path_id(parts[3]), query.get('q', [''])[0])}, []
         if len(parts) == 5 and parts[4] == 'journal':
             if path_id(parts[3]) is None: raise AccessError(404, 'Record not found')
             from .journal import route
@@ -1329,8 +1352,38 @@ class Business:
             items = self.policy.serialize_many(tx, user, [model._from_row(row) for row in rows])
         return 200, {'items': items, 'total': total, 'limit': limit, 'offset': offset}, []
 
+    def schedule_image_purge(self):
+        """Held rich text images are purged on each upload; with jobs, also hourly by a framework schedule."""
+        from . import images
+        from .jobs import Task
+        if self.jobs is None or not any(images.rich_fields(model) for model in self.registry.models.values()):
+            return
+        self.jobs.tasks.setdefault(images.PURGE_TASK, Task(images.PURGE_TASK, images.purge_job(self), max_attempts=1))
+        try:
+            with self.database.transaction() as tx:
+                exists = tx.connection.execute('SELECT 1 FROM evlet_schedules WHERE name=?', (images.PURGE_TASK,)).fetchone()
+        except Exception:  # the jobs tables are created when the queue initializes
+            return
+        if not exists:
+            self.jobs.schedule(images.PURGE_TASK, images.PURGE_TASK, {}, every=3600)
+
+    def images(self, user, model, tail, method, body):
+        """/api/{model}/_images: rich text images of a record not saved yet, held for the person who added them."""
+        from . import images
+        if len(tail) > 1:
+            raise AccessError(404, 'Route not found')
+        with self.database.transaction() as tx:
+            self.policy.require(user, model, 'create')
+            if method == 'POST' and not tail:
+                return 201, images.upload(self, tx, user, model, None, body), []
+            if method == 'GET' and tail and re.fullmatch(r'[1-9][0-9]{0,18}', tail[0]):
+                return images.response(self, images.held(self, tx, user, model, int(tail[0])))
+        raise AccessError(405 if not tail else 404, 'Method not allowed' if not tail else 'Image not found')
+
     def files(self, user, model, record_id, tail, method, body):
-        if model not in self.attachments or len(tail) > 1:
+        from . import images
+        image_route = bool(images.rich_fields(model))
+        if (model not in self.attachments and not image_route) or len(tail) > 1:
             raise AccessError(404, 'Attachments unavailable')
         file_id = None
         if tail:
@@ -1345,8 +1398,15 @@ class Business:
                 from .states import check_attachments
                 check_attachments(Context(self, tx, user, readonly=True), model, record)
             args = (name, record_id)
+            if method == 'POST' and file_id is None and body.get('purpose') == 'image':
+                # A rich text image: its own type check and limits, outside the record's files.
+                reply = images.upload(self, tx, user, model, record_id, body)
+                self.changed(tx, model, record_id)
+                return 201, reply, []
+            if model not in self.attachments and (method != 'GET' or file_id is None):
+                raise AccessError(404, 'Attachments unavailable')
             if method == 'GET' and file_id is None:
-                rows = tx.connection.execute('SELECT id,name,COALESCE(file_size,length(content)) AS size FROM evlet_attachments WHERE model=? AND record_id=? ORDER BY id', args)
+                rows = tx.connection.execute("SELECT id,name,COALESCE(file_size,length(content)) AS size FROM evlet_attachments WHERE model=? AND record_id=? AND (purpose IS NULL OR purpose <> 'image') ORDER BY id", args)
                 return 200, {'items': [dict(row) for row in rows]}, []
             if method == 'POST' and file_id is None:
                 filename = body.get('name')
@@ -1360,7 +1420,7 @@ class Business:
                 limits = self.attachment_limits[model]
                 if not 1 <= len(content) <= limits.max_size:
                     raise ValidationError({'attachment': f'Use a nonempty file up to {size_text(limits.max_size)}'})
-                if tx.connection.execute('SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=?', args).fetchone()[0] >= limits.max_files:
+                if tx.connection.execute("SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=? AND (purpose IS NULL OR purpose <> 'image')", args).fetchone()[0] >= limits.max_files:
                     raise ValidationError({'attachment': f'Use at most {limits.max_files} attachment{"s" if limits.max_files > 1 else ""} per record'})
                 file_id = self.storage.add(tx, *args, filename, content)
                 from .journal import file
@@ -1368,8 +1428,13 @@ class Business:
                 self.changed(tx, model, record_id)
                 return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []
             row = tx.connection.execute('SELECT * FROM evlet_attachments WHERE model=? AND record_id=? AND id=?', (*args, file_id)).fetchone()
-            if row is None:
+            if row is None or (model not in self.attachments and row['purpose'] != 'image'):
                 raise AccessError(404, 'Attachment not found')
+            if method == 'GET' and row['purpose'] == 'image':
+                return images.response(self, row)
+            if method == 'DELETE' and row['purpose'] == 'image':
+                # A record's images go when its rich text no longer refers to them (on save).
+                raise AccessError(405, 'Remove the image from the text and save instead')
             if method == 'GET':
                 return 200, Download(self.storage.read(row)), [(b'content-type', b'application/octet-stream'), (b'content-disposition', ("attachment; filename*=UTF-8''" + quote(row['name'], safe='')).encode()), (b'content-security-policy', b"default-src 'none'; sandbox")]
             if method == 'DELETE':

@@ -14,8 +14,9 @@ import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildRows, ChildTable } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
-import { displayValue, enterMovesToNextField, fieldFor, localField, stateTint, type FieldLike } from '../ui/fields';
+import { displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, stateTint, type FieldLike } from '../ui/fields';
 import { flowGrid, FoldSection, Folds, revealField, revealFirstError } from '../ui/fold';
+import { NoteComposer } from './composer';
 import { FormSection, KeyValueList } from '../ui/inline';
 import { humanize } from '../ui/kinds';
 import { copyText, DialogFooter, MenuButton, openDrawer, openModal, toast, type MenuItem } from '../ui/layers';
@@ -885,7 +886,6 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
   const page = cell<JournalPage | null>(null), problem = cell('');
   const load = () => void ctx.api.journal(model.name, store.id!, { limit: 50 }).then(result => page.set(result), error => problem.set(error instanceof ApiError ? error.message : 'The history could not be loaded.'));
   load();
-  const text = cell('');
   const canNote = Boolean(model.journal?.kinds?.includes('note'));
   const label = (field: string) => fieldOf(model, field)?.label ?? humanize(field);
   const value = (field: string, raw: unknown) => { const meta = fieldOf(model, field); return raw === '[masked]' ? '[masked]' : raw === null || raw === undefined || raw === '' ? 'empty' : meta ? formatOf(meta, raw) : String(raw); };
@@ -894,12 +894,6 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
   const action = (name: string) => model.actions?.find(item => item.name === name)?.label ?? humanize(name);
   const state = (name: unknown) => humanize(String(name ?? ''));
   const person = (id: unknown) => id === null || id === undefined ? null : page.peek()?.users[String(id)] ?? `User ${id}`;
-  const addNote = async () => {
-    const body = text.peek().trim();
-    if (!body) return;
-    try { await ctx.api.addNote(model.name, store.id!, body); text.set(''); toast('Note added', { icon: 'sticky-note' }); load(); }
-    catch (error) { toast(error instanceof ApiError ? error.message : 'The note was not added.', { icon: 'info' }); }
-  };
   const day = (at: string) => {
     const date = formatDateTime(at).slice(0, 10);
     return date === formatDateTime(new Date()).slice(0, 10) ? 'Today' : date;
@@ -941,7 +935,8 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
       case 'effects': return (data.targets ?? []).some((posted: any) => posted.balanced !== undefined)
         ? html`<div class="note">${(data.targets ?? []).filter((posted: any) => posted.balanced !== undefined).map((posted: any) =>
           Chip({ label: `${target(posted.target)} ${posted.balanced ? 'balanced' : 'not balanced'}`, tone: posted.balanced ? 'green' : 'rose', icon: posted.balanced ? 'check' : 'info' }))}</div>` : null;
-      case 'message': return html`<div class="note mail">${data.subject ? html`<div class="subj">${String(data.subject)}</div>` : null}${String(data.text ?? '')}</div>`;
+      case 'message': return html`<div class="note mail">${data.subject ? html`<div class="subj">${String(data.subject)}</div>` : null}${typeof data.html === 'string' ? richNote(data.html) : String(data.text ?? '')}</div>`;
+      case 'note': return typeof data.html === 'string' ? html`<div class="note">${richNote(data.html)}</div>` : data.text ? html`<div class="note">${String(data.text)}</div>` : null;
       case 'follow_up': {
         const who = person(data.assignee);
         const facts = [data.due ? `Due ${formatDate(data.due)}` : null, who ? `for ${who}` : null].filter(Boolean).join(' ');
@@ -950,6 +945,8 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
       default: return data.text || data.reason ? html`<div class="note">${String(data.text ?? data.reason)}</div>` : null;
     }
   };
+  // A note written with the composer: formatted, mentions shown with each person's current name.
+  const richNote = (markup: string) => RichTextView(markup, { mentions: id => page.peek()?.users[id] });
   const entry = (item: JournalEntry) => {
     const [icon, tint] = KINDS[item.kind] ?? ['activity', 'slate'];
     const hidden = item.partial ? html`<span class="muted ev-partial" title="Parts of this entry are hidden from your role">${Icon('eye-off', { size: 'xs' })} Some details are hidden</span>` : null;
@@ -958,9 +955,8 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
   };
   return [
     InfoNote(model.journal?.tamper_evident ? 'Append-only history, chained so tampering shows. Entries are never edited or removed.' : 'Append-only history. Entries are never edited or removed.', 'lock'),
-    canNote ? html`<div class="composer"><textarea aria-label="Note" placeholder="Write a note" prop:value=${text} on:input=${(event: Event) => text.set((event.target as HTMLTextAreaElement).value)}
-      on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.stopPropagation(); void addNote(); } }}></textarea>
-      <div class="cf"><span class="grow"></span>${Button({ label: 'Save note', variant: 'primary', size: 'small', disabled: () => !text.get().trim(), onClick: () => void addNote() })}</div></div>` : null,
+    canNote ? NoteComposer({ api: ctx.api, model: model.name, id: store.id!, name: id => page.peek()?.users[id],
+      onAdded: () => { toast('Note added', { icon: 'sticky-note' }); load(); }, onError: message => toast(message, { icon: 'info' }) }) : null,
     live(() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : page.get() === null ? html`<p class="muted">Loading…</p>`
       : !page.get()!.items.length ? EmptyState({ icon: 'activity', tint: 'slate', title: 'No activity yet', text: 'Changes, moves and notes for this record land here.' })
       : html`<div class="timeline">${(() => {

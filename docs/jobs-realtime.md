@@ -169,7 +169,8 @@ Authenticated routes are:
 - `GET /api/_events/stream?cursor=<cursor>`: stream named `evlet` SSE messages.
 
 Each page contains `items`, `cursor`, `reset`, and `more`. An item contains only
-`model`, `id`, and `deleted`. No record fields, actor IDs, or payloads are included.
+`model`, `id`, and `deleted`, except `{"type": "inbox.changed"}`, which only the person whose
+inbox changed receives (`EventStore.publish_user`), and `{"type": "config.changed"}`. No record fields, actor IDs, or payloads are included.
 Cursors are opaque random tokens. A stale or foreign cursor returns `reset: true`
 with a current watermark; clients reload their authorized records. Cursor `0`
 requests the retained beginning. Pages scan at most 100 events and advance even

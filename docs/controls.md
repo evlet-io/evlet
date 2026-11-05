@@ -494,6 +494,14 @@ mailbox" on the Email page:
 |---|---|---|
 | `mail.personal` | false | Off refuses new connections and pauses every personal mailbox: nothing is read and emails go from the shared account. People can still change options and disconnect. Settings, Your email says so and disables every Connect button and the app-password form. |
 
+Images in rich text have their own limits, separate from a model's file attachments (which stay
+at 1 MiB and ten files). Set them as setting overrides (`PUT` a `setting` override, audit area Files):
+
+| Key | File value | Rule |
+|---|---|---|
+| `files.image_max_kb` | 2048 | Largest image after the browser shrinks it, in KiB, 64 to 8192 (8 MiB, what private storage reads back). |
+| `files.images_per_record` | 50 | Images per record across its rich text fields, 1 to 200. |
+
 A stored value that no longer validates turns it off. Changes are audited under `Email`.
 
 **Which records mail matches.** Apps opt models in, naming the `Email` fields to match:
