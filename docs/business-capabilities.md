@@ -190,6 +190,34 @@ the role cannot read all give the same 403 "Query field is unavailable", before 
 compared. A restricted field is refused, never answered, so filters cannot be used to guess its
 values. The parent's row scope, tenant and account checks apply as for any list.
 
+### Link filters
+
+`filters` on a Link limit which records it may hold. A value is a literal or `Ref` to another
+field of the same form; a row of a Table reads its parent with `Ref("parent.<field>")`:
+
+```python
+class Visit(Model):
+    company = Link(Company)
+    branch = Link(Branch, filters={"company": Ref("company")})
+    floor = Link(Floor, filters={"branch": Ref("branch")})      # a chain: company, branch, floor
+
+    class Stop(Child):
+        branch = Link(Branch, filters={"company": Ref("parent.company")})
+```
+
+The server checks the selected record on every preview and save, and reading it applies the
+role's row scope. A record that does not fit gives a field error that names the mismatch in
+plain words: "Port office is not in Summit Services." when the Link has one filter, that filter
+compares a Link of the target with a Link on the form, and the role may read both titles. An
+empty referenced field gives "Choose Company first.". Otherwise, with several filters, a
+literal filter, or a title the role cannot read, the error is general: "This Branch doesn't fit
+the other values on this form." The message never shows a title or field the role cannot read.
+
+The schema sends each Link's filters in `behavior.<field>.filters` (`{"$expr": "ref", "args":
+["company"]}` for a `Ref`), also for models with no other rules. When the filters read a field
+the role cannot read, it sends `filters_blocked: true` instead and only the server applies them.
+The browser form uses the filters as [ui.md](ui.md#link-filters) describes.
+
 A scope on the signed-in user pairs with `default=CurrentUser`, which fills a field from that
 user when a record is created without a value: the username in a `Text` field, the account id
 in an `Integer` field. Other field types refuse it. A value the caller sends wins and still has
@@ -353,7 +381,57 @@ class Meta:
 Use at most eight groups and list each visible field at most once. Visible fields a
 layout leaves out follow in an Other group, in declaration order. A field listed twice,
 or an unknown or hidden name, fails registration with a message naming it. The default
-is one Details group. The UI schema retains version 1 with additive layout,
+is one Details group.
+
+### Collapsible sections
+
+A plain `('Title', fields)` group always shows. Use `Section` for a group people can open
+and close from its heading:
+
+```python
+from evlet import Section
+
+class Meta:
+    layout = (
+        ('Project', ('title', 'customer', 'status')),
+        Section('Planning', ('budget', 'progress')),                 # starts open
+        Section('Schedule', ('starts_on',), collapsed=True),         # starts closed
+        Section('Notes', ('notes',), collapsed='empty'),             # closed when empty
+    )
+```
+
+`Section(title, fields, *, collapsible=True, collapsed=False)`. `collapsed` is where the
+section starts: `False` open, `True` closed, or `'empty'`, closed when every field in it is
+empty on an existing record and always open on a new one. Any other value, or `collapsed`
+on a section with `collapsible=False`, fails registration with a message naming the model
+and the section. The group rules above apply to sections too, and Other always shows.
+`collapsed` is only the starting point: each person's own choice is remembered per model
+([ui.md](ui.md#collapsible-sections)). Each layout entry in the UI schema carries
+`collapsible` and `collapsed` (`false` for plain groups). Controls can change both per
+section ([controls.md](controls.md)).
+
+### Field order and record tabs
+
+`Section(..., flow="rows" | "columns")` sets how a section's fields are ordered on screen and
+for Tab. `"rows"`, the default and the only order for a plain group, fills across, then down.
+`"columns"` goes down the left column, then the right; a full-width field (long text, or
+`width: 12` in Controls) ends the run like a section break, and the next run starts below it. The
+browser puts fields in the DOM in this order, so Tab, screen readers and a phone's single column all
+follow it. Each UI schema layout entry carries `flow`.
+
+`Meta.tabs` orders the record page's tabs and `Meta.default_tab` names the one a record opens on:
+
+```python
+class Meta:
+    tabs = ("details", "lines", "activity", "related")
+    default_tab = "details"
+```
+
+Names are `activity`, `details`, `revisions`, `related`, `postings` and the model's Table fields.
+Tabs left out follow in their usual order, and a tab a record doesn't have (Activity without a
+journal) is skipped. An unknown name, a name listed twice, or a `default_tab` missing from `tabs`
+fails registration naming the model. The schema adds `tabs` (`[]` without one) and `default_tab`
+(`null`). Controls can change both per site. The UI schema retains version 1 with additive layout,
 permissions, actions, children, child_only, and attachments metadata. Presentation
 changes do not alter migration checksums.
 

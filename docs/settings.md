@@ -17,7 +17,7 @@ person used, kept on the server: `GET /settings` redirects to `/settings/<last p
 | Path | What it holds | Saves |
 | --- | --- | --- |
 | `/settings/profile` | Photo, full name, short name, job title, mobile, email signature, email (through a link) and the read-only username | Instantly |
-| `/settings/appearance` | Theme (light, dark or match my device), density, text size, start page, sidebar counts, language (Arabic is right-to-left), time zone, date format, number format, first day of the week | Instantly |
+| `/settings/appearance` | Theme (light, dark or match my device), density, text size, start page, sidebar counts, Enter moves to the next field, language (Arabic is right-to-left), time zone, date format, number format, first day of the week | Instantly |
 | `/settings/security` | Password, two-step sign-in, where you are signed in | On submit |
 | `/settings/notifications` | Event by channel (in Evlet, email), quiet hours | Instantly |
 | `/settings/email` | Your own mailbox: connect Microsoft 365, Google or another mailbox, send from it, link replies to records, sync and disconnect ([controls.md](controls.md#personal-mailboxes)). Desk only | Instantly |

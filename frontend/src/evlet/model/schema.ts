@@ -75,7 +75,11 @@ export interface ModelSchema {
   fields: FieldSchema[];
   list_fields: string[];
   search_fields?: string[];
-  layout?: Array<{ label: string; fields: string[]; wide?: string[] }>;
+  /** Form sections. collapsible and collapsed come from evlet.Section or a Controls layout (absent from older servers). */
+  layout?: Array<{ label: string; fields: string[]; wide?: string[]; collapsible?: boolean; collapsed?: boolean | 'empty';
+    /** rows: across then down; columns: down the left column, then the right. */ flow?: 'rows' | 'columns' }>;
+  /** Record page tabs in order (record tabs and child table names) and the tab a record opens on. */
+  tabs?: string[]; default_tab?: string | null;
   /** Rows per page and default order, from a Controls list view. */
   page_size?: number;
   order_by?: string;
@@ -93,6 +97,12 @@ export interface ModelSchema {
   slips?: SlipSchema[];
   /** Print designs the role may print a record of this model with, the default first. */
   prints?: PrintSchema[];
+  /**
+   * Per-field behavior. `filters` are a Link's selection filters: a literal value, or
+   * `{"$expr": "ref", "args": ["company"]}` for another field of the form (`parent.company` from a
+   * row). `filters_blocked` means they read a field the role cannot, so only the server applies them.
+   */
+  behavior?: Record<string, { filters?: Record<string, unknown>; filters_blocked?: boolean } & Record<string, unknown>>;
 }
 
 /** A print design (evlet.PrintDesign) the role may print with; the PDF comes from the server. */

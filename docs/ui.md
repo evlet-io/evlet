@@ -24,6 +24,12 @@ The previous SolidJS interface and the Vue regression harness have been removed.
   model, when the server has the print extra (in a side panel, Print is in the More menu). It opens a drawer with the server's PDF in the browser's
   own viewer, a choice of design, Download, and File a copy on records that keep attachments.
 
+Tables keep per-person column choices. The Columns menu of a record's child tables and of a report
+orders columns by dragging (or the keyboard), shows or hides them, and pins any number on the left:
+columns above the menu's divider stay in place while the table scrolls sideways. Prefs saved before
+pinning keep the first column pinned. A child table's Focus view keeps the record's header and its
+save bar in view ([ui-framework.md](ui-framework.md)).
+
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout`, `key_fields`, `relations`, `measures` and `open_in`. See "What the model decides" in
 [ui-framework.md](ui-framework.md).
@@ -135,6 +141,42 @@ A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-f
 at rest the record shows the formatted text (read only when the record is locked), and list cells
 show its plain text. The Playground's projects have one, Brief.
 
+### Collapsible sections
+
+Sections declared with `evlet.Section`, or set to Can collapse in Controls, open and close
+from their heading: a real button with `aria-expanded` and `aria-controls`, so Enter and Space
+toggle it, and Tab skips the fields of a closed section. A closed section shows how many of its
+fields are filled ("3 of 5 filled"), or "Required missing" when a required field is empty, and
+a badge with the number of fields that have errors.
+
+- **Starting state.** The app's `collapsed` value, unless the person chose: open and closed are
+  remembered per user and model in their browser preferences, by section title, and the record page
+  and the side panel share them. Sections closed in a side panel before this release carry over once.
+  Reset layout in the record's More menu forgets those choices.
+- **Phones.** Below 760 px, collapsible sections after the first start closed unless the person's
+  saved choice says otherwise. This is the default behaviour.
+- **Errors and focus.** A field error opens its section. A refused save opens every section with an
+  error, then scrolls to and focuses the first one. A `#field` address
+  (`/app/project/01hc1sd9vc1ye#starts_on`) opens that field's section and focuses it; code can do the
+  same with `revealField(root, name)`.
+- **Same everywhere.** New, read-only and locked records fold the same way. In the narrow side panel
+  every section can close. Print and PDF show everything: the browser's print style opens closed
+  sections, and the server's print designs never use the form layout.
+- Height animates only when the device does not ask for reduced motion.
+
+### Field and tab order
+
+The DOM order of a form is its visual order, and nothing uses a positive `tabindex`. A section with
+`flow="columns"` lists its fields down the left column, then the right, so Tab goes the same way.
+Tab skips values that can't change (read only, locked or calculated); a click still focuses them,
+showing why, and screen readers read them. Record tabs follow `Meta.tabs` or the Controls tab order,
+and a record opens on its default tab, which the address then leaves out (`?tab=` names the others).
+
+**Enter moves to the next field** (Settings, Appearance, off by default) makes Enter go to the next
+field of a form and Shift+Enter to the one before, skipping fields that can't change. It never
+applies in long text or rich text, on buttons, or while a picker or list is open, and Ctrl or Cmd
+Enter still saves. On a saved record, where each value saves on its own, Enter keeps saving the value.
+
 ### Ids, names and titles
 
 Record addresses use the record's text id, `/app/invoice/01hc1sd9vc1ye`, so changing a name never
@@ -144,6 +186,33 @@ the model has naming, its `name` next to it in a monospaced font, or "Assigned o
 "Assigned on confirm" until it has one. Link pickers, list rows, search and the recent records
 show titles; the schema's `title_field` is `title` for every record model
 ([model-engine.md](model-engine.md#name-and-title)).
+
+### Created and last modified
+
+The Record info block of every record page shows when the record was created and last changed, and
+by whom: `Created 2 hours ago · Aslam`. Hover or focus a time for the exact time in your zone
+(`04-11-2026 12:05 GST`); click it to show every time there exactly, which is remembered for you. The
+times move on by themselves while the page is open. Who links to Controls Users for people who may
+open Controls. Portal users see the times only. See
+[model-engine.md](model-engine.md#record-times) for what is recorded and
+[ui-framework.md](ui-framework.md#relative-times) for the `RelativeTime` component.
+
+### Link filters
+
+A Link with `filters` ([business-capabilities.md](business-capabilities.md#link-filters)) is
+handled in the form with the values the person has entered, saved or not:
+
+- The picker lists only records that fit, by sending the filters to the list route. While a field
+  the filters read is empty, it lists nothing and says "Choose Company first.".
+- When a field changes, every Link whose filters read it is checked again: on the same row, and
+  `Ref("parent.<field>")` Links on the rows of its tables. A value that still fits is kept. One that
+  no longer fits is cleared, with a note under the field (a tooltip in a table cell) such as
+  "Cleared because Company changed". Clearing a Link checks the Links that read it in turn, so a
+  chain such as company, branch, floor clears together. The browser decides from a record it
+  already holds; otherwise it asks the list route (`id__in` and the filters), so the role's row and
+  field permissions apply. When it cannot tell, the value stays and the save reports it.
+
+The server still checks every Link on preview and save; the form only avoids keeping a stale value.
 
 ### Filters
 

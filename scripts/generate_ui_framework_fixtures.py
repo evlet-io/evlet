@@ -19,6 +19,7 @@ from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Tab
                    Report, Column, Chart, Count)
 from evlet.calc import D, F, round, days
 from evlet.identity import sequential_ids
+from evlet.audit import fixed_times
 
 PASSWORD = 'a sufficiently long fixture password'
 FULL = Rule(('read', 'create', 'update', 'delete'))
@@ -614,7 +615,7 @@ def record_reports(folder):
 
 def generate():
     """Both fixtures, recorded from fresh databases. Ids count up per table so the recording is stable."""
-    with TemporaryDirectory() as directory, sequential_ids():
+    with TemporaryDirectory() as directory, sequential_ids(), fixed_times():
         return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_slips(Path(directory)), **record_reports(Path(directory))}}
 
 

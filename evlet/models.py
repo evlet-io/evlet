@@ -7,6 +7,7 @@ from .fields import ACTIVE, Field, Link, MISSING, RULES, Reference, State, activ
 from .declarations import Table, ReactiveQuery, DEFAULT_TABLE_ROWS
 from .identity import RecordId
 from .naming import standard
+from .audit import COLUMNS as AUDIT
 
 
 def identifier(name):
@@ -225,6 +226,8 @@ class Model(metaclass=ModelType):
             if not (getattr(field, 'instance', None) or standard(field)) or name in row.keys()
         })
         instance._id = RecordId(row["id"])
+        # When and by whom the record was created and last changed (evlet/audit.py), when the row has them.
+        instance._audit = tuple(row[name] for name in AUDIT) if AUDIT[0] in row.keys() else None
         return instance
 
 
@@ -296,6 +299,9 @@ class Registry:
                 raise ValueError(f'Model and table names (storage_name or Table attribute) must use lowercase letters, digits and underscores: {name!r}')
             if name in ("schema", "auth") or name.startswith("evlet_"):
                 raise ValueError("The model name is reserved for metadata")
+            if set(model.__fields__) & set(AUDIT):
+                raise ValueError(f"{model.__name__}: {', '.join(sorted(set(model.__fields__) & set(AUDIT)))} is reserved for the record's "
+                                 "created and modified times; rename the field")
             if name in registered:
                 raise ValueError(f"Duplicate model name: {name}")
             registered[name] = model
@@ -315,9 +321,11 @@ class Registry:
         for model in models:
             for field in model.__declared_fields__.values():
                 check_currency_source(model, field)
-        from .ui.metadata import view_for
+        from .ui.metadata import check_tabs, view_for
         for model in models:
-            view_for(model)
+            view = view_for(model)
+            tables = [child.name for child in self.children if child.parent is model]
+            check_tabs(tables, view['tabs'], view['default_tab'], f'{model.__name__}.Meta.tabs')
         self.models = MappingProxyType(registered)
         self.resources = MappingProxyType(resources)
         for model in models:

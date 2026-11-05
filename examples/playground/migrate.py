@@ -125,8 +125,11 @@ class LedgerEntry(Model):
 
 migrations.append(Migration('0009_ledger', CreateModel(LedgerEntry)))
 
+# Invoice.project: a Link whose filters read the invoice's customer (Ref('customer')).
+migrations.append(Migration('0010_invoice_project', AddField('invoice', 'project', Link(Project))))
+
 # Rich text: a project's brief (docs/internal/rich-text.md).
-migrations.append(Migration('0010_project_brief', AddField('project', 'brief', RichText(label='Brief'))))
+migrations.append(Migration('0011_project_brief', AddField('project', 'brief', RichText(label='Brief'))))
 
 
 def legacy_registry():

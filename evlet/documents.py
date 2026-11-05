@@ -142,7 +142,11 @@ class Context:
         if correlation_id is not None and (not isinstance(correlation_id, str) or len(correlation_id) > 200):
             raise ValueError('correlation_id must be text of at most 200 characters')
         if not readonly:
+            from .audit import actor_id
             tx._change_source, tx._change_correlation = source, correlation_id
+            # Writes are recorded under this user; the engine's own contexts (effects) keep the person's.
+            if actor_id(user) is not None:
+                tx.actor = actor_id(user)
         self.source, self.correlation_id = source, correlation_id
         self._lifecycle_execution = None
         self._business, self._tx, self.user = business, tx, user
@@ -875,16 +879,55 @@ def submitted_links(business, model, collections):
     return pairs
 
 
-def link_matches(context, item, field, value, targets=None):
-    """Whether the Link's selected record satisfies its filters; reading the record checks access."""
+def link_mismatch(context, item, name, field, value, targets=None):
+    """None when the Link's selected record satisfies its filters, else the message for the field.
+
+    Reading the record checks access. The message names both records only when the Link has one
+    filter, it compares a Link of the target with a Link on this form, and the role may read both
+    titles; otherwise it stays general, so it never reveals a record the role cannot read.
+    """
     business = context._business
     target = targets.get(field.target, value) if targets is not None else business.policy.record(context._tx, context.user, field.target, value)
     visible = business.policy.fields(context.user, field.target)
     if set(field.filters) - visible: raise AccessError(403, 'A selection constraint is unavailable')
+    failed = []
     for filter_name, expected in field.filters.items():
-        expected = item.read(expected.path) if isinstance(expected, Ref) else expected
-        if expected is None or getattr(target, filter_name) != expected: return False
-    return True
+        path = expected.path if isinstance(expected, Ref) else None
+        expected = item.read(path) if path else expected
+        if expected is None or getattr(target, filter_name) != expected: failed.append((filter_name, path, expected))
+    if not failed: return None
+    general = f"This {field_label(item._definition, name) or 'selection'} doesn't fit the other values on this form."
+    if len(field.filters) != 1 or failed[0][1] is None: return general
+    filter_name, path, expected = failed[0]
+    if expected is None:
+        label = path_label(item, path)
+        return f'Choose {label} first.' if label else general
+    # Both sides must be records the role may read, shown by their titles.
+    compared = field.target.__declared_fields__.get(filter_name)
+    if not isinstance(compared, Link): return general
+    try:
+        owner = targets.get(compared.target, expected) if targets is not None else business.policy.record(context._tx, context.user, compared.target, expected)
+    except (AccessError, ValueError, TypeError):
+        return general
+    titles = [getattr(record, 'title', None) if 'title' in business.policy.fields(context.user, model) else None
+              for record, model in ((target, field.target), (owner, compared.target))]
+    if not all(isinstance(title, str) and title.strip() for title in titles): return general
+    return f'{titles[0]} is not in {titles[1]}.'
+
+
+def field_label(definition, name):
+    from .ui.metadata import label_for
+    field = definition.__declared_fields__.get(name)
+    return None if field is None else field.label or label_for(name)
+
+
+def path_label(item, path):
+    """The label of the field a Ref path names on this form: `company` or `parent.company`."""
+    parts = path.split('.')
+    if len(parts) == 1: return field_label(item._definition, parts[0])
+    if len(parts) == 2 and parts[0] == 'parent' and getattr(item, 'parent', None) is not None:
+        return field_label(item.parent._definition, parts[1])
+    return None
 
 
 def settle(context, draft, *, complete, previous=None, kept=False):
@@ -1066,8 +1109,8 @@ def check_preview(context, all_drafts, internal, errors, states, targets=None):
                 required = required or item._rules.get(name, {}).get('required', False)
                 if required and item._values.get(name) in EMPTY: states[prefix + name] = 'required-input'
                 if isinstance(field, Link) and item._values.get(name) is not None and field.filters:
-                    if not link_matches(context, item, field, item._values[name], targets):
-                        errors[prefix + name] = 'The selected record does not match the current filters'
+                    message = link_mismatch(context, item, name, field, item._values[name], targets)
+                    if message: errors[prefix + name] = message
             except (ValueError, TypeError, ArithmeticError) as exc: errors[prefix + name] = str(exc)
 
 
@@ -1096,8 +1139,8 @@ def validate_tree(context, all_drafts, internal, prior, errors, targets=None):
                     raise ValueError('This field is required')
                 item._values[name] = field.clean(item._values.get(name))
                 if isinstance(field, Link) and item._values[name] is not None:
-                    if not link_matches(context, item, field, item._values[name], targets):
-                        raise ValueError('The selected record does not match the current filters')
+                    message = link_mismatch(context, item, name, field, item._values[name], targets)
+                    if message: raise ValueError(message)
             except ValueError as exc:
                 errors[prefix + name] = str(exc)
         for name, table in item._definition.__tables__.items():
@@ -1374,8 +1417,11 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     names, values = storage_columns(model, draft._values, model.__fields__)
     table = identifier(tx.registry.name_for(model))
     if draft.id is None:
-        object.__setattr__(draft, 'id', insert(tx.connection, table, names, values, id_title=has_title(model)))
-    elif names:
+        object.__setattr__(draft, 'id', insert(tx.connection, table, names, values, id_title=has_title(model), actor=tx.actor))
+    else:
+        from .audit import modified
+        stamp_names, stamp_values = modified(tx.actor)
+        names, values = [*names, *stamp_names], [*values, *stamp_values]
         tx.connection.execute(f'UPDATE {table} SET {", ".join(identifier(name) + "=?" for name in names)} WHERE id=?', [*values, draft.id])
     return tx.get(model, draft.id) if reload else None
 
@@ -1390,6 +1436,10 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     """
     from . import states
     business, tx, user = context._business, context._tx, context.user
+    # Two Contexts for different users may share one transaction: this write is recorded under this one.
+    from .audit import actor_id
+    if actor_id(user) is not None:
+        tx.actor = actor_id(user)
     # Required fields and retired options set in Controls apply to what people send, not to app code.
     person, context._person = context._person == (model, record_id) and action is None and move is None, None
     if (action is not None or move is not None) and not record_id:

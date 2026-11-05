@@ -5,6 +5,7 @@ from pathlib import Path
 import sqlite3
 
 from .fields import ACTIVE, EMPTY_LAYER, Link, MISSING, Reference, RichText
+from . import audit
 from .identity import RecordId, new_id, sequential
 from .models import ValidationError, identifier
 from .query import SqlQuery
@@ -189,12 +190,14 @@ def storage_columns(model, values, names):
     return columns, stored
 
 
-def insert(connection, table, names, values, *, id_title=False):
+def insert(connection, table, names, values, *, id_title=False, actor=None):
     """Insert one row under a new record id and return the id. A taken id (a collision of the 21 random
     bits within one millisecond) inserts nothing, so another id is drawn; other constraints still raise.
     With id_title, a standard title with nothing else to show takes the text id (evlet/naming.py), in the
-    same statement."""
+    same statement. The row's created and modified times and `actor` (evlet/audit.py) go in the same statement."""
     position = names.index('title') if id_title and values[names.index('title')] is None else None
+    stamp_names, stamp_values = audit.created(actor)
+    names, values = [*names, *stamp_names], [*values, *stamp_values]
     record_id = _insert(connection, table, names, values, position)
     if position is not None and sequential():
         connection.execute(f'UPDATE {table} SET "title" = ? WHERE "id" = ?', (str(record_id), record_id))
@@ -235,6 +238,8 @@ class Session:
         self.registry = registry
         self.timezone = timezone
         self._maintenance = False
+        # The user id writes are recorded under (evlet/audit.py); None is the engine.
+        self.actor = None
         # Period locks read once per transaction, and whether unlocked_periods() is active (evlet/periods.py).
         self._period_locks = None
         self._periods_unlocked = False
@@ -291,7 +296,7 @@ class Session:
         periods.check(self, model, after=record._values)
         self.check_references(model, record._values)
         names, stored = storage_columns(model, stored_values(model, record._values), model.__fields__)
-        created = insert(self.connection, table, names, stored, id_title=has_title(model))
+        created = insert(self.connection, table, names, stored, id_title=has_title(model), actor=self.actor)
         images.settle(self, model, created, record._values)
         return self.get(model, created)
 
@@ -335,6 +340,8 @@ class Session:
             table = identifier(self.registry.name_for(model))
             values = stored_values(model, record._values, current.id)
             names, stored = storage_columns(model, values, [*changes, *(['title'] if has_title(model) and 'title' not in changes else [])])
+            stamp_names, stamp_values = audit.modified(self.actor)
+            names, stored = [*names, *stamp_names], [*stored, *stamp_values]
             assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
             self.connection.execute(f'UPDATE {table} SET {assignments} WHERE "id" = ?', stored + [current.id])
             if any(isinstance(model.__fields__.get(name), RichText) for name in changes):
@@ -356,7 +363,9 @@ class Session:
         """For a data migration that fills names: give the model's table the standard name and title
         columns now instead of in framework step 0003, which runs after app migrations. Idempotent."""
         from .naming import add_columns
-        add_columns(self.connection, not isinstance(self.connection, sqlite3.Connection), self.registry.name_for(model), model)
+        postgres = not isinstance(self.connection, sqlite3.Connection)
+        add_columns(self.connection, postgres, self.registry.name_for(model), model)
+        audit.add_columns(self.connection, postgres, self.registry.name_for(model))
 
     def delete(self, model, record_id):
         self._guard(model)

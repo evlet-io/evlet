@@ -8,7 +8,7 @@ production ready, but the rules below hold from 0.3 on.
 
 - **Root exports.** Every name in `evlet.__all__`: fields, `Model`, `Child`, `Registry`,
   migrations, permissions (`Policy`, `Rule`, `own_customer`, `SCOPES`), lifecycle
-  (`State`, `Move`, `action`, `validate`), slips, measures, settings, connectors, storage,
+  (`State`, `Move`, `action`, `validate`), form sections (`Section`), slips, measures, settings, connectors, storage,
   jobs, routing and the application classes. Import them from `evlet`, not from the
   module that defines them.
 - **Field keywords.** The keywords every field takes (`required`, `default`, `label`,
@@ -20,6 +20,10 @@ production ready, but the rules below hold from 0.3 on.
   `ListView`, `Navigate`, `PageView`, `Select`, `Text`, `TextInput`, `ViewRegistry` and
   `When`. The browser does not render Python pages today ([ui.md](ui.md)), but their API
   stays.
+
+- **Record times.** Record details carry `_audit` (`created_at`, `created_by`, `modified_at`,
+  `modified_by`), and the column names `evlet_created_at`, `evlet_created_by`, `evlet_modified_at`
+  and `evlet_modified_by` are reserved on every model ([model-engine.md](model-engine.md#record-times)).
 
 - **Record identity.** Every record has `id`, `name` and `title`. `id` is a 13-character text id in
   JSON and URLs and a `RecordId` in Python; `name` and `title` are reserved field names on record
