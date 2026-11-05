@@ -154,7 +154,9 @@
             "total",
             "posting_date",
             "status",
-            "tax_rate"
+            "tax_rate",
+            "amount_paid",
+            "payment_status"
           ]
         }
       ],
@@ -168,6 +170,7 @@
         "reference",
         "customer",
         "total",
+        "payment_status",
         "status",
         "posting_date"
       ],
@@ -281,6 +284,52 @@
           "default": "0.0000"
         },
         {
+          "name": "amount_paid",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": "0",
+          "maximum": null,
+          "label": "Amount paid",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "currency_source": {
+            "link": "customer",
+            "field": "currency"
+          },
+          "default_kind": "static",
+          "default": "0.00"
+        },
+        {
+          "name": "payment_status",
+          "type": "select",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "unpaid",
+            "partly_paid",
+            "paid"
+          ],
+          "colors": {
+            "unpaid": "rose",
+            "partly_paid": "amber",
+            "paid": "green"
+          },
+          "label": "Payment status",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": true,
+          "default_kind": "none"
+        },
+        {
           "name": "name",
           "type": "text",
           "required": false,
@@ -308,7 +357,77 @@
           "read_only": true,
           "default_kind": "none"
         }
-      ]
+      ],
+      "document_version": 1,
+      "resource": "invoice",
+      "behavior": {
+        "customer": {},
+        "reference": {},
+        "total": {},
+        "posting_date": {},
+        "status": {},
+        "tax_rate": {},
+        "amount_paid": {},
+        "payment_status": {
+          "compute": {
+            "$expr": "choose",
+            "args": [
+              {
+                "$expr": "gte",
+                "args": [
+                  {
+                    "$expr": "ref",
+                    "args": [
+                      "amount_paid"
+                    ]
+                  },
+                  {
+                    "$expr": "ref",
+                    "args": [
+                      "total"
+                    ]
+                  }
+                ]
+              },
+              "paid",
+              {
+                "$expr": "choose",
+                "args": [
+                  {
+                    "$expr": "gt",
+                    "args": [
+                      {
+                        "$expr": "ref",
+                        "args": [
+                          "amount_paid"
+                        ]
+                      },
+                      0
+                    ]
+                  },
+                  "partly_paid",
+                  "unpaid"
+                ]
+              }
+            ]
+          }
+        },
+        "name": {},
+        "title": {}
+      },
+      "order": [
+        "customer",
+        "reference",
+        "total",
+        "posting_date",
+        "status",
+        "tax_rate",
+        "amount_paid",
+        "payment_status",
+        "name",
+        "title"
+      ],
+      "sources": {}
     },
     {
       "name": "payment",
