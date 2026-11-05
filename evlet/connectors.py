@@ -646,7 +646,7 @@ class Connectors:
         with self.database._connection() as connection:
             return [self.public(row) for row in connection.execute('SELECT * FROM evlet_connectors WHERE id LIKE ? ORDER BY id', (connector_id + ':%',))]
 
-    def send_mail(self, to, subject, text, *, account=None, html=None, reply_to=None):
+    def send_mail(self, to, subject, text, *, account=None, html=None, reply_to=None, inline=()):
         """Send one email through a named outgoing account, or the default one. Returns the Message-ID."""
         rows = self.accounts('smtp')
         if account is not None:
@@ -661,10 +661,11 @@ class Connectors:
         if not recipients or len(recipients) > 50 or any(not isinstance(item, str) or not ADDRESS.fullmatch(item) for item in recipients):
             raise ValueError('Send to between 1 and 50 valid email addresses')
         values = self.values(chosen['id'])
-        return self.deliver(values, recipients, subject, text, html=html, reply_to=reply_to)
+        return self.deliver(values, recipients, subject, text, html=html, reply_to=reply_to, inline=inline)
 
     @staticmethod
-    def deliver(values, to, subject, text, *, html=None, reply_to=None):
+    def deliver(values, to, subject, text, *, html=None, reply_to=None, inline=()):
+        """inline: [(content id, bytes, image type)] parts the HTML refers to as cid: (rich text images)."""
         message = EmailMessage()
         message['From'] = values['address']
         message['To'] = ', '.join([to] if isinstance(to, str) else to)
@@ -675,6 +676,10 @@ class Connectors:
         message.set_content(text)
         if html is not None:
             message.add_alternative(html, subtype='html')
+            if inline:
+                part = message.get_payload()[-1]
+                for cid, content, kind in inline:
+                    part.add_related(content, maintype='image', subtype=kind.split('/', 1)[1], cid=f'<{cid}>')
         try:
             client = _smtp(values)
             try:

@@ -32,7 +32,9 @@ production ready, but the rules below hold from 0.3 on.
 - **Rich text storage.** `RichText` values are the HTML subset in
   [internal/rich-text.md](internal/rich-text.md): the allowed tags and attributes, and the canonical
   form the server writes, are public, so other clients and stored records keep working. Adding a
-  node type (images, mentions) widens the subset; nothing is removed without a deprecation. The
+  node type (images, then mentions) widens the subset; nothing is removed without a deprecation.
+  Images are `<figure class="rt-sm|rt-md|rt-full"><img data-attachment="<id>" alt="...">` with an
+  optional `<figcaption>`. The
   `<name>_text` column is internal.
 
 - **Model `Meta` options.** `tests/test_public_api.py` pins the option names, among them `api`

@@ -45,5 +45,11 @@ export class History {
   get canUndo() { return this.done.length > 0; }
   get canRedo() { return this.undone.length > 0; }
 
+  /** Change every kept state (an upload finished: its placeholder becomes the attachment, in undo too). */
+  rewrite(fn: (state: State) => State) {
+    this.done = this.done.map(fn);
+    this.undone = this.undone.map(fn);
+  }
+
   clear() { this.done = []; this.undone = []; this.group = null; }
 }

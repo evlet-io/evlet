@@ -653,9 +653,14 @@ class Mailboxes:
         recipients = [to] if isinstance(to, str) else list(to)
         if not recipients or len(recipients) > 50 or any(not isinstance(item, str) or not ADDRESS.fullmatch(item) for item in recipients):
             raise ValueError('Send to between 1 and 50 valid email addresses')
+        inline = ()
         if record is not None:
             with self.database.transaction() as tx:
                 self.business.policy.record(tx, user, record[0], record[1], 'update')
+                if html is not None:
+                    # Rich text images of the record go inline (cid:), never as links.
+                    from .images import for_email
+                    html, inline = for_email(self.business, tx, record[0], record[1], html)
         with self.database._connection() as connection:
             row = self.row(connection, user.id)
         own = (row is not None and self.enabled() and row['status'] in ('connected', 'error')
@@ -666,9 +671,9 @@ class Mailboxes:
             except Ended as exc:
                 self.end(row['id'], str(exc))
                 raise ConnectionFailed(str(exc)) from None
-            message_id = Connectors.deliver(values, recipients, subject, text, html=html)
+            message_id = Connectors.deliver(values, recipients, subject, text, html=html, inline=inline)
         else:
-            message_id = self.business.connectors.send_mail(recipients, subject, text, html=html)
+            message_id = self.business.connectors.send_mail(recipients, subject, text, html=html, inline=inline)
         if record is not None:
             with self.database.transaction() as tx:
                 link_message(self.business, tx, user, record[0], record[1], key_of(message_id),

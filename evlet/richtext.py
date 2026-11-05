@@ -5,7 +5,10 @@ library parser, keeps only the editor's schema and writes canonical HTML:
 
 - blocks: p, h2, h3, ul, ol (nested at most three levels, `ul data-type="checklist"` with
   `li data-checked="true"`), blockquote, pre > code, hr;
-- inline: strong, em, u, s, code, a href (http, https and mailto only), br.
+- inline: strong, em, u, s, code, a href (http, https and mailto only), br;
+- images: figure (class rt-sm, rt-md or rt-full) > img data-attachment="<attachment id>" alt="..." and an
+  optional figcaption. An image is always one of the record's private attachments, never a URL: src is
+  never kept (docs/internal/rich-text.md, "Inline images").
 
 Everything else is dropped (scripts, styles, frames, SVG and their content; every attribute that is not
 listed) or unwrapped (unknown tags keep their text). The output is canonical: sanitising it again gives
@@ -16,7 +19,7 @@ from html.parser import HTMLParser
 import re
 from urllib.parse import urlsplit
 
-__all__ = ['sanitise', 'plain_text', 'Document']
+__all__ = ['sanitise', 'plain_text', 'image_ids', 'Document']
 
 MARKS = ('strong', 'em', 'u', 's', 'code')  # outermost first, after the link
 ALIASES = {'b': 'strong', 'i': 'em', 'strike': 's', 'del': 's', 'ins': 'u', 'tt': 'code', 'kbd': 'code', 'samp': 'code',
@@ -24,15 +27,19 @@ ALIASES = {'b': 'strong', 'i': 'em', 'strike': 's', 'del': 's', 'ins': 'u', 'tt'
 # Their content is never text the user meant to keep.
 DROPPED = frozenset(('script', 'style', 'iframe', 'object', 'embed', 'svg', 'math', 'template', 'noscript', 'noembed',
                      'noframes', 'textarea', 'select', 'title', 'head', 'frame', 'frameset', 'applet', 'audio', 'video',
-                     'canvas', 'xmp', 'plaintext', 'button', 'map', 'picture', 'img'))
+                     'canvas', 'xmp', 'plaintext', 'button', 'map', 'picture'))
 VOID = frozenset(('br', 'hr', 'img', 'embed', 'input', 'meta', 'link', 'area', 'base', 'col', 'param', 'source', 'track',
                   'wbr', 'keygen'))
 # Unknown tags that still separate blocks (their text is kept, in its own paragraph).
 BOUNDARIES = frozenset(('section', 'article', 'header', 'footer', 'nav', 'aside', 'main', 'table', 'thead', 'tbody',
                         'tfoot', 'tr', 'td', 'th', 'caption', 'dl', 'dt', 'dd', 'address', 'center', 'details',
-                        'summary', 'figure', 'figcaption', 'fieldset', 'legend', 'form', 'body', 'html'))
+                        'summary', 'fieldset', 'legend', 'form', 'body', 'html'))
 BLOCKS = frozenset(('p', 'h2', 'h3', 'ul', 'ol', 'li', 'blockquote', 'pre', 'hr'))
 INLINE = frozenset(MARKS) | {'a', 'br'}
+IMAGES = frozenset(('figure', 'img', 'figcaption'))
+SIZES = ('rt-sm', 'rt-md', 'rt-full')
+ATTACHMENT = re.compile(r'[1-9][0-9]{0,18}')
+MAX_ALT = 300
 MAX_DEPTH = 3
 SPACES = re.compile(r'[ \t\n\r\f]+')
 CONTROL = re.compile(r'[\x00-\x20\x7f-\x9f]')
@@ -94,7 +101,13 @@ class _Reader(HTMLParser):
                 self.skip.append(tag)
             return
         name = ALIASES.get(tag, tag)
-        if name in BLOCKS or name in INLINE:
+        if tag == 'img':
+            # Only a reference to an attachment: the image itself is never a URL.
+            values = {key.lower(): value for key, value in attrs if isinstance(key, str)}
+            if ATTACHMENT.fullmatch(values.get('data-attachment') or ''):
+                self.node().children.append(_Node('img', values))
+            return
+        if name in BLOCKS or name in INLINE or name in IMAGES:
             node = _Node(name, {key.lower(): value for key, value in attrs if isinstance(key, str)})
         elif tag in BOUNDARIES:
             node = _Node('#boundary')
@@ -205,6 +218,12 @@ class Document:
             tag = child.tag
             # A browser drops a newline only right after <pre>, never inside a tag within it.
             ctx = {**ctx, 'first_in_pre': False} if tag != 'pre' else ctx
+            if tag in ('figure', 'img'):
+                if ctx['item'] is None and not ctx['code']:
+                    self.image(child)
+                continue
+            if tag == 'figcaption':
+                continue
             if tag == 'br':
                 self.line_break(ctx)
             elif tag == 'a':
@@ -271,6 +290,20 @@ class Document:
                 self.walk(child, ctx)
                 self.end()
 
+    def image(self, node):
+        """A figure (or a bare img) as an image block: the attachment id, alt text, size and caption."""
+        img = node if node.tag == 'img' else _find(node, 'img')
+        if img is None:
+            return
+        caption = _find(node, 'figcaption') if node.tag == 'figure' else None
+        classes = (node.attrs.get('class') or '').split() if node.tag == 'figure' else []
+        size = next((name for name in classes if name in SIZES), 'rt-md')
+        self.end()
+        self.blocks.append({'type': 'image', 'content': [], 'attachment': int(img.attrs['data-attachment']),
+                            'alt': _plain(img.attrs.get('alt') or '')[:MAX_ALT],
+                            'caption': _plain(_text_of(caption) if caption else '')[:MAX_ALT], 'size': size})
+        self.end()
+
     @classmethod
     def parse(cls, markup):
         reader = _Reader()
@@ -292,7 +325,8 @@ class Document:
             if block['type'] == 'code':
                 block['text'] = block['text'].replace('\r\n', '\n').replace('\r', '\n').replace('\x00', '')
                 continue
-            if block['type'] == 'rule':
+            if block['type'] in ('rule', 'image'):
+                previous_indent = -1
                 continue
             block['content'] = _tidy(block['content'])
             if block['type'] == 'item':
@@ -307,7 +341,7 @@ class Document:
     # Writing -----------------------------------------------------------------------------------
 
     def empty(self):
-        return all(block['type'] != 'rule' and not block.get('text') and all(piece[0] == 'break' for piece in block.get('content', ()))
+        return all(block['type'] not in ('rule', 'image') and not block.get('text') and all(piece[0] == 'break' for piece in block.get('content', ()))
                    for block in self.blocks)
 
     def html(self):
@@ -341,6 +375,9 @@ class Document:
                 out.append(f'<pre><code>{_text(block["text"])}</code></pre>')
             elif kind == 'rule':
                 out.append('<hr>')
+            elif kind == 'image':
+                caption = f'<figcaption>{_text(block["caption"])}</figcaption>' if block['caption'] else ''
+                out.append(f'<figure class="{block["size"]}"><img data-attachment="{block["attachment"]}" alt="{_attribute(block["alt"])}">{caption}</figure>')
             index += 1
         return ''.join(out)
 
@@ -349,6 +386,9 @@ class Document:
         for block in self.blocks:
             if block['type'] == 'code':
                 lines.append(block['text'])
+            elif block['type'] == 'image':
+                if block['alt']:
+                    lines.append(block['alt'])
             elif block['type'] != 'rule':
                 lines.append(''.join(piece[1] if piece[0] == 'text' else '\n' for piece in block['content']))
         return '\n'.join(lines).strip('\n')
@@ -385,6 +425,32 @@ def _tidy(pieces):
                 continue
         merged.append(piece)
     return merged
+
+
+def _find(node, tag):
+    for child in node.children:
+        if isinstance(child, _Node):
+            if child.tag == tag:
+                return child
+            found = _find(child, tag)
+            if found is not None:
+                return found
+    return None
+
+
+def _text_of(node):
+    return ''.join(child if isinstance(child, str) else _text_of(child) for child in node.children)
+
+
+def _plain(value):
+    return SPACES.sub(' ', value.replace('\u00a0', ' ').replace('\x00', '')).strip()
+
+
+def image_ids(markup):
+    """The attachment ids the images of stored rich text refer to, in order, each once."""
+    if not markup:
+        return []
+    return list(dict.fromkeys(block['attachment'] for block in Document.parse(markup).blocks if block['type'] == 'image'))
 
 
 def _text(value):

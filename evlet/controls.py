@@ -28,6 +28,8 @@ SETTINGS = MappingProxyType({
     'security.two_step_roles': ['admin'], 'security.controls_ips': [],
     'mcp.enabled': True, 'mcp.allow_writes': False, 'mcp.rate': 60, 'mcp.disabled_tools': [], 'mcp.hidden_models': [],
     'mail.personal': False,
+    # Images in rich text (evlet/richtext.py): separate from the general attachment limits.
+    'files.image_max_kb': 2048, 'files.images_per_record': 50,
     # Eva (evlet.eva). Only used when config.py turns AI on; the switch here can only narrow that.
     'eva.enabled': False, 'eva.model': '', 'eva.choose_model': False, 'eva.disabled_tools': [],
     'eva.confirm': {'create': 'never', 'update': 'never', 'confirm': 'ask', 'action': 'ask'},
@@ -35,8 +37,10 @@ SETTINGS = MappingProxyType({
     'eva.user_limit': {'amount': None, 'unit': 'aed', 'period': 'week'},
     'eva.person_limits': {}, 'eva.task_reserve': 10, 'eva.max_steps': 12, 'eva.max_tools': 30, 'eva.max_seconds': 120, 'eva.rates': {},
 })
+# Safe bounds of the rich text image limits: up to 8 MiB an image (what private storage reads back) and 200 a record.
+IMAGE_LIMITS = {'files.image_max_kb': (64, 8192), 'files.images_per_record': (1, 200)}
 # Audit areas of setting overrides by key prefix; other settings are Security.
-SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email', 'eva': 'Eva'}
+SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email', 'eva': 'Eva', 'files': 'Files'}
 NOT_FOUND = 'Route not found'
 AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming'}
 # A paused schedule is a setting override: schedule.<name>.active = false.
@@ -205,6 +209,9 @@ def strictest(key, value, roles, file=None):
         return False
     if key == 'mcp.rate':
         return min(max(value, 1), 60) if number else 1
+    if key in IMAGE_LIMITS:
+        low, high = IMAGE_LIMITS[key]
+        return min(max(value, low), high) if number else file
     if key in ('mcp.disabled_tools', 'mcp.hidden_models'):
         # Names are kept as they are; a value that is not a list turns every tool off or hides every model ('*').
         from .tools import NAMES
@@ -578,6 +585,9 @@ class Controls:
             value = list(dict.fromkeys(networks))
         if key in ('mcp.enabled', 'mcp.allow_writes', 'mail.personal') and type(value) is not bool:
             raise ValueError('Use on or off.')
+        if key in IMAGE_LIMITS and not (number and IMAGE_LIMITS[key][0] <= value <= IMAGE_LIMITS[key][1]):
+            low, high = IMAGE_LIMITS[key]
+            raise ValueError(f'Use a whole number from {low} to {high}.')
         if key == 'mcp.rate' and not (number and 1 <= value <= 60):
             raise ValueError('Use 1 to 60 tool calls a minute. The framework allows at most 60.')
         if key.startswith('eva.'):

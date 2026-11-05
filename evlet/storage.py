@@ -7,8 +7,9 @@ import secrets
 import stat
 
 
-# The largest private file read back: a profile photo of 2 MB. Attachments have their own lower limits.
-MAX_FILE = 2 * 1024 * 1024
+# The largest private file read back: a rich text image of 8 MiB at most (Controls, files.image_max_kb).
+# Attachments and profile photos have their own lower limits.
+MAX_FILE = 8 * 1024 * 1024
 
 
 class StorageError(RuntimeError):

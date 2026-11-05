@@ -17,7 +17,8 @@ from tests.test_business import client, hashed, secured  # noqa: F401  (fixtures
 
 CASES = json.loads((Path(__file__).parents[1] / 'frontend/src/evlet/tests/richtext-cases.json').read_text())['cases']
 ALLOWED = {'p': set(), 'h2': set(), 'h3': set(), 'ul': {'data-type'}, 'ol': set(), 'li': {'data-checked'}, 'blockquote': set(),
-           'pre': set(), 'code': set(), 'hr': set(), 'br': set(), 'strong': set(), 'em': set(), 'u': set(), 's': set(), 'a': {'href'}}
+           'pre': set(), 'code': set(), 'hr': set(), 'br': set(), 'strong': set(), 'em': set(), 'u': set(), 's': set(), 'a': {'href'},
+           'figure': {'class'}, 'img': {'data-attachment', 'alt'}, 'figcaption': set()}
 
 
 class Checker(HTMLParser):
@@ -37,6 +38,8 @@ class Checker(HTMLParser):
             if name == 'href' and not re.match(r'(https?://|mailto:)', value or ''):
                 self.problems.append(f'href {value!r}')
             if name == 'data-type' and value != 'checklist' or name == 'data-checked' and value != 'true':
+                self.problems.append(f'{name}={value!r}')
+            if name == 'class' and value not in ('rt-sm', 'rt-md', 'rt-full') or name == 'data-attachment' and not re.fullmatch(r'[1-9][0-9]*', value or ''):
                 self.problems.append(f'{name}={value!r}')
 
     def handle_comment(self, data):

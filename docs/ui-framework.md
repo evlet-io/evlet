@@ -344,6 +344,16 @@ document.body.append(editor.element);
 - `RichTextView(html)` (`ui/fields.ts`) shows stored rich text read only, with nested lists and real
   links. Stored HTML is parsed with `DOMParser` and rebuilt from the model, never assigned as markup.
 - The server is the security boundary: it sanitises every write ([model-engine.md](model-engine.md)).
+- Images (`images: ImageSource`, given by fields on a record through `recordImages()` in
+  `richtext/images.ts`): the Image button, a pasted or dropped image file, or an image copied from
+  another record's text go in at the caret as a placeholder with a progress bar. The browser
+  refuses SVG and anything but PNG, JPEG, GIF and WebP, shrinks the image to 2,000 px on the long side
+  and re-encodes it (WebP when it can, else JPEG, or PNG to keep transparency; a GIF that fits is
+  kept, so it stays animated), then uploads it to the record, or to the person's holding area before
+  the record is saved. Only the attachment id is stored. Each image has tools for small, medium and
+  full width, alt text and caption, and remove. Copy marks images with their record, so a paste into
+  the same record keeps the reference and a paste into another record uploads the image again. An
+  image that can no longer be loaded says so. Undo after an upload brings back the image itself.
 
 ### Relative times
 
