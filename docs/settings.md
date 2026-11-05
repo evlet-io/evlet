@@ -129,6 +129,8 @@ was taken this way, or a phone is lost:
 - an admin uses **Reset two-step** on the user in Controls (audited), or
 - on the server, `evlet users reset-two-step <instance> <username>` (audited as `cli`).
 
+To set a new password from the server shell, run `evlet users set-password <instance> <username>`. It asks twice, applies `security.password_min`, ends the user's sessions and is audited as `cli`.
+
 Both clear the app and the backup codes and revoke all the person's access: sessions, AI
 assistants and API keys ([controls.md](controls.md#ending-access)). They set it up again at
 their next sign-in (a required role) or in Settings.
