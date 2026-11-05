@@ -285,7 +285,7 @@ mark only.
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table`, and ChildRows for a narrow column |
 | `split.ts` | SplitView: a main area and a resizable side panel |
-| `doc.ts` | DocFrame (page or panel variant), DocHeader, MoveButton, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
+| `doc.ts` | DocFrame (page or panel variant), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
 | `theme.ts` | `applyTheme`, `resolveTheme`, `systemScheme`, `currentTheme`, `THEMES`, `isTheme` ([Themes](#themes)) |
 | `time.ts` | `RelativeTime`, `relativeTime`, `exactTime`, `zoneLabel`, `RELATIVE_STEPS`, `minuteClock` ([Relative times](#relative-times)) |
@@ -769,12 +769,13 @@ a title opens the full page in a new browser tab.
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |
 | `Slip` with `source` or `menu` ([slips.md](slips.md)) | A header button on the source model's records, or an entry in New; `?slip=name` on a record opens it. A slip that becomes a record for review opens New filled in, with a note |
-| `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board, the status flow, move buttons; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
+| `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board, a header status badge (`show="badge"`, the default) or the stage bar (`show="bar"`) or neither (`show="none"`), move buttons; the badge and the bar offer only the moves this person may take now (`allowed` in `_moves`), the rest are plain text; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
 | Locked states, `editable_when_locked` | Lock banner; only the declared fields stay editable; lines lock |
 | Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |
 | Unpost and repost | Offered from `_unpost` and `_repost` in the locked banner, the More menu and the unposted banner; Unpost asks for a reason, Repost takes an optional one |
 | `Sequence` (Phase 7) | The number in mono as the title; "Number assigned on ..." until then |
 | `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
+| `Meta.status`, `Select(colors=...)` | A status badge in the record header and the same badge in the list column; never a button unless it is the State with moves to offer |
 | `Meta.key_fields` (Phase 10) | Header facts, the summary strip and the Key fields side block (without it: the first fields) |
 | `Meta.relations` (Phase 10) | The Related tab and side block |
 | `attachments` | The Files side block, with upload for roles that can update while the record is not locked |

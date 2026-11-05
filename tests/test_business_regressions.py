@@ -20,9 +20,11 @@ def test_authenticated_invalid_link_patch_is_validation_and_atomic(secured, valu
     customer = secured.database.create(Customer, customer_name='Review')
     invoice = secured.database.create(Invoice, customer=customer.id, reference='ORIGINAL', total='1.00')
     call = client(secured, 'editor')
-    status, data, _ = call('PATCH', f'/api/invoice/{invoice.id}', {
+    url = f'/api/invoice/{invoice.id}'
+    # The invoice has a calculated payment status, so an update sends its ETag.
+    status, data, _ = call('PATCH', url, {
         'customer': value, 'reference': 'CHANGED',
-    })
+    }, headers={b'if-match': call('GET', url)[2][b'etag']})
     assert secured.database.get(Invoice, invoice.id).reference == 'ORIGINAL'
     assert status == 422, (status, data)
     assert 'customer' in data['fields']

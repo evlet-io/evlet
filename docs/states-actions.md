@@ -60,8 +60,10 @@ class Invoice(Model):
   final. Void and revise (below) start only from a voidable state and end in `void`. No
   declared Move may then go to `void`: a record is voided only through void, with a reason,
   so later phases can always reverse its effects and record it.
-* State also takes `label`, `help_text`, `placeholder`, `hidden`, `index` and
-  `max_length`. It takes no rules, calculations or validators.
+* State also takes `label`, `help_text`, `placeholder`, `hidden`, `index`, `max_length` and
+  `colors` (as on a Select, below). It takes no rules, calculations or validators.
+* `show` says how the record page draws the State: `"badge"` (the default), `"bar"` or
+  `"none"`. See [How a state and a status show](#how-a-state-and-a-status-show).
 
 `Move(from_, to, label, roles=("admin", "editor"), when=None, run=None)`:
 
@@ -76,6 +78,79 @@ class Invoice(Model):
 * `run` names a model method that takes only `self`, like an action. It runs after the
   state changes and before the document settles, so calculations, rules and validation see
   its changes.
+
+## How a state and a status show
+
+Not every State is a pipeline, and not every status is set by hand. `show` and `Meta.status`
+say how the record page and lists draw them.
+
+```python
+class Member(Model):
+    # Active or left is not a pipeline: a badge in the header (the default).
+    standing = State(("active", "left"), moves=(Move("active", "left", "Mark as left"),
+                                                Move("left", "active", "Reinstate", roles=("admin",))))
+
+
+class Claim(Model):
+    # Draft, submitted, approved is a pipeline: the stage bar.
+    stage = State(("draft", "submitted", "approved"), show="bar",
+                  moves=(Move("draft", "submitted", "Submit"), Move("submitted", "approved", "Approve")))
+```
+
+* `show="badge"` (the default) draws the state as a coloured badge in the record header, with
+  the key facts. The moves stay as buttons in the header actions.
+* `show="bar"` draws the stage bar under the header, every state in order, for pipelines such as
+  draft, submitted, approved.
+* `show="none"` draws neither, for an app that places the state itself. The moves stay as header
+  buttons.
+* Any other value fails at registration: `State show is "badge", "bar" or "none"`. The schema's
+  `state` entry carries it as `show`.
+
+Display never implies that a person can change the state:
+
+* Clicking the badge opens a menu of the moves this person may take now, and only those. A
+  step of the bar is a button only when this person may move to that state now. Everything else
+  is plain text with no pointer or hover: states only the system reaches, moves for other roles,
+  and moves whose condition is not met. The header buttons still list those moves and say why
+  each is blocked.
+* "May take now" is `allowed` in `_moves` (below), so the server decides it: the move's roles, update
+  permission and the row scope, the move's condition, `Meta.api = "read"` and a closed period
+  (`Meta.period`). The record page also needs update permission on the model.
+* The badge's accessible name is `Status: Active` (and `Status: Draft. Change status` while it
+  offers moves). The bar is a list named after the model (`Invoice status`); the current step
+  has `aria-current="step"`.
+
+### Meta.status
+
+`Meta.status` names a Select or a State to show as the record's status badge. Use it for a
+status the system sets, such as an invoice's payment status calculated from what was paid:
+
+```python
+class Invoice(Model):
+    class Meta:
+        status = "payment_status"
+
+    total = Currency(required=True)
+    amount_paid = Currency(default="0.00")
+    payment_status = Select(["unpaid", "partly_paid", "paid"], label="Payment status",
+                            colors={"unpaid": "rose", "partly_paid": "amber", "paid": "green"},
+                            compute="'paid' if amount_paid >= total else ('partly_paid' if amount_paid > 0 else 'unpaid')")
+```
+
+* The field must be a visible Select or State of a root model; anything else fails at
+  registration (`Meta.status names a visible Select or State field of the model`). The schema
+  carries `status` (the field name) only for roles that can read the field.
+* The badge is never a button. A calculated or read-only Select cannot be edited anywhere. A Select
+  people may write still shows as a badge; they change it in the form, not from the badge.
+* When `Meta.status` names the model's State, the State's badge shows in the header whatever its
+  `show`, with its moves. When it names another field, both badges show, the State's first (if
+  its `show` is `"badge"`).
+* Lists draw the State's column and the `Meta.status` column as the same badges.
+* `Select(..., colors={...})` maps some choices to a badge colour: `blue`, `green`, `amber`,
+  `rose`, `violet`, `teal` or `slate`. Unknown choices or colours fail when the field is
+  declared. The schema carries `colors` on the field. Choices without a colour take the UI's
+  usual tint for the name (green for paid or approved, rose for void or lost, and so on).
+* A legacy string formula may calculate a Select. The value must be one of its choices.
 
 ## Ordinary writes and locks
 
@@ -251,8 +326,9 @@ Detail responses of a model with a State, or with an action that declares
 ```
 
 * `_moves` lists every move out of the current state, for every role, with the reason it
-  is blocked: the role, missing update access, or the guard (not met, waiting for values,
-  could not be checked).
+  is blocked: the role, missing update access (`You cannot change this record`, also on a
+  `Meta.api = "read"` model), a record dated in a closed period (`This record is in a closed
+  period`), or the guard (not met, waiting for values, could not be checked).
 * `_actions` lists the model actions this role may run.
 * When a guard reads a value the role cannot read, the reason is always
   `This move is not available now` (or `action`), so it does not tell whether a hidden

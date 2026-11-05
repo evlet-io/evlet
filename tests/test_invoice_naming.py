@@ -48,17 +48,20 @@ def test_the_name_cannot_be_sent_on_create_and_edits_keep_it(secured):
     assert status == 422 and body['fields']['name'] == 'Assigned on save'
     created = invoice(editor, owner, 'PO-1', posting_date='2026-03-01')
     url = f"/api/invoice/{created['id']}"
-    status, edited, _ = editor('PATCH', url, {'total': '250.00', 'posting_date': '2027-02-01'})
+    # The payment status is calculated, so an edit sends the record's ETag (If-Match).
+    status, edited, _ = editor('PATCH', url, {'total': '250.00', 'posting_date': '2027-02-01'},
+                               headers={b'if-match': editor('GET', url)[2][b'etag']})
     assert status == 200, edited
     # Editing the invoice, even into another year, keeps its name.
     assert (edited['total'], edited['name'], edited['title']) == ('250.00', 'INV-2026-00001', 'INV-2026-00001')
     assert editor('GET', url)[1]['name'] == 'INV-2026-00001'
     # Once assigned, a name changes through the normal edit (no rename feature); a taken name is refused.
-    status, renamed, _ = editor('PATCH', url, {'name': 'INV-2026-09999'})
+    status, renamed, _ = editor('PATCH', url, {'name': 'INV-2026-09999'}, headers={b'if-match': editor('GET', url)[2][b'etag']})
     assert status == 200 and (renamed['id'], renamed['name'], renamed['title']) == (created['id'], 'INV-2026-09999', 'INV-2026-09999')
     other = invoice(editor, owner, 'PO-2', posting_date='2026-03-02')
     assert other['name'] == 'INV-2026-00002'
-    assert editor('PATCH', f"/api/invoice/{other['id']}", {'name': 'INV-2026-09999'})[0] in (409, 422)
+    other_url = f"/api/invoice/{other['id']}"
+    assert editor('PATCH', other_url, {'name': 'INV-2026-09999'}, headers={b'if-match': editor('GET', other_url)[2][b'etag']})[0] in (409, 422)
     # A viewer changes nothing.
     assert client(secured, 'viewer')('PATCH', url, {'name': 'INV-2026-00007'})[0] == 403
 
@@ -182,7 +185,7 @@ def test_an_upgraded_playground_keeps_invoice_numbers_as_names_and_continues_the
 
     # evlet migrate: app migrations first, then framework step 0003.
     current = Database(path, registry)
-    assert current.migrate(migrations) == ['0007_employees', '0008_record_names', '0009_ledger', '0010_invoice_project', '0011_project_brief']
+    assert current.migrate(migrations) == ['0007_employees', '0008_record_names', '0009_ledger', '0010_invoice_project', '0011_project_brief', '0012_invoice_payment_status']
     assert '0003_record_names' in framework.upgrade(current)
     assert not framework.pending(current)
     assert {'name', 'title', 'customer_name'} <= set(columns(path, 'customer')) and 'number' not in Invoice.__fields__

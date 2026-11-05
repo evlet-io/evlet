@@ -208,9 +208,11 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     # and admin and editor write, like Invoice.customer (6db28179... after it), and again when Project gained
     # the rich text Brief (0011_project_brief), with the same permissions as Project.notes. Before both the
     # table hashed to 19b87059....
+    # Re-recorded when the Playground invoice gained amount_paid (readable, writable) and the calculated
+    # payment_status (readable, never writable) in 0012_invoice_payment_status; without them it hashes to 1611bff0....
     data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes', 'employee', 'ledgerentry')), 'states': table(Registry(*test_states.MODELS))}
     assert hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest() == \
-        '1611bff00b868e5c48b245d94b8bf0a856b36313e1eab6920ecb319802b75d64'
+        'c0cf23d63bd9af9aedda728fbc72a1611de3c80d0de694ff775fce2464403be8'
     policy = Policy(Registry(*MODELS))
     assert dict(policy.corrections) == {(Quote, 'void'): {'admin', 'editor'}, (Quote, 'revise'): {'admin', 'editor'},
                                         (Order, 'void'): {'admin'}, (Ticket, 'void'): {'admin'}}

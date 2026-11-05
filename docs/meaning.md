@@ -37,6 +37,11 @@ are listed under `children` in the schema.
 The schema entry has `key_fields` only when the model declares them, and lists only
 the fields the caller may read.
 
+## Status
+
+`Meta.status` names a visible Select or State of the model shown as its status badge in the
+record header and in lists. See [states-actions.md](states-actions.md#meta-status).
+
 ## Relations
 
 A relation is a reverse Link: the records of another model whose Link holds this

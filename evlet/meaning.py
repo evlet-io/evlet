@@ -6,7 +6,9 @@ Declared on `Model.Meta`:
         key_fields = ("customer", "status", "total")
         relations = (Related(Payment, "invoice", label="Payments", limit=5, order="-paid_on"),)
         attachments = Attachments(max_files=5, max_size=262_144)
+        status = "payment_status"
 
+`status` names a Select or State shown as the record's status badge (and as a badge in lists).
 Relations are reverse Links: every Link on a root model to another root model is discovered
 automatically. `Related` names, orders, limits or hides one of them.
 """
@@ -16,7 +18,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from .database import ROW_LIMIT
-from .fields import Link, Reference
+from .fields import Link, Reference, Select
 from .models import storage_name
 
 KEY_FIELDS = 8
@@ -87,6 +89,7 @@ class Meaning:
     key_fields: tuple = ()
     relations: tuple = ()
     attachments: Attachments = None
+    status: str = None
 
 
 def meaning_for(registry):
@@ -101,16 +104,17 @@ def meaning_for(registry):
     result = {}
     for model in registry.models.values():
         meta = getattr(model, 'Meta', None)
-        declared = {key: getattr(meta, key) for key in ('key_fields', 'relations', 'attachments') if hasattr(meta, key)}
+        declared = {key: getattr(meta, key) for key in ('key_fields', 'relations', 'attachments', 'status') if hasattr(meta, key)}
         if model in children:
             if declared:
-                raise ValueError(f'{model.__name__}: Meta.key_fields, relations and attachments are for root models, not Table rows')
+                raise ValueError(f'{model.__name__}: Meta.key_fields, relations, attachments and status are for root models, not Table rows')
             result[model] = Meaning()
             continue
         result[model] = Meaning(key_fields(model, declared.get('key_fields', ())),
                                 relations(registry, model, declared.get('relations', ()), discovered.get(model, ()),
                                           inherited='Meta' not in vars(model)),
-                                attachments(model, declared.get('attachments')))
+                                attachments(model, declared.get('attachments')),
+                                status(model, declared.get('status')))
     return MappingProxyType(result)
 
 
@@ -121,6 +125,16 @@ def key_fields(model, names):
         raise ValueError(f'{model.__name__}: Meta.key_fields are at most {KEY_FIELDS} distinct visible fields '
                          '(Tables are listed as children, not key fields)')
     return tuple(names)
+
+
+def status(model, name):
+    """The field Meta.status names: a visible Select or State of the model, shown as its status badge."""
+    if name is None:
+        return None
+    field = model.__declared_fields__.get(name) if isinstance(name, str) else None
+    if not isinstance(field, Select) or field.hidden:
+        raise ValueError(f'{model.__name__}: Meta.status names a visible Select or State field of the model')
+    return name
 
 
 def relations(registry, model, declared, discovered, *, inherited=False):

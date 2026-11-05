@@ -13,8 +13,8 @@ import { RecordStore, type Field, type Rules } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildRows, ChildTable } from '../ui/childtable';
-import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
-import { displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, stateTint, type FieldLike } from '../ui/fields';
+import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
+import { displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, stateTint, statusTint, type FieldLike } from '../ui/fields';
 import { flowGrid, FoldSection, Folds, revealField, revealFirstError } from '../ui/fold';
 import { NoteComposer } from './composer';
 import { FormSection, KeyValueList } from '../ui/inline';
@@ -471,7 +471,17 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const titleProp = isNew || !has(model.title_field) || (numbered && model.title_field === numbered.name) ? () => titleText.get() : view(model.title_field);
   const markName = () => titleText.get();
   const mark = look.person ? Avatar({ name: markName, size: 'xl' }) : RecordMark({ name: markName, size: 'lg', tint: look.tint });
-  const metaFacts = keyFields(model).filter(meta => meta.name !== model.title_field && meta.name !== 'name' && has(meta.name) && !isStateField(model, meta)).slice(0, 3)
+  // The status badges: the State (show="badge", or named by Meta.status) offers the moves this person may take
+  // now; a Meta.status field that is not the State is shown, never changed, here.
+  const show = state?.show ?? 'badge';
+  const statusMeta = model.status ? fieldOf(model, model.status) : undefined;
+  const takeable = () => canUpdate ? (extras.get()._moves ?? []).filter(move => move.allowed) : [];
+  const stateBadge = state && !isNew && (show === 'badge' || statusMeta?.name === state.field) ? StatusBadge({
+    value: stateValue, tint: value => statusTint(fieldOf(model, state.field) ?? {}, value), name: 'Status',
+    moves: () => takeable().map(move => ({ to: move.to, label: move.label })), blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) }) : null;
+  const statusBadge = statusMeta && statusMeta.name !== state?.field && has(statusMeta.name) && !isNew ? StatusBadge({
+    value: () => store.field(statusMeta.name).value.get() as string | null, tint: value => statusTint(statusMeta, value), name: statusMeta.label }) : null;
+  const metaFacts = keyFields(model).filter(meta => meta.name !== model.title_field && meta.name !== 'name' && has(meta.name) && !isStateField(model, meta) && meta.name !== model.status).slice(0, 3)
     .map(meta => html`<span class="ev-fact" title=${meta.label}>${displayValue(view(meta.name), { links: ctx.links, empty: `No ${meta.label.toLowerCase()}` })}</span>`);
   const numberFact = sequence && has(sequence.name) && !isNew ? when(() => !store.field(sequence.name).value.get(),
     () => html`<span class="muted">${(sequence as any).sequence?.assign_on && (sequence as any).sequence.assign_on !== 'create' ? `Number assigned on ${humanize((sequence as any).sequence.assign_on).toLowerCase()}` : 'Number assigned on save'}</span>`) : null;
@@ -490,7 +500,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     mono: () => Boolean(numbered && model.title_field === numbered.name && has(numbered.name) && store.field(numbered.name).value.get())
       // A title that is the record's name (no other title source) reads as a document number too.
       || Boolean(naming && store.field('name').value.get() && String(store.field('name').value.get()) === titleText.get()),
-    meta: [nameFact, ...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
+    meta: [stateBadge, statusBadge, nameFact, ...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
       const current = extras.get()._lifecycle;
       return current ? Chip({ label: `${model.lifecycle!.labels[current.state]} · Revision ${current.revision}`, tone: current.state === 'confirmed' ? 'green' : 'slate' }) : null;
     }) : null].filter(Boolean) as Child[],
@@ -546,9 +556,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- flow and summary ----------
 
-  const flow = state && !isNew ? (() => {
+  // The stage bar, for a State declared show="bar": only the states this person can move to now are buttons.
+  const flow = state && !isNew && show === 'bar' ? (() => {
     const { steps, good, bad } = flowFromState(state as any);
-    return StatusFlow({ steps, good, bad, current: stateValue, label: `${model.label} status`, blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) });
+    return StatusFlow({ steps, good, bad, current: stateValue, label: `${model.label} status`, canMove: to => takeable().some(move => move.to === to),
+      blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) });
   })() : null;
 
   const perRecord = (model.measures ?? []).filter(measure => measure.per_record);
