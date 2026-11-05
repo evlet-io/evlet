@@ -221,7 +221,7 @@ versions and distributions. Their `pyproject.toml` uses standard Python metadata
 name = "notes"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["evlet>=0.3.0.dev0,<0.4"]
+dependencies = ["evlet>=0.3.0,<0.4"]
 
 [tool.evlet]
 app = true

@@ -157,7 +157,7 @@ def test_install_second_app_preserves_records_and_history(project):
 
 def test_missing_dependency_fails_before_import_or_data(project):
     path = project / 'apps/notes/pyproject.toml'
-    path.write_text(path.read_text().replace('"evlet>=0.3.0.dev0,<0.4"', '"evlet>=0.3.0.dev0,<0.4", "missing_evlet_test_dependency>=1"'))
+    path.write_text(path.read_text().replace('"evlet>=0.3.0,<0.4"', '"evlet>=0.3.0,<0.4", "missing_evlet_test_dependency>=1"'))
     with pytest.raises(ValueError, match='Missing dependency'):
         install(project, 'acme', app_name='notes', trust=True)
     assert not (project / 'instances/acme/data').exists()
@@ -166,7 +166,7 @@ def test_missing_dependency_fails_before_import_or_data(project):
 def test_local_dependency_installed_first(project):
     create_app(project, 'crm')
     path = project / 'apps/notes/pyproject.toml'
-    path.write_text(path.read_text().replace('"evlet>=0.3.0.dev0,<0.4"', '"evlet>=0.3.0.dev0,<0.4", "crm>=0.1"'))
+    path.write_text(path.read_text().replace('"evlet>=0.3.0,<0.4"', '"evlet>=0.3.0,<0.4", "crm>=0.1"'))
     result = install(project, 'acme', app_name='notes', trust=True)
     assert result['apps'] == ['crm', 'notes']
     assert set(runtime(project).registry.models) == {'crmitem', 'notesitem'}
@@ -176,7 +176,7 @@ def test_circular_dependencies_rejected(project):
     create_app(project, 'crm')
     for name, dependency in (('notes', 'crm'), ('crm', 'notes')):
         path = project / f'apps/{name}/pyproject.toml'
-        path.write_text(path.read_text().replace('"evlet>=0.3.0.dev0,<0.4"', f'"evlet>=0.3.0.dev0,<0.4", "{dependency}>=0.1"'))
+        path.write_text(path.read_text().replace('"evlet>=0.3.0,<0.4"', f'"evlet>=0.3.0,<0.4", "{dependency}>=0.1"'))
     with pytest.raises(ValueError, match='Circular'):
         install(project, 'acme', app_name='notes', trust=True)
 
@@ -596,7 +596,7 @@ def test_scaffold_preserves_underscores_and_uses_supported_evlet_version(project
         install(project, 'acme', app_name=name, trust=True)
     assert {'shop_xitem', 'shopxitem'} <= runtime(project).registry.models.keys()
     metadata = (project/'apps/shop_x/pyproject.toml').read_text()
-    assert 'evlet>=0.3.0.dev0,<0.4' in metadata and 'title = "Shop X"' in metadata
+    assert 'evlet>=0.3.0,<0.4' in metadata and 'title = "Shop X"' in metadata
     for name in list(sys.modules):
         if name.split('.')[0] in ('shop_x', 'shopx'):
             del sys.modules[name]
