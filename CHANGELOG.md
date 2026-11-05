@@ -4,6 +4,17 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Changed
+
+- **Related counts use the model's words.** In the side block, a relation named after its model
+  is announced as "Payments, 1 payment" by screen readers; other relations still say "records".
+  An empty relation in the Related tab is one short line instead of a table of headers, and its
+  heading shows no 0.
+- **Record tabs show their keyboard focus ring inside the tab**, so the scrolling tab strip no
+  longer clips it.
+
 ## 0.3.0 (05-11-2026)
 
 This release adds rich text with images and mentions, unsaved changes that survive leaving a
