@@ -60,10 +60,14 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
   const { field } = props, meta = field.meta, kind = kindOf(meta.type);
   const save = props.save ?? recordSave(field);
   const editing = cell(false, { name: `${meta.name} (editing)` }), busy = cell(false), conflict = cell(false);
-  const textual = !kind.control || kind.control === 'textarea';
+  const textual = !kind.control || kind.control === 'textarea' || kind.control === 'richtext';
+  // Multi-line kinds: Enter adds a line, Ctrl or Cmd Enter saves.
+  const multiline = kind.control === 'textarea' || kind.control === 'richtext';
   let before: unknown = null, control: Control | null = null, finishing = false;
 
-  const rest = () => html`<span class="tx-wrap">${props.display ? props.display(field) : displayValue(field, { links: props.links })}</span>`;
+  // Rich text at rest inside the edit button shows its links as text (a link inside a button can't be used).
+  const rest = (editable = false) => html`<span class="tx-wrap">${props.display ? props.display(field)
+    : displayValue(field, { links: props.links, plainLinks: editable })}</span>`;
   const start = () => {
     if (!untrack(() => field.editable.get())) return;
     before = untrack(() => field.value.get());
@@ -146,7 +150,7 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
     on:keydown=${(event: KeyboardEvent) => {
       if (!editing.peek()) return;
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(); }
-      else if (event.key === 'Enter' && textual && !(kind.control === 'textarea' && !(event.metaKey || event.ctrlKey))) {
+      else if (event.key === 'Enter' && textual && !(multiline && !(event.metaKey || event.ctrlKey))) {
         event.preventDefault();
         if (control?.commit()) void finish(true);
       }
@@ -158,7 +162,7 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
       else if (!next || !(next as Element).closest?.('.pop')) void finish(false);
     }}>${when(editing, editor, () => {
       const at = html`<button type="button" class="fval" aria-labelledby=${props.labelledBy ?? null}
-        aria-label=${props.labelledBy ? null : () => `Edit ${meta.label}`} on:click=${start}>${rest()}${Icon('pencil', { size: 'xs', className: 'pen' })}</button>` as HTMLElement;
+        aria-label=${props.labelledBy ? null : () => `Edit ${meta.label}`} on:click=${start}>${rest(true)}${Icon('pencil', { size: 'xs', className: 'pen' })}</button>` as HTMLElement;
       // Tab skips a value that can't change; a click still focuses it (and shows why) and screen readers read it.
       const readOnly = html`<div class="fval ro" tabindex="-1" aria-labelledby=${props.labelledBy ?? null}>${rest()}</div>` as HTMLElement;
       tooltip(readOnly, () => lockReason(field));
@@ -184,7 +188,7 @@ export function FormSection(props: { title: string; note?: string; fields: Field
   const wide = (field: FieldLike) => Boolean(field.meta.wide ?? field.meta.type === 'longtext');
   const cells = props.fields.map(field => {
     const id = uid('ff');
-    return html`<div class="ff" class:full=${field.meta.wide ?? field.meta.type === 'longtext'} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}>
+    return html`<div class="ff" class:full=${field.meta.wide ?? (field.meta.type === 'longtext' || field.meta.type === 'richtext')} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}>
       <label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
       <div class="ff-v">${InlineValue({ field, save: props.save, labelledBy: id, links: props.links })}</div></div>` as Node;
   });

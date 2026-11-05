@@ -1284,6 +1284,7 @@
         {
           "label": "Notes",
           "fields": [
+            "brief",
             "notes"
           ],
           "collapsible": true,
@@ -1500,6 +1501,32 @@
             "lt",
             "lte",
             "between",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "brief",
+          "type": "richtext",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 20000,
+          "label": "Brief",
+          "help_text": "Goals, scope and links, with formatting.",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "contains",
+            "icontains",
+            "nicontains",
             "isnull"
           ],
           "compute": null,

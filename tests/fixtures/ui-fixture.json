@@ -1430,6 +1430,17 @@
                     {
                       "bindings": {},
                       "events": {},
+                      "id": "brief",
+                      "props": {
+                        "field": "brief"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
                       "id": "notes",
                       "props": {
                         "field": "notes"
@@ -1597,6 +1608,17 @@
                     {
                       "bindings": {},
                       "events": {},
+                      "id": "brief",
+                      "props": {
+                        "field": "brief"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
+                    {
+                      "bindings": {},
+                      "events": {},
                       "id": "notes",
                       "props": {
                         "field": "notes"
@@ -1760,6 +1782,17 @@
                 },
                 "slots": {
                   "children": [
+                    {
+                      "bindings": {},
+                      "events": {},
+                      "id": "brief",
+                      "props": {
+                        "field": "brief"
+                      },
+                      "slots": {},
+                      "type": "Field",
+                      "version": 1
+                    },
                     {
                       "bindings": {},
                       "events": {},
@@ -12498,6 +12531,7 @@
         {
           "label": "Notes",
           "fields": [
+            "brief",
             "notes"
           ],
           "collapsible": true,
@@ -12714,6 +12748,32 @@
             "lt",
             "lte",
             "between",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "brief",
+          "type": "richtext",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 20000,
+          "label": "Brief",
+          "help_text": "Goals, scope and links, with formatting.",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "contains",
+            "icontains",
+            "nicontains",
             "isnull"
           ],
           "compute": null,

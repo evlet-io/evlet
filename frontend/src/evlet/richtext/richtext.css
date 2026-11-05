@@ -1,0 +1,89 @@
+/* Rich text: the editor (richtext/editor.ts) and the read-only view (.rt-view). Design tokens come
+   from ui/styles.css, so both themes work. */
+
+.rt{position:relative;display:flex;flex-direction:column;border:1px solid var(--border-strong);border-radius:var(--r);background:var(--surface);
+  box-shadow:var(--shadow-xs);transition:border-color .12s,box-shadow .12s;min-width:0}
+.rt:focus-within{border-color:var(--focus-border,var(--accent));box-shadow:0 0 0 4px var(--focus-ring,var(--accent-ring))}
+.rt.rt-invalid{border-color:var(--t-rose)}
+.rt.rt-invalid:focus-within{box-shadow:0 0 0 4px var(--error-ring,var(--accent-ring))}
+.rt.rt-disabled{background:var(--bg-subtle)}
+
+.rt-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:4px 6px;border-bottom:1px solid var(--divider);background:var(--bg-subtle);
+  border-radius:var(--r) var(--r) 0 0}
+.rt-tool{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:6px;color:var(--fg-3);background:none;border:0;cursor:pointer}
+.rt-tool:hover:not(:disabled){background:var(--bg-muted);color:var(--fg)}
+.rt-tool[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+.rt-tool:disabled{opacity:.4;cursor:default}
+.rt-tool:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.rt-sep{width:1px;height:18px;background:var(--divider);margin:0 4px}
+
+.rt-surface{min-height:120px;max-height:60vh;overflow:auto;padding:10px 14px;outline:none;font-size:14px;line-height:1.55;
+  white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;caret-color:var(--accent)}
+.rt-surface[contenteditable="false"]{color:var(--fg-2)}
+.rt-surface.rt-empty::before{content:attr(data-placeholder);color:var(--fg-4);position:absolute;pointer-events:none}
+
+/* Blocks, shared by the surface and the read-only view. */
+.rt-surface .rt-b,.rt-view>*{margin:0 0 6px}
+.rt-surface .rt-b:last-child,.rt-view>:last-child{margin-bottom:0}
+.rt-surface h2,.rt-view h2{font-size:18px;font-weight:600;line-height:1.35;margin-top:10px}
+.rt-surface h3,.rt-view h3{font-size:15.5px;font-weight:600;line-height:1.4;margin-top:8px}
+.rt-surface h2:first-child,.rt-surface h3:first-child,.rt-view h2:first-child,.rt-view h3:first-child{margin-top:0}
+.rt-surface blockquote,.rt-view blockquote{border-left:3px solid var(--border-strong);padding:0 0 0 12px;color:var(--fg-2)}
+.rt-surface blockquote+blockquote{margin-top:-6px;padding-top:6px}
+.rt-surface pre,.rt-view pre{font-family:var(--mono);font-size:12.5px;background:var(--bg-muted);border-radius:var(--r-sm);padding:8px 10px;
+  white-space:pre-wrap;overflow-wrap:anywhere}
+.rt-surface code,.rt-view code{font-family:var(--mono);font-size:.9em;background:var(--bg-muted);border-radius:4px;padding:1px 4px}
+.rt-surface pre code,.rt-view pre code{background:none;padding:0;font-size:inherit}
+.rt-surface a,.rt-view a,.rt-a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.rt-rule hr,.rt-view hr{border:0;border-top:1px solid var(--border-strong);margin:10px 0}
+.rt-rule{user-select:none}
+
+/* Flat list items on the surface: the marker and indent come from data attributes. */
+.rt-li{position:relative;padding-left:24px}
+.rt-li[data-indent="1"]{margin-left:22px}
+.rt-li[data-indent="2"]{margin-left:44px}
+.rt-li+.rt-li{margin-top:-4px}
+.rt-li::before{content:attr(data-marker);position:absolute;left:4px;color:var(--fg-3);font-variant-numeric:tabular-nums;user-select:none}
+.rt-li[data-list="ordered"]::before{left:0;min-width:20px;text-align:right;padding-right:4px}
+.rt-li[data-list="check"]{padding-left:28px}
+.rt-li[data-checked="true"]{color:var(--fg-3);text-decoration:line-through}
+.rt-check{position:absolute;left:2px;top:3px;width:16px;height:16px;border:1.5px solid var(--border-strong);border-radius:4px;background:var(--surface);cursor:pointer}
+[data-checked="true"]>.rt-check{background:var(--accent);border-color:var(--accent)}
+[data-checked="true"]>.rt-check::after{content:"";position:absolute;left:4.5px;top:1px;width:4px;height:8px;border:solid var(--accent-fg);border-width:0 2px 2px 0;transform:rotate(45deg)}
+
+/* The read-only view: semantic lists. */
+.rt-view{font-size:14px;line-height:1.55;overflow-wrap:anywhere;white-space:pre-wrap;min-width:0}
+.rt-view ul,.rt-view ol{padding-left:22px}
+.rt-view ul ul,.rt-view ol ol,.rt-view ul ol,.rt-view ol ul{margin:2px 0 0}
+.rt-view ul[data-type="checklist"]{list-style:none;padding-left:4px}
+.rt-view ul[data-type="checklist"]>li{position:relative;padding-left:24px}
+.rt-view ul[data-type="checklist"]>li[data-checked="true"]{color:var(--fg-3);text-decoration:line-through}
+.rt-view .rt-check{cursor:default}
+.rt-view li[data-checked="true"]>.rt-check{background:var(--accent);border-color:var(--accent)}
+.fval .rt-view{white-space:pre-wrap;text-align:left}
+
+/* The floating selection toolbar (desktop). */
+.rt-float{position:fixed;z-index:60;display:flex;gap:2px;padding:3px;background:var(--inverse-bg);border-radius:var(--r);box-shadow:var(--shadow-md)}
+.rt-float .rt-tool{color:var(--inverse-fg);width:28px;height:28px}
+.rt-float .rt-tool:hover,.rt-float .rt-tool[aria-pressed="true"]{background:var(--inverse-hover);color:var(--inverse-fg)}
+
+/* The link dialog. */
+.rt-link{display:flex;flex-direction:column;gap:6px;padding:10px;width:300px;max-width:calc(100vw - 32px)}
+.rt-link-l{font-size:12.5px;font-weight:500;color:var(--fg-2)}
+.rt-link-in{height:34px;border:1px solid var(--border-strong);border-radius:var(--r);padding:0 10px;background:var(--surface);outline:none}
+.rt-link-in:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring)}
+.rt-link .err:empty{display:none}
+.rt-link-b{display:flex;gap:6px}
+
+.rt-count{align-self:flex-end;font-size:12px;color:var(--fg-3);padding:0 10px 6px}
+.rt-count.over{color:var(--t-rose)}
+.rt-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* Phones: the toolbar sits above the on-screen keyboard while the editor has focus. */
+.rt.rt-phone .rt-toolbar{position:fixed;left:0;right:0;bottom:var(--rt-keyboard,0);z-index:70;flex-wrap:nowrap;overflow-x:auto;border-radius:0;
+  border-top:1px solid var(--divider);box-shadow:var(--shadow-md);padding:4px 8px calc(4px + env(safe-area-inset-bottom))}
+.rt.rt-phone .rt-tool{width:40px;height:40px;flex:none}
+@media (max-width:640px){
+  .rt-surface{max-height:none;font-size:16px}
+  .rt-tool{width:36px;height:36px}
+}
