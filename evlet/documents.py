@@ -142,7 +142,11 @@ class Context:
         if correlation_id is not None and (not isinstance(correlation_id, str) or len(correlation_id) > 200):
             raise ValueError('correlation_id must be text of at most 200 characters')
         if not readonly:
+            from .audit import actor_id
             tx._change_source, tx._change_correlation = source, correlation_id
+            # Writes are recorded under this user; the engine's own contexts (effects) keep the person's.
+            if actor_id(user) is not None:
+                tx.actor = actor_id(user)
         self.source, self.correlation_id = source, correlation_id
         self._lifecycle_execution = None
         self._business, self._tx, self.user = business, tx, user
@@ -1413,8 +1417,11 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     names, values = storage_columns(model, draft._values, model.__fields__)
     table = identifier(tx.registry.name_for(model))
     if draft.id is None:
-        object.__setattr__(draft, 'id', insert(tx.connection, table, names, values, id_title=has_title(model)))
-    elif names:
+        object.__setattr__(draft, 'id', insert(tx.connection, table, names, values, id_title=has_title(model), actor=tx.actor))
+    else:
+        from .audit import modified
+        stamp_names, stamp_values = modified(tx.actor)
+        names, values = [*names, *stamp_names], [*values, *stamp_values]
         tx.connection.execute(f'UPDATE {table} SET {", ".join(identifier(name) + "=?" for name in names)} WHERE id=?', [*values, draft.id])
     return tx.get(model, draft.id) if reload else None
 
@@ -1429,6 +1436,10 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     """
     from . import states
     business, tx, user = context._business, context._tx, context.user
+    # Two Contexts for different users may share one transaction: this write is recorded under this one.
+    from .audit import actor_id
+    if actor_id(user) is not None:
+        tx.actor = actor_id(user)
     # Required fields and retired options set in Controls apply to what people send, not to app code.
     person, context._person = context._person == (model, record_id) and action is None and move is None, None
     if (action is not None or move is not None) and not record_id:

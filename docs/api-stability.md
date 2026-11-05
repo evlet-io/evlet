@@ -21,6 +21,10 @@ production ready, but the rules below hold from 0.3 on.
   `When`. The browser does not render Python pages today ([ui.md](ui.md)), but their API
   stays.
 
+- **Record times.** Record details carry `_audit` (`created_at`, `created_by`, `modified_at`,
+  `modified_by`), and the column names `evlet_created_at`, `evlet_created_by`, `evlet_modified_at`
+  and `evlet_modified_by` are reserved on every model ([model-engine.md](model-engine.md#record-times)).
+
 - **Record identity.** Every record has `id`, `name` and `title`. `id` is a 13-character text id in
   JSON and URLs and a `RecordId` in Python; `name` and `title` are reserved field names on record
   models ([model-engine.md](model-engine.md#record-ids)).

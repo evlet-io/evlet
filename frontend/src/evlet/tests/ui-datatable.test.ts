@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cell } from '../reactive';
-import { DataTable, emptyPrefs, type Column, type Sort } from '../ui/table';
+import { DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import { cleanup, key, render, watch } from './ui-helpers';
 
 afterEach(cleanup);
@@ -45,6 +45,23 @@ describe('DataTable', () => {
     expect(host.querySelector('th[data-key="amount"]')!.classList.contains('stk')).toBe(false);
     expect(table.style.width).toBe('500px');
     expect(bodyRows(host)).toHaveLength(5);
+  });
+
+  it('pins the saved range of columns, offsets each after the checkbox, and keeps header drags inside a range', () => {
+    const prefs = cell<TablePrefs>({ ...emptyPrefs(), pinned: 2 });
+    const host = render(() => DataTable({ columns, rows: items(2), key: item => item.id, label: 'Deals', selectable: true, prefs }));
+    const th = (name: string) => host.querySelector<HTMLElement>(`th[data-key="${name}"]`)!;
+    expect([th('name').style.left, th('amount').style.left, th('city').style.left]).toEqual(['40px', '240px', '']);
+    expect(th('amount').classList.contains('stk-last')).toBe(true);
+    expect(th('name').classList.contains('stk-last')).toBe(false);
+    expect(bodyRows(host)[0].querySelectorAll('td.stk').length).toBe(3);
+    // City can't move into the pinned range by Alt and an arrow; Amount and Deal swap inside it.
+    key(th('city'), 'ArrowLeft', { altKey: true });
+    expect(headerKeys(host)).toEqual(['name', 'amount', 'city']);
+    key(th('amount'), 'ArrowLeft', { altKey: true });
+    expect(headerKeys(host)).toEqual(['amount', 'name', 'city']);
+    expect(th('amount').style.left).toBe('40px');
+    expect(th('name').style.left).toBe('160px');
   });
 
   it('sorts by clicking a header: ascending, descending, then off, with exact number order', () => {
