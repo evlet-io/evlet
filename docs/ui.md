@@ -105,9 +105,19 @@ Docs off it starts on the first list the role can open and hides the Docs links.
 | `/app/<model>/<id>/view` | Older record link; opens the record view |
 | `/settings/<page>`, `/settings/app/<app>` | Settings ([settings.md](settings.md)); `/settings` opens the last page |
 | `/settings/accounts` | Redirects to `/controls/users` |
+| `/controls`, `/controls/<page>` | Controls ([controls.md](controls.md)), a separate page for roles that open it |
 | `/eva`, `/eva/<chat>`, `/eva/tasks` | Eva's chat and scheduled tasks ([eva.md](eva.md)). Served only when config.py turns Eva on; the page asks `/api/_eva` and shows nothing of Eva to people without it |
 | `/reports`, `/reports/<name>` | The reports this role may run, and one report's view ([reports.md](reports.md)) |
 | Registered Python page routes | Served, then open Docs |
+
+### Between the app and Controls
+
+People who may open Controls reach it from **Controls** in the account menu, or **Go to Controls**
+in the search palette. Both open it in a new tab. In Controls, **Back to <app>** sits at the top of
+the sidebar, on phones too. It is a real link, so a plain click goes back in the same tab and Cmd
+or Ctrl click opens a new one. It goes to the last app page this browser had open for the person,
+kept in localStorage (`evlet.last_app.<user>`, a same-origin path only). With none, it goes to `/`,
+which opens the person's start page. The server stores no last app page.
 
 The development-only `/ui` and `/m/<model>` paths of the earlier preview are gone.
 Signing in keeps the address the user opened. A record with unsaved changes asks

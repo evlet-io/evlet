@@ -8,6 +8,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Back to the app from Controls.** The top of the Controls sidebar links back to the last app
+  page, or the start page; the search palette offers Go to Controls to roles that open it.
 - **Change password from the account menu.** It opens the Sign-in & security password form
   in a small dialog; both use one shared form.
 - **Files can be removed from a record.** Each file in the Files block has a remove button,

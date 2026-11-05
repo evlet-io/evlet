@@ -4,6 +4,10 @@
 /* Like the app sidebar: the head (brand, workspace) and the foot (account) stay put; only the nav list scrolls. */
 .ctl-side{width:236px;flex:none;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);border-right:1px solid var(--border);overflow:hidden}
 .ctl-side-head{flex:none;padding:14px 10px 0}
+.ctl-back{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;margin:0 0 8px;border-radius:var(--r);color:var(--fg-2);font-weight:500;border:1px solid var(--border);background:var(--surface);min-width:0}
+.ctl-back:hover{background:var(--bg-muted);color:var(--fg)}
+.ctl-back span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctl-back strong{font-weight:600;color:var(--fg)}
 .ctl-brand{display:flex;align-items:center;gap:8px;font-weight:650;font-size:15px;padding:2px 6px 8px}
 .ctl-brand small{font-weight:500;color:var(--fg-3);font-size:12px}
 .ctl-brand .ev-lockup{height:24px}

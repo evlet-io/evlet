@@ -15,6 +15,7 @@ import { canChangePassword, displayName, openPasswordDialog, PersonMark } from '
 import { presentSlip } from './slips';
 import { InboxButton } from './inbox';
 import { RecentsButton } from './recents';
+import { rememberAppPage } from './last-page';
 import { groupOf, identity, rootModels, type ScreenModel } from './meta';
 import { REPORT_ICON, reportGroups, reportsOf } from './report-page';
 
@@ -37,6 +38,8 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const flipTheme = () => ctx.toggleTheme();
   // Close the drawer and any menu when the page changes.
   effect(() => { route.get(); mobileOpen.set(false); closePopover(); });
+  // Remember the page, so Back to app in Controls returns to it.
+  effect(() => { route.get(); rememberAppPage(ctx.user.username, window.location.pathname + window.location.search, appName); });
 
   ctx.toggleSidebar = () => { if (isPhone()) mobileOpen.set(!mobileOpen.peek()); else collapsed.set(!collapsed.peek()); };
 
