@@ -25,7 +25,7 @@ class Customer(Model):
 class Invoice(Model):
     class Meta:
         description = "Keep each piece of work connected to a customer."
-        list_fields = ('name', 'reference', 'customer', 'total', 'status', 'posting_date')
+        list_fields = ('name', 'reference', 'customer', 'total', 'payment_status', 'status', 'posting_date')
         search_fields = ('name', 'reference', 'status')
         # The server names each new invoice INV-2026-00001, INV-2026-00002, ... in its create transaction:
         # the standard name, shown as the document number. The year comes from the posting date, or the
@@ -37,6 +37,8 @@ class Invoice(Model):
         # The posting date places an invoice in a period. Once Controls, Periods locks that period, nobody
         # adds, changes or deletes invoices dated in it, app code included.
         period = 'posting_date'
+        # The header shows the payment status as a badge; it is calculated, so nobody edits it.
+        status = 'payment_status'
 
     customer = Link(Customer, required=True)
     # help_text reads under the input; tooltip sits behind a ? icon at its right end.
@@ -49,6 +51,11 @@ class Invoice(Model):
     status = Select(["draft", "sent"], required=True, default="draft")
     # suffix='%' puts a % box after the input, as Percent fields have.
     tax_rate = Decimal(scale=4, minimum="0", maximum="100", default="0.0000", label="Tax rate", suffix="%", help_text="Recorded separately; this does not calculate the total.")
+    amount_paid = Currency(minimum="0", default="0.00", currency='customer.currency', label='Amount paid')
+    # Calculated from the amount paid against the total, never set by hand. colors picks each badge colour.
+    payment_status = Select(['unpaid', 'partly_paid', 'paid'], label='Payment status',
+                            colors={'unpaid': 'rose', 'partly_paid': 'amber', 'paid': 'green'},
+                            compute="'paid' if amount_paid >= total else ('partly_paid' if amount_paid > 0 else 'unpaid')")
 
 
 class Payment(Model):

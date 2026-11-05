@@ -12,7 +12,7 @@ import type { ApiClient, RecordData } from '../api';
 import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '../model/record';
 import type { FieldSchema, SchemaIndex } from '../model/schema';
 import { Chip, Icon, IconButton, RecordMark, StatusPill, Switch } from './base';
-import { read, tintFor, uid, type Prop, type Tint } from './core';
+import { read, tintFor, TINTS, uid, type Prop, type Tint } from './core';
 import { formula, labeller, phrase, source } from './explain';
 import { checkTag, currencyOf, durationText, humanize, InputError, kindOf } from './kinds';
 import { copyText, openPopover } from './layers';
@@ -189,10 +189,15 @@ const STATE_TINTS: Record<string, Tint> = {
   draft: 'slate', new: 'blue', open: 'blue', issued: 'blue', submitted: 'blue', qualification: 'slate', discovery: 'blue',
   proposal: 'violet', negotiation: 'amber', contacted: 'amber', pending: 'amber', qualified: 'green', paid: 'green', won: 'green',
   done: 'green', closed: 'green', approved: 'green', converted: 'violet', lost: 'rose', void: 'rose', cancelled: 'rose',
-  rejected: 'rose', unqualified: 'slate',
+  rejected: 'rose', unqualified: 'slate', active: 'green', inactive: 'slate', unpaid: 'amber', partly_paid: 'blue', overdue: 'rose',
 };
 /** The tint of a state: known names get the design's colour, others a stable one. */
 export const stateTint = (state: string): Tint => STATE_TINTS[String(state).toLowerCase()] ?? tintFor(state);
+/** The tint of a status badge: the field's own colour for the value (Select colors), else stateTint. */
+export const statusTint = (meta: { colors?: Record<string, string> }, value: string): Tint => {
+  const color = meta.colors?.[value];
+  return TINTS.includes(color as Tint) ? color as Tint : stateTint(value);
+};
 
 // ---------- currency ----------
 

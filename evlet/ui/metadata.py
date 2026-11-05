@@ -26,7 +26,7 @@ OPEN_IN = ('page', 'panel')
 # The options a model's Meta may declare; each is public (docs/api-stability.md).
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
-                          'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope'))
+                          'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'status'))
 
 
 def view_for(model):

@@ -143,7 +143,7 @@ class Invoice(Model):
     due_on = Date()
     status = State(('draft', 'issued', 'paid', 'void'),
                    moves=(Move('draft', 'issued', 'Issue', when=F('total') > D('0'), run='open_balance'), Move('issued', 'paid', 'Mark paid', roles=('admin',))),
-                   locked=('issued', 'paid', 'void'), final=('paid', 'void'), voidable=('issued',))
+                   locked=('issued', 'paid', 'void'), final=('paid', 'void'), voidable=('issued',), show='bar')
     lines = Table(InvoiceLine, max_rows=1000)
     total = Currency(compute=lines.sum('amount'))
     outstanding = Currency(default=0)

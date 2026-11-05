@@ -204,9 +204,11 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     # readable `name` and `title`; Customer.name became customer_name, Project.name the declared title,
     # Invoice.number moved into the named (and so writable) standard name, and test_states renamed its
     # own name fields to title. Before this the table hashed to b1bb34ff....
+    # Re-recorded when the Playground invoice gained amount_paid (readable, writable) and the calculated
+    # payment_status (readable, never writable) in 0010_invoice_payment_status; without them it hashes to 19b87059....
     data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes', 'employee', 'ledgerentry')), 'states': table(Registry(*test_states.MODELS))}
     assert hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest() == \
-        '19b87059b740d3707ec07dd4dad1146f78825b984ea394a0844b6340abd76c1a'
+        'c6709042fc19e0dede9aa65647f6c37caf3892af3be0aec1b756801021eac42f'
     policy = Policy(Registry(*MODELS))
     assert dict(policy.corrections) == {(Quote, 'void'): {'admin', 'editor'}, (Quote, 'revise'): {'admin', 'editor'},
                                         (Order, 'void'): {'admin'}, (Ticket, 'void'): {'admin'}}

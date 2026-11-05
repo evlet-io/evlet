@@ -140,7 +140,7 @@ class Deal(Model):
              when=(F('total') > 0) & (F('contact') != None), run='on_won'),  # noqa: E711
         Move(('lead', 'qualified', 'proposal', 'negotiation'), 'lost', 'Mark lost'),
         Move('lost', 'lead', 'Reopen', roles=('admin',)),
-    ), locked=('won', 'lost', 'void'), final=('void',), voidable=('won',))
+    ), locked=('won', 'lost', 'void'), final=('void',), voidable=('won',), show='bar')
     # A won deal that has to change is revised: it is voided and a new copy starts at lead.
     probability = Percent(compute=when(F('stage') == 'won', D('100'),
                                        when(F('stage') == 'negotiation', D('75'),

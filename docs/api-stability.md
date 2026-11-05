@@ -26,9 +26,14 @@ production ready, but the rules below hold from 0.3 on.
   models ([model-engine.md](model-engine.md#record-ids)).
 
 - **Model `Meta` options.** `tests/test_public_api.py` pins the option names, among them `api`
-  (`"full"`, `"read"` or `None`), `period` and `period_scope`. `Session.unlocked_periods(reason)`
+  (`"full"`, `"read"` or `None`), `period`, `period_scope` and `status` (the Select or State shown
+  as the status badge, [states-actions.md](states-actions.md#meta-status)). `Session.unlocked_periods(reason)`
   and `Context.unlocked_periods(reason)` are public for trusted code
   ([model-engine.md](model-engine.md#closed-periods)).
+
+- **How a state shows.** `State(..., show=...)` takes `"badge"` (the default), `"bar"` or `"none"`,
+  and `Select(..., colors=...)` maps choices to badge colours. The values and the default are
+  public ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).
 
 For each of these, the contract covers the name and the arguments it takes: their names,
 order, whether they are keyword-only, and their defaults. Model `Meta` options and the

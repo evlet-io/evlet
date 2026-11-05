@@ -6,6 +6,25 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased (0.3.0.dev0)
 
+- **Changed default: a State shows as a header badge, not a stage bar.** `State(..., show=...)`
+  takes `"badge"` (the new default: a coloured status badge in the record header, with the moves
+  as header buttons), `"bar"` (the stage bar, as before, for pipelines such as draft, submitted,
+  approved) or `"none"`. What to change: add `show="bar"` to a State that is a real pipeline
+  to keep the bar. The schema's `state` entry adds `show`. The badge and the bar now offer only
+  the moves this person may take now; states only the system reaches, and moves for other roles or
+  whose condition is not met, are plain text. `_moves` now also blocks every move on a
+  `Meta.api = "read"` model (`You cannot change this record`) and on a record in a closed period
+  (`This record is in a closed period`). The testCRM deal and the amendment quote declare
+  `show="bar"` ([docs/states-actions.md](docs/states-actions.md#how-a-state-and-a-status-show)).
+- **`Meta.status` and `Select(colors=...)`.** `Meta.status = "<field>"` names a visible Select or
+  State shown as the record's status badge and as a badge in lists, for a status the system sets
+  (never a button). `colors` maps choices to `blue`, `green`, `amber`, `rose`, `violet`, `teal` or
+  `slate`. A legacy string formula may now calculate a Select. The schema adds `status` on the model
+  (for roles that can read the field) and `colors` on the field. The Playground invoice shows a
+  calculated payment status (Unpaid, Partly paid, Paid) from a new `amount_paid` field; migration
+  `0010_invoice_payment_status` adds both columns. Because the invoice now has a calculated field,
+  an update to a Playground invoice sends `If-Match` with its ETag, as every calculated document does.
+  Badge colours are display only: changing `colors` needs no migration.
 - **`Meta.api` sets how much HTTP surface a model gets.** `"full"` is the default and changes
   nothing. `"read"` lets callers (HTTP, MCP, Eva, the connector) read the model but write it in no
   way, for any role and whatever Controls overrides say; only trusted Python (sessions, actions,

@@ -13,14 +13,14 @@
 import { each, html, match, when, type Child } from '../dom';
 import { ApiError, type RecordData } from '../api';
 import { batch, cell, derive, effect, onCleanup, untrack } from '../reactive';
-import { Button, CountBadge, EmptyState, IconButton, SearchInput, SegmentedControl, StatusPill, SummaryStrip, type StatProps } from '../ui/base';
-import { currencyIn, displayValue, localField, stateTint } from '../ui/fields';
+import { Button, CountBadge, EmptyState, IconButton, SearchInput, SegmentedControl, SummaryStrip, type StatProps } from '../ui/base';
+import { currencyIn, displayValue, localField, stateTint, statusTint } from '../ui/fields';
 import { formatMoney } from '../model/format';
 import { humanize } from '../ui/kinds';
 import { closeDialogs, DialogFooter, MenuButton, openModal, toast } from '../ui/layers';
 import { SplitView } from '../ui/split';
 import { Board, BoardCard, BulkBar, PageHeader, Toolbar, type BoardColumn, type BoardTotal } from '../ui/list';
-import { Tabs } from '../ui/doc';
+import { StatusBadge, Tabs } from '../ui/doc';
 import { DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
@@ -38,12 +38,11 @@ const COMPACT_WIDTH = 460;
 /** Bulk changes send at most this many requests at once. */
 const BULK_AT_ONCE = 4;
 
-/** A list cell: state pill, record title for links, formatted value. */
+/** A list cell: status badge for the State and Meta.status, record title for links, formatted value. */
 export function cellView(ctx: AppContext, model: ScreenModel, meta: FieldSchema, row: () => RecordData): Child {
-  if (isStateField(model, meta)) return () => {
-    const value = row()[meta.name];
-    return value === null || value === undefined ? '' : StatusPill({ label: humanize(String(value)), tint: stateTint(String(value)) });
-  };
+  if (isStateField(model, meta) || meta.name === model.status) return StatusBadge({
+    value: () => { const value = row()[meta.name]; return value === null || value === undefined ? null : String(value); },
+    tint: value => statusTint(meta, value), name: meta.label });
   if (meta.type === 'link' || meta.type === 'tags' || meta.type === 'boolean' || meta.type === 'state') {
     const field = localField(meta as any, untrack(() => row()[meta.name]), {});
     effect(() => field.value.set(row()[meta.name]));

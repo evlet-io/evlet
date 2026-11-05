@@ -98,10 +98,13 @@ def _definition(registry):
 
 
 def _comparable(schema):
-    """A schema as migrations compare it: sorted, without the Python class names (`label`), which store nothing."""
+    """A schema as migrations compare it: sorted, without the Python class names (`label`) and badge colours
+    (Select `colors`), which store nothing."""
     schema = _normalized(schema)
     for model in schema['models']:
         model.pop('label', None)
+        for field in model['fields']:
+            field.pop('colors', None)
     return schema
 
 

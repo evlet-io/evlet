@@ -1,4 +1,4 @@
-// Doc view building blocks: DocFrame, DocHeader, MoveButton, StatusFlow, Tabs and TabPanel,
+// Doc view building blocks: DocFrame, DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs and TabPanel,
 // SideBlock and LockBanner. Screens compose them with SummaryStrip, FormSection, KeyValueList
 // and ChildTable into the one layout every record uses.
 
@@ -10,7 +10,7 @@ import { read, tint, uid, type Prop, type Tint } from './core';
 import { type FieldLike } from './fields';
 import { InlineValue } from './inline';
 import { humanize } from './kinds';
-import { toast } from './layers';
+import { Menu, openPopover, toast } from './layers';
 
 /**
  * The record layout: main column and side panel (right, left or off), comfortable or compact.
@@ -66,14 +66,20 @@ export function MoveButton(props: ButtonProps & { blocked: Prop<string | null>; 
 
 export interface FlowStep { value: string; label: string }
 
-/** The states as connected steps: done steps tint, the current one fills, terminal states turn green or red. */
+/**
+ * The states as connected steps: done steps tint, the current one fills, terminal states turn green or red.
+ * Only a step this person can move to now is a button; the others (states only the system reaches, or
+ * moves for other roles) are plain steps with no pointer or hover.
+ */
 export function StatusFlow(props: {
   steps: FlowStep[];
   current: Prop<string | null>;
   /** Terminal states: good ones turn green, bad ones rose. */
   good?: string[];
   bad?: string[];
-  /** Why a move to this state is not allowed now, or null. */
+  /** Whether this person may move to this state now. Without it, every step but the current one may be chosen. */
+  canMove?: (to: string) => boolean;
+  /** Why a move to this state cannot run right now (unsaved changes, say), or null. */
   blocked?: (to: string) => string | null;
   onMove?: (to: string) => void;
   label?: string;
@@ -81,15 +87,53 @@ export function StatusFlow(props: {
   const index = () => props.steps.findIndex(step => step.value === read(props.current));
   return html`<div class="stepper" role="list" aria-label=${props.label ?? 'Status'}>${props.steps.map((step, at) => {
     const done = () => at < index(), now = () => at === index();
-    return html`<button type="button" role="listitem" class="step" class:done=${done} class:cur=${now} class:won=${(props.good ?? []).includes(step.value)}
-      class:lost=${(props.bad ?? []).includes(step.value)} aria-current=${() => now() ? 'step' : null}
-      aria-label=${() => `${step.label}${now() ? ', current' : done() ? ', done' : ''}`}
-      on:click=${() => {
-        if (now() || !props.onMove) return;
-        const why = props.blocked?.(step.value) ?? null;
-        if (why) toast(why, { icon: 'info' }); else props.onMove(step.value);
-      }}>${() => done() ? Icon('check', { size: 'xs' }) : null}${step.label}</button>`;
+    const name = () => `${step.label}${now() ? ', current' : done() ? ', done' : ''}`;
+    const open = () => Boolean(props.onMove) && !now() && (props.canMove ? props.canMove(step.value) : true);
+    const content = [() => done() ? Icon('check', { size: 'xs' }) : null, step.label];
+    return html`<div role="listitem" class="step" class:done=${done} class:cur=${now} class:won=${(props.good ?? []).includes(step.value)}
+      class:lost=${(props.bad ?? []).includes(step.value)} class:plain=${() => !open()} aria-current=${() => now() ? 'step' : null}>${() => open()
+        ? html`<button type="button" class="step-go" aria-label=${() => `${name()}. Move to ${step.label}`} on:click=${() => {
+            const why = props.blocked?.(step.value) ?? null;
+            if (why) toast(why, { icon: 'info' }); else props.onMove!(step.value);
+          }}>${content}</button>`
+        : html`<span class="step-tx" aria-label=${name}>${content}</span>`}</div>`;
   })}</div>` as HTMLElement;
+}
+
+export interface BadgeMove { to: string; label: string }
+
+/**
+ * A record's status as a coloured badge, named "Status: Active" for screen readers. With moves this
+ * person may take, it opens a menu of them; without, it is plain text with no pointer or hover.
+ */
+export function StatusBadge(props: {
+  value: Prop<string | null>;
+  label?: (value: string) => string;
+  tint: (value: string) => Tint;
+  /** What the badge is, for its accessible name: "Status", "Payment status". */
+  name?: string;
+  moves?: () => BadgeMove[];
+  /** Why a move cannot run right now (unsaved changes, say), or null. */
+  blocked?: (to: string) => string | null;
+  onMove?: (to: string) => void;
+}): Child {
+  const label = (value: string) => props.label ? props.label(value) : humanize(value);
+  const name = props.name ?? 'Status';
+  return () => {
+    const value = read(props.value);
+    if (value === null || value === undefined || value === '') return null;
+    const text = label(String(value)), color = tint(props.tint(String(value)));
+    const moves = props.onMove ? props.moves?.() ?? [] : [];
+    const inner = [html`<span class="d" aria-hidden="true"></span>`, text];
+    if (!moves.length) return html`<span class=${`pill ev-status b-${color}`} role="img" aria-label=${`${name}: ${text}`}>${inner}</span>`;
+    const button = html`<button type="button" class=${`pill ev-status ev-status-go b-${color}`} aria-haspopup="menu" aria-expanded="false"
+      aria-label=${`${name}: ${text}. Change ${name.toLowerCase()}`}>${inner}${Icon('chevron-down', { size: 'xs', className: 'chev' })}</button>` as HTMLButtonElement;
+    button.addEventListener('click', () => openPopover(button, close => Menu(moves.map(move => ({ label: move.label, icon: 'arrow-right', onSelect: () => {
+      const why = props.blocked?.(move.to) ?? null;
+      if (why) toast(why, { icon: 'info' }); else props.onMove!(move.to);
+    } })), close), { label: `Change ${name.toLowerCase()}` }));
+    return button;
+  };
 }
 
 /** StatusFlow steps from a model State: its states in order, terminal ones marked. */

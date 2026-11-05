@@ -25,6 +25,8 @@ export interface FieldSchema {
   maximum?: string | number | null;
   max_length?: number;
   choices?: string[];
+  /** Select colors: a badge colour for some choices. */
+  colors?: Record<string, string>;
   /** Options Controls hid from new values; records that hold one keep it. */
   retired_choices?: string[];
   /** Full width in the form, from a Controls layout. */
@@ -55,6 +57,7 @@ export interface StateSchema {
   moves: Array<{ from: string; to: string; label: string; roles?: string[] }>;
   locked?: string[];
   final?: string[];
+  show?: 'badge' | 'bar' | 'none';
 }
 
 export interface CalculationSchema {

@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 
 from evlet import (AddField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
-                   Link, LongText, Migration, Model, PostgreSQLDatabase, Registry, RenameField, RetireField, RunData, Select, Text)
+                   Link, LongText, Migration, Model, PostgreSQLDatabase, Recompute, Registry, RenameField, RetireField, RunData, Select, Text)
 from .items import core_fields, item_fields
 from .models import Customer, Invoice, registry
 
@@ -124,6 +124,13 @@ class LedgerEntry(Model):
 
 
 migrations.append(Migration('0009_ledger', CreateModel(LedgerEntry)))
+
+# What has been paid on an invoice, and the payment status calculated from it (the header badge).
+migrations.append(Migration('0010_invoice_payment_status',
+    AddField('invoice', 'amount_paid', Currency(minimum='0', default='0.00')),
+    AddField('invoice', 'payment_status', Select(['unpaid', 'partly_paid', 'paid'])),
+    Recompute('invoice', ('payment_status',)),
+))
 
 
 def legacy_registry():

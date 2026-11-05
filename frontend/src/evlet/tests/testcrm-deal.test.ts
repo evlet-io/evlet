@@ -12,6 +12,8 @@ const cellOf = (row: Element, col: string) => row.querySelector<HTMLElement>(`td
 const sums = (host: Element) => text(host.querySelector('.g-sum'));
 const button = (host: Element, label: string) => byText<HTMLButtonElement>(host, '.doc-head button', label)!;
 const current = (host: Element) => text(host.querySelector('.stepper .step.cur'));
+// A lead's status is not a pipeline: it shows as the header badge.
+const badge = (host: Element) => text(host.querySelector('.doc-head .ev-status'));
 const field = (host: Element, name: string) => host.querySelector<HTMLElement>(`.ff[data-field="${name}"]`);
 const tab = (host: Element, label: RegExp) => click(byText(host, '.doc-tabs [role="tab"]', label));
 
@@ -167,9 +169,11 @@ describe('testCRM: a deal and its lines', () => {
     typeInto(dialog.querySelector('input')!, 'No budget this year');
     submit();
     await until(() => expect(text(dialog)).toContain('This field is required'));
-    expect(current(host)).toBe('New');
+    expect(host.querySelector('.stepper')).toBeNull();
+    expect(badge(host)).toBe('New');
+    expect(host.querySelector('.doc-head .ev-status')!.getAttribute('aria-label')).toBe('Status: New. Change status');
     submit();
-    await until(() => expect(current(host)).toBe('Lost'));
+    await until(() => expect(badge(host)).toBe('Lost'));
     expect(run.writes.map(sent => sent.body)).toEqual([{ lost_reason: 'No budget this year' }, { lost_reason: 'No budget this year' }]);
     await until(() => expect(text(field(host, 'lost_reason'))).toContain('No budget this year'));
     expect(run.misses).toEqual([]);

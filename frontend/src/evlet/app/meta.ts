@@ -11,7 +11,9 @@ import { kindOf } from '../ui/kinds';
 import { tintFor, type Tint } from '../ui/core';
 
 export interface MoveSchema { from: string[] | string; to: string; label: string; roles?: string[]; guarded?: boolean; when?: unknown; asks?: string[] }
-export interface StateMeta { field: string; states: string[]; default?: string; moves: MoveSchema[]; locked?: string[]; final?: string[]; voidable?: string[] }
+/** show: how the record page draws the State, a header badge (the default), the stage bar, or neither. */
+export interface StateMeta { field: string; states: string[]; default?: string; moves: MoveSchema[]; locked?: string[]; final?: string[]; voidable?: string[]; show?: StateShow }
+export type StateShow = 'badge' | 'bar' | 'none';
 export interface MeasureSchema { name: string; function: string; field: string | null; per_record: boolean; model: string | null; link: string | null; where?: unknown }
 export interface RelationSchema { name: string; label: string; model: string; link: string; limit: number; order?: string[] }
 export interface EffectSchema { target: string; on: string | null; balanced: string[] | null; reverse: unknown }
@@ -28,6 +30,8 @@ export interface ActionMeta {
 /** A model entry with the optional keys of later phases. */
 export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   state?: StateMeta;
+  /** Meta.status: the Select or State shown as the record's status badge. */
+  status?: string;
   actions?: ActionMeta[];
   permissions?: { create: boolean; update: boolean; delete: boolean; void?: boolean; revise?: boolean; unpost?: boolean; repost?: boolean };
   voidable?: boolean;

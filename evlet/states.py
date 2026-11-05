@@ -568,8 +568,12 @@ def availability(business, context, model, record, loaded=None):
         return guards_now
     result, locks = {}, []
     if shown_state:
+        from . import periods
         field = model.__declared_fields__[name]
         current = record._values.get(name)
+        # What blocks every move of this record: a model callers only read, or a date in a closed period.
+        read_only = business.registry.api.get(model) == 'read'
+        closed = None if read_only or getattr(context._tx, '_periods_unlocked', False) else periods.closed(context._tx, model, record._values)
         moves = []
         for move in field.moves:
             if current not in move.sources or current in field.final:
@@ -577,8 +581,10 @@ def availability(business, context, model, record, loaded=None):
             reason = None
             if user.role not in move.roles:
                 reason = 'Your role cannot use this move'
-            elif not updatable:
+            elif not updatable or read_only:
                 reason = 'You cannot change this record'
+            elif closed is not None:
+                reason = 'This record is in a closed period'
             elif move in guards:
                 reason = blocked_reason(evaluator().result(guards[move]), readable(policy, user, guards[move]), 'move')
             asks = writable_asks(business, user, model, move)
@@ -632,7 +638,7 @@ def state_schema(business, user, model):
                       'when': guards[move].ir if move in guards and readable(business.policy, user, guards[move]) else None,
                       **({'asks': asks} if asks else {})})
     return {'field': name, 'states': list(field.choices), 'default': field.default, 'moves': moves,
-            'locked': list(field.locked), 'final': list(field.final), 'voidable': list(field.voidable)}
+            'locked': list(field.locked), 'final': list(field.final), 'voidable': list(field.voidable), 'show': field.show}
 
 
 def action_schema(business, user, model, name):
