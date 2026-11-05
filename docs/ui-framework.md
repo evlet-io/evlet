@@ -832,7 +832,7 @@ record store replay the shared finite-v1 scenarios (`finite-fixtures.json`).
 
 ## Limits of this phase
 
-- Home, accounts, form dialogs, the notification panel, the layout control and Doc
+- Home, accounts, form dialogs, the layout control and Doc
   layout page are not built. Python pages (`evlet.ui` PageView), native panels and custom
   components are not rendered (owner decision); their Python APIs remain.
 - Bulk moves and deletes read each record first, one request per record.

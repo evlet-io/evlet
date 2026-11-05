@@ -21,6 +21,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   longer clips it.
 - **The note composer shows one focus ring.** The editor inside it no longer draws its own
   border and ring, and the ring matches rich text form fields.
+- **The bell opens a notification centre.** It is a panel along the right edge under the top
+  bar, grouped by day, that closes on a click anywhere else or Esc. A click on an item marks it
+  read; Go to opens its record when the person can open it. New items slide in as popups at the
+  top right while the panel is closed.
 - **Recent records moved from the sidebar to a history button left of search.** It lists them
   newest first with the model and when each was opened, and has a Clear action.
 

@@ -150,8 +150,13 @@ A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-f
 at rest the record shows the formatted text (read only when the record is locked), and list cells
 show its plain text. The Playground's projects have one, Brief.
 A record's Activity tab writes notes with the same editor; typing `@` mentions a person, with a
-warning when they can't open the record. The bell in the top bar is the Mentions inbox, with the
-unread count kept live by the event stream ([journal.md](journal.md#mentions)).
+warning when they can't open the record. The bell in the top bar opens the notification centre,
+with the unread count kept live by the event stream ([journal.md](journal.md#mentions)). It is a
+panel along the right edge under the top bar, grouped into Today and Earlier; a click anywhere else,
+Esc or the bell closes it. A click on an item marks it read. Go to shows only when the person can
+open the item's record, and opens it. While the panel is closed, new items slide in as popups at the
+top right for a few seconds (longer while pointed at or focused); a click on one opens the panel.
+Today the inbox holds mentions; other kinds show with a bell icon.
 
 ### Collapsible sections
 
