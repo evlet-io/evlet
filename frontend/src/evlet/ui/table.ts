@@ -7,6 +7,7 @@ import { each, html, type Child } from '../dom';
 import { cell, derive, effect, getOwner, onCleanup, runWithOwner, untrack, type Cell, type Derive, type Readable } from '../reactive';
 import { compare as compareNumbers, parse as parseNumber } from '../model/finite';
 import { Checkbox, Icon } from './base';
+import { dragList } from './draglist';
 import { read, uid, type Prop } from './core';
 
 // ---------- shared by DataTable and ChildTable ----------
@@ -165,7 +166,8 @@ export interface ColumnsMenuProps {
   note?: string;
 }
 
-const EDGE = '\u0000pinned';
+// The divider's id among the columns: a hyphen never appears in a field name.
+const EDGE = '-pinned-edge';
 
 /**
  * Columns menu shared by the tables: show or hide each column, drag its grip to reorder (mouse,
@@ -180,9 +182,10 @@ export function ColumnsMenu(props: ColumnsMenuProps): HTMLElement {
   const count = () => pinnedCount(prefs.get(), all, props.pinned);
   const entries = derive(() => { const order = fullOrder(prefs.get(), all), n = count(); return [...order.slice(0, n), EDGE, ...order.slice(n)]; });
   const said = cell(''), hintId = uid('cm');
-  let refused = '';
   const shownCount = () => all.filter(key => !prefs.get().hidden.includes(key)).length;
   const say = (text: string) => { said.set(''); queueMicrotask(() => said.set(text)); };
+  const nameOf = (key: string) => key === EDGE ? 'The end of the pinned columns'
+    : `${labels.get(key)} (${entries.peek().indexOf(key) < entries.peek().indexOf(EDGE) ? 'pinned' : 'not pinned'})`;
   const describe = (key: string) => {
     const list = entries.peek(), n = list.indexOf(EDGE);
     if (key === EDGE) return n === 0 ? 'No columns pinned' : `Pinned range, ${n} ${n === 1 ? 'column' : 'columns'}`;
@@ -192,19 +195,16 @@ export function ColumnsMenu(props: ColumnsMenuProps): HTMLElement {
   // Writes a new order of entries (columns and the pinned edge) to the prefs, if it keeps a column unpinned.
   const write = (list: string[]) => {
     const n = list.indexOf(EDGE);
-    if (n > all.length - 1) { refused = 'Keep at least one column unpinned.'; say(refused); return false; }
+    if (n > all.length - 1) { say('Keep at least one column unpinned.'); return false; }
     prefs.set({ ...prefs.peek(), order: list.filter(item => item !== EDGE), pinned: n });
     return true;
   };
-  const moveTo = (key: string, to: number) => {
-    const list = entries.peek().filter(item => item !== key);
-    to = Math.max(0, Math.min(list.length, to));
-    if (entries.peek().indexOf(key) === to) return false;
-    list.splice(to, 0, key);
-    return write(list);
+  // dragList's move: the column (or the divider) goes before another entry, or last.
+  const move = (key: string, _zone: string, before: string | null) => {
+    const list = entries.peek().filter(item => item !== key), at = before === null ? list.length : list.indexOf(before);
+    list.splice(at < 0 ? list.length : at, 0, key);
+    if (list.join('\n') !== entries.peek().join('\n')) write(list);
   };
-  const grip = (key: string) => () => listEl.querySelector<HTMLElement>(`[data-entry="${key === EDGE ? 'edge' : CSS.escape(key)}"] .col-grip`);
-  const refocus = (key: string) => queueMicrotask(() => grip(key)()?.focus());
   const togglePin = (key: string) => {
     const list = entries.peek().filter(item => item !== key), n = entries.peek().indexOf(EDGE), pinnedNow = entries.peek().indexOf(key) < n;
     // Pinning adds to the end of the pinned range; unpinning starts the rest.
@@ -212,88 +212,20 @@ export function ColumnsMenu(props: ColumnsMenuProps): HTMLElement {
     if (write(list)) say(describe(key));
   };
 
-  // ---------- dragging ----------
-
-  let lifted: { key: string; before: TablePrefs; pointer: boolean } | null = null;
-  const dragging = cell<string | null>(null);
-  const finish = (keep: boolean) => {
-    if (!lifted) return;
-    const { key, before } = lifted;
-    lifted = null;
-    dragging.set(null);
-    window.removeEventListener('keydown', escape, true);
-    document.removeEventListener('pointermove', onMove);
-    document.removeEventListener('pointerup', onUp);
-    document.removeEventListener('pointercancel', onCancel);
-    if (!keep) prefs.set(before);
-    say(keep ? `${refused ? `${refused} ` : ''}${describe(key)}. Dropped.` : `Move cancelled. ${describe(key)}`);
-  };
-  // Esc while a column is lifted cancels the move, before the popover sees it.
-  const escape = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape' || !lifted) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const key = lifted.key;
-    finish(false);
-    refocus(key);
-  };
-  const lift = (key: string, pointer: boolean) => {
-    lifted = { key, before: prefs.peek(), pointer };
-    refused = '';
-    dragging.set(key);
-    window.addEventListener('keydown', escape, true);
-    say(`${describe(key)}. Lifted. ${pointer ? '' : 'Use the arrow keys to move, Space to drop, Escape to cancel.'}`.trim());
-  };
-  // The entry under the pointer: the number of other rows whose middle is above it.
-  const onMove = (event: PointerEvent) => {
-    if (!lifted) return;
-    const rows = [...listEl.querySelectorAll<HTMLElement>('[data-entry]')].filter(row => row.dataset.entry !== (lifted!.key === EDGE ? 'edge' : lifted!.key));
-    const to = rows.filter(row => { const box = row.getBoundingClientRect(); return box.top + box.height / 2 < event.clientY; }).length;
-    moveTo(lifted.key, to);
-  };
-  const onUp = () => finish(true);
-  const onCancel = () => finish(false);
-  const startPointer = (key: string) => (event: PointerEvent) => {
-    if (event.button !== 0 || lifted) return;
-    event.preventDefault();
-    lift(key, true);
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
-    document.addEventListener('pointercancel', onCancel);
-  };
-  const gripKeys = (key: string) => (event: KeyboardEvent) => {
-    if (!lifted) {
-      if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); lift(key, false); }
-      return;
-    }
-    if (lifted.key !== key) return;
-    const at = entries.peek().indexOf(key), last = entries.peek().length - 1;
-    const to = ({ ArrowUp: at - 1, ArrowDown: at + 1, Home: 0, End: last } as Record<string, number>)[event.key];
-    if (to !== undefined) {
-      event.preventDefault();
-      if (moveTo(key, to)) say(describe(key));
-      refocus(key);
-    } else if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); finish(true); refocus(key); }
-    else if (event.key === 'Tab') finish(true);
-  };
-  const gripButton = (key: string, label: string) => html`<button type="button" class="col-grip" aria-label=${label} aria-describedby=${hintId}
-    aria-pressed=${() => String(dragging.get() === key)} on:pointerdown=${startPointer(key)} on:keydown=${gripKeys(key)}
-    on:blur=${() => { if (lifted?.key === key && !lifted.pointer) finish(true); }}>${Icon('grip-vertical', { size: 'sm' })}</button>`;
-
   // ---------- rows ----------
 
   const row = (item: () => string) => {
     const key = item();
-    if (key === EDGE) return html`<div class="col-edge" role="listitem" data-entry="edge" class:lift=${() => dragging.get() === EDGE}>
-      ${gripButton(EDGE, 'Move the end of the pinned columns')}<span class="col-line" aria-hidden="true"></span>
+    if (key === EDGE) return html`<div class="col-edge" role="listitem" data-entry="edge" data-drag-item="column" data-drag-id=${EDGE}>
+      ${gripButton('Move the end of the pinned columns')}<span class="col-line" aria-hidden="true"></span>
       <span class="muted">${() => count() === 0 ? 'Nothing pinned. Drag a column above this line.' : 'Below this line, columns scroll'}</span></div>`;
     const label = labels.get(key)!;
     const hidden = () => prefs.get().hidden.includes(key);
     const pinnedNow = () => entries.get().indexOf(key) < entries.get().indexOf(EDGE);
     const lastShown = () => !hidden() && shownCount() <= 1;
     const lastUnpinned = () => !pinnedNow() && count() >= all.length - 1;
-    return html`<div class="col-row" role="listitem" data-entry=${key} class:hid=${hidden} class:pinned=${pinnedNow} class:lift=${() => dragging.get() === key}>
-      ${gripButton(key, `Move ${label}`)}
+    return html`<div class="col-row" role="listitem" data-entry=${key} data-drag-item="column" data-drag-id=${key} class:hid=${hidden} class:pinned=${pinnedNow}>
+      ${gripButton(`Move ${label}`)}
       <span class="lbl">${label}</span>
       <button type="button" class="col-pin" aria-pressed=${() => String(pinnedNow())} disabled=${lastUnpinned}
         aria-label=${() => pinnedNow() ? `Unpin ${label}` : lastUnpinned() ? `${label} stays unpinned` : `Pin ${label}`}
@@ -307,7 +239,9 @@ export function ColumnsMenu(props: ColumnsMenuProps): HTMLElement {
     const view = props.viewWidth(), keys = entries.get().slice(0, count()).filter(key => !prefs.get().hidden.includes(key));
     return view > 0 && keys.reduce((sum, key) => sum + props.widthOf!(key), 0) > view * 0.6;
   };
-  const listEl = html`<div class="col-list" role="list" aria-label="Columns in order">${each(entries, key => key, row)}</div>` as HTMLElement;
+  const gripButton = (label: string) => html`<button type="button" class="col-grip" data-drag-handle="column" aria-label=${label} aria-describedby=${hintId}
+    aria-pressed="false">${Icon('grip-vertical', { size: 'sm' })}</button>`;
+  const listEl = html`<div class="col-list" role="list" aria-label="Columns in order" data-drop-zone="column" data-zone="columns">${each(entries, key => key, row)}</div>` as HTMLElement;
   const menu = html`<div class="cols-menu">
     <div class="mh">Pinned · saved for you</div>${listEl}
     ${() => crowded() ? html`<p class="col-warn" role="status">${Icon('info', { size: 'xs' })}Pinned columns take most of the table's width, so little is left to scroll.</p>` : null}
@@ -315,7 +249,7 @@ export function ColumnsMenu(props: ColumnsMenuProps): HTMLElement {
     <div class="col-said" aria-live="polite" role="status">${said}</div>
     ${props.extra ?? null}
     <hr><button type="button" class="mi" on:click=${() => prefs.set(emptyPrefs())}>${Icon('rotate-ccw', { size: 'sm' })}<span>Reset columns</span></button></div>` as HTMLElement;
-  onCleanup(() => finish(false));
+  dragList(menu, { kind: 'column', move, label: nameOf });
   return menu;
 }
 

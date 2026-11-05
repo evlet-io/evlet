@@ -561,7 +561,8 @@ mount(document.querySelector('#app')!, () => DocFrame({
   Pinned range at the top whose divider can be dragged too. The pin button pins a column at the end
   of the range or unpins it to the start of the rest. One column always stays unpinned, and the
   menu warns, without blocking, when pinned columns take more than 60% of the table's width.
-  Every pinned column is sticky, with its own left offset, in the header, cells and totals. When the frame is wider than the columns, the last column
+  Every pinned column is sticky, with its own left offset, in the header, cells and totals. The
+  dragging is `dragList` (`ui/draglist.ts`), with the divider as one more item in the list. When the frame is wider than the columns, the last column
   takes the spare width, so the header and row rules reach the edge; the child table does the same.
   `current` marks the row open beside the table (`aria-current`) and keeps it in view; `onMove`
   reports the row the arrow keys move to, so a side panel can follow.

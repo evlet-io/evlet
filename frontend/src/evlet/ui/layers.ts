@@ -61,6 +61,8 @@ export function openPopover(anchor: HTMLElement, render: (close: () => void) => 
   };
   const escape = (event: KeyboardEvent) => {
     if (event.key !== 'Escape') return;
+    // Esc on an item lifted for a keyboard drag (dragList) puts the item back; the panel stays.
+    if ((event.target as Element | null)?.closest?.('.drag-lifted')) return;
     event.preventDefault();
     event.stopPropagation();
     close(true);
