@@ -126,6 +126,12 @@ def password_hash(password, salt=None, minimum=15):
         return _scrypt(encoded, salt)
 
 
+def check_username(name):
+    """The rule every account creation shares."""
+    if not isinstance(name, str) or not re.fullmatch(r'[a-zA-Z0-9_.-]{3,64}', name):
+        raise ValidationError({'username': 'Use 3 to 64 letters, numbers, dots, hyphens, or underscores'})
+
+
 def proxy_networks(values):
     """Validate trusted proxy addresses and CIDR ranges; returns them as normalized network strings."""
     if isinstance(values, (str, bytes)):
@@ -552,8 +558,7 @@ class LocalAuth:
             raise ValidationError({'_form': 'Unknown account field'})
         name = body.get('username', '')
         role = body.get('role', 'viewer')
-        if not isinstance(name, str) or not re.fullmatch(r'[a-zA-Z0-9_.-]{3,64}', name):
-            raise ValidationError({'username': 'Use 3 to 64 letters, numbers, dots, hyphens, or underscores'})
+        check_username(name)
         if role not in ROLES and not ROLE_ID.fullmatch(str(role)):
             raise ValidationError({'role': 'Choose an existing role'})
         return name.lower(), password_hash(body.get('password'), minimum=self.password_min), role

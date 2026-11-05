@@ -148,6 +148,42 @@ def reset_two_step_from_shell(database_path, username):
         connection.close()
 
 
+def set_password_from_shell(database_path, username, password, file_minimum=15):
+    """Set a user's password from the server shell, audited as cli. Ends their sessions, assistants and API keys, like a takeover recovery.
+
+    The minimum is the instance's security.password_min: config.py, raised by a stricter Controls setting."""
+    from .auth import password_hash
+    if not database_path.is_file():
+        raise ValueError('This instance has no database yet. Start it once first.')
+    connection = sqlite3.connect(database_path, isolation_level=None)
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        ensure_schema(connection)
+        row = connection.execute('SELECT id, username FROM evlet_users WHERE username=?', (username.lower(),)).fetchone() \
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone() else None
+        if row is None:
+            raise ValueError(f'No user is named {username}.')
+        minimum = file_minimum
+        stored = connection.execute("SELECT value FROM evlet_overrides WHERE kind='setting' AND key='security.password_min'").fetchone()
+        if stored is not None:
+            minimum = strictest('security.password_min', json.loads(stored[0]), None, file_minimum)
+        try:
+            encoded = password_hash(password, minimum=minimum)
+        except ValidationError as exc:
+            raise ValueError(exc.errors['password']) from None
+        connection.execute('UPDATE evlet_users SET password=? WHERE id=?', (encoded, row['id']))
+        LocalAuth.end_sessions(connection, row['id'], keys=True)
+        audit(connection, 'cli', 'Users', row['username'], 'Password set from the server shell. Sessions, AI assistants and API keys ended.')
+        connection.execute('COMMIT')
+    except BaseException:
+        if connection.in_transaction:
+            connection.execute('ROLLBACK')
+        raise
+    finally:
+        connection.close()
+
+
 def client_ip(scope, auth):
     """The address the Controls allowlist checks: LocalAuth.client_address, through trusted proxies only."""
     try:
