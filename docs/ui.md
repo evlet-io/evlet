@@ -283,6 +283,10 @@ The server still checks every Link on preview and save; the form only avoids kee
 
 ### Filters
 
+The list's table has no card around it. It runs flush to the edges of the main area, as a child
+table does in focus view, and the first column keeps the page margin so it lines up with the
+toolbar. Beside a side panel and on a phone the table does the same.
+
 A list's Filter button (with a count of active filters) opens a panel of filter rows under the
 toolbar, as in Frappe. Each row is a field, a condition and a value, with a remove button; Add
 filter adds rows, and every row must match (AND). The field picker searches the model's fields

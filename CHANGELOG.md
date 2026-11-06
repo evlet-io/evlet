@@ -17,6 +17,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
+- **Lists run flush to the main area.** A model list's table no longer sits in a rounded,
+  bordered card. Its rows run edge to edge, like a child table in focus view, and the list page
+  uses the full width of the main area. Related lists and reports keep their own look.
 - **Related counts use the model's words.** In the side block, a relation named after its model
   is announced as "Payments, 1 payment" by screen readers; other relations still say "records".
   An empty relation in the Related tab is one short line instead of a table of headers, and its
