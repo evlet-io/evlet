@@ -111,6 +111,9 @@ class Project(Model):
         tabs = ('details', 'related', 'activity')
         default_tab = 'details'
         open_in = 'panel'
+        # The list's tabs: All, Planned, Active and Done, with counts. It opens on Active.
+        list_tabs = 'status'
+        list_tab = 'active'
 
     # A declared title is the record title itself.
     title = Text(required=True, max_length=120, label='Project')
