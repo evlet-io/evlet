@@ -120,6 +120,7 @@ class InvoiceLine(Child):
 
 class InvoiceMeta(FiniteMeta):
     revisable = True
+    board = 'status'
     effects = (Effect(LedgerEntry, rows='ledger_rows', on='issued', reverse=Swap('debit', 'credit'), balanced=('debit', 'credit')),)
     measures = {'outstanding': Sum('outstanding', where=F('status') == 'issued'), 'count': Count(),
                 'payments': Count('payment', link='invoice'), 'paid': Sum('amount', model='payment', link='invoice')}
