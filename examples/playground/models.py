@@ -34,7 +34,8 @@ class Invoice(Model):
         # the standard name, shown as the document number. The year comes from the posting date, or the
         # creation day without one. Controls, Naming can add series and set the counter. With no title
         # source the title is the name.
-        naming = Naming(Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date')
+        # label names the standard name field for invoices on the form, list columns, filters and search.
+        naming = Naming(Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date', label='Invoice number')
         # The list opens an invoice in a side panel beside it. People can switch back to the full page.
         open_in = 'panel'
         # The posting date places an invoice in a period. Once Controls, Periods locks that period, nobody

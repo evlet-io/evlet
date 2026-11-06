@@ -71,6 +71,20 @@ describe('record status display', () => {
     expect(badges(host)[0].getAttribute('aria-label')).toBe('Status: Issued');
   });
 
+  it('shows and takes the moves of a record whose text id has letters, as every new id does', async () => {
+    // The recordings number rows 1, 2, 3, so their ids are all digits; a time-ordered id is not.
+    const textId = '01hff1w8vgqwf';
+    const retext = (source: Recorded): Recorded => JSON.parse(JSON.stringify(source).split(draft).join(textId));
+    const { host, sent } = start([...routes(schema(invoice.schema, { show: null }), retext(invoice.invoice_draft)),
+      ['POST', new RegExp(`/api/invoice/${textId}/moves/issued$`), retext(invoice.invoice_issued)]], `/app/invoice/${textId}`);
+    await until(() => expect(byText(host, '.doc-head .ph-actions button', 'Issue')).not.toBeNull());
+    expect(badges(host)[0].tagName).toBe('BUTTON');
+    click(byText(host, '.doc-head .ph-actions button', 'Issue'));
+    await until(() => expect(requests(sent, 'POST', new RegExp(`/api/invoice/${textId}/moves/issued$`))).toHaveLength(1));
+    await until(() => expect(text(badges(host)[0])).toBe('Issued'));
+    expect(lastToast()).not.toMatch(/cannot move/);
+  });
+
   it('keeps the badge plain for a role that may take no move, and for a guarded move that is not met', async () => {
     const { host } = start(routes(schema(invoice.schema, { show: null }), invoice.invoice_draft_blocked), `/app/invoice/${draft}`);
     await until(() => expect(badges(host)).toHaveLength(1));

@@ -63,6 +63,19 @@ def test_without_routes_py_every_browser_path_is_served_as_before(secured):
     assert status == 404 and isinstance(payload, dict)
 
 
+@pytest.mark.skipif(not (STATIC / 'index.html').is_file(), reason='Build browser assets before checking static serving')
+def test_record_pages_with_text_ids_are_served_with_200(secured):
+    # Records have 13-character text ids; a decimal id from an older bookmark still opens its page.
+    for path in ('/app/customer/01hff1w8vgqwf', '/app/customer/01hff1w8vgqwf/view', '/app/customer/01HFF1W8VGQWF',
+                 '/app/customer/0lhffiw8vgqwf', '/app/customer/42'):
+        status, payload, _ = http(secured, 'GET', path)
+        assert status == 200 and b'<div id="evlet-app">' in payload, path
+    # Too long, too short, past 63 bits, not base32, or an unknown model: the not-found page.
+    for path in ('/app/customer/01hff1w8vgqwfx', '/app/customer/01hff1w8vgqw', '/app/customer/zzzzzzzzzzzzz',
+                 '/app/customer/01hff1w8vgqw_', '/app/customer/0000000000000', '/app/unknown/01hff1w8vgqwf', '/app/customer/01hff1w8vgqwf/edit'):
+        assert http(secured, 'GET', path)[0] == 404, path
+
+
 def test_session_tells_the_browser_whether_docs_are_on(secured):
     assert http(secured, 'GET', '/api/auth/session')[1]['application']['docs'] == '/docs'
 

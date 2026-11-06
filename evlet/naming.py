@@ -93,6 +93,9 @@ def configure(registry, child_models):
             rules = registry.naming.get(model)
             named = rules is not None and rules.field == 'name'
             model.__fields__['name'].read_only = not named
+            # Naming(label=...) names the field for the model's domain; the schema carries it everywhere.
+            label = getattr(getattr(getattr(model, 'Meta', None), 'naming', None), 'label', None) if named else None
+            model.__fields__['name'].label = label or 'Name'
 
 
 def check_declarations(registry, child_models):

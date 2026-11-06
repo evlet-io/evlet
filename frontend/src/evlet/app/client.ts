@@ -7,7 +7,10 @@ import { cell, type Cell } from '../reactive';
 import { isRecordId } from '../ids';
 import type { NodeChanges } from '../model/unsaved';
 
-const DETAIL = /^\/api\/([A-Za-z][A-Za-z0-9_]*)\/(\d+)(?:\/(?:moves\/[^/]+|actions\/[^/]+|void|revise|unpost|repost|confirm|cancel|reopen))?$/;
+// A record id in a path: the 13-character text id (any case, as ids.ts reads it), or a decimal id from an older link.
+const ID = '(?:[0-7IiLlOo][0-9A-HJKMNP-TV-Za-hjkmnp-tv-zIiLlOo]{12}|[1-9][0-9]{0,11})';
+const DETAIL = new RegExp(`^/api/([A-Za-z][A-Za-z0-9_]*)/(${ID})(?:/(?:moves/[^/]+|actions/[^/]+|void|revise|unpost|repost|confirm|cancel|reopen))?$`);
+const READ = new RegExp(`^/api/[A-Za-z][A-Za-z0-9_]*/${ID}$`);
 const NAME = /^[A-Za-z][A-Za-z0-9_.]*$/;
 
 export interface Attachment { id: number; name: string; size: number }
@@ -32,7 +35,7 @@ export class AppClient extends ApiClient {
   }
 
   async request<T>(method: string, path: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
-    if (method !== 'GET' || !/^\/api\/[A-Za-z][A-Za-z0-9_]*\/\d+$/.test(path) || options.query) return this.withDetail<T>(method, path, options);
+    if (method !== 'GET' || !READ.test(path) || options.query) return this.withDetail<T>(method, path, options);
     const pending = this.withDetail<T>(method, path, options);
     this.inflight.set(path, pending as Promise<ApiResponse<any>>);
     const done = () => { if (this.inflight.get(path) === pending) this.inflight.delete(path); };

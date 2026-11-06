@@ -240,6 +240,18 @@ class Ticket(Model):
         return 'T-' + self.subject.upper().replace(' ', '-')
 ```
 
+**Label.** The standard `name` field is labelled "Name". `Naming(..., label="Project number")` names
+it for the model's domain: the form, list columns, filters, search and the schema all use the label.
+It is a short line of text, at most 80 characters. The label belongs with the naming rule, because
+the rule says what the name is; a model without naming keeps "Name". The older
+`Naming("field", ...)` form takes no label: label that field with `label=` on the field itself.
+
+```python
+class Project(Model):
+    class Meta:
+        naming = Naming(Series("PRJ-{#####}"), label="Project number")
+```
+
 **When.** `assign_on="create"` (the default), `"confirm"` for a confirmable model, or a state of the
 model. A confirm-time name is taken in the confirm transaction, so drafts never use a number and the
 numbers of confirmed documents have no gaps, as UAE tax invoices need. Until then the name is
@@ -298,7 +310,8 @@ customer's own reference, such as their purchase order number.
 ```python
 class Invoice(Model):
     class Meta:
-        naming = Naming(Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date')
+        naming = Naming(Series('INV-{YYYY}-{#####}', label='Invoices'), date_field='posting_date',
+                        label='Invoice number')
 ```
 
 **Older targets.** `Naming("reference", Series(...))` still names another unique, optional Text
