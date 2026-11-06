@@ -12,11 +12,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   page, or the start page; the search palette offers Go to Controls to roles that open it.
 - **Change password from the account menu.** It opens the Sign-in & security password form
   in a small dialog; both use one shared form.
+- **Saved filters on lists.** The filter panel keeps the current filters under a name, per
+  person on the device. Choosing one applies it; each can be deleted.
 - **Files can be removed from a record.** Each file in the Files block has a remove button,
   shown to roles that can upload. It asks first, and a locked record shows none.
 
 ### Changed
 
+- **The list filter panel is a side panel.** It docks beside the table inside the page, with
+  no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
+  sit on top and saved filters below; each half scrolls on its own. Escape closes it.
 - **Lists run flush to the main area.** A model list's table no longer sits in a rounded,
   bordered card. Its rows run edge to edge, like a child table in focus view, and the list page
   uses the full width of the main area. Related lists and reports keep their own look.
