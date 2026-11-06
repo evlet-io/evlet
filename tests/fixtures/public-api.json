@@ -65,7 +65,7 @@
     "MigrationPlan": "class(state: str, pending: tuple, differences: tuple, suggestion: str, planned: dict = None) -> None",
     "Min": "class(field, *, where=None, model=None, link=None)",
     "Model": "class(**values)",
-    "Model.Meta": "options['api', 'attachments', 'autosave', 'calculation_language', 'default_tab', 'description', 'effects', 'journal', 'key_fields', 'label', 'layout', 'list_fields', 'list_tab', 'list_tabs', 'mail', 'measures', 'naming', 'numeric_profile', 'open_in', 'period', 'period_scope', 'plural', 'relations', 'revisable', 'search_fields', 'status', 'tabs', 'title', 'title_field']",
+    "Model.Meta": "options['api', 'attachments', 'autosave', 'board', 'calculation_language', 'default_tab', 'description', 'effects', 'journal', 'key_fields', 'label', 'layout', 'list_fields', 'list_tab', 'list_tabs', 'mail', 'measures', 'naming', 'numeric_profile', 'open_in', 'period', 'period_scope', 'plural', 'relations', 'revisable', 'search_fields', 'status', 'tabs', 'title', 'title_field']",
     "Model.to_dict": "def(self)",
     "Model.validate": "def(self)",
     "Month": "class(field)",

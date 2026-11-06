@@ -17,6 +17,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   in the address. The Controls list view sets both per instance
   ([docs/ui.md](docs/ui.md#list-tabs)).
 
+### Changed
+
+- **The list board is opt-in.** A model's list offers the Board view only when `Meta.board`
+  names its State field, such as `board = "stage"`, and the board groups by that field. Without
+  it the list is a table with the saved views per state, and an old `?view=board` link opens the
+  table. Apps that relied on the automatic board for every model with a State must now set
+  `Meta.board`. `Meta.board` on any other field fails registration naming the model.
+
 ## 0.3.0 (05-11-2026)
 
 This release adds rich text with images and mentions, unsaved changes that survive leaving a
