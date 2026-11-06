@@ -456,6 +456,11 @@ def test_frontends_need_the_matching_realm_and_role(portal):
     assert viewer('GET', '/crm/customer')[0] == 404
     if (STATIC / 'index.html').is_file():
         assert admin('GET', '/crm/customer')[0] == 200
+        # Record pages under a frontend's base take the text id, any case, and a decimal id from an older link.
+        for path in ('/crm/customer/01hff1w8vgqwf', '/crm/customer/01HFF1W8VGQWF/view', '/crm/customer/42'):
+            assert admin('GET', path)[0] == 200, path
+        for path in ('/crm/customer/zzzzzzzzzzzzz', '/crm/customer/01hff1w8vgqw', '/crm/customer/0'):
+            assert admin('GET', path)[0] == 404, path
     with pytest.raises(ValueError, match='roles need a sign-in realm'):
         Frontend('site', kind='server', handler=render, path='/site', auth=None, roles=('admin',))
 

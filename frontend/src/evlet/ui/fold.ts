@@ -21,6 +21,8 @@ const REVEAL = 'ev-reveal';
 const media = (query: string) => { try { return Boolean(window.matchMedia?.(query)?.matches); } catch { return false; } };
 /** Whether the height may animate: not when the person asked for reduced motion. */
 const motion = () => !media('(prefers-reduced-motion: reduce)');
+/** A hidden page does not play animations, so a section would wait for one that never ends. */
+const visible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
 
 /** Empty as a summary counts it: no value, blank text, no items. */
 export function isEmpty(value: unknown): boolean {
@@ -37,6 +39,8 @@ export function foldSummary(fields: FieldLike[]): string {
 /** Open and closed state of one form's sections. */
 export class Folds {
   private readonly local = new Map<string, Cell<boolean | null>>();
+  /** True while reset() applies: sections change at once, without animating. */
+  instant = false;
 
   /**
    * @param saved the person's choices by section title (true is open), kept in their preferences.
@@ -76,6 +80,9 @@ export class Folds {
 
   /** Forget the person's choices: every section goes back to how the app starts it. */
   reset() {
+    // Effects may run when an outer batch ends, so the flag lasts until the current task is done.
+    this.instant = true;
+    queueMicrotask(() => { this.instant = false; });
     for (const local of this.local.values()) local.set(null);
     this.saved.set({});
   }
@@ -132,15 +139,15 @@ export function FoldSection(props: FoldSectionProps): HTMLElement {
   effect(() => {
     const next = open.get();
     if (first) { first = false; return; }
-    untrack(() => animate(body, next, shown));
+    untrack(() => animate(body, next, shown, !folds.instant));
   });
   return section;
 }
 
 const running = new WeakMap<HTMLElement, Animation>();
-function animate(body: HTMLElement, next: boolean, shown: Cell<boolean>) {
+function animate(body: HTMLElement, next: boolean, shown: Cell<boolean>, smooth = true) {
   running.get(body)?.cancel();
-  if (!motion() || typeof body.animate !== 'function') { shown.set(next); return; }
+  if (!smooth || !motion() || !visible() || typeof body.animate !== 'function') { body.style.overflow = ''; shown.set(next); return; }
   if (next) shown.set(true);
   const height = `${body.scrollHeight}px`;
   body.style.overflow = 'hidden';
