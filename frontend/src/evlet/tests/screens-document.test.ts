@@ -57,6 +57,8 @@ describe('transaction document (recorded fixtures)', () => {
     expect(host.querySelector('.composer .rt-surface')).not.toBeNull();
     // Side panel: key fields, related counts, files and record info.
     await until(() => expect(text(byText(host, '.side-sec', /^Related/))).toContain('Payments1'));
+    // Payments are named after their model, so the count reads in its words.
+    expect(byText(host, '.side-sec', /^Related/)!.querySelector('.rel-row')!.getAttribute('aria-label')).toBe('Payments, 1 payment');
     expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf');
     click(byText(host, '.doc-tabs [role="tab"]', 'Related'));
     // A payment has no text field, so its title is its id.
@@ -226,10 +228,11 @@ describe('transaction document (recorded fixtures)', () => {
     expect(byText(host, '.inv-banner button', 'Void')).toBeNull();
   });
 
-  it('offers no upload on a locked record, whose files the server refuses to change', async () => {
+  it('offers no upload and no remove on a locked record, whose files the server refuses to change', async () => {
     const { host } = start(routes(invoice.invoice_issued_detail), `/app/invoice/${draft}`);
     await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf'));
     expect(host.querySelector('.ev-upload')).toBeNull();
+    expect(host.querySelector('.ev-file-remove')).toBeNull();
     expect(invoice.invoice_attachment_locked.status).toBe(409);
   });
 

@@ -20,6 +20,9 @@ const columns = () => { try { return window.matchMedia?.('(max-width: 760px)')?.
 /** Every quick access tile this user may use: lists, new records and pages. */
 export function quickTiles(ctx: AppContext): Tile[] {
   const tiles: Tile[] = docsOn(ctx.session) ? [{ id: 'p-docs', group: 'Pages', icon: 'file-text', tint: 'slate', label: 'Docs', run: () => void ctx.router.go('docs', {}) }] : [];
+  // Controls opens in a new tab, as from the account menu, for people allowed to open it.
+  if (ctx.me.peek()?.controls) tiles.push({ id: 'p-controls', group: 'Pages', icon: 'sliders-horizontal', tint: 'slate', label: 'Go to Controls',
+    run: () => { window.open('/controls', '_blank', 'noopener'); } });
   for (const model of rootModels(ctx.schema)) {
     const { icon, tint } = identity(model);
     tiles.push({ id: `l-${model.name}`, group: 'Lists', icon, tint, label: model.plural, badge: 'list', run: () => void ctx.router.go('list', { model: model.name }) });

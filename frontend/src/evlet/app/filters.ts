@@ -198,6 +198,8 @@ export interface FilterBuilder {
   add(): void;
   remove(id: number): void;
   clear(): void;
+  /** Replaces the rows with those of an address (`?f=`), as a saved filter keeps it. */
+  load(text: string): void;
 }
 
 export function filterBuilder(index: SchemaIndex, model: ScreenModel, start: string | undefined): FilterBuilder {
@@ -215,6 +217,10 @@ export function filterBuilder(index: SchemaIndex, model: ScreenModel, start: str
     add() { state.set({ ...state.peek(), rows: [...state.peek().rows, { id: ++next, field: '', op: '', value: null }] }); },
     remove(id) { state.set({ ...state.peek(), rows: state.peek().rows.filter(row => row.id !== id) }); },
     clear() { state.set({ rows: [], matches: {} }); },
+    load(text) {
+      const loaded = decode(byKey, text);
+      state.set({ ...loaded, rows: loaded.rows.map(row => ({ ...row, id: ++next })) });
+    },
   };
 }
 
@@ -225,8 +231,24 @@ export function FilterChips(builder: FilterBuilder, links: LinkSource): HTMLElem
     ? Button({ label: 'Clear filters', variant: 'ghost', size: 'small', onClick: () => builder.clear() }) : null}</span>` as HTMLElement;
 }
 
-/** The panel of filter rows: field, condition, value and remove; child table rows grouped by table. */
-export function FilterPanel(builder: FilterBuilder, links: LinkSource, onClose: () => void): HTMLElement {
+/** A saved filter: the address form of the rows (`?f=`), under a name. Kept per person on the device. */
+export interface SavedFilter { name: string; f: string }
+export const MAX_SAVED_FILTERS = 20;
+
+export interface FilterPanelOptions {
+  /** Closes the panel; Escape inside it does the same. */
+  onClose: () => void;
+  /** The saved filters, usually a preference cell per list. */
+  saved: Cell<SavedFilter[]>;
+}
+
+/**
+ * The filter side panel, docked beside the list: the filter rows on top (field, condition, value
+ * and remove; child table rows grouped by table) and the saved filters below, each half scrolling
+ * on its own.
+ */
+export function FilterPanel(builder: FilterBuilder, links: LinkSource, options: FilterPanelOptions): HTMLElement {
+  const { onClose, saved } = options;
   const { state, byKey } = builder;
   const choices: GroupedChoice[] = builder.fields.map(field => ({ value: field.key, label: field.table ? field.meta.label : field.label, group: field.group, hint: humanize(field.meta.type) }));
   const update = (id: number, patch: Partial<FilterRow>) => state.set({ ...state.peek(), rows: state.peek().rows.map(row => row.id === id ? { ...row, ...patch } : row) });
@@ -260,13 +282,47 @@ export function FilterPanel(builder: FilterBuilder, links: LinkSource, onClose: 
       ${each(rowsOf(name), row => row.id, rowView)}</div>`;
   };
   const add = () => { builder.add(); const id = state.peek().rows[state.peek().rows.length - 1].id; queueMicrotask(() => pickers.get(id)?.open()); };
-  const panel = html`<section class="fb" aria-label="Filters">
-    <p class="muted fb-empty" hidden=${() => state.get().rows.length > 0}>No filters yet. Add one to narrow the list; every filter must match.</p>
-    <div class="fb-rows">${each(rowsOf(''), row => row.id, rowView)}</div>
-    ${() => tables.get() ? untrack(() => tables.peek().split(',').map(group)) : null}
-    <div class="fb-foot">${Button({ label: 'Add filter', icon: 'plus', size: 'small', onClick: add })}<span class="grow"></span>${Button({ label: 'Clear filters', variant: 'ghost', size: 'small',
-      onClick: () => builder.clear() })}${Button({ label: 'Done', size: 'small', onClick: onClose })}</div></section>` as HTMLElement;
+  // ---------- saved filters ----------
+  const naming = cell('', { name: 'filters.save name' });
+  const current = derive(() => builder.address.get());
+  const save = (event: Event) => {
+    event.preventDefault();
+    const name = naming.peek().trim().slice(0, 60), f = current.peek();
+    if (!name || !f) return;
+    saved.set([...saved.peek().filter(item => item.name !== name), { name, f }].slice(-MAX_SAVED_FILTERS));
+    naming.set('');
+    nameInput.value = '';
+  };
+  const nameInput = html`<input class="input" aria-label="Name for these filters" placeholder="Name these filters" maxlength="60" autocomplete="off"
+    on:input=${(event: Event) => naming.set((event.target as HTMLInputElement).value)}>` as HTMLInputElement;
+  const savedList = html`<ul class="fb-saved-list">${each(() => saved.get(), item => item.name, item => html`<li class="fb-saved-item">
+    <button type="button" class="fb-apply" aria-pressed=${() => String(current.get() === item().f)} on:click=${() => builder.load(item().f)}>
+      <span class="tx">${() => item().name}</span></button>
+    ${IconButton({ icon: 'trash-2', tip: () => `Delete ${item().name}`, size: 'small', onClick: () => saved.set(saved.peek().filter(other => other.name !== untrack(item).name)) })}</li>`)}</ul>`;
+
+  const panel = html`<aside class="fb-dock" aria-label="Filters" tabindex="-1">
+    <div class="fb-dock-head"><h2>Filters</h2><span class="grow"></span>${IconButton({ icon: 'x', tip: 'Close filters', size: 'small', onClick: onClose })}</div>
+    <section class="fb fb-top" aria-label="Filter rows">
+      <p class="muted fb-empty" hidden=${() => state.get().rows.length > 0}>No filters yet. Add one to narrow the list; every filter must match.</p>
+      <div class="fb-rows">${each(rowsOf(''), row => row.id, rowView)}</div>
+      ${() => tables.get() ? untrack(() => tables.peek().split(',').map(group)) : null}
+      <div class="fb-foot">${Button({ label: 'Add filter', icon: 'plus', size: 'small', onClick: add })}<span class="grow"></span>${Button({ label: 'Clear filters', variant: 'ghost', size: 'small',
+        onClick: () => builder.clear() })}</div></section>
+    <section class="fb-saved" aria-label="Saved filters">
+      <h3>Saved filters</h3>
+      <form class="fb-save" on:submit=${save}>${nameInput}${Button({ label: 'Save', icon: 'star', size: 'small', type: 'submit',
+        disabled: () => !naming.get().trim() || !current.get() })}</form>
+      <p class="muted fb-empty" hidden=${() => saved.get().length > 0}>${() => current.get() ? 'Name the filters above to keep them for next time, on this device.' : 'Add a filter, then save it here under a name.'}</p>
+      ${savedList}</section></aside>` as HTMLElement;
+  panel.addEventListener('keydown', event => {
+    // Menus and pickers open outside the panel and close themselves first.
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    event.preventDefault();
+    onClose();
+  });
+  // Opening starts on the first row's field, or adds a row and opens its field search.
   if (!state.peek().rows.length) queueMicrotask(add);
+  else queueMicrotask(() => panel.querySelector<HTMLElement>('.fb-field')?.focus());
   return panel;
 }
 

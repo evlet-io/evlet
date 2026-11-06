@@ -204,7 +204,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   if (!panel) effect(() => ctx.crumbs.set([{ label: model.plural, href: router.href('list', { model: name }) }, { label: titleText.get() }]));
   if (!isNew) {
     const remember = () => {
-      const entry = { model: name, id: store.id!, title: untrack(() => titleText.get()) };
+      const entry = { model: name, id: store.id!, title: untrack(() => titleText.get()), at: Date.now() };
       prefs.recentRecords.set([entry, ...prefs.recentRecords.peek().filter(item => !(item.model === name && item.id === entry.id))].slice(0, 8));
     };
     remember();
@@ -758,7 +758,8 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
         void ctx.api.related(model.name, store.id!, relation.name, { limit: 1 }).then(page => total.set(page.total), () => total.set(null));
       });
       const target = screenModel(ctx.schema, relation.model);
-      return { key: relation.name, label: relation.label, href: ctx.router.href('record', { model: model.name, id: String(store.id) }, { tab: 'related' }), icon: identity(target).icon, tint: identity(target).tint, count: total };
+      return { key: relation.name, label: relation.label, href: ctx.router.href('record', { model: model.name, id: String(store.id) }, { tab: 'related' }), icon: identity(target).icon, tint: identity(target).tint, count: total,
+        noun: relatedNoun(relation.label, target) };
     }) }) }));
   if (model.attachments) blocks.push(SideBlock({ title: 'Files', body: Files(ctx, model, store) }));
   const revises = has('revises') ? view('revises') : null;
@@ -814,10 +815,10 @@ export function openPrint(ctx: AppContext, model: ScreenModel, id: string, title
 function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
   const files = cell<Array<{ id: number; name: string; size: number }> | null>(null);
   const problem = cell('');
-  const load = () => void ctx.api.attachments(model.name, store.id!).then(items => files.set(items), error => problem.set(error instanceof ApiError ? error.message : 'Files could not be loaded.'));
+  const load = () => ctx.api.attachments(model.name, store.id!).then(items => { files.set(items); }, error => { problem.set(error instanceof ApiError ? error.message : 'Files could not be loaded.'); });
   load();
   // A filed print copy is a new attachment of this record.
-  const changed = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.model === model.name && detail?.id === store.id) load(); };
+  const changed = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.model === model.name && detail?.id === store.id) void load(); };
   window.addEventListener('evlet-files-changed', changed);
   onCleanup(() => window.removeEventListener('evlet-files-changed', changed));
   const canWrite = model.api !== 'read' && model.permissions?.update !== false;
@@ -833,19 +834,48 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
     const reader = new FileReader();
     reader.onload = () => {
       const content = String(reader.result).split(',')[1] ?? '';
-      ctx.api.upload(model.name, store.id!, file.name, content).then(() => { toast(`${file.name} attached`, { icon: 'paperclip' }); load(); },
+      ctx.api.upload(model.name, store.id!, file.name, content).then(() => { toast(`${file.name} attached`, { icon: 'paperclip' }); void load(); },
         error => toast(error instanceof ApiError ? `Not attached: ${error.fields.attachment ?? error.message}` : 'Not attached.', { icon: 'info' }));
     };
     reader.readAsDataURL(file);
   };
-  return html`<div class="ev-files">
+  const box = html`<div class="ev-files" tabindex="-1">
     ${() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : files.get() === null ? html`<p class="muted">Loading…</p>` : files.get()!.length === 0
-      ? html`<p class="muted">No files yet.</p>` : html`<div class="files">${files.get()!.map(file => html`<div class="file">${Icon('paperclip', { size: 'sm', className: 'muted' })}
-        <div style="flex:1;min-width:0"><a class="link" rel="external" href=${ctx.api.url(`/api/${model.name}/${store.id}/attachments/${file.id}`)}>${file.name}</a><div class="muted" style="font-size:12px">${size(file.size)}</div></div></div>`)}</div>`}
-    ${canWrite ? when(() => !locked(), () => html`<label class="btn sm ev-upload">${Icon('upload', { size: 'sm', className: 'tint' })}Attach a file<input type="file" hidden on:change=${upload}></label>`) : null}</div>`;
+      ? html`<p class="muted">No files yet.</p>` : html`<div class="files">${files.get()!.map((file, index) => html`<div class="file">${Icon('paperclip', { size: 'sm', className: 'muted' })}
+        <div style="flex:1;min-width:0"><a class="link" rel="external" href=${ctx.api.url(`/api/${model.name}/${store.id}/attachments/${file.id}`)}>${file.name}</a><div class="muted" style="font-size:12px">${size(file.size)}</div></div>
+        ${canWrite ? when(() => !locked(), () => removeButton(file, index)) : null}</div>`)}</div>`}
+    ${canWrite ? when(() => !locked(), () => html`<label class="btn sm ev-upload">${Icon('upload', { size: 'sm', className: 'tint' })}Attach a file<input type="file" hidden on:change=${upload}></label>`) : null}</div>` as HTMLElement;
+  // After a removal, focus moves to the remove button now in the same place, else the one before it, else the block.
+  const refocus = (index: number) => {
+    const buttons = [...box.querySelectorAll<HTMLButtonElement>('.ev-file-remove')];
+    (buttons[Math.min(index, buttons.length - 1)] ?? box).focus();
+  };
+  const remove = (file: { id: number; name: string }, index: number) => openModal({ title: `Remove ${file.name}?`, icon: 'trash-2', tint: 'rose', narrow: true,
+    body: () => html`<p>This can’t be undone.</p>`,
+    footer: close => DialogFooter({ cancel: close, submit: { label: 'Remove', variant: 'danger', icon: 'trash-2', onClick: async () => {
+      try {
+        await ctx.api.removeAttachment(model.name, store.id!, file.id);
+        close();
+        toast(`${file.name} removed`, { icon: 'trash-2' });
+        await load();
+        refocus(index);
+      } catch (error) { close(); toast(error instanceof ApiError ? `Not removed: ${error.fields.attachment ?? error.message}` : 'Not removed.', { icon: 'info' }); }
+    } } }) });
+  const removeButton = (file: { id: number; name: string }, index: number) => {
+    const button = IconButton({ icon: 'trash-2', tip: `Remove ${file.name}`, size: 'small', onClick: () => remove(file, index) });
+    button.classList.add('ev-file-remove');
+    return button;
+  };
+  return box;
 }
 
 // ---------- related ----------
+
+/** A relation named after its model counts in that model's words ('1 invoice', 'No invoices yet'); any other
+ * name ('Revisions', 'Open tasks') stays neutral, so its count never reads as something it is not. */
+function relatedNoun(label: string, target: ScreenModel) {
+  return label === target.plural ? { one: target.label.toLowerCase(), many: target.plural.toLowerCase() } : undefined;
+}
 
 function Related(ctx: AppContext, model: ScreenModel, id: string, relations: NonNullable<ScreenModel['relations']>): Child {
   return relations.map(relation => {
@@ -860,10 +890,13 @@ function Related(ctx: AppContext, model: ScreenModel, id: string, relations: Non
       render: index === 0 ? (row: () => RecordData) => html`<a class="ev-row-link" href=${() => ctx.router.href('record', { model: target.name, id: String(row().id) })}>${() => titleOf(target, row())}</a>`
         : (row: () => RecordData) => cellView(ctx, target, meta, row),
     }));
-    return html`<section class="panel ev-related" aria-label=${relation.label}><div class="panel-h"><h3>${relation.label}</h3><span class="muted num">${() => total.get() === null ? '' : String(total.get())}</span></div>
+    const none = `No ${relation.label.toLowerCase()} yet.`;
+    // An empty relation is one short line: no table of headers over nothing, and no 0 in the heading.
+    return html`<section class="panel ev-related" aria-label=${relation.label}><div class="panel-h"><h3>${relation.label}</h3><span class="muted num">${() => total.get() ? String(total.get()) : ''}</span></div>
       ${() => problem.get() ? html`<p class="muted" style="padding:12px">${problem.get()}</p>` : null}
-      ${DataTable<RecordData>({ columns, rows, key: row => row.id, label: relation.label, onOpen: row => void ctx.router.go('record', { model: target.name, id: String(row.id) }), height: 300,
-        empty: () => html`<span class="muted">${`No ${relation.label.toLowerCase()} yet.`}</span>` })}
+      ${when(() => total.get() === 0 && !problem.get(), () => html`<p class="ev-related-empty">${none}</p>`)}
+      ${when(() => total.get() !== 0, () => DataTable<RecordData>({ columns, rows, key: row => row.id, label: relation.label, onOpen: row => void ctx.router.go('record', { model: target.name, id: String(row.id) }), height: 300,
+        empty: () => html`<span class="muted">${none}</span>` }))}
       ${when(() => (total.get() ?? 0) > rows.get().length, () => html`<div class="ev-more">${Button({ label: 'Show more', size: 'small', onClick: () => more(rows.peek().length) })}</div>`)}</section>`;
   });
 }

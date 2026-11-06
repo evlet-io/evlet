@@ -16,6 +16,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `list_tabs` for roles that can read the field (additive). Choosing a tab, All included, keeps it
   in the address. The Controls list view sets both per instance
   ([docs/ui.md](docs/ui.md#list-tabs)).
+- **Back to the app from Controls.** The top of the Controls sidebar links back to the last app
+  page, or the start page; the search palette offers Go to Controls to roles that open it.
+- **Change password from the account menu.** It opens the Sign-in & security password form
+  in a small dialog; both use one shared form.
+- **Saved filters on lists.** The filter panel keeps the current filters under a name, per
+  person on the device. Choosing one applies it; each can be deleted.
+- **Files can be removed from a record.** Each file in the Files block has a remove button,
+  shown to roles that can upload. It asks first, and a locked record shows none.
 
 ### Changed
 
@@ -24,6 +32,33 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   it the list is a table with the saved views per state, and an old `?view=board` link opens the
   table. Apps that relied on the automatic board for every model with a State must now set
   `Meta.board`. `Meta.board` on any other field fails registration naming the model.
+- **The list filter panel is a side panel.** It docks beside the table inside the page, with
+  no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
+  sit on top and saved filters below; each half scrolls on its own. Escape closes it.
+- **Lists run flush to the main area.** A model list's table no longer sits in a rounded,
+  bordered card. Its rows run edge to edge, like a child table in focus view, and the list page
+  uses the full width of the main area. Related lists and reports keep their own look.
+- **Related counts use the model's words.** In the side block, a relation named after its model
+  is announced as "Payments, 1 payment" by screen readers; other relations still say "records".
+  An empty relation in the Related tab is one short line instead of a table of headers, and its
+  heading shows no 0.
+- **Record tabs show their keyboard focus ring inside the tab**, so the scrolling tab strip no
+  longer clips it.
+- **The note composer shows one focus ring.** The editor inside it no longer draws its own
+  border and ring, and the ring matches rich text form fields.
+- **Controls Jobs lists the jobs on the left.** All sits on top, and each job shows its latest
+  run and how many recent runs it has. A click (or the arrow keys) shows that job's schedules and
+  runs on the right, and the choice stays in the address as `?job=<name>`. On a phone the jobs
+  are a row of chips above the runs.
+- **The bell opens a notification centre.** It is a panel along the right edge under the top
+  bar, grouped by day, that closes on a click anywhere else or Esc. A click on an item marks it
+  read; Go to opens its record when the person can open it. New items slide in as popups at the
+  top right while the panel is closed.
+- **Only the Controls nav list scrolls.** The brand and workspace at the top of the Controls
+  sidebar and the account card at the bottom stay in place, like the app sidebar, also in the
+  phone drawer.
+- **Recent records moved from the sidebar to a history button left of search.** It lists them
+  newest first with the model and when each was opened, and has a Clear action.
 
 ## 0.3.0 (05-11-2026)
 

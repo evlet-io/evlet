@@ -200,6 +200,8 @@ textarea.input{height:auto;padding:8px 10px;resize:vertical;min-height:72px;line
 .tabs button{display:flex;align-items:center;gap:6px;padding:8px 10px 9px;font-weight:500;color:var(--fg-3);position:relative;white-space:nowrap;font-size:13px}
 .tabs button:hover{color:var(--fg)}
 .tabs button.on{color:var(--fg)}
+/* Drawn inside the tab: the scrolling tab strip would clip an outline outside it. */
+.tabs button:focus-visible{outline-offset:-2px;border-radius:6px}
 .tabs button.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;background:var(--accent);border-radius:2px}
 .tabs .n{font-size:11.5px;color:var(--fg-3);background:var(--bg-muted);border-radius:5px;padding:0 5px;line-height:17px}
 .tabs .add{color:var(--fg-4)}
@@ -358,7 +360,10 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .step.won.cur{background:var(--t-green)}
 .step.lost.cur{background:var(--t-rose)}
 .composer{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);margin-bottom:20px;box-shadow:var(--shadow-sm);transition:border-color .12s,box-shadow .12s}
-.composer:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring)}
+.composer:focus-within{border-color:var(--focus-border);box-shadow:var(--shadow-xs),0 0 0 4px var(--focus-ring)}
+/* The note composer wraps the rich text editor: one box and one focus ring, on the composer. */
+.composer>.rt,.composer>.rt:focus-within{border:0;border-radius:var(--r-lg) var(--r-lg) 0 0;box-shadow:none;background:transparent}
+.composer>.rt:not(.rt-phone) .rt-toolbar{border-radius:var(--r-lg) var(--r-lg) 0 0}
 .composer .ct{display:flex;gap:2px;padding:6px 6px 0}
 .composer .ct button{display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:6px;font-size:12.5px;font-weight:500;color:var(--fg-3)}
 .composer .ct button.on{background:var(--bg-muted);color:var(--fg)}

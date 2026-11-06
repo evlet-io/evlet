@@ -78,8 +78,9 @@ export class Prefs {
   get density() { return this.cell<Density>('density', 'comfortable'); }
   /** This session's recent searches (memory only). */
   get recentSearches() { return this.memory<string[]>('recentQ', []); }
-  /** This session's recent records (memory only). */
-  get recentRecords() { return this.memory<Array<{ model: string; id: string; title: string }>>('recents', []); }
+  /** This session's recent records (memory only), newest first. `at` is when each was last opened
+   * (milliseconds); entries from earlier builds have none. */
+  get recentRecords() { return this.memory<RecentRecord[]>('recents', []); }
   /** Record info shows exact times instead of relative ones ("2 hours ago"). */
   get exactTimes() { return this.cell<boolean>('exactTimes', false); }
   get quickRows() { return this.cell<1 | 2>('qaRows', 1); }
@@ -87,6 +88,9 @@ export class Prefs {
 
   dispose() { this.stop(); }
 }
+
+/** One recently opened record. */
+export interface RecentRecord { model: string; id: string; title: string; at?: number }
 
 function safeStorage(): Storage | null {
   try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }

@@ -422,44 +422,96 @@ function SecurityPage(ctx: SettingsContext): Node {
     ${me.portal ? null : twoStep}${sessions}`;
 }
 
+/** Settings > Sign-in & security: the shared password form inside the page, with its own buttons. */
 function PasswordForm(ctx: SettingsContext, close: () => void, reload: () => Promise<void>): Node {
-  const minimum = ctx.me.peek().security.password_min;
-  const enrolled = ctx.me.peek().security.two_step.on, keys = ctx.me.peek().security.api_keys ?? 0;
-  const current = cell(''), next = cell(''), again = cell(''), code = cell(''), revoke = cell(false), error = cell(''), busy = cell(false);
+  const form = passwordForm(ctx.api, ctx.me.peek(), () => { close(); void reload(); });
+  return html`<div class="set-sec-b">${form.fields}
+    <div class="set-actions"><span class="hint grow">Other devices are signed out after the change.</span>${Button({ label: 'Cancel', variant: 'ghost', onClick: close })}
+      ${Button({ label: 'Update password', variant: 'primary', disabled: form.busy, onClick: () => void form.submit() })}</div></div>`;
+}
+
+/** Whether this person can change their password in Settings, so the account menu offers it too. */
+export const canChangePassword = (me: Me | null) => Boolean(me?.pages.includes('security'));
+
+/** Change password from the account menu: the same form as Settings, in a small dialog. */
+export function openPasswordDialog(api: ApiClient, me: Cell<Me | null>) {
+  const current = me.peek();
+  if (!current) return;
+  let form!: ReturnType<typeof passwordForm>;
+  openModal({ title: 'Change password', icon: 'lock', narrow: true, className: 'set-pw-dialog', onSubmit: () => void form.submit(),
+    body: close => {
+      form = passwordForm(api, current, () => { close(); void loadMe(api).then(fresh => { if (fresh && me.peek() === current) me.set(fresh); }); });
+      return form.fields;
+    },
+    footer: close => DialogFooter({ note: 'Other devices are signed out after the change.', cancel: close,
+      submit: { label: 'Change password', disabled: form.busy, onClick: () => void form.submit() } }) });
+}
+
+const PASSWORD_FIELDS: Record<string, [id: string, label: string]> = {
+  current: ['pw-cur', 'Current password'], new: ['pw-new', 'New password'], again: ['pw-again', 'Type it again'], code: ['pw-code', 'Code from your app'],
+};
+
+/**
+ * The change-password form Settings and the account menu share: current, new and again, a code when
+ * two-step sign-in is on, and the choice to revoke API keys. It checks the workspace's minimum length
+ * and the repeat before sending, and shows the server's answer under the field it names.
+ */
+function passwordForm(api: ApiClient, me: Me, done: () => void) {
+  const minimum = me.security.password_min;
+  const enrolled = me.security.two_step.on, keys = me.security.api_keys ?? 0;
+  const current = cell(''), next = cell(''), again = cell(''), code = cell(''), revoke = cell(false), busy = cell(false);
+  // An error names the field it came from ('' for the form as a whole, or the server without a field).
+  const error = cell<{ field: string; text: string } | null>(null);
   const score = derive(() => { const value = next.get(); return Math.min(4, Number(value.length >= minimum) + Number(value.length >= 20) + Number(/[A-Z]/.test(value) && /[a-z]/.test(value)) + Number(/[0-9\W]/.test(value))); });
-  const field = (id: string, label: string, value: Cell<string>, auto: string) => html`<input class="input" id=${id} type="password" autocomplete=${auto} aria-label=${label} prop:value=${value}
-    on:input=${(event: Event) => { value.set((event.target as HTMLInputElement).value); error.set(''); }}>`;
+  const errorId = (field: string) => `${PASSWORD_FIELDS[field][0]}-err`;
+  const fieldError = (field: string) => () => error.get()?.field === field ? html`<span class="err" id=${errorId(field)} role="alert">${error.get()!.text}</span>` : null;
+  const input = (field: string, value: Cell<string>, auto: string, extra: Record<string, string> = {}) => {
+    const [id, label] = PASSWORD_FIELDS[field] ?? [`pw-${field}`, ''];
+    return html`<input class="input" id=${id} type=${field === 'code' ? 'text' : 'password'} autocomplete=${auto} aria-label=${label || null} maxlength=${extra.maxlength ?? null}
+      aria-invalid=${() => error.get()?.field === field ? 'true' : null} aria-describedby=${() => error.get()?.field === field ? errorId(field) : null} prop:value=${value}
+      on:input=${(event: Event) => { value.set((event.target as HTMLInputElement).value); error.set(null); }}>`;
+  };
+  const show = (field: string, text: string) => {
+    error.set({ field, text });
+    const id = PASSWORD_FIELDS[field]?.[0];
+    if (id) queueMicrotask(() => document.getElementById(id)?.focus());
+  };
   const submit = async () => {
-    if (!current.peek()) { error.set('Enter your current password.'); return; }
-    if (next.peek().length < minimum) { error.set(`Your workspace needs at least ${minimum} characters.`); return; }
-    if (next.peek() !== again.peek()) { error.set("The two new passwords don't match."); return; }
-    if (enrolled && !code.peek().trim()) { error.set('Enter a code from your app, or a backup code.'); return; }
+    if (busy.peek()) return;
+    if (!current.peek()) return show('current', 'Enter your current password.');
+    if (next.peek().length < minimum) return show('new', `Your workspace needs at least ${minimum} characters.`);
+    if (next.peek() !== again.peek()) return show('again', "The two new passwords don't match.");
+    if (enrolled && !code.peek().trim()) return show('code', 'Enter a code from your app, or a backup code.');
     busy.set(true);
     try {
-      await ctx.api.request('POST', '/api/_settings/me/password', { body: { current: current.peek(), new: next.peek(),
+      await api.request('POST', '/api/_settings/me/password', { body: { current: current.peek(), new: next.peek(),
         ...(enrolled ? { code: code.peek().trim() } : {}), ...(keys ? { revoke_keys: revoke.peek() } : {}) } });
-      toast(ctx.me.peek().portal ? 'Password updated.' : revoke.peek() ? 'Password updated. Other devices were signed out and your API keys revoked.'
-        : 'Password updated. Other devices were signed out.');
-      close();
-      await reload();
+      toast(revoke.peek() ? 'Password changed. Other devices were signed out and your API keys revoked.' : 'Password changed. Other devices were signed out.');
+      done();
     } catch (failure) {
-      error.set(failure instanceof ValidationError ? Object.values(failure.fields ?? {})[0] ?? failure.message : failure instanceof ApiError ? failure.message : 'Try again.');
+      if (failure instanceof ValidationError && failure.fields && Object.keys(failure.fields).length) {
+        const [field, text] = Object.entries(failure.fields)[0];
+        if (field in PASSWORD_FIELDS) show(field, text); else show('', `${humanize(field)}: ${text}`);
+      } else show('', failure instanceof ApiError ? `The server said: ${failure.message}` : 'That did not reach the server. Try again.');
     } finally { busy.set(false); }
   };
-  return html`<div class="set-sec-b"><div class="set-form">
-    <div class="set-field full"><label for="pw-cur">Current password</label>${field('pw-cur', 'Current password', current, 'current-password')}</div>
-    <div class="set-field"><label for="pw-new">New password</label>${field('pw-new', 'New password', next, 'new-password')}
+  const fields = html`<div class="set-form">
+    <div class="set-field full"><label for="pw-cur">Current password</label>${input('current', current, 'current-password')}${fieldError('current')}</div>
+    <div class="set-field"><label for="pw-new">New password</label>${input('new', next, 'new-password')}
       <div class="set-meter"><i style:width=${() => next.get() ? `${(score.get() + 1) * 20}%` : '0'} class=${() => `s${score.get()}`}></i></div>
-      <span class="hint">${() => next.get().length < minimum ? `At least ${minimum} characters.${next.get().length ? ` ${minimum - next.get().length} more to go.` : ''}` : 'Long enough. A short sentence is easy to remember.'}</span></div>
-    <div class="set-field"><label for="pw-again">Type it again</label>${field('pw-again', 'Type it again', again, 'new-password')}
-      ${() => again.get() && again.get() !== next.get() ? html`<span class="err">The two passwords don't match.</span>` : null}</div>
-    ${enrolled ? html`<div class="set-field"><label for="pw-code">Code from your app, or a backup code</label><input class="input" id="pw-code" autocomplete="one-time-code" maxlength="9"
-      prop:value=${code} on:input=${(event: Event) => { code.set((event.target as HTMLInputElement).value); error.set(''); }}></div>` : null}
+      <span class="hint" id="pw-rules">${() => next.get().length < minimum ? `At least ${minimum} characters.${next.get().length ? ` ${minimum - next.get().length} more to go.` : ''}` : 'Long enough. A short sentence is easy to remember.'}</span>
+      ${fieldError('new')}</div>
+    <div class="set-field"><label for="pw-again">Type it again</label><input class="input" id="pw-again" type="password" autocomplete="new-password" aria-label="Type it again"
+      aria-invalid=${() => error.get()?.field === 'again' || (again.get() && again.get() !== next.get()) ? 'true' : null}
+      aria-describedby=${() => error.get()?.field === 'again' ? errorId('again') : null} prop:value=${again}
+      on:input=${(event: Event) => { again.set((event.target as HTMLInputElement).value); error.set(null); }}>
+      ${() => error.get()?.field === 'again' ? fieldError('again')()
+        : again.get() && again.get() !== next.get() ? html`<span class="err">The two passwords don't match.</span>` : null}</div>
+    ${enrolled ? html`<div class="set-field"><label for="pw-code">Code from your app, or a backup code</label>${input('code', code, 'one-time-code', { maxlength: '9' })}${fieldError('code')}</div>` : null}
     ${keys ? html`<div class="set-field full">${Checkbox({ checked: revoke, label: `Also revoke API keys (${keys} active)` })}
-      <span class="hint">Scripts and tools that use them stop working. Leave it unticked to keep them.</span></div>` : null}</div>
-    ${() => error.get() ? callout('warn', 'info', error.get()) : null}
-    <div class="set-actions"><span class="hint grow">Other devices are signed out after the change.</span>${Button({ label: 'Cancel', variant: 'ghost', onClick: close })}
-      ${Button({ label: 'Update password', variant: 'primary', disabled: busy, onClick: () => void submit() })}</div></div>`;
+      <span class="hint">Scripts and tools that use them stop working. Leave it unticked to keep them.</span></div>` : null}
+    ${() => error.get()?.field === '' ? html`<div class="set-field full" role="alert">${callout('warn', 'info', error.get()!.text)}</div>` : null}</div>`;
+  return { fields, submit, busy };
 }
 
 function confirmDialog(title: string, text: string, yes: string, run: () => void | Promise<void>) {

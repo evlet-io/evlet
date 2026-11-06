@@ -4,12 +4,16 @@
 import { html, when, type Child } from '../dom';
 import { cell, derive } from '../reactive';
 import { Button, Icon, StatusPill, Switch } from '../ui/base';
+import { exactTime, RelativeTime, relativeTime } from '../ui/time';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
 import type { AppInfo, AuditRow, CodeFile, HostCheck, Jobs, OverrideItem, Routing } from './client';
 import { describe, idOf } from './drafts';
 import { message, Select } from './people';
 import { UnsavedSection } from './unsaved';
+
+/** How many recent runs GET /api/_controls/jobs sends (PAGE in evlet/controls_system.py). */
+const RECENT = 50;
 
 const copy = (text: string) => void navigator.clipboard?.writeText(text).then(() => toast('Copied'), () => toast('Copy it by hand', { icon: 'info' }));
 const CodeBlock = (file: string, code: string) => html`<div class="ctl-codefile"><div class="ctl-line"><span class="mono muted ctl-small grow">${file}</span>
@@ -134,33 +138,86 @@ export function RoutingPage(ctx: ControlsContext): HTMLElement {
 const every = (seconds: number) => seconds % 86400 === 0 ? plural(seconds / 86400, 'day') : seconds % 3600 === 0 ? plural(seconds / 3600, 'hour') : plural(Math.round(seconds / 60), 'minute');
 const STATES: Record<string, [string, 'green' | 'rose' | 'blue' | 'slate']> = {
   succeeded: ['Done', 'green'], failed: ['Failed', 'rose'], running: ['Running', 'blue'], queued: ['Queued', 'slate'] };
+const stateOf = (state: string): [string, 'green' | 'rose' | 'blue' | 'slate'] => STATES[state] ?? [state, 'slate'];
+const ago = (seconds: number) => RelativeTime({ at: new Date(seconds * 1000) });
+const ALL = 'all';
+// Inside a tab, so not focusable on its own: the exact time is the title.
+const hint = (seconds: number) => { const at = new Date(seconds * 1000); return html`<time datetime=${at.toISOString()} title=${exactTime(at)}>${relativeTime(at)}</time>`; };
 
+/** The jobs the left list shows: every task a schedule runs or a recent run used, by name. */
+export function jobNames(value: Jobs): string[] {
+  return [...new Set([...value.schedules.map(item => item.task), ...value.jobs.map(job => job.task)])].sort();
+}
+
+/**
+ * Jobs: a list of jobs (tasks) with All on top, and the selected job's schedules and recent runs.
+ * The selection is ?job=<task> in the URL. Runs come from the one recent list the server sends
+ * (the newest PAGE runs across every job), so a job's runs are filtered from those.
+ */
 export function JobsPage(ctx: ControlsContext): HTMLElement {
   const jobs = cell<Jobs | null>(null);
   const act = async (run: () => Promise<Jobs>, done: string) => {
     try { jobs.set(await run()); toast(done); ctx.state.set(await ctx.api.state()); } catch (failure) { toast(message(failure), { icon: 'info' }); }
   };
   void ctx.api.jobs().then(value => jobs.set(value), failure => toast(message(failure), { icon: 'info' }));
+  const names = derive(() => { const value = jobs.get(); return value ? jobNames(value) : []; });
+  // An unknown ?job= falls back to All once the jobs are loaded.
+  const selected = derive(() => { const wanted = ctx.router.route.get()?.query.job; return wanted && names.get().includes(wanted) ? wanted : ALL; });
+  const select = (name: string) => void ctx.router.go('jobs', {}, name === ALL ? {} : { job: name }, { replace: true });
+  const runsOf = (value: Jobs, name: string) => name === ALL ? value.jobs : value.jobs.filter(job => job.task === name);
+  let list: HTMLElement;
+  const keys = (event: KeyboardEvent) => {
+    const order = [ALL, ...names.peek()], at = order.indexOf(selected.peek());
+    const to = { ArrowDown: at + 1, ArrowRight: at + 1, ArrowUp: at - 1, ArrowLeft: at - 1, Home: 0, End: order.length - 1 }[event.key];
+    if (to === undefined) return;
+    event.preventDefault();
+    const next = order[Math.max(0, Math.min(order.length - 1, to))];
+    select(next);
+    queueMicrotask(() => list.querySelector<HTMLElement>(`[data-job="${CSS.escape(next)}"]`)?.focus());
+  };
+  const entry = (value: Jobs, name: string) => {
+    const runs = runsOf(value, name), latest = runs[0];
+    const on = () => selected.get() === name;
+    return html`<button type="button" role="tab" class="ctl-jitem" class:on=${on} id=${`ctl-job-${name}`} data-job=${name}
+      aria-selected=${() => String(on())} aria-controls="ctl-job-runs" tabindex=${() => on() ? '0' : '-1'} on:click=${() => select(name)}>
+      <span class="ctl-jname"><span class="grow">${name === ALL ? 'All' : html`<span class="mono">${name}</span>`}</span> <span class="ctl-n" title=${plural(runs.length, 'recent run')}>${runs.length}</span></span>
+      ${latest ? html`<span class="ctl-jhint"><span class=${`ctl-jdot b-${stateOf(latest.state)[1]}`} aria-hidden="true"></span> <span>${stateOf(latest.state)[0]}</span> ${hint(latest.run_at)}</span>`
+        : html`<span class="ctl-jhint muted">No runs yet</span>`}</button>`;
+  };
+  const schedules = (value: Jobs, name: string) => {
+    const shown = name === ALL ? value.schedules : value.schedules.filter(item => item.task === name);
+    if (name !== ALL && !shown.length) return null;
+    return html`<section class="ctl-card ctl-gap"><div class="ctl-card-head"><div><h2>Schedules</h2><p>Defined by apps. Pausing one is saved to this instance.</p></div></div>
+      <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Schedule</th><th>Task</th><th>Every</th><th>Next run</th><th>App</th><th class="c">Active</th><th></th></tr></thead><tbody>
+      ${shown.length ? shown.map(item => html`<tr><td class="mono strong">${item.name}</td><td class="mono muted">${item.task}</td>
+        <td>${item.expression ? html`<code>${item.expression}</code>` : every(item.every ?? 0)}</td><td class="num" class:muted=${!item.active}>${item.active ? stamp(item.next_run) : 'Paused'}</td>
+        <td>${item.app ? html`<span class="ctl-chip">${item.app}</span>` : html`<span class="muted">—</span>`}</td>
+        <td class="c">${Switch({ on: item.active, ariaLabel: `Run ${item.name}`, onChange: next => void act(() => ctx.api.setSchedule(item.name, next), `${item.name} ${next ? 'resumed' : 'paused'}`) })}</td>
+        <td class="r">${Button({ label: 'Run now', icon: 'zap', size: 'small', onClick: () => void act(() => ctx.api.runSchedule(item.name), `${item.name} queued`) })}</td></tr>`)
+        : html`<tr><td colspan="7"><div class="ctl-empty">No schedules.</div></td></tr>`}</tbody></table></div></section>`;
+  };
+  const runs = (value: Jobs, name: string) => {
+    const shown = runsOf(value, name), all = name === ALL, columns = all ? 7 : 6;
+    const limit = value.jobs.length >= RECENT ? `Showing the last ${RECENT} runs across all jobs, so older runs of this job may not be listed. ` : '';
+    return html`<section class="ctl-card"><div class="ctl-card-head"><div><h2>${all ? 'Recent runs' : html`Recent runs of <span class="mono">${name}</span>`}</h2>
+      <p>${limit}Newest first. A retried job keeps its idempotency key.</p></div></div>
+      <div class="table-wrap"><table class="dt ctl-table ctl-runs"><thead><tr><th>Run</th>${all ? html`<th>Job</th>` : null}<th>Record</th><th>Status</th><th>Due</th><th class="r">Attempts</th><th></th></tr></thead><tbody>
+      ${shown.length ? shown.map(job => html`<tr data-run=${String(job.id)}><td class="mono muted">#${job.id}</td>${all ? html`<td class="mono">${job.task}</td>` : null}
+        <td>${job.model ? `${job.model} #${job.record_id}` : html`<span class="muted">—</span>`}</td>
+        <td>${StatusPill({ label: stateOf(job.state)[0], tint: stateOf(job.state)[1] })}${job.error ? html`<span class="ctl-sub ctl-err">${job.error}</span>` : null}</td>
+        <td class="muted num">${ago(job.run_at)}</td><td class="r num">${job.attempts}</td>
+        <td class="r">${job.state === 'failed' ? Button({ label: 'Retry', icon: 'rotate-ccw', size: 'small', onClick: () => void act(() => ctx.api.retryJob(job.id), `Job #${job.id} queued again`) }) : null}</td></tr>`)
+        : html`<tr><td colspan=${String(columns)}><div class="ctl-empty">No runs yet.</div></td></tr>`}</tbody></table></div></section>`;
+  };
   return html`<div>
     ${Head('Jobs', 'Background work and the schedules from installed apps.')}
     ${() => { const value = jobs.get(); if (!value) return html`<div class="ctl-empty">Loading jobs…</div>`;
-      if (!value.available) return html`<section class="ctl-card"><div class="ctl-empty">This instance has no background jobs.</div></section>`; return [
-      html`<section class="ctl-card ctl-gap"><div class="ctl-card-head"><div><h2>Schedules</h2><p>Defined by apps. Pausing one is saved to this instance.</p></div></div>
-        <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Schedule</th><th>Task</th><th>Every</th><th>Next run</th><th>App</th><th class="c">Active</th><th></th></tr></thead><tbody>
-        ${value.schedules.length ? value.schedules.map(item => html`<tr><td class="mono strong">${item.name}</td><td class="mono muted">${item.task}</td>
-          <td>${item.expression ? html`<code>${item.expression}</code>` : every(item.every ?? 0)}</td><td class="num" class:muted=${!item.active}>${item.active ? stamp(item.next_run) : 'Paused'}</td>
-          <td>${item.app ? html`<span class="ctl-chip">${item.app}</span>` : html`<span class="muted">—</span>`}</td>
-          <td class="c">${Switch({ on: item.active, ariaLabel: `Run ${item.name}`, onChange: next => void act(() => ctx.api.setSchedule(item.name, next), `${item.name} ${next ? 'resumed' : 'paused'}`) })}</td>
-          <td class="r">${Button({ label: 'Run now', icon: 'zap', size: 'small', onClick: () => void act(() => ctx.api.runSchedule(item.name), `${item.name} queued`) })}</td></tr>`)
-          : html`<tr><td colspan="7"><div class="ctl-empty">No schedules.</div></td></tr>`}</tbody></table></div></section>`,
-      html`<section class="ctl-card"><div class="ctl-card-head"><div><h2>Recent jobs</h2><p>A retried job keeps its idempotency key</p></div></div>
-        <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Job</th><th>Task</th><th>Record</th><th>Status</th><th>Due</th><th class="r">Attempts</th><th></th></tr></thead><tbody>
-        ${value.jobs.length ? value.jobs.map(job => html`<tr><td class="mono muted">#${job.id}</td><td class="mono">${job.task}</td>
-          <td>${job.model ? `${job.model} #${job.record_id}` : html`<span class="muted">—</span>`}${job.error ? html`<span class="ctl-sub ctl-err">${job.error}</span>` : null}</td>
-          <td>${StatusPill({ label: (STATES[job.state] ?? [job.state])[0], tint: (STATES[job.state] ?? [job.state, 'slate'])[1] })}</td>
-          <td class="muted num">${stamp(job.run_at)}</td><td class="r num">${job.attempts}</td>
-          <td class="r">${job.state === 'failed' ? Button({ label: 'Retry', icon: 'rotate-ccw', size: 'small', onClick: () => void act(() => ctx.api.retryJob(job.id), `Job #${job.id} queued again`) }) : null}</td></tr>`)
-          : html`<tr><td colspan="7"><div class="ctl-empty">No jobs yet.</div></td></tr>`}</tbody></table></div></section>`]; }}
+      if (!value.available) return html`<section class="ctl-card"><div class="ctl-empty">This instance has no background jobs.</div></section>`;
+      list = html`<div class="ctl-card ctl-jlist" role="tablist" aria-label="Jobs" aria-orientation="vertical" on:keydown=${keys}>
+        ${[ALL, ...names.get()].map(name => entry(value, name))}</div>` as HTMLElement;
+      return html`<div class="ctl-split ctl-jobs">${list}
+        <div class="ctl-min" role="tabpanel" id="ctl-job-runs" aria-labelledby=${() => `ctl-job-${selected.get()}`}>
+          ${() => [schedules(value, selected.get()), runs(value, selected.get())]}</div></div>`; }}
     ${UnsavedSection(ctx)}
   </div>` as HTMLElement;
 }

@@ -64,6 +64,11 @@ describe('related panel', () => {
     expect(rows[0].getAttribute('href')).toContain('tab=related');
   });
 
+  it('counts in the relation\'s own noun when it has one', () => {
+    const host = mount([{ ...item('Invoices', 1), noun: { one: 'invoice', many: 'invoices' } }, { ...item('Payments', 2), noun: { one: 'payment', many: 'payments' } }]);
+    expect([...host.querySelectorAll('a.rel-row')].map(r => r.getAttribute('aria-label'))).toEqual(['Payments, 2 payments', 'Invoices, 1 invoice']);
+  });
+
   it('re-sorts when a count arrives', () => {
     const a = item('A', null), b = item('B', 1);
     const host = mount([a, b]);
