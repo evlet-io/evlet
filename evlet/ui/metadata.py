@@ -27,7 +27,7 @@ OPEN_IN = ('page', 'panel')
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
-                          'status'))
+                          'status', 'board'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -120,6 +120,11 @@ def view_for(model):
         raise ValueError(f'{model.__name__}.Meta.default_tab: name one tab, such as "details"')
     if default_tab is not None and tabs and default_tab not in tabs:
         raise ValueError(f'{model.__name__}.Meta.default_tab: {default_tab} is not in Meta.tabs')
+    # A list offers a board only when Meta.board names the field its columns follow: the model's State.
+    board = getattr(meta, 'board', None)
+    if board is not None and (type(board) is not str or board != getattr(model, '__state__', None)):
+        raise ValueError(f'{model.__name__}.Meta.board: name the model\'s State field'
+                         + (f', {model.__state__!r}' if getattr(model, '__state__', None) else '; this model has no State'))
     # Leaving a record keeps its unsaved edits apart from it (evlet.unsaved); False keeps the leave prompt.
     from ..unsaved import autosave as keeps_unsaved
     autosave = keeps_unsaved(model)
@@ -154,7 +159,7 @@ def view_for(model):
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in,
             'tabs': list(tabs), 'default_tab': default_tab,
-            'autosave': autosave}
+            'autosave': autosave, **({'board': board} if board else {})}
 
 
 def check_tabs(tables, tabs, default_tab, where):

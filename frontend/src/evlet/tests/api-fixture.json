@@ -6783,6 +6783,7 @@
        "finite": true
       }
      },
+     "board": "status",
      "calculation": {
       "capabilities": {
        "lines[*].amount": "local_universal",
@@ -8996,6 +8997,7 @@
        "finite": true
       }
      },
+     "board": "status",
      "calculation": {
       "capabilities": {
        "lines[*].amount": "local_universal",

@@ -1,6 +1,6 @@
 // The generated list page of a model (docs/ui-design/README.md section 6, List pages): page header,
 // saved views by State, toolbar with search and filters, the model's measures, a DataTable with
-// the list fields (title pinned), sorting, paging and a bulk bar, or a board by State.
+// the list fields (title pinned), sorting, paging and a bulk bar, or a board by State when Meta.board names it.
 //
 // Search, sort, page, view, saved view and filters live in the address, so a link opens the
 // same list. Everything runs on the server: the browser never filters or sorts a partial list.
@@ -62,6 +62,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const model = screenModel(ctx.schema, name);
   const { icon, tint } = identity(model);
   const state = model.state && fieldOf(model, model.state.field) ? model.state : null;
+  // A board only when the model opts in (Meta.board) for its State field; otherwise the list is a table.
+  const boarded = state && model.board === state.field ? state : null;
   const canCreate = model.api !== 'read' && model.permissions?.create !== false;
   const canDelete = model.api !== 'read' && model.permissions?.delete === true;
   const fields = listFields(model);
@@ -96,7 +98,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   // Rows per page from a Controls list view, else the framework default.
   const size = model.page_size ?? PAGE_SIZE;
   const page = cell(Math.max(1, Number(start.page) || 1), { name: `${name}.page` });
-  const view = cell<'list' | 'board'>(state && start.view === 'board' ? 'board' : 'list', { name: `${name}.view` });
+  const view = cell<'list' | 'board'>(boarded && start.view === 'board' ? 'board' : 'list', { name: `${name}.view` });
   const tab = cell(state && start.tab && state.states.includes(start.tab) ? start.tab : 'all', { name: `${name}.tab` });
   const filters = filterBuilder(ctx.schema, model, start.f);
   const filtering = cell(false, { name: `${name}.filter panel` });
@@ -208,7 +210,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   effect(() => { filterButton.classList.toggle('has-filters', filters.active.get().length > 0); });
 
   const header = PageHeader({ icon, tint, title: model.plural, count: () => total.get(), actions: [
-    state ? SegmentedControl({ options: [{ value: 'list', label: 'List', icon: 'list' }, { value: 'board', label: 'Board', icon: 'kanban' }], value: view, label: 'View',
+    boarded ? SegmentedControl({ options: [{ value: 'list', label: 'List', icon: 'list' }, { value: 'board', label: 'Board', icon: 'kanban' }], value: view, label: 'View',
       onChange: next => batch(() => { view.set(next); selection.set(new Set()); }) }) : null,
     filters.fields.length ? filterButton : null,
     // Reports declared for this model (Report.model) open from here.
