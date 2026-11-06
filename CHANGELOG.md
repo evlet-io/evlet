@@ -4,6 +4,19 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Added
+
+- **List tabs by a chosen field, with a default tab.** `Meta.list_tabs` names the State, Select
+  or Link field whose values are the list's tabs, and `Meta.list_tab` the tab the list opens on
+  (`"all"` by default). Without them a model's State drives the tabs as before; `list_tabs = None`
+  turns them off. Counts come from the new `GET /api/{model}/list_tabs`, which follows the list's
+  filters, search and row scope; a Link shows its 8 most used values. `/api/schema` adds
+  `list_tabs` for roles that can read the field (additive). Choosing a tab, All included, keeps it
+  in the address. The Controls list view sets both per instance
+  ([docs/ui.md](docs/ui.md#list-tabs)).
+
 ## 0.3.0 (05-11-2026)
 
 This release adds rich text with images and mentions, unsaved changes that survive leaving a

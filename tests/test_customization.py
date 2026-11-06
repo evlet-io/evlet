@@ -276,7 +276,7 @@ def test_a_list_override_chooses_whether_records_open_in_a_side_panel(app):
     assert schema_of(admin, 'lead')['open_in'] == 'panel'
     assert schema_of(client(app, 'editor'), 'lead')['open_in'] == 'panel'
     assert save(admin, ('list', 'Lead', {**value, 'open_in': 'drawer'}))[1]['fields']['changes.0'] == 'Open records in the full page or a side panel.'
-    assert save(admin, ('list', 'Lead', {**value, 'open': 'panel'}))[1]['fields']['changes.0'] == 'Send columns, page_size and sort, and optionally open_in.'
+    assert save(admin, ('list', 'Lead', {**value, 'open': 'panel'}))[1]['fields']['changes.0'] == 'Send columns, page_size and sort, and optionally open_in, list_tabs and list_tab.'
 
 
 # ---------- instance fields ----------

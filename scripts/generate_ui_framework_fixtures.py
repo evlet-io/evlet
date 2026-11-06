@@ -309,6 +309,7 @@ def documents(out, folder):
     keep('invoice_measures', editor('GET', '/api/invoice/measures'))
     keep('invoice_measures_issued', editor('GET', '/api/invoice/measures?filters=' + quote(json.dumps({'status': 'issued'}))))
     keep('invoice_aggregate_by_status', editor('GET', '/api/invoice/aggregate?measures=n:count&group_by=status'))
+    keep('invoice_list_tabs', editor('GET', '/api/invoice/list_tabs'))
     keep('invoice_related_revisions', editor('GET', f'{url}/related/invoice.revises?limit=10&offset=0'))
     keep('invoice_attachment_upload', editor('POST', f'{url}/attachments', {'name': 'signed-copy.pdf', 'content': 'JVBERi0='}))
     keep('invoice_attachments', editor('GET', f'{url}/attachments'))

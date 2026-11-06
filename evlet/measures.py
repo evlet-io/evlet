@@ -598,6 +598,62 @@ def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=N
     return execute(tx.connection, registry, model, compiled, groups, where, values, getattr(business, 'timezone', None) or 'UTC')
 
 
+# The list page's tabs (Meta.list_tabs): record counts per value of one State, Select or Link field.
+# A Link shows its most used values, at most TAB_LINKS; the list's filter finds the rest.
+TAB_LINKS = 8
+
+
+def list_tabs_of(business, model):
+    """The model's list tabs on this instance ({field, kind, default}), or None: the Controls list view, else Meta."""
+    from .ui.metadata import view_for
+    custom = getattr(getattr(business, 'controls', None), 'custom', None)
+    saved = getattr(custom, 'lists', {}).get(model, {}) if custom is not None else {}
+    if 'list_tabs' in saved:
+        try:
+            return custom.list_tabs(model, saved)
+        except ValueError:
+            pass
+    return view_for(model).get('list_tabs')
+
+
+def tabs_visible(business, user, model, name):
+    """Whether this role may see list tabs by `name`: it can group by the field (measures.visible) and,
+    for a Link, read the linked records whose titles label the tabs."""
+    policy = business.policy
+    if not visible(policy, user, model, name, policy.fields(user, model)):
+        return False
+    field = model.__declared_fields__.get(name)
+    return not isinstance(field, Link) or policy.allows(user, field.target, 'read')
+
+
+def list_tabs(business, tx, user, model, filters=None, search=''):
+    """Counts for the list tabs: {field, total, items: [{value, count}], more}, over the records this role
+    reads (row scope), matching `filters` and the search text exactly as the list does.
+
+    Items leave out records without a value; total counts them. A Link gives its TAB_LINKS most used
+    values, most used first, and more is True when there are others."""
+    policy, registry = business.policy, business.registry
+    policy.require(user, model, 'read')
+    tabs = list_tabs_of(business, model)
+    if tabs is None or not tabs_visible(business, user, model, tabs['field']):
+        raise AccessError(403, 'List tabs are unavailable')
+    name, link = tabs['field'], tabs['kind'] == 'link'
+    field = model.__declared_fields__[name]
+    children = getattr(business, 'children', {}).values()
+    policy.query_fields(user, model, filters, (), children=children)
+    text, fields = searched(business, user, model, search)
+    where, values = SqlQuery(registry, model, children=children).where(filters, text, search_fields=fields)
+    where, values = combine(where, values, *policy.scope_sql(user, model))
+    table, column = identifier(registry.name_for(model)), f'"record".{identifier(name)}'
+    total = tx.connection.execute(f'SELECT COUNT(*) FROM {table} AS "record"{where}', values).fetchone()[0]
+    grouped, grouped_values = combine(where, values, f' WHERE {column} IS NOT NULL', [])
+    limit = TAB_LINKS + 1 if link else MAX_GROUPS
+    rows = tx.connection.execute(f'SELECT {column} AS "c0", COUNT(*) AS "c1" FROM {table} AS "record"{grouped} '
+                                 f'GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?', [*grouped_values, limit]).fetchall()
+    items = [{'value': field.serialize(field.from_storage(row[0])), 'count': int(row[1])} for row in rows[:limit - 1 if link else limit]]
+    return {'field': name, 'total': int(total or 0), 'items': items, 'more': link and len(rows) > TAB_LINKS}
+
+
 def available(business, user, model, per_record):
     return [item for item in declared(business.registry, model)
             if (item.link is not None) == per_record and allowed(business.policy, user, item)]
@@ -684,6 +740,11 @@ def route(business, scope, user, model, parts):
             raise AccessError(404, 'Record not found')
         record_id = path_id(parts[3])
     business.policy.require(user, model, 'read')
+    if parts[3] == 'list_tabs':
+        query, filters = parameters(scope, {'filters', 'q'})
+        with business.database._connection() as connection:
+            connection.execute('BEGIN')
+            return 200, list_tabs(business, Session(connection, business.registry), user, model, filters, query.get('q', '')), []
     if parts[3] == 'aggregate':
         query, filters = parameters(scope, {'measures', 'group_by', 'filters', 'q'})
         requested, group_by = parse_measures(query.get('measures', '')), parse_groups(query.get('group_by', ''))

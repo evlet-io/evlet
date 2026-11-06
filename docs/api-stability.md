@@ -39,7 +39,8 @@ production ready, but the rules below hold from 0.3 on.
 
 - **Model `Meta` options.** `tests/test_public_api.py` pins the option names, among them `api`
   (`"full"`, `"read"` or `None`), `period`, `period_scope` and `status` (the Select or State shown
-  as the status badge, [states-actions.md](states-actions.md#meta-status)). `Session.unlocked_periods(reason)`
+  as the status badge, [states-actions.md](states-actions.md#meta-status)), `list_tabs` and `list_tab`
+  (the list's tabs and the one it opens on, [ui.md](ui.md#list-tabs)). `Session.unlocked_periods(reason)`
   and `Context.unlocked_periods(reason)` are public for trusted code
   ([model-engine.md](model-engine.md#closed-periods)).
 
