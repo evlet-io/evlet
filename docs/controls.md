@@ -235,6 +235,15 @@ announced to screen readers. The arrow buttons still work.
 saved as `{"sections": [...], "tabs": ["details", ...], "default_tab": "details" | null}`; without them it stays the
 plain list of sections. Tab names are the record's own tabs and the model's child tables (`tabs` in each model of
 `GET /api/_controls/state`). The export writes them as `Meta.tabs` and `Meta.default_tab` notes.
+**Side panel**: what a record shows when a list opens it in a side panel. Each section, field and tab (Details aside) has
+a panel button, pressed while it shows there; the Side panel card has the summary strip, Files and Record info. A layout
+that sets this is saved as `{"sections": [...], "panel": {"sections": [...], "fields": [...], "tabs": [...], "blocks": [...]}}`,
+each list naming what the panel hides (`blocks` from `summary`, `key_fields`, `files` and `info`). `panel` replaces the
+app's `panel=False` flags and `Meta.panel` for this instance, keeping the order `Meta.panel` gives; `{}` shows
+everything; a layout without `panel` leaves it to the app, whose choice the toggles start from. Unknown names or a name
+given twice are refused. It is stored with the layout and needs no migration. Renaming a section keeps its choice;
+removing an instance field drops it. `/api/schema` names only fields the role can read. Hiding is display only: the
+same field, row and action checks apply, and the full page shows everything.
 
 **List view** (kind `list`, key `Model`): `{"columns": [...], "page_size": 25 | 50 | 100, "sort": "field" | "-field", "open_in": "page" | "panel"}`,
 1 to 8 columns. `/api/schema` drops the columns a role can't read and gives `page_size`, `order_by` and `open_in`.

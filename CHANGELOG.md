@@ -32,6 +32,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - `Naming(..., label="Project number")` labels the standard `name` field for the model's domain on
   the form, in list columns, filters, search and the schema
   ([docs/sequences.md](docs/sequences.md)). The Playground labels it "Invoice number".
+- **Choose what a list's side panel shows.** `panel=False` on a field, `Section` or `Table` keeps
+  it on the full page only. `Meta.panel = ('Contact', 'notes', 'activity')` names the only parts
+  the panel keeps, in order: sections, fields, tabs, `summary` and side blocks. Names are checked
+  when the registry is built. Controls, Form layout has a panel button per section, field and tab,
+  and a Side panel card for the rest, stored with the layout. Hiding is display only. A required
+  field that is empty on a new record always shows, and the panel offers Open full page when it
+  hides anything. The UI schema carries `panel` only when something is hidden.
 
 ### Changed
 

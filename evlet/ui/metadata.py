@@ -27,7 +27,7 @@ OPEN_IN = ('page', 'panel')
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
-                          'status', 'summary', 'side_blocks', 'list_tabs', 'list_tab', 'board'))
+                          'status', 'summary', 'side_blocks', 'list_tabs', 'list_tab', 'board', 'panel'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -38,6 +38,10 @@ FLOWS = ('rows', 'columns')
 TABS = ('activity', 'details', 'revisions', 'related', 'postings')
 # The record page's side column blocks, for Meta.side_blocks: Key fields, Related, Files and Record info.
 SIDE_BLOCKS = ('key_fields', 'related', 'files', 'info')
+# What a list's side panel can leave out besides sections and fields: the summary strip and the side blocks.
+PANEL_BLOCKS = ('summary', *SIDE_BLOCKS)
+# The kinds of element a record's side panel can hide, as keys of the schema's "panel".
+PANEL_KINDS = ('sections', 'fields', 'tabs', 'blocks')
 
 
 def starts_valid(value):
@@ -50,16 +54,18 @@ class Section:
 
     `collapsed` is where it starts: False (open), True (closed) or 'empty' (closed when every field in
     it is empty on an existing record; a new record shows it open). A person's own choice wins after that.
-    A plain ('Title', fields) pair is a section that can't collapse."""
+    A plain ('Title', fields) pair is a section that can't collapse. `panel=False` leaves the section out when a
+    list opens the record in its side panel; the full page still shows it."""
 
-    __slots__ = ('title', 'fields', 'collapsible', 'collapsed', 'flow')
+    __slots__ = ('title', 'fields', 'collapsible', 'collapsed', 'flow', 'panel')
 
-    def __init__(self, title, fields, *, collapsible=True, collapsed=False, flow='rows'):
+    def __init__(self, title, fields, *, collapsible=True, collapsed=False, flow='rows', panel=True):
         self.title, self.fields, self.collapsible, self.collapsed, self.flow = title, fields, collapsible, collapsed, flow
+        self.panel = panel
 
     def __repr__(self):
         return (f'Section({self.title!r}, {self.fields!r}, collapsible={self.collapsible!r}, collapsed={self.collapsed!r}'
-                + (f', flow={self.flow!r})' if self.flow != 'rows' else ')'))
+                + (f', flow={self.flow!r}' if self.flow != 'rows' else '') + (', panel=False)' if self.panel is False else ')'))
 
     def check(self, model):
         """Raise ValueError naming the model and the section when the options can't work."""
@@ -76,6 +82,8 @@ class Section:
             raise ValueError(f'{where}: collapsed needs collapsible=True, because this section always shows')
         if type(self.flow) is not str or self.flow not in FLOWS:
             raise ValueError(f"{where}: flow must be 'rows' or 'columns', not {self.flow!r}")
+        if type(self.panel) is not bool:
+            raise ValueError(f'{where}: panel must be True or False')
 
 
 def view_for(model):
@@ -164,18 +172,80 @@ def view_for(model):
             used.append(name)
         # A plain (label, fields) pair is a section that can't collapse.
         groups.append({'label': group[0], 'fields': list(group[1]), 'collapsible': bool(section and section.collapsible),
-                       'collapsed': section.collapsed if section and section.collapsible else False, 'flow': section.flow if section else 'rows'})
+                       'collapsed': section.collapsed if section and section.collapsible else False, 'flow': section.flow if section else 'rows',
+                       **({'panel': False} if section and section.panel is False else {})})
     # Visible fields the layout leaves out follow under Other, in declaration order.
     rest = [name for name in visible if name not in used]
     if rest:
         groups.append({'label': 'Other', 'fields': rest, 'collapsible': False, 'collapsed': False, 'flow': 'rows'})
+    titles = [group['label'] for group in groups]
+    if len(set(titles)) != len(titles):
+        if getattr(meta, 'panel', None) is not None or any(group.get('panel') is False for group in groups):
+            raise ValueError(f'{model.__name__}.Meta.layout: give sections different titles, so the side panel can name them')
+    panel = panel_for(model, meta, groups, visible)
+    for group in groups:
+        group.pop('panel', None)
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in,
             'tabs': list(tabs), 'default_tab': default_tab,
             'autosave': autosave, **({'list_tabs': list_tabs} if list_tabs else {}), **({'board': board} if board else {}),
             # Additive keys: only a model that declares them carries them.
             **({'summary': summary} if summary is not None else {}),
-            **({'side_blocks': list(side_blocks)} if side_blocks is not None else {})}
+            **({'side_blocks': list(side_blocks)} if side_blocks is not None else {}),
+            **({'panel': panel} if panel is not None else {})}
+
+
+def panel_names(model, groups, visible):
+    """The names Meta.panel may use, each with its kind: section titles, fields, Table fields (their tabs), the
+    record tabs, the summary strip and the side blocks. A section or field wins over a record tab or block of the
+    same name, so a field called info is the field."""
+    names = {name: 'tabs' for name in TABS}
+    names.update((name, 'blocks') for name in PANEL_BLOCKS if name != 'related')
+    names.update((name, 'tabs') for name in getattr(model, '__tables__', {}))
+    names.update((name, 'fields') for name in visible)
+    names.update((group['label'], 'sections') for group in groups)
+    return names
+
+
+def panel_for(model, meta, groups, visible):
+    """What a record opened in a list's side panel leaves out, or None when it shows everything.
+
+    The result lists hidden names by kind ({'sections', 'fields', 'tabs', 'blocks'}, each sorted) and, for
+    Meta.panel, the order it names tabs and blocks in. Meta.panel wins over panel=False flags. Display only:
+    permissions never read it. Related means the tab (the panel has no Related block)."""
+    tables = getattr(model, '__tables__', {})
+    keep = getattr(meta, 'panel', None)
+    where = f'{model.__name__}.Meta.panel'
+    if keep is None:
+        hidden = {'sections': [group['label'] for group in groups if group.get('panel') is False],
+                  'fields': [name for name, field in visible.items() if field.panel is False],
+                  'tabs': [name for name, table in tables.items() if getattr(table, 'panel', True) is False], 'blocks': []}
+        hidden = {kind: sorted(names) for kind, names in hidden.items() if names}
+        return hidden or None
+    if not isinstance(keep, (tuple, list)) or any(type(name) is not str or not name for name in keep) or len(set(keep)) != len(keep):
+        raise ValueError(f'{where}: list what the side panel shows once each, such as ("Contact", "notes", "activity")')
+    known = panel_names(model, groups, visible)
+    unknown = [name for name in keep if name not in known]
+    if unknown:
+        raise ValueError(f'{where} names unknown elements: {", ".join(unknown)}. Use section titles, field names, '
+                         f'tabs ({", ".join((*TABS, *tables))}) or blocks ({", ".join(name for name in PANEL_BLOCKS if name != "related")})')
+    kept = {kind: {name for name in keep if known[name] == kind} for kind in PANEL_KINDS}
+    # 'details' keeps every section; a named section keeps its fields; a named field keeps its section with only it.
+    every = 'details' in kept['tabs']
+    shown_sections = {group['label'] for group in groups if every or group['label'] in kept['sections']
+                      or any(name in kept['fields'] for name in group['fields'])}
+    whole = {group['label'] for group in groups if every or group['label'] in kept['sections']}
+    hidden = {
+        'sections': sorted(group['label'] for group in groups if group['label'] not in shown_sections),
+        # Fields of a hidden section go with it; a section shown for some of its fields hides the rest.
+        'fields': sorted(name for group in groups for name in group['fields']
+                         if group['label'] in shown_sections and group['label'] not in whole and name not in kept['fields']),
+        'tabs': sorted(name for name in (*TABS, *tables) if name != 'details' and name not in kept['tabs']),
+        'blocks': sorted(name for name in PANEL_BLOCKS if name != 'related' and name not in kept['blocks']),
+    }
+    # The order tabs and blocks show in; a section or field stands for the Details tab, where they live.
+    order = list(dict.fromkeys('details' if known[name] in ('sections', 'fields') else name for name in keep))
+    return {**{kind: names for kind, names in hidden.items() if names}, 'order': order}
 
 
 # The field kinds whose values can be list tabs (Meta.list_tabs).

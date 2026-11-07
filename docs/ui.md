@@ -33,7 +33,7 @@ save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout`, `key_fields`, `relations`, `measures`, `open_in`, `list_tabs`, `list_tab`, `autosave`, `status`,
-`board`, `summary` and `side_blocks`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+`board`, `summary`, `side_blocks` and `panel`. See "What the model decides" in [ui-framework.md](ui-framework.md).
 
 ### Each fact once on the record page
 
@@ -99,6 +99,48 @@ class Employee(Model):
   [controls.md](controls.md)).
 
 The Playground's Projects list opens on Active, with tabs for Planned, Active and Done.
+
+### What a side panel shows
+
+A list that opens records in a side panel (`Meta.open_in = 'panel'`, or "Open records in: Side
+panel") can show less of each record than the full page. Each app decides which parts:
+
+```python
+class Ticket(Model):
+    notes = LongText(panel=False)            # this field stays on the full page
+    lines = Table(Line, panel=False)         # so does this table's tab
+
+    class Meta:
+        open_in = 'panel'
+        layout = (Section('Ticket', ('subject', 'owner')),
+                  Section('Internal', ('audit_note',), panel=False))   # and this section
+```
+
+`panel=False` works on a field, a `Section` and a `Table`. For a model where only a few parts
+matter in the panel, `Meta.panel` names what to keep, in order, and hides everything else:
+
+```python
+    class Meta:
+        panel = ('Ticket', 'related', 'info')   # a section, the Related tab and Record info
+```
+
+Names are section titles, field names, `Table` field names, the record tabs (`activity`,
+`details`, `revisions`, `related`, `postings`), `summary` (the summary strip) and the side blocks
+(`key_fields`, `files`, `info`). Naming a section keeps all its fields; naming a field keeps its
+section with only that field; `details` keeps every section. Tabs and blocks show in the order
+`Meta.panel` names them. A section or field of the same name wins over a tab or block. When both
+are given, `Meta.panel` wins over the flags. An unknown name, a name given twice or a flag that is
+not True or False fails when the registry is built.
+
+- **Display only.** Hiding is never a permission: the API, row, field and action checks are
+  unchanged, and the full page shows everything.
+- **A new record can always be saved.** A required field that is empty on a new record shows in
+  the panel even when it is hidden.
+- **The full page is one click away.** When the panel hides anything, a line under Details says
+  so with an Open full page link, as well as the panel's Expand button.
+- Controls, Models, Form layout can change it per instance with the panel button on each section,
+  field and tab, and the Side panel card for the summary strip and blocks
+  ([controls.md](controls.md)).
 
 A record's State shows as a coloured badge in the header by default, with its moves as header
 buttons; `State(..., show="bar")` draws the stage bar instead, for pipelines, and `show="none"`

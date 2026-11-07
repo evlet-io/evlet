@@ -233,6 +233,41 @@ describe('order in the layout editor', () => {
   });
 });
 
+describe('the side panel toggles', () => {
+  const key = (target: Element, name: string) => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+  const grip = (host: Element, selector: string) => host.querySelector<HTMLElement>(`${selector} [data-drag-handle]`)!;
+  it('hides a section, a field, a tab and a block in the side panel, keeps the choice when the section is renamed, and saves it', async () => {
+    const { host, sent } = open('/controls/models?model=Lead&tab=layout');
+    await until(() => expect(host.querySelector('.ctl-lsec-fold')).toBeTruthy());
+    const toggle = (label: string) => host.querySelector<HTMLButtonElement>(`button[aria-label="Show ${label} in the side panel"]`)!;
+    expect(toggle('section Details').getAttribute('aria-pressed')).toBe('true');
+    click(toggle('Value'));
+    click(toggle('Activity tab'));
+    click(toggle('Summary strip'));
+    await until(() => expect(toggle('Value').getAttribute('aria-pressed')).toBe('false'));
+    // Details has no toggle: it shows while anything in it does.
+    expect(toggle('Details tab')).toBeNull();
+    click(byText(host, 'button', 'Add section'));
+    await until(() => expect(host.querySelectorAll('.ctl-lsec')).toHaveLength(2));
+    click(toggle('section Section 2'));
+    await until(() => expect(toggle('section Section 2').getAttribute('aria-pressed')).toBe('false'));
+    const title = host.querySelectorAll<HTMLInputElement>('.ctl-lsec-head input')[1];
+    title.value = 'Internal';
+    title.dispatchEvent(new Event('change'));
+    await until(() => expect(toggle('section Internal').getAttribute('aria-pressed')).toBe('false'));
+    // A section needs a field to save: move notes into it.
+    grip(host, '[data-drag-id="notes"]').focus();
+    key(grip(host, '[data-drag-id="notes"]'), ' ');
+    key(grip(host, '[data-drag-id="notes"]'), 'ArrowDown');
+    key(grip(host, '[data-drag-id="notes"]'), ' ');
+    await until(() => expect(host.querySelectorAll('.ctl-lsec')[1].querySelector('[data-field="notes"]')).not.toBeNull());
+    click(byText(bar()!, 'button', 'Save changes'));
+    await until(() => expect(bar()).toBeNull());
+    const posted = sent.filter(entry => entry.method === 'POST')[0].body.changes[0].value;
+    expect(posted.panel).toEqual({ fields: ['value'], tabs: ['activity'], blocks: ['summary'], sections: ['Internal'] });
+  });
+});
+
 describe('Naming', () => {
   it('shows series from the server, the condition error and the next names', async () => {
     const { host } = open('/controls/naming');
