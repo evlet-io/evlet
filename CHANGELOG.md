@@ -23,7 +23,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   header shows; the title is edited in the header. A new record's form keeps them.
 - **The Related side block lists only relations with records** and is left out when none has any.
   The Related tab still lists every relation.
-- **Record info no longer shows the record id.** Use More > Copy record ID.
+- **Record info no longer shows the record id.** Use More > Copy record ID. The block is left out
+  while it has nothing to show, such as an older record without times.
 
 - **Related counts use the model's words.** In the side block, a relation named after its model
   is announced as "Payments, 1 payment" by screen readers; other relations still say "records".
