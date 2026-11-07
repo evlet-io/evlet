@@ -448,6 +448,14 @@ class Business:
                                   'filterable': self.policy.rule(user, child.model).scope is None,
                                   **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child)))}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
+            # Meta.panel keeps only what it names: a ChildTable given to the Application (not a Table field, so
+            # unknown when the model was defined) stays out of the side panel too.
+            panel = entry.get('panel')
+            if panel and 'order' in panel:
+                extra = [child['name'] for child in entry['children'] if child['name'] not in getattr(model, '__tables__', {})
+                         and child['name'] not in panel['order'] and child['name'] not in panel.get('tabs', ())]
+                if extra:
+                    entry['panel'] = {**panel, 'tabs': sorted({*panel.get('tabs', ()), *extra})}
             from .states import action_schema, state_schema
             entry['actions'] = [{'name': action.name, 'label': action.label,
                                  **(action_schema(self, user, model, action.name) if hasattr(getattr(model, action.name, None), '__action__') else {})}

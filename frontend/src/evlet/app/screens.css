@@ -122,8 +122,10 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
   background:var(--surface);box-shadow:var(--shadow-md);padding-bottom:max(10px,env(safe-area-inset-bottom,0px))}
 .ev-savebar .grow{flex:1;display:inline-flex;align-items:center;gap:6px;color:var(--fg-2);font-size:13px}
 .ev-new-form .fs-g .fld{min-width:0}
-.ev-related{margin-bottom:16px}
+/* The table sits flush in the panel, which clips it to its rounded corners. An empty list is one line. */
+.ev-related{margin-bottom:16px;overflow:hidden}
 .ev-related .table-wrap{border:0;border-radius:0}
+.ev-related-empty{margin:0;padding:14px 16px 16px;color:var(--fg-3)}
 .ev-more{padding:10px 12px;border-top:1px solid var(--divider)}
 .ev-files{display:grid;gap:10px}
 .ev-print-body{display:grid;gap:12px;min-height:0}
@@ -197,6 +199,9 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-crow .l2{font-size:12px;color:var(--fg-4)}
 .ev-sr{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .ev-panel-blocks .fields dd{margin:0;padding:6px 0;display:flex;align-items:center}
+/* The line under a side panel that leaves parts out: the full page shows them. */
+.ev-panel-more{margin:12px 0 0;font-size:12.5px}
+.ev-panel-more .link-q{margin-left:4px;background:none;border:0;padding:0;font:inherit;cursor:pointer}
 /* Record info: Created and Last modified. The time is a quiet button that switches relative and exact times. */
 .ev-record-time{padding:6px 0;display:flex;align-items:baseline;flex-wrap:wrap;min-width:0}
 .ev-time-toggle{background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left;border-radius:4px}

@@ -56,7 +56,9 @@ class Invoice(Model):
     posting_date = Date()
     status = Select(["draft", "sent"], required=True, default="draft")
     # suffix='%' puts a % box after the input, as Percent fields have.
-    tax_rate = Decimal(scale=4, minimum="0", maximum="100", default="0.0000", label="Tax rate", suffix="%", help_text="Recorded separately; this does not calculate the total.")
+    # panel=False: the list's side panel leaves the tax rate out; the full page shows it.
+    tax_rate = Decimal(scale=4, minimum="0", maximum="100", default="0.0000", label="Tax rate", suffix="%", help_text="Recorded separately; this does not calculate the total.",
+                       panel=False)
     amount_paid = Currency(minimum="0", default="0.00", currency='customer.currency', label='Amount paid')
     # Calculated from the amount paid against the total, never set by hand. colors picks each badge colour.
     payment_status = Select(['unpaid', 'partly_paid', 'paid'], label='Payment status',
@@ -110,7 +112,14 @@ class Project(Model):
         # The record page's tabs: Details first, then the project's tasks (Related) and its history.
         tabs = ('details', 'related', 'activity')
         default_tab = 'details'
+        # The full page's side column: related tasks first, then the record's times, then key fields
+        # (shown away from Details).
+        side_blocks = ('related', 'info', 'key_fields')
         open_in = 'panel'
+        # What the list's side panel shows, in this order: the Project and Planning sections, then the
+        # Related tab and Record info. Schedule, Notes, Activity and the summary stay on the full page,
+        # one click away (Open full page). Controls, Models, Form layout can change it per instance.
+        panel = ('Project', 'Planning', 'related', 'info')
 
     # A declared title is the record title itself.
     title = Text(required=True, max_length=120, label='Project')

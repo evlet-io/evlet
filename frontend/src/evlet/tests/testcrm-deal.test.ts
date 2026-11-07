@@ -15,6 +15,8 @@ const current = (host: Element) => text(host.querySelector('.stepper .step.cur')
 // A lead's status is not a pipeline: it shows as the header badge.
 const badge = (host: Element) => text(host.querySelector('.doc-head .ev-status'));
 const field = (host: Element, name: string) => host.querySelector<HTMLElement>(`.ff[data-field="${name}"]`);
+// A saved record's title is edited in the header, not in the Details form.
+const heading = (host: Element) => host.querySelector<HTMLElement>('.doc-head .doc-title');
 const tab = (host: Element, label: RegExp) => click(byText(host, '.doc-tabs [role="tab"]', label));
 
 function edit(cell: HTMLElement, value: string) {
@@ -235,20 +237,20 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
     const run = scenario('sara_conflict');
     const id = idOf('sara_conflict', 'deal', 'ERP rollout, 3 entities');
     const { host } = run.start(`/app/deal/${id}?tab=details`);
-    await until(() => expect(field(host, 'title')).not.toBeNull());
-    click(field(host, 'title')!.querySelector('.fval'));
-    const input = field(host, 'title')!.querySelector<HTMLInputElement>('input')!;
+    await until(() => expect(heading(host)).not.toBeNull());
+    click(heading(host)!.querySelector('.fval'));
+    const input = heading(host)!.querySelector<HTMLInputElement>('input')!;
     typeInto(input, 'ERP rollout, 3 entities and Oman');
     press(input, 'Enter');
-    await until(() => expect(text(field(host, 'title'))).toContain('Someone else changed this record.'));
-    click(byText(field(host, 'title')!, 'button', 'Reload'));
+    await until(() => expect(text(heading(host))).toContain('Someone else changed this record.'));
+    click(byText(heading(host)!, 'button', 'Reload'));
     await until(() => expect(text(field(host, 'next_step'))).toContain('Changed elsewhere'));
     click(byText(host, 'button', 'Save'));
     await until(() => expect(run.writes).toHaveLength(2));
     expect(run.writes[1].body).toMatchObject({ title: 'ERP rollout, 3 entities and Oman' });
     expect(Object.keys(run.writes[1].body).filter(name => !name.startsWith('_'))).toEqual(['title']);
     expect(run.writes[1].headers['if-match']).not.toBe(run.writes[0].headers['if-match']);
-    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('ERP rollout, 3 entities and Oman'));
+    await until(() => expect(text(host.querySelector('.crumbs .cur'))).toBe('ERP rollout, 3 entities and Oman'));
     expect(run.misses).toEqual([]);
   });
 
@@ -259,7 +261,7 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
     stopAll();
     const id = ids.deal;
     const viewer = scenario('vera_deal').start(`/app/deal/${id}?tab=details`);
-    await until(() => expect(field(viewer.host, 'title')).not.toBeNull());
+    await until(() => expect(heading(viewer.host)).not.toBeNull());
     expect(field(viewer.host, 'internal_notes')).toBeNull();
     expect(text(viewer.host.querySelector('.doc-main'))).not.toContain('Partner sign-off');
     // Nothing is editable for a viewer.

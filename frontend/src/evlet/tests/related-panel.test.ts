@@ -1,4 +1,4 @@
-// The side panel's Related block: ordering, the folded empty line, the five-row limit with Show all,
+// The side panel's Related block: ordering, leaving out empty relations, the five-row limit with Show all,
 // the name and count as separate elements, and accessible names.
 import { describe, expect, it } from 'vitest';
 import { cell } from '../reactive';
@@ -24,16 +24,11 @@ describe('related panel', () => {
     expect(empty.map(r => r.label)).toEqual(['Also', 'Nada']);
   });
 
-  it('folds relations with no records into one muted line of links', () => {
-    const opened: string[] = [];
-    const host = mount([item('Employees', 0), item('Departments', 0), item('Tasks', 3)], cell(false), opened);
+  it('lists only relations with records: empty ones stay in the Related tab', () => {
+    const host = mount([item('Employees', 0), item('Departments', 0), item('Tasks', 3)]);
     expect(names(host)).toEqual(['Tasks']);
-    const line = host.querySelector('.rel-none')!;
-    expect(line.textContent).toBe('No records: Departments, Employees');
-    const links = [...line.querySelectorAll('a')];
-    expect(links.map(a => a.textContent)).toEqual(['Departments', 'Employees']);
-    links[1].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    expect(opened).toEqual(['Employees']);
+    expect(host.textContent).not.toContain('Employees');
+    expect(host.textContent).not.toContain('No records');
   });
 
   it('shows five rows, then Show all expands in place and reports aria-expanded', () => {
@@ -62,6 +57,11 @@ describe('related panel', () => {
     expect(rows[0].querySelector('.rel-ct')!.textContent).toBe('3');
     expect(rows[0].querySelector('.rel-nm')).not.toBe(rows[0].querySelector('.rel-ct'));
     expect(rows[0].getAttribute('href')).toContain('tab=related');
+  });
+
+  it('counts in the relation\'s own noun when it has one', () => {
+    const host = mount([{ ...item('Invoices', 1), noun: { one: 'invoice', many: 'invoices' } }, { ...item('Payments', 2), noun: { one: 'payment', many: 'payments' } }]);
+    expect([...host.querySelectorAll('a.rel-row')].map(r => r.getAttribute('aria-label'))).toEqual(['Payments, 2 payments', 'Invoices, 1 invoice']);
   });
 
   it('re-sorts when a count arrives', () => {
