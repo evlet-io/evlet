@@ -17,6 +17,28 @@ const rowsIn = (host: Element) => [...host.querySelectorAll<HTMLElement>('.grid 
 const cellOf = (row: Element, col: string) => [...row.querySelectorAll<HTMLElement>('td[data-col]')].find(td => td.dataset.col === col)!;
 
 describe('generated record view', () => {
+  const customerRoutes = (orders: number, quotes = 0): Route[] => {
+    const page = (total: number) => ({ status: 200, etag: null, body: { items: [], total, limit: 10, offset: 0 } });
+    return [...adminRoutes(), ['GET', /\/api\/customer\/0000000000001$/, { ...recorded.customer, status: 200 }],
+      ['GET', /\/api\/customer\/0000000000001\/related\/order\.customer/, page(orders)], ['GET', /\/api\/customer\/0000000000001\/related\/quote\.customer/, page(quotes)]];
+  };
+
+  it('shows an empty related list as one line, without a table of headers or a 0', async () => {
+    const { host } = start(customerRoutes(0), '/app/customer/0000000000001');
+    await until(() => expect(byText(host, '.doc-tabs [role="tab"]', 'Related')).not.toBeNull());
+    click(byText(host, '.doc-tabs [role="tab"]', 'Related'));
+    await until(() => expect(text(host.querySelector('.ev-related[aria-label="Orders"] .ev-related-empty'))).toBe('No orders yet.'));
+    expect(host.querySelector('.ev-related[aria-label="Orders"] table')).toBeNull();
+    expect(text(host.querySelector('.ev-related[aria-label="Orders"] .panel-h .num'))).toBe('');
+  });
+
+  it('counts a related list named after its model in that model\'s words', async () => {
+    for (const [total, expected] of [[1, 'Orders, 1 order'], [3, 'Orders, 3 orders']] as const) {
+      const { host } = start(customerRoutes(total), '/app/customer/0000000000001');
+      await until(() => expect(host.querySelector('.rel-row')?.getAttribute('aria-label')).toBe(expected));
+      stopAll();
+    }
+  });
   it('lays out the header, summary, Details sections and a tab per Table from the schema', async () => {
     const { host } = start(orderRoutes(), '/app/order/0000000000001');
     await until(() => expect(text(host.querySelector('.doc-head .eyebrow'))).toBe('Order'));
@@ -31,9 +53,16 @@ describe('generated record view', () => {
     expect(field(host, 'reason')!.hidden).toBe(true);
     expect(text(field(host, 'total')!.querySelector('label'))).toContain('ƒ calculated');
     expect(text(host.querySelector('.fs-link'))).toContain('120 rows');
-    // The action from the schema is a header button; the record is remembered in the sidebar.
+    // The action from the schema is a header button; the record is remembered under the history button
+    // left of search, not in the sidebar.
     expect(byText(host, '.doc-head button', 'Close')).not.toBeNull();
-    await until(() => expect(text(byText(host, '.nav-group', /^Recent/))).toContain('Big order'));
+    expect(byText(host, '.nav-group', /^Recent/)).toBeNull();
+    const history = host.querySelector<HTMLElement>('.top-actions .rec-btn')!;
+    expect(history.nextElementSibling!.classList.contains('top-search')).toBe(true);
+    click(history);
+    const recent = document.querySelector('.rec-pop .rec-item');
+    expect(text(recent)).toContain('Big order');
+    expect(text(recent)).toContain('just now');
   });
 
   it('saves one field in place with the record revision and offers Undo', async () => {
@@ -217,6 +246,61 @@ describe('permission-driven screens', () => {
     // The viewer reads the file an administrator attached, and cannot add one.
     await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('brief.txt'));
     expect(host.querySelector('.ev-upload')).toBeNull();
+    expect(host.querySelector('.ev-file-remove')).toBeNull();
+  });
+
+  it('offers no remove on a read-only model, even to an administrator', async () => {
+    const schema = copy(screen.schema);
+    schema.body.models.find((model: any) => model.name === 'contact').api = 'read';
+    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema],
+      ['GET', /\/api\/contact\/0000000000001$/, screen.contact_detail],
+      ['GET', /\/api\/contact\/0000000000001\/attachments$/, screen.attachments]], '/app/contact/0000000000001');
+    await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('brief.txt'));
+    expect(host.querySelector('.ev-file-remove')).toBeNull();
+    expect(host.querySelector('.ev-upload')).toBeNull();
+  });
+
+  it('an editor removes a file after confirming; cancelling sends nothing; a refusal says why', async () => {
+    let items = [{ id: 1, name: 'brief.txt', size: 5 }, { id: 2, name: 'scan.pdf', size: 2048 }];
+    let refuse = false;
+    const { host, sent } = start([...adminRoutes(),
+      ['GET', /\/api\/contact\/0000000000001$/, screen.contact_detail],
+      ['GET', /\/api\/contact\/0000000000001\/attachments$/, () => ({ status: 200, etag: null, body: { items: copy(items) } })],
+      ['DELETE', /\/api\/contact\/0000000000001\/attachments\/\d+$/, request => {
+        if (refuse) return { status: 409, etag: null, body: { error: 'This record is locked' } };
+        const gone = Number(request.url.split('/').pop());
+        items = items.filter(item => item.id !== gone);
+        return { status: 204, etag: null, body: null };
+      }],
+    ], '/app/contact/0000000000001');
+    const files = () => text(byText(host, '.side-sec', /^Files/));
+    const removeOf = (name: string) => host.querySelector<HTMLButtonElement>(`.ev-file-remove[aria-label="Remove ${name}"]`);
+    await until(() => expect(removeOf('brief.txt')).not.toBeNull());
+    expect(removeOf('scan.pdf')).not.toBeNull();
+    // Cancel: nothing is sent and the file stays.
+    click(removeOf('brief.txt'));
+    await until(() => expect(text(document.querySelector('.modal h2'))).toBe('Remove brief.txt?'));
+    expect(text(document.querySelector('.modal'))).toContain('This can’t be undone.');
+    click(byText(document.body, '.modal-f button', 'Cancel'));
+    await until(() => expect(document.querySelector('.modal')).toBeNull());
+    expect(requests(sent, 'DELETE', /attachments/)).toHaveLength(0);
+    expect(files()).toContain('brief.txt');
+    // Confirm: DELETE, the row goes, a toast, and focus lands on the remove button now in its place.
+    click(removeOf('brief.txt'));
+    await until(() => expect(document.querySelector('.modal')).not.toBeNull());
+    click(byText(document.body, '.modal-f button', 'Remove'));
+    await until(() => expect(requests(sent, 'DELETE', /attachments\/1$/)).toHaveLength(1));
+    await until(() => expect(files()).not.toContain('brief.txt'));
+    expect(files()).toContain('scan.pdf');
+    expect(lastToast()).toBe('brief.txt removed');
+    await until(() => expect(document.activeElement).toBe(removeOf('scan.pdf')));
+    // A server refusal shows its message.
+    refuse = true;
+    click(removeOf('scan.pdf'));
+    await until(() => expect(document.querySelector('.modal')).not.toBeNull());
+    click(byText(document.body, '.modal-f button', 'Remove'));
+    await until(() => expect(lastToast()).toBe('Not removed: This record is locked'));
+    expect(files()).toContain('scan.pdf');
   });
 
   it('the admin of the same records gets every field, the action and an upload; a refused upload says why', async () => {

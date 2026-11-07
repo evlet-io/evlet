@@ -29,6 +29,8 @@ import { extrasOf, fieldOf, formatOf, identity, isStateField, keyFields, listFie
   summaryFields, titleOf, LIST_KEYS, type ActionMeta, type AuditPerson, type DetailExtras, type RecordAudit, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { RelatedPanel } from './related-panel';
+import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } from './related-data';
+import { filterFields } from './filters';
 import { Revisions } from './revisions';
 import { presentSlip, takePrefill } from './slips';
 import { openEvaPanel } from '../eva/chat';
@@ -204,7 +206,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   if (!panel) effect(() => ctx.crumbs.set([{ label: model.plural, href: router.href('list', { model: name }) }, { label: titleText.get() }]));
   if (!isNew) {
     const remember = () => {
-      const entry = { model: name, id: store.id!, title: untrack(() => titleText.get()) };
+      const entry = { model: name, id: store.id!, title: untrack(() => titleText.get()), at: Date.now() };
       prefs.recentRecords.set([entry, ...prefs.recentRecords.peek().filter(item => !(item.model === name && item.id === entry.id))].slice(0, 8));
     };
     remember();
@@ -583,6 +585,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const tables = (model.children ?? []).filter(child => store.root.tables.has(child.name));
   const journal = Boolean(model.journal) && !isNew;
   const relations = !isNew ? (model.relations ?? []).filter(relation => ctx.schema.schema.models.some(item => item.name === relation.model)) : [];
+  // Nothing is asked for until the Related block or a Related tab section shows (related-data.ts).
+  const related = relatedPages(relations, (relation, page) => ctx.api.related(model.name, store.id!, relation, page), store.etag,
+    error => error instanceof ApiError ? error.message : 'Not loaded.');
   const tabItems: TabItem[] = [
     ...(journal ? [{ id: 'activity', label: 'Activity' }] : []),
     { id: 'details', label: 'Details' },
@@ -632,7 +637,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const sectionsShown = groups.map((section, index) => FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
       extra: index === groups.length - 1 ? childLinks : null, flow: section.flow, fold: { folds, ...foldOf(section, index) } }));
     // The full page's side column folds into the panel: Files and Record info close the Details tab.
-    return panel ? [...sectionsShown, html`<div class="ev-panel-blocks">${SidePanel(ctx, model, store, view, relations, active, true)}</div>`] : sectionsShown;
+    return panel ? [...sectionsShown, html`<div class="ev-panel-blocks">${SidePanel(ctx, model, store, view, relations, related, active, true)}</div>`] : sectionsShown;
   };
   // Sections people open and close (evlet.Section), remembered per user and model by title; the app's
   // collapsed value is where they start. In the narrow side panel every section can close.
@@ -667,7 +672,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     TabPanel(tabs, 'details', active, details),
     model.lifecycle && !isNew ? TabPanel(tabs, 'revisions', active, () => Revisions(ctx, model, store.id!)) : null,
     ...tables.map(child => TabPanel(tabs, `t-${child.name}`, active, () => tablePanel(child))),
-    relations.length ? TabPanel(tabs, 'related', active, () => Related(ctx, model, store.id!, relations)) : null,
+    relations.length ? TabPanel(tabs, 'related', active, () => Related(ctx, model, store.id!, relations, related)) : null,
     postings ? TabPanel(tabs, 'postings', active, () => Postings(ctx, postings)) : null,
   ];
 
@@ -685,7 +690,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- side panel ----------
 
-  const side = isNew || panel ? undefined : SidePanel(ctx, model, store, view, relations, active);
+  const side = isNew || panel ? undefined : SidePanel(ctx, model, store, view, relations, related, active);
 
   const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
     main: [panelBar, header, UnsavedBar(ctx, model, store, { isNew }), options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
@@ -741,25 +746,25 @@ export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (va
 
 // ---------- side panel ----------
 
-function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view: (name: string) => FieldLike, relations: NonNullable<ScreenModel['relations']>, active: { set(value: string): void },
-  narrow = false): Child {
+function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view: (name: string) => FieldLike, relations: NonNullable<ScreenModel['relations']>, related: (name: string) => RelatedPage,
+  active: { set(value: string): void }, narrow = false): Child {
   const has = (field: string) => store.root.fields.has(field);
   // A narrow panel shows key fields in its header and relations in the Related tab.
   const keys = narrow ? [] : keyFields(model).filter(meta => has(meta.name));
   const blocks: Child[] = [];
   if (keys.length) blocks.push(SideBlock({ title: 'Key fields', action: html`<button type="button" class="h-link" on:click=${() => active.set('details')}>All fields</button>`,
     body: KeyValueList(keys.map(meta => view(meta.name)), { links: ctx.links }) }));
-  if (relations.length && !narrow) blocks.push(SideBlock({ title: 'Related', body: RelatedPanel({ expanded: ctx.prefs.cell(`related.all.${model.name}`, false), onOpen: () => active.set('related'),
-    items: relations.map(relation => {
-      const total = cell<number | null>(null);
-      // Counted again after every write of this record: a move or an action may add related records.
-      effect(() => {
-        store.etag.get();
-        void ctx.api.related(model.name, store.id!, relation.name, { limit: 1 }).then(page => total.set(page.total), () => total.set(null));
-      });
-      const target = screenModel(ctx.schema, relation.model);
-      return { key: relation.name, label: relation.label, href: ctx.router.href('record', { model: model.name, id: String(store.id) }, { tab: 'related' }), icon: identity(target).icon, tint: identity(target).tint, count: total };
-    }) }) }));
+  if (relations.length && !narrow) {
+    // The counts come with each relation's first page, asked for once the block scrolls into view.
+    const body = RelatedPanel({ expanded: ctx.prefs.cell(`related.all.${model.name}`, false), onOpen: () => active.set('related'),
+      items: relations.map(relation => {
+        const target = screenModel(ctx.schema, relation.model);
+        return { key: relation.name, label: relation.label, href: ctx.router.href('record', { model: model.name, id: String(store.id) }, { tab: 'related' }), icon: identity(target).icon, tint: identity(target).tint,
+          count: related(relation.name).total, noun: relatedNoun(relation.label, target) };
+      }) }) as Element;
+    whenVisible(body, () => relations.forEach(relation => related(relation.name).ensure()));
+    blocks.push(SideBlock({ title: 'Related', body }));
+  }
   if (model.attachments) blocks.push(SideBlock({ title: 'Files', body: Files(ctx, model, store) }));
   const revises = has('revises') ? view('revises') : null;
   const extras = () => extrasOf(ctx.api.detail(model.name, store.id!).get());
@@ -814,10 +819,10 @@ export function openPrint(ctx: AppContext, model: ScreenModel, id: string, title
 function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
   const files = cell<Array<{ id: number; name: string; size: number }> | null>(null);
   const problem = cell('');
-  const load = () => void ctx.api.attachments(model.name, store.id!).then(items => files.set(items), error => problem.set(error instanceof ApiError ? error.message : 'Files could not be loaded.'));
+  const load = () => ctx.api.attachments(model.name, store.id!).then(items => { files.set(items); }, error => { problem.set(error instanceof ApiError ? error.message : 'Files could not be loaded.'); });
   load();
   // A filed print copy is a new attachment of this record.
-  const changed = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.model === model.name && detail?.id === store.id) load(); };
+  const changed = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.model === model.name && detail?.id === store.id) void load(); };
   window.addEventListener('evlet-files-changed', changed);
   onCleanup(() => window.removeEventListener('evlet-files-changed', changed));
   const canWrite = model.api !== 'read' && model.permissions?.update !== false;
@@ -833,38 +838,81 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
     const reader = new FileReader();
     reader.onload = () => {
       const content = String(reader.result).split(',')[1] ?? '';
-      ctx.api.upload(model.name, store.id!, file.name, content).then(() => { toast(`${file.name} attached`, { icon: 'paperclip' }); load(); },
+      ctx.api.upload(model.name, store.id!, file.name, content).then(() => { toast(`${file.name} attached`, { icon: 'paperclip' }); void load(); },
         error => toast(error instanceof ApiError ? `Not attached: ${error.fields.attachment ?? error.message}` : 'Not attached.', { icon: 'info' }));
     };
     reader.readAsDataURL(file);
   };
-  return html`<div class="ev-files">
+  const box = html`<div class="ev-files" tabindex="-1">
     ${() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : files.get() === null ? html`<p class="muted">Loading…</p>` : files.get()!.length === 0
-      ? html`<p class="muted">No files yet.</p>` : html`<div class="files">${files.get()!.map(file => html`<div class="file">${Icon('paperclip', { size: 'sm', className: 'muted' })}
-        <div style="flex:1;min-width:0"><a class="link" rel="external" href=${ctx.api.url(`/api/${model.name}/${store.id}/attachments/${file.id}`)}>${file.name}</a><div class="muted" style="font-size:12px">${size(file.size)}</div></div></div>`)}</div>`}
-    ${canWrite ? when(() => !locked(), () => html`<label class="btn sm ev-upload">${Icon('upload', { size: 'sm', className: 'tint' })}Attach a file<input type="file" hidden on:change=${upload}></label>`) : null}</div>`;
+      ? html`<p class="muted">No files yet.</p>` : html`<div class="files">${files.get()!.map((file, index) => html`<div class="file">${Icon('paperclip', { size: 'sm', className: 'muted' })}
+        <div style="flex:1;min-width:0"><a class="link" rel="external" href=${ctx.api.url(`/api/${model.name}/${store.id}/attachments/${file.id}`)}>${file.name}</a><div class="muted" style="font-size:12px">${size(file.size)}</div></div>
+        ${canWrite ? when(() => !locked(), () => removeButton(file, index)) : null}</div>`)}</div>`}
+    ${canWrite ? when(() => !locked(), () => html`<label class="btn sm ev-upload">${Icon('upload', { size: 'sm', className: 'tint' })}Attach a file<input type="file" hidden on:change=${upload}></label>`) : null}</div>` as HTMLElement;
+  // After a removal, focus moves to the remove button now in the same place, else the one before it, else the block.
+  const refocus = (index: number) => {
+    const buttons = [...box.querySelectorAll<HTMLButtonElement>('.ev-file-remove')];
+    (buttons[Math.min(index, buttons.length - 1)] ?? box).focus();
+  };
+  const remove = (file: { id: number; name: string }, index: number) => openModal({ title: `Remove ${file.name}?`, icon: 'trash-2', tint: 'rose', narrow: true,
+    body: () => html`<p>This can’t be undone.</p>`,
+    footer: close => DialogFooter({ cancel: close, submit: { label: 'Remove', variant: 'danger', icon: 'trash-2', onClick: async () => {
+      try {
+        await ctx.api.removeAttachment(model.name, store.id!, file.id);
+        close();
+        toast(`${file.name} removed`, { icon: 'trash-2' });
+        await load();
+        refocus(index);
+      } catch (error) { close(); toast(error instanceof ApiError ? `Not removed: ${error.fields.attachment ?? error.message}` : 'Not removed.', { icon: 'info' }); }
+    } } }) });
+  const removeButton = (file: { id: number; name: string }, index: number) => {
+    const button = IconButton({ icon: 'trash-2', tip: `Remove ${file.name}`, size: 'small', onClick: () => remove(file, index) });
+    button.classList.add('ev-file-remove');
+    return button;
+  };
+  return box;
 }
 
 // ---------- related ----------
 
-function Related(ctx: AppContext, model: ScreenModel, id: string, relations: NonNullable<ScreenModel['relations']>): Child {
+/** A relation named after its model counts in that model's words ('1 invoice', 'No invoices yet'); any other
+ * name ('Revisions', 'Open tasks') stays neutral, so its count never reads as something it is not. */
+function relatedNoun(label: string, target: ScreenModel) {
+  return label === target.plural ? { one: target.label.toLowerCase(), many: target.plural.toLowerCase() } : undefined;
+}
+
+/** The list of `target` filtered to the records whose `link` points to `id`, in the list's own ?f= form;
+ * null when the list cannot filter on that field for this role. */
+function viewAllHref(ctx: AppContext, target: ScreenModel, link: string, id: string) {
+  if (!filterFields(ctx.schema, target).some(field => field.key === link)) return null;
+  return ctx.router.href('list', { model: target.name }, { f: JSON.stringify([[link, 'eq', id]]) });
+}
+
+function Related(ctx: AppContext, model: ScreenModel, id: string, relations: NonNullable<ScreenModel['relations']>, related: (name: string) => RelatedPage): Child {
   return relations.map(relation => {
     const target = screenModel(ctx.schema, relation.model);
-    const rows = cell<RecordData[]>([]), total = cell<number | null>(null), problem = cell('');
-    const more = (offset: number) => void ctx.api.related(model.name, id, relation.name, { limit: relation.limit, offset })
-      .then(page => batch(() => { rows.set([...rows.peek(), ...page.items]); total.set(page.total); }), error => problem.set(error instanceof ApiError ? error.message : 'Not loaded.'));
-    more(0);
+    const { rows, total, offset, problem, load, ensure } = related(relation.name);
     const columns: Column<RecordData>[] = listFields(target).filter(meta => meta.name !== relation.link).slice(0, 4).map((meta, index) => ({
       key: meta.name, label: meta.label, width: index === 0 ? 220 : 150, value: (row: RecordData) => row[meta.name],
       align: ['currency', 'decimal', 'integer', 'percent'].includes(meta.type) ? 'right' : 'left', sortable: false,
       render: index === 0 ? (row: () => RecordData) => html`<a class="ev-row-link" href=${() => ctx.router.href('record', { model: target.name, id: String(row().id) })}>${() => titleOf(target, row())}</a>`
         : (row: () => RecordData) => cellView(ctx, target, meta, row),
     }));
-    return html`<section class="panel ev-related" aria-label=${relation.label}><div class="panel-h"><h3>${relation.label}</h3><span class="muted num">${() => total.get() === null ? '' : String(total.get())}</span></div>
+    const none = `No ${relation.label.toLowerCase()} yet.`;
+    const all = viewAllHref(ctx, target, relation.link, id);
+    const pages = () => (total.get() ?? 0) > RELATED_PAGE;
+    // An empty relation is one short line: no table of headers over nothing, and no 0 in the heading.
+    const section = html`<section class="panel ev-related" aria-label=${relation.label}><div class="panel-h"><h3>${relation.label}</h3><span class="muted num">${() => total.get() ? String(total.get()) : ''}</span>
+        ${all ? when(() => Boolean(total.get()), () => html`<a class="ev-view-all" href=${all} aria-label=${`View all ${relation.label.toLowerCase()}`}>View all</a>`) : null}</div>
       ${() => problem.get() ? html`<p class="muted" style="padding:12px">${problem.get()}</p>` : null}
-      ${DataTable<RecordData>({ columns, rows, key: row => row.id, label: relation.label, onOpen: row => void ctx.router.go('record', { model: target.name, id: String(row.id) }), height: 300,
-        empty: () => html`<span class="muted">${`No ${relation.label.toLowerCase()} yet.`}</span>` })}
-      ${when(() => (total.get() ?? 0) > rows.get().length, () => html`<div class="ev-more">${Button({ label: 'Show more', size: 'small', onClick: () => more(rows.peek().length) })}</div>`)}</section>`;
+      ${when(() => total.get() === 0 && !problem.get(), () => html`<p class="ev-related-empty">${none}</p>`)}
+      ${when(() => total.get() !== 0, () => DataTable<RecordData>({ columns, rows, key: row => row.id, label: relation.label, onOpen: row => void ctx.router.go('record', { model: target.name, id: String(row.id) }),
+        height: 300, empty: () => html`<span class="muted">${none}</span>` }))}
+      ${when(pages, () => html`<div class="ev-pager"><span class="muted num">${() => rangeText(offset.get(), rows.get().length, total.get() ?? 0)}</span>
+        ${IconButton({ icon: 'chevron-left', tip: 'Previous page', size: 'small', disabled: () => offset.get() === 0, onClick: () => load(Math.max(0, offset.peek() - RELATED_PAGE)) })}
+        ${IconButton({ icon: 'chevron-right', tip: 'Next page', size: 'small', disabled: () => offset.get() + RELATED_PAGE >= (total.get() ?? 0), onClick: () => load(offset.peek() + RELATED_PAGE) })}</div>`)}</section>` as Element;
+    whenVisible(section, ensure);
+    return section;
   });
 }
 

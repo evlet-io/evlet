@@ -126,8 +126,8 @@ const TOPICS: Topic[] = [
     ${section('4. Keep control of the details', p('Use Application with your existing database, registry, policy, actions and storage when you need explicit configuration. The screens use the same query and mutation endpoints.'))}
   </article>` },
   { id: 'screens', title: 'Screens and routes', render: () => html`<article class="ev-doc-article">
-    ${section('The application shell', p('The sidebar lists your models, grouped into documents and records, with your recent records. The top bar shows where you are, search (Ctrl K or Cmd K) and the New menu. Only the view scrolls.'),
-      table([['Sidebar', 'Workspace, app bar, models, recent records, and your account at the bottom.'], ['Top bar', 'Sidebar toggle, breadcrumbs, search, shortcuts, New.'],
+    ${section('The application shell', p('The sidebar lists your models, grouped into documents and records. The top bar shows where you are, your recent records (the clock button left of search), search (Ctrl K or Cmd K) and the New menu. Only the view scrolls.'),
+      table([['Sidebar', 'Workspace, app bar, models, and your account at the bottom.'], ['Top bar', 'Sidebar toggle, breadcrumbs, recent records, search, shortcuts, New.'],
         ['View', 'The page: a list, a board, a record or these docs.'], ['Layers', 'Menus, dialogs, drawers, toasts and the search palette.']]))}
     ${section('From a model to its screens', p('Lists show Meta.list_fields (up to eight), with the title pinned. A model with a State also gets a board and saved views per state. A record shows the title, the State as steps with its moves, a summary strip, a Details tab built from Meta.layout, one tab per Table and the side panel.'), code(screensCode))}
     ${section('Routes', p('Every model has /app/model, /app/model/new and /app/model/123. Lists keep their search, sort, page and view in the address, so a link opens the same list. A record keeps its tab: /app/invoice/42?tab=lines.'),

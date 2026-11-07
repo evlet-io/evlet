@@ -1,6 +1,6 @@
 // The list filter builder: fields from the schema (a model of 220 fields and a child table), the
 // conditions each type offers, the address and server forms, and the builder on the list page.
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SchemaIndex, type FieldSchema } from '../model/schema';
 import { compact, conditionsFor, decode, encode, filterFields, type FilterState } from '../app/filters';
 import type { ScreenModel } from '../app/meta';
@@ -242,5 +242,70 @@ describe('the filter builder on a list', () => {
     click(byText(document.body, '.select-pop [role="option"]', 'is set'));
     await until(() => expect(row(0).querySelector('.fb-value')!.children).toHaveLength(0));
     await until(() => expect(JSON.parse(itemCalls(sent).pop()!.filters)[0]).toEqual(['introduced_on', 'isnull', false]));
+  });
+
+  it('docks beside the list with rows on top and saved filters below, kept on the device, and Escape closes it', async () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => void data.set(key, value),
+      removeItem: (key: string) => void data.delete(key), clear: () => data.clear(), key: () => null, get length() { return data.size; } } as Storage;
+    const { host, sent } = start(routes(), '/app/item', { storage });
+    await until(() => expect(host.querySelectorAll('tbody tr[data-key]')).toHaveLength(2));
+    const button = byText<HTMLButtonElement>(host, '.ph-actions button', /^Filter/)!;
+    const layers = () => [...document.querySelectorAll('.scrim, .backdrop, .modal, [aria-modal="true"]')];
+    const before = layers();
+    click(button);
+    // A side panel in the page beside the list: no overlay, backdrop or dialog.
+    const dock = await vi.waitFor(() => host.querySelector<HTMLElement>('.ev-list-row > .ev-filter-dock > .fb-dock')!);
+    expect(dock.parentElement!.previousElementSibling!.classList.contains('ev-list')).toBe(true);
+    expect(dock.closest('.split-main')).not.toBeNull();
+    expect(layers()).toEqual(before);
+    expect(document.querySelector('.modal, [aria-modal="true"]')).toBeNull();
+    expect(button.getAttribute('aria-controls')).toBe(dock.parentElement!.id);
+    expect([...dock.querySelectorAll(':scope > section')].map(section => section.getAttribute('aria-label'))).toEqual(['Filter rows', 'Saved filters']);
+
+    // Rows: add two, remove one.
+    await chooseField(host, 'standard rate');
+    await chooseCondition(host, '>');
+    const value = host.querySelector<HTMLInputElement>('.fb-value input')!;
+    typeInto(value, '20');
+    click(byText(host, '.fb-foot button', 'Add filter'));
+    await chooseField(host, 'item name');
+    await until(() => expect(host.querySelectorAll('.fb-row')).toHaveLength(2));
+    click(host.querySelectorAll('.fb-row')[1].querySelector('button[aria-label="Remove filter"]'));
+    await until(() => expect(host.querySelectorAll('.fb-row')).toHaveLength(1));
+    const f = [['standard_rate', 'gt', '20.00']];
+    await until(() => expect(JSON.parse(new URLSearchParams(location.search).get('f')!)).toEqual(f));
+
+    // Save under a name: kept per person on the device in the address form.
+    const save = dock.querySelector<HTMLButtonElement>('.fb-save button')!;
+    expect(save.disabled).toBe(true);
+    typeInto(dock.querySelector<HTMLInputElement>('.fb-save input')!, 'Over 20');
+    expect(save.disabled).toBe(false);
+    click(save);
+    await until(() => expect([...dock.querySelectorAll('.fb-apply')].map(text)).toEqual(['Over 20']));
+    expect(dock.querySelector('.fb-apply')!.getAttribute('aria-pressed')).toBe('true');
+    await until(() => expect(JSON.parse([...data].find(([key]) => key.endsWith('.list.item.filters'))![1])).toEqual([{ name: 'Over 20', f: JSON.stringify(f) }]));
+
+    // Apply: clearing and choosing it again brings the rows, the address and the request back.
+    click(byText(dock, '.fb-foot button', 'Clear filters'));
+    await until(() => expect(location.search).toBe(''));
+    expect(dock.querySelector('.fb-apply')!.getAttribute('aria-pressed')).toBe('false');
+    click(dock.querySelector('.fb-apply'));
+    await until(() => expect(JSON.parse(new URLSearchParams(location.search).get('f')!)).toEqual(f));
+    await until(() => expect(JSON.parse(itemCalls(sent).pop()!.filters)).toEqual(f));
+    expect(host.querySelectorAll('.fb-row')).toHaveLength(1);
+    expect(text(host.querySelector('.filter-chip'))).toBe('Standard rate > AED 20.00');
+
+    // Delete.
+    click(dock.querySelector('.fb-saved-item button[aria-label="Delete Over 20"]'));
+    await until(() => expect(dock.querySelectorAll('.fb-apply')).toHaveLength(0));
+    await until(() => expect(JSON.parse([...data].find(([key]) => key.endsWith('.list.item.filters'))![1])).toEqual([]));
+
+    // Escape closes the panel and returns focus to the Filter button; the filters stay.
+    press(dock.querySelector('.fb-save input')!, 'Escape');
+    await until(() => expect(host.querySelector('.fb-dock')).toBeNull());
+    await until(() => expect(document.activeElement).toBe(button));
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(JSON.parse(new URLSearchParams(location.search).get('f')!)).toEqual(f);
   });
 });

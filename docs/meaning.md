@@ -75,7 +75,7 @@ changes one discovered relation:
 - `model` is the class or its model name or resource id; `link` is its Link field to
   this model.
 - `label` replaces the default label.
-- `limit` is the default page size, 1 to 100.
+- `limit` is the API's default page size, 1 to 100. The record page always shows five rows a page.
 - `order` is one to three stored fields of the other model, each optionally with a
   leading `-` for descending order. Reference fields cannot be used.
 - `hidden=True` removes the relation from the schema and the related route.

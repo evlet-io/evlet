@@ -692,7 +692,8 @@ not part of the build.
 | Module | What it does |
 |---|---|
 | `app.ts` | Session, sign in and first-run setup, the shell and the route table |
-| `shell.ts` | Sidebar (models grouped, recent records, Library in development, the account and the theme button), top bar, keyboard |
+| `shell.ts` | Sidebar (models grouped, Library in development, the account and the theme button), top bar, keyboard |
+| `recents.ts` | The history button left of search in the top bar: this session's recent records, newest first, with the model and when each was opened |
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
 | `record-page.ts` | Record (doc) view, new records, action, void, revise, unpost and repost dialogs |
@@ -778,8 +779,8 @@ a title opens the full page in a new browser tab.
 | `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.status`, `Select(colors=...)` | A status badge in the record header and the same badge in the list column; never a button unless it is the State with moves to offer |
 | `Meta.key_fields` (Phase 10) | Header facts, the summary strip and the Key fields side block (without it: the first fields) |
-| `Meta.relations` (Phase 10) | The Related tab and side block |
-| `attachments` | The Files side block, with upload for roles that can update while the record is not locked |
+| `Meta.relations` (Phase 10) | The Related tab and side block. A relation named after its model counts in that model's words ("Payments, 1 payment"), any other name counts records; an empty relation is one line in the tab, with no table or 0. Rows load when shown, five at a time with a pager, and View all opens the filtered list ([ui.md](ui.md)) |
+| `attachments` | The Files side block, with upload and a remove button on each file (asks first) for roles that can update while the record is not locked |
 | `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
 | Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
 | Every record (`_audit`) | Created and Last modified in the Record info side block, as relative times with who ([Relative times](#relative-times)) |
@@ -801,8 +802,9 @@ Appearance, region, start page and sidebar counts are the person's Settings, kep
 widths, child table columns, quick access, how each list opens records, the side panel's width and
 which form sections a person opened or closed) are kept in browser storage under `evlet.<username>.`.
 They never hold record data: recent records and recent searches stay in memory for the signed-in
-session and go on sign-out. The account area is at the bottom of the sidebar; the top bar keeps
-search and notifications.
+session and go on sign-out. Each recent record keeps when it was last opened; the history button left
+of search lists them with the relative time and the exact time on hover. The account area is at the
+bottom of the sidebar; the top bar keeps recent records, search and notifications.
 
 Signing out ends the local session only after the server confirms it (or answers that the
 session had already ended). If the request fails, the user stays signed in and a dialog says so,
@@ -830,7 +832,7 @@ record store replay the shared finite-v1 scenarios (`finite-fixtures.json`).
 
 ## Limits of this phase
 
-- Home, accounts, form dialogs, the notification panel, the layout control and Doc
+- Home, accounts, form dialogs, the layout control and Doc
   layout page are not built. Python pages (`evlet.ui` PageView), native panels and custom
   components are not rendered (owner decision); their Python APIs remain.
 - Bulk moves and deletes read each record first, one request per record.

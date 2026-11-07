@@ -24,7 +24,7 @@ import { StatusBadge, Tabs } from '../ui/doc';
 import { DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
-import { compact, filterBuilder, FilterChips, FilterPanel } from './filters';
+import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
 import { fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, LIST_KEYS, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
 import { RecordPage, type PanelHost } from './record-page';
@@ -464,7 +464,12 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
       board: () => [state ? html`<p class="muted ev-note ev-board-note" hidden=${() => tab.get() === 'all'}>${() => `Showing ${humanize(tab.get()).toLowerCase()} ${model.plural.toLowerCase()} only. Choose All ${model.plural.toLowerCase()} to see every column.`}</p>` : null,
         match(tab, Object.fromEntries(['all', ...state!.states].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
 
-  const list = html`<div class="page ev-list" class:ev-list-narrow=${panelOpen} data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${header}${tabs}${toolbar}<div id=${`ev-${name}-filters`}>${when(filtering, () => FilterPanel(filters, ctx.links, () => filtering.set(false)))}</div>${when(() => !panelOpen.get(), () => strip)}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>${content}${when(() => !panelOpen.get(), () => bulk)}</div>` as HTMLElement;
+  const list = html`<div class="page ev-list" class:ev-list-narrow=${panelOpen} data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${header}${tabs}${toolbar}${when(() => !panelOpen.get(), () => strip)}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>${content}${when(() => !panelOpen.get(), () => bulk)}</div>` as HTMLElement;
+  // The filter panel docks beside the list, inside the page: the list narrows, nothing covers it.
+  const closeFilters = () => { filtering.set(false); queueMicrotask(() => filterButton.focus()); };
+  const savedFilters = ctx.prefs.cell<SavedFilter[]>(`list.${name}.filters`, []);
+  const main = html`<div class="ev-list-row" class:ev-filtering=${filtering}>${list}<div class="ev-filter-dock" id=${`ev-${name}-filters`}>${when(filtering,
+    () => FilterPanel(filters, ctx.links, { onClose: closeFilters, saved: savedFilters }))}</div></div>` as HTMLElement;
   if (typeof ResizeObserver !== 'undefined') {
     const observer = new ResizeObserver(entries => listWidth.set(Math.round(entries[0]?.contentRect.width ?? 0)));
     observer.observe(list);
@@ -519,7 +524,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     });
     return element;
   };
-  const split = SplitView({ main: list, side: panel, open: panelOpen, overlay, width: ctx.prefs.cell(`panelWidth.${name}`, 480),
+  const split = SplitView({ main, side: panel, open: panelOpen, overlay, width: ctx.prefs.cell(`panelWidth.${name}`, 480),
     label: `Resize the ${model.label.toLowerCase()} panel` });
   split.classList.add('ev-list-split');
   split.append(html`<p class="ev-sr" aria-live="polite">${announce}</p>`);
