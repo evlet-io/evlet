@@ -45,6 +45,9 @@ How each kind is served:
 
 - `evlet`: the desk shell under the frontend's base, `<base>/<model>`,
   `<base>/<model>/new` and `<base>/<model>/<id>`, with every model the role can read.
+  `<id>` is the record's 13-character text id, such as `01hff1w8vgqwf`, in any case; a
+  decimal id from an older link is served too, and the page opens the record it names. A segment
+  that is neither, or a text id past 63 bits, gets the not-found page with a 404.
   Narrowing the shell to the app's own models comes later.
 - `static`: files from `dist`, a folder inside the app package, copied into the build
   generation with the app source. Only html, js, css, svg, png, jpg, webp, ico, woff2,

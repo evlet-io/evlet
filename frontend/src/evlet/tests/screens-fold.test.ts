@@ -1,10 +1,10 @@
 // Collapsible sections on the generated record page: the app's starting state, the person's saved
 // choice and Reset layout, a #field link, and a refused create that opens the section with the error.
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { byText, click, recorded, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
 import { copy } from './server';
 
-afterEach(stopAll);
+afterEach(() => { stopAll(); delete (HTMLElement.prototype as any).animate; });
 
 function schema() {
   const value = copy(screen.schema);
@@ -56,6 +56,30 @@ describe('collapsible record sections', () => {
     click(byText(document.body, '[role="menuitem"]', 'Reset layout'));
     expect(expanded(again, 'Dates')).toBe('false');
     expect(JSON.parse(storage.get(key)!)).toEqual({});
+  });
+
+  it('Reset layout puts every section back to its starting state at once, on the same page', async () => {
+    // A time-ordered text id (with letters), as every new record has.
+    const textId = '01hff1w8vgqwf';
+    const retext = (source: any) => JSON.parse(JSON.stringify(source).split('0000000000001').join(textId));
+    // The height animation is held up (as in a page in the background): Reset must not wait for it.
+    const animate = vi.fn(() => ({ cancel() {}, onfinish: null, oncancel: null }) as unknown as Animation);
+    (HTMLElement.prototype as any).animate = animate;
+    const { store } = memory();
+    const { host } = start(retext(routes()).map((route: any, index: number) => [route[0], new RegExp(routes()[index][1].source.split('0000000000001').join(textId)), route[2]]),
+      `/app/order/${textId}`, { storage: store });
+    await until(() => expect(section(host, 'Dates')).not.toBeNull());
+    const starting = ['plain', 'false', 'false', 'true'];
+    expect(['Main', 'Dates', 'Notes', 'Totals'].map(title => expanded(host, title))).toEqual(starting);
+    for (const title of ['Dates', 'Notes', 'Totals']) click(section(host, title).querySelector('.fs-toggle'));
+    expect(['Main', 'Dates', 'Notes', 'Totals'].map(title => expanded(host, title))).toEqual(['plain', 'true', 'true', 'false']);
+    click(host.querySelector('[aria-label="More actions"]'));
+    const reset = byText<HTMLButtonElement>(document.body, '[role="menuitem"]', 'Reset layout')!;
+    expect(reset.getAttribute('aria-disabled') === 'true' || reset.disabled).toBe(false);
+    click(reset);
+    await until(() => expect(['Main', 'Dates', 'Notes', 'Totals'].map(title => expanded(host, title))).toEqual(starting));
+    expect(['Dates', 'Notes', 'Totals'].map(title => section(host, title).querySelector<HTMLElement>('.fs-body')!.hidden)).toEqual([true, true, false]);
+    expect(animate).toHaveBeenCalled();
   });
 
   it('opens the section of a #field link and focuses the field', async () => {

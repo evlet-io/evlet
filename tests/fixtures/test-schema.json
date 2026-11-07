@@ -365,7 +365,7 @@
           "unique": true,
           "index": false,
           "max_length": 140,
-          "label": "Name",
+          "label": "Invoice number",
           "help_text": "",
           "placeholder": "",
           "hidden": false,

@@ -200,6 +200,8 @@ Every record model also has two standard columns, next to `id`. Table rows have 
   forms show "Assigned on save" or "Assigned on confirm". Once a record has a name, anyone who may
   write the `name` field can change it through the normal edit; a taken name is refused. Links
   point to the id, so changing a name updates one row and breaks no link or bookmark.
+  `Naming(..., label="Project number")` labels the field for the model's domain; it is "Name"
+  otherwise.
 - **`title`** is the display text that Link pickers, lists, search, breadcrumbs and Eva show. Declare
   a `title` Text field and that field is the title. Otherwise the framework fills it on every
   write from `Meta.title_field = "customer_name"` or a template

@@ -29,6 +29,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   person on the device. Choosing one applies it; each can be deleted.
 - **Files can be removed from a record.** Each file in the Files block has a remove button,
   shown to roles that can upload. It asks first, and a locked record shows none.
+- `Naming(..., label="Project number")` labels the standard `name` field for the model's domain on
+  the form, in list columns, filters, search and the schema
+  ([docs/sequences.md](docs/sequences.md)). The Playground labels it "Invoice number".
 
 ### Changed
 
@@ -73,6 +76,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   phone drawer.
 - **Recent records moved from the sidebar to a history button left of search.** It lists them
   newest first with the model and when each was opened, and has a Clear action.
+
+### Fixed
+
+- Records with text ids show their move and action buttons again. The browser client now reads
+  record details from paths with a text id, so allowed moves are no longer refused.
+- Record pages with a text id, such as `/app/<model>/01hff1w8vgqwf`, are served with 200 instead
+  of 404. A decimal id from an older link is still served ([docs/routing.md](docs/routing.md)).
+- More > Reset layout puts collapsible sections back to their starting state at once, including
+  `collapsed="empty"`, instead of waiting for an animation that a background page never plays.
 
 ## 0.3.0 (05-11-2026)
 
