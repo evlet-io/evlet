@@ -12788,6 +12788,11 @@
         "kind": "select",
         "default": "active"
       },
+      "side_blocks": [
+        "related",
+        "info",
+        "key_fields"
+      ],
       "fields": [
         {
           "name": "title",
