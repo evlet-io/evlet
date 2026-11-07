@@ -417,6 +417,10 @@ class Business:
             entry['layout'] = [{**group, 'fields': [name for name in group['fields'] if name in readable]} for group in entry.get('layout', [])]
             # Controls overrides: labels, rules, options, layout and list view on this instance.
             self.controls.custom.merge(entry, model, readable, writable)
+            # List tabs only for roles that can count by their field (evlet.measures.list_tabs).
+            from .measures import tabs_visible
+            if 'list_tabs' in entry and not tabs_visible(self, user, model, entry['list_tabs']['field']):
+                del entry['list_tabs']
             if entry['title_field'] not in readable:
                 entry['title_field'] = 'id'
             # The field naming fills: the record page shows it as the document number, and until it has one,
@@ -805,7 +809,7 @@ class Business:
             with self.database.transaction() as tx:
                 record, result = self.create_plain(tx, user, model, body)
             return 201, result, [(b'location', f'/api/{parts[2]}/{record.id}'.encode())]
-        if len(parts) == 4 and parts[3] in ('aggregate', 'measures') or len(parts) == 5 and parts[4] == 'measures':
+        if len(parts) == 4 and parts[3] in ('aggregate', 'measures', 'list_tabs') or len(parts) == 5 and parts[4] == 'measures':
             from .measures import route
             return route(self, scope, user, model, parts)
         if len(parts) < 4 or path_id(parts[3]) is None:

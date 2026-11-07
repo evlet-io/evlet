@@ -157,6 +157,7 @@ describe('board totals and counts from the server', () => {
     ['GET', /\/api\/invoice\?/, invoice.invoices],
     ['GET', /\/api\/invoice\/measures/, invoice.invoice_measures],
     ['GET', /\/api\/invoice\/aggregate/, aggregate],
+    ['GET', /\/api\/invoice\/list_tabs/, invoice.invoice_list_tabs],
     ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ];
   const grouped = { status: 200, etag: null, body: { group_by: ['status'], measures: ['n', 'outstanding'], items: [
@@ -175,12 +176,12 @@ describe('board totals and counts from the server', () => {
     expect(call).toMatchObject({ measures: 'n:count,outstanding', group_by: 'status' });
   });
 
-  it('counts saved views with the aggregate route when the model declares no measures', async () => {
+  it('counts the tabs with the list tabs route when the model declares no measures', async () => {
     const schema = copy(invoice.schema);
     delete schema.body.models.find((model: any) => model.name === 'invoice').measures;
     const { host, sent } = start(routes(invoice.invoice_aggregate_by_status, schema), '/app/invoice');
     await until(() => expect([...host.querySelectorAll('.ev-list [role="tab"]')].map(text)).toEqual(['All invoices3', 'Draft1', 'Issued1', 'Paid0', 'Void1']));
-    expect(query(requests(sent, 'GET', /aggregate/)[0])).toMatchObject({ measures: 'n:count', group_by: 'status' });
+    expect(requests(sent, 'GET', /list_tabs/)).not.toHaveLength(0);
   });
 
   it('shows only the chosen column when a State tab is selected on the board', async () => {

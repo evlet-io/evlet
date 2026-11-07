@@ -22,7 +22,7 @@ from .fields import (ACTIVE, MISSING, Boolean, Currency, CurrentUser, Date, Deci
                      State, Text, active_layer)
 from .database import ConflictError
 from .models import ValidationError, identifier
-from .ui.metadata import FLOWS, OPEN_IN, label_for, starts_valid, view_for
+from .ui.metadata import FLOWS, OPEN_IN, label_for, list_tabs_for, starts_valid, view_for
 
 PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default', 'options_add', 'options_hidden')
 DISPLAY = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden')
@@ -195,7 +195,9 @@ class Customization:
             return {'sections': sections, 'tabs': view['tabs'], 'default_tab': view['default_tab']} if view['tabs'] or view['default_tab'] else sections
         if kind == 'list':
             view = view_for(model)
-            return {'columns': [key for key in view['list_fields'] if key != 'id'], 'page_size': 50, 'sort': '-id', 'open_in': view['open_in']}
+            tabs = view.get('list_tabs')
+            return {'columns': [key for key in view['list_fields'] if key != 'id'], 'page_size': 50, 'sort': '-id', 'open_in': view['open_in'],
+                    'list_tabs': tabs['field'] if tabs else None, 'list_tab': tabs['default'] if tabs else 'all'}
         return [dict(item) for item in getattr(model.Meta, 'naming').series]
 
     def items(self):
@@ -376,9 +378,10 @@ class Customization:
 
     def check_list(self, model, _, value):
         stored = {name for name, field in self.fields(model).items() if field.stored and field.kind != 'reference'}
-        # open_in is optional: list views saved before it existed keep the app's choice.
-        if not isinstance(value, dict) or not {'columns', 'page_size', 'sort'} <= set(value) <= {'columns', 'page_size', 'sort', 'open_in'}:
-            raise ValueError('Send columns, page_size and sort, and optionally open_in.')
+        # open_in, list_tabs and list_tab are optional: list views saved before them keep the app's choice.
+        optional = {'open_in', 'list_tabs', 'list_tab'}
+        if not isinstance(value, dict) or not {'columns', 'page_size', 'sort'} <= set(value) <= {'columns', 'page_size', 'sort', *optional}:
+            raise ValueError('Send columns, page_size and sort, and optionally open_in, list_tabs and list_tab.')
         columns = value['columns']
         if not isinstance(columns, list) or not 1 <= len(columns) <= 8 or any(name not in stored for name in columns) or len(set(columns)) != len(columns):
             raise ValueError(f'Choose 1 to 8 columns of {model.__name__}, each once.')
@@ -389,7 +392,22 @@ class Customization:
             raise ValueError('Sort by a field of the model, or -id for newest first.')
         if 'open_in' in value and value['open_in'] not in OPEN_IN:
             raise ValueError('Open records in the full page or a side panel.')
-        return {'columns': list(columns), 'page_size': value['page_size'], 'sort': sort, **({'open_in': value['open_in']} if 'open_in' in value else {})}
+        if 'list_tab' in value and 'list_tabs' not in value:
+            raise ValueError('Send list_tabs with list_tab: the tab the list opens on is one of its values.')
+        if 'list_tabs' in value:
+            # The same rules as Meta.list_tabs and Meta.list_tab, over this instance's fields.
+            self.list_tabs(model, value)
+        return {'columns': list(columns), 'page_size': value['page_size'], 'sort': sort,
+                **{key: value[key] for key in ('open_in', 'list_tabs', 'list_tab') if key in value}}
+
+    def list_tabs(self, model, value):
+        """The list tabs a saved list view sets, as list_tabs_for gives them; ValueError when they can't work."""
+        class Options:
+            list_tabs, list_tab = value['list_tabs'], value.get('list_tab', 'all')
+        try:
+            return list_tabs_for(model, Options, self.fields(model))
+        except ValueError as exc:
+            raise ValueError(str(exc).replace(f'{model.__name__}.Meta.', 'The list view ')) from None
 
     def check_naming(self, model, _, value, saved=False):
         from .sequences import NamingRules, SERIES_ID, check_order
@@ -533,6 +551,15 @@ class Customization:
             entry['page_size'] = value['page_size']
             if 'open_in' in value:
                 entry['open_in'] = value['open_in']
+            if 'list_tabs' in value:
+                # A saved choice that no longer fits (its field was removed since) keeps the app's tabs.
+                try:
+                    tabs = self.list_tabs(model, value)
+                except ValueError:
+                    tabs = entry.get('list_tabs')
+                entry.pop('list_tabs', None)
+                if tabs:
+                    entry['list_tabs'] = tabs
             if value['sort'].removeprefix('-') in readable or value['sort'] in ('id', '-id'):
                 entry['order_by'] = value['sort']
 

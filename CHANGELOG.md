@@ -13,6 +13,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `key_fields`, `related`, `files` and `info`. Both are checked when the registry is built and go
   into the UI schema only when a model sets them.
 - **More > Copy record ID** on the record page.
+- **List tabs by a chosen field, with a default tab.** `Meta.list_tabs` names the State, Select
+  or Link field whose values are the list's tabs, and `Meta.list_tab` the tab the list opens on
+  (`"all"` by default). Without them a model's State drives the tabs as before; `list_tabs = None`
+  turns them off. Counts come from the new `GET /api/{model}/list_tabs`, which follows the list's
+  filters, search and row scope; a Link shows its 8 most used values. `/api/schema` adds
+  `list_tabs` for roles that can read the field (additive). Choosing a tab, All included, keeps it
+  in the address. The Controls list view sets both per instance
+  ([docs/ui.md](docs/ui.md#list-tabs)).
 - **Back to the app from Controls.** The top of the Controls sidebar links back to the last app
   page, or the start page; the search palette offers Go to Controls to roles that open it.
 - **Change password from the account menu.** It opens the Sign-in & security password form
@@ -33,6 +41,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   The Related tab still lists every relation.
 - **Record info no longer shows the record id.** Use More > Copy record ID. The block is left out
   while it has nothing to show, such as an older record without times.
+- **The list board is opt-in.** A model's list offers the Board view only when `Meta.board`
+  names its State field, such as `board = "stage"`, and the board groups by that field. Without
+  it the list is a table with the saved views per state, and an old `?view=board` link opens the
+  table. Apps that relied on the automatic board for every model with a State must now set
+  `Meta.board`. `Meta.board` on any other field fails registration naming the model.
 - **The list filter panel is a side panel.** It docks beside the table inside the page, with
   no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
   sit on top and saved filters below; each half scrolls on its own. Escape closes it.

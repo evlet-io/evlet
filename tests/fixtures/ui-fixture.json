@@ -12783,11 +12783,11 @@
       ],
       "default_tab": "details",
       "autosave": true,
-      "side_blocks": [
-        "related",
-        "info",
-        "key_fields"
-      ],
+      "list_tabs": {
+        "field": "status",
+        "kind": "select",
+        "default": "active"
+      },
       "fields": [
         {
           "name": "title",

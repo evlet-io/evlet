@@ -239,6 +239,11 @@ plain list of sections. Tab names are the record's own tabs and the model's chil
 **List view** (kind `list`, key `Model`): `{"columns": [...], "page_size": 25 | 50 | 100, "sort": "field" | "-field", "open_in": "page" | "panel"}`,
 1 to 8 columns. `/api/schema` drops the columns a role can't read and gives `page_size`, `order_by` and `open_in`.
 `open_in` (Open records in) is optional: a list view saved without it keeps the model's `Meta.open_in`.
+`list_tabs` (Tabs by) and `list_tab` (Opens on) are optional too and follow the rules of `Meta.list_tabs` and
+`Meta.list_tab` ([ui.md](ui.md#list-tabs)): a State, Select or Link field of the model, or `null` for no tabs, and
+`"all"`, one of its values or a linked record's title. `list_tab` needs `list_tabs`. A list view saved without them
+keeps the model's tabs, and a saved field that is later removed falls back to them. The export writes them as
+`Meta.list_tabs` and `Meta.list_tab` notes.
 The sort is also the server's order for a list request that names none, when the role can read it.
 
 ### Instance fields
