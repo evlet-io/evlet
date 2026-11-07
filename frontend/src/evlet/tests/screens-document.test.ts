@@ -69,7 +69,8 @@ describe('transaction document (recorded fixtures)', () => {
     click(byText(host, '.doc-tabs [role="tab"]', 'Related'));
     // A payment has no text field, so its title is its id.
     await until(() => expect(text(host.querySelector('.ev-related .ev-row-link'))).toBe(String(invoice.invoice_payment.body.id)));
-    expect(location.search).toBe('?tab=related');
+    // The rows were loaded with the count, so they show before the address catches up.
+    await until(() => expect(location.search).toBe('?tab=related'));
   });
 
   it('explains a blocked move instead of running it', async () => {

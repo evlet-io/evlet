@@ -52,6 +52,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **The list filter panel is a side panel.** It docks beside the table inside the page, with
   no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
   sit on top and saved filters below; each half scrolls on its own. Escape closes it.
+- **Related records load when shown, five at a time.** Opening a record no longer asks for
+  every relation: the Related block and each Related tab section load when they scroll into
+  view, and one page serves both. Each section shows five rows with a small pager, and View all
+  opens the related list filtered to this record.
 - **Lists run flush to the main area.** A model list's table no longer sits in a rounded,
   bordered card. Its rows run edge to edge, like a child table in focus view, and the list page
   uses the full width of the main area. Related lists and reports keep their own look.
@@ -85,6 +89,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   of 404. A decimal id from an older link is still served ([docs/routing.md](docs/routing.md)).
 - More > Reset layout puts collapsible sections back to their starting state at once, including
   `collapsed="empty"`, instead of waiting for an animation that a background page never plays.
+- **A read-only child table stays read only when opened in the row editor.** On a locked or
+  cancelled record, or without write access, a row opened from the table or its focus view showed
+  editable inputs. They are now read only, like the cells, and the rows still open to read.
 
 ## 0.3.0 (05-11-2026)
 
