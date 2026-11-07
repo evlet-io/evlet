@@ -22,6 +22,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **The list filter panel is a side panel.** It docks beside the table inside the page, with
   no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
   sit on top and saved filters below; each half scrolls on its own. Escape closes it.
+- **Related records load when shown, five at a time.** Opening a record no longer asks for
+  every relation: the Related block and each Related tab section load when they scroll into
+  view, and one page serves both. Each section shows five rows with a small pager, and View all
+  opens the related list filtered to this record.
 - **Lists run flush to the main area.** A model list's table no longer sits in a rounded,
   bordered card. Its rows run edge to edge, like a child table in focus view, and the list page
   uses the full width of the main area. Related lists and reports keep their own look.

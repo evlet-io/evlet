@@ -138,7 +138,10 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-related{margin-bottom:16px;overflow:hidden}
 .ev-related .table-wrap{border:0;border-radius:0}
 .ev-related-empty{margin:0;padding:14px 16px 16px;color:var(--fg-3)}
-.ev-more{padding:10px 12px;border-top:1px solid var(--divider)}
+.ev-view-all{font-size:12px;font-weight:550;color:var(--accent)}
+.ev-view-all:hover{text-decoration:underline}
+.ev-pager{display:flex;align-items:center;justify-content:flex-end;gap:2px;padding:6px 10px;border-top:1px solid var(--divider);font-size:12px}
+.ev-pager .num{margin-right:6px}
 .ev-files{display:grid;gap:10px}
 .ev-print-body{display:grid;gap:12px;min-height:0}
 .ev-print-design{display:grid;gap:4px;font-size:13px;max-width:320px}

@@ -43,6 +43,17 @@ moves this person may take now; everything else is plain text. Lists draw the sa
 badge wraps with the key facts in the side panel and on a phone; the bar scrolls sideways there.
 See [states-actions.md](states-actions.md#how-a-state-and-a-status-show).
 
+Related records (`Meta.relations`) show in the side panel's Related block, with a count per
+relation, and in the Related tab, with a short table per relation. Nothing is asked for when a
+record opens: a relation's records load when the Related block or its tab section first scrolls
+into view (at once in a browser without IntersectionObserver). One server page of five records
+serves both the count and the tab, and it stays loaded while the record is open, so switching
+tabs asks again for nothing; a save of the record reloads the pages already shown. Each tab
+section shows five rows; with more, a small pager under it reads "1–5 of 12" with previous and
+next, each a server page (`limit` and `offset`). **View all** in the section's heading opens the
+related model's list filtered to this record (`?f=[["customer","eq","<id>"]]`), shown as a
+filter that can be removed. It is left out when the role cannot filter that list on the link.
+
 ## Not rendered by this interface
 
 These keep their Python APIs, HTTP routes, permission checks and tests. The browser
