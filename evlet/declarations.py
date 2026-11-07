@@ -26,7 +26,7 @@ class Table:
     """Owned rows. `min_rows` is checked on save (`required=True` means at least one row);
     `max_rows` (default 100, at most 1,000) bounds the collection in both runtimes."""
     def __init__(self, child, *, required=False, min_rows=None, max_rows=DEFAULT_TABLE_ROWS, label=None,
-                 storage_name=None, owner_field='evlet_owner'):
+                 storage_name=None, owner_field='evlet_owner', panel=True):
         for name, value in (('min_rows', min_rows), ('max_rows', max_rows)):
             if value is not None and (type(value) is not int or value < 0):
                 raise ValueError(f'Table {name} must be a nonnegative integer')
@@ -42,6 +42,10 @@ class Table:
         self.required = min_rows > 0
         self.name = ''
         self.storage_name, self.owner_field = storage_name, owner_field
+        # Whether its tab shows when a list opens the record in its side panel (display only).
+        if type(panel) is not bool:
+            raise ValueError('Table panel must be True or False')
+        self.panel = panel
 
     def __set_name__(self, owner, name):
         self.name = name

@@ -754,6 +754,12 @@ a title opens the full page in a new browser tab.
   the page; a saved or moved record updates its row.
 - When the content area is narrower than 900 px the panel covers the list with a back link
   (`Invoices`), and on phones it takes the screen.
+- The panel shows only what the model lets it: the schema's `panel` lists hidden `sections`,
+  `fields`, `tabs` and `blocks` (`summary`, `files`, `info`), and `order`, the order `Meta.panel`
+  names tabs and blocks in (`panelView` in `app/meta.ts`). Details shows while anything in it does.
+  A required field that is empty on a new record always shows. When anything is hidden, Details
+  ends with "Some parts of this invoice show only on the full page" (the model label) and an Open full page link. The
+  full page ignores `panel` ([ui.md](ui.md#what-a-side-panel-shows)).
 
 ### What the model decides
 
@@ -782,6 +788,7 @@ a title opens the full page in a new browser tab.
 | Calculated fields, per-record measures | The summary strip, at most four: calculated values the header facts don't show, then per-record measures. No strip when nothing is left; `Meta.summary = False` turns it off |
 | `Meta.relations` (Phase 10) | The Related tab and side block. The side block lists only relations with records, and goes when none has any; the tab lists them all. A relation named after its model counts in that model's words ("Payments, 1 payment"), any other name counts records; an empty relation is one line in the tab, with no table or 0 |
 | `Meta.side_blocks` | Which side blocks show, in order, from `key_fields`, `related`, `files` and `info`. Without it, all four in that order; `()` shows none |
+| `panel=False` on a field, `Section` or `Table`; `Meta.panel` | What a record opened in a list's side panel leaves out, or (`Meta.panel`) the only parts it keeps, in order. The schema carries `panel` only when something is hidden; the full page ignores it ([Side panel](#side-panel)) |
 | `attachments` | The Files side block, with upload for roles that can update while the record is not locked |
 | `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
 | Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |

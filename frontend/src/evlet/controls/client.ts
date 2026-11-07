@@ -50,7 +50,9 @@ export interface LayoutSection { title: string; fields: Array<{ name: string; wi
   collapsible?: boolean; collapsed?: boolean | 'empty';
   /** columns: fields go down the left column, then the right (absent: rows). */ flow?: 'columns' }
 /** A saved form layout: its sections, or its sections with the record tab order and default tab. */
-export type LayoutValue = LayoutSection[] | { sections: LayoutSection[]; tabs?: string[]; default_tab?: string | null }
+/** What a list's side panel hides, by kind (an empty object shows everything). Display only. */
+export interface PanelHidden { sections?: string[]; fields?: string[]; tabs?: string[]; blocks?: string[] }
+export type LayoutValue = LayoutSection[] | { sections: LayoutSection[]; tabs?: string[]; default_tab?: string | null; panel?: PanelHidden }
 export interface ListValue { columns: string[]; page_size: number; sort: string; /** How the list opens a record (absent in list views saved before it existed). */ open_in?: 'page' | 'panel' }
 export interface SeriesValue { id: string; label: string; format: string; when: string }
 export interface FieldInfo {

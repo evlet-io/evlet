@@ -188,6 +188,43 @@ export const measureLabel = (measure: MeasureSchema) => measure.name.replace(/_/
 const tabId = (name: string) => ['activity', 'details', 'revisions', 'related', 'postings'].includes(name) ? name : `t-${name}`;
 
 /**
+ * What a record opened in a list's side panel shows (model.panel: panel=False flags, Meta.panel or the Controls
+ * toggles). Tabs and blocks follow the order Meta.panel names them in. The full page ignores it.
+ */
+export interface PanelView {
+  /** True when the panel leaves anything out: it then offers the full page. */
+  hides: boolean;
+  section(label: string): boolean;
+  field(name: string): boolean;
+  /** A record page tab id: activity, details, revisions, related, postings or t-<table>. */
+  tab(id: string): boolean;
+  /** summary, key_fields, related, files or info. */
+  block(name: string): boolean;
+  /** Items in the order Meta.panel names them (by tab id or block name), the rest after them as they were. */
+  order<T>(items: T[], id: (item: T) => string): T[];
+}
+
+export function panelView(model: ScreenModel): PanelView {
+  const panel = model.panel ?? {};
+  const hidden = (names?: string[]) => new Set(names ?? []);
+  const sections = hidden(panel.sections), fields = hidden(panel.fields), blocks = hidden(panel.blocks);
+  const tabs = new Set((panel.tabs ?? []).map(tabId));
+  const ranks = (panel.order ?? []).map(name => SIDE_BLOCK_NAMES.includes(name) || name === 'summary' ? name : tabId(name));
+  const rank = (key: string) => { const at = ranks.indexOf(key); return at < 0 ? ranks.length : at; };
+  return {
+    hides: Boolean(sections.size || fields.size || tabs.size || blocks.size),
+    section: label => !sections.has(label),
+    field: name => !fields.has(name),
+    tab: id => !tabs.has(id),
+    block: name => !blocks.has(name),
+    order: (items, id) => items.map((item, index) => ({ item, index })).sort((a, b) => rank(id(a.item)) - rank(id(b.item)) || a.index - b.index).map(entry => entry.item),
+  };
+}
+
+/** The record page's side blocks (Meta.side_blocks in evlet/ui/metadata.py). */
+const SIDE_BLOCK_NAMES = ['key_fields', 'related', 'files', 'info'];
+
+/**
  * Record page tabs in the model's order (Meta.tabs or the Controls tab order): the tabs it names first,
  * the rest after them in their usual order. Also the tab a record opens on: its default_tab when the
  * record has that tab, else the first.

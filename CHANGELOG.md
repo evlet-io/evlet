@@ -13,6 +13,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `key_fields`, `related`, `files` and `info`. Both are checked when the registry is built and go
   into the UI schema only when a model sets them.
 - **More > Copy record ID** on the record page.
+- **Choose what a list's side panel shows.** `panel=False` on a field, `Section` or `Table` keeps
+  it on the full page only. `Meta.panel = ('Contact', 'notes', 'activity')` names the only parts
+  the panel keeps, in order: sections, fields, tabs, `summary` and side blocks. Names are checked
+  when the registry is built. Controls, Form layout has a panel button per section, field and tab,
+  and a Side panel card for the rest, stored with the layout. Hiding is display only. A required
+  field that is empty on a new record always shows, and the panel offers Open full page when it
+  hides anything. The UI schema carries `panel` only when something is hidden.
 
 ### Changed
 

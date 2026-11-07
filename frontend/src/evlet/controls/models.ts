@@ -7,7 +7,7 @@ import { cell, derive, type Cell } from '../reactive';
 import { Button, Checkbox, Icon, IconButton, Switch } from '../ui/base';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
 import { Callout, Head, plural, type ControlsContext } from './app';
-import type { FieldInfo, FieldOverride, FieldProps, LayoutSection, LayoutValue, ListValue, ModelInfo } from './client';
+import type { FieldInfo, FieldOverride, FieldProps, LayoutSection, LayoutValue, ListValue, ModelInfo, PanelHidden } from './client';
 import { dragList } from '../ui/draglist';
 import { flowGrid } from '../ui/fold';
 import { idOf } from './drafts';
@@ -285,16 +285,31 @@ function addField(ctx: ControlsContext, model: ModelInfo) {
 
 // ---------- form layout ----------
 
-/** A layout value as sections plus the record tab order: older layouts and layouts without tabs are a plain list. */
-export function layoutValue(value: LayoutValue | null | undefined): { sections: LayoutSection[]; tabs: string[]; default_tab: string | null } {
-  if (Array.isArray(value)) return { sections: value, tabs: [], default_tab: null };
-  return { sections: value?.sections ?? [], tabs: value?.tabs ?? [], default_tab: value?.default_tab ?? null };
+/** A layout value as sections plus the record tab order and what a list's side panel hides: older layouts and
+ * layouts with neither are a plain list. panel is null when the layout leaves the side panel to the app. */
+export function layoutValue(value: LayoutValue | null | undefined): { sections: LayoutSection[]; tabs: string[]; default_tab: string | null; panel: PanelHidden | null } {
+  if (Array.isArray(value)) return { sections: value, tabs: [], default_tab: null, panel: null };
+  return { sections: value?.sections ?? [], tabs: value?.tabs ?? [], default_tab: value?.default_tab ?? null, panel: value?.panel ?? null };
 }
 
-/** The value to save: a plain list unless it orders the record tabs, so layouts without tabs keep their old shape. */
-export function layoutToSave(sections: LayoutSection[], tabs: string[], default_tab: string | null): LayoutValue {
-  return tabs.length || default_tab ? { sections, tabs, default_tab } : sections;
+/** The value to save: a plain list unless it orders the record tabs or sets the side panel, so other layouts keep their old shape. */
+export function layoutToSave(sections: LayoutSection[], tabs: string[], default_tab: string | null, panel: PanelHidden | null = null): LayoutValue {
+  if (!tabs.length && !default_tab && panel === null) return sections;
+  return { sections, ...(tabs.length || default_tab ? { tabs, default_tab } : {}), ...(panel !== null ? { panel } : {}) };
 }
+
+type PanelKind = keyof PanelHidden;
+/** Whether a section, field, tab or block shows when a list opens the record in its side panel. */
+export const inPanel = (panel: PanelHidden | null, kind: PanelKind, name: string) => !(panel?.[kind] ?? []).includes(name);
+/** The panel value with one element shown or hidden; kinds left empty are dropped. */
+export function togglePanel(panel: PanelHidden | null, kind: PanelKind, name: string): PanelHidden {
+  const names = panel?.[kind] ?? [];
+  const next: PanelHidden = { ...(panel ?? {}), [kind]: names.includes(name) ? names.filter(item => item !== name) : [...names, name].sort() };
+  if (!next[kind]!.length) delete next[kind];
+  return next;
+}
+/** The record parts besides sections, fields and tabs that a side panel can leave out. */
+export const PANEL_BLOCKS: Array<[string, string]> = [['summary', 'Summary strip'], ['files', 'Files'], ['info', 'Record info']];
 
 /** The layout people see: the override (or file) with fields placed nowhere added to the last section. */
 export function layoutOf(ctx: ControlsContext, model: ModelInfo): LayoutSection[] {
@@ -371,16 +386,29 @@ function LayoutTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
   const id = idOf('layout', model.name);
   const sections = () => layoutOf(ctx, model);
   const value = () => layoutValue(ctx.drafts.value<LayoutValue>(id));
-  const save = (next: LayoutSection[]) => ctx.drafts.set(id, layoutToSave(next, value().tabs, value().default_tab));
+  const save = (next: LayoutSection[]) => {
+    // A renamed or removed section keeps its side panel choice under its new title, or drops it.
+    const panel = value().panel, before = sections();
+    const renamed = panel?.sections ? { ...panel, sections: panel.sections.map(title => {
+      const at = before.findIndex(section => section.title === title);
+      return at >= 0 && next[at] && next.length === before.length ? next[at].title : title;
+    }).filter(title => next.some(section => section.title === title)) } : panel;
+    if (renamed?.sections && !renamed.sections.length) delete renamed.sections;
+    ctx.drafts.set(id, layoutToSave(next, value().tabs, value().default_tab, renamed));
+  };
+  const panelOf = () => value().panel;
+  const setPanel = (kind: PanelKind, name: string) => ctx.drafts.set(id, layoutToSave(sections(), value().tabs, value().default_tab, togglePanel(panelOf(), kind, name)));
+  const panelToggle = (kind: PanelKind, name: string, what: string) => IconButton({ icon: 'panel-right', size: 'small',
+    tip: `Show ${what} in the side panel`, active: () => inPanel(panelOf(), kind, name), onClick: () => setPanel(kind, name) });
   const change = (fn: (draft: LayoutSection[]) => void) => { const draft = sections(); fn(draft); save(draft); };
   const label = (name: string) => effective(ctx, model.name, name).label;
-  const saveTabs = (tabs: string[], home: string | null) => ctx.drafts.set(id, layoutToSave(sections(), tabs, home));
+  const saveTabs = (tabs: string[], home: string | null) => ctx.drafts.set(id, layoutToSave(sections(), tabs, home, value().panel));
   const chip = (item: LayoutSection['fields'][number], index: number, position: number, count: number, total: number) => html`<div class="ctl-lf" class:full=${item.width === 12}
     class:off=${() => effective(ctx, model.name, item.name).hidden} data-field=${item.name} data-drag-item="field" data-drag-id=${item.name}>
     <button type="button" class="ctl-grip" data-drag-handle="field" aria-label=${`Move ${label(item.name)}`}
       aria-roledescription="draggable field" aria-describedby="ctl-drag-help">${Icon('grip-vertical', { size: 'xs' })}</button>
     <span class="grow"><strong>${() => label(item.name)}${() => effective(ctx, model.name, item.name).required ? html` <span class="ctl-req">*</span>` : null}</strong>
-      <span class="ctl-sub mono">${item.name}${() => effective(ctx, model.name, item.name).hidden ? ' · hidden' : ''}</span></span>
+      <span class="ctl-subrow"><span class="ctl-sub mono">${item.name}${() => effective(ctx, model.name, item.name).hidden ? ' · hidden' : ''}</span>${panelToggle('fields', item.name, label(item.name))}</span></span>
     <button type="button" class="ctl-wbtn" title="Width" on:click=${() => change(draft => { draft[index].fields[position].width = item.width === 12 ? 6 : 12; })}>${item.width === 12 ? 'Full' : 'Half'}</button>
     ${IconButton({ icon: 'arrow-up', tip: 'Move earlier', size: 'small', disabled: index === 0 && position === 0, onClick: () => change(draft => nudge(draft, item.name, -1)) })}
     ${IconButton({ icon: 'arrow-down', tip: 'Move later', size: 'small', disabled: index === total - 1 && position === count - 1, onClick: () => change(draft => nudge(draft, item.name, 1)) })}</div>`;
@@ -392,6 +420,7 @@ function LayoutTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
         if (!title) { toast('A section needs a title', { icon: 'info' }); input.value = section.title; return; }
         change(draft => { draft[index].title = title; });
       }}>
+      ${panelToggle('sections', section.title, `section ${section.title}`)}
       ${IconButton({ icon: 'arrow-up', tip: 'Move section up', size: 'small', disabled: index === 0, onClick: () => change(draft => { [draft[index - 1], draft[index]] = [draft[index], draft[index - 1]]; }) })}
       ${IconButton({ icon: 'arrow-down', tip: 'Move section down', size: 'small', disabled: index === all.length - 1, onClick: () => change(draft => { [draft[index + 1], draft[index]] = [draft[index], draft[index + 1]]; }) })}
       ${IconButton({ icon: 'trash-2', tip: 'Remove section', size: 'small', disabled: all.length === 1, onClick: () => {
@@ -416,7 +445,7 @@ function LayoutTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
       ${() => ctx.drafts.overridden(id) ? Button({ label: 'Reset to file', icon: 'rotate-ccw', size: 'small', variant: 'ghost', onClick: () => ctx.drafts.reset(id) }) : null}
       ${Button({ label: 'Add section', icon: 'plus', size: 'small', onClick: () => change(draft => { draft.push({ title: `Section ${draft.length + 1}`, fields: [] }); }) })}</div>
     ${when(() => ctx.drafts.errors.get().has(id), () => Callout('err', 'info', () => ctx.drafts.errors.get().get(id)))}
-    <div class="ctl-lwrap"><div class="ctl-stack"><div class="ctl-stack" data-drop-zone="section" data-zone="sections">${editor}</div>${() => TabsCard(model, value, saveTabs)}</div>
+    <div class="ctl-lwrap"><div class="ctl-stack"><div class="ctl-stack" data-drop-zone="section" data-zone="sections">${editor}</div>${() => TabsCard(model, value, saveTabs, panelToggle)}${() => PanelCard(panelToggle)}</div>
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Preview</h2><p>${`New ${model.name.toLowerCase()} form, as people will see it`}</p></div>
         <span class="ctl-badge">${() => ctx.drafts.overridden(id) ? 'Changed here' : 'From the app'}</span></div><div class="ctl-pad">${preview}</div></section></div>
   </div>` as HTMLElement;
@@ -440,7 +469,15 @@ export function tabOrder(model: ModelInfo, saved: string[]): string[] {
   return [...saved.filter(name => known.includes(name)), ...known.filter(name => !saved.includes(name))];
 }
 
-function TabsCard(model: ModelInfo, value: () => ReturnType<typeof layoutValue>, save: (tabs: string[], home: string | null) => void): HTMLElement | null {
+/** The record parts a list's side panel can leave out besides sections, fields and tabs: the summary strip and blocks. */
+function PanelCard(toggle: (kind: PanelKind, name: string, what: string) => HTMLElement): HTMLElement {
+  return html`<section class="ctl-card ctl-panel-parts"><div class="ctl-card-head"><div><h2>Side panel</h2>
+      <p>What a record shows when a list opens it in a side panel. Use the panel button on each section, field and tab, and here for the rest. The full page always shows everything, and hiding is not a permission.</p></div></div>
+    <div class="ctl-pad"><ul class="ctl-tablist ctl-partlist">${PANEL_BLOCKS.map(([name, label]) => html`<li class="ctl-partrow"><span class="grow">${label}</span>${toggle('blocks', name, label)}</li>`)}</ul></div></section>` as HTMLElement;
+}
+
+type PanelToggle = (kind: PanelKind, name: string, what: string) => HTMLElement;
+function TabsCard(model: ModelInfo, value: () => ReturnType<typeof layoutValue>, save: (tabs: string[], home: string | null) => void, toggle?: PanelToggle): HTMLElement | null {
   const known = model.tabs ?? [];
   if (!known.length) return null;
   const labelOf = (name: string) => known.find(tab => tab.name === name)?.label ?? name;
@@ -452,6 +489,7 @@ function TabsCard(model: ModelInfo, value: () => ReturnType<typeof layoutValue>,
     <div class="ctl-pad"><ol class="ctl-tablist" data-drop-zone="tab" data-zone="tabs">${order.map((name, index) => html`<li class="ctl-tabrow" data-drag-item="tab" data-drag-id=${name}>
       <button type="button" class="ctl-grip" data-drag-handle="tab" aria-label=${`Move ${labelOf(name)} tab`} aria-roledescription="draggable tab" aria-describedby="ctl-drag-help">${Icon('grip-vertical', { size: 'xs' })}</button>
       <span class="grow">${labelOf(name)}</span>${name === home ? html`<span class="ctl-badge">Opens first</span>` : null}
+      ${toggle && name !== 'details' ? toggle('tabs', name, `${labelOf(name)} tab`) : null}
       ${IconButton({ icon: 'arrow-up', tip: 'Move earlier', size: 'small', disabled: index === 0, onClick: () => save(moveBefore(order, name, order[index - 1]), current.default_tab) })}
       ${IconButton({ icon: 'arrow-down', tip: 'Move later', size: 'small', disabled: index === order.length - 1, onClick: () => save(moveBefore(order, name, order[index + 2] ?? null), current.default_tab) })}</li>`)}</ol>
       ${field('Open records on', 'ctl-tabs-home', Select({ id: 'ctl-tabs-home', label: 'Open records on', value: () => home, options: () => order.map(name => [name, labelOf(name)]),
