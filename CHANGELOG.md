@@ -47,6 +47,12 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Recent records moved from the sidebar to a history button left of search.** It lists them
   newest first with the model and when each was opened, and has a Clear action.
 
+### Fixed
+
+- **A read-only child table stays read only when opened in the row editor.** On a locked or
+  cancelled record, or without write access, a row opened from the table or its focus view showed
+  editable inputs. They are now read only, like the cells, and the rows still open to read.
+
 ## 0.3.0 (05-11-2026)
 
 This release adds rich text with images and mentions, unsaved changes that survive leaving a
