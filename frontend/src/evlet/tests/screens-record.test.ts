@@ -431,6 +431,14 @@ describe('each fact shows once on the record page', () => {
       ['GET', /\/api\/customer\/0000000000001\/related\/order\.customer/, page(orders)], ['GET', /\/api\/customer\/0000000000001\/related\/quote\.customer/, page(quotes)]];
   };
 
+  it('E4: Record info is left out while it has nothing to show', async () => {
+    const detail = copy(recorded.detail);
+    delete detail.body._audit;
+    const { host } = start([...orderRoutes().filter(route => !String(route[1]).includes('order\\/0000000000001$')), ['GET', /\/api\/order\/0000000000001$/, detail]], '/app/order/0000000000001?tab=t-lines');
+    await until(() => expect(blocks(host)).toContain('Key fields'));
+    expect(blocks(host)).not.toContain('Record info');
+  });
+
   it('E5: the Related block lists only relations with records, and goes when none has any', async () => {
     const { host } = start(customer(2, 0), '/app/customer/0000000000001');
     await until(() => expect([...host.querySelectorAll('.side-sec .rel-row .rel-nm')].map(text)).toEqual(['Orders']));

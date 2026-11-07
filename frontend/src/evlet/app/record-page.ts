@@ -791,11 +791,13 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
     info: () => {
       const revises = has('revises') ? view('revises') : null;
       const extras = () => extrasOf(ctx.api.detail(model.name, store.id!).get());
-      return SideBlock({ title: 'Record info', body: html`<dl class="fields">
+      // Left out while there is nothing to say (an older record with no times, say).
+      const audit = () => extras()._audit;
+      return when(() => Boolean(revises?.value.get() || extras().revised_by || audit()?.created_at || audit()?.modified_at), () => SideBlock({ title: 'Record info', body: html`<dl class="fields">
     ${revises ? when(() => Boolean(revises.value.get()), () => html`<dt>Revises</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(revises.value.get()) })}>${() => `${model.label} ${revises.value.get()}`}</a></dd>`) : null}
     ${when(() => Boolean(extras().revised_by), () => html`<dt>Revised by</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(extras().revised_by) })}>${() => `${model.label} ${extras().revised_by}`}</a></dd>`)}
-    ${RecordTimes(ctx, () => extras()._audit)}
-    </dl>` });
+    ${RecordTimes(ctx, audit)}
+    </dl>` }));
     },
   };
   // Meta.side_blocks picks and orders them; without it, all four in this order.
