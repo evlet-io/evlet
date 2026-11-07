@@ -1,7 +1,13 @@
 /* Controls (/controls): its own shell and pages. Tokens only; components come from ../ui/styles.css. */
 
 .ctl{display:flex;height:100%;background:var(--bg)}
-.ctl-side{width:236px;flex:none;display:flex;flex-direction:column;gap:6px;padding:14px 10px;background:var(--side-bg);border-right:1px solid var(--border);overflow-y:auto}
+/* Like the app sidebar: the head (brand, workspace) and the foot (account) stay put; only the nav list scrolls. */
+.ctl-side{width:236px;flex:none;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);border-right:1px solid var(--border);overflow:hidden}
+.ctl-side-head{flex:none;padding:14px 10px 0}
+.ctl-back{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;margin:0 0 8px;border-radius:var(--r);color:var(--fg-2);font-weight:500;border:1px solid var(--border);background:var(--surface);min-width:0}
+.ctl-back:hover{background:var(--bg-muted);color:var(--fg)}
+.ctl-back span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctl-back strong{font-weight:600;color:var(--fg)}
 .ctl-brand{display:flex;align-items:center;gap:8px;font-weight:650;font-size:15px;padding:2px 6px 8px}
 .ctl-brand small{font-weight:500;color:var(--fg-3);font-size:12px}
 .ctl-brand .ev-lockup{height:24px}
@@ -10,7 +16,7 @@
 .ctl-ws strong{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctl-ws small{font-size:11.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctl-ws-letter{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--t-amber-bg);color:var(--t-amber);font-weight:650;flex:none}
-.ctl-nav{display:flex;flex-direction:column;gap:1px;flex:1}
+.ctl-nav{display:flex;flex-direction:column;gap:1px;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:2px 10px 12px}
 .ctl-nav-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);padding:12px 8px 4px}
 .ctl-nav-item{display:flex;align-items:center;gap:9px;height:32px;padding:0 8px;border-radius:var(--r);color:var(--fg-2);font-weight:500}
 .ctl-nav-item:hover{background:var(--bg-muted);color:var(--fg)}
@@ -18,7 +24,7 @@
 .ctl-nav-item span:first-of-type{flex:1}
 .ctl-count{font-size:11.5px;color:var(--fg-3);font-weight:550}
 .ctl-count.warn{color:var(--t-amber)}
-.ctl-side-foot{display:flex;align-items:center;gap:8px;padding:10px 6px 2px;border-top:1px solid var(--divider)}
+.ctl-side-foot{flex:none;display:flex;align-items:center;gap:8px;padding:10px 16px 16px;border-top:1px solid var(--divider)}
 .ctl-side-foot>span:not(.avatar){flex:1;display:flex;flex-direction:column;min-width:0}
 .ctl-side-foot strong{font-size:13px}
 .ctl-side-foot small{font-size:11.5px;color:var(--fg-3)}
@@ -247,7 +253,9 @@
 
 @media (max-width:1100px){.ctl-split,.ctl-lwrap{grid-template-columns:1fr}.ctl-mlist{position:static;max-height:none}.ctl-grid.g4,.ctl-grid.g3{grid-template-columns:repeat(2,minmax(0,1fr))}.ctl-grid.main{grid-template-columns:1fr}}
 @media (max-width:760px){
-  .ctl-side{position:fixed;inset:0 auto 0 0;z-index:60;transform:translateX(-100%);transition:transform .2s;box-shadow:var(--shadow-lg)}
+  .ctl-side{position:fixed;inset:0 auto 0 0;z-index:60;transform:translateX(-100%);transition:transform .2s;box-shadow:var(--shadow-lg);
+    padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px)}
+  .ctl-side-foot{padding-bottom:max(16px,env(safe-area-inset-bottom,0px))}
   .ctl-side.open{transform:none}
   .ctl-scrim.show{display:block;position:fixed;inset:0;background:var(--overlay);z-index:55}
   .ctl-menu{display:grid}
@@ -311,3 +319,23 @@
 .ctl-tablist{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:6px}
 .ctl-tabrow{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg-subtle)}
 .ctl-tabrow .grow{flex:1;font-size:13px}
+
+/* Jobs: the list of jobs with All on top, and the selected job's runs (controls/system.ts). */
+.ctl-jobs{grid-template-columns:220px minmax(0,1fr)}
+.ctl-jlist{position:sticky;top:0;display:flex;flex-direction:column;gap:2px;padding:6px;max-height:calc(100vh - 120px);overflow-y:auto}
+.ctl-jitem{display:flex;flex-direction:column;align-items:stretch;gap:2px;width:100%;padding:7px 10px;border-radius:var(--r);color:var(--fg-2);text-align:left}
+.ctl-jitem:hover{background:var(--bg-muted)}
+.ctl-jitem.on{background:var(--accent-soft);color:var(--accent)}
+.ctl-jitem.on .ctl-jname{font-weight:550}
+.ctl-jname{display:flex;align-items:center;gap:8px;min-width:0}
+.ctl-jname .mono{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.ctl-jhint{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--fg-3)}
+.ctl-jdot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--tint,var(--fg-3))}
+.ctl-jdot.b-green{background:var(--t-green)}.ctl-jdot.b-rose{background:var(--t-rose)}.ctl-jdot.b-blue{background:var(--t-blue)}.ctl-jdot.b-slate{background:var(--t-slate)}
+/* Phones: the list becomes one row of chips above the runs. */
+@media (max-width:760px){
+  .ctl-jobs{grid-template-columns:1fr}
+  .ctl-jlist{position:static;flex-direction:row;overflow-x:auto;overflow-y:hidden;max-height:none;padding:4px;scrollbar-width:thin}
+  .ctl-jitem{flex:none;width:auto;max-width:200px;border:1px solid var(--border);border-radius:999px;padding:5px 12px}
+  .ctl-jitem.on{border-color:transparent}
+}

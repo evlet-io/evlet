@@ -12,7 +12,8 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 
 - Sign-in and first-run setup (the first administrator account).
 - Docs after sign-in, with its topics.
-- The shell: sidebar with the models, recent records, search palette and New menu.
+- The shell: sidebar with the models; a top bar with a history button for recent records (left of
+  search), the search palette and the New menu.
 - Generated model screens: lists, boards for models with a State, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
   files.
@@ -127,9 +128,19 @@ Docs off it starts on the first list the role can open and hides the Docs links.
 | `/app/<model>/<id>/view` | Older record link; opens the record view |
 | `/settings/<page>`, `/settings/app/<app>` | Settings ([settings.md](settings.md)); `/settings` opens the last page |
 | `/settings/accounts` | Redirects to `/controls/users` |
+| `/controls`, `/controls/<page>` | Controls ([controls.md](controls.md)), a separate page for roles that open it |
 | `/eva`, `/eva/<chat>`, `/eva/tasks` | Eva's chat and scheduled tasks ([eva.md](eva.md)). Served only when config.py turns Eva on; the page asks `/api/_eva` and shows nothing of Eva to people without it |
 | `/reports`, `/reports/<name>` | The reports this role may run, and one report's view ([reports.md](reports.md)) |
 | Registered Python page routes | Served, then open Docs |
+
+### Between the app and Controls
+
+People who may open Controls reach it from **Controls** in the account menu, or **Go to Controls**
+in the search palette. Both open it in a new tab. In Controls, **Back to <app>** sits at the top of
+the sidebar, on phones too. It is a real link, so a plain click goes back in the same tab and Cmd
+or Ctrl click opens a new one. It goes to the last app page this browser had open for the person,
+kept in localStorage (`evlet.last_app.<user>`, a same-origin path only). With none, it goes to `/`,
+which opens the person's start page. The server stores no last app page.
 
 The development-only `/ui` and `/m/<model>` paths of the earlier preview are gone.
 Signing in keeps the address the user opened. A record with unsaved changes asks
@@ -172,8 +183,13 @@ A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-f
 at rest the record shows the formatted text (read only when the record is locked), and list cells
 show its plain text. The Playground's projects have one, Brief.
 A record's Activity tab writes notes with the same editor; typing `@` mentions a person, with a
-warning when they can't open the record. The bell in the top bar is the Mentions inbox, with the
-unread count kept live by the event stream ([journal.md](journal.md#mentions)).
+warning when they can't open the record. The bell in the top bar opens the notification centre,
+with the unread count kept live by the event stream ([journal.md](journal.md#mentions)). It is a
+panel along the right edge under the top bar, grouped into Today and Earlier; a click anywhere else,
+Esc or the bell closes it. A click on an item marks it read. Go to shows only when the person can
+open the item's record, and opens it. While the panel is closed, new items slide in as popups at the
+top right for a few seconds (longer while pointed at or focused); a click on one opens the panel.
+Today the inbox holds mentions; other kinds show with a bell icon.
 
 ### Collapsible sections
 
@@ -290,9 +306,22 @@ The server still checks every Link on preview and save; the form only avoids kee
 
 ### Filters
 
-A list's Filter button (with a count of active filters) opens a panel of filter rows under the
-toolbar, as in Frappe. Each row is a field, a condition and a value, with a remove button; Add
-filter adds rows, and every row must match (AND). The field picker searches the model's fields
+The list's table has no card around it. It runs flush to the edges of the main area, as a child
+table does in focus view, and the first column keeps the page margin so it lines up with the
+toolbar. Beside a side panel and on a phone the table does the same.
+
+A list's Filter button (with a count of active filters) opens the filter side panel, docked
+beside the list inside the page, like the record side panel. There is no overlay and no
+backdrop: the list narrows and stays usable, and the panel fills the height to the bottom of the
+screen. On a phone it is a full-width sheet in the same place. The panel has two halves of about
+equal height, each scrolling on its own. The top half holds the filter rows, as in Frappe: each
+row is a field, a condition and a value on one line, with a remove button; Add filter adds rows
+with no limit, and every row must match (AND). The bottom half holds **Saved filters**: name the
+current filters and Save keeps them; choosing one applies its rows (the current one is marked);
+the trash button deletes it. Saved filters keep the rows in the same form as `?f=`, per person
+on the device (browser storage, like a report's saved views), up to 20 per list. Opening the
+panel moves focus to the first row's field, or adds a row and opens its field search; Escape
+closes the panel and returns focus to the Filter button. The field picker searches the model's fields
 and then each child table's ("Prices → Rate"), by any words of the label, and shows each field's
 type; it draws at most 100 matches at a time, so a model with hundreds of fields stays quick.
 Arrows and Enter pick a field.

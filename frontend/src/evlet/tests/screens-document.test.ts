@@ -234,10 +234,11 @@ describe('transaction document (recorded fixtures)', () => {
     expect(byText(host, '.inv-banner button', 'Void')).toBeNull();
   });
 
-  it('offers no upload on a locked record, whose files the server refuses to change', async () => {
+  it('offers no upload and no remove on a locked record, whose files the server refuses to change', async () => {
     const { host } = start(routes(invoice.invoice_issued_detail), `/app/invoice/${draft}`);
     await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf'));
     expect(host.querySelector('.ev-upload')).toBeNull();
+    expect(host.querySelector('.ev-file-remove')).toBeNull();
     expect(invoice.invoice_attachment_locked.status).toBe(409);
   });
 

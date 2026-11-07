@@ -70,6 +70,18 @@
 .ev-note{font-size:12.5px;margin:10px 2px}
 .ev-choices{display:flex;flex-wrap:wrap;gap:8px}
 .ev-list .sum{margin-top:4px}
+/* The list's table runs flush to the main area's edges, like a child table in focus view: no card border or
+   radius, rows edge to edge, and the first and last cells keep the page gutter so text lines up with the toolbar. */
+.ev-list{--ev-gut:28px}
+.ev-list.page{max-width:none}
+.ev-list-narrow{--ev-gut:18px}
+.ev-list .table-wrap,.ev-list .ev-compact{margin-inline:calc(-1 * var(--ev-gut));border-radius:0;border-inline:0}
+.ev-list .table-wrap .dt tr > :first-child:not(.w-check){padding-left:var(--ev-gut)}
+.ev-list .table-wrap .dt tr > .w-check{padding-left:max(12px,calc(var(--ev-gut) - 12px))}
+.ev-list .table-wrap .dt tr > :last-child{padding-right:var(--ev-gut)}
+.ev-list .table-wrap .dt td.dt-empty{padding:0}
+.ev-list .ev-compact .ev-crow{padding-inline:var(--ev-gut)}
+@media (max-width:760px){.ev-list{--ev-gut:max(16px,env(safe-area-inset-left,0px))}}
 
 /* ---------- reports ---------- */
 .nav-sub{padding:6px 8px 2px;font-size:11.5px;color:var(--fg-4)}
@@ -177,6 +189,36 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .slip-table-err { font-size: 12px; color: var(--t-rose); }
 .slip .ev-error { grid-column: 1 / -1; }
 
+/* ---------- the filter side panel, docked beside the list ---------- */
+/* No overlay and no backdrop: the list narrows and scrolls on its own; the panel fills the height. */
+.ev-list-row{display:flex;height:100%;min-height:0;min-width:0;position:relative}
+.ev-list-row > .ev-list{flex:1 1 auto;min-width:0;overflow:auto;margin:0}
+.ev-filter-dock{flex:none;width:min(560px,48%);min-width:400px;min-height:0;display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--bg)}
+.ev-filter-dock:empty{display:none}
+.fb-dock{flex:1;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) minmax(0,1fr);outline:none}
+.fb-dock-head{display:flex;align-items:center;gap:8px;padding:12px 16px 10px;border-bottom:1px solid var(--divider)}
+.fb-dock-head h2{margin:0;font-size:14px;font-weight:600}
+.fb-dock-head .grow{flex:1}
+.fb-dock .fb.fb-top{margin:0;border:0;border-radius:0;background:transparent;padding:12px 16px;overflow:auto;min-height:0}
+.fb-dock .fb-row{grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr) minmax(0,1.3fr) 28px}
+.fb-saved{min-height:0;overflow:auto;border-top:1px solid var(--border);background:var(--bg-subtle);padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.fb-saved h3{margin:0;font-size:12.5px;font-weight:600;color:var(--fg-3)}
+.fb-save{display:flex;gap:8px}
+.fb-save .input{flex:1;min-width:0;height:32px;font-size:13px;background:var(--surface)}
+.fb-saved-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.fb-saved-list:empty{display:none}
+.fb-saved-item{display:flex;align-items:center;gap:4px}
+.fb-apply{flex:1;min-width:0;display:flex;align-items:center;height:32px;padding:0 10px;border:0;border-radius:var(--r);background:transparent;color:var(--fg);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.fb-apply .tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fb-apply:hover{background:var(--surface)}
+.fb-apply:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.fb-apply[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:550}
+/* On a phone the panel is a full-width sheet in the same place, still without a backdrop. */
+@media (max-width:760px){
+  .ev-filter-dock{position:absolute;inset:0;width:auto;min-width:0;border-left:0;z-index:5}
+  .fb-dock .fb-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 28px}
+}
+
 /* ---------- a list with a record in its side panel ---------- */
 .ev-list-split{position:absolute;inset:0}
 .ev-list-narrow.page{padding:18px 18px 32px}
@@ -204,15 +246,53 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-time-toggle{background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left;border-radius:4px}
 .ev-time-toggle:hover time{text-decoration:underline dotted;text-underline-offset:3px}
 
-/* The inbox (mentions) in the top bar. */
+/* Recent records in the top bar: a history button left of search and its list. */
+.rec-pop{width:340px;max-width:calc(100vw - 24px);padding:0}
+.rec-h{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--divider)}
+.rec-list{padding:4px;max-height:min(60vh,420px);overflow:auto}
+.rec-item{display:flex;align-items:center;gap:9px;width:100%;padding:7px 8px;border-radius:var(--r-sm);color:var(--fg);text-decoration:none;min-width:0}
+.rec-item:hover,.rec-item:focus-visible{background:var(--bg-muted)}
+.rec-text{flex:1;min-width:0;display:flex;flex-direction:column}
+.rec-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.rec-model{font-size:12px;color:var(--fg-3)}
+.rec-at{flex:none;font-size:12px;color:var(--fg-3);white-space:nowrap}
+.rec-empty{padding:16px 12px;margin:0}
+
+/* The notification centre: the bell and its count in the top bar, a panel along the right edge under
+   the top bar (the top bar stays usable), and popups for new items at the top right. */
 .inbox-btn{position:relative}
 .inbox-count{position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--t-rose);color:var(--on-tint, var(--accent-fg));
   font-size:10.5px;font-weight:600;line-height:16px;text-align:center}
-.inbox-pop{width:340px;max-width:calc(100vw - 24px)}
-.inbox-h{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--divider)}
-.inbox-list{list-style:none;margin:0;padding:4px;max-height:60vh;overflow:auto}
-.inbox-item a,.inbox-plain{display:grid;grid-template-columns:20px 1fr;gap:2px 8px;width:100%;padding:8px;border-radius:var(--r-sm);color:var(--fg);text-decoration:none;text-align:left;background:none;border:0}
-.inbox-item a:hover,.inbox-plain:hover{background:var(--bg-muted)}
-.inbox-item.unread .inbox-text{font-weight:600}
-.inbox-at{grid-column:2;font-size:12px}
-.inbox-empty{padding:16px 12px;margin:0}
+.ntf-scrim{position:fixed;inset:var(--topbar-h) 0 0 0;background:var(--overlay);opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
+.ntf-scrim.on{opacity:.5;pointer-events:auto}
+.ntf-panel{position:fixed;top:var(--topbar-h);right:0;bottom:0;width:min(400px,100vw);z-index:51;display:flex;flex-direction:column;background:var(--surface);
+  border-left:1px solid var(--border);box-shadow:var(--shadow-lg);transform:translateX(100%);transition:transform .22s cubic-bezier(.2,.8,.2,1);outline:none;
+  padding-bottom:env(safe-area-inset-bottom,0px);padding-right:env(safe-area-inset-right,0px)}
+.ntf-panel.on{transform:none}
+.ntf-h{display:flex;align-items:center;gap:8px;padding:12px 12px 12px 16px;border-bottom:1px solid var(--divider)}
+.ntf-h h2{flex:1;margin:0;font-size:15px;font-weight:600}
+.ntf-scroll{flex:1;overflow:auto;padding:4px 0 12px}
+.ntf-gh{margin:0;padding:12px 16px 4px;font-size:11.5px;font-weight:600;color:var(--fg-3);text-transform:uppercase;letter-spacing:.04em}
+.ntf-list{list-style:none;margin:0;padding:0 8px}
+.ntf-item{position:relative;display:flex;align-items:center;gap:6px;margin:4px 0;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface)}
+.ntf-item:hover{border-color:var(--border-strong)}
+.ntf-item.unread::before{content:"";position:absolute;left:5px;top:18px;width:6px;height:6px;border-radius:3px;background:var(--accent)}
+.ntf-main{flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px;padding:10px 6px 10px 14px;border:0;background:none;text-align:left;color:var(--fg);border-radius:var(--r-lg)}
+.ntf-main:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.ntf-ic{flex:none;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--t-blue-bg);color:var(--t-blue)}
+.ntf-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ntf-text{font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.ntf-item.unread .ntf-text{font-weight:600}
+.ntf-at{font-size:12px;color:var(--fg-3)}
+.ntf-go{flex:none;margin-right:8px;gap:4px;text-decoration:none}
+.ntf-empty{padding:24px 16px;margin:0}
+.ntf-pops{position:fixed;top:calc(var(--topbar-h) + 10px);right:calc(16px + env(safe-area-inset-right,0px));width:min(360px,calc(100vw - 24px));z-index:66;
+  display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.ntf-pop{pointer-events:auto;display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  box-shadow:var(--shadow-lg);animation:ntf-in .26s cubic-bezier(.2,.8,.2,1)}
+.ntf-pop.out{animation:ntf-out .2s ease forwards}
+.ntf-pop-acts{display:flex;align-items:center;gap:2px;padding-right:6px}
+.ntf-pop .ntf-go{margin-right:0}
+@keyframes ntf-in{from{transform:translateX(calc(100% + 24px))}to{transform:none}}
+@keyframes ntf-out{to{opacity:0;transform:translateX(30%)}}
+@media (prefers-reduced-motion:reduce){.ntf-panel,.ntf-scrim{transition:none}.ntf-pop,.ntf-pop.out{animation:none}}

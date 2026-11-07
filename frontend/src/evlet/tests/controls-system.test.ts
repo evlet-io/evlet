@@ -26,8 +26,10 @@ const overrides = { version: 2, problems: [], items: [
   { kind: 'setting', key: 'security.password_min', file: 15, value: null, changed_by: null, changed_at: null },
 ] };
 const jobs = (failed = true) => ({ available: true,
-  schedules: [{ name: 'nightly', task: 'cleanup', every: 86400, expression: null, timezone: null, next_run: 1790000000, active: false, paused: true, app: 'notes' }],
-  jobs: [{ id: 7, task: 'cleanup', actor: null, model: null, record_id: null, state: failed ? 'failed' : 'queued', attempts: failed ? 3 : 0, run_at: 1790000000, error: failed ? 'NotFoundError' : null },
+  schedules: [{ name: 'nightly', task: 'cleanup', every: 86400, expression: null, timezone: null, next_run: 1790000000, active: false, paused: true, app: 'notes' },
+    { name: 'weekly', task: 'export', every: 604800, expression: null, timezone: null, next_run: 1790000000, active: true, paused: false, app: 'notes' }],
+  jobs: [{ id: 9, task: 'send_mail', actor: 1, model: null, record_id: null, state: 'running', attempts: 1, run_at: 1790000100, error: null },
+    { id: 7, task: 'cleanup', actor: null, model: null, record_id: null, state: failed ? 'failed' : 'queued', attempts: failed ? 3 : 0, run_at: 1790000000, error: failed ? 'NotFoundError' : null },
     { id: 6, task: 'cleanup', actor: null, model: null, record_id: null, state: 'succeeded', attempts: 1, run_at: 1789990000, error: null }] });
 const audit = (before?: string) => ({ areas: ['Jobs', 'Security'], next: before ? null : 9,
   items: before ? [{ id: 8, at: 1789000000, actor: 'owner', area: 'Security', target: 'security.lockout', detail: 'Changed' }]
@@ -153,6 +155,110 @@ describe('Controls system pages', () => {
     await until(() => expect(lastToast()).toBe('Job #7 queued again'));
     expect(requests(sent, 'POST', /jobs\/7\/retry$/)).toHaveLength(1);
     await until(() => expect(byText(host, 'tr', /#7/)!.querySelector('button')).toBeNull());
+  });
+
+  describe('Jobs as a list of jobs and their runs', () => {
+    const tabs = (host: HTMLElement) => [...host.querySelectorAll<HTMLElement>('.ctl-jlist [role="tab"]')];
+    const selectedTab = (host: HTMLElement) => host.querySelector<HTMLElement>('.ctl-jlist [aria-selected="true"]');
+    const runIds = (host: HTMLElement) => [...host.querySelectorAll('#ctl-job-runs tr[data-run]')].map(row => row.getAttribute('data-run'));
+    const loaded = (host: HTMLElement) => until(() => expect(tabs(host).length).toBe(4));
+
+    it('lists All first, then every job with a count and its latest run, and opens on All', async () => {
+      const { host } = open('/controls/jobs');
+      await loaded(host);
+      expect(tabs(host).map(tab => tab.dataset.job)).toEqual(['all', 'cleanup', 'export', 'send_mail']);
+      expect(text(selectedTab(host))).toMatch(/^All 3/);
+      expect(host.querySelector('[role="tablist"]')!.getAttribute('aria-orientation')).toBe('vertical');
+      expect(tabs(host).map(tab => tab.tabIndex)).toEqual([0, -1, -1, -1]);
+      expect(text(tabs(host)[1])).toMatch(/cleanup 2 Failed/);
+      expect(tabs(host)[1].querySelector('.ctl-jdot')!.className).toContain('b-rose');
+      expect(text(tabs(host)[2])).toContain('No runs yet');
+      // All shows every run, newest first, with the job as a column, and every schedule.
+      expect(runIds(host)).toEqual(['9', '7', '6']);
+      expect(text(byText(host, '#ctl-job-runs th', 'Job'))).toBe('Job');
+      expect(text(byText(host, '#ctl-job-runs tr', /#9/))).toContain('send_mail');
+      expect(byText(host, 'tr', /weekly/)).toBeTruthy();
+      expect(window.location.search).toBe('');
+    });
+
+    it('filters the runs and schedules to the selected job and keeps it in the URL', async () => {
+      const { host } = open('/controls/jobs');
+      await loaded(host);
+      click(tabs(host)[1]);
+      await until(() => expect(runIds(host)).toEqual(['7', '6']));
+      expect(window.location.search).toBe('?job=cleanup');
+      expect(byText(host, '#ctl-job-runs th', 'Job')).toBeNull();
+      expect(byText(host, 'tr', /weekly/)).toBeNull();
+      expect(byText(host, 'tr', /nightly/)).toBeTruthy();
+      expect(host.querySelector('#ctl-job-runs')!.getAttribute('aria-labelledby')).toBe('ctl-job-cleanup');
+      click(tabs(host)[0]);
+      await until(() => expect(runIds(host)).toEqual(['9', '7', '6']));
+      expect(window.location.search).toBe('');
+    });
+
+    it('opens the job named in the URL, and All for one it does not know', async () => {
+      const first = open('/controls/jobs?job=send_mail');
+      await loaded(first.host);
+      expect(selectedTab(first.host)!.dataset.job).toBe('send_mail');
+      expect(runIds(first.host)).toEqual(['9']);
+      // A job with no schedule shows no schedule table.
+      expect(byText(first.host, 'h2', 'Schedules')).toBeNull();
+      running.splice(0).forEach(stop => stop()); stopAll(); document.body.innerHTML = '';
+      const second = open('/controls/jobs?job=gone');
+      await loaded(second.host);
+      expect(selectedTab(second.host)!.dataset.job).toBe('all');
+    });
+
+    it('moves through the list with the arrow keys, Home and End', async () => {
+      const { host } = open('/controls/jobs');
+      await loaded(host);
+      const list = host.querySelector('[role="tablist"]')!;
+      const key = (name: string) => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+      tabs(host)[0].focus();
+      key('ArrowDown');
+      await until(() => expect(selectedTab(host)!.dataset.job).toBe('cleanup'));
+      await until(() => expect(document.activeElement).toBe(tabs(host)[1]));
+      expect(window.location.search).toBe('?job=cleanup');
+      key('End');
+      await until(() => expect(document.activeElement).toBe(tabs(host)[3]));
+      key('ArrowDown');
+      await until(() => expect(selectedTab(host)!.dataset.job).toBe('send_mail'));
+      key('ArrowUp');
+      await until(() => expect(document.activeElement).toBe(tabs(host)[2]));
+      expect(text(host.querySelector('#ctl-job-runs .ctl-empty'))).toBe('No runs yet.');
+      key('Home');
+      await until(() => expect(selectedTab(host)!.dataset.job).toBe('all'));
+      expect(tabs(host).map(tab => tab.tabIndex)).toEqual([0, -1, -1, -1]);
+      expect(list.contains(document.activeElement)).toBe(true);
+    });
+
+    it('shows each run as a coloured status chip, the error of a failed run and the exact time on hover', async () => {
+      const { host } = open('/controls/jobs');
+      await loaded(host);
+      const row = (id: number) => byText(host, '#ctl-job-runs tr', new RegExp(`#${id}`))!;
+      expect(row(9).querySelector('.pill')!.className).toContain('b-blue');
+      expect(text(row(9).querySelector('.pill'))).toBe('Running');
+      expect(row(7).querySelector('.pill')!.className).toContain('b-rose');
+      expect(text(row(7))).toContain('NotFoundError');
+      expect(text(row(6).querySelector('.pill'))).toBe('Done');
+      expect(row(6).querySelector('.pill')!.className).toContain('b-green');
+      const time = row(6).querySelector('time')!;
+      expect(time.getAttribute('datetime')).toBe(new Date(1789990000 * 1000).toISOString());
+      expect(time.getAttribute('aria-label')).toMatch(/\d{2}-\d{2}-\d{4} \d{2}:\d{2}/);
+    });
+
+    it('turns the list into one row of chips above the runs on a phone', async () => {
+      const node = (globalThis as any).process;
+      const css: string = node.getBuiltinModule('node:fs').readFileSync(`${node.cwd()}/src/evlet/controls/controls.css`, 'utf8');
+      const phone = css.slice(css.indexOf('@media (max-width:760px){', css.indexOf('/* Jobs:')));
+      expect(phone).toMatch(/\.ctl-jobs\{grid-template-columns:1fr\}/);
+      expect(phone).toMatch(/\.ctl-jlist\{[^}]*flex-direction:row;overflow-x:auto/);
+      const { host } = open('/controls/jobs');
+      await loaded(host);
+      // One list serves both layouts, so the keyboard and the URL work the same on a phone.
+      expect(host.querySelectorAll('[role="tablist"]')).toHaveLength(1);
+      expect(host.querySelector('.ctl-jobs > .ctl-jlist + #ctl-job-runs')).toBeTruthy();
+    });
   });
 
   it('lists overrides with the file value, resets through the change bar and exports code', async () => {
