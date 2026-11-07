@@ -1303,6 +1303,3 @@ th:hover>.rz::after{background:var(--border-strong)}
 .rel-all{display:block;margin:4px 8px 0;padding:4px 0;font-size:12px;font-weight:550;color:var(--accent);background:none;border:0;cursor:pointer;border-radius:6px}
 .rel-all:hover{text-decoration:underline}
 .rel-all:focus-visible{outline:none;box-shadow:0 0 0 2px var(--accent-ring)}
-.rel-none{margin:8px 8px 0;font-size:12px;line-height:1.5;color:var(--fg-3)}
-.rel-none a{color:var(--fg-3);text-decoration:underline}
-.rel-none a:hover{color:var(--fg)}

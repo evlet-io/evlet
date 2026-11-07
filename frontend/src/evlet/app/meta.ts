@@ -145,11 +145,16 @@ export function sections(model: ScreenModel): Array<{ label: string; fields: Fie
   return result.filter(section => section.fields.length);
 }
 
-/** Summary strip stats: key fields first, else calculated fields, at most four. */
-export function summaryFields(model: ScreenModel): FieldSchema[] {
-  const keyed = (model.key_fields ?? []).map(name => fieldOf(model, name)).filter((field): field is FieldSchema => Boolean(field));
-  if (keyed.length) return keyed.slice(0, 4);
-  return model.fields.filter(field => field.compute && !field.hidden).slice(0, 4);
+/** The record header's facts: the first three key fields that the title, name, State and status badge don't already show. */
+export function headerFacts(model: ScreenModel, has: (name: string) => boolean = () => true): FieldSchema[] {
+  return keyFields(model).filter(meta => meta.name !== model.title_field && meta.name !== 'name' && has(meta.name) && !isStateField(model, meta) && meta.name !== model.status).slice(0, 3);
+}
+
+/** Summary strip stats: calculated values the header doesn't show, at most four. Key fields belong to the
+ * header; per-record measures follow these on the page. Meta.summary = False leaves the strip out. */
+export function summaryFields(model: ScreenModel, shown: ReadonlySet<string> = new Set(headerFacts(model).map(meta => meta.name))): FieldSchema[] {
+  if (model.summary === false) return [];
+  return model.fields.filter(field => field.compute && !field.hidden && !shown.has(field.name) && field.type !== 'longtext' && field.type !== 'richtext').slice(0, 4);
 }
 
 // ---------- values ----------

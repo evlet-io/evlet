@@ -6,7 +6,24 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Added
+
+- **`Meta.summary` and `Meta.side_blocks`.** `summary = False` leaves the record page's summary
+  strip out. `side_blocks = ('related', 'files')` picks and orders the side blocks, from
+  `key_fields`, `related`, `files` and `info`. Both are checked when the registry is built and go
+  into the UI schema only when a model sets them.
+- **More > Copy record ID** on the record page.
+
 ### Changed
+
+- **The record page shows each fact once.** Key fields show in the header facts and no longer in
+  the summary strip, which now holds calculated values and per-record measures the header doesn't
+  show (no strip when nothing is left). The Key fields side block shows only while a tab other
+  than Details is open. A saved record's Details form leaves out the title, name and State that the
+  header shows; the title is edited in the header. A new record's form keeps them.
+- **The Related side block lists only relations with records** and is left out when none has any.
+  The Related tab still lists every relation.
+- **Record info no longer shows the record id.** Use More > Copy record ID.
 
 - **Related counts use the model's words.** In the side block, a relation named after its model
   is announced as "Payments, 1 payment" by screen readers; other relations still say "records".
