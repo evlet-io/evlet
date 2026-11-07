@@ -1,0 +1,1542 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>
+<title>Evlet Workflow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: Evlet AppShell. Light sidebar, fixed top bar, view host on a soft canvas. Single light theme, same as Evlet UI. */
+:root{
+  --ink:#20243b;--ink-2:#404861;--muted:#68738d;--muted-2:#8c93a7;--line:#e8eaf1;--line-2:#dce1eb;
+  --canvas:#f5f6fa;--side:#f5f7fa;--card:#ffffff;--soft:#fbfbfd;
+  --accent:#3466c8;--accent-dark:#2855ae;--accent-soft:#edf3ff;--accent-soft-2:#e4edfc;
+  --green:#16846b;--green-soft:#e7f5f0;--orange:#bd7a2f;--orange-soft:#fff2e6;--red:#c4414e;--red-soft:#fcedef;
+  --violet:#7457c9;--violet-soft:#f1edfc;--teal:#1b8aa0;--teal-soft:#e6f4f7;
+  --radius:12px;--shadow:0 8px 30px #1a204008;
+  --font:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+html,body{height:100%}
+body{margin:0;overflow:hidden}
+#app{height:100%}
+.shell{height:100%;min-height:0}
+.host{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+body{background:var(--canvas);color:var(--ink);font-family:var(--font);font-size:13.5px;-webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01"}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+input,select,textarea{font:inherit;color:inherit}
+a{color:var(--accent);text-decoration:none}
+.num,td.n{font-variant-numeric:tabular-nums}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.ic{width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ic.sm{width:15px;height:15px}.ic.xs{width:13px;height:13px}
+
+/* shell */
+.shell{display:grid;grid-template-columns:232px minmax(0,1fr);height:100%}
+.side{background:var(--side);box-shadow:inset -1px 0 #e0e5ee;display:flex;flex-direction:column;height:100%;min-height:0;padding:24px 12px 14px}
+.brand{display:flex;align-items:center;gap:10px;padding:0 10px 22px;color:#28344b;font-size:23px;font-weight:700;letter-spacing:-1px}
+.brand-mark{position:relative;width:30px;height:30px;border-radius:9px;background:var(--accent);display:grid;place-items:center;color:#fff}
+.brand-mark:after{content:"";position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:#73b779;border:2px solid var(--side)}
+.brand small{font-size:11px;font-weight:600;letter-spacing:0;color:var(--muted);margin-top:6px}
+.ws{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:#fff;border:1px solid #dfe5ee;border-radius:10px;padding:10px;margin-bottom:20px}
+.ws-letter{width:30px;height:30px;border-radius:8px;background:#f2b168;color:#53391f;display:grid;place-items:center;font-weight:700;font-size:13px;flex-shrink:0}
+.ws strong{display:block;font-size:13px;font-weight:600;color:#334058}
+.ws small{display:block;font-size:11px;color:#758096;margin-top:2px}
+.nav{overflow:auto;flex:1;min-height:0;margin:0 -4px;padding:0 4px}
+.nav-label{font-size:10px;font-weight:650;letter-spacing:1.5px;text-transform:uppercase;color:#778296;margin:16px 12px 8px}
+.nav-label:first-child{margin-top:0}
+.nav-item{position:relative;display:flex;align-items:center;gap:11px;width:100%;padding:9px 12px;margin-bottom:2px;border-radius:8px;color:#536178;font-size:13.5px;font-weight:500;text-align:left}
+.nav-item:hover{background:#eaf0f7;color:#2c4268}
+.nav-item.on{background:var(--accent-soft-2);color:#2d59ae}
+.nav-item.on:before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:4px;background:var(--accent)}
+.nav-item .count{margin-left:auto;min-width:20px;text-align:center;font-size:10.5px;line-height:18px;border-radius:5px;background:#d5e3fa;color:#325ca8;font-weight:600}
+.nav-item .count.warn{background:#fde6c9;color:#9a5d17}
+.side-foot{display:flex;align-items:center;gap:10px;padding:14px 8px 0;border-top:1px solid #e3e8ef;margin-top:10px}
+.avatar{width:32px;height:32px;border-radius:50%;background:#f3e3cf;color:#6a4a25;font-size:10.5px;font-weight:700;display:grid;place-items:center;flex-shrink:0;border:2px solid #fff}
+.side-foot strong{display:block;font-size:13px;font-weight:600}
+.side-foot small{font-size:11px;color:var(--muted)}
+.side-foot .back{margin-left:auto;color:var(--muted);padding:6px;border-radius:6px}
+.side-foot .back:hover{background:#eaf0f7;color:var(--accent)}
+
+.main{display:flex;flex-direction:column;min-width:0;height:100%;min-height:0}
+.topbar{height:58px;flex-shrink:0;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;padding:0 28px}
+.menu-btn{display:none;color:var(--muted);padding:6px;border-radius:6px}
+.crumbs{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px;min-width:0}
+.crumbs span:last-child{color:var(--ink-2)}
+.crumbs .sep{color:#c3c8d6}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.gsearch{display:flex;align-items:center;gap:8px;color:#8f96a9;font-size:12.5px;padding:6px 8px;border-radius:8px}
+.gsearch:hover{background:var(--canvas)}
+.kbd{font-size:10.5px;border:1px solid var(--line-2);border-radius:5px;padding:1px 5px;color:#8a91a5;background:#fff}
+.env{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:4px 8px;border-radius:6px;background:var(--green-soft);color:var(--green)}
+.env:before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+.lockpill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--muted);padding:4px 8px;border-radius:6px;background:var(--canvas);border:1px solid var(--line)}
+.host{flex:1;min-height:0;overflow:auto;position:relative}
+.page{padding:28px 32px 120px;max-width:1280px}
+.page.wide{max-width:none}
+
+/* heading */
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+.head h1{margin:0;font-size:28px;font-weight:700;letter-spacing:-.6px;display:flex;align-items:center;gap:12px;text-wrap:balance}
+.head p{margin:8px 0 0;color:var(--muted);font-size:13.5px;max-width:68ch;line-height:1.5}
+.head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;border-radius:5px;padding:3px 7px;font-size:11px;font-weight:600;background:var(--accent-soft);color:#4b78d9;letter-spacing:0}
+.badge:before{content:"";width:4px;height:4px;border-radius:50%;background:currentColor}
+.badge.nodot:before{display:none}
+.badge.green{background:var(--green-soft);color:var(--green)}
+.badge.orange{background:var(--orange-soft);color:var(--orange)}
+.badge.red{background:var(--red-soft);color:var(--red)}
+.badge.grey{background:#eef0f5;color:#6f778c}
+.badge.violet{background:var(--violet-soft);color:var(--violet)}
+.badge.teal{background:var(--teal-soft);color:var(--teal)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:36px;padding:0 14px;border-radius:8px;font-size:13px;font-weight:600;white-space:nowrap;border:1px solid var(--line-2);background:#fff;color:var(--ink-2);transition:background .15s,box-shadow .15s,border-color .15s}
+.btn:hover{background:#f7f8fb;border-color:#cfd5e2}
+.btn.primary{background:var(--accent);border-color:transparent;color:#fff;box-shadow:0 3px 7px #3466c81b}
+.btn.primary:hover{background:var(--accent-dark);box-shadow:0 4px 12px #3466c82c}
+.btn.danger{color:var(--red);border-color:#f0cfd3}
+.btn.danger:hover{background:var(--red-soft)}
+.btn.danger.solid{background:var(--red);color:#fff;border-color:transparent}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.btn.ghost:hover{background:#f0f2f7;color:var(--ink-2)}
+.btn.sm{height:30px;padding:0 10px;font-size:12.5px;border-radius:7px}
+.btn.xs{height:26px;padding:0 8px;font-size:12px;border-radius:6px;gap:5px}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.linkbtn{color:var(--accent);font-weight:600;font-size:12.5px;display:inline-flex;align-items:center;gap:5px}
+.linkbtn:hover{color:var(--accent-dark)}
+.iconbtn{width:30px;height:30px;border-radius:7px;display:inline-grid;place-items:center;color:var(--muted)}
+.iconbtn:hover{background:#f0f2f7;color:var(--ink)}
+
+/* cards */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card-pad{padding:20px 22px}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.card-head h2,.card h2{margin:0;font-size:15px;font-weight:650;letter-spacing:-.2px}
+.card-head p{margin:3px 0 0;font-size:12.5px;color:var(--muted)}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.g-main{grid-template-columns:minmax(0,1fr) 340px}
+.stack{display:flex;flex-direction:column;gap:16px}
+
+.tile{position:relative;padding:18px 20px;display:flex;flex-direction:column;gap:6px;text-align:left}
+.tile.hero{background:var(--accent);border-color:transparent;color:#fff}
+.tile .t-label{font-size:12.5px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.tile.hero .t-label{color:#dfe8ff}
+.tile .t-val{font-size:28px;font-weight:700;letter-spacing:-.8px;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:8px}
+.tile .t-val small{font-size:11.5px;font-weight:500;color:var(--muted);letter-spacing:0}
+.tile.hero .t-val small{color:#dfe8ff}
+button.tile:hover{border-color:#cdd6ea}
+button.tile.hero:hover{background:var(--accent-dark)}
+
+/* tabs */
+.tabs{display:flex;gap:24px;border-bottom:1px solid var(--line);margin-bottom:18px;overflow-x:auto;scrollbar-width:none}
+.tab{height:40px;display:flex;align-items:center;gap:6px;color:#7c8297;font-size:13.5px;font-weight:500;border-bottom:2px solid transparent;white-space:nowrap;margin-bottom:-1px}
+.tab:hover{color:var(--ink-2)}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.tab .tc{font-size:10.5px;color:#8c92a4;background:#e9ebf2;border-radius:4px;padding:0 5px;line-height:16px}
+.tab.on .tc{background:var(--accent-soft);color:var(--accent)}
+.seg{display:inline-flex;background:#eef0f5;border-radius:9px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg button{height:30px;padding:0 12px;border-radius:7px;font-size:12.5px;font-weight:550;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px #1a20401a}
+.seg button .rdot{width:6px;height:6px;border-radius:50%}
+
+/* toolbar + inputs */
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.search{display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border:1px solid var(--line-2);border-radius:8px;background:#fff;min-width:220px;color:#9aa1b3}
+.search input{border:0;outline:0;background:transparent;color:var(--ink);font-size:13px;width:100%}
+.search:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.inp,.sel,.ta{height:36px;width:100%;border:1px solid var(--line-2);border-radius:7px;background:#fff;padding:0 10px;font-size:13px;color:var(--ink-2);outline:0}
+.ta{height:auto;padding:8px 10px;resize:vertical;min-height:72px;line-height:1.5}
+.inp.mono,.ta.mono{font-family:var(--mono);font-size:12px}
+.inp:focus,.sel:focus,.ta:focus{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.inp[disabled],.sel[disabled]{background:#f6f7fa;color:#9aa1b3}
+.inp.changed,.sel.changed{border-color:#9db5ea;background:#f8faff}
+.sel{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238c93a7' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:30px}
+.sel.auto{width:auto}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field>label,.field>.lbl{font-size:12px;font-weight:550;color:#697188;display:flex;align-items:center;gap:6px}
+.field .hint{font-size:11.5px;color:var(--muted-2);line-height:1.45}
+.field .err{font-size:11.5px;color:var(--red)}
+.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px}
+.form .full{grid-column:1/-1}
+.addon{display:flex;border:1px solid var(--line-2);border-radius:7px;overflow:hidden;background:#fff}
+.addon span{background:#f5f7fa;color:#748096;font-size:12px;padding:0 10px;display:flex;align-items:center;border-right:1px solid #e3e7ee;white-space:nowrap}
+.addon span.r{border-right:0;border-left:1px solid #e3e7ee}
+.addon .inp{border:0;border-radius:0}
+.addon:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+
+/* toggle + check */
+.tg{position:relative;width:34px;height:20px;border-radius:20px;background:#d5dae5;transition:background .15s;flex-shrink:0}
+.tg:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px #1a204033;transition:transform .15s}
+.tg.on{background:var(--accent)}
+.tg.on:after{transform:translateX(14px)}
+.tg[disabled]{opacity:.45;cursor:not-allowed}
+.ck{width:18px;height:18px;border-radius:5px;border:1.5px solid #c9cfdc;background:#fff;display:inline-grid;place-items:center;color:#fff;transition:background .12s,border-color .12s;flex-shrink:0}
+.ck.on{background:var(--accent);border-color:var(--accent)}
+.ck.mixed{background:var(--accent-soft);border-color:#9db5ea;color:var(--accent)}
+.ck[disabled]{opacity:.45;cursor:not-allowed}
+.ck.ov{box-shadow:0 0 0 3px #f6c58d55}
+.ck .ic{width:12px;height:12px;stroke-width:3}
+
+/* tables */
+.tcard{background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);overflow:hidden}
+.tscroll{overflow-x:auto}
+table.t{width:100%;border-collapse:collapse;font-size:13px}
+.t th{text-align:left;font-weight:500;font-size:12px;color:var(--muted);padding:11px 14px;border-bottom:1px solid var(--line);white-space:nowrap;background:#fff}
+.t td{padding:12px 14px;border-bottom:1px solid #eff1f6;vertical-align:middle}
+.t tr:last-child td{border-bottom:0}
+.t tbody tr.click{cursor:pointer}
+.t tbody tr.click:hover td{background:#fafbfe}
+.t tr.group td{background:#f8f9fc;font-size:11px;font-weight:650;letter-spacing:1.2px;text-transform:uppercase;color:#778296;padding:8px 14px}
+.t td.c,.t th.c{text-align:center}
+.t td.r,.t th.r{text-align:right}
+.t .strong{font-weight:600;color:var(--ink)}
+.t .sub{display:block;font-size:11.5px;color:var(--muted);margin-top:2px;font-weight:400}
+.tfoot{border-top:1px solid var(--line);background:var(--soft);display:flex;align-items:center;justify-content:space-between;padding:0 14px;height:42px;font-size:11.5px;color:#7f879d}
+.mono{font-family:var(--mono);font-size:12px}
+code.c{font-family:var(--mono);font-size:11.5px;background:#f2f4f8;border:1px solid #e8ebf2;border-radius:5px;padding:1px 5px;color:#4a5370;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:550;border-radius:6px;padding:3px 8px;background:#f0f2f7;color:#535c74;white-space:nowrap}
+.chip.on{background:var(--accent-soft);color:var(--accent)}
+button.chip:hover{background:#e6e9f1}
+button.chip.on:hover{background:#dfe9fd}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.muted{color:var(--muted)}
+.sm-txt{font-size:12px}
+.row{display:flex;align-items:center;gap:10px}
+.spacer{flex:1}
+.lock{display:inline-flex;color:#9aa1b3}
+.src{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.src i{width:7px;height:7px;border-radius:2px;display:inline-block}
+.src.file i{background:#c3cad9}.src.app i{background:#8aa7e3}.src.ov i{background:#e9a24f}
+.dotk{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+
+/* list rows */
+.list-row{display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid #eff1f6;text-align:left;width:100%}
+.list-row:last-child{border-bottom:0}
+button.list-row:hover{background:#fafbfe}
+.lr-icon{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;flex-shrink:0}
+.lr-body{min-width:0;flex:1}
+.lr-body strong{display:block;font-size:13.5px;font-weight:600}
+.lr-body span{display:block;font-size:12px;color:var(--muted);margin-top:2px;line-height:1.4}
+.tone-blue{background:var(--accent-soft);color:var(--accent)}
+.tone-green{background:var(--green-soft);color:var(--green)}
+.tone-orange{background:var(--orange-soft);color:var(--orange)}
+.tone-red{background:var(--red-soft);color:var(--red)}
+.tone-violet{background:var(--violet-soft);color:var(--violet)}
+.tone-teal{background:var(--teal-soft);color:var(--teal)}
+.tone-grey{background:#eef0f5;color:#6f778c}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:10px 16px;font-size:13px;margin:0}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;text-align:right;font-weight:550;min-width:0;overflow-wrap:anywhere}
+
+/* perm matrix */
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);align-items:center}
+.pm td{padding:10px 14px}
+.pm .opcell{width:76px;text-align:center}
+.pm tr.locked td{color:#9aa1b3}
+.pm tr.ovrow td:first-child{box-shadow:inset 3px 0 #e9a24f}
+.cellbtn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2);padding:4px 8px;border-radius:6px;margin:-4px -8px;text-align:left}
+.cellbtn:hover{background:#eef2fb;color:var(--accent)}
+.cellbtn.dim{color:var(--muted)}
+
+/* split */
+.split{display:grid;grid-template-columns:270px minmax(0,1fr);gap:16px;align-items:start}
+.mlist{position:sticky;top:0}
+.mlist .group{font-size:10.5px;font-weight:650;letter-spacing:1.4px;text-transform:uppercase;color:#778296;padding:14px 16px 6px}
+.mitem{display:flex;align-items:center;gap:10px;width:100%;padding:9px 16px;text-align:left;font-size:13px;color:var(--ink-2)}
+.mitem:hover{background:#f6f8fc}
+.mitem.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.mitem .n{margin-left:auto;font-size:11px;color:var(--muted-2);font-variant-numeric:tabular-nums}
+.mitem .ovdot{width:6px;height:6px;border-radius:50%;background:#e9a24f}
+
+/* code */
+pre.code{margin:0;background:#fbfbfd;border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-family:var(--mono);font-size:12px;line-height:1.7;color:#3d4560;overflow:auto;max-height:520px}
+pre.code .k{color:#7457c9}pre.code .s{color:#16846b}pre.code .cm{color:#a0a7b8;font-style:italic}pre.code .ov{background:#fff3e2;display:inline-block;width:100%;border-radius:3px}pre.code .f{color:#3466c8}
+
+/* overlays */
+.scrim{position:fixed;inset:0;background:#1c21463d;backdrop-filter:blur(2px);z-index:50;animation:fade .15s ease}
+@keyframes fade{from{opacity:0}}
+@keyframes slide{from{transform:translateX(24px);opacity:0}}
+@keyframes pop{from{transform:translateY(8px) scale(.98);opacity:0}}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100vw);background:#fff;z-index:51;display:flex;flex-direction:column;box-shadow:-20px 0 60px #171c3f22;animation:slide .18s ease;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);padding-right:env(safe-area-inset-right,0px)}
+.drawer.wide{width:min(720px,100vw)}
+.d-head{padding:20px 24px 16px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:12px}
+.d-head h2{margin:0;font-size:18px;font-weight:650;letter-spacing:-.4px}
+.d-head p{margin:4px 0 0;color:var(--muted);font-size:12.5px}
+.d-body{flex:1;overflow:auto;padding:20px 24px;display:flex;flex-direction:column;gap:18px}
+.d-foot{border-top:1px solid var(--line);padding:14px 24px;display:flex;gap:8px;justify-content:flex-end;background:var(--soft)}
+.d-section h3{margin:0 0 10px;font-size:12px;font-weight:650;letter-spacing:1.2px;text-transform:uppercase;color:#778296}
+.dialog{position:fixed;left:50%;top:12vh;transform:translateX(-50%);width:min(500px,calc(100vw - 32px));max-height:76vh;background:#fff;border:1px solid #e5e4ef;border-radius:15px;z-index:52;display:flex;flex-direction:column;box-shadow:0 30px 120px #171c3f30;animation:pop .16s ease}
+.dialog.wide{width:min(720px,calc(100vw - 32px))}
+.dialog .d-body{padding:18px 24px}
+.dialog .d-foot{border-radius:0 0 15px 15px}
+.palette{top:14vh;width:min(560px,calc(100vw - 32px))}
+.pal-in{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);color:var(--muted)}
+.pal-in input{border:0;outline:0;font-size:15px;width:100%;color:var(--ink)}
+.pal-list{overflow:auto;padding:6px;flex:1;min-height:0}
+.pal-item{display:flex;align-items:center;gap:12px;width:100%;padding:9px 12px;border-radius:8px;text-align:left;font-size:13.5px}
+.pal-item small{margin-left:auto;color:var(--muted-2);font-size:11.5px}
+.pal-item.on{background:var(--accent-soft);color:var(--accent)}
+.pal-group{font-size:10.5px;font-weight:650;letter-spacing:1.3px;text-transform:uppercase;color:#8a91a5;padding:10px 12px 4px}
+
+.changebar{position:sticky;bottom:16px;margin:0 32px;z-index:20;display:flex;align-items:center;gap:12px;background:#20243b;color:#fff;border-radius:12px;padding:10px 10px 10px 18px;box-shadow:0 14px 40px #171c3f40;animation:pop .2s ease;max-width:1216px;flex-wrap:wrap}
+.changebar .cb-dot{width:8px;height:8px;border-radius:50%;background:#f0a64b}
+.changebar strong{font-weight:600;font-size:13px}
+.changebar span.m{color:#b8bdd0;font-size:12.5px}
+.changebar .btn{height:32px;border-color:#3b4160;background:transparent;color:#e6e8f0}
+.changebar .btn:hover{background:#2c3150}
+.changebar .btn.primary{background:#fff;color:var(--ink);border-color:#fff}
+.changebar .btn.primary:hover{background:#eef1f8}
+.toasts{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{background:#fff;border:1px solid var(--line);box-shadow:0 12px 30px #171c3f22;border-radius:10px;padding:10px 14px;font-size:13px;display:flex;align-items:center;gap:10px;animation:pop .18s ease;pointer-events:auto}
+.toast .ic{color:var(--green)}
+.toast.err .ic{color:var(--red)}
+
+.callout{display:flex;gap:12px;padding:12px 14px;border-radius:10px;font-size:12.5px;line-height:1.5;align-items:flex-start}
+.callout.info{background:#f3f7ff;color:#3e5482;border:1px solid #dde7fb}
+.callout.warn{background:#fff8ef;color:#7c5419;border:1px solid #f6e0c1}
+.callout.err{background:#fdf2f3;color:#8a2f39;border:1px solid #f6d7db}
+.callout .ic{margin-top:1px}
+.empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:13px}
+.spark{display:block;width:100%;height:56px}
+.diff-from{color:#9aa1b3;text-decoration:line-through}
+.diff-to{color:var(--ink);font-weight:600}
+.setrow{display:flex;align-items:flex-start;gap:16px;padding:16px 20px;border-bottom:1px solid #eff1f6}
+.setrow:last-child{border-bottom:0}
+.setrow .sr-body{flex:1;min-width:0}
+.setrow .sr-body strong{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600}
+.setrow .sr-body p{margin:3px 0 0;font-size:12.5px;color:var(--muted);line-height:1.45;max-width:62ch}
+.setrow .sr-ctl{flex-shrink:0;display:flex;align-items:center;gap:10px;min-width:0}
+.ovtag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:650;color:#a6651d;background:#fff1df;border-radius:4px;padding:1px 6px;letter-spacing:.2px}
+.conn{padding:18px;display:flex;flex-direction:column;gap:12px}
+.conn-top{display:flex;align-items:flex-start;gap:12px}
+.conn-logo{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-weight:700;font-size:13px;flex-shrink:0}
+.conn h3{margin:0;font-size:14px;font-weight:650}
+.conn p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5;flex:1}
+.conn-foot{display:flex;align-items:center;gap:8px;padding-top:12px;border-top:1px solid #eff1f6}
+.attn{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid #eff1f6;width:100%;text-align:left}
+.attn:last-child{border-bottom:0}
+.attn:hover{background:#fafbfe}
+.audit-item{display:flex;gap:14px;padding:14px 20px;border-bottom:1px solid #eff1f6}
+.audit-item:last-child{border-bottom:0}
+.audit-item .when{width:118px;flex-shrink:0;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;padding-top:1px}
+.audit-item .what{flex:1;min-width:0;font-size:13px;line-height:1.5}
+.audit-item .what .detail{display:block;font-size:12px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.secret{display:flex;align-items:center;gap:8px;background:#f6f7fa;border:1px dashed #cfd5e2;border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* responsive */
+@media (max-width:1100px){.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g-main{grid-template-columns:minmax(0,1fr)}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:900px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .side{position:fixed;inset:0 auto 0 0;width:260px;z-index:55;transform:translateX(-100%);transition:transform .2s;padding-top:calc(24px + env(safe-area-inset-top,0px));padding-left:max(12px,env(safe-area-inset-left,0px))}
+  .side.open{transform:none;box-shadow:20px 0 60px #171c3f30}
+  .menu-btn{display:inline-grid}
+  .topbar{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .page{padding:22px max(16px,env(safe-area-inset-right,0px)) 120px max(16px,env(safe-area-inset-left,0px))}
+  .split{grid-template-columns:minmax(0,1fr)}
+  .mlist{position:static}
+  .changebar{margin:0 16px}
+  .gsearch span.lbl,.lockpill{display:none}
+}
+@media (max-width:640px){
+  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}
+  .form{grid-template-columns:minmax(0,1fr)}
+  .head h1{font-size:24px}
+  .search{min-width:0;flex:1}
+  .setrow{flex-direction:column;gap:10px}
+  .audit-item{flex-direction:column;gap:4px}
+  .audit-item .when{width:auto}
+  .crumbs .hide-sm{display:none}
+}
+/* ---------- workflow prototype ---------- */
+.scrim{backdrop-filter:none!important;background:#1c214626}
+.jbar{background:#fff;border-bottom:1px solid var(--line);padding:12px 28px 12px;display:flex;flex-direction:column;gap:10px}
+.jbar-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.jbar-title{font-size:11px;font-weight:650;letter-spacing:1.3px;text-transform:uppercase;color:#778296}
+.jchips{display:flex;gap:6px;flex-wrap:wrap}
+.jchip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--line-2);font-size:12.5px;font-weight:550;color:var(--ink-2);background:#fff}
+.jchip:hover{border-color:#cfd5e2;background:#f7f8fb}
+.jchip.on{background:var(--accent-soft);border-color:#c9d8f6;color:var(--accent)}
+.jchip .jn{width:18px;height:18px;border-radius:5px;background:#eef0f5;color:#6f778c;font-size:11px;font-weight:650;display:grid;place-items:center}
+.jchip.on .jn{background:var(--accent);color:#fff}
+.jchip.done .jn{background:var(--green);color:#fff}
+.asme{display:flex;align-items:center;gap:8px;margin-left:auto}
+.asme label{font-size:12px;color:var(--muted);font-weight:550}
+.asme .sel{height:32px;min-width:230px}
+.jsteps{display:flex;gap:8px;flex-wrap:wrap;margin:0;padding:0;list-style:none}
+.jstep{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--ink-2);background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:7px 10px;max-width:420px;line-height:1.45}
+.jstep.cur{border-color:#c9d8f6;background:#f6f9ff}
+.jstep.ok{color:var(--muted)}
+.jstep .sn{width:18px;height:18px;border-radius:50%;border:1.5px solid #c9cfdc;display:grid;place-items:center;font-size:10.5px;font-weight:650;flex-shrink:0;margin-top:1px;color:#6f778c}
+.jstep.cur .sn{border-color:var(--accent);color:var(--accent)}
+.jstep.ok .sn{background:var(--green);border-color:var(--green);color:#fff}
+.jstep .linkbtn{font-size:12px}
+
+.rec-head{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.rec-head h1{margin:0;font-size:24px;font-weight:700;letter-spacing:-.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rec-sub{margin:6px 0 0;color:var(--ink-2);font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rec-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:relative}
+.stagebadge{display:inline-flex;align-items:center;gap:6px;border-radius:6px;padding:3px 8px;font-size:11.5px;font-weight:600;background:var(--violet-soft);color:var(--violet)}
+.stagebadge .ic{width:13px;height:13px}
+.stagebadge.ok{background:var(--green-soft);color:var(--green)}
+.stagebadge.bad{background:var(--red-soft);color:var(--red)}
+.stagebadge.wait{background:var(--orange-soft);color:var(--orange)}
+.stagebadge.none{background:#eef0f5;color:#6f778c}
+.lcbadge{display:inline-flex;align-items:center;gap:5px;border-radius:6px;padding:3px 8px;font-size:11.5px;font-weight:600;border:1px solid var(--line-2);color:var(--ink-2);background:#fff}
+.lcbadge.conf{border-color:#bfe3d6;color:var(--green)}
+.menu{position:absolute;top:42px;right:0;z-index:30;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 14px 40px #171c3f26;min-width:250px;padding:6px}
+.menu-item{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;padding:8px 10px;border-radius:7px;font-size:13px}
+.menu-item:hover,.menu-item:focus-visible{background:#f3f6fc}
+.menu-item small{display:block;color:var(--muted);font-size:11.5px;margin-top:1px}
+.menu-item.danger{color:var(--red)}
+.menu-label{font-size:10.5px;font-weight:650;letter-spacing:1.2px;text-transform:uppercase;color:#8a91a5;padding:6px 10px 4px}
+.ro-field{min-height:36px;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid #edf0f5;border-radius:7px;background:#f8f9fb;color:var(--ink-2);font-size:13px}
+.ro-field .lock{margin-left:auto}
+.lines td.n,.lines th.n{text-align:right;font-variant-numeric:tabular-nums}
+.lines .inp{height:32px}
+.totals{display:grid;grid-template-columns:auto auto;gap:6px 24px;justify-content:end;padding:14px 20px;font-size:13px;border-top:1px solid var(--line)}
+.totals dt{color:var(--muted)}.totals dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:550}
+.totals .grand{font-weight:700;font-size:14px;color:var(--ink)}
+
+.wf-panel .card-head{padding:14px 18px}
+.wf-sec{padding:14px 18px;border-bottom:1px solid #eff1f6}
+.wf-sec:last-child{border-bottom:0}
+.wf-sec h3{margin:0 0 10px;font-size:11px;font-weight:650;letter-spacing:1.2px;text-transform:uppercase;color:#778296;display:flex;align-items:center;gap:8px}
+.tl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.tl li{display:flex;gap:10px;position:relative;padding-bottom:12px}
+.tl li:last-child{padding-bottom:0}
+.tl li:not(:last-child):before{content:"";position:absolute;left:9px;top:22px;bottom:2px;width:2px;background:#e8ebf2}
+.tl .dot{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;background:#fff;border:2px solid #d5dae5;color:#fff;position:relative;z-index:1}
+.tl .dot .ic{width:11px;height:11px;stroke-width:3}
+.tl li.done .dot{background:var(--green);border-color:var(--green)}
+.tl li.cur .dot{border-color:var(--violet);background:var(--violet-soft)}
+.tl li.cur .dot:after{content:"";width:8px;height:8px;border-radius:50%;background:var(--violet)}
+.tl li.bad .dot{background:var(--red);border-color:var(--red)}
+.tl li.future .dot{border-style:dashed}
+.tl .tl-body{flex:1;min-width:0;font-size:13px;line-height:1.45}
+.tl .tl-body strong{font-weight:600}
+.tl .tl-body .sub{display:block;color:var(--muted);font-size:12px}
+.tl li.future .tl-body{color:var(--muted)}
+.cond-tag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:650;color:#7c5419;background:#fff3df;border-radius:4px;padding:1px 6px;margin-left:4px}
+.rv{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px dashed #eceff5;font-size:12.5px}
+.rv:first-child{border-top:0}
+.rv .avatar{width:26px;height:26px;font-size:9.5px}
+.rv-body{flex:1;min-width:0}
+.rv-body strong{display:block;font-weight:600;font-size:12.5px}
+.rv-body span{color:var(--muted);font-size:11.5px}
+.st{font-size:11px;font-weight:600;border-radius:5px;padding:2px 7px;white-space:nowrap}
+.st.wait{background:var(--orange-soft);color:var(--orange)}
+.st.ok{background:var(--green-soft);color:var(--green)}
+.st.no{background:var(--red-soft);color:var(--red)}
+.st.skip{background:#eef0f5;color:#6f778c}
+.st.you{background:var(--accent-soft);color:var(--accent)}
+.act-item{display:flex;gap:10px;padding:12px 18px;border-bottom:1px solid #eff1f6}
+.act-item:last-child{border-bottom:0}
+.act-item .avatar{width:28px;height:28px;font-size:10px}
+.act-body{flex:1;min-width:0;font-size:13px;line-height:1.5}
+.act-body .when{display:block;color:var(--muted);font-size:11.5px}
+.fb{margin:6px 0 2px;padding:8px 10px;border-left:3px solid #d5dcef;background:#f8f9fc;border-radius:0 7px 7px 0;font-size:12.5px;color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere}
+.fb.req{border-left-color:#e9a24f}
+.att-tag{display:inline-block;font-size:10.5px;font-weight:600;color:#6f778c;background:#eef0f5;border-radius:4px;padding:0 5px;margin-left:4px}
+.att-tag.old{text-decoration:line-through}
+
+/* editor */
+.ed-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+.ed-grid.docked{grid-template-columns:minmax(0,1fr) 380px}
+.dock{position:sticky;top:12px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);display:flex;flex-direction:column;max-height:calc(100vh - 200px);min-height:0}
+.dock-head{display:flex;align-items:center;gap:8px;padding:12px 14px 0}
+.dock-head h2{margin:0;font-size:14px;font-weight:650}
+.dock .tabs{margin:8px 14px 0;gap:16px}
+.dock-body{overflow:auto;padding:14px;display:flex;flex-direction:column;gap:14px;min-height:0}
+.wf-headcard{padding:18px 20px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 16px}
+.wf-headcard .wide{grid-column:span 2}
+.scard{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);transition:border-color .12s}
+.scard.open{border-color:#c9d8f6;box-shadow:0 8px 30px #3466c812}
+.scard.err{border-color:#f0c9cf}
+.s-sum{display:flex;align-items:center;gap:6px 12px;width:100%;text-align:left;padding:14px 16px;flex-wrap:wrap}
+.s-sum:hover{background:#fafbfe;border-radius:12px}
+.s-num{width:26px;height:26px;border-radius:8px;background:#eef0f5;color:#6f778c;font-size:12px;font-weight:650;display:grid;place-items:center;flex-shrink:0}
+.scard.open .s-num{background:var(--accent);color:#fff}
+.s-main{flex:1;min-width:0}
+.s-main strong{font-size:14px;font-weight:650;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.s-facts{display:flex;gap:6px 16px;flex-wrap:wrap;margin-top:4px;font-size:12px;color:var(--muted)}
+.s-facts span{display:inline-flex;align-items:center;gap:5px}
+.s-facts .ic{width:13px;height:13px}
+.s-next{order:3;flex-basis:100%;padding-left:38px;font-size:12px;color:var(--ink-2);display:flex;align-items:flex-start;gap:5px;line-height:1.45}
+.s-next .ic{margin-top:1px}
+.s-body{border-top:1px solid var(--line);padding:16px;display:flex;flex-direction:column;gap:18px}
+.s-sec h4{margin:0 0 8px;font-size:12px;font-weight:650;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+.s-sec h4 small{font-weight:500;color:var(--muted)}
+.s-foot{display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid #eff1f6;padding-top:12px}
+.etable{width:100%;border-collapse:collapse;font-size:12.5px}
+.etable th{text-align:left;font-weight:550;font-size:11.5px;color:var(--muted);padding:0 8px 6px;white-space:nowrap}
+.etable td{padding:4px 8px;vertical-align:top;border-top:1px solid #f1f3f7}
+.etable .inp,.etable .sel{height:32px;font-size:12.5px}
+.etable td.tools{width:1%;white-space:nowrap}
+.etable tr.sub td{border-top:0;padding-top:0}
+.etable-wrap{border:1px solid var(--line);border-radius:10px;padding:8px 6px 6px;background:var(--soft)}
+.routebox{margin:4px 0 6px;border:1px dashed #cfd8ea;border-radius:9px;padding:8px 10px;background:#fbfcff;display:flex;flex-direction:column;gap:6px}
+.routerow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px}
+.routecase{display:flex;flex-direction:column;gap:6px;padding-bottom:8px;border-bottom:1px dashed #e3e8f2}
+.routerow .lead{font-weight:600;color:var(--ink-2);min-width:64px}
+.cgroup{border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:#fff;display:flex;flex-direction:column;gap:6px}
+.cgroup .cgroup{background:#fafbfd}
+.cg-head{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.cg-head .seg button{height:24px;font-size:12px;padding:0 9px}
+.crow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.4fr) auto;gap:6px;align-items:center}
+.crow .inp,.crow .sel{height:32px;font-size:12.5px}
+.crow .addon{height:32px}
+.crow .addon .inp{height:30px}
+.c-actions{display:flex;gap:6px;flex-wrap:wrap}
+.always{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.optrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12.5px}
+.optrow .lbl{color:var(--muted);font-weight:550;min-width:150px}
+.radio-list{display:flex;flex-direction:column;gap:6px}
+.radio{display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer}
+.radio input{margin:3px 0 0}
+.radio small{display:block;color:var(--muted);font-size:11.5px}
+.access-matrix td,.access-matrix th{padding:6px 8px;font-size:12px}
+.access-matrix td.c{text-align:center}
+.yes{color:var(--green);font-weight:600}.no{color:#9aa1b3}
+.issues{display:flex;flex-direction:column;gap:6px}
+.issue{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:#8a2f39}
+.issue button{color:inherit;text-decoration:underline;text-underline-offset:2px;text-align:left}
+.pv{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;counter-reset:pv}
+.pv>li{border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:12.5px;line-height:1.5;background:#fff}
+.pv>li.skip{background:var(--soft);color:var(--muted)}
+.pv>li.blocked{border-color:#f0c9cf;background:#fdf6f7;color:#8a2f39}
+.pv strong{font-size:13px}
+.pv .pvsub{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:3px}
+.pv .pvsub li{display:flex;gap:6px;align-items:flex-start}
+.pv .k{color:var(--muted)}
+.chg{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.chg li{display:flex;gap:8px;align-items:flex-start;line-height:1.45}
+.chg .ic{margin-top:2px}
+.jsonbox{max-height:none}
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.dirty-note{font-size:12px;color:var(--orange);display:inline-flex;align-items:center;gap:6px}
+.ibx td{vertical-align:top}
+
+@media (max-width:1180px){.ed-grid.docked{grid-template-columns:minmax(0,1fr)}.dock{position:static;max-height:none;order:-1}.wf-headcard{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:900px){.jbar{padding:12px 16px}.asme{margin-left:0;width:100%}.asme .sel{flex:1;min-width:0}}
+@media (max-width:720px){
+  .wf-headcard{grid-template-columns:minmax(0,1fr)}.wf-headcard .wide{grid-column:auto}
+  .stack-sm thead{display:none}
+  .stack-sm,.stack-sm tbody,.stack-sm tr,.stack-sm td{display:block;width:100%}
+  .stack-sm tr{border:1px solid var(--line);border-radius:9px;background:#fff;padding:8px 10px;margin-bottom:8px}
+  .stack-sm tr.sub{border:0;background:transparent;padding:0;margin-top:-6px}
+  .stack-sm td{border:0;padding:4px 0}
+  .stack-sm td[data-label]:before{content:attr(data-label);display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:3px}
+  .stack-sm td.tools{width:auto;display:flex;gap:6px;justify-content:flex-end}
+  .etable-wrap{padding:6px;background:transparent;border:0}
+  .crow{grid-template-columns:minmax(0,1fr);border-bottom:1px dashed #e8ebf2;padding-bottom:8px}
+  .crow>*:before{content:attr(data-label);display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:3px}
+  .crow>.tools:before{display:none}
+  
+  .rec-actions{margin-left:0;width:100%}
+  .rec-actions .btn.primary{flex:1}
+  .menu{left:0;right:auto}
+  .optrow .lbl{min-width:0;width:100%}
+}
+</style>
+<div id="app"></div><div class="toasts" id="toasts" aria-live="polite"></div><div id="sr" class="visually-hidden" role="status" aria-live="polite"></div>
+<script>
+"use strict";
+/* Evlet workflow prototype. Phase 1 of docs/internal/workflow.md.
+   Static, self-contained, no network. The workflow definitions below use the neutral JSON
+   shape proposed in docs/internal/workflow-contract.md, and the small evaluator here only
+   imitates the backend so the journeys can be clicked through. Nothing is saved. */
+const IC={
+users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+user:'<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+shield:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+lock:'<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+history:'<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+right:'<path d="m9 18 6-6-6-6"/>',down:'<path d="m6 9 6 6 6-6"/>',up:'<path d="m18 15-6-6-6 6"/>',
+plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',check:'<path d="M20 6 9 17l-5-5"/>',
+arrow:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+copy:'<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+alert:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+undo:'<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>',
+code:'<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
+menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+sliders:'<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+send:'<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+play:'<polygon points="6 3 20 12 6 21 6 3"/>',
+inbox:'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+cart:'<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>',
+receipt:'<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>',
+flow:'<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+split:'<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/>',
+pen:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+filter:'<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
+refresh:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+msg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+};
+const ic=(n,c='')=>`<svg class="ic ${c}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]||''}</svg>`;
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const clone=o=>JSON.parse(JSON.stringify(o));
+const nid=p=>p+'_'+Math.random().toString(36).slice(2,8);
+
+/* ---------- exact money (fils as BigInt), dates and time in GST ---------- */
+const toF=s=>{if(s==null)return null;s=String(s).replace(/,/g,'').trim();if(!/^-?\d+(\.\d{1,2})?$/.test(s))return null;const neg=s[0]==='-';if(neg)s=s.slice(1);const [a,b='']=s.split('.');const v=BigInt(a)*100n+BigInt((b+'00').slice(0,2));return neg?-v:v};
+const fromF=f=>{const neg=f<0n;if(neg)f=-f;return (neg?'-':'')+(f/100n).toString()+'.'+(f%100n).toString().padStart(2,'0')};
+const grp=t=>{const [a,b]=t.split('.');return a.replace(/\B(?=(\d{3})+(?!\d))/g,',')+'.'+b};
+const money=v=>{const f=typeof v==='bigint'?v:toF(v);return f==null?'Not set':'AED '+grp(fromF(f))};
+const vatOf=sub=>(sub*5n+50n)/100n; /* 5% VAT, half up to the fils */
+const isoToDmy=s=>s?s.split('-').reverse().join('-'):'';
+const dmyToIso=s=>{const m=/^(\d{2})-(\d{2})-(\d{4})$/.exec(String(s||'').trim());return m?`${m[3]}-${m[2]}-${m[1]}`:null};
+let CLOCK=9*60+2;
+const stamp=()=>{CLOCK+=3;return `07-11-2026, ${String(Math.floor(CLOCK/60)).padStart(2,'0')}:${String(CLOCK%60).padStart(2,'0')}`};
+const due=h=>{const t=CLOCK+h*60;const d=7+Math.floor(t/1440),m=t%1440;return `${String(d).padStart(2,'0')}-11-2026, ${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`};
+
+/* ---------- people (fictional) and their single role ---------- */
+const PEOPLE={
+ sara:{name:'Sara Khan',title:'Purchasing officer',role:'purchasing',dept:'operations',manager:'omar',update:true,confirm:true},
+ omar:{name:'Omar Haddad',title:'Operations manager',role:'manager',dept:'operations',update:false},
+ priya:{name:'Priya Nair',title:'IT approver',role:'it_approver',dept:'it',update:false},
+ daniel:{name:'Daniel Reyes',title:'Operations approver',role:'ops_approver',dept:'operations',update:false},
+ mariam:{name:'Mariam Saleh',title:'Finance approver',role:'finance_approver',dept:'finance',update:false},
+ arjun:{name:'Arjun Rao',title:'Procurement approver',role:'procurement_approver',dept:'operations',update:false},
+ layla:{name:'Layla Hassan',title:'Director',role:'director',dept:'operations',update:false},
+ hamid:{name:'Hamid Qureshi',title:'Administrator',role:'admin',dept:'it',update:true,confirm:true},
+};
+const ROLES={purchasing:'Purchasing',manager:'Department manager',it_approver:'IT approver',ops_approver:'Operations approver',finance_approver:'Finance approver',procurement_approver:'Procurement approver',director:'Director',admin:'Admin'};
+const initials=id=>PEOPLE[id].name.split(' ').map(x=>x[0]).join('');
+const pname=id=>PEOPLE[id]?PEOPLE[id].name:id;
+const SUPPLIERS={sup_hbr:{label:'Harbour Technology LLC',risk:'low'},sup_plm:{label:'Palm Facilities Services LLC',risk:'medium'},sup_blw:{label:'Bluewave Networks LLC',risk:'high'}};
+
+/* ---------- facts a workflow may read: declared in Python, sent as neutral schema ---------- */
+const FACTS={
+ purchaseorder:{
+  total:{label:'Total',type:'money',source:'field'},
+  subtotal:{label:'Subtotal',type:'money',source:'field'},
+  purchase_type:{label:'Purchase type',type:'enum',source:'field',choices:{equipment:'Equipment',services:'Services',other:'Other'}},
+  department:{label:'Department',type:'enum',source:'field',choices:{it:'IT',operations:'Operations',finance:'Finance'}},
+  required_by:{label:'Required by',type:'date',source:'field'},
+  supplier:{label:'Supplier',type:'link',source:'field',choices:Object.fromEntries(Object.entries(SUPPLIERS).map(([k,v])=>[k,v.label]))},
+  'lines.count':{label:'Number of lines',type:'number',source:'rows'},
+  'requester':{label:'Requester',type:'user',source:'requester'},
+  'requester.department':{label:"Requester's department",type:'enum',source:'requester',choices:{it:'IT',operations:'Operations',finance:'Finance'}},
+  'fact.supplier_risk':{label:'Supplier risk rating',type:'enum',source:'lookup',choices:{low:'Low',medium:'Medium',high:'High'}},
+ },
+ expenseclaim:{
+  total:{label:'Total',type:'money',source:'field'},
+  'requester':{label:'Requester',type:'user',source:'requester'},
+ }
+};
+const OPS={
+ money:[['eq','is'],['ne','is not'],['gt','is above'],['gte','is at least'],['lt','is below'],['lte','is at most'],['between','is between'],['isnull','is empty']],
+ number:[['eq','is'],['gt','is above'],['gte','is at least'],['lt','is below'],['lte','is at most']],
+ enum:[['eq','is'],['ne','is not'],['in','is one of'],['nin','is not one of'],['isnull','is empty']],
+ link:[['eq','is'],['ne','is not'],['in','is one of'],['isnull','is empty']],
+ user:[['eq','is'],['ne','is not'],['in','is one of']],
+ date:[['eq','is on'],['lt','is before'],['gt','is after'],['between','is between'],['isnull','is empty']],
+};
+const opLabel=(type,op)=>(OPS[type].find(o=>o[0]===op)||[op,op])[1];
+const ASSIGN_OPTS=[
+ {v:'requester',label:'Requester',a:{kind:'requester'}},
+ {v:'fact:requester.manager',label:"Requester's manager",a:{kind:'fact',fact:'requester.manager'}},
+ ...Object.keys(ROLES).filter(r=>r!=='admin'&&r!=='purchasing').map(r=>({v:'role:'+r,label:ROLES[r]+' role',a:{kind:'role',role:r}})),
+ {v:'user:layla',label:'Layla Hassan (person)',a:{kind:'user',user:'layla'}},
+];
+const assignKey=a=>!a?'':a.kind==='requester'?'requester':a.kind==='fact'?'fact:'+a.fact:a.kind==='role'?'role:'+a.role:a.kind==='user'?'user:'+a.user:'';
+const assignLabel=a=>{if(!a)return 'Nobody assigned';const o=ASSIGN_OPTS.find(o=>o.v===assignKey(a));return o?o.label:'Unknown'};
+
+/* ---------- workflow definitions (neutral JSON, contract section 2) ---------- */
+const FB=(mode,prompt)=>({mode,label:'Feedback',prompt:prompt||'',max_length:2000});
+const ST=id=>({kind:'stage',stage:id});
+const C=(field,op,value)=>({id:nid('cnd'),field,op,value});
+const G=(match,items)=>({id:nid('cnd'),match,items});
+function reviewActions(p,next){return [
+ {id:'act_'+p+'apprv',label:'Approve',kind:'approve',who:{kind:'assigned'},when:null,go_to:next?ST(next):null,feedback:FB('optional'),execute:null},
+ {id:'act_'+p+'chgrq',label:'Request changes',kind:'request_changes',who:{kind:'assigned'},when:null,go_to:next?ST('stg_draft1'):null,feedback:FB('required','What should the requester change?'),execute:null},
+ {id:'act_'+p+'rejct',label:'Reject',kind:'reject',who:{kind:'assigned'},when:null,go_to:next?ST('stg_rejct1'):null,feedback:FB('required','Why is this rejected?'),execute:null}];}
+const EDIT_DRAFT={who:'requester',fields:{mode:'all',names:[]},tables:{lines:{edit:true,add:true,remove:true,reorder:true}},attachments:{add:true,remove:true}};
+const EDIT_NONE={who:'nobody',fields:{mode:'all',names:[]},tables:{lines:{edit:false,add:false,remove:false,reorder:false}},attachments:{add:false,remove:false}};
+const SETTINGS=()=>({completion:{mode:'enable'},self_approval:'block',withdraw:{allowed:true},delegation:{allowed:true},invalidation:{mode:'any_change',harmless:['remarks']},deadlines:{unit:'elapsed_hours'},notifications:{on_assign:true,on_decision:true,reminder_hours:24},paused:false});
+
+function poDefinition(threshold,withProcurement){
+ const items=[
+  {id:'rev_techn1',label:'Technical',assign:{kind:'role',role:'it_approver'},when:G('all',[C('purchase_type','eq','equipment')]),required:{kind:'any'}},
+  {id:'rev_opern1',label:'Operations',assign:{kind:'role',role:'ops_approver'},when:G('all',[C('purchase_type','eq','services')]),required:{kind:'any'}},
+  {id:'rev_finan1',label:'Finance',assign:{kind:'role',role:'finance_approver'},when:null,required:{kind:'any'}}];
+ if(withProcurement)items.push({id:'rev_procu1',label:'Procurement',assign:{kind:'role',role:'procurement_approver'},when:null,required:{kind:'any'}});
+ return {
+  schema:'evlet.workflow/1',id:'wfl_po0001',version:3,name:'Purchase order approval',model:'purchaseorder',
+  protects:{kind:'lifecycle',operation:'confirm'},applies_when:null,start:'stg_draft1',settings:SETTINGS(),notes:'',
+  stages:[
+   {id:'stg_draft1',label:'Draft',kind:'work',assign:{kind:'requester'},require:null,deadline:null,edit:clone(EDIT_DRAFT),reviews:null,
+    actions:[{id:'act_submit',label:'Send for review',kind:'submit',who:{kind:'requester'},when:null,go_to:ST('stg_mngr01'),feedback:FB('hidden'),execute:null}]},
+   {id:'stg_mngr01',label:'Manager Review',kind:'review',assign:{kind:'fact',fact:'requester.manager'},require:null,deadline:{hours:24},edit:clone(EDIT_NONE),reviews:null,actions:reviewActions('m','stg_deprt1')},
+   {id:'stg_deprt1',label:'Department Review',kind:'review',assign:null,deadline:{hours:48},edit:clone(EDIT_NONE),
+    require:{when:G('all',[C('purchase_type','in',['equipment','services'])]),message:'Purchase type must be Equipment or Services. Change it in Draft or ask an administrator to add a review for this type.'},
+    reviews:{run:'together',complete:{kind:'all',count:null},rejection:'veto',when_none:'block',
+     on_complete:{kind:'first_match',rows:[{id:'rte_dirc01',when:G('all',[C('total','gt',threshold)]),stage:'stg_drctr1'}],otherwise:'stg_apprv1'},
+     on_reject:ST('stg_rejct1'),on_changes:ST('stg_draft1'),items},
+    actions:reviewActions('d',null)},
+   {id:'stg_drctr1',label:'Director Review',kind:'review',assign:{kind:'role',role:'director'},require:null,deadline:{hours:48},edit:clone(EDIT_NONE),reviews:null,actions:reviewActions('r','stg_apprv1')},
+   {id:'stg_apprv1',label:'Approved',kind:'end',outcome:'approved',assign:null,require:null,deadline:null,edit:clone(EDIT_NONE),reviews:null,actions:[]},
+   {id:'stg_rejct1',label:'Rejected',kind:'end',outcome:'rejected',assign:null,require:null,deadline:null,edit:clone(EDIT_NONE),reviews:null,actions:[]},
+  ]};
+}
+const WF_EXPENSE={schema:'evlet.workflow/1',id:'wfl_exp001',version:1,name:'Expense claim approval',model:'expenseclaim',
+ protects:{kind:'lifecycle',operation:'confirm'},applies_when:null,start:'stg_draft1',settings:SETTINGS(),notes:'',
+ stages:[
+  {id:'stg_draft1',label:'Draft',kind:'work',assign:{kind:'requester'},require:null,deadline:null,edit:clone(EDIT_DRAFT),reviews:null,
+   actions:[{id:'act_submit',label:'Send for review',kind:'submit',who:{kind:'requester'},when:null,go_to:ST('stg_mngr01'),feedback:FB('hidden'),execute:null}]},
+  {id:'stg_mngr01',label:'Manager Review',kind:'review',assign:{kind:'fact',fact:'requester.manager'},require:null,deadline:{hours:24},edit:clone(EDIT_NONE),reviews:null,actions:reviewActions('m','stg_apprv1')},
+  {id:'stg_apprv1',label:'Approved',kind:'end',outcome:'approved',assign:null,require:null,deadline:null,edit:clone(EDIT_NONE),reviews:null,actions:[]},
+  {id:'stg_rejct1',label:'Rejected',kind:'end',outcome:'rejected',assign:null,require:null,deadline:null,edit:clone(EDIT_NONE),reviews:null,actions:[]},
+ ]};
+const PO_V3=poDefinition('100000.00',true);
+/* Draft version 4: the administrator also wants high-risk suppliers to reach the Director. */
+const PO_V4=(()=>{const d=clone(PO_V3);d.version=4;const row=d.stages.find(s=>s.id==='stg_deprt1').reviews.on_complete.rows[0];
+ row.when=G('any',[C('total','gt','100000.00'),C('fact.supplier_risk','eq','high')]);return d})();
+
+/* ---------- conditions: evaluate and describe ---------- */
+function factText(model,field,v){const f=FACTS[model][field];if(!f)return String(v);
+ if(v==null||v==='')return 'empty';
+ if(Array.isArray(v))return v.map(x=>factText(model,field,x)).join(', ');
+ if(f.type==='money')return money(v);
+ if(f.type==='enum'||f.type==='link')return f.choices[v]||v;
+ if(f.type==='user')return pname(v);
+ if(f.type==='date')return isoToDmy(v);
+ return String(v);}
+function describe(model,c){
+ if(!c)return 'Always';
+ if(c.items){if(!c.items.length)return 'Always';const parts=c.items.map(x=>x.items&&x.items.length>1?'('+describe(model,x)+')':describe(model,x));return parts.join(c.match==='any'?' or ':' and ');}
+ const f=FACTS[model][c.field];if(!f)return 'Unknown field';
+ const t=f.type;let val='';
+ if(c.op==='isnull')val='';else if(c.op==='between')val=`${factText(model,c.field,(c.value||[])[0])} and ${factText(model,c.field,(c.value||[])[1])}`;
+ else if(c.op==='in'||c.op==='nin')val=(c.value||[]).map(x=>factText(model,c.field,x)).join(' or ')||'…';
+ else val=factText(model,c.field,c.value);
+ return `${f.label} ${opLabel(t,c.op)}${val?' '+val:''}`;}
+function cmp(t,a,b){if(t==='money'){const x=toF(a),y=toF(b);return x<y?-1:x>y?1:0}if(t==='number'){return Number(a)-Number(b)}return a<b?-1:a>b?1:0}
+/* returns {value:true|false|null, missing:[labels], why:text} - unknown never counts as false */
+function evaluate(model,c,facts){
+ if(!c||(c.items&&!c.items.length))return {value:true,missing:[],why:'Always'};
+ if(c.items){const rs=c.items.map(x=>evaluate(model,x,facts));const missing=rs.flatMap(r=>r.missing);
+  if(missing.length)return {value:null,missing,why:''};
+  const v=c.match==='any'?rs.some(r=>r.value):rs.every(r=>r.value);
+  const shown=v?(c.match==='any'?rs.filter(r=>r.value):rs):(c.match==='any'?rs:rs.filter(r=>!r.value));
+  return {value:v,missing:[],why:shown.map(r=>r.why).join(v&&c.match==='any'?' or ':' and ')};}
+ const f=FACTS[model][c.field];if(!f)return {value:null,missing:['an unknown field'],why:''};
+ const have=facts[c.field];
+ if(c.op==='isnull'){const v=(have==null||have==='');return {value:v,missing:[],why:`${f.label} is ${v?'empty':'filled in'}`}}
+ if(have==null||have==='')return {value:null,missing:[f.label],why:''};
+ if(c.value==null||c.value===''||(Array.isArray(c.value)&&!c.value.length))return {value:null,missing:[f.label+' condition value'],why:''};
+ let v;
+ switch(c.op){case 'eq':v=cmp(f.type,have,c.value)===0;break;case 'ne':v=cmp(f.type,have,c.value)!==0;break;
+  case 'gt':v=cmp(f.type,have,c.value)>0;break;case 'gte':v=cmp(f.type,have,c.value)>=0;break;
+  case 'lt':v=cmp(f.type,have,c.value)<0;break;case 'lte':v=cmp(f.type,have,c.value)<=0;break;
+  case 'between':v=cmp(f.type,have,c.value[0])>=0&&cmp(f.type,have,c.value[1])<=0;break;
+  case 'in':v=c.value.includes(have);break;case 'nin':v=!c.value.includes(have);break;default:v=null}
+ const ol=opLabel(f.type,c.op);const neg=ol==='is'?'is not':ol.startsWith('is ')?'is not '+ol.slice(3):'not '+ol;
+ const target=c.op==='between'?factText(model,c.field,c.value[0])+' and '+factText(model,c.field,c.value[1]):factText(model,c.field,c.value);
+ const ht=factText(model,c.field,have);
+ if(['enum','link','user','date'].includes(f.type)&&['eq','ne','in','nin'].includes(c.op)){const pos=c.op==='eq'||c.op==='in';
+  return {value:v,missing:[],why:v===pos?`${f.label} is ${ht}`:`${f.label} is ${ht}, not ${target.replace(/, /g,' or ')}`}}
+ return {value:v,missing:[],why:`${f.label} ${ht} ${v?ol:neg} ${target}`};}
+function describeRoute(def,route){
+ if(!route)return 'Decided by the reviews';
+ if(route.kind==='stage')return stageLabel(def,route.stage);
+ return route.rows.map(r=>`${stageLabel(def,r.stage)} when ${describe(def.model,r.when)}`).join('; ')+`; otherwise ${stageLabel(def,route.otherwise)}`;}
+const stageOf=(def,id)=>def.stages.find(s=>s.id===id);
+const stageLabel=(def,id)=>{const s=stageOf(def,id);return s?s.label:(id?'Missing stage':'Not chosen')};
+
+/* ---------- records ---------- */
+function poRecord(key,number,title,type,dept,supplier,lines,risk){return {key,model:'purchaseorder',number,title,requester:'sara',
+ f:{purchase_type:type,department:dept,supplier,required_by:'2026-11-30',remarks:''},lines,lifecycle:'draft',run:null,attempts:[],history:[],def:null,dirty:null,flags:{}}}
+const RECS={};
+function seed(){
+ CLOCK=8*60+30;
+ RECS.ec118={key:'ec118',model:'expenseclaim',number:'EC-2026-00118',title:'Client visit expenses',requester:'sara',f:{},lifecycle:'draft',run:null,attempts:[],history:[],def:null,dirty:null,flags:{},
+  lines:[{item:'Taxi, Dubai to Abu Dhabi and back',qty:'1',price:'350.00'},{item:'Parking, two days',qty:'1',price:'150.00'},{item:'Client lunch',qty:'1',price:'750.00'}]};
+ RECS.po41=poRecord('po41','PO-2026-00041','Server room expansion','equipment','it','sup_hbr',[{item:'Rack server, 2U',qty:'2',price:'60000.00'},{item:'Rack, cabling and installation',qty:'1',price:'21428.57'}]);
+ RECS.po42=poRecord('po42','PO-2026-00042','Annual facilities maintenance','services','operations','sup_plm',[{item:'Facilities maintenance contract, 12 months',qty:'1',price:'59428.57'}]);
+ RECS.po43=poRecord('po43','PO-2026-00043','Laptops for new joiners','equipment','operations','sup_hbr',[{item:'Laptop, 14 inch',qty:'6',price:'3000.00'}]);
+ RECS.po44=poRecord('po44','PO-2026-00044','Core network upgrade','equipment','it','sup_blw',[{item:'Core network upgrade, supply and install',qty:'1',price:'91428.57'}]);
+ const go=(k,actor,label,task)=>{const r=RECS[k];const acts=available(r,actor).filter(a=>a.action.label===label&&(!task||(a.task&&a.task.review===task)));decide(r,actor,acts[0],'')};
+ go('po41','sara','Send for review');go('po41','omar','Approve');go('po41','priya','Approve','rev_techn1');go('po41','mariam','Approve','rev_finan1');
+ go('po42','sara','Send for review');go('po42','omar','Approve');
+ go('po43','sara','Send for review');go('po43','omar','Approve');
+ go('po44','sara','Send for review');go('po44','omar','Approve');
+ CLOCK=10*60+12;
+}
+
+const linesSub=r=>r.lines.reduce((s,l)=>s+(toF(l.price)??0n)*BigInt(Math.max(0,parseInt(l.qty,10)||0)),0n);
+const totals=r=>{const sub=linesSub(r);if(r.model==='expenseclaim')return {sub,vat:0n,total:sub};const vat=vatOf(sub);return {sub,vat,total:sub+vat}};
+function factsOf(r){const t=totals(r);const p=PEOPLE[r.requester];
+ return {total:fromF(t.total),subtotal:fromF(t.sub),purchase_type:r.f.purchase_type,department:r.f.department,supplier:r.f.supplier,required_by:r.f.required_by,
+  'lines.count':String(r.lines.length),requester:r.requester,'requester.department':p.dept,'fact.supplier_risk':r.f.supplier?SUPPLIERS[r.f.supplier].risk:null};}
+const defFor=r=>r.def||(r.model==='expenseclaim'?WF_EXPENSE:S.published);
+function resolve(a,r){if(!a)return [];
+ if(a.kind==='requester')return [r.requester];
+ if(a.kind==='fact'&&a.fact==='requester.manager')return PEOPLE[r.requester].manager?[PEOPLE[r.requester].manager]:[];
+ if(a.kind==='role')return Object.keys(PEOPLE).filter(id=>PEOPLE[id].role===a.role);
+ if(a.kind==='user')return [a.user];return [];}
+const modelLabel=r=>r.model==='expenseclaim'?'expense claim':'purchase order';
+
+/* ---------- the imitation engine (the real one is phase 2 and 3) ---------- */
+function log(r,e){r.history.unshift({at:stamp(),attempt:r.run?r.run.attempt:0,...e})}
+function enter(r,stageId,why){
+ const def=r.def,run=r.run,st=stageOf(def,stageId);
+ run.stage=stageId;run.version++;run.tasks=[];run.block=null;run.visits.push({stage:stageId,attempt:run.attempt});
+ log(r,{kind:'stage',actor:null,text:`Moved to ${st.label}`,why});
+ if(st.kind==='end'){run.status=st.outcome;const at=r.attempts[r.attempts.length-1];at.status=st.outcome;
+  if(st.outcome==='approved')log(r,{kind:'note',actor:null,text:`Approval complete. Confirm is now available to people who may confirm ${modelLabel(r)}s.`});return}
+ if(st.kind==='work'){run.status='draft';return}
+ run.status='active';
+ const facts=factsOf(r);
+ if(st.require){const e=evaluate(def.model,st.require.when,facts);if(e.value!==true){run.status='blocked';run.block=e.value===null?`${e.missing.join(', ')} is missing, so ${st.label} cannot start.`:st.require.message;log(r,{kind:'block',actor:null,text:`Blocked at ${st.label}`,why:run.block});return}}
+ if(st.reviews){
+  for(const rv of st.reviews.items){
+   const e=evaluate(def.model,rv.when,facts);
+   if(e.value===null){run.status='blocked';run.block=`${e.missing.join(', ')} is missing, so the ${rv.label} review cannot be decided.`;}
+   const people=resolve(rv.assign,r);
+   run.tasks.push({id:nid('tsk'),review:rv.id,label:rv.label,assign:rv.assign,people,status:e.value?'pending':'skipped',why:e.value?(rv.when?e.why:'Always'):`Skipped: ${e.why}`,due:due(st.deadline?st.deadline.hours:48)});
+  }
+  if(!run.tasks.some(t=>t.status==='pending')&&st.reviews.when_none==='block'){run.status='blocked';run.block='No review applies to this request.'}
+ } else {
+  run.tasks.push({id:nid('tsk'),review:null,label:st.label,assign:st.assign,people:resolve(st.assign,r),status:'pending',why:'',due:due(st.deadline?st.deadline.hours:24)});
+ }
+ const empty=run.tasks.find(t=>t.status==='pending'&&!t.people.length);
+ if(empty){run.status='blocked';run.block=`Nobody is eligible for ${empty.label}. An administrator must repair the assignment; the review is not skipped.`}
+}
+function follow(r,route){
+ const def=r.def;if(route.kind==='stage')return enter(r,route.stage,null);
+ const facts=factsOf(r);
+ for(const row of route.rows){const e=evaluate(def.model,row.when,facts);
+  if(e.value===null){r.run.status='blocked';r.run.block=`${e.missing.join(', ')} is missing, so the next stage cannot be chosen. It does not count as false.`;log(r,{kind:'block',actor:null,text:'Routing blocked',why:r.run.block});return}
+  if(e.value)return enter(r,row.stage,e.why+', so '+stageLabel(def,row.stage)+' is next.');}
+ const first=route.rows[0];const e=evaluate(def.model,first.when,facts);
+ enter(r,route.otherwise,(e.why||'No condition matched')+', so '+stageLabel(def,route.otherwise)+' is next.');
+}
+function closeOpen(r,why){for(const t of r.run.tasks)if(t.status==='pending'){t.status='closed';t.why=why}}
+function available(r,actor){
+ const out=[];if(r.lifecycle!=='draft')return out;
+ const def=defFor(r);const run=r.run;const st=run?stageOf(r.def,run.stage):stageOf(def,def.start);
+ if(run&&(run.status==='approved'||run.status==='rejected')){
+  if(run.status==='approved'&&PEOPLE[actor].confirm)out.push({lifecycle:'confirm',action:{label:'Confirm',kind:'confirm'}});
+  if(run.status==='rejected'&&actor===r.requester)out.push({restart:true,action:{label:'Start a new attempt',kind:'submit',feedback:FB('hidden'),go_to:null,id:'act_restart'}});
+  return out;}
+ if(st.kind==='work'){if(actor===r.requester)for(const a of st.actions)out.push({action:a,task:null});return out}
+ if(!run)return out;
+ if(run.status==='active')for(const t of run.tasks){if(t.status!=='pending'||!t.people.includes(actor))continue;
+  if(actor===r.requester){continue}
+  for(const a of st.actions)out.push({action:a,task:t});}
+ if(actor===r.requester&&(run.status==='active'||run.status==='blocked'))out.push({withdraw:true,action:{id:'act_withdraw',label:'Withdraw request',kind:'withdraw',feedback:FB('optional','Why are you withdrawing it?')}});
+ return out;
+}
+function decide(r,actor,a,feedback){
+ const fb=(feedback||'').trim();
+ if(a.lifecycle==='confirm'){r.lifecycle='confirmed';log(r,{kind:'lifecycle',actor,text:`Confirmed ${modelLabel(r)} ${r.number}`,why:'Approval for this attempt was checked again under the same lock as the confirmation.'});return}
+ if(a.withdraw){r.run.version++;closeOpen(r,'No longer required: the request was withdrawn');const at=r.attempts[r.attempts.length-1];at.status='withdrawn';
+  log(r,{kind:'decision',actor,text:'Withdrew the request',feedback:fb,verb:'withdrew'});r.run.stage=r.def.start;r.run.status='draft';r.run.tasks=[];return}
+ const act=a.action;
+ if(act.kind==='submit'){
+  if(!r.run){r.def=defFor(r);r.run={attempt:0,stage:null,status:'draft',tasks:[],version:0,visits:[],block:null}}
+  r.run.attempt++;r.attempts.push({n:r.run.attempt,status:'active',started:CLOCK});
+  log(r,{kind:'decision',actor,text:r.run.attempt>1?`Sent for review again: attempt ${r.run.attempt} starts`:'Sent for review',feedback:fb,verb:'submitted'});
+  const st=stageOf(r.def,r.def.start);const sub=st.actions.find(x=>x.kind==='submit');return enter(r,sub.go_to.stage,r.run.attempt>1?`Attempt ${r.run.attempt-1} stays in history. Its approvals do not count for this attempt.`:null);
+ }
+ const t=a.task;const st=stageOf(r.def,r.run.stage);r.run.version++;
+ t.status=act.kind==='approve'?'approved':act.kind==='reject'?'rejected':'changes';t.by=actor;t.at=stamp();t.feedback=fb;
+ const verb=act.kind==='approve'?'approved':act.kind==='reject'?'rejected':'requested changes';
+ log(r,{kind:'decision',actor,text:`${cap(verb)}${t.review?' as '+t.label:''}`,feedback:fb,verb,required:act.feedback.mode==='required',stage:st.id,review:t.review?t.label:null});
+ const at=r.attempts[r.attempts.length-1];
+ if(st.reviews){const g=st.reviews;
+  if(t.status==='rejected'&&g.rejection==='veto'){closeOpen(r,'No longer required: the stage was rejected');at.status='rejected';return follow(r,g.on_reject)}
+  if(t.status==='changes'){closeOpen(r,'No longer required: changes were requested');at.status='changes';return follow(r,g.on_changes)}
+  const act2=r.run.tasks.filter(x=>x.status!=='skipped'&&x.status!=='closed');const ok=act2.filter(x=>x.status==='approved').length;
+  const need=g.complete.kind==='all'?act2.length:g.complete.kind==='any'?1:g.complete.count;
+  if(ok>=need){closeOpen(r,'No longer required: the group completed');log(r,{kind:'note',actor:null,text:`${st.label} complete`,why:`${ok} of ${act2.length} applicable reviews approved.`});return follow(r,g.on_complete)}
+  return;}
+ if(t.status==='changes')at.status='changes';if(t.status==='rejected')at.status='rejected';
+ follow(r,act.go_to);
+}
+const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+
+/* ---------- what the header and panel say ---------- */
+function stageBadge(r){
+ const run=r.run;const def=defFor(r);
+ if(!run)return `<span class="stagebadge none">${ic('flow')}Stage: Draft, not sent</span>`;
+ const st=stageOf(r.def,run.stage);
+ if(run.status==='approved')return `<span class="stagebadge ok">${ic('check')}Stage: Approved</span>`;
+ if(run.status==='rejected')return `<span class="stagebadge bad">${ic('x')}Stage: Rejected</span>`;
+ if(run.status==='blocked')return `<span class="stagebadge wait">${ic('alert')}Stage: ${esc(st.label)}, blocked</span>`;
+ return `<span class="stagebadge">${ic('flow')}Stage: ${esc(st.label)}</span>`;}
+function sentence(r){
+ const run=r.run;
+ if(r.lifecycle==='confirmed')return `Confirmed · approved in attempt ${run.attempt}`;
+ if(!run)return 'Not sent for review yet';
+ const st=stageOf(r.def,run.stage);
+ if(run.status==='approved')return 'Approved, awaiting confirmation';
+ if(run.status==='rejected'){const d=r.history.find(h=>h.verb==='rejected');return `Rejected by ${d?pname(d.actor):'a reviewer'}`}
+ if(run.status==='blocked')return run.block;
+ if(run.status==='draft'){const last=r.attempts[r.attempts.length-1];
+  if(last&&last.status==='changes'){const d=r.history.find(h=>h.verb==='requested changes');return `Changes requested by ${d?pname(d.actor):'a reviewer'} · attempt ${last.n} closed`}
+  if(last&&last.status==='withdrawn')return `Withdrawn · attempt ${last.n} closed`;return 'Draft'}
+ const pend=run.tasks.filter(t=>t.status==='pending');
+ const names=pend.map(t=>t.review?t.label:t.people.map(pname).join(' or '));
+ const tail=r.history.filter(h=>h.verb==='approved'&&h.attempt===run.attempt).reverse().map(h=>h.review?h.review+' approved':stageLabel(r.def,h.stage).replace(/ Review$/,'')+' approved');
+ return `Awaiting ${names.length>1?names.slice(0,-1).join(', ')+' and '+names[names.length-1]:names[0]||'nobody'}${tail.length?' · '+[...new Set(tail)].join(' · '):''}`;}
+function editInfo(r,actor){
+ const p=PEOPLE[actor];const run=r.run;const def=defFor(r);const st=run?stageOf(r.def,run.stage):stageOf(def,def.start);
+ if(r.lifecycle!=='draft')return {can:false,why:'Confirmed documents are locked. Only fields marked editable when locked can change.'};
+ if(!p.update)return {can:false,why:`Your role (${ROLES[p.role]}) can read ${modelLabel(r)}s but cannot change them. ${run&&run.status==='active'?'You can still decide on a review assigned to you.':''}`};
+ if(st.edit.who==='requester'&&actor===r.requester)return {can:true,why:''};
+ if(st.edit.who==='existing')return {can:true,why:''};
+ if(run&&run.status==='approved')return {can:false,why:'Approved and waiting for confirmation. Editing now would end the approval; withdraw is not available after approval.'};
+ return {can:false,why:`Locked during ${st.label}. ${actor===r.requester?'To change it, withdraw the request first.':'Nobody edits at this stage.'}`};}
+
+/* ---------- state ---------- */
+const S={view:'record',journey:'j3',actor:'daniel',rec:'po42',menu:false,dialog:null,side:false,inboxTab:'mine',
+ published:clone(PO_V3),draft:clone(PO_V4),undo:[],unsaved:false,open:{stg_deprt1:true},dock:null,dockTab:'settings',
+ tryx:{source:'sample',rec:'po41',purchase_type:'equipment',total:'148500.00',requester:'sara'},access:{who:'mariam',stage:'stg_deprt1'},
+ published_v:3,showWhy:false,feedbackDraft:{},tried:false,checked:false,publishedOnce:false,expandedOnce:false,editedOnce:false};
+S.published=clone(PO_V3);
+seed();
+
+/* ---------- journeys ---------- */
+const J=[
+ {id:'j1',n:1,title:'Manager-only approval',rec:'ec118',actor:'sara',steps:[
+  {who:'sara',text:'As Sara, send the expense claim for review.',done:()=>!!RECS.ec118.run},
+  {who:'omar',text:'As Omar, her manager, approve it. Feedback is optional, so Approve acts straight away.',done:()=>RECS.ec118.run&&RECS.ec118.run.status==='approved'},
+  {who:'sara',text:'As Sara, confirm it. Approval only enabled Confirm; it did not confirm on its own.',done:()=>RECS.ec118.lifecycle==='confirmed'}]},
+ {id:'j2',n:2,title:'Conditional route',rec:'po41',actor:'arjun',steps:[
+  {who:'arjun',text:'As Arjun, approve as Procurement. Department Review completes and the total is above AED 100,000.00.',done:()=>visited('po41','stg_drctr1')},
+  {who:'layla',text:'As Layla, approve as Director.',done:()=>RECS.po41.run.status==='approved'},
+  {who:'hamid',text:'Open the editor, then Try example with a total of AED 85,000.00: Director Review is skipped.',done:()=>S.tried}]},
+ {id:'j3',n:3,title:'Parallel Department Review',rec:'po42',actor:'daniel',steps:[
+  {who:'daniel',text:'As Daniel, approve as Operations. Technical was skipped: the type is Services.',done:()=>taskDone('po42','rev_opern1')},
+  {who:'mariam',text:'As Mariam, open Approve with feedback, tick "someone else decides first" and send. Your text is kept.',done:()=>taskDone('po42','rev_finan1')},
+  {who:'arjun',text:'As Arjun, approve as Procurement if still needed. All applicable reviews approved, so it goes to Approved.',done:()=>RECS.po42.run.status==='approved'}]},
+ {id:'j4',n:4,title:'Request changes, then resubmit',rec:'po43',actor:'mariam',steps:[
+  {who:'mariam',text:'As Mariam, choose Request changes. Try sending it empty first: feedback is required.',done:()=>RECS.po43.attempts.length&&RECS.po43.attempts[0].status==='changes'},
+  {who:'sara',text:'As Sara, set the unit price to 2,850.00 and save.',done:()=>RECS.po43.lines[0].price==='2850.00'&&!RECS.po43.dirty},
+  {who:'sara',text:'Send for review again. Attempt 2 starts at Manager Review; attempt 1 stays in history.',done:()=>RECS.po43.run&&RECS.po43.run.attempt>=2}]},
+ {id:'j5',n:5,title:'Locked document, read-only reviewer',rec:'po44',actor:'priya',steps:[
+  {who:'priya',text:'As Priya, look at the order: every field is locked, yet Approve is available.',done:()=>S.sawLocked},
+  {who:'priya',text:'Open "Why can\'t I edit?" to see the access explanation.',done:()=>S.showWhy},
+  {who:'priya',text:'Approve as Technical.',done:()=>taskDone('po44','rev_techn1')}]},
+ {id:'j6',n:6,title:'Workflow editor',view:'editor',actor:'hamid',steps:[
+  {who:'hamid',text:'Expand Department Review: parallel reviews, conditions and the conditional route.',done:()=>S.expandedOnce},
+  {who:'hamid',text:'Change something, such as a condition value or Who can edit. Checks update as you type.',done:()=>S.editedOnce},
+  {who:'hamid',text:'Use Try example and Check access in the docked panel.',done:()=>S.tried&&S.checked},
+  {who:'hamid',text:'Publish. Read the change summary first.',done:()=>S.publishedOnce}]},
+];
+const visited=(k,s)=>RECS[k].run&&RECS[k].run.visits.some(v=>v.stage===s);
+const taskDone=(k,rv)=>{const r=RECS[k];if(!r.run)return false;return r.history.some(h=>h.verb&&h.text.includes(' as ')&&h.text.endsWith(r.def.stages.flatMap(s=>s.reviews?s.reviews.items:[]).find(x=>x.id===rv).label))};
+const curJ=()=>J.find(j=>j.id===S.journey);
+
+/* ---------- rendering ---------- */
+function sidebar(){
+ const mine=myTasks(S.actor).length;
+ const item=(v,label,icon,count,extra)=>`<button class="nav-item ${S.view===v&&(!extra||extra())?'on':''}" data-a="nav" data-v="${v}">${ic(icon)}${label}${count?`<span class="count">${count}</span>`:''}</button>`;
+ return `<aside class="side ${S.side?'open':''}" aria-label="Main">
+ <div class="brand"><div class="brand-mark">${ic('flow')}</div>Evlet<small>prototype</small></div>
+ <button class="ws"><span class="ws-letter">A</span><span><strong>Acme Trading LLC</strong><small>Workflow prototype</small></span></button>
+ <nav class="nav">
+  <div class="nav-label">Work</div>
+  ${item('inbox','My reviews','inbox',mine)}
+  <div class="nav-label">Purchasing</div>
+  ${item('list','Purchase orders','cart',0)}
+  ${item('expense','Expense claims','receipt',0)}
+  <div class="nav-label">Controls</div>
+  ${item('editor','Workflows','flow',0)}
+ </nav>
+ <div class="side-foot"><span class="avatar">${initials(S.actor)}</span><span><strong>${esc(pname(S.actor))}</strong><small>${esc(PEOPLE[S.actor].title)}</small></span></div>
+ </aside>`;}
+function topbar(){
+ const crumbs=S.view==='editor'?['Controls','Workflows','Purchase order approval']:S.view==='inbox'?['Work','My reviews']:S.view==='list'?['Purchasing','Purchase orders']:S.view==='expense'?['Purchasing','Expense claims']:[RECS[S.rec].model==='expenseclaim'?'Expense claims':'Purchase orders',RECS[S.rec].number];
+ return `<header class="topbar"><button class="menu-btn" data-a="side" aria-label="Open menu">${ic('menu')}</button>
+ <div class="crumbs">${crumbs.map((c,i)=>`<span class="${i<crumbs.length-1?'hide-sm':''}">${esc(c)}</span>`).join('<span class="sep hide-sm">/</span>')}</div>
+ <div class="top-right"><span class="lockpill">${ic('clock','xs')} 07-11-2026 · GST</span><span class="env">Prototype</span></div></header>`;}
+function journeyBar(){
+ if(S.view==='record'&&S.rec==='po44'&&S.actor==='priya')S.sawLocked=true;
+ if(S.view==='editor'&&S.open.stg_deprt1)S.expandedOnce=true;
+ const j=curJ();let cur=j.steps.findIndex(s=>!s.done());
+ return `<section class="jbar" aria-label="Prototype journeys">
+ <div class="jbar-top"><span class="jbar-title">Journey</span><div class="jchips">${J.map(x=>`<button class="jchip ${x.id===S.journey?'on':''} ${x.steps.every(s=>s.done())?'done':''}" data-a="journey" data-j="${x.id}" aria-pressed="${x.id===S.journey}"><span class="jn">${x.steps.every(s=>s.done())?'✓':x.n}</span>${esc(x.title)}</button>`).join('')}</div>
+ <div class="asme"><label for="actas">Acting as</label><select id="actas" class="sel" data-c="actor">${Object.keys(PEOPLE).map(id=>`<option value="${id}" ${id===S.actor?'selected':''}>${esc(PEOPLE[id].name)}, ${esc(PEOPLE[id].title)}</option>`).join('')}</select><button class="btn sm ghost" data-a="reset" title="Start all journeys again">${ic('undo','sm')}Reset</button></div></div>
+ <ol class="jsteps">${j.steps.map((s,i)=>`<li class="jstep ${s.done()?'ok':i===cur?'cur':''}"><span class="sn">${s.done()?'✓':i+1}</span><span>${esc(s.text)} ${!s.done()&&S.actor!==s.who?`<button class="linkbtn" data-a="actas" data-p="${s.who}">Act as ${esc(pname(s.who).split(' ')[0])}</button>`:''}</span></li>`).join('')}</ol>
+ </section>`;}
+
+function recordPage(){
+ const r=RECS[S.rec];const acts=available(r,S.actor);const ed=editInfo(r,S.actor);const t=totals(r);const def=defFor(r);
+ const facts=FACTS[r.model];const dirty=!!r.dirty;
+ const primary=acts.find(a=>!a.withdraw&&a.action.kind!=='request_changes'&&a.action.kind!=='reject');
+ const secondary=acts.filter(a=>a!==primary);
+ const lc=r.lifecycle==='confirmed'?`<span class="lcbadge conf">Document: Confirmed</span>`:`<span class="lcbadge">Document: Draft</span>`;
+ let actionsHtml='';
+ if(dirty)actionsHtml=`<span class="dirty-note">${ic('alert','sm')}Save or discard your changes before a workflow action</span><button class="btn" data-a="discard">Discard</button><button class="btn primary" data-a="save">Save</button>`;
+ else{
+  if(primary)actionsHtml+=`<button class="btn primary" data-a="act" data-i="${acts.indexOf(primary)}">${primary.action.kind==='approve'?ic('check','sm'):primary.action.kind==='submit'?ic('send','sm'):''}${esc(primary.action.label)}${primary.task&&primary.task.review?` as ${esc(primary.task.label)}`:''}</button>`;
+  if(secondary.length||primary&&primary.action.kind==='approve')actionsHtml+=`<button class="btn" data-a="menu" aria-haspopup="menu" aria-expanded="${S.menu}">More actions ${ic('down','sm')}</button>`;
+  if(!acts.length)actionsHtml=`<span class="muted sm-txt">${noActionText(r)}</span>`;
+ }
+ const menu=S.menu&&!dirty?`<div class="menu" role="menu"><div class="menu-label">Workflow actions</div>
+  ${primary&&primary.action.kind==='approve'?`<button class="menu-item" role="menuitem" data-a="act" data-i="${acts.indexOf(primary)}" data-fb="1">${ic('msg','sm')}<span>Approve with feedback<small>Adds a note to the history</small></span></button>`:''}
+  ${secondary.map(a=>`<button class="menu-item ${a.action.kind==='reject'?'danger':''}" role="menuitem" data-a="act" data-i="${acts.indexOf(a)}">${ic(a.action.kind==='reject'?'x':a.withdraw?'undo':'pen','sm')}<span>${esc(a.action.label)}${a.task&&a.task.review?' as '+esc(a.task.label):''}<small>${esc(effectText(r,a))}</small></span></button>`).join('')}</div>`:'';
+ const lock=!ed.can;
+ const fld=(label,val,key,type)=>{if(lock||!key)return `<div class="field"><span class="lbl">${esc(label)}</span><div class="ro-field">${esc(val)}${lock?`<span class="lock" title="Locked">${ic('lock','xs')}</span>`:''}</div></div>`;
+  if(type==='enum')return `<div class="field"><label for="f_${key}">${esc(label)}</label><select id="f_${key}" class="sel" data-c="field" data-k="${key}">${Object.entries(facts[key].choices).map(([k,v])=>`<option value="${k}" ${r.f[key]===k?'selected':''}>${esc(v)}</option>`).join('')}</select></div>`;
+  return `<div class="field"><label for="f_${key}">${esc(label)}</label><input id="f_${key}" class="inp" data-c="field" data-k="${key}" value="${esc(type==='date'?isoToDmy(r.f[key]):r.f[key])}"></div>`;};
+ const form=r.model==='expenseclaim'?`<div class="form">${fld('Claim','Client visit expenses')}${fld('Employee',pname(r.requester))}${fld('Expense date','05-11-2026')}${fld('Cost centre','Sales')}</div>`
+  :`<div class="form">${fld('Supplier',SUPPLIERS[r.f.supplier].label)}${fld('Purchase type',facts.purchase_type.choices[r.f.purchase_type],'purchase_type','enum')}${fld('Department',facts.department.choices[r.f.department],'department','enum')}${fld('Required by',isoToDmy(r.f.required_by),'required_by','date')}${fld('Requested by',pname(r.requester))}${fld('Currency','AED')}</div>`;
+ const rows=r.lines.map((l,i)=>`<tr><td data-label="Item">${lock?esc(l.item):`<input class="inp" aria-label="Item ${i+1}" data-c="line" data-i="${i}" data-k="item" value="${esc(l.item)}">`}</td>
+  <td class="n" data-label="Qty">${lock?esc(l.qty):`<input class="inp" style="width:70px;text-align:right" aria-label="Quantity, line ${i+1}" data-c="line" data-i="${i}" data-k="qty" value="${esc(l.qty)}">`}</td>
+  <td class="n" data-label="Unit price">${lock?esc(grp(fromF(toF(l.price)??0n))):`<input class="inp" style="width:120px;text-align:right" aria-label="Unit price, line ${i+1}" data-c="line" data-i="${i}" data-k="price" value="${esc(l.price)}">`}</td>
+  <td class="n" data-label="Amount">${esc(grp(fromF((toF(l.price)??0n)*BigInt(Math.max(0,parseInt(l.qty,10)||0)))))}</td></tr>`).join('');
+ return `<div class="page wide" style="max-width:1320px">
+ <div class="rec-head"><div style="min-width:0">
+  <h1>${esc(r.number)} ${lc} ${stageBadge(r)}</h1>
+  <p class="rec-sub">${esc(r.title)} · ${esc(sentence(r))}</p></div>
+  <div class="rec-actions">${actionsHtml}${menu}</div></div>
+ ${banner(r,ed,acts)}
+ <div class="grid g-main">
+  <div class="stack">
+   <section class="card"><div class="card-head"><div><h2>Details</h2></div>${lock?`<span class="src">${ic('lock','xs')} Read only for you</span>`:''}</div><div class="card-pad">${form}</div></section>
+   <section class="tcard"><div class="card-head"><div><h2>Lines</h2></div>${lock?`<span class="src">${ic('lock','xs')} Rows locked</span>`:`<button class="btn xs" data-a="addline">${ic('plus','xs')}Add line</button>`}</div>
+    <div class="tscroll"><table class="t lines stack-sm"><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Unit price</th><th class="n">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <dl class="totals">${r.model==='expenseclaim'?'':`<dt>Subtotal</dt><dd>${money(t.sub)}</dd><dt>VAT 5%</dt><dd>${money(t.vat)}</dd>`}<dt class="grand">Total</dt><dd class="grand">${money(t.total)}</dd></dl></section>
+  </div>
+  <div class="stack">${workflowPanel(r)}${activity(r)}</div>
+ </div></div>`;}
+function noActionText(r){const run=r.run;
+ if(r.lifecycle==='confirmed')return 'Nothing to do: this document is confirmed.';
+ if(!run)return S.actor===r.requester?'':'Only the requester can send this for review.';
+ if(run.status==='approved')return 'Approved. Waiting for someone who may confirm.';
+ if(run.status==='rejected')return 'This request was rejected.';
+ if(run.status==='draft')return 'Back with the requester.';
+ if(S.actor===r.requester)return 'You cannot review your own request.';
+ return 'You have no review on this request.';}
+function effectText(r,a){
+ if(a.withdraw)return 'Back to Draft. Open reviews close.';
+ const k=a.action.kind;const st=stageOf(r.def,r.run.stage);
+ if(k==='reject')return 'Goes to Rejected. Feedback required.';
+ if(k==='request_changes')return 'Back to Draft for rework. Feedback required.';
+ if(st&&st.reviews)return 'Counts towards '+st.label;return 'Goes to '+describeRoute(r.def,a.action.go_to);}
+function banner(r,ed,acts){
+ const out=[];const run=r.run;
+ const canDecide=acts.some(a=>a.task);
+ if(run&&run.status==='blocked')out.push(`<div class="callout err" role="alert">${ic('alert')}<div><strong>Blocked.</strong> ${esc(run.block)} <button class="linkbtn" data-a="repair">Administrator: repair</button></div></div>`);
+ if(!ed.can&&canDecide)out.push(`<div class="callout info">${ic('shield')}<div><strong>You can ${(l=>l.length>1?l.slice(0,-1).join(', ')+' or '+l[l.length-1]:l[0])(acts.filter(a=>a.task).map(a=>a.action.label.toLowerCase()).filter((v,i,s)=>s.indexOf(v)===i))}. You cannot edit.</strong> ${esc(ed.why)} <button class="linkbtn" data-a="why" aria-expanded="${S.showWhy}">Why can't I edit?</button>${S.showWhy?whyBox(r):''}</div></div>`);
+ else if(!ed.can&&r.lifecycle==='draft'&&run&&S.actor===r.requester)out.push(`<div class="callout warn">${ic('lock')}<div>${esc(ed.why)}</div></div>`);
+ if(S.conflict&&S.conflict.rec===r.key)out.push(`<div class="callout warn" role="alert">${ic('refresh')}<div><strong>This request changed. Review the latest status.</strong> Your feedback is kept for this attempt. <button class="linkbtn" data-a="reopen">Reopen your decision</button></div></div>`);
+ return out.length?`<div class="stack" style="gap:10px;margin-bottom:16px">${out.join('')}</div>`:'';}
+function whyBox(r){const p=PEOPLE[S.actor];const run=r.run;const st=run?stageOf(r.def,run.stage):null;const mine=run?run.tasks.filter(t=>t.people.includes(S.actor)&&t.status==='pending'):[];
+ return `<table class="t" style="margin-top:10px;background:#fff;border-radius:8px"><tbody>
+ <tr><td>Read this ${modelLabel(r)}</td><td class="yes">Yes</td><td class="muted">${esc(ROLES[p.role])} role can read ${modelLabel(r)}s</td></tr>
+ <tr><td>Decide</td><td class="${mine.length?'yes':'no'}">${mine.length?'Yes':'No'}</td><td class="muted">${mine.length?`Assigned to ${esc(mine.map(t=>t.label).join(', '))} through the ${esc(ROLES[p.role])} role, and the role has the review permission`:'Not assigned'}</td></tr>
+ <tr><td>Edit fields and lines</td><td class="no">No</td><td class="muted">${p.update?'':'The role has no update permission. '}${st?`During ${esc(st.label)} nobody edits; Total, Unit price and every line are read only.`:''}</td></tr>
+ <tr><td>Confirm</td><td class="no">No</td><td class="muted">Approving does not give confirm rights</td></tr></tbody></table>`;}
+function workflowPanel(r){
+ const def=r.def||defFor(r);const run=r.run;
+ const ver=`${esc(def.name)} · version ${def.version}`;
+ if(!run)return `<section class="card wf-panel"><div class="card-head"><div><h2>Workflow</h2><p>${ver}</p></div></div><div class="wf-sec"><h3>What happens next</h3>${futureList(r,def,def.start,true)}</div></section>`;
+ const st=stageOf(def,run.stage);
+ const visits=run.visits.filter(v=>v.attempt===run.attempt);
+ const doneStages=run.status==='draft'?[]:visits.slice(0,-1).map(v=>stageOf(def,v.stage));
+ const tasks=run.tasks.slice().sort((a,b)=>(a.status==='pending'?0:1)-(b.status==='pending'?0:1));
+ const rv=t=>{const who=t.by?t.by:t.people[0];const mine=t.status==='pending'&&t.people.includes(S.actor);
+  const stt=t.status==='pending'?(mine?'<span class="st you">Your review</span>':'<span class="st wait">Waiting</span>'):t.status==='approved'?'<span class="st ok">Approved</span>':t.status==='rejected'?'<span class="st no">Rejected</span>':t.status==='changes'?'<span class="st no">Changes requested</span>':t.status==='closed'?'<span class="st skip">No longer required</span>':'<span class="st skip">Skipped</span>';
+  return `<div class="rv"><span class="avatar">${who?initials(who):'?'}</span><div class="rv-body"><strong>${esc(t.label)}</strong><span>${t.status==='skipped'||t.status==='closed'?esc(t.why):t.by?`${esc(pname(t.by))} · ${esc(t.at)}`:`${esc(t.people.map(pname).join(', ')||'Nobody eligible')} · ${esc(assignLabel(t.assign))} · due ${esc(t.due)}`}</span></div>${stt}</div>`;};
+ const closed=r.attempts.filter(a=>a.n<run.attempt);
+ const current=(run.status==='active'||run.status==='blocked')?`<li class="cur"><span class="dot"></span><div class="tl-body"><strong>${esc(st.label)}</strong>${st.reviews?`<span class="sub">${st.reviews.run==='together'?'Run together':'In sequence'} · complete when ${st.reviews.complete.kind==='all'?'all applicable reviews approve':st.reviews.complete.kind==='any'?'any review approves':st.reviews.complete.count+' approve'}</span>`:''}<div style="margin-top:6px">${tasks.map(rv).join('')}</div></div></li>`:
+  run.status==='approved'?`<li class="done"><span class="dot">${ic('check')}</span><div class="tl-body"><strong>Approved</strong><span class="sub">${r.lifecycle==='confirmed'?'Confirmed':'Awaiting confirmation by someone who may confirm'}</span></div></li>`:
+  run.status==='rejected'?`<li class="bad"><span class="dot">${ic('x')}</span><div class="tl-body"><strong>Rejected</strong><span class="sub">This attempt has ended</span></div></li>`:
+  `<li class="cur"><span class="dot"></span><div class="tl-body"><strong>Draft</strong><span class="sub">With ${esc(pname(r.requester))} for rework</span></div></li>`;
+ return `<section class="card wf-panel"><div class="card-head"><div><h2>Workflow</h2><p>${ver} · pinned for this request</p></div><span class="chip">Attempt ${run.attempt}</span></div>
+ <div class="wf-sec"><h3>${run.status==='active'?'Now':'Status'}</h3><ul class="tl">${doneStages.map(s=>`<li class="done"><span class="dot">${ic('check')}</span><div class="tl-body"><strong>${esc(s.label)}</strong><span class="sub">${esc(stageDoneText(r,s))}</span></div></li>`).join('')}${current}</ul></div>
+ ${(run.status==='active'||run.status==='blocked'||run.status==='draft')?`<div class="wf-sec"><h3>Coming up <span class="cond-tag">May change</span></h3>${futureList(r,def,run.stage,false)}</div>`:''}
+ ${closed.length?`<div class="wf-sec"><h3>Earlier attempts</h3>${closed.map(a=>`<div class="rv"><span class="avatar">${ic('history','xs')}</span><div class="rv-body"><strong>Attempt ${a.n}</strong><span>${a.status==='changes'?'Changes requested':a.status==='withdrawn'?'Withdrawn':a.status==='rejected'?'Rejected':'Ended'} · its approvals do not count now</span></div><span class="att-tag old">superseded</span></div>`).join('')}</div>`:''}
+ </section>`;}
+function stageDoneText(r,s){
+ if(s.kind==='work')return `Sent by ${pname(r.requester)}`;if(s.reviews)return 'All applicable reviews approved';
+ const d=r.history.find(h=>h.verb==='approved'&&h.stage===s.id&&h.attempt===r.run.attempt);return d?`Approved by ${pname(d.actor)}`:'Done';}
+function futureList(r,def,fromId,includeFrom){
+ /* preview from saved facts. Stages after a conditional route are marked conditional. */
+ const facts=factsOf(r);const out=[];let id=fromId;let guard=0;let first=true;
+ while(id&&guard++<10){const st=stageOf(def,id);if(!st)break;
+  if(!(first&&!includeFrom)){
+   let sub='';
+   if(st.reviews)sub=st.reviews.items.map(x=>{const e=evaluate(def.model,x.when,facts);return `${x.label}${e.value===false?' (skipped)':''}`}).join(', ');
+   else if(st.assign)sub=resolve(st.assign,r).map(pname).join(', ')+' · '+assignLabel(st.assign);
+   out.push(`<li class="future"><span class="dot"></span><div class="tl-body"><strong>${esc(st.label)}</strong>${st.cond?`<span class="cond-tag">${esc(st.cond)}</span>`:''}<span class="sub">${esc(sub||(st.kind==='end'?'End of approval':''))}</span></div></li>`);}
+  first=false;if(st.kind==='end')break;
+  let next=null,cond=null;
+  if(st.reviews){const route=st.reviews.on_complete;if(route.kind==='stage')next=route.stage;else{const row=route.rows[0];const e=evaluate(def.model,row.when,facts);next=e.value?row.stage:route.otherwise;cond=e.value===true?'Next because '+e.why:e.value===false?stageLabel(def,row.stage)+' skipped: '+e.why:'Depends on '+e.missing.join(', ')}}
+  else{const a=st.actions.find(x=>x.kind==='approve'||x.kind==='submit');if(a&&a.go_to)next=a.go_to.kind==='stage'?a.go_to.stage:a.go_to.otherwise}
+  if(next){const ns=stageOf(def,next);if(ns)ns.cond=cond;}
+  id=next;}
+ def.stages.forEach(s=>delete s.cond);
+ return `<ul class="tl">${out.join('')||'<li class="future"><span class="dot"></span><div class="tl-body">Nothing further</div></li>'}</ul>`;}
+function activity(r){
+ const cur=r.run?r.run.attempt:0;
+ return `<section class="card"><div class="card-head"><div><h2>Activity</h2><p>Decisions and feedback cannot be edited. Corrections are added as clarifications.</p></div></div>
+ <div>${r.history.length?r.history.map(h=>`<div class="act-item"><span class="avatar">${h.actor?initials(h.actor):ic('flow','xs')}</span><div class="act-body">${h.actor?`<strong>${esc(pname(h.actor))}</strong> ${esc(h.text.charAt(0).toLowerCase()+h.text.slice(1))}`:`<strong>${esc(h.text)}</strong>`}${h.attempt?`<span class="att-tag ${h.attempt<cur?'old':''}">Attempt ${h.attempt}</span>`:''}
+  ${h.why?`<span class="when" style="color:var(--ink-2)">${esc(h.why)}</span>`:''}${h.feedback?`<div class="fb ${h.required?'req':''}">${esc(h.feedback)}</div>`:''}<span class="when">${esc(h.at)} GST</span></div></div>`).join(''):'<div class="empty">No activity yet</div>'}</div></section>`;}
+
+function myTasks(actor){const out=[];for(const r of Object.values(RECS)){if(!r.run||r.run.status!=='active')continue;for(const t of r.run.tasks)if(t.status==='pending'&&t.people.includes(actor)&&actor!==r.requester)out.push({r,t})}return out}
+function inboxPage(){
+ const tab=S.inboxTab;let rows=[];
+ if(tab==='mine')rows=myTasks(S.actor).map(({r,t})=>({r,stage:stageOf(r.def,r.run.stage).label+(t.review?' · '+t.label:''),due:t.due,avail:'Your review'}));
+ else if(tab==='requested')rows=Object.values(RECS).filter(r=>r.requester===S.actor).map(r=>({r,stage:r.run?stageOf(r.def,r.run.stage).label:'Not sent',due:'',avail:sentence(r)}));
+ else rows=(S.actor==='omar'||S.actor==='hamid')?Object.values(RECS).filter(r=>r.run&&r.run.status==='active').map(r=>({r,stage:stageOf(r.def,r.run.stage).label,due:r.run.tasks.find(t=>t.status==='pending')?.due||'',avail:sentence(r)})):[];
+ const tabs=[['mine','My reviews',myTasks(S.actor).length],['requested','Requested by me',Object.values(RECS).filter(r=>r.requester===S.actor).length],['team','Team reviews',null]];
+ return `<div class="page"><div class="head"><div><h1>My reviews</h1><p>Opening a review never grants access to a record. Items you can no longer open drop out of the list.</p></div></div>
+ <div class="tabs" role="tablist">${tabs.map(([k,l,n])=>`<button class="tab ${tab===k?'on':''}" role="tab" aria-selected="${tab===k}" data-a="itab" data-t="${k}">${l}${n!=null?`<span class="tc">${n}</span>`:''}</button>`).join('')}</div>
+ <div class="tcard"><div class="tscroll"><table class="t ibx stack-sm"><thead><tr><th>Document</th><th>Requester</th><th>Summary</th><th class="r">Amount</th><th>Stage</th><th>Due</th><th>Now</th></tr></thead><tbody>
+ ${rows.length?rows.map(x=>`<tr class="click" data-a="open" data-r="${x.r.key}" tabindex="0"><td data-label="Document"><span class="strong">${esc(x.r.number)}</span></td><td data-label="Requester">${esc(pname(x.r.requester))}</td><td data-label="Summary">${esc(x.r.title)}</td><td class="r num" data-label="Amount">${money(totals(x.r).total)}</td><td data-label="Stage">${esc(x.stage)}</td><td data-label="Due">${esc(x.due||'')}</td><td data-label="Now"><span class="sm-txt muted">${esc(x.avail)}</span></td></tr>`).join(''):`<tr><td colspan="7"><div class="empty">${tab==='team'?'Team reviews show only for people with an authorized team view, such as a department manager.':'Nothing waiting for you.'}</div></td></tr>`}
+ </tbody></table></div></div></div>`;}
+function listPage(model){
+ const rs=Object.values(RECS).filter(r=>r.model===model);
+ return `<div class="page"><div class="head"><div><h1>${model==='expenseclaim'?'Expense claims':'Purchase orders'}</h1><p>The document state and the workflow stage are separate columns.</p></div></div>
+ <div class="tcard"><div class="tscroll"><table class="t stack-sm"><thead><tr><th>Number</th><th>Title</th><th class="r">Total</th><th>Document</th><th>Stage</th></tr></thead><tbody>
+ ${rs.map(r=>`<tr class="click" data-a="open" data-r="${r.key}" tabindex="0"><td data-label="Number" class="strong">${esc(r.number)}</td><td data-label="Title">${esc(r.title)}</td><td class="r num" data-label="Total">${money(totals(r).total)}</td><td data-label="Document">${r.lifecycle==='confirmed'?'Confirmed':'Draft'}</td><td data-label="Stage">${stageBadge(r)}</td></tr>`).join('')}
+ </tbody></table></div></div></div>`;}
+
+/* ---------- editor ---------- */
+function issues(def){
+ const out=[];const ids=new Set(def.stages.map(s=>s.id));
+ const chkRoute=(st,route,what)=>{if(!route){out.push({s:st.id,t:`${st.label}: ${what} has no destination`});return}
+  if(route.kind==='stage'){if(!ids.has(route.stage))out.push({s:st.id,t:`${st.label}: ${what} goes to a stage that no longer exists`})}
+  else{route.rows.forEach(rw=>{if(!ids.has(rw.stage))out.push({s:st.id,t:`${st.label}: a conditional destination of ${what} is missing`});chkCond(st,rw.when)});if(!route.otherwise||!ids.has(route.otherwise))out.push({s:st.id,t:`${st.label}: ${what} needs an Otherwise destination`})}};
+ const chkCond=(st,c)=>{if(!c)return;if(c.items){if(c.items.length===0&&c!==null)return;c.items.forEach(x=>chkCond(st,x));return}
+  const empty=c.op!=='isnull'&&(c.value==null||c.value===''||(Array.isArray(c.value)&&(!c.value.length||c.value.some(v=>v==null||v===''))));
+  if(empty)out.push({s:st.id,t:`${st.label}: the condition "${FACTS[def.model][c.field].label}" needs a value`});
+  else if(FACTS[def.model][c.field].type==='money'&&c.op!=='isnull'&&[].concat(c.value).some(v=>toF(v)==null))out.push({s:st.id,t:`${st.label}: "${[].concat(c.value).join(', ')}" is not an amount in AED`})};
+ for(const st of def.stages){
+  if(st.kind==='end')continue;
+  if(st.kind==='review'&&!st.reviews&&!st.assign)out.push({s:st.id,t:`${st.label} has no reviewer`});
+  if(st.require)chkCond(st,st.require.when);
+  if(st.reviews){const g=st.reviews;
+   if(!g.items.length)out.push({s:st.id,t:`${st.label} has no reviews`});
+   g.items.forEach(x=>{if(!x.assign)out.push({s:st.id,t:`${st.label}: ${x.label||'a review'} has nobody assigned`});if(!x.label.trim())out.push({s:st.id,t:`${st.label}: a review needs a name`});chkCond(st,x.when)});
+   if(g.complete.kind==='count'&&(!(g.complete.count>0)||g.complete.count>g.items.length))out.push({s:st.id,t:`${st.label}: ${g.complete.count||0} approvals can never be reached with ${g.items.length} reviews`});
+   chkRoute(st,g.on_complete,'completion');chkRoute(st,g.on_reject,'rejection');chkRoute(st,g.on_changes,'Request changes');
+  } else {
+   if(!st.actions.length)out.push({s:st.id,t:`${st.label} is a dead end: it has no actions`});
+   st.actions.forEach(a=>{if(!a.label.trim())out.push({s:st.id,t:`${st.label}: an action needs a button label`});chkRoute(st,a.go_to,`"${a.label||'an action'}"`);chkCond(st,a.when)});}
+ }
+ const seen=new Set([def.start]);const q=[def.start];
+ while(q.length){const st=stageOf(def,q.shift());if(!st)continue;const dests=[];
+  const add=rt=>{if(!rt)return;if(rt.kind==='stage')dests.push(rt.stage);else{rt.rows.forEach(x=>dests.push(x.stage));dests.push(rt.otherwise)}};
+  if(st.reviews){add(st.reviews.on_complete);add(st.reviews.on_reject);add(st.reviews.on_changes)}st.actions.forEach(a=>add(a.go_to));
+  dests.forEach(d=>{if(d&&!seen.has(d)){seen.add(d);q.push(d)}})}
+ def.stages.forEach(s=>{if(!seen.has(s.id))out.push({s:s.id,t:`${s.label} cannot be reached from ${stageLabel(def,def.start)}`})});
+ if(!def.stages.some(s=>s.kind==='end'&&s.outcome==='approved'))out.push({s:null,t:'The workflow has no Approved end stage'});
+ return out;}
+function nextSummary(def,st){
+ if(st.kind==='end')return st.outcome==='approved'?'Enables Confirm':'Ends the attempt';
+ if(st.reviews)return describeRoute(def,st.reviews.on_complete).replace(/; otherwise/,', otherwise');
+ const a=st.actions.find(x=>x.kind==='approve'||x.kind==='submit')||st.actions[0];return a?`${a.label} → ${describeRoute(def,a.go_to)}`:'No actions';}
+const EDIT_WHO={nobody:'Nobody',requester:'Requester',assigned:'Assigned reviewers',selected:'Selected users or roles',existing:'Everyone with existing edit access'};
+function editSummary(e){if(e.who==='nobody')return 'Nobody edits';let s=EDIT_WHO[e.who]+' edits';if(e.fields.mode==='only')s+=` ${e.fields.names.length} field${e.fields.names.length===1?'':'s'}`;return s}
+function editorPage(){
+ const d=S.draft;const iss=issues(d);
+ return `<div class="page wide" style="max-width:1400px">
+ <div class="head"><div><h1>${esc(d.name)} <span class="badge orange">Draft v${d.version}</span><span class="badge green">Published v${S.published.version}</span></h1>
+ <p>Each stage is a card. Open one to change who reviews it, its buttons and who can edit. Requests already running stay on the version they started with.</p></div>
+ <div class="head-actions"><button class="btn" data-a="undo" ${S.undo.length?'':'disabled'}>${ic('undo','sm')}Undo</button><button class="btn" data-a="dock" data-t="try">${ic('play','sm')}Try example</button><button class="btn" data-a="dock" data-t="access">${ic('shield','sm')}Check access</button><button class="btn" data-a="dock" data-t="settings">${ic('sliders','sm')}Settings</button><button class="btn primary" data-a="publish">Publish…</button></div></div>
+ <div class="ed-grid ${S.dock?'docked':''}"><div class="stack">
+ <section class="card"><div class="wf-headcard">
+  <div class="field wide"><label for="wfname">Name</label><input id="wfname" class="inp" data-c="wf" data-k="name" value="${esc(d.name)}"></div>
+  <div class="field"><label for="wfmodel">Document</label><select id="wfmodel" class="sel" disabled><option>Purchase order</option></select><span class="hint">Only models the app makes configurable are listed</span></div>
+  <div class="field"><label for="wfstart">Starting stage</label><select id="wfstart" class="sel" data-c="wf" data-k="start">${d.stages.map(s=>`<option value="${s.id}" ${s.id===d.start?'selected':''}>${esc(s.label)}</option>`).join('')}</select></div>
+  <div class="field wide"><span class="lbl">Applies when</span>${d.applies_when?condEditor(d.applies_when,'applies'):`<div class="always">Every purchase order <button class="linkbtn" data-a="applies">${ic('filter','xs')}Add a condition</button></div>`}</div>
+  <div class="field"><span class="lbl">Protects</span><div class="ro-field">Confirm</div></div>
+  <div class="field"><span class="lbl">Status</span><div class="ro-field">Draft · ${S.unsaved?'unsaved changes':'saved'}</div></div>
+ </div></section>
+ ${iss.length?`<div class="callout err" role="status">${ic('alert')}<div style="flex:1"><strong>${iss.length} thing${iss.length===1?'':'s'} to fix before publishing</strong><div class="issues" style="margin-top:6px">${iss.map(x=>`<div class="issue">${ic('right','xs')}<button data-a="goto" data-s="${x.s||''}">${esc(x.t)}</button></div>`).join('')}</div></div></div>`:`<div class="callout info" role="status">${ic('check')}<div>No problems found. Runtime checks still apply: a request without an eligible manager blocks instead of skipping.</div></div>`}
+ ${d.stages.map((s,i)=>stageCard(d,s,i,iss)).join('')}
+ <div class="row"><button class="btn" data-a="addstage">${ic('plus','sm')}Add stage</button><span class="muted sm-txt">Order sets the default sequence and how stages are listed. It never rewrites a destination you chose.</span></div>
+ </div>${S.dock?dock():''}</div>
+ ${S.unsaved?`<div class="changebar" role="region" aria-label="Unsaved changes"><span class="cb-dot"></span><strong>Unsaved changes</strong><span class="m">${S.undo.length} edit${S.undo.length===1?'':'s'} to draft v${d.version}</span><span class="spacer"></span><button class="btn" data-a="undo">Undo</button><button class="btn primary" data-a="savedraft">Save draft</button></div>`:''}
+ </div>`;}
+function stageCard(d,s,i,iss){
+ const open=!!S.open[s.id];const bad=iss.some(x=>x.s===s.id);
+ const resp=s.reviews?s.reviews.items.map(x=>x.label).join(', '):s.assign?assignLabel(s.assign):s.kind==='end'?'Nobody':'Nobody assigned';
+ const condTxt=s.require?describe(d.model,s.require.when):s.reviews?`${s.reviews.items.filter(x=>x.when).length} conditional review${s.reviews.items.filter(x=>x.when).length===1?'':'s'}`:'Always';
+ return `<section class="scard ${open?'open':''} ${bad?'err':''}" id="card_${s.id}">
+ <button class="s-sum" data-a="toggle" data-s="${s.id}" aria-expanded="${open}"><span class="s-num">${i+1}</span><span class="s-main"><strong>${esc(s.label)} ${s.kind==='end'?`<span class="badge ${s.outcome==='approved'?'green':'red'} nodot">End: ${esc(s.outcome)}</span>`:s.reviews?`<span class="badge violet nodot">${ic('split','xs')} ${s.reviews.items.length} parallel reviews</span>`:''}${s.id===d.start?'<span class="badge grey nodot">Start</span>':''}${bad?`<span class="badge red nodot">${ic('alert','xs')} Needs attention</span>`:''}</strong>
+  <span class="s-facts"><span>${ic('users')}${esc(resp)}</span><span>${ic('filter')}${esc(condTxt)}</span><span>${ic('pen')}${esc(editSummary(s.edit))}</span></span></span>
+  <span class="s-next">${ic('arrow','sm')}${esc(nextSummary(d,s))}</span>${ic(open?'up':'down','sm')}</button>
+ ${open?stageBody(d,s,i):''}</section>`;}
+function stagePicker(d,val,path,extra){return `<select class="sel" data-c="route" data-p="${path}" aria-label="Go to">${!val?'<option value="">Choose a stage…</option>':''}${d.stages.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(x.label)}</option>`).join('')}${extra?'<option value="__cond">Choose by condition…</option>':''}<option value="__new">New stage…</option></select>`}
+function routeEditor(d,route,path,allowCond=true){
+ if(!route||route.kind==='stage')return stagePicker(d,route&&route.stage,path,allowCond);
+ return `<div class="routebox"><div class="routerow"><span class="lead">First match</span><span class="muted">The first true row decides. Missing values block; they never count as false.</span></div>
+ ${route.rows.map((rw,k)=>`<div class="routecase"><div class="routerow"><span class="lead">${k?'Else if':'If'}</span><span class="spacer"></span><button class="iconbtn sm" data-a="rmroute" data-p="${path}" data-k="${k}" aria-label="Remove this destination">${ic('x','xs')}</button></div>${condEditor(rw.when,path+'.rows.'+k)}<div class="routerow"><span class="lead">Go to</span><div style="min-width:200px">${stagePicker(d,rw.stage,path+'.rows.'+k+'.stage',false)}</div></div></div>`).join('')}
+ <div class="routerow"><span class="lead">Otherwise</span><div style="min-width:160px">${stagePicker(d,route.otherwise,path+'.otherwise',false)}</div><button class="linkbtn" data-a="addroute" data-p="${path}">${ic('plus','xs')}Add destination</button><button class="linkbtn" data-a="unroute" data-p="${path}">Use one stage</button></div></div>`;}
+function condEditor(c,path){
+ if(!c)return '';
+ return groupEditor(c,path,0);}
+function groupEditor(g,path,depth){
+ return `<div class="cgroup" data-cid="${g.id}"><div class="cg-head"><span>Match</span><div class="seg" role="group" aria-label="Match all or any">${['all','any'].map(m=>`<button class="${g.match===m?'on':''}" data-a="match" data-id="${g.id}" data-m="${m}" aria-pressed="${g.match===m}">${m==='all'?'All':'Any'}</button>`).join('')}</div><span>of these</span>${depth?`<button class="iconbtn sm" style="margin-left:auto" data-a="rmcond" data-id="${g.id}" aria-label="Remove group">${ic('x','xs')}</button>`:''}</div>
+ ${g.items.map(x=>x.items?groupEditor(x,path,depth+1):condRow(x)).join('')}
+ <div class="c-actions"><button class="linkbtn" data-a="addcond" data-id="${g.id}">${ic('plus','xs')}Add condition</button>${depth<2?`<button class="linkbtn" data-a="addgroup" data-id="${g.id}">${ic('plus','xs')}Add group</button>`:''}</div></div>`;}
+function condRow(c){
+ const d=S.draft;const F=FACTS[d.model];const f=F[c.field];const ops=OPS[f.type];
+ let val='';
+ if(c.op==='isnull')val='<span class="muted sm-txt">No value needed</span>';
+ else if(f.type==='enum'||f.type==='link'||f.type==='user'){const choices=f.type==='user'?Object.fromEntries(Object.keys(PEOPLE).map(k=>[k,PEOPLE[k].name])):f.choices;
+  if(c.op==='in'||c.op==='nin'){const v=c.value||[];val=`<div class="chips">${Object.entries(choices).map(([k,l])=>`<button class="chip ${v.includes(k)?'on':''}" data-a="multi" data-id="${c.id}" data-v="${k}" aria-pressed="${v.includes(k)}">${esc(l)}</button>`).join('')}</div>`}
+  else val=`<select class="sel" data-c="cval" data-id="${c.id}" aria-label="Value">${c.value?'':'<option value="">Choose…</option>'}${Object.entries(choices).map(([k,l])=>`<option value="${k}" ${c.value===k?'selected':''}>${esc(l)}</option>`).join('')}</select>`}
+ else if(f.type==='money'){const one=(v,i)=>`<div class="addon"><span>AED</span><input class="inp ${v!=null&&v!==''&&toF(v)==null?'bad':''}" inputmode="decimal" data-c="cval" data-id="${c.id}" ${i!=null?`data-i="${i}"`:''} value="${esc(v==null||v===''?'':toF(v)==null?v:grp(fromF(toF(v))))}" aria-label="Amount"></div>`;
+  val=c.op==='between'?`<div class="row">${one((c.value||[])[0],0)}${one((c.value||[])[1],1)}</div>`:one(c.value)}
+ else if(f.type==='date'){val=`<input class="inp" placeholder="DD-MM-YYYY" data-c="cval" data-id="${c.id}" value="${esc(isoToDmy(c.value||''))}" aria-label="Date">`}
+ else val=`<input class="inp" inputmode="numeric" data-c="cval" data-id="${c.id}" value="${esc(c.value||'')}" aria-label="Value">`;
+ return `<div class="crow"><div data-label="Field"><select class="sel" data-c="cfield" data-id="${c.id}" aria-label="Field">${Object.entries(F).map(([k,x])=>`<option value="${k}" ${k===c.field?'selected':''}>${esc(x.label)}${x.source==='lookup'?' (lookup)':x.source==='rows'?' (lines)':''}</option>`).join('')}</select></div>
+ <div data-label="Operator"><select class="sel" data-c="cop" data-id="${c.id}" aria-label="Operator">${ops.map(([o,l])=>`<option value="${o}" ${o===c.op?'selected':''}>${esc(l)}</option>`).join('')}</select></div>
+ <div data-label="Value">${val}</div><div class="tools"><button class="iconbtn sm" data-a="rmcond" data-id="${c.id}" aria-label="Remove condition">${ic('x','xs')}</button></div></div>`;}
+function stageBody(d,s,i){
+ const P=`stages.${i}`;
+ const asg=`<select class="sel" data-c="assign" data-p="${P}.assign" aria-label="Assigned to">${s.assign?'':'<option value="">Nobody</option>'}${ASSIGN_OPTS.map(o=>`<option value="${o.v}" ${o.v===assignKey(s.assign)?'selected':''}>${esc(o.label)}</option>`).join('')}</select>`;
+ const top=`<div class="form"><div class="field"><label for="sl_${s.id}">Stage name</label><input id="sl_${s.id}" class="inp" data-c="set" data-p="${P}.label" value="${esc(s.label)}"></div>
+  ${s.kind==='end'?`<div class="field"><span class="lbl">Ends the attempt as</span><div class="ro-field">${esc(cap(s.outcome))}</div></div>`:s.reviews?`<div class="field"><span class="lbl">Responsible</span><div class="ro-field">The reviews below</div></div>`:`<div class="field"><span class="lbl">${s.kind==='work'?'Worked on by':'Reviewer'}</span>${asg}${s.kind==='review'?'<span class="hint">Resolved when the stage starts and kept for this attempt. Checked again at each decision.</span>':''}</div>`}
+  ${s.kind!=='end'?`<div class="field"><label for="dl_${s.id}">Deadline</label><div class="addon"><input id="dl_${s.id}" class="inp" inputmode="numeric" data-c="deadline" data-p="${P}" value="${s.deadline?s.deadline.hours:''}" placeholder="None"><span class="r">elapsed hours</span></div><span class="hint">Business days need a calendar. Until then deadlines count elapsed hours.</span></div>`:''}
+  ${s.require?`<div class="field full"><span class="lbl">Only start this stage when <small class="muted">otherwise the request is blocked with this message</small></span>${condEditor(s.require.when,P+'.require')}<input class="inp" data-c="set" data-p="${P}.require.message" value="${esc(s.require.message)}" aria-label="Message when blocked"></div>`:''}</div>`;
+ const reviews=s.kind==='review'?(s.reviews?reviewsEditor(d,s,P):`<div><button class="btn sm" data-a="addreviews" data-p="${P}">${ic('split','sm')}Add parallel reviews</button> <span class="muted sm-txt">For two or more reviews at once, such as Finance and Procurement</span></div>`):'';
+ const actions=s.kind==='end'?(s.outcome==='approved'?`<div class="callout info">${ic('info')}<div>Reaching Approved makes <strong>Confirm</strong> available to people who may confirm. It does not confirm by itself unless <em>Settings › Completion</em> names an authorized executor.</div></div>`:''):actionsEditor(d,s,P);
+ return `<div class="s-body">${top}${reviews}${actions}${editEditor(d,s,P)}
+ <div class="s-foot"><button class="btn xs" data-a="dup" data-s="${s.id}">${ic('copy','xs')}Duplicate</button><button class="btn xs" data-a="mv" data-s="${s.id}" data-d="-1" ${i===0?'disabled':''}>${ic('up','xs')}Move up</button><button class="btn xs" data-a="mv" data-s="${s.id}" data-d="1" ${i===d.stages.length-1?'disabled':''}>${ic('down','xs')}Move down</button><span class="spacer"></span><button class="btn xs danger" data-a="rmstage" data-s="${s.id}">${ic('trash','xs')}Remove</button></div></div>`;}
+function actionsEditor(d,s,P){
+ const grpStage=!!s.reviews;
+ return `<div class="s-sec"><h4>Actions <small>${grpStage?'Each review uses these buttons. Where a decision leads is set by the reviews above.':'The buttons people see at this stage'}</small></h4>
+ <div class="etable-wrap"><table class="etable stack-sm"><thead><tr><th>Button label</th><th>Who can use it</th><th>Only when</th><th>Go to</th><th>Feedback</th><th>Execute</th><th></th></tr></thead><tbody>
+ ${s.actions.map((a,k)=>{const AP=`${P}.actions.${k}`;return `<tr><td data-label="Button label"><input class="inp" data-c="set" data-p="${AP}.label" value="${esc(a.label)}" aria-label="Button label"></td>
+  <td data-label="Who can use it"><select class="sel" data-c="who" data-p="${AP}" aria-label="Who can use it"><option value="assigned" ${a.who.kind==='assigned'?'selected':''}>${s.kind==='work'?'Requester':'Assigned reviewer'}</option><option value="requester" ${a.who.kind==='requester'&&s.kind!=='work'?'selected':''}>Requester</option><option value="role:director" ${a.who.kind==='role'?'selected':''}>Director role</option></select></td>
+  <td data-label="Only when">${a.when?`<button class="linkbtn" data-a="editwhen" data-p="${AP}">${esc(describe(d.model,a.when))}</button>`:`<button class="linkbtn" data-a="addwhen" data-p="${AP}">Always</button>`}</td>
+  <td data-label="Go to">${grpStage?'<span class="muted sm-txt">Set by the reviews</span>':(a.go_to&&a.go_to.kind==='first_match'?'<span class="muted sm-txt">By condition, below</span>':stagePicker(d,a.go_to&&a.go_to.stage,AP+'.go_to',true))}</td>
+  <td data-label="Feedback"><select class="sel" data-c="set" data-p="${AP}.feedback.mode" aria-label="Feedback">${['hidden','optional','required'].map(m=>`<option value="${m}" ${a.feedback.mode===m?'selected':''}>${cap(m)}</option>`).join('')}</select></td>
+  <td data-label="Execute"><select class="sel" data-c="exec" data-p="${AP}" aria-label="Execute"><option value="">None</option><option value="confirm" ${a.execute?'selected':''}>Confirm (needs an executor)</option></select></td>
+  <td class="tools"><button class="iconbtn sm" data-a="rmaction" data-p="${P}" data-k="${k}" aria-label="Remove ${esc(a.label)}">${ic('trash','xs')}</button></td></tr>
+  ${a.when&&S.whenOpen===AP?`<tr class="sub"><td colspan="7">${condEditor(a.when,AP+'.when')}<button class="linkbtn" data-a="rmwhen" data-p="${AP}">Always available</button></td></tr>`:''}
+  ${!grpStage&&a.go_to&&a.go_to.kind==='first_match'?`<tr class="sub"><td colspan="7">${routeEditor(d,a.go_to,AP+'.go_to')}</td></tr>`:''}`}).join('')}
+ </tbody></table><button class="linkbtn" style="margin:6px 8px" data-a="addaction" data-p="${P}">${ic('plus','xs')}Add action</button></div></div>`;}
+function reviewsEditor(d,s,P){
+ const g=s.reviews;const RP=P+'.reviews';
+ return `<div class="s-sec"><h4>${ic('split','sm')}Parallel reviews <small>Only reviews whose condition holds are started. The stage waits only for those.</small></h4>
+ <div class="etable-wrap"><table class="etable stack-sm"><thead><tr><th>Review</th><th>Assigned to</th><th>Only when</th><th>Required decisions</th><th></th></tr></thead><tbody>
+ ${g.items.map((x,k)=>{const XP=`${RP}.items.${k}`;return `<tr><td data-label="Review"><input class="inp" data-c="set" data-p="${XP}.label" value="${esc(x.label)}" aria-label="Review name"></td>
+  <td data-label="Assigned to"><select class="sel" data-c="assign" data-p="${XP}.assign" aria-label="Assigned to">${x.assign?'':'<option value="">Nobody</option>'}${ASSIGN_OPTS.map(o=>`<option value="${o.v}" ${o.v===assignKey(x.assign)?'selected':''}>${esc(o.label)}</option>`).join('')}</select></td>
+  <td data-label="Only when">${x.when?`<button class="linkbtn" data-a="whenrev" data-p="${XP}">${esc(describe(d.model,x.when))}</button>`:`<button class="linkbtn" data-a="addwhen" data-p="${XP}">Always</button>`}</td>
+  <td data-label="Required decisions"><select class="sel" data-c="set" data-p="${XP}.required.kind" aria-label="Required decisions"><option value="any" ${x.required.kind==='any'?'selected':''}>Any one</option><option value="all" ${x.required.kind==='all'?'selected':''}>Everyone assigned</option></select></td>
+  <td class="tools"><button class="iconbtn sm" data-a="rmreview" data-p="${RP}" data-k="${k}" aria-label="Remove ${esc(x.label)}">${ic('trash','xs')}</button></td></tr>
+  ${x.when&&S.whenOpen===XP?`<tr class="sub"><td colspan="5">${condEditor(x.when,XP+'.when')}<button class="linkbtn" data-a="rmwhen" data-p="${XP}">Always</button></td></tr>`:''}`}).join('')}
+ </tbody></table><button class="linkbtn" style="margin:6px 8px" data-a="addreview" data-p="${RP}">${ic('plus','xs')}Add review</button></div>
+ <div class="stack" style="gap:10px;margin-top:12px">
+ <div class="optrow"><span class="lbl">Run</span><div class="seg">${[['together','Run together'],['sequence','In sequence']].map(([v,l])=>`<button class="${g.run===v?'on':''}" data-a="setv" data-p="${RP}.run" data-v="${v}" aria-pressed="${g.run===v}">${l}</button>`).join('')}</div></div>
+ <div class="optrow"><span class="lbl">Complete when</span><div class="seg">${[['all','All approve'],['any','Any approves'],['count','Number approve']].map(([v,l])=>`<button class="${g.complete.kind===v?'on':''}" data-a="setv" data-p="${RP}.complete.kind" data-v="${v}" aria-pressed="${g.complete.kind===v}">${l}</button>`).join('')}</div>${g.complete.kind==='count'?`<input class="inp" style="width:70px" inputmode="numeric" data-c="count" data-p="${RP}" value="${g.complete.count||''}" aria-label="Number of approvals">`:''}<span class="muted sm-txt">Counts reviews actually started, never skipped ones</span></div>
+ ${g.complete.kind!=='all'?`<div class="optrow"><span class="lbl">If one review rejects</span><div class="seg">${[['veto','Reject the stage'],['branch','Only that review fails']].map(([v,l])=>`<button class="${g.rejection===v?'on':''}" data-a="setv" data-p="${RP}.rejection" data-v="${v}">${l}</button>`).join('')}</div></div>`:''}
+ <div class="field"><span class="lbl">When complete, go to</span>${routeEditor(d,g.on_complete,RP+'.on_complete')}</div>
+ <div class="optrow"><span class="lbl">When rejected, go to</span><div style="min-width:180px">${stagePicker(d,g.on_reject&&g.on_reject.stage,RP+'.on_reject',false)}</div><span class="lbl" style="min-width:0">Changes requested</span><div style="min-width:180px">${stagePicker(d,g.on_changes&&g.on_changes.stage,RP+'.on_changes',false)}</div></div>
+ <label class="radio"><input type="checkbox" data-c="whennone" data-p="${RP}" ${g.when_none==='continue'?'checked':''}><span>Continue when no reviews apply<small>Off by default: with no applicable review the request is blocked. When on, Try example shows it.</small></span></label>
+ </div></div>`;}
+function editEditor(d,s,P){
+ const e=s.edit;const EP=P+'.edit';const more=S.editMore===s.id;
+ const fieldNames={supplier:'Supplier',purchase_type:'Purchase type',department:'Department',required_by:'Required by',remarks:'Remarks'};
+ return `<div class="s-sec"><h4>${ic('pen','sm')}Who can edit? <small>${esc(editSummary(e))}. Workflow only narrows existing rights.</small></h4>
+ <div class="seg" role="group" aria-label="Who can edit">${Object.entries(EDIT_WHO).map(([k,l])=>`<button class="${e.who===k?'on':''}" data-a="editwho" data-p="${EP}" data-v="${k}" aria-pressed="${e.who===k}">${l}</button>`).join('')}</div>
+ ${e.who!=='nobody'?`<div style="margin-top:8px"><button class="linkbtn" data-a="editmore" data-s="${s.id}" aria-expanded="${more}">${ic(more?'up':'down','xs')}Fields, lines and attachments</button></div>`:''}
+ ${more&&e.who!=='nobody'?`<div class="stack" style="gap:10px;margin-top:10px">
+  <div class="optrow"><span class="lbl">Fields</span><div class="seg">${[['all','All otherwise-writable fields'],['only','Only selected fields']].map(([v,l])=>`<button class="${e.fields.mode===v?'on':''}" data-a="setv" data-p="${EP}.fields.mode" data-v="${v}">${l}</button>`).join('')}</div></div>
+  ${e.fields.mode==='only'?`<div class="chips">${Object.entries(fieldNames).map(([k,l])=>`<button class="chip ${e.fields.names.includes(k)?'on':''}" data-a="efield" data-p="${EP}" data-v="${k}" aria-pressed="${e.fields.names.includes(k)}">${l}</button>`).join('')}</div><span class="hint" style="font-size:11.5px;color:var(--muted-2)">Fields added to the model later are not editable until they are selected here.</span>`:''}
+  <div class="optrow"><span class="lbl">Lines</span>${['edit','add','remove','reorder'].map(k=>`<label class="radio"><input type="checkbox" data-c="etable" data-p="${EP}" data-k="${k}" ${e.tables.lines[k]?'checked':''}>${k==='edit'?'Edit cells':cap(k)+' rows'}</label>`).join('')}</div>
+  <div class="optrow"><span class="lbl">Attachments</span>${['add','remove'].map(k=>`<label class="radio"><input type="checkbox" data-c="eatt" data-p="${EP}" data-k="${k}" ${e.attachments[k]?'checked':''}>${cap(k)}</label>`).join('')}</div>
+ </div>`:''}</div>`;}
+function dock(){
+ const t=S.dockTab;
+ const tabs=[['settings','Settings'],['try','Try example'],['access','Check access'],['json','JSON']];
+ let body='';
+ if(t==='settings')body=settingsPanel();else if(t==='try')body=tryPanel();else if(t==='access')body=accessPanel();else body=`<p class="muted sm-txt" style="margin:0">The neutral schema the browser edits and the backend validates. Stable ids, never labels or positions.</p><pre class="code jsonbox">${esc(JSON.stringify(S.draft,null,2))}</pre>`;
+ return `<aside class="dock" aria-label="Workflow side panel"><div class="dock-head"><h2>${esc(tabs.find(x=>x[0]===t)[1])}</h2><button class="iconbtn" style="margin-left:auto" data-a="undock" aria-label="Close side panel">${ic('x','sm')}</button></div>
+ <div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab ${t===k?'on':''}" role="tab" aria-selected="${t===k}" data-a="dock" data-t="${k}">${l}</button>`).join('')}</div>
+ <div class="dock-body">${body}</div></aside>`;}
+function settingsPanel(){
+ const s=S.draft.settings;
+ const radio=(name,val,opts)=>`<div class="radio-list">${opts.map(([v,l,h])=>`<label class="radio"><input type="radio" name="${name}" data-c="setting" data-k="${name}" value="${v}" ${val===v?'checked':''}><span>${l}${h?`<small>${h}</small>`:''}</span></label>`).join('')}</div>`;
+ return `<div class="field"><span class="lbl">Protected action</span><div class="ro-field">Confirm purchase order</div><span class="hint">The app declares which actions a workflow may protect. Confirm needs an approved attempt.</span></div>
+ <div class="field"><span class="lbl">When the approval completes</span>${radio('completion',s.completion.mode,[['enable','Allow confirmation','People who may confirm can now confirm. The last reviewer gets no extra rights.'],['execute','Confirm automatically','Runs as a named, authorized executor, recorded apart from the approver. Rechecked at that moment.']])}
+  ${s.completion.mode==='execute'?`<select class="sel" aria-label="Executor"><option>Sara Khan (may confirm)</option><option>Hamid Qureshi (may confirm)</option></select>`:''}</div>
+ <div class="field"><span class="lbl">Self-approval</span>${radio('self_approval',s.self_approval,[['block','Not allowed','A requester never decides on their own request, whatever their role.'],['allow','Allowed']])}</div>
+ <div class="field"><span class="lbl">Withdrawal</span>${radio('withdraw',s.withdraw.allowed?'yes':'no',[['yes','The requester may withdraw while in review'],['no','Not allowed']])}</div>
+ <div class="field"><span class="lbl">Delegation</span>${radio('delegation',s.delegation.allowed?'yes':'no',[['yes','Allowed','A delegate needs their own access to the document. Delegation never adds a vote.'],['no','Not allowed']])}</div>
+ <div class="field"><span class="lbl">Edits while in review</span><div class="ro-field">Any change ends the attempt, except Remarks</div><span class="hint">The app marks harmless fields. Changing anything else closes open reviews and needs a new attempt.</span></div>
+ <div class="field"><span class="lbl">Notifications</span><label class="radio"><input type="checkbox" checked>Tell reviewers when a review starts</label><label class="radio"><input type="checkbox" checked>Tell the requester about each decision</label><label class="radio"><input type="checkbox" checked>Remind after 24 elapsed hours</label><span class="hint">Messages carry a link and no document values.</span></div>
+ <div class="field"><span class="lbl">When no workflow applies</span><div class="ro-field">${ic('lock','xs')} Blocked: Confirm needs approval</div><span class="hint">Declared by the app, not changeable here.</span></div>
+ <div class="field"><span class="lbl">New requests</span><label class="radio"><input type="checkbox" data-c="setting" data-k="paused" ${s.paused?'checked':''}><span>Pause new starts<small>Running requests carry on. New requests are blocked with a message.</small></span></label></div>`;}
+function tryPanel(){
+ const x=S.tryx;const P=FACTS.purchaseorder;
+ const res=preview(S.draft,x);
+ return `<p class="muted sm-txt" style="margin:0">Uses the backend evaluator on a saved order or sample values. Creates no tasks, history, jobs or postings.</p>
+ <div class="seg"><button class="${x.source==='sample'?'on':''}" data-a="trysrc" data-v="sample">Sample values</button><button class="${x.source==='record'?'on':''}" data-a="trysrc" data-v="record">Saved order</button></div>
+ ${x.source==='record'?`<div class="field"><label for="tryrec">Purchase order</label><select id="tryrec" class="sel" data-c="try" data-k="rec">${Object.values(RECS).filter(r=>r.model==='purchaseorder').map(r=>`<option value="${r.key}" ${x.rec===r.key?'selected':''}>${r.number} · ${money(totals(r).total)}</option>`).join('')}</select></div>`:
+ `<div class="field"><label for="trytype">Purchase type</label><select id="trytype" class="sel" data-c="try" data-k="purchase_type">${Object.entries(P.purchase_type.choices).map(([k,l])=>`<option value="${k}" ${x.purchase_type===k?'selected':''}>${l}</option>`).join('')}</select></div>
+ <div class="field"><label for="trytotal">Total</label><div class="addon"><span>AED</span><input id="trytotal" class="inp" inputmode="decimal" data-c="try" data-k="total" value="${esc(x.total)}"></div><span class="hint">Leave it empty to see a blocked route.</span></div>
+ <div class="field"><label for="tryreq">Requester</label><select id="tryreq" class="sel" data-c="try" data-k="requester">${['sara','priya','layla'].map(k=>`<option value="${k}" ${x.requester===k?'selected':''}>${PEOPLE[k].name}</option>`).join('')}</select></div>`}
+ <button class="btn primary sm" data-a="runtry">${ic('play','sm')}Run preview</button>
+ <ol class="pv" aria-live="polite">${res.map(l=>`<li class="${l.cls||''}"><strong>${esc(l.title)}</strong>${l.lines?`<ul class="pvsub">${l.lines.map(z=>`<li><span class="k">${esc(z[0])}</span><span>${esc(z[1])}</span></li>`).join('')}</ul>`:''}</li>`).join('')}</ol>`;}
+function preview(def,x){
+ let r;if(x.source==='record')r=RECS[x.rec];
+ else{r={model:'purchaseorder',requester:x.requester,f:{purchase_type:x.purchase_type,department:'it',supplier:'sup_hbr',required_by:'2026-11-30'},lines:[]};}
+ const facts=x.source==='record'?factsOf(r):{...factsOf({...r,lines:[]}),total:toF(x.total)!=null?fromF(toF(x.total)):null,'lines.count':'1'};
+ const out=[];let id=def.start;let guard=0;
+ const edit=st=>editSummary(st.edit);
+ while(id&&guard++<12){const st=stageOf(def,id);if(!st){out.push({title:'Broken destination',cls:'blocked'});break}
+  if(st.kind==='end'){out.push({title:`${st.label}`,lines:[['Outcome',st.outcome==='approved'?'Approved. Confirm becomes available to people who may confirm.':'Rejected']]});break}
+  if(st.require){const e=evaluate(def.model,st.require.when,facts);if(e.value!==true){out.push({title:`Blocked at ${st.label}`,cls:'blocked',lines:[['Why',e.value===null?e.missing.join(', ')+' is missing':st.require.message]]});break}}
+  if(st.kind==='work'){const a=st.actions[0];out.push({title:`${st.label}`,lines:[['Who',pname(x.source==='record'?r.requester:x.requester)+' · '+assignLabel(st.assign)],['Can edit',edit(st)],['Buttons',st.actions.map(a=>a.label).join(', ')||'None'],['Next',a?describeRoute(def,a.go_to):'Dead end']]});id=a&&a.go_to?(a.go_to.kind==='stage'?a.go_to.stage:a.go_to.otherwise):null;continue}
+  if(st.reviews){const lines=[];let started=0;
+   for(const rv of st.reviews.items){const e=evaluate(def.model,rv.when,facts);if(e.value===null){out.push({title:`Blocked at ${st.label}`,cls:'blocked',lines:[['Why',`${e.missing.join(', ')} is missing for ${rv.label}`]]});return out}
+    if(e.value){started++;lines.push(['✓ '+rv.label,`${resolve(rv.assign,{requester:r.requester}).map(pname).join(', ')||'Nobody eligible'} · ${assignLabel(rv.assign)}${rv.when?' · '+e.why:''}`])}else lines.push(['– '+rv.label,`Skipped: ${e.why}`])}
+   if(!started&&st.reviews.when_none!=='continue'){out.push({title:`Blocked at ${st.label}`,cls:'blocked',lines:[['Why','No review applies']]});break}
+   lines.push(['Can edit',edit(st)],['Completes when',st.reviews.complete.kind==='all'?`all ${started} started reviews approve`:st.reviews.complete.kind==='any'?'any review approves':`${st.reviews.complete.count} approve`]);
+   const route=st.reviews.on_complete;let next=route.kind==='stage'?route.stage:null;
+   if(route.kind==='first_match'){for(const row of route.rows){const e=evaluate(def.model,row.when,facts);if(e.value===null){lines.push(['Next','Blocked: '+e.missing.join(', ')+' is missing. Not treated as false.']);out.push({title:`${st.label}, run together`,lines,cls:'blocked'});return out}if(e.value){next=row.stage;lines.push(['Next',`${stageLabel(def,row.stage)}: ${e.why}`]);break}}
+    if(!next){next=route.otherwise;const e=evaluate(def.model,route.rows[0]?.when,facts);lines.push(['Next',`${stageLabel(def,next)}: ${e.why}`])}}
+   out.push({title:`${st.label}, ${st.reviews.run==='together'?'run together':'in sequence'}`,lines});id=next;continue}
+  const a=st.actions.find(z=>z.kind==='approve');const people=resolve(st.assign,{requester:x.source==='record'?r.requester:x.requester});
+  const self=people.includes(x.source==='record'?r.requester:x.requester);
+  out.push({title:st.label,cls:people.length?'':'blocked',lines:[['Reviewer',people.length?people.map(pname).join(', ')+' · '+assignLabel(st.assign):'Nobody eligible: blocks at runtime'],['Can edit',edit(st)],['Buttons',st.actions.map(z=>z.label+(z.feedback.mode==='required'?' (feedback required)':'')).join(', ')],...(self?[['Note','The requester is the reviewer here; self-approval is not allowed, so this blocks']]:[]),['If approved',a?describeRoute(def,a.go_to):'No Approve action']]});
+  id=a&&a.go_to?(a.go_to.kind==='stage'?a.go_to.stage:(()=>{for(const row of a.go_to.rows){if(evaluate(def.model,row.when,facts).value)return row.stage}return a.go_to.otherwise})()):null;}
+ out.push({title:'Nothing was saved',cls:'skip',lines:[['','No tasks, history, jobs or postings were created.']]});
+ return out;}
+function accessPanel(){
+ const d=S.draft;const a=S.access;
+ const res=accessText(d,a.who,a.stage);
+ return `<p class="muted sm-txt" style="margin:0">Combines the app's permissions with this draft. Workflow can only narrow what a role may do.</p>
+ <div class="field"><label for="acwho">Person</label><select id="acwho" class="sel" data-c="access" data-k="who">${Object.keys(PEOPLE).map(k=>`<option value="${k}" ${a.who===k?'selected':''}>${PEOPLE[k].name}, ${PEOPLE[k].title}</option>`).join('')}</select></div>
+ <div class="field"><label for="acst">Stage</label><select id="acst" class="sel" data-c="access" data-k="stage">${d.stages.map(s=>`<option value="${s.id}" ${a.stage===s.id?'selected':''}>${esc(s.label)}</option>`).join('')}</select></div>
+ <div class="tryres" role="status"><strong style="font-size:15px">${esc(res.headline)}</strong><span class="sm-txt" style="color:#3e5482">${esc(res.detail)}</span></div>
+ <div class="s-sec"><h4>Access matrix, ${esc(stageLabel(d,a.stage))}</h4><table class="t access-matrix"><thead><tr><th>Person</th><th class="c">Decide</th><th class="c">Edit</th></tr></thead><tbody>
+ ${Object.keys(PEOPLE).map(k=>{const z=accessText(d,k,a.stage);return `<tr><td>${esc(PEOPLE[k].name)}<span class="sub">${esc(PEOPLE[k].title)}</span></td><td class="c ${z.decide?'yes':'no'}">${z.decide?'Yes':'No'}</td><td class="c ${z.edit?'yes':'no'}">${z.edit?'Yes':'No'}</td></tr>`}).join('')}</tbody></table></div>`;}
+function accessText(d,who,stageId){
+ const st=stageOf(d,stageId);const p=PEOPLE[who];const r={requester:'sara'};
+ let decide=false,as=[];
+ if(st.reviews)for(const x of st.reviews.items){if(resolve(x.assign,r).includes(who)){decide=true;as.push(x.label)}}
+ else if(st.kind==='review'&&resolve(st.assign,r).includes(who)){decide=true;as.push(st.label)}
+ if(who==='sara'&&st.kind==='review'){decide=false}
+ let edit=false;
+ if(p.update){if(st.edit.who==='existing')edit=true;if(st.edit.who==='requester'&&who==='sara')edit=true;if(st.edit.who==='assigned'&&decide)edit=true}
+ const verbs=decide?`Can approve, request changes or reject as ${as.join(' and ')}`:(st.kind==='work'&&who==='sara'?'Can send it for review':'Cannot decide at this stage');
+ const ed=edit?(st.edit.fields.mode==='only'?`can edit ${st.edit.fields.names.length} selected fields`:'can edit')+'.':'cannot edit.';
+ const why=!p.update?`${p.name}'s role has no update permission on purchase orders.`:!edit?`During ${st.label} ${EDIT_WHO[st.edit.who].toLowerCase()} edits. Total and every line are read only.`:'Only within the rights the role already has.';
+ return {decide,edit,headline:`${verbs}; ${ed}`,detail:(who==='sara'&&st.kind==='review'?'Self-approval is not allowed. ':'')+why};}
+
+/* ---------- dialogs ---------- */
+function dialog(){
+ const D=S.dialog;if(!D)return '';
+ if(D.type==='decide'){const r=RECS[D.rec];const a=D.a;const act=a.action;const fb=act.feedback||FB('hidden');
+  const verb=act.kind==='approve'?`Approve ${modelLabel(r)}`:act.kind==='reject'?`Reject ${modelLabel(r)}`:act.kind==='request_changes'?'Request changes':act.kind==='withdraw'?'Withdraw request':act.label;
+  const max=fb.max_length||2000;const len=(D.text||'').length;
+  return `<div class="scrim" data-a="dclose"></div><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgt"><div class="d-head"><div><h2 id="dlgt">${esc(verb)}${a.task&&a.task.review?' as '+esc(a.task.label):''}</h2><p>${esc(r.number)} · ${money(totals(r).total)}</p></div><button class="iconbtn" data-a="dclose" style="margin-left:auto" aria-label="Close">${ic('x','sm')}</button></div>
+  <div class="d-body">
+   ${D.conflict?`<div class="callout warn" role="alert">${ic('refresh')}<div><strong>This request changed. Review the latest status.</strong><br>${esc(D.conflict)} Your feedback is kept below.</div></div>`:''}
+   <div class="callout info">${ic('arrow')}<div><strong>What happens:</strong> ${esc(effectText(r,a))}${act.kind==='request_changes'?' This closes attempt '+r.run.attempt+'; sending it again starts a new attempt.':''}</div></div>
+   ${fb.mode!=='hidden'?`<div class="field"><label for="fbt">${esc(fb.label)}${fb.mode==='required'?' <span style="color:var(--red)">(required)</span>':' (optional)'}</label>
+    <textarea id="fbt" class="ta ${D.error?'bad':''}" maxlength="${max}" data-c="fb" placeholder="${esc(fb.prompt||'')}" aria-describedby="fbh ${D.error?'fbe':''}" ${D.error?'aria-invalid="true"':''}>${esc(D.text||'')}</textarea>
+    ${D.error?`<span class="err" id="fbe">${esc(D.error)}</span>`:''}
+    <span class="hint" id="fbh"><span id="fbc">${len}</span> / ${max} · Everyone who can see this request's workflow history can read it. It cannot be edited later; corrections are added as a clarification.</span></div>`:''}
+   ${D.canConflict?`<label class="radio"><input type="checkbox" data-c="sim" ${D.sim?'checked':''}><span>Prototype only: someone else decides first<small>Shows the 409 conflict and keeps your text</small></span></label>`:''}
+  </div><div class="d-foot"><button class="btn" data-a="dclose">Cancel</button><button class="btn primary ${act.kind==='reject'?'danger solid':''}" data-a="dsend">${esc(verb)}</button></div></div>`;}
+ if(D.type==='publish'){const iss=issues(S.draft);const ch=changes(S.published,S.draft);
+  return `<div class="scrim" data-a="dclose"></div><div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="pubt"><div class="d-head"><div><h2 id="pubt">Publish version ${S.draft.version}</h2><p>Purchase order · protects Confirm</p></div><button class="iconbtn" data-a="dclose" style="margin-left:auto" aria-label="Close">${ic('x','sm')}</button></div>
+  <div class="d-body">${iss.length?`<div class="callout err">${ic('alert')}<div><strong>Publishing is blocked.</strong><div class="issues" style="margin-top:6px">${iss.map(x=>`<div class="issue">${ic('right','xs')}<span>${esc(x.t)}</span></div>`).join('')}</div></div></div>`:''}
+   <div class="d-section"><h3>What changes from version ${S.published.version}</h3>${ch.length?`<ul class="chg">${ch.map(c=>`<li>${ic(c[0]==='+'?'plus':c[0]==='-'?'trash':'pen','sm')}<span>${esc(c[1])}</span></li>`).join('')}</ul>`:'<p class="muted">No changes.</p>'}</div>
+   <div class="d-section"><h3>Who is affected</h3><ul class="chg"><li>${ic('info','sm')}<span>New purchase order requests use version ${S.draft.version}.</span></li><li>${ic('lock','sm')}<span>${Object.values(RECS).filter(r=>r.model==='purchaseorder'&&r.run&&(r.run.status==='active'||r.run.status==='blocked')).length} running requests stay on the version they started with.</span></li></ul></div>
+   <div class="field"><label for="pubnote">Publication note</label><textarea id="pubnote" class="ta" placeholder="Why this change" data-c="pubnote">${esc(S.draft.notes||'')}</textarea></div></div>
+  <div class="d-foot"><button class="btn" data-a="dclose">Cancel</button><button class="btn primary" data-a="dopublish" ${iss.length||!ch.length?'disabled':''}>Publish version ${S.draft.version}</button></div></div>`;}
+ if(D.type==='rmstage'){const d=S.draft;const st=stageOf(d,D.s);const refs=refsTo(d,D.s);
+  return `<div class="scrim" data-a="dclose"></div><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="rmt"><div class="d-head"><div><h2 id="rmt">Remove ${esc(st.label)}?</h2></div><button class="iconbtn" data-a="dclose" style="margin-left:auto" aria-label="Close">${ic('x','sm')}</button></div>
+  <div class="d-body">${refs.length?`<p style="margin:0">These lead to ${esc(st.label)}. They will show as broken until you choose another stage:</p><ul class="chg">${refs.map(x=>`<li>${ic('arrow','sm')}<span>${esc(x)}</span></li>`).join('')}</ul>`:`<p style="margin:0">Nothing leads to this stage.</p>`}<p class="muted sm-txt" style="margin:0">You can undo this until you save.</p></div>
+  <div class="d-foot"><button class="btn" data-a="dclose">Cancel</button><button class="btn danger solid" data-a="dormstage">Remove stage</button></div></div>`;}
+ if(D.type==='repair')return `<div class="scrim" data-a="dclose"></div><div class="dialog" role="dialog" aria-modal="true"><div class="d-head"><div><h2>Repair assignment</h2><p>Administrator action, recorded with a reason</p></div><button class="iconbtn" data-a="dclose" style="margin-left:auto" aria-label="Close">${ic('x','sm')}</button></div><div class="d-body"><p style="margin:0" class="sm-txt">Repair assigns an eligible person or ends the attempt with a reason. It never lowers the quorum and never skips the review.</p><div class="field"><label>Reason (required)</label><textarea class="ta"></textarea></div></div><div class="d-foot"><button class="btn" data-a="dclose">Close</button></div></div>`;
+ return '';}
+function refsTo(d,id){const out=[];const lab=s=>s.label;
+ for(const s of d.stages){if(s.id===id)continue;
+  for(const a of s.actions){const rt=a.go_to;if(!rt)continue;if((rt.kind==='stage'&&rt.stage===id)||(rt.kind==='first_match'&&(rt.otherwise===id||rt.rows.some(x=>x.stage===id))))out.push(`${lab(s)} › ${a.label}`)}
+  if(s.reviews){const g=s.reviews;[['on_complete','When complete'],['on_reject','When rejected'],['on_changes','Changes requested']].forEach(([k,l])=>{const rt=g[k];if(rt&&((rt.kind==='stage'&&rt.stage===id)||(rt.kind==='first_match'&&(rt.otherwise===id||rt.rows.some(x=>x.stage===id)))))out.push(`${lab(s)} › ${l}`)})}}
+ if(d.start===id)out.push('Starting stage');return out;}
+function changes(a,b){
+ const out=[];const A=Object.fromEntries(a.stages.map(s=>[s.id,s])),B=Object.fromEntries(b.stages.map(s=>[s.id,s]));
+ if(a.name!==b.name)out.push(['~',`Renamed the workflow to "${b.name}"`]);
+ if(a.start!==b.start)out.push(['~',`Starting stage is now ${stageLabel(b,b.start)}`]);
+ for(const s of b.stages){const o=A[s.id];if(!o){out.push(['+',`Added stage ${s.label}`]);continue}
+  if(o.label!==s.label)out.push(['~',`Renamed ${o.label} to ${s.label}`]);
+  if(assignKey(o.assign)!==assignKey(s.assign))out.push(['~',`${s.label}: reviewer is now ${assignLabel(s.assign)} (was ${assignLabel(o.assign)})`]);
+  if(o.edit.who!==s.edit.who||JSON.stringify(o.edit)!==JSON.stringify(s.edit))out.push(['~',`${s.label}: ${editSummary(s.edit)} (was ${editSummary(o.edit).toLowerCase()})`]);
+  const oa=Object.fromEntries(o.actions.map(x=>[x.id,x]));for(const x of s.actions){const y=oa[x.id];if(!y)out.push(['+',`${s.label}: added button ${x.label}`]);else{if(y.label!==x.label)out.push(['~',`${s.label}: button ${y.label} is now ${x.label}`]);if(JSON.stringify(y.go_to)!==JSON.stringify(x.go_to))out.push(['~',`${s.label} › ${x.label} now goes to ${describeRoute(b,x.go_to)}`]);if(y.feedback.mode!==x.feedback.mode)out.push(['~',`${s.label} › ${x.label}: feedback is now ${x.feedback.mode}`])}}
+  o.actions.filter(x=>!s.actions.some(z=>z.id===x.id)).forEach(x=>out.push(['-',`${s.label}: removed button ${x.label}`]));
+  const og=o.reviews,ng=s.reviews;
+  if(ng||og){const oi=Object.fromEntries((og?og.items:[]).map(x=>[x.id,x]));
+   for(const x of (ng?ng.items:[])){const y=oi[x.id];if(!y)out.push(['+',`${s.label}: added ${x.label} review, assigned to ${assignLabel(x.assign)}, ${x.when?'only when '+describe(b.model,x.when):'always'}`]);else{if(JSON.stringify(stripIds(y.when))!==JSON.stringify(stripIds(x.when)))out.push(['~',`${s.label} › ${x.label}: now ${x.when?'only when '+describe(b.model,x.when):'always'}`]);if(assignKey(y.assign)!==assignKey(x.assign))out.push(['~',`${s.label} › ${x.label}: assigned to ${assignLabel(x.assign)}`])}}
+   (og?og.items:[]).filter(x=>!(ng?ng.items:[]).some(z=>z.id===x.id)).forEach(x=>out.push(['-',`${s.label}: removed ${x.label} review`]));
+   if(og&&ng){if(JSON.stringify(stripIds(og.on_complete))!==JSON.stringify(stripIds(ng.on_complete)))out.push(['~',`${s.label}: when complete, goes to ${describeRoute(b,ng.on_complete)} (was ${describeRoute(a,og.on_complete)})`]);
+    if(JSON.stringify(og.complete)!==JSON.stringify(ng.complete))out.push(['~',`${s.label}: completes when ${ng.complete.kind==='count'?ng.complete.count+' approve':ng.complete.kind+' approve'}`])}}
+ }
+ a.stages.filter(s=>!B[s.id]).forEach(s=>out.push(['-',`Removed stage ${s.label}`]));
+ if(a.settings.completion.mode!==b.settings.completion.mode)out.push(['~',`Completion: ${b.settings.completion.mode==='execute'?'confirm automatically':'allow confirmation'}`]);
+ if(a.settings.paused!==b.settings.paused)out.push(['~',b.settings.paused?'New starts paused':'New starts resumed']);
+ return out;}
+const stripIds=o=>o==null?o:JSON.parse(JSON.stringify(o,(k,v)=>k==='id'?undefined:v));
+
+/* ---------- render ---------- */
+function render(){
+ const focus=document.activeElement;const fid=focus&&focus.id;
+ let page='';
+ if(S.view==='record')page=recordPage();else if(S.view==='inbox')page=inboxPage();else if(S.view==='editor')page=editorPage();else if(S.view==='list')page=listPage('purchaseorder');else page=listPage('expenseclaim');
+ document.getElementById('app').innerHTML=`<div class="shell">${sidebar()}<div class="main">${topbar()}<div class="host" id="host">${journeyBar()}${page}</div></div></div>${S.side?'<div class="scrim" data-a="side" style="z-index:54"></div>':''}${dialog()}`;
+ if(fid){const el=document.getElementById(fid);if(el)el.focus()}
+ if(S.dialog&&S.dialog.focus){const t=document.getElementById('fbt')||document.querySelector('.dialog .btn.primary');if(t)t.focus();S.dialog.focus=false}}
+function toast(msg,err,link){const box=document.getElementById('toasts');const el=document.createElement('div');el.className='toast'+(err?' err':'');el.innerHTML=`${ic(err?'alert':'check','sm')}<span>${esc(msg)}</span>${link?`<button class="linkbtn" data-a="open" data-r="${link.r}">${esc(link.label)}</button>`:''}`;box.appendChild(el);setTimeout(()=>el.remove(),link?6500:3200);document.getElementById('sr').textContent=msg}
+
+/* ---------- editor mutations ---------- */
+function getPath(obj,path){return path.split('.').reduce((o,k)=>o==null?o:o[k],obj)}
+function setPath(obj,path,v){const ks=path.split('.');const last=ks.pop();const o=ks.reduce((o,k)=>o[k],obj);o[last]=v}
+function mutate(fn){S.undo.push(clone(S.draft));if(S.undo.length>50)S.undo.shift();fn(S.draft);S.unsaved=true;S.editedOnce=true;render()}
+function findCond(node,id,parent){if(!node||typeof node!=='object')return null;
+ if(node.id===id&&(node.field||node.items))return {node,parent};
+ for(const v of Object.values(node)){if(Array.isArray(v)){for(const x of v){const r=findCond(x,id,node);if(r)return r}}else if(v&&typeof v==='object'){const r=findCond(v,id,node);if(r)return r}}return null}
+function defaultCond(field){const f=FACTS[S.draft.model][field];const op=f.type==='money'?'gt':'eq';return C(field,op,f.type==='money'?'':'')}
+
+/* ---------- events ---------- */
+const A={
+ nav(el){S.side=false;const v=el.dataset.v;S.view=v;if(v==='editor'&&S.journey!=='j2')S.journey='j6';render()},
+ side(){S.side=!S.side;render()},
+ journey(el){const j=J.find(x=>x.id===el.dataset.j);S.journey=j.id;S.menu=false;S.conflict=null;
+  if(j.view==='editor'){S.view='editor'}else{S.view='record';S.rec=j.rec}
+  const cur=j.steps.find(s=>!s.done());S.actor=cur?cur.who:j.actor;render()},
+ actas(el){const p=el.dataset.p;S.actor=p;S.menu=false;S.showWhy=false;const j=curJ();
+  if(j.id==='j2'&&p==='hamid'){S.view='editor';S.dock=true;S.dockTab='try';Object.assign(S.tryx,{source:'sample',total:'85000.00',purchase_type:'equipment',requester:'sara'})}
+  else if(j.rec){S.view='record';S.rec=j.rec}render()},
+ reset(){for(const k of Object.keys(RECS))delete RECS[k];seed();Object.assign(S,{published:clone(PO_V3),draft:clone(PO_V4),undo:[],unsaved:false,showWhy:false,sawLocked:false,tried:false,checked:false,publishedOnce:false,expandedOnce:false,editedOnce:false,conflict:null,feedbackDraft:{},dialog:null,menu:false});S.open={stg_deprt1:true};A.journey({dataset:{j:S.journey}});toast('All journeys reset')},
+ menu(){S.menu=!S.menu;render();if(S.menu){const f=document.querySelector('.menu .menu-item');if(f)f.focus()}},
+ act(el){const r=RECS[S.rec];const acts=available(r,S.actor);const a=acts[+el.dataset.i];S.menu=false;
+  const mode=(a.action.feedback||FB('hidden')).mode;
+  if(a.lifecycle==='confirm'){decide(r,S.actor,a,'');toast(`${r.number} confirmed`);render();return}
+  if(!el.dataset.fb&&(mode==='hidden'||(mode==='optional'&&a.action.kind==='approve'))){doDecide(r,a,'');return}
+  const key=r.key+':'+(a.task?a.task.id:a.action.id);
+  S.dialog={type:'decide',rec:r.key,a,key,text:S.feedbackDraft[key]||'',focus:true,canConflict:r.key==='po42'&&S.actor==='mariam'&&!!a.task,sim:false,opener:el.dataset.a};render()},
+ dclose(){S.dialog=null;render();const b=document.querySelector('.rec-actions .btn.primary');if(b)b.focus()},
+ dsend(){const D=S.dialog;const r=RECS[D.rec];const fb=D.a.action.feedback||FB('hidden');const text=(D.text||'');
+  if(fb.mode==='required'&&!text.trim()){D.error='Enter feedback. Spaces alone do not count.';render();document.getElementById('fbt').focus();return}
+  if(text.length>(fb.max_length||2000)){D.error='Feedback is too long';render();return}
+  if(text.includes('\u0000')){D.error='Feedback contains a character that is not allowed';render();return}
+  if(D.sim&&!D.conflictShown){S.feedbackDraft[D.key]=text;
+   const other=r.run.tasks.find(t=>t.status==='pending'&&t.review==='rev_procu1')||r.run.tasks.find(t=>t.status==='pending'&&t.review!==D.a.task.review);
+   if(other){const who=other.people[0];const acts=available(r,who).filter(x=>x.task===other&&x.action.kind==='approve');if(acts[0])decide(r,who,acts[0],'')}
+   D.conflict=other?`${pname(other.people[0])} approved ${other.label} a moment ago, so the version you saw is out of date.`:'Another decision arrived first, so the version you saw is out of date.';D.conflictShown=true;D.sim=false;
+   const acts=available(r,S.actor);const same=acts.find(x=>x.task&&x.task.review===D.a.task.review&&x.action.kind===D.a.action.kind);
+   if(same)D.a=same;else{S.dialog=null;S.conflict={rec:r.key}}
+   render();return}
+  delete S.feedbackDraft[D.key];S.dialog=null;S.conflict=null;doDecide(r,D.a,text)},
+ reopen(){S.conflict=null;render()},
+ why(){S.showWhy=!S.showWhy;render()},
+ repair(){S.dialog={type:'repair'};render()},
+ save(){const r=RECS[S.rec];const bad=r.lines.some(l=>toF(l.price)==null||!(parseInt(l.qty,10)>0));if(bad){toast('Enter a whole quantity and an amount with up to two decimals',true);return}
+  r.lines.forEach(l=>l.price=fromF(toF(l.price)));r.dirty=null;log(r,{kind:'edit',actor:S.actor,text:'Saved changes'});toast('Saved');render()},
+ discard(){const r=RECS[S.rec];Object.assign(r,clone(r.dirty));r.dirty=null;render()},
+ addline(){const r=RECS[S.rec];if(!r.dirty)r.dirty=clone({lines:r.lines,f:r.f});r.lines.push({item:'',qty:'1',price:'0.00'});render()},
+ itab(el){S.inboxTab=el.dataset.t;render()},
+ open(el){S.rec=el.dataset.r;S.view='record';S.menu=false;S.showWhy=false;render()},
+ /* editor */
+ toggle(el){const id=el.dataset.s;S.open[id]=!S.open[id];if(id==='stg_deprt1'&&S.open[id])S.expandedOnce=true;render()},
+ goto(el){const id=el.dataset.s;if(!id)return;S.open[id]=true;render();const c=document.getElementById('card_'+id);if(c)c.scrollIntoView({block:'start',behavior:'smooth'})},
+ dock(el){S.dock=true;S.dockTab=el.dataset.t;if(el.dataset.t==='try')S.tried=S.tried||false;if(el.dataset.t==='access')S.checked=true;render()},
+ undock(){S.dock=null;render()},
+ undo(){if(!S.undo.length)return;S.draft=S.undo.pop();S.unsaved=S.undo.length>0;render();toast('Undone')},
+ savedraft(){S.unsaved=false;S.undo=[];render();toast('Draft saved. Nothing changes for requests until you publish.')},
+ publish(){S.dialog={type:'publish',focus:true};render()},
+ dopublish(){const v=S.draft.version;S.published=clone(S.draft);S.draft=clone(S.draft);S.draft.version=v+1;S.undo=[];S.unsaved=false;S.dialog=null;S.publishedOnce=true;render();toast(`Version ${v} published. Running requests keep their version.`)},
+ addstage(){mutate(d=>{const id=nid('stg');d.stages.splice(d.stages.length-2,0,{id,label:'New stage',kind:'review',assign:null,require:null,deadline:{hours:24},edit:clone(EDIT_NONE),reviews:null,actions:reviewActions(id.slice(4,7),'stg_apprv1').map(a=>({...a,id:nid('act')}))});S.open[id]=true})},
+ dup(el){mutate(d=>{const i=d.stages.findIndex(s=>s.id===el.dataset.s);const c=clone(d.stages[i]);c.id=nid('stg');c.label=c.label+' (copy)';c.actions.forEach(a=>a.id=nid('act'));if(c.reviews)c.reviews.items.forEach(x=>x.id=nid('rev'));d.stages.splice(i+1,0,c);S.open[c.id]=true})},
+ mv(el){mutate(d=>{const i=d.stages.findIndex(s=>s.id===el.dataset.s);const j=i+(+el.dataset.d);if(j<0||j>=d.stages.length)return;const [s]=d.stages.splice(i,1);d.stages.splice(j,0,s)})},
+ rmstage(el){S.dialog={type:'rmstage',s:el.dataset.s,focus:true};render()},
+ dormstage(){const id=S.dialog.s;S.dialog=null;mutate(d=>{d.stages=d.stages.filter(s=>s.id!==id)})},
+ addaction(el){mutate(d=>{getPath(d,el.dataset.p).actions.push({id:nid('act'),label:'New action',kind:'move',who:{kind:'assigned'},when:null,go_to:null,feedback:FB('optional'),execute:null})})},
+ rmaction(el){mutate(d=>{getPath(d,el.dataset.p).actions.splice(+el.dataset.k,1)})},
+ addreviews(el){mutate(d=>{const s=getPath(d,el.dataset.p);s.reviews={run:'together',complete:{kind:'all',count:null},rejection:'veto',when_none:'block',on_complete:s.actions[0]&&s.actions[0].go_to?clone(s.actions[0].go_to):null,on_reject:ST('stg_rejct1'),on_changes:ST('stg_draft1'),items:[{id:nid('rev'),label:'Review 1',assign:s.assign,when:null,required:{kind:'any'}},{id:nid('rev'),label:'Review 2',assign:null,when:null,required:{kind:'any'}}]};s.assign=null;s.actions.forEach(a=>a.go_to=null)})},
+ addreview(el){mutate(d=>{getPath(d,el.dataset.p).items.push({id:nid('rev'),label:'New review',assign:null,when:null,required:{kind:'any'}})})},
+ rmreview(el){mutate(d=>{getPath(d,el.dataset.p).items.splice(+el.dataset.k,1)})},
+ setv(el){mutate(d=>{setPath(d,el.dataset.p,el.dataset.v);if(el.dataset.p.endsWith('complete.kind')&&el.dataset.v==='count'){const g=getPath(d,el.dataset.p.replace('.complete.kind',''));g.complete.count=2}})},
+ editwho(el){mutate(d=>{getPath(d,el.dataset.p).who=el.dataset.v})},
+ editmore(el){S.editMore=S.editMore===el.dataset.s?null:el.dataset.s;render()},
+ efield(el){mutate(d=>{const e=getPath(d,el.dataset.p);const n=e.fields.names;const i=n.indexOf(el.dataset.v);if(i>=0)n.splice(i,1);else n.push(el.dataset.v)})},
+ addwhen(el){mutate(d=>{getPath(d,el.dataset.p).when=G('all',[defaultCond('total')]);S.whenOpen=el.dataset.p})},
+ editwhen(el){S.whenOpen=S.whenOpen===el.dataset.p?null:el.dataset.p;render()},
+ whenrev(el){S.whenOpen=S.whenOpen===el.dataset.p?null:el.dataset.p;render()},
+ rmwhen(el){mutate(d=>{getPath(d,el.dataset.p).when=null;S.whenOpen=null})},
+ applies(){mutate(d=>{d.applies_when=G('all',[C('department','eq','it')])})},
+ match(el){mutate(d=>{const f=findCond(d,el.dataset.id);if(f)f.node.match=el.dataset.m})},
+ addcond(el){mutate(d=>{const f=findCond(d,el.dataset.id);f.node.items.push(defaultCond('total'))})},
+ addgroup(el){mutate(d=>{const f=findCond(d,el.dataset.id);f.node.items.push(G('any',[C('fact.supplier_risk','eq','high'),C('lines.count','gt','10')]))})},
+ rmcond(el){mutate(d=>{const f=findCond(d,el.dataset.id);if(f&&f.parent&&f.parent.items){f.parent.items.splice(f.parent.items.indexOf(f.node),1)}})},
+ multi(el){mutate(d=>{const f=findCond(d,el.dataset.id);const v=f.node.value=Array.isArray(f.node.value)?f.node.value:[];const i=v.indexOf(el.dataset.v);if(i>=0)v.splice(i,1);else v.push(el.dataset.v)})},
+ addroute(el){mutate(d=>{getPath(d,el.dataset.p).rows.push({id:nid('rte'),when:G('all',[defaultCond('total')]),stage:''})})},
+ rmroute(el){mutate(d=>{const r=getPath(d,el.dataset.p);r.rows.splice(+el.dataset.k,1);if(!r.rows.length)setPath(d,el.dataset.p,ST(r.otherwise))})},
+ unroute(el){mutate(d=>{const r=getPath(d,el.dataset.p);setPath(d,el.dataset.p,ST(r.otherwise||(r.rows[0]&&r.rows[0].stage)))})},
+ trysrc(el){S.tryx.source=el.dataset.v;render()},
+ runtry(){S.tried=true;render();toast('Preview updated. Nothing was saved.')},
+};
+const CH={
+ actor(el){S.actor=el.value;S.menu=false;S.showWhy=false;render()},
+ field(el){const r=RECS[S.rec];if(!r.dirty)r.dirty=clone({lines:r.lines,f:r.f});const k=el.dataset.k;r.f[k]=k==='required_by'?(dmyToIso(el.value)||r.f[k]):el.value;render()},
+ line(el){const r=RECS[S.rec];if(!r.dirty)r.dirty=clone({lines:r.lines,f:r.f});r.lines[+el.dataset.i][el.dataset.k]=el.value.replace(/,/g,'');render()},
+ wf(el){mutate(d=>{d[el.dataset.k]=el.value})},
+ set(el){mutate(d=>{setPath(d,el.dataset.p,el.value)})},
+ assign(el){mutate(d=>{const o=ASSIGN_OPTS.find(o=>o.v===el.value);setPath(d,el.dataset.p,o?clone(o.a):null)})},
+ deadline(el){mutate(d=>{const s=getPath(d,el.dataset.p);const n=parseInt(el.value,10);s.deadline=n>0?{hours:n}:null})},
+ route(el){const p=el.dataset.p;const v=el.value;
+  if(v==='__new'){mutate(d=>{const id=nid('stg');d.stages.splice(d.stages.length-2,0,{id,label:'New stage',kind:'review',assign:null,require:null,deadline:{hours:24},edit:clone(EDIT_NONE),reviews:null,actions:reviewActions(id.slice(4,7),'stg_apprv1').map(a=>({...a,id:nid('act')}))});
+   if(p.endsWith('.stage')||p.endsWith('.otherwise'))setPath(d,p,id);else setPath(d,p,ST(id));S.open[id]=true});toast('New stage added before Approved. Name it in its card.');return}
+  if(v==='__cond'){mutate(d=>{const cur=getPath(d,p);setPath(d,p,{kind:'first_match',rows:[{id:nid('rte'),when:G('all',[defaultCond('total')]),stage:''}],otherwise:cur&&cur.stage||''})});return}
+  mutate(d=>{if(p.endsWith('.stage')||p.endsWith('.otherwise'))setPath(d,p,v);else setPath(d,p,ST(v))})},
+ who(el){mutate(d=>{const a=getPath(d,el.dataset.p);a.who=el.value==='assigned'?{kind:'assigned'}:el.value==='requester'?{kind:'requester'}:{kind:'role',role:'director'}})},
+ exec(el){mutate(d=>{const a=getPath(d,el.dataset.p);a.execute=el.value?{kind:'lifecycle',operation:'confirm'}:null})},
+ count(el){mutate(d=>{getPath(d,el.dataset.p).complete.count=parseInt(el.value,10)||0})},
+ whennone(el){mutate(d=>{getPath(d,el.dataset.p).when_none=el.checked?'continue':'block'})},
+ etable(el){mutate(d=>{getPath(d,el.dataset.p).tables.lines[el.dataset.k]=el.checked})},
+ eatt(el){mutate(d=>{getPath(d,el.dataset.p).attachments[el.dataset.k]=el.checked})},
+ cfield(el){mutate(d=>{const f=findCond(d,el.dataset.id);const n=defaultCond(el.value);f.node.field=n.field;f.node.op=n.op;f.node.value=n.value})},
+ cop(el){mutate(d=>{const f=findCond(d,el.dataset.id);const was=f.node.op;f.node.op=el.value;if(el.value==='in'||el.value==='nin')f.node.value=f.node.value&&!Array.isArray(f.node.value)?[f.node.value]:(Array.isArray(f.node.value)?f.node.value:[]);else if(el.value==='between')f.node.value=['',''];else if(was==='in'||was==='nin'||was==='between')f.node.value=Array.isArray(f.node.value)?(f.node.value[0]||''):f.node.value;if(el.value==='isnull')f.node.value=true})},
+ cval(el){mutate(d=>{const f=findCond(d,el.dataset.id);const t=FACTS[d.model][f.node.field].type;let v=el.value;
+  if(t==='money'){const x=toF(v);v=x==null?v.replace(/,/g,''):fromF(x)}else if(t==='date'){v=dmyToIso(v)||v}
+  if(el.dataset.i!=null){const arr=Array.isArray(f.node.value)?f.node.value:['',''];arr[+el.dataset.i]=v;f.node.value=arr}else f.node.value=v})},
+ setting(el){mutate(d=>{const s=d.settings;const k=el.dataset.k;if(k==='completion')s.completion.mode=el.value;else if(k==='self_approval')s.self_approval=el.value;else if(k==='withdraw')s.withdraw.allowed=el.value==='yes';else if(k==='delegation')s.delegation.allowed=el.value==='yes';else if(k==='paused')s.paused=el.checked})},
+ try(el){S.tryx[el.dataset.k]=el.dataset.k==='total'?el.value.replace(/,/g,''):el.value;S.tried=true;render()},
+ access(el){S.access[el.dataset.k]=el.value;S.checked=true;render()},
+ pubnote(el){S.draft.notes=el.value},
+ sim(el){S.dialog.sim=el.checked},
+};
+function doDecide(r,a,text){
+ const label=a.action.label;decide(r,S.actor,a,text);
+ const next=myTasks(S.actor)[0];
+ toast(`${label==='Send for review'?'Sent for review':label+(a.task&&a.task.review?' as '+a.task.label:'')} · ${r.number}`,false,next&&next.r.key!==r.key?{r:next.r.key,label:'Next review: '+next.r.number}:null);
+ render();}
+document.addEventListener('click',e=>{const el=e.target.closest('[data-a]');if(!el){if(S.menu&&!e.target.closest('.menu')){S.menu=false;render()}return}if(el.disabled)return;const f=A[el.dataset.a];if(f){e.preventDefault();f(el,e)}});
+document.addEventListener('change',e=>{const el=e.target.closest('[data-c]');if(!el)return;const f=CH[el.dataset.c];if(f&&el.dataset.c!=='fb'&&el.dataset.c!=='pubnote')f(el)});
+document.addEventListener('input',e=>{const el=e.target;
+ if(el.dataset.c==='fb'){S.dialog.text=el.value;S.dialog.error=null;S.feedbackDraft[S.dialog.key]=el.value;const c=document.getElementById('fbc');if(c)c.textContent=el.value.length;el.classList.remove('bad');return}
+ if(el.dataset.c==='pubnote'){S.draft.notes=el.value}});
+document.addEventListener('keydown',e=>{
+ if(e.key==='Escape'){if(S.dialog){A.dclose();return}if(S.menu){S.menu=false;render();const b=document.querySelector('[data-a="menu"]');if(b)b.focus()}if(S.side){S.side=false;render()}}
+ if((e.key==='Enter'||e.key===' ')&&e.target.matches('tr[data-a]')){e.preventDefault();A[e.target.dataset.a](e.target)}});
+render();
+</script>
+</body></html>
