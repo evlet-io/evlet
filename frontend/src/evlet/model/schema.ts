@@ -90,6 +90,10 @@ export interface ModelSchema {
   open_in?: 'page' | 'panel';
   /** Meta.autosave: false keeps the "Discard your changes?" prompt instead of keeping unsaved changes. */
   autosave?: boolean;
+  /** Meta.summary: false leaves the record page's summary strip out. Absent means shown when it has values. */
+  summary?: boolean;
+  /** Meta.side_blocks: the record page's side blocks in order ('key_fields', 'related', 'files', 'info'). Absent means all. */
+  side_blocks?: string[];
   children?: ChildSchema[];
   actions?: ActionSchema[];
   permissions?: { create: boolean; update: boolean; delete: boolean };

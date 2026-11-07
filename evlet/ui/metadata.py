@@ -27,7 +27,7 @@ OPEN_IN = ('page', 'panel')
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
-                          'status'))
+                          'status', 'summary', 'side_blocks'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -36,6 +36,8 @@ FLOWS = ('rows', 'columns')
 # The record page's own tabs. Meta.tabs also names Table fields (their child tables); a tab a record doesn't
 # have (Activity without a journal, say) is skipped.
 TABS = ('activity', 'details', 'revisions', 'related', 'postings')
+# The record page's side column blocks, for Meta.side_blocks: Key fields, Related, Files and Record info.
+SIDE_BLOCKS = ('key_fields', 'related', 'files', 'info')
 
 
 def starts_valid(value):
@@ -120,6 +122,16 @@ def view_for(model):
         raise ValueError(f'{model.__name__}.Meta.default_tab: name one tab, such as "details"')
     if default_tab is not None and tabs and default_tab not in tabs:
         raise ValueError(f'{model.__name__}.Meta.default_tab: {default_tab} is not in Meta.tabs')
+    # The summary strip under the record header: Meta.summary = False leaves it out.
+    summary = getattr(meta, 'summary', None)
+    if summary is not None and type(summary) is not bool:
+        raise ValueError(f'{model.__name__}.Meta.summary must be True or False, not {summary!r}')
+    # Which side column blocks a record page shows, in this order.
+    side_blocks = getattr(meta, 'side_blocks', None)
+    if side_blocks is not None and (not isinstance(side_blocks, (tuple, list)) or len(set(side_blocks)) != len(side_blocks)
+                                    or any(type(name) is not str or name not in SIDE_BLOCKS for name in side_blocks)):
+        raise ValueError(f'{model.__name__}.Meta.side_blocks: list blocks once each from {", ".join(SIDE_BLOCKS)}, '
+                         f'such as ("related", "files"), not {side_blocks!r}')
     # Leaving a record keeps its unsaved edits apart from it (evlet.unsaved); False keeps the leave prompt.
     from ..unsaved import autosave as keeps_unsaved
     autosave = keeps_unsaved(model)
@@ -154,7 +166,10 @@ def view_for(model):
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in,
             'tabs': list(tabs), 'default_tab': default_tab,
-            'autosave': autosave}
+            'autosave': autosave,
+            # Additive keys: only a model that declares them carries them.
+            **({'summary': summary} if summary is not None else {}),
+            **({'side_blocks': list(side_blocks)} if side_blocks is not None else {})}
 
 
 def check_tabs(tables, tabs, default_tab, where):

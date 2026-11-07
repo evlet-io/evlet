@@ -105,3 +105,24 @@ def test_the_playground_shows_column_flow_and_a_tab_order():
     from examples.playground.models import Customer, Project
     assert [group['flow'] for group in view_for(Customer)['layout']] == ['columns']
     assert (view_for(Project)['tabs'], view_for(Project)['default_tab']) == (['details', 'related', 'activity'], 'details')
+    assert view_for(Project)['side_blocks'] == ['related', 'info', 'key_fields']
+
+
+def test_meta_summary_and_side_blocks_go_into_the_schema_only_when_set():
+    view = view_for(Registry(tabbed(name='Tour', summary=False, side_blocks=('related', 'info'))).models['tour'])
+    assert (view['summary'], view['side_blocks']) == (False, ['related', 'info'])
+    assert view_for(Registry(tabbed(name='Hike', side_blocks=())).models['hike'])['side_blocks'] == []
+    plain = view_for(Registry(tabbed(name='Walk')).models['walk'])
+    assert 'summary' not in plain and 'side_blocks' not in plain
+
+
+@pytest.mark.parametrize('meta, message', [
+    (dict(summary='no'), r"Trip.Meta.summary must be True or False, not 'no'"),
+    (dict(summary=0), r'Trip.Meta.summary must be True or False, not 0'),
+    (dict(side_blocks=('related', 'history')), r'Trip.Meta.side_blocks: list blocks once each from key_fields, related, files, info'),
+    (dict(side_blocks=('info', 'info')), r'Trip.Meta.side_blocks: list blocks once each'),
+    (dict(side_blocks='related'), r'Trip.Meta.side_blocks: list blocks once each'),
+])
+def test_meta_summary_and_side_block_mistakes_fail_registration(meta, message):
+    with pytest.raises(ValueError, match=message):
+        Registry(tabbed(**meta))

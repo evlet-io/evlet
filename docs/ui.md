@@ -31,8 +31,31 @@ pinning keep the first column pinned. A child table's Focus view keeps the recor
 save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
-`layout`, `key_fields`, `relations`, `measures`, `open_in`, `autosave` and `status`. See "What the model decides" in
-[ui-framework.md](ui-framework.md).
+`layout`, `key_fields`, `relations`, `measures`, `open_in`, `autosave`, `status`, `summary` and
+`side_blocks`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+
+### Each fact once on the record page
+
+A record page shows each fact in one place. The header has the title, the name, the State and up
+to three key fields. The summary strip under it has calculated values and per-record measures that
+the header doesn't show; with nothing left, there is no strip. The Details form of a saved record
+leaves out the title, name and State, because the header shows them and edits the title in place;
+a new record's form keeps them. The side column's Key fields block shows only while another tab
+is open (Activity, Related or a table), as a way back to the fields. Its Related block lists only
+relations that have records; the Related tab lists every one. Record info has Created and Last
+modified; More > Copy record ID copies the id.
+
+Two options change this per model:
+
+```python
+class Project(Model):
+    class Meta:
+        summary = False                              # no summary strip
+        side_blocks = ('related', 'info', 'key_fields')  # these side blocks, in this order
+```
+
+`side_blocks` takes `key_fields`, `related`, `files` and `info`, each once. Anything else, or a
+`summary` that is not True or False, fails when the registry is built.
 
 A record's State shows as a coloured badge in the header by default, with its moves as header
 buttons; `State(..., show="bar")` draws the stage bar instead, for pipelines, and `show="none"`
