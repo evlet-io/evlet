@@ -16,6 +16,7 @@ import { formatDate, formatMoney, formatNumber } from '../model/format';
 import { Button, Checkbox, EmptyState, IconButton, IconTile } from '../ui/base';
 import { fieldFor, localField } from '../ui/fields';
 import { humanize } from '../ui/kinds';
+import { moneyChild } from '../ui/money';
 import { copyText, DialogFooter, openDrawer, openModal, openPopover, toast } from '../ui/layers';
 import { PageHeader, Toolbar } from '../ui/list';
 import { CHART_ROWS, plotChart } from '../ui/chart';
@@ -96,6 +97,11 @@ export function cellText(ctx: AppContext, column: ReportColumn, value: unknown):
     case 'link': return column.link ? ctx.links.title(column.link, String(value)).get() ?? String(value) : String(value);
     default: return String(value);
   }
+}
+
+/** A cell on screen: money with the site's currency symbol (an image when the site set one), anything else as cellText. */
+export function cellView(ctx: AppContext, column: ReportColumn, value: unknown): Child {
+  return column.type === 'currency' && !blank(value) && column.unit && CODE.test(column.unit) ? moneyChild(value, column.unit) : cellText(ctx, column, value);
 }
 
 // ---------- one report ----------
@@ -338,14 +344,14 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
       if (row()._kind === 'head') return column.name === grouping
         ? html`<span class="ev-report-group-name">${() => cellText(ctx, column, value()) || 'Not set'}<small class="muted">${() => { const count = row()._group?.count; return count === undefined ? '' : ` · ${count} ${count === 1 ? 'row' : 'rows'}`; }}</small></span>` : null;
       if (row()._kind === 'sub') return column.name === grouping ? html`<span class="muted">Subtotal</span>`
-        : column.total ? html`<span class="num">${() => { const total = row()._group?.totals[column.name]; return total === undefined || total === null ? '' : cellText(ctx, column, total); }}</span>` : null;
+        : column.total ? html`<span class="num">${() => { const total = row()._group?.totals[column.name]; return total === undefined || total === null ? '' : cellView(ctx, column, total); }}</span>` : null;
       if (column.type === 'link' && column.link) return when(() => !blank(value()), () =>
         html`<a class="ev-row-link" href=${() => router.href('record', { model: column.link!, id: String(value()) })}>${() => cellText(ctx, column, value())}</a>`);
-      return html`<span class=${NUMBERS.includes(column.type) ? 'num' : null}>${() => cellText(ctx, column, value())}</span>`;
+      return html`<span class=${NUMBERS.includes(column.type) ? 'num' : null}>${() => cellView(ctx, column, value())}</span>`;
     },
   }));
   const totals = Object.fromEntries(report.columns.filter(column => column.total).map(column =>
-    [column.name, () => { const value = result.get()?.totals?.values[column.name]; return value === undefined ? '' : cellText(ctx, column, value); }]));
+    [column.name, () => { const value = result.get()?.totals?.values[column.name]; return value === undefined ? '' : cellView(ctx, column, value); }]));
   const table = () => DataTable<Row>({ columns, rows, key: row => row._row, label: report.label, pinned: 1, sort, serverSort: true, prefs: tablePrefs, height: 560,
     rowClass: row => row._kind ? `ev-report-${row._kind}` : null,
     totals: Object.keys(totals).length ? totals : undefined,

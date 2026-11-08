@@ -126,7 +126,8 @@ them, each is the record's id. On a report design it sees
 Rows come from the report's own `run()`, page by page, up to 5000; a note says when more were left
 out.
 
-Helpers: `money(value, currency=None)` gives `AED 5,616.35`, `date(value)` gives `03-11-2026`,
+Helpers: `money(value, currency=None)` gives `AED 5,616.35`, or the symbol and position the site
+set in Controls, Currencies, with an image symbol embedded in the PDF ([controls.md](controls.md#currencies)); `date(value)` gives `03-11-2026`,
 `number(value, places=None)` and `ar(text)` (marks Arabic text right to left). They isolate text
 direction, so dates and amounts read correctly inside Arabic. Noto Sans and Noto Sans Arabic are
 bundled and embedded in every PDF.

@@ -66,7 +66,7 @@ that is not `autorun`.
 | `type` | `text`, `integer`, `decimal`, `currency`, `date`, `boolean` or `link`. Every cell is cleaned through it |
 | `link` | For a `link` column, the model its values open (`'invoice'`). The cell shows the record's title |
 | `total` | Total this number column. Needs `unit`, the one currency or unit all its values share |
-| `unit` | A currency code (`'AED'`) prints as money; any other text follows the number |
+| `unit` | A currency code (`'AED'`) prints as money, with the site's symbol ([controls.md](controls.md#currencies)); any other text follows the number. CSV keeps the plain number and names the code in the header, `Total (AED)` |
 | `source` | `'model.field'`: the column, its values and its total are left out for anyone who cannot read that field |
 
 `Chart(type, x, y, label=None)`: `type` is `bar` or `line`, `x` a column for the labels and `y`

@@ -136,6 +136,7 @@
     "depends": "def(*paths)",
     "own_customer": "def(field='customer', model='customer')",
     "present": "def(slip, *, source=None, values=None)",
+    "set_currency_display": "def(application, value, *, actor='cli')",
     "validate": "SimpleNamespace",
     "validate.cancel": "def(function=None, *, priority=0)",
     "validate.confirm": "def(function=None, *, priority=0)"

@@ -348,6 +348,10 @@ class Business:
             result['slips'] = self.slips.schema(user)
         if self.events or self.jobs:
             result['capabilities'] = {'events': self.events is not None, 'jobs': self.jobs is not None}
+        # How the currency codes an admin changed are shown (evlet.currencies); every other code keeps the default.
+        displays = self.controls.settings.get('display.currencies') if getattr(self, 'controls', None) is not None else None
+        if displays:
+            result['currency_display'] = displays
         if self.tenant:
             result['tenant'] = self.tenant
         available = {name for name, model in self.registry.models.items() if self.policy.allows(user, model, 'read')}

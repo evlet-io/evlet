@@ -67,6 +67,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   each other or to themselves; `insert_many` and `tx.create` take a reserved `id`. On SQLite a
   rollback hands the ids back; on PostgreSQL they come from the identity sequence and a rollback
   leaves a gap ([docs/ledger.md](docs/ledger.md#reserving-ids-txreserve_ids)).
+- **Currency display per site.** Controls, Currencies sets how each currency code is shown: a text
+  symbol (`$`, `€`, `د.إ`) or a small PNG or WebP image, before or after the amount, with or
+  without a space. Images are at most 32 KB and 128 x 128 pixels, checked by their bytes; SVG is
+  refused. It applies to forms (at rest and in the input's side box), lists, boards, totals,
+  measures, reports and print designs, where the image is embedded in the PDF. Number formatting
+  is unchanged, and codes nobody set show as before (`AED 25,200.00`). Only admins change it; every
+  change is audited. `/api/schema` sends it as `currency_display`, and trusted code can use
+  `set_currency_display(app, {...})`. Report CSV now names a currency column's code in its header,
+  `Total (AED)`, and keeps plain numbers. The Playground shows AED with a placeholder image symbol
+  ([docs/controls.md](docs/controls.md#currencies)).
 - `Naming(..., label="Project number")` labels the standard `name` field for the model's domain on
   the form, in list columns, filters, search and the schema
   ([docs/sequences.md](docs/sequences.md)). The Playground labels it "Invoice number".

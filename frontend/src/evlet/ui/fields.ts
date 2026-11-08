@@ -18,7 +18,8 @@ import { formula, labeller, phrase, source } from './explain';
 import { checkTag, currencyOf, durationText, humanize, InputError, kindOf } from './kinds';
 import { copyText, openPopover } from './layers';
 import { DatePanel, DateTimePanel, Dropdown, DurationPanel, focusCalendar, TimePanel, type DateTimeValue } from './pickers';
-import { formatDate, formatMoney, zoneOffset } from '../model/format';
+import { currencyDisplay, formatDate, zoneOffset } from '../model/format';
+import { CurrencySymbol, Money } from './money';
 import { parseClock, parseDay, parseDayTime, parseLength } from './dateparse';
 import { tooltip } from './tooltip';
 import { RichTextEditor } from '../richtext/editor';
@@ -264,9 +265,10 @@ export function displayValue(field: FieldLike, options: { links?: LinkSource | n
         return html`<span class="cell-flex">${RecordMark({ name: () => title.get() || '?' })}<span class="tx">${() => title.get() || 'Loading'}</span></span>`;
       }, blank);
   }
-  if (meta.type === 'currency' && meta.currency_source) {
+  if (meta.type === 'currency') {
+    // The site's symbol (text or an image) before or after the amount; the code follows its source.
     const currency = currencyFor(field, links);
-    return when(() => !isEmpty(value()), () => html`<span class="tx num">${() => formatMoney(value() as string, { currency: currency(), scale: typeof meta.scale === 'number' ? meta.scale : 2 })}</span>`, blank);
+    return when(() => !isEmpty(value()), () => html`<span class="tx num">${Money(value, currency, typeof meta.scale === 'number' ? meta.scale : 2)}</span>`, blank);
   }
   const numeric = kind.align === 'right';
   // A unit declared with suffix= reads after the number at rest too: 5.00%, 8 hours.
@@ -432,14 +434,21 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
         aria-invalid=${invalid} aria-required=${required} aria-describedby=${options.describedBy ?? null} aria-label=${options.label ?? null}
         maxlength=${meta.max_length ?? null} on:change=${onChange} on:keydown=${onKey}
         on:input=${() => { if (kind.picker && field.error.peek()) field.error.set(null); }}>`) as HTMLInputElement;
-  // A Currency field's side box follows its currency source (a field of the record, say).
-  const prefix: Child = meta.type === 'currency' ? currencyFor(field, options.links) : kind.prefix?.(meta), suffix = kind.suffix?.(meta);
+  const prefix: Child = kind.prefix?.(meta), suffix = kind.suffix?.(meta);
+  let before: Child = prefix ? html`<span class="in-box">${prefix}</span>` : null, after: Child = suffix ? html`<span class="in-box">${suffix}</span>` : null;
+  if (meta.type === 'currency') {
+    // A Currency field's side box shows the site's symbol on its side, and follows its currency source (a field of the record, say).
+    const code = currencyFor(field, options.links);
+    const box = (side: 'prefix' | 'suffix') => () => currencyDisplay(code()).position === side ? html`<span class="in-box">${CurrencySymbol(code())}</span>` : null;
+    before = box('prefix');
+    after = box('suffix');
+  }
   let element: HTMLElement = input;
   const picker = kind.picker && !textarea ? PickerButton(field, input, kind.picker, commit, () => options.onPicked?.()) : null;
-  if (prefix || suffix || meta.type === 'email' || picker) {
+  if (before || after || meta.type === 'email' || picker) {
     const copy = meta.type === 'email' ? when(() => !isEmpty(field.value.get()), () => IconButton({ icon: 'copy', tip: 'Copy email', size: 'small',
       onClick: () => copyText(String(field.value.peek()), String(field.value.peek())) })) : null;
-    element = html`<div class="in-affix" class:in-pick=${Boolean(picker)}>${prefix ? html`<span class="in-box">${prefix}</span>` : null}${input}${suffix ? html`<span class="in-box">${suffix}</span>` : null}${copy}${picker}</div>` as HTMLElement;
+    element = html`<div class="in-affix" class:in-pick=${Boolean(picker)}>${before}${input}${after}${copy}${picker}</div>` as HTMLElement;
     picker?.attach(element);
   }
   return { element, commit, focus: () => { input.focus(); input.select?.(); } };

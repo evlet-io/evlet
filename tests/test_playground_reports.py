@@ -44,7 +44,7 @@ def test_invoice_register_filters_sorts_and_totals_every_row(secured):
     one = editor('POST', '/api/_reports/InvoiceRegister', {'filters': {'customer': owners['Gulf Supplies']}})[1]
     assert [row['reference'] for row in one['rows']] == ['PO-3']
     status, content, _ = editor('POST', '/api/_reports/InvoiceRegister/export.csv', {'filters': {}, 'sort': 'posting_date'})
-    assert status == 200 and content.decode('utf-8').splitlines()[0] == '﻿Invoice,Customer,Customer reference,Posted,Status,Total'
+    assert status == 200 and content.decode('utf-8').splitlines()[0] == '﻿Invoice,Customer,Customer reference,Posted,Status,Total (AED)'
 
 
 def test_sales_by_customer_groups_and_is_for_editors(secured):

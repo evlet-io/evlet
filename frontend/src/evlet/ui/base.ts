@@ -237,7 +237,7 @@ export function StateBanner(props: { tone: Prop<BannerTone>; title?: Prop<string
 
 // ---------- stats ----------
 
-export interface StatProps { label: Prop<string>; value: Prop<string>; note?: Prop<string>; /** Shown muted when the value is empty. */ empty?: string }
+export interface StatProps { label: Prop<string>; value: Prop<Child>; note?: Prop<string>; /** Shown muted when the value is empty. */ empty?: string }
 /** Label, value and a short note. The unit of the summary strip. */
 export function Stat(props: StatProps): HTMLElement {
   const value = props.empty === undefined ? props.value

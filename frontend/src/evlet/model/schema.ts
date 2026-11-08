@@ -1,6 +1,8 @@
 // The parts of GET /api/schema the model runtime and renderers use.
 // Python is the source of truth; this only names the shapes it sends.
 
+import type { CurrencyDisplay } from './format';
+
 export type Expression = Record<string, unknown> | null;
 
 export interface FieldSchema {
@@ -156,7 +158,9 @@ export interface SlipSchema { name: string; label: string; hand_in_label: string
 
 export interface AppSchema { version: number; ui_version: number; models: ModelSchema[]; /** Slips for the New menu. */ slips?: SlipSchema[];
   /** Reports the role may run (evlet.Report), with their filters, columns and view settings. */ reports?: ReportSchema[];
-  /** Present when the app has print designs; available is false without the server's print extra. */ printing?: { available: boolean } }
+  /** Present when the app has print designs; available is false without the server's print extra. */ printing?: { available: boolean };
+  /** How the currency codes the site changed are shown (Controls, Currencies); other codes show as 'AED 25,200.00'. */
+  currency_display?: Record<string, CurrencyDisplay> }
 
 /** A report column: its type, and for a link column the model its values open. */
 export interface ReportColumn { name: string; type: 'text' | 'integer' | 'decimal' | 'currency' | 'date' | 'boolean' | 'link'; label: string | null;
