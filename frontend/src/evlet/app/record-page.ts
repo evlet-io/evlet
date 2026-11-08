@@ -15,7 +15,7 @@ import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote,
 import { ChildRows, ChildTable } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
 import { displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, stateTint, statusTint, type FieldLike } from '../ui/fields';
-import { flowGrid, FoldSection, Folds, revealField, revealFirstError } from '../ui/fold';
+import { flowGrid, FoldSection, Folds, isEmpty, revealField, revealFirstError } from '../ui/fold';
 import { NoteComposer } from './composer';
 import { FormSection, KeyValueList } from '../ui/inline';
 import { humanize } from '../ui/kinds';
@@ -26,7 +26,7 @@ import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { JournalEntry, JournalPage } from './client';
 import { extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, keyFields, listFields, measureLabel, measureText, numberField, orderTabs, screenModel, sections, sequenceField,
-  summaryFields, titleOf, LIST_KEYS, type ActionMeta, type AuditPerson, type DetailExtras, type RecordAudit, type ScreenModel } from './meta';
+  summaryFields, titleOf, LIST_KEYS, panelView, type PanelView, type ActionMeta, type AuditPerson, type DetailExtras, type RecordAudit, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { RelatedPanel } from './related-panel';
 import { Revisions } from './revisions';
@@ -556,6 +556,28 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     ];
   };
 
+  // What the header shows of a saved record, and edits there or nowhere: the form leaves these out. The title
+  // goes when the header edits it in place or nothing can edit it; the name and the State likewise (the State
+  // changes by its moves in the header). Anything the header shows but can't edit stays in the form.
+  const formEditable = (meta: FieldSchema) => !meta.read_only && !meta.compute && meta.type !== 'sequence';
+  const titleInHeader = typeof titleProp === 'object' && titleProp !== null && 'meta' in titleProp && titleProp.meta.type !== 'sequence';
+  const inHeader = new Set<string>(isNew ? [] : [
+    ...(has(model.title_field) && (titleInHeader || !formEditable(fieldOf(model, model.title_field)!)) ? [model.title_field] : []),
+    ...(naming && !formEditable(fieldOf(model, 'name')!) ? ['name'] : []),
+    ...(state && (show === 'badge' || show === 'bar' || statusMeta?.name === state.field) ? [state.field] : []),
+  ]);
+  // ---------- what a side panel shows ----------
+
+  // model.panel (panel=False, Meta.panel or the Controls toggles) applies only here; the full page shows everything.
+  // A required field that is empty on a new record always shows, so the record can be saved from the panel.
+  const shows = panel ? panelView(model) : null;
+  const mustShow = new Set(isNew ? model.fields.filter(meta => meta.required && has(meta.name) && isEmpty(store.field(meta.name).value.peek())).map(meta => meta.name) : []);
+  const fieldShown = (section: string, name: string) => !shows || mustShow.has(name) || (shows.section(section) && shows.field(name));
+  const panelSections = () => sections(model).map(section => ({ ...section, fields: section.fields.filter(meta => has(meta.name) && !inHeader.has(meta.name) && fieldShown(section.label, meta.name)) }))
+    .filter(section => section.fields.length);
+  const detailsShown = () => isNew || panelSections().length > 0 || (['files', 'info'] as const).some(block => shows!.block(block));
+  const fullPageNote = shows?.hides ? html`<p class="ev-panel-more muted">Some parts of this ${model.label.toLowerCase()} show only on the full page.
+    <button type="button" class="link-q" on:click=${() => expand(active.peek() === 'details' ? null : active.peek())}>Open full page</button></p>` : null;
   // ---------- flow and summary ----------
 
   // The stage bar, for a State declared show="bar": only the states this person can move to now are buttons.
@@ -578,7 +600,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     note: view(meta.name).calculated ? 'Calculated' : undefined,
   }));
   if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureText(ctx.schema, model, measure, recordMeasures.get()![measure.name]) : '…' });
-  const summary = stats.length && !isNew ? SummaryStrip(stats) : null;
+  const summary = stats.length && !isNew && (!shows || shows.block('summary')) ? SummaryStrip(stats) : null;
 
   // ---------- tabs ----------
 
@@ -597,8 +619,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   if (postings) tabItems.push({ id: 'postings', label: 'Postings', count: () => postings.get()?.length ? postings.get()!.reduce((sum, item) => sum + item.rows + item.reversals, 0) : null });
   // The app's tab order and default tab (Meta.tabs, Meta.default_tab, or the Controls tab order).
   const ordered = orderTabs(model, tabItems);
-  tabItems.splice(0, tabItems.length, ...ordered.tabs);
-  const home = ordered.home;
+  // A side panel shows only the tabs the app lets it, in Meta.panel's order. Details stays while it has anything to show.
+  const panelTabs = shows ? shows.order(ordered.tabs.filter(tab => tab.id === 'details' ? detailsShown() : shows.tab(tab.id)), tab => tab.id) : ordered.tabs;
+  tabItems.splice(0, tabItems.length, ...panelTabs);
+  const home = tabItems.some(tab => tab.id === ordered.home) ? ordered.home : tabItems[0]?.id ?? 'details';
   const wanted = panel ? panel.tab : options.query.tab;
   const active = cell(tabItems.some(tab => tab.id === wanted) ? wanted! : home, { name: `${name} tab` });
   effect(() => {
@@ -616,19 +640,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   });
   const tabs = Tabs({ tabs: tabItems, active, label: `${model.label} sections`, doc: true, idPrefix: `ev-rec-${name}` });
 
-  // What the header shows of a saved record, and edits there or nowhere: the form leaves these out. The title
-  // goes when the header edits it in place or nothing can edit it; the name and the State likewise (the State
-  // changes by its moves in the header). Anything the header shows but can't edit stays in the form.
-  const formEditable = (meta: FieldSchema) => !meta.read_only && !meta.compute && meta.type !== 'sequence';
-  const titleInHeader = typeof titleProp === 'object' && titleProp !== null && 'meta' in titleProp && titleProp.meta.type !== 'sequence';
-  const inHeader = new Set<string>(isNew ? [] : [
-    ...(has(model.title_field) && (titleInHeader || !formEditable(fieldOf(model, model.title_field)!)) ? [model.title_field] : []),
-    ...(naming && !formEditable(fieldOf(model, 'name')!) ? ['name'] : []),
-    ...(state && (show === 'badge' || show === 'bar' || statusMeta?.name === state.field) ? [state.field] : []),
-  ]);
   const details = () => {
-    const groups = sections(model).map(section => ({ ...section, fields: section.fields.filter(meta => has(meta.name) && !inHeader.has(meta.name)) })).filter(section => section.fields.length);
-    const childLinks = tables.length && !isNew ? tables.map(child => {
+    const groups = panelSections();
+    // In a side panel, only tables whose tab it shows.
+    const linked = tables.filter(child => !shows || shows.tab(`t-${child.name}`));
+    const childLinks = linked.length && !isNew ? linked.map(child => {
       const table = store.table(child.name);
       const sums = model.fields.filter(meta => (meta.compute as any)?.$expr === 'aggregate' && (meta.compute as any).table === child.name && has(meta.name));
       return html`<button type="button" class="fs-link" on:click=${() => active.set(`t-${child.name}`)}>${IconTile('rows-3', { tint: look.tint, size: 30 })}
@@ -643,8 +659,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     })}</div>`;
     const sectionsShown = groups.map((section, index) => FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
       extra: index === groups.length - 1 ? childLinks : null, flow: section.flow, fold: { folds, ...foldOf(section, index) } }));
-    // The full page's side column folds into the panel: Files and Record info close the Details tab.
-    return panel ? [...sectionsShown, html`<div class="ev-panel-blocks">${SidePanel(ctx, model, store, view, relations, active, true)}</div>`] : sectionsShown;
+    // The full page's side column folds into the panel: Files and Record info close the Details tab. When the
+    // panel leaves anything out, the full page is one click away.
+    return panel ? [...sectionsShown, html`<div class="ev-panel-blocks">${SidePanel(ctx, model, store, view, relations, active, shows)}</div>`, fullPageNote] : sectionsShown;
   };
   // Sections people open and close (evlet.Section), remembered per user and model by title; the app's
   // collapsed value is where they start. In the narrow side panel every section can close.
@@ -758,7 +775,9 @@ const SIDE_BLOCKS = ['key_fields', 'related', 'files', 'info'] as const;
 type SideBlockName = typeof SIDE_BLOCKS[number];
 
 function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view: (name: string) => FieldLike, relations: NonNullable<ScreenModel['relations']>,
-  active: { get(): string; set(value: string): void }, narrow = false): Child {
+  active: { get(): string; set(value: string): void }, panel: PanelView | null = null): Child {
+  // In a list's side panel (narrow): what model.panel lets it show, in its order.
+  const narrow = panel !== null;
   const has = (field: string) => store.root.fields.has(field);
   const build: Record<SideBlockName, () => Child> = {
     // A shortcut back to the fields from Activity, Related and the table tabs: hidden while Details is open, where
@@ -801,7 +820,8 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
     },
   };
   // Meta.side_blocks picks and orders them; without it, all four in this order.
-  const names = (model.side_blocks ?? SIDE_BLOCKS).filter((name): name is SideBlockName => name in build);
+  const listed = (model.side_blocks ?? SIDE_BLOCKS).filter((name): name is SideBlockName => name in build);
+  const names = panel ? panel.order(listed.filter(name => panel.block(name)), name => name) : listed;
   return names.map(name => build[name]()).filter(block => block !== null);
 }
 

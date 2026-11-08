@@ -70,6 +70,9 @@ export interface CalculationSchema {
   plan?: any;
 }
 
+/** Hidden names by kind in a list's side panel. Display only: permissions never read it. */
+export interface PanelSchema { sections?: string[]; fields?: string[]; tabs?: string[]; blocks?: string[]; order?: string[] }
+
 export interface ListTabsSchema { field: string; kind: 'state' | 'select' | 'link'; default: string }
 
 export interface ModelSchema {
@@ -101,6 +104,9 @@ export interface ModelSchema {
   summary?: boolean;
   /** Meta.side_blocks: the record page's side blocks in order ('key_fields', 'related', 'files', 'info'). Absent means all. */
   side_blocks?: string[];
+  /** What a record opened in a list's side panel leaves out, by kind: panel=False flags, Meta.panel or the Controls
+   * toggles. order is the order Meta.panel names tabs and blocks in. Absent means the panel shows everything. */
+  panel?: PanelSchema;
   children?: ChildSchema[];
   actions?: ActionSchema[];
   permissions?: { create: boolean; update: boolean; delete: boolean };

@@ -49,8 +49,10 @@ export interface LayoutSection { title: string; fields: Array<{ name: string; wi
   /** Whether people can open and close the section, and how it starts (absent in layouts saved before them). */
   collapsible?: boolean; collapsed?: boolean | 'empty';
   /** columns: fields go down the left column, then the right (absent: rows). */ flow?: 'columns' }
+/** What a list's side panel hides, by kind (an empty object shows everything). Display only. */
 /** A saved form layout: its sections, or its sections with the record tab order and default tab. */
-export type LayoutValue = LayoutSection[] | { sections: LayoutSection[]; tabs?: string[]; default_tab?: string | null }
+export interface PanelHidden { sections?: string[]; fields?: string[]; tabs?: string[]; blocks?: string[] }
+export type LayoutValue = LayoutSection[] | { sections: LayoutSection[]; tabs?: string[]; default_tab?: string | null; panel?: PanelHidden }
 export interface ListValue { columns: string[]; page_size: number; sort: string; /** How the list opens a record (absent in list views saved before it existed). */ open_in?: 'page' | 'panel';
   /** The field whose values are the list's tabs (a State, Select or Link field), or null for none; absent keeps the app's. */ list_tabs?: string | null;
   /** The tab the list opens on: "all", a value, or a linked record's title. */ list_tab?: string }

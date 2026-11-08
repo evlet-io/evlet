@@ -419,7 +419,8 @@ and the section. The group rules above apply to sections too, and Other always s
 `collapsed` is only the starting point: each person's own choice is remembered per model
 ([ui.md](ui.md#collapsible-sections)). Each layout entry in the UI schema carries
 `collapsible` and `collapsed` (`false` for plain groups). Controls can change both per
-section ([controls.md](controls.md)).
+section ([controls.md](controls.md)). `Section(..., panel=False)` leaves the section out when a
+list opens the record in its side panel ([ui.md](ui.md#what-a-side-panel-shows)).
 
 ### Field order and record tabs
 

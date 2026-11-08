@@ -194,6 +194,11 @@
       "tabs": [],
       "default_tab": null,
       "autosave": true,
+      "panel": {
+        "fields": [
+          "tax_rate"
+        ]
+      },
       "fields": [
         {
           "name": "customer",
@@ -848,6 +853,27 @@
         "info",
         "key_fields"
       ],
+      "panel": {
+        "sections": [
+          "Notes",
+          "Schedule"
+        ],
+        "tabs": [
+          "activity",
+          "postings",
+          "revisions"
+        ],
+        "blocks": [
+          "files",
+          "key_fields",
+          "summary"
+        ],
+        "order": [
+          "details",
+          "related",
+          "info"
+        ]
+      },
       "fields": [
         {
           "name": "title",
