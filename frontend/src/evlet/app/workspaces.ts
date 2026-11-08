@@ -7,7 +7,7 @@
 // item its address. An older server without `workspaces` gets the fallback: one workspace per installed
 // app, with Documents, Records and Reports sections. The shell only reads the returned shape.
 
-import { cell, type Cell } from '../reactive';
+import { cell, effect, type Cell } from '../reactive';
 import type { AppSchema, ModelSchema, ReportSchema, WorkspaceItem, WorkspaceSchema } from '../model/schema';
 import { tintFor, type Tint } from '../ui/core';
 import { fieldOf, groupOf, type ScreenModel } from './meta';
@@ -182,6 +182,51 @@ export function activeShortcut(nav: WorkspaceNav, path: string, prefer?: string)
     if (mine > score) { best = { workspace, section, item }; score = mine; }
   }
   return best;
+}
+
+/**
+ * The workspace a page belongs to: the first declared one holding a shortcut to its path (a list with any tab
+ * or filter, a record under it, a report) or, for a URL shortcut, to its exact address. Null for a page no
+ * workspace holds (Docs, Settings, the start page). The breadcrumb names it, and a fresh tab opens on it.
+ */
+export function homeWorkspace(nav: WorkspaceNav, path: string): Workspace | null {
+  const bare = pathOf(path), query = queryOf(path);
+  return nav.workspaces.find(workspace => workspace.sections.some(section => section.items.some(item => {
+    if (item.slip || item.external || !item.href) return false;
+    const target = pathOf(item.href);
+    if (item.kind === 'link') return bare === target && sameQuery(queryOf(item.href), query);
+    return bare === target || bare.startsWith(target + '/');
+  }))) ?? null;
+}
+
+/** sessionStorage, or null where the browser blocks it. */
+function tabStorage(): Storage | null {
+  try { return typeof sessionStorage === 'undefined' ? null : sessionStorage; } catch { return null; }
+}
+
+/**
+ * The workspace the sidebar shows. Only the Workspace switcher and the breadcrumb's workspace crumb change it:
+ * opening a page of another workspace keeps it. It is kept per browser tab in sessionStorage, so a reload keeps
+ * it and a new tab does not. A tab without one (a new tab, a pasted link, a bookmark) opens on the page's own
+ * workspace, else on `fallback` (the person's last choice, kept on the device for the start page), else the
+ * first. Blocked storage only means nothing is remembered.
+ */
+export function chosenWorkspace(user: string, nav: WorkspaceNav, path: string, fallback: Cell<string>): Cell<string> {
+  const key = `evlet.${user}.nav.workspace`, storage = tabStorage();
+  const known = (value: string | null | undefined): value is string => Boolean(value) && nav.workspaces.some(workspace => workspace.key === value);
+  let stored: string | null = null;
+  try { stored = storage?.getItem(key) ?? null; } catch { /* blocked */ }
+  const start = known(stored) ? stored : homeWorkspace(nav, path)?.key ?? (known(fallback.peek()) ? fallback.peek() : nav.workspaces[0]?.key ?? '');
+  const chosen = cell(start, { name: 'nav.workspace' });
+  // A choice also becomes the start page's default; opening a tab on a page does not.
+  let first = true;
+  effect(() => {
+    const value = chosen.get();
+    try { storage?.setItem(key, value); } catch { /* blocked */ }
+    if (!first && value) fallback.set(value);
+    first = false;
+  });
+  return chosen;
 }
 
 // The workspaces in /api/schema change when someone saves a workspace override: the editor reads the

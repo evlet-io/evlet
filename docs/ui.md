@@ -502,11 +502,20 @@ The sidebar has three levels: workspace, section, shortcut. It starts directly w
   For people with access, a divider and **Customize** follow. Arrow Up and Arrow Down move through the
   rows (wrapping at either end), Home and End jump to the first and last, Enter opens one, and Esc
   closes the menu and gives focus back to the button. The menu is a `menu` of `menuitemradio` rows.
-  Opening a workspace shows its sections and opens its first shortcut. Opening a page of another
-  workspace (a link, Back, the search palette) switches the sidebar to it.
+  Opening a workspace shows its sections and opens its first shortcut.
+- **The workspace stays put.** Opening a page of another workspace (a link, Back, the search palette,
+  a related record) keeps the current workspace and its sidebar; nothing is marked there, since no
+  shortcut matches. The breadcrumb shows where the page belongs: its first crumb names the page's own
+  workspace (the first declared one holding a shortcut to it), such as "Billing › Invoices › INV-…",
+  as a link to the page. Clicking it shows that workspace, the page staying open. The switcher and
+  that crumb are the only things that change the workspace. The workspace is kept per browser tab in
+  sessionStorage (`evlet.<username>.nav.workspace`), so a reload keeps it and a new tab does not. A tab
+  without one (a new tab, a pasted link, a bookmark) opens on the page's own workspace; a page no
+  workspace holds, such as the start page, opens on the person's last choice, kept on the device in
+  localStorage under the same name. Blocked storage falls back to the page's workspace.
 - **Sections** are collapsible titles with an icon, an optional count and a chevron. Each one is open
   until the person closes it. The closed ones are kept per person in browser storage
-  (`evlet.<username>.nav.closed`), and the chosen workspace in `evlet.<username>.nav.workspace`.
+  (`evlet.<username>.nav.closed`).
   Blocked storage only means nothing is remembered.
 - **Shortcuts** sit under their section on a thin guide line, each starting with its kind's icon
   ([Navigation icons](#navigation-icons)), small and muted, in place of a dot. The one the page

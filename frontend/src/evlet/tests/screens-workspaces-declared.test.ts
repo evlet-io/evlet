@@ -190,6 +190,68 @@ describe('the sidebar with declared workspaces', () => {
     expect(marked()).toEqual([]);
   });
 
+  it('keeps the workspace when a page of another one opens, and the breadcrumb\'s workspace crumb switches to it', async () => {
+    const { host, router } = start(routes(), '/app/customer');
+    const workspace = () => text(host.querySelector('.app-switch .as-text b'));
+    const marked = () => [...host.querySelectorAll('.sidebar [aria-current="page"]')].map(item => text(item.querySelector('.lbl')));
+    // A fresh tab opens on the page's first declared workspace.
+    await until(() => expect(workspace()).toBe('Billing'));
+    click(host.querySelector('.app-switch'));
+    click([...document.querySelectorAll<HTMLButtonElement>('.ws-pop .ws-tile, .ws-item')].find(item => text(item) === 'My desk')!);
+    await until(() => expect(workspace()).toBe('My desk'));
+    await until(() => expect(marked()).toEqual(['Customers']));
+    // Invoices belong to Billing only: the sidebar stays on My desk with nothing marked.
+    void router.navigate('/app/invoice');
+    await until(() => expect(text(host.querySelector('.crumbs .cur'))).toBe('Invoices'));
+    expect(workspace()).toBe('My desk');
+    expect(marked()).toEqual([]);
+    // The first crumb names the page's workspace, as a link to the page; clicking it shows that workspace.
+    const crumb = host.querySelector<HTMLAnchorElement>('.crumbs a.ws-crumb')!;
+    expect(text(crumb)).toBe('Billing');
+    expect(crumb.getAttribute('href')).toBe('/app/invoice');
+    click(crumb);
+    await until(() => expect(workspace()).toBe('Billing'));
+    expect(location.pathname).toBe('/app/invoice');
+    await until(() => expect(marked()).toEqual(['Invoices']));
+  });
+
+  it('keeps the chosen workspace over a reload of the tab, and a fresh tab opens on the page\'s', async () => {
+    const first = start(routes(), '/app/customer');
+    await until(() => expect(text(first.host.querySelector('.app-switch .as-text b'))).toBe('Billing'));
+    click(first.host.querySelector('.app-switch'));
+    click([...document.querySelectorAll<HTMLButtonElement>('.ws-pop .ws-tile, .ws-item')].find(item => text(item) === 'My desk')!);
+    await until(() => expect(text(first.host.querySelector('.app-switch .as-text b'))).toBe('My desk'));
+    void first.router.navigate('/app/invoice');
+    await until(() => expect(location.pathname).toBe('/app/invoice'));
+    const kept = Object.entries({ ...sessionStorage }).find(([key]) => key.endsWith('.nav.workspace'))!;
+    expect(kept[1]).toBe('desk');
+    // A reload: the tab's sessionStorage survives, and the workspace with it.
+    stopAll();
+    sessionStorage.setItem(kept[0], kept[1]);
+    const again = start(routes(), '/app/invoice');
+    await until(() => expect(text(again.host.querySelector('.crumbs .cur'))).toBe('Invoices'));
+    expect(text(again.host.querySelector('.app-switch .as-text b'))).toBe('My desk');
+    // A fresh tab (no sessionStorage) opens on the page's own workspace.
+    stopAll();
+    const fresh = start(routes(), '/app/invoice');
+    await until(() => expect(text(fresh.host.querySelector('.crumbs .cur'))).toBe('Invoices'));
+    expect(text(fresh.host.querySelector('.app-switch .as-text b'))).toBe('Billing');
+  });
+
+  it('opens on the page\'s workspace when sessionStorage is blocked', async () => {
+    const real = Object.getOwnPropertyDescriptor(window, 'sessionStorage')!;
+    Object.defineProperty(window, 'sessionStorage', { configurable: true, get() { throw new DOMException('blocked', 'SecurityError'); } });
+    try {
+      const { host } = start(routes(), '/app/invoice');
+      await until(() => expect(text(host.querySelector('.crumbs .cur'))).toBe('Invoices'));
+      expect(text(host.querySelector('.app-switch .as-text b'))).toBe('Billing');
+      // Switching still works; nothing is remembered.
+      click(host.querySelector('.app-switch'));
+      click([...document.querySelectorAll<HTMLButtonElement>('.ws-pop .ws-tile, .ws-item')].find(item => text(item) === 'My desk')!);
+      await until(() => expect(text(host.querySelector('.app-switch .as-text b'))).toBe('My desk'));
+    } finally { Object.defineProperty(window, 'sessionStorage', real); }
+  });
+
   it('presents a menu slip from its shortcut', async () => {
     const { host, sent } = start(routes(), '/app/customer');
     await until(() => expect(byText(host, '.nav-sc', 'Quick customer')).toBeTruthy());

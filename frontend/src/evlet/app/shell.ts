@@ -18,7 +18,7 @@ import { InboxButton } from './inbox';
 import { RecentsButton } from './recents';
 import { rememberAppPage } from './last-page';
 import { rootModels } from './meta';
-import { activeShortcut, modelCounts, workspaceNav, workspacesVersion, type NavSection, type NavShortcut, type Workspace } from './workspaces';
+import { activeShortcut, chosenWorkspace, homeWorkspace, modelCounts, workspaceNav, workspacesVersion, type NavSection, type NavShortcut, type Workspace } from './workspaces';
 import { presentSlip } from './slips';
 import { customizeAccess, openWorkspaceEditor } from './workspace-editor';
 import { isExplorer, openExplorer } from './explorer';
@@ -71,10 +71,11 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   // Saving a workspace override hands the shell the schema's new list (workspacesVersion), and the sidebar follows.
   const version = workspacesVersion(ctx);
   const nav = derive(() => { version.get(); return workspaceNav(ctx.schema.schema, { list: (model, query) => router.href('list', { model }, query ?? {}), report: report => router.href('report', { report }) }, appName); });
-  const chosen = prefs.cell<string>('nav.workspace', nav.peek().workspaces[0]?.key ?? '');
+  // Opening a page of another workspace (a link, Back, the palette) keeps the sidebar as it is: only the switcher
+  // and the breadcrumb's workspace crumb change it. Kept per browser tab; a fresh tab opens on the page's workspace.
+  const chosen = chosenWorkspace(ctx.user.username, nav.peek(), route.peek()?.url ?? window.location.pathname + window.location.search,
+    prefs.cell<string>('nav.workspace', ''));
   const here = derive(() => { const now = route.get(); return now ? activeShortcut(nav.get(), now.url, chosen.get()) : null; });
-  // Opening a shortcut of another workspace (a link, Back, the palette) shows that workspace.
-  effect(() => { const found = here.get(); if (found && found.workspace.key !== chosen.peek()) chosen.set(found.workspace.key); });
   const current = derive(() => nav.get().workspaces.find(workspace => workspace.key === chosen.get()) ?? nav.get().workspaces[0] ?? null);
   // Open or closed sections, per person on this device; a section is open until closed.
   const closed = prefs.cell<Record<string, boolean>>('nav.closed', {});
@@ -183,9 +184,19 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
         ref=${(el: HTMLElement) => tooltip(el, () => dark() ? 'Light theme' : 'Dark theme')}>${() => Icon(dark() ? 'sun' : 'moon')}</button>`)}</div>
     </div></aside>` as HTMLElement;
 
-  const crumbs = () => ctx.crumbs.get().map((crumb, index, all) => index === all.length - 1
-    ? html`<span class="cur" aria-current="page">${crumb.label}</span>`
-    : [html`<a class="hide-sm" href=${crumb.href ?? '#'}>${crumb.label}</a>`, Icon('chevron-right', { size: 'xs', className: 'hide-sm' })]);
+  // The first crumb names the workspace the page belongs to (the first declared one holding it); clicking it shows
+  // that workspace in the sidebar, the page staying open.
+  const pageWorkspace = derive(() => { const now = route.get(); return now ? homeWorkspace(nav.get(), now.url) : null; });
+  // Its address is the page's own: opened in a new tab, the page shows in its workspace there too.
+  const workspaceCrumb = (workspace: Workspace) => [html`<a class="hide-sm ws-crumb" href=${() => route.get()?.url ?? '#'}
+    on:click=${(event: MouseEvent) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return; event.preventDefault(); chosen.set(workspace.key); }}>${workspace.label}</a>`,
+    Icon('chevron-right', { size: 'xs', className: 'hide-sm' })];
+  const crumbs = () => {
+    const list = ctx.crumbs.get(), workspace = pageWorkspace.get();
+    return [workspace && list.length ? workspaceCrumb(workspace) : null, ...list.map((crumb, index, all) => index === all.length - 1
+      ? html`<span class="cur" aria-current="page">${crumb.label}</span>`
+      : [html`<a class="hide-sm" href=${crumb.href ?? '#'}>${crumb.label}</a>`, Icon('chevron-right', { size: 'xs', className: 'hide-sm' })])];
+  };
   // Search and the Explorer: two buttons in one box (docs/ui.md#top-bar-search-and-explorer). The search part
   // opens the palette; the Explorer part opens the Explorer on its last view and is pressed while it is open.
   const onExplorer = () => isExplorer(route.get());
