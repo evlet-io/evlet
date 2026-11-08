@@ -220,11 +220,12 @@ describe('record view', () => {
   });
 
   it('shows an empty summary value as Not set', async () => {
-    const schema = copy(screen.schema);
-    schema.body.models.find((model: any) => model.name === 'order').key_fields = ['title', 'remark'];
-    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema], ...orderRecord()], '/app/order/0000000000001');
-    await until(() => expect([...host.querySelectorAll('.sum-t > span')].map(text)).toContain('Remark'));
-    const due = byText(host, '.sum-t', /^Remark/)!;
+    const detail = copy(recorded.detail);
+    // Due is calculated from Issued, so with no Issued it is empty.
+    detail.body.issued = null; detail.body.due = null;
+    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, screen.schema], ['GET', /\/api\/order\/0000000000001$/, detail], ...orderRecord().slice(1)], '/app/order/0000000000001');
+    await until(() => expect([...host.querySelectorAll('.sum-t > span')].map(text)).toContain('Due'));
+    const due = byText(host, '.sum-t', /^Due/)!;
     expect(text(due.querySelector('b'))).toBe('Not set');
     expect(due.querySelector('b .ev-unset')).not.toBeNull();
     expect(text(host.querySelector('.ev-record'))).not.toContain('—');

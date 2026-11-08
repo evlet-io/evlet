@@ -8,6 +8,30 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **`Meta.summary` and `Meta.side_blocks`.** `summary = False` leaves the record page's summary
+  strip out. `side_blocks = ('related', 'files')` picks and orders the side blocks, from
+  `key_fields`, `related`, `files` and `info`. Both are checked when the registry is built and go
+  into the UI schema only when a model sets them.
+- **More > Copy record ID** on the record page.
+
+### Changed
+
+- **The record page shows each fact once.** Key fields show in the header facts and no longer in
+  the summary strip, which now holds calculated values and per-record measures the header doesn't
+  show (no strip when nothing is left). The Key fields side block shows only while a tab other
+  than Details is open. A saved record's Details form leaves out the title, name and State that the
+  header shows; the title is edited in the header. A new record's form keeps them.
+- **The Related side block lists only relations with records** and is left out when none has any.
+  The Related tab still lists every relation.
+- **Record info no longer shows the record id.** Use More > Copy record ID. The block is left out
+  while it has nothing to show, such as an older record without times.
+
+- **Related counts use the model's words.** In the side block, a relation named after its model
+  is announced as "Payments, 1 payment" by screen readers; other relations still say "records".
+  An empty relation in the Related tab is one short line instead of a table of headers, and its
+  heading shows no 0.
+- **Record tabs show their keyboard focus ring inside the tab**, so the scrolling tab strip no
+  longer clips it.
 - **List tabs by a chosen field, with a default tab.** `Meta.list_tabs` names the State, Select
   or Link field whose values are the list's tabs, and `Meta.list_tab` the tab the list opens on
   (`"all"` by default). Without them a model's State drives the tabs as before; `list_tabs = None`
@@ -26,9 +50,6 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Transaction locks.** `tx.lock(*keys, timeout=None)` holds named locks on business keys until the
   transaction ends, PostgreSQL advisory locks taken in a fixed order, a key check on SQLite. A wait
   past `timeout` raises the new `LockTimeout`. Nothing changes for existing apps.
-
-### Changed
-
 - **The list board is opt-in.** A model's list offers the Board view only when `Meta.board`
   names its State field, such as `board = "stage"`, and the board groups by that field. Without
   it the list is a table with the saved views per state, and an old `?view=board` link opens the

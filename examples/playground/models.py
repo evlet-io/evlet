@@ -110,6 +110,9 @@ class Project(Model):
         # The record page's tabs: Details first, then the project's tasks (Related) and its history.
         tabs = ('details', 'related', 'activity')
         default_tab = 'details'
+        # The full page's side column: related tasks first, then the record's times, then key fields
+        # (shown away from Details).
+        side_blocks = ('related', 'info', 'key_fields')
         open_in = 'panel'
         # The list's tabs: All, Planned, Active and Done, with counts. It opens on Active.
         list_tabs = 'status'

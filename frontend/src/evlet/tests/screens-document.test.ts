@@ -42,9 +42,15 @@ describe('transaction document (recorded fixtures)', () => {
     // Record payment is listed for this role but blocked by its condition.
     expect(byText(host, '.doc-head button', 'Record payment')!.getAttribute('aria-disabled')).toBe('true');
     expect(tabs(host)).toEqual(['Activity', 'Details', 'Lines2', 'Related', 'Postings']);
-    // Summary: key fields then per-record measures.
+    // E3: the header's stage bar shows and moves the State, so the read form leaves it out.
+    click(byText(host, '.doc-tabs [role="tab"]', 'Details'));
+    await until(() => expect(host.querySelector('.fs .ff')).not.toBeNull());
+    expect(host.querySelector('.fs .ff[data-field="status"]')).toBeNull();
+    click(byText(host, '.doc-tabs [role="tab"]', 'Activity'));
+    // Key fields show in the header only; the summary keeps what the header doesn't: per-record measures.
+    await until(() => expect(text(host.querySelector('.rec-meta'))).toContain('Al Sahra Trading'));
     await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => `${text(item.querySelector('span'))}=${text(item.querySelector('b'))}`))
-      .toEqual(['Customer=Al Sahra Trading', 'Total=AED 2,680.00', 'Due on=01-12-2026', 'Payments=1']));
+      .toEqual(['Payments=1', 'Paid=AED 500.00']));
     // Activity: the journal grouped by day, newest first, actors named from the page's users, field
     // changes old and new and Table rows counted.
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(3));
@@ -57,6 +63,8 @@ describe('transaction document (recorded fixtures)', () => {
     expect(host.querySelector('.composer .rt-surface')).not.toBeNull();
     // Side panel: key fields, related counts, files and record info.
     await until(() => expect(text(byText(host, '.side-sec', /^Related/))).toContain('Payments1'));
+    // Payments are named after their model, so the count reads in its words.
+    expect(byText(host, '.side-sec', /^Related/)!.querySelector('.rel-row')!.getAttribute('aria-label')).toBe('Payments, 1 payment');
     expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf');
     click(byText(host, '.doc-tabs [role="tab"]', 'Related'));
     // A payment has no text field, so its title is its id.
