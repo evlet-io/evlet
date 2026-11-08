@@ -14,16 +14,16 @@ import { REPORT_ICON, reportsOf } from './report-page';
 import { appOf, appsOf, modelCounts, reportApp } from './workspaces';
 import type { Tint } from '../ui/core';
 
-export type ExplorerView = 'reports' | 'data' | 'dashboards';
+export type ExplorerView = 'reports' | 'ledger' | 'data' | 'dashboards';
 
-// The views in order. Ledger reports (reports over ledger models) join here as their own view once the
-// server offers a read-only, permission-checked way to list them; nothing of it shows until then.
+// The views in order. Ledger reports (source_kind "ledger": reports over a ledger model, which the schema
+// never lists as a model) show as their own view when this person may run at least one.
 const VIEWS: Array<{ value: ExplorerView; label: string; icon: string }> = [
   { value: 'reports', label: 'Reports', icon: REPORT_ICON },
+  { value: 'ledger', label: 'Ledger reports', icon: 'receipt' },
   { value: 'data', label: 'Data', icon: 'table-2' },
   { value: 'dashboards', label: 'Dashboards', icon: 'layout-grid' },
 ];
-const viewOf = (value: string | undefined): ExplorerView => VIEWS.some(view => view.value === value) ? value as ExplorerView : 'reports';
 
 /** The Explorer's address: /?explorer=reports. */
 export const explorerHref = (router: AppRouter, view: ExplorerView = 'reports') => router.href('home', {}, { explorer: view });
@@ -39,6 +39,9 @@ export function ExplorerPage(ctx: AppContext): HTMLElement {
   const fallback = application.playground ? 'Playground' : application.name || 'Evlet';
   const apps = appsOf(ctx.schema.schema, fallback);
   const labelOf = (key: string) => apps.find(app => app.key === key)?.label ?? fallback;
+  const hasLedger = reportsOf(ctx).some(report => report.source_kind === 'ledger');
+  const views = VIEWS.filter(entry => entry.value !== 'ledger' || hasLedger);
+  const viewOf = (value: string | undefined): ExplorerView => views.some(entry => entry.value === value) ? value as ExplorerView : 'reports';
   const view = cell<ExplorerView>(viewOf(router.route.peek()?.query.explorer), { name: 'explorer.view' });
   const query = cell('', { name: 'explorer.query' });
   const app = cell('', { name: 'explorer.app' });
@@ -47,11 +50,13 @@ export function ExplorerPage(ctx: AppContext): HTMLElement {
   effect(() => { const next = router.route.get(); if (isExplorer(next)) untrack(() => { if (view.peek() !== viewOf(next!.query.explorer)) view.set(viewOf(next!.query.explorer)); }); });
 
   const counts = modelCounts(ctx);
-  const reports: Card[] = reportsOf(ctx).map(report => {
+  const reportCard = (report: ReturnType<typeof reportsOf>[number]): Card => {
     const key = reportApp(ctx.schema.schema, report);
     return { key: report.name, label: report.label, app: key, appLabel: labelOf(key), description: report.description ?? '',
-      href: router.href('report', { report: report.name }), icon: REPORT_ICON, tint: 'rose' };
-  });
+      href: router.href('report', { report: report.name }), icon: report.source_kind === 'ledger' ? 'receipt' : REPORT_ICON, tint: report.source_kind === 'ledger' ? 'teal' : 'rose' };
+  };
+  const reports: Card[] = reportsOf(ctx).map(reportCard);
+  const ledger: Card[] = reportsOf(ctx).filter(report => report.source_kind === 'ledger').map(reportCard);
   // Child tables are never listed. Ledger models have no public surface, so the schema never carries them.
   const models: Card[] = rootModels(ctx.schema).map(model => {
     const { icon, tint } = identity(model);
@@ -65,7 +70,7 @@ export function ExplorerPage(ctx: AppContext): HTMLElement {
     return cards.filter(card => (!only || card.app === only)
       && (!text || [card.label, card.description, card.appLabel].some(value => value.toLowerCase().includes(text))));
   });
-  const shownReports = matching(reports), shownModels = matching(models);
+  const shownReports = matching(reports), shownLedger = matching(ledger), shownModels = matching(models);
 
   const card = (item: Card) => html`<a class="ex-card" href=${item.href}>
     <span class="ex-card-h">${IconTile(item.icon, { tint: item.tint, size: 28 })}<b>${item.label}</b>
@@ -89,12 +94,13 @@ export function ExplorerPage(ctx: AppContext): HTMLElement {
   const body = () => {
     switch (view.get()) {
       case 'reports': return grid(reports, () => shownReports.get(), { title: 'No reports', text: 'Your role cannot run any report here.' });
+      case 'ledger': return grid(ledger, () => shownLedger.get(), { title: 'No ledger reports', text: 'Your role cannot run any ledger report here.' });
       case 'data': return grid(models, () => shownModels.get(), { title: 'No data', text: 'Your role cannot open any list here.' });
       case 'dashboards': return EmptyState({ icon: 'layout-grid', tint: 'slate', title: 'No dashboards yet', text: 'Dashboards will be listed here when an app adds them.' });
     }
   };
   return html`<div class="page ev-explorer">${PageHeader({ icon: 'layout-grid', tint: 'slate', title: 'Explorer' })}
-    <div class="ex-views">${SegmentedControl({ options: VIEWS, value: view, label: 'Explorer view',
+    <div class="ex-views">${SegmentedControl({ options: views, value: view, label: 'Explorer view',
       onChange: next => void router.go('home', {}, { explorer: next }) })}</div>
     <div class="ex-tools" hidden=${() => !searchable()}>${tools}</div>${body}</div>` as HTMLElement;
 }
