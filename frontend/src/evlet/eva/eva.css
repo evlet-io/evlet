@@ -104,7 +104,7 @@
 .eva-compose-wrap{padding:8px 20px 16px}
 .eva-compose-wrap>.eva-quota{max-width:760px;margin:0 auto}
 .eva-compose{max-width:760px;margin:0 auto;border:1px solid var(--border-strong);border-radius:var(--r-lg);background:var(--surface);box-shadow:var(--shadow-md)}
-.eva-compose:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring)}
+.eva-compose:focus-within{border-color:var(--accent);box-shadow:none}
 .eva-compose textarea{border:0;outline:0;background:none;resize:none;width:100%;padding:12px 14px 4px;min-height:48px;line-height:1.5;display:block}
 .eva-compose textarea:disabled{color:var(--fg-3)}
 .eva-compose-bar{display:flex;align-items:center;gap:6px;padding:6px 8px 8px}

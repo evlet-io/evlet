@@ -8,6 +8,7 @@ import { cell, type Cell } from '../reactive';
 import { ApiError, type FieldErrors } from '../api';
 import type { FieldSchema } from '../model/schema';
 import { Button, IconButton } from '../ui/base';
+import { autofocusForm, initialFocusField } from '../ui/autofocus';
 import { FieldControl, fieldFor, localField } from '../ui/fields';
 import { humanize } from '../ui/kinds';
 import { DialogFooter, openModal, toast } from '../ui/layers';
@@ -260,5 +261,9 @@ export function SlipSheet(ctx: AppContext, surface: SlipSurface, source: SlipSou
       body: () => [body(), html`<p class="ev-error full" role="alert" hidden=${() => !note.get()}>${() => note.get()}</p>`],
       footer: close => DialogFooter({ note: () => tried.get() ? '' : 'Nothing is saved until you hand this in.',
         cancel: () => { if (confirmClose()) close(); }, submit: { label: surface.hand_in_label, onClick: () => void handIn(close) } }) });
+    // The first field that can be filled in takes the focus (on a device with a mouse), not whatever input comes first.
+    const sheet = [...document.querySelectorAll<HTMLElement>('.modal.slip')].pop();
+    if (sheet) autofocusForm(sheet, () => initialFocusField({ name: surface.slip },
+      groups.map(group => ({ fields: group.names.flatMap(name => fields.get(name) ?? []) }))));
   });
 }

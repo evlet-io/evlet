@@ -318,6 +318,26 @@ Tab skips values that can't change (read only, locked or calculated); a click st
 showing why, and screen readers read them. Record tabs follow `Meta.tabs` or the Controls tab order,
 and a record opens on its default tab, which the address then leaves out (`?tab=` names the others).
 
+### Focus on new forms
+
+A new record (the full page `/app/<model>/new` and the side panel) and a slip focus their first
+editable field when they open, so typing can start at once. The field is the first one in screen
+order that shows and can be edited: read-only, calculated, hidden and locked fields are skipped, and
+so are the fields of a closed section and of a tab other than Details. The rules:
+
+- An existing record never takes the focus on open, so keys and scrolling stay where they were.
+- Touch devices (no hover, or a coarse pointer) skip it, so the on-screen keyboard does not open.
+  Dialogs there focus the dialog itself rather than its first field, for the same reason.
+- A focus the person moved while the form loaded stays where it is.
+- Restoring an unsaved draft, or starting fresh, focuses the first field again; the values do not
+  change.
+
+The choice goes through `initialFocusField(model, layout)` in `ui/autofocus.ts`, so a model's own
+choice can plug in there later.
+
+A focused field shows a solid 1 px accent border, with no glow; a field with an error keeps its rose
+border when focused. Buttons and other controls show a solid 2 px accent outline.
+
 **Enter moves to the next field** (Settings, Appearance, off by default) makes Enter go to the next
 field of a form and Shift+Enter to the one before, skipping fields that can't change. It never
 applies in long text or rich text, on buttons, or while a picker or list is open, and Ctrl or Cmd

@@ -280,6 +280,7 @@ mark only.
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type (RichTextField and RichTextView for rich text), `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
 | `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
+| `autofocus.ts` | `initialFocusField`, `autofocusForm` ([focus on new forms](ui.md#focus-on-new-forms)) |
 | `fold.ts` | FoldSection, Folds, `foldSummary`, `revealField`, `revealFirstError` ([collapsible sections](ui.md#collapsible-sections)), `flowGrid` (rows or columns) |
 | `draglist.ts` | `dragList(root, { kind, move, label, zoneLabel })`: reorder by mouse, touch or keyboard, with announcements |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
@@ -437,7 +438,10 @@ The date range filter's From and To boxes read days the same way.
 BaseField follows the Untitled UI input structure in Evlet's colours. Inputs, Link and Select
 buttons, unit boxes and tag fields are 40 px tall with 14 px text and 14 px side padding, so a
 form row lines up. At rest an input has a 1 px light grey border and a faint shadow; on focus
-a lighter blue border and a soft 4 px blue ring; with an error the same in rose. The label is
+the border turns the accent blue, with no glow or ring, so nothing moves; with an error the border
+stays rose on focus. The rich text frame, link pickers, selects, tags, date and time inputs and the
+search boxes focus the same way; child table cells show the active cell's 2 px accent outline.
+Buttons and other controls keep the page-wide `:focus-visible` outline, a solid 2 px accent line. The label is
 14 px, weight 500, 6 px above the input, and the required `*` is the accent blue (its
 `required_when` tooltip stays). `help_text` reads under the input in grey and is linked with
 `aria-describedby`; an error replaces it while there is one. A field with `tooltip` gets a ? icon
@@ -644,8 +648,14 @@ mount(document.querySelector('#app')!, () => DocFrame({
   live region. Listeners sit on `root`, so the lists may be redrawn after each `move`.
 - **enterMovesToNextField(root, on)** makes Enter and Shift+Enter move between the `[data-field]` blocks
   under `root` while `on()` is true.
+- **initialFocusField(model, layout)** names the field a new form focuses first: the first field of an
+  open section that shows and can be edited (not read only, calculated, hidden or locked). `model` is
+  where a model's own choice will plug in; nothing is read from it yet. **autofocusForm(root, choose,
+  before)** focuses that field's control once `root` is on the page, except on a touch device
+  (`keyboardFirst()` in `core.ts`) or when the focus moved away from `before` while the form loaded.
+  The record page uses both for new records and slips use them on open ([focus on new forms](ui.md#focus-on-new-forms)).
 - Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
-  first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
+  first field (the dialog itself on a touch device), keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
   polite live region that the app creates at mount with `mountToasts()`. A popover stays open
   when a phone keyboard resizes the window while the user types in it. `apiLinks()` reads
   link titles in batches (one list request per target model with `id__in` for the titles a page
@@ -700,12 +710,12 @@ no script. Each block also sets `color-scheme`, so scrollbars and native control
 | `--bg`, `--bg-subtle`, `--bg-muted`, `--side-bg`, `--surface`, `--overlay` | Grounds, cards, popovers and the dialog scrim |
 | `--border`, `--border-strong`, `--divider` | Lines |
 | `--fg`, `--fg-2`, `--fg-3`, `--fg-4` | Text from strongest to faint; `--fg-4` is for icons and marks only |
-| `--accent`, `--accent-hover`, `--accent-soft`, `--accent-ring` | Links, active marks, selected rows, focus rings |
+| `--accent`, `--accent-hover`, `--accent-soft`, `--accent-ring` | Links, active marks, selected rows and focus borders (`--accent`); `--accent-ring` is a light tint for selected tiles, never focus |
 | `--accent-solid`, `--accent-solid-hover`, `--accent-fg` | A filled accent surface and the text on it |
 | `--t-{blue,green,amber,rose,violet,teal,slate}` and `-bg` | Tints: icons, pills, charts, validation (`--t-rose`) |
 | `--on-tint` | Text on a solid `--t-*` fill |
 | `--inverse-bg`, `--inverse-fg`, `--inverse-ok`, `--inverse-hover` | Toasts, tooltips, the bulk bar and the Settings save bar (dark in light, light in dark) |
-| `--focus-border`, `--focus-ring`, `--error-ring`, `--knob`, `--shadow-*` | Focus, the switch knob, shadows, sticky column edges |
+| `--knob`, `--shadow-*` | The switch knob, shadows, sticky column edges |
 | `--swatch-*` | The theme pictures in Settings (the same in both themes) |
 
 Components and screens use tokens only; `color-mix()` over a token is fine for a translucent

@@ -12,7 +12,7 @@ img.set-photo{object-fit:cover;padding:0}
 .set-nav{position:sticky;top:0;display:flex;flex-direction:column;gap:2px}
 .set-search{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border:1px solid var(--border-strong);border-radius:var(--r);background:var(--surface);color:var(--fg-3);margin-bottom:10px}
 .set-search input{border:0;outline:0;background:transparent;width:100%;color:var(--fg)}
-.set-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring)}
+.set-search:focus-within{border-color:var(--accent);box-shadow:none}
 .set-nav-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);padding:12px 10px 4px}
 .set-nav-item{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:var(--r);color:var(--fg-2);font-weight:500}
 .set-nav-item:hover{background:var(--bg-muted);color:var(--fg)}

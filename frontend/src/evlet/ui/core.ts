@@ -24,6 +24,11 @@ export function canHover(): boolean {
   try { return !window.matchMedia?.('(hover: none)')?.matches; } catch { return true; }
 }
 
+/** Whether the device has a fine pointer that hovers: not a phone or tablet, where focusing a field opens the keyboard. */
+export function keyboardFirst(): boolean {
+  try { return !window.matchMedia?.('(hover: none), (pointer: coarse)')?.matches; } catch { return true; }
+}
+
 /** The first and last focusable elements inside a container. */
 export function focusables(root: Element): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')]

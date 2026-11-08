@@ -7,7 +7,7 @@
 import { html, type Child } from '../dom';
 import { cell, runWithOwner, scope } from '../reactive';
 import { Button, Icon, type ButtonProps } from './base';
-import { focusables, read, tint, trapFocus, uid, type Prop, type Tint } from './core';
+import { focusables, keyboardFirst, read, tint, trapFocus, uid, type Prop, type Tint } from './core';
 import { hideTip } from './tooltip';
 
 // Render into a fresh root scope (not owned by whatever opened the layer).
@@ -201,9 +201,11 @@ function dialog(kind: 'modal' | 'drawer', options: ModalOptions): () => void {
     ?? (nodes.find(node => node instanceof HTMLElement && node.classList.contains('modal-wrap')) as HTMLElement).querySelector<HTMLElement>('[role="dialog"]')!;
   stack.push(close);
   layersOpen.set(stack.length);
-  // Focus the first field, else the first control, else the dialog.
+  // Focus the first field, else the first control, else the dialog. On a touch device the dialog itself, so
+  // the on-screen keyboard does not open before the person picks a field.
   const body = panel.querySelector('.modal-b,.drawer-b')!;
-  const first = body.querySelector<HTMLElement>('input:not([disabled]),select:not([disabled]),textarea:not([disabled])') ?? focusables(body)[0] ?? panel;
+  const first = !keyboardFirst() ? panel
+    : body.querySelector<HTMLElement>('input:not([disabled]),select:not([disabled]),textarea:not([disabled])') ?? focusables(body)[0] ?? panel;
   first.focus();
   return close;
 }

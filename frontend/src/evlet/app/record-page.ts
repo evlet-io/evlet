@@ -15,6 +15,7 @@ import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote,
 import { ChildRows, ChildTable } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
 import { displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, stateTint, statusTint, type FieldLike } from '../ui/fields';
+import { autofocusForm, initialFocusField } from '../ui/autofocus';
 import { flowGrid, FoldSection, Folds, isEmpty, revealField, revealFirstError } from '../ui/fold';
 import { NoteComposer } from './composer';
 import { FormSection, KeyValueList } from '../ui/inline';
@@ -115,6 +116,8 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
   const { api, router } = ctx;
   const model = screenModel(ctx.schema, name);
   const isNew = idText === 'new';
+  // What held the focus when the form was asked for: autofocus leaves alone a focus moved while it loads.
+  const focusedAtOpen = isNew ? document.activeElement : null;
   // An older bookmark carries a decimal id (/app/invoice/42): open the same record under its text id.
   const legacy = isNew ? null : legacyRecordId(idText);
   if (legacy && !panel) {
@@ -161,7 +164,7 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
     loading: () => html`<div class="page"><p class="muted" role="status">Loading…</p></div>`,
     missing: () => missing(ctx, model, panel),
     error: () => html`<div class="page">${EmptyState({ icon: 'info', tint: 'rose', title: 'This record could not be opened', text: () => failure.get(), action: Button({ label: 'Try again', onClick: () => void load() }) })}</div>`,
-    ready: () => RecordView(ctx, model, store, { isNew, extras, detail, query, prefill: prefill?.from ?? null, panel }),
+    ready: () => RecordView(ctx, model, store, { isNew, extras, detail, query, prefill: prefill?.from ?? null, panel, focusedAtOpen }),
   })}</div>` as HTMLElement;
   return page;
 }
@@ -174,7 +177,7 @@ function missing(ctx: AppContext, model: ScreenModel, panel?: PanelHost): HTMLEl
 }
 
 interface ViewOptions { isNew: boolean; extras: Readable<DetailExtras>; detail: Readable<RecordData | null>; query: Record<string, string>; /** The slip that filled this new record. */ prefill?: string | null;
-  /** Shown in a list's side panel: the narrow layout. */ panel?: PanelHost }
+  /** Shown in a list's side panel: the narrow layout. */ panel?: PanelHost; /** A new record: what held the focus when it was asked for. */ focusedAtOpen?: Element | null }
 
 function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, options: ViewOptions): HTMLElement {
   const { api, router, prefs } = ctx;
@@ -721,10 +724,17 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   const side = isNew || panel ? undefined : SidePanel(ctx, model, store, view, relations, related, active);
 
+  // A new record focuses its first editable field, in an open section of the Details tab: when it opens, and
+  // again once its draft is restored or set aside (the restore bar held the focus).
+  const focusFirst = (before?: Element | null) => onCleanup(autofocusForm(frame, () => active.peek() !== 'details' ? null : initialFocusField(model, panelSections().map((section, index) => {
+    const fields = section.fields.filter(meta => !isStateField(model, meta)).map(meta => view(meta.name)), fold = foldOf(section, index);
+    return { fields, open: !fold.collapsible || untrack(() => folds.open(section.label, folds.start(fold.collapsed, index, fields)).get()) };
+  })), before));
   const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
-    main: [panelBar, header, UnsavedBar(ctx, model, store, { isNew }), options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
+    main: [panelBar, header, UnsavedBar(ctx, model, store, { isNew, onSettled: () => focusFirst() }), options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
   // The person's "Enter moves to the next field" setting (Settings, Appearance).
   enterMovesToNextField(frame, () => Boolean(ctx.me.get()?.prefs.enter_next));
+  if (isNew) focusFirst(options.focusedAtOpen);
   frame.addEventListener('keydown', event => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && (isNew || store.dirty.peek())) { event.preventDefault(); void save(); }
   });

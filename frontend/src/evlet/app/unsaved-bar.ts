@@ -33,7 +33,7 @@ type Bar =
 
 const missedNote = (missed: number) => missed ? ` ${missed === 1 ? 'One change no longer fits' : `${missed} changes no longer fit`} this record and ${missed === 1 ? 'was' : 'were'} left out.` : '';
 
-export interface UnsavedBarOptions { isNew: boolean }
+export interface UnsavedBarOptions { isNew: boolean; /** A new record's draft was restored or set aside: the bar is gone. */ onSettled?: () => void }
 
 /** The restore bar for a record that is ready to edit. Empty when nothing was kept. */
 export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordStore, options: UnsavedBarOptions): Node {
@@ -71,12 +71,13 @@ export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordSto
     // Set as the person's own edits, so leaving keeps them again.
     const missed = apply(store.root, changes);
     toast(`Draft restored. Nothing is saved until you create it.${missedNote(missed)}`);
+    options.onSettled?.();
   };
 
   const discard = async () => {
     const current = bar.peek();
     bar.set(null);
-    if (current?.kind === 'local') { ctx.unsaved.remove(model.name); return; }
+    if (current?.kind === 'local') { ctx.unsaved.remove(model.name); options.onSettled?.(); return; }
     if (current?.kind === 'server' && id) {
       try { await ctx.api.discardUnsaved(model.name, id); toast('Unsaved changes discarded'); }
       catch { toast('Unsaved changes could not be discarded. Try again.', { icon: 'info' }); bar.set(current); }
