@@ -3,7 +3,7 @@
 // from the site's overrides, and the active shortcut chosen by the address. Also the Explorer's Ledger reports.
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, invoice, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
-import { copy } from './server';
+import { copy, type Recorded } from './server';
 import { activeShortcut, listQuery, workspaceNav } from '../app/workspaces';
 import type { AppSchema, WorkspaceSchema } from '../model/schema';
 import type { ScreenModel } from '../app/meta';
@@ -47,6 +47,8 @@ function declared(): any {
   ] satisfies WorkspaceSchema[];
   return schema;
 }
+/** GET /api/_controls/workspaces for someone the routes answer. */
+const listing: Recorded = { status: 200, etag: null, body: { items: [], problems: [] } };
 const routes = (schema = declared()): Route[] => [
   ['GET', /\/api\/auth\/session$/, invoice.session],
   ['GET', /\/api\/schema$/, schema],
@@ -147,10 +149,45 @@ describe('the sidebar with declared workspaces', () => {
   });
 
   it('offers Customize in the switcher to people the workspace routes answer', async () => {
-    const { host } = start([...routes(), ['GET', /\/api\/_controls\/workspaces$/, { status: 200, etag: null, body: { items: [], problems: [] } }]], '/app/invoice');
+    const { host } = start([...routes(), ['GET', /\/api\/_controls\/workspaces$/, listing]], '/app/invoice');
     await until(() => expect(host.querySelector('.app-switch')).not.toBeNull());
     click(host.querySelector('.app-switch'));
     await until(() => expect(text(document.querySelector('.ws-pop .ws-edit'))).toBe('Customize'));
+  });
+
+  // GET /api/_settings/me reports customize_workspaces; the switcher asks the route only when it is missing.
+  const me = (customize?: boolean): Recorded => {
+    const value = copy(screen.settings_me);
+    if (customize === undefined) delete value.body.customize_workspaces;
+    else value.body.customize_workspaces = customize;
+    return value;
+  };
+  const openSwitcher = async (settings: Recorded) => {
+    const started = start([...routes(), ['GET', /\/api\/_settings\/me$/, settings], ['GET', /\/api\/_controls\/workspaces$/, listing]], '/app/invoice');
+    await until(() => expect(started.host.querySelector('.app-switch')).not.toBeNull());
+    click(started.host.querySelector('.app-switch'));
+    await until(() => expect(document.querySelectorAll('.ws-pop .ws-tile').length).toBe(3));
+    return started;
+  };
+
+  it('shows Customize when settings say the person may customize, without asking the route', async () => {
+    const { sent } = await openSwitcher(me(true));
+    await until(() => expect(text(document.querySelector('.ws-pop .ws-edit'))).toBe('Customize'));
+    expect(requests(sent, 'GET', /\/api\/_controls\/workspaces$/)).toEqual([]);
+  });
+
+  it('hides Customize when settings say the person may not, without asking the route', async () => {
+    const { sent } = await openSwitcher(me(false));
+    // The route would answer here, so a probe would show the button.
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(document.querySelector('.ws-pop .ws-edit')).toBeNull();
+    expect(requests(sent, 'GET', /\/api\/_controls\/workspaces$/)).toEqual([]);
+  });
+
+  it('asks the route once when settings leave the key out (an older server)', async () => {
+    const { sent } = await openSwitcher(me());
+    await until(() => expect(text(document.querySelector('.ws-pop .ws-edit'))).toBe('Customize'));
+    expect(requests(sent, 'GET', /\/api\/_controls\/workspaces$/).length).toBe(1);
   });
 });
 
