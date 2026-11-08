@@ -147,7 +147,7 @@ export function App(options: AppOptions): Node {
 
   async function signOut() {
     // Leaving the page first lets an unsaved record ask.
-    if (!(await router.go(docsOn(session.peek()) ? 'docs' : 'home', {}))) return;
+    if (!(await router.go('login', {}))) return;
     try { await api.logout(); }
     catch (failure) {
       // 401: the server already ended the session. Anything else: the session may still be
@@ -218,7 +218,13 @@ function page(ctx: AppContext): Child {
   const route = ctx.router.route.peek();
   const known = (name: string) => rootModels(ctx.schema).find(model => model.name === name);
   switch (route?.name) {
-    case 'home': case 'login': return docsOn(ctx.session) ? DocsPage(ctx) : nothingToOpen(ctx);
+    // The root opens the start page. /login only shows while signing out, as the page is left.
+    case 'home': {
+      if (startPage(ctx).name === 'home') return nothingToOpen(ctx);
+      queueMicrotask(() => { if (ctx.router.route.peek()?.name === 'home') void goStart(ctx, true); });
+      return html`<div class="page"></div>`;
+    }
+    case 'login': return html`<div class="page"></div>`;
     case 'docs': return docsOn(ctx.session) ? DocsPage(ctx) : unavailable(ctx);
     case 'topic': return docsOn(ctx.session) ? DocsPage(ctx, route.params.topic) : unavailable(ctx);
     case 'list': return known(route.params.model) ? ListPage(ctx, route.params.model) : unavailable(ctx);
@@ -255,26 +261,34 @@ function unavailable(ctx: AppContext): HTMLElement {
     text: 'The address may be wrong, or your role cannot open it.', action: startButton(ctx) })}</div>` as HTMLElement;
 }
 
-/** The start page when Docs are off and the role can open no list. */
+/** The start page when the role can open no list and Docs are off. */
 function nothingToOpen(ctx: AppContext): HTMLElement {
   ctx.crumbs.set([]);
   return html`<div class="page">${EmptyState({ icon: 'layers', tint: 'slate', title: 'Nothing to open yet',
     text: 'Your role cannot open any list here. Ask an administrator for access.' })}</div>` as HTMLElement;
 }
 
-/** Where a signed-in user starts: Docs, or the first list they can open when Docs are off. */
-function goStart(ctx: AppContext, replace = false) {
+/** Where a signed-in user starts: the start page saved in Settings, else the first list the role
+ * can open. Docs are the start only when chosen, or when there is no list to open. */
+function startPage(ctx: AppContext): { name: 'docs' | 'list' | 'home'; model?: string } {
   const start = ctx.me.peek()?.prefs.start;
-  if (start === 'docs' && docsOn(ctx.session)) return ctx.router.go('docs', {}, {}, { replace });
-  if (start && rootModels(ctx.schema).some(model => model.name === start)) return ctx.router.go('list', { model: start }, {}, { replace });
-  if (docsOn(ctx.session)) return ctx.router.go('docs', {}, {}, { replace });
-  const first = rootModels(ctx.schema)[0];
-  return first ? ctx.router.go('list', { model: first.name }, {}, { replace }) : ctx.router.go('home', {}, {}, { replace });
+  const models = rootModels(ctx.schema);
+  if (start === 'docs' && docsOn(ctx.session)) return { name: 'docs' };
+  if (start && models.some(model => model.name === start)) return { name: 'list', model: start };
+  if (models[0]) return { name: 'list', model: models[0].name };
+  return docsOn(ctx.session) ? { name: 'docs' } : { name: 'home' };
 }
 
+function goStart(ctx: AppContext, replace = false) {
+  const target = startPage(ctx);
+  return target.name === 'list' ? ctx.router.go('list', { model: target.model! }, {}, { replace }) : ctx.router.go(target.name, {}, {}, { replace });
+}
+
+/** The button a page that is not available offers: the start page. */
 function startButton(ctx: AppContext): Node | undefined {
-  if (docsOn(ctx.session)) return Button({ label: 'Open Docs', onClick: () => void ctx.router.go('docs', {}) });
-  const first = rootModels(ctx.schema)[0];
-  return first ? Button({ label: `Open ${first.plural}`, onClick: () => void goStart(ctx) }) : undefined;
+  const target = startPage(ctx);
+  if (target.name === 'docs') return Button({ label: 'Open Docs', onClick: () => void ctx.router.go('docs', {}) });
+  const model = target.model ? rootModels(ctx.schema).find(item => item.name === target.model) : undefined;
+  return model ? Button({ label: `Open ${model.plural}`, onClick: () => void goStart(ctx) }) : undefined;
 }
 

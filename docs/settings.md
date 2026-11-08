@@ -55,7 +55,8 @@ The form checks the minimum length and the repeated password before sending, sho
 error under the field it names (or as "The server said: ..." when it names none), and on success
 toasts "Password changed. Other devices were signed out."
 
-**Start page.** Only Docs or a model the person can read.
+**Start page.** Only Docs or a model the person can read. With none chosen, the app
+starts on the first list the person can open ([ui.md](ui.md#routes)).
 
 **Theme.** `theme` is `"light"`, `"dark"` or `"system"` (the default, which follows the
 device and changes with it). It is kept per person like the other appearance settings, so it
