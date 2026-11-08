@@ -26,7 +26,7 @@ class Table:
     """Owned rows. `min_rows` is checked on save (`required=True` means at least one row);
     `max_rows` (default 100, at most 1,000) bounds the collection in both runtimes."""
     def __init__(self, child, *, required=False, min_rows=None, max_rows=DEFAULT_TABLE_ROWS, label=None,
-                 storage_name=None, owner_field='evlet_owner', panel=True):
+                 storage_name=None, owner_field='evlet_owner', panel=True, copy=True):
         for name, value in (('min_rows', min_rows), ('max_rows', max_rows)):
             if value is not None and (type(value) is not int or value < 0):
                 raise ValueError(f'Table {name} must be a nonnegative integer')
@@ -46,6 +46,10 @@ class Table:
         if type(panel) is not bool:
             raise ValueError('Table panel must be True or False')
         self.panel = panel
+        # Whether the browser's Duplicate copies its rows into the new record (display only).
+        if type(copy) is not bool:
+            raise ValueError('Table copy must be True or False')
+        self.copy = copy
 
     def __set_name__(self, owner, name):
         self.name = name

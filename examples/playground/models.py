@@ -55,7 +55,9 @@ class Invoice(Model):
     # help_text reads under the input; tooltip sits behind a ? icon at its right end.
     reference = Text(required=True, unique=True, max_length=40, label='Customer reference',
                      help_text="The customer's reference for this invoice.",
-                     tooltip="Use the customer's purchase order number if they ask for one.")
+                     tooltip="Use the customer's purchase order number if they ask for one.",
+                     # copy=False: Duplicate leaves the reference empty, since it is unique per invoice.
+                     copy=False)
     # The currency comes from the customer the invoice is for.
     total = Currency(required=True, minimum="0.01", currency='customer.currency')
     posting_date = Date()

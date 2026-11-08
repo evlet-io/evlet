@@ -92,6 +92,13 @@ production ready, but the rules below hold from 0.3 on.
   (left out when unset or unreadable for the role) and on a slip surface (left out when unset). It is
   display only ([ui.md](ui.md#where-the-cursor-starts), [slips.md](slips.md)).
 
+- **Duplicate options.** `Meta.duplicate` on a model (default `True`) and `copy=` on every field
+  and on `Table` (default `True`), each checked as a boolean with a `ValueError` (`Meta.duplicate`
+  when the registry is built, `copy=` when the field or table is defined). The `duplicate: false` key
+  on a model's `/api/schema` entry and `copy: false` on a field or `children` entry, present only
+  when off. Display only: they are not part of the stored schema or migration checksums
+  ([ui.md](ui.md#duplicate)).
+
 - **Job progress.** `JobContext.progress(done, total=None, message='')`, `JobContext.checkpoint`,
   `Task(..., resumable=True)` with its return-value contract (a JSON checkpoint, or `None` when
   done), `progress` in `GET /api/_jobs/<id>`, and `evlet jobs list`

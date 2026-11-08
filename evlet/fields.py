@@ -102,7 +102,7 @@ class Field:
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
                  initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False, tracking="value",
-                 panel=True):
+                 panel=True, copy=True):
         if tracking not in ("value", "mask", "exclude"):
             raise ValueError("tracking is value, mask or exclude")
         self.tracking = tracking
@@ -128,6 +128,11 @@ class Field:
         if type(panel) is not bool:
             raise ValueError("panel must be True or False")
         self.panel = panel
+        # Whether the browser's Duplicate copies this value into the new record. Display only: a create
+        # validates whatever it is sent, and permissions never read it.
+        if type(copy) is not bool:
+            raise ValueError("copy must be True or False")
+        self.copy = copy
         self.compute, self.stored, self.query, self.fetch = compute, stored, query, fetch
         self.filters = dict(filters or {})
         self.visible_if, self.required_if, self.read_only_if = visible_if, required_if, read_only_if
@@ -543,7 +548,7 @@ class State(Select):
     `show` is how the record page draws it: "badge" (a status badge in the header, the default),
     "bar" (the stage bar, for pipelines such as draft, submitted, approved) or "none".
     """
-    OPTIONS = ("label", "help_text", "tooltip", "placeholder", "hidden", "index", "max_length", "colors", "panel")
+    OPTIONS = ("label", "help_text", "tooltip", "placeholder", "hidden", "index", "max_length", "colors", "panel", "copy")
     SHOW = ("badge", "bar", "none")
 
     def __init__(self, choices, *, default=MISSING, moves=(), locked=(), final=(), voidable=(), show="badge", **kwargs):

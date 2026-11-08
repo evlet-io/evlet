@@ -34,7 +34,7 @@ save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout` (sections, or tabs and blocks, see Record layouts below), `key_fields`, `relations`, `measures`, `open_in`, `list_tabs`,
-`list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks`, `panel` and `focus`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+`list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks`, `panel`, `focus` and `duplicate`. See "What the model decides" in [ui-framework.md](ui-framework.md).
 
 ### Where the cursor starts
 
@@ -120,6 +120,31 @@ not True or False fails when the registry is built.
 - Controls, Models, Form layout can change it per instance with the panel button on each section,
   field and tab, and the Side panel card for the summary strip and blocks
   ([controls.md](controls.md)).
+
+### Duplicate
+
+A saved record's Duplicate action opens a new, unsaved record filled in from it. Saving it is an
+ordinary create: the server copies nothing itself and checks the new record as any other, so
+required, unique, row, field and action rules all apply. The browser copies the values a person
+could type and the rows of each `Table`. It leaves out what Evlet sets: the id, the name or
+document number, `Sequence` numbers, the State, calculated and read-only values and the record
+times. Two options steer it:
+
+```python
+class Invoice(Model):
+    reference = Text(unique=True, copy=False)   # a duplicate starts with an empty reference
+    lines = Table(Line, copy=False)             # and without these rows
+
+    class Meta:
+        duplicate = False                       # or: no Duplicate action on this model at all
+```
+
+`copy=False` works on any field (a `Child` row field too) and on a `Table`. The schema carries
+`copy: false` on that field or `children` entry, and `duplicate: false` on the model, only when
+they are off. A value that is not True or False fails with a `ValueError`: for `copy=` when the
+field or `Table` is defined, for `Meta.duplicate` when the registry is built. Duplicate shows only
+to roles that may create the model (the schema's `permissions.create`). Both options are display
+only: they never change storage, migrations or permissions.
 
 ### Record layouts
 
