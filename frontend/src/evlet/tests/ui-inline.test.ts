@@ -99,6 +99,37 @@ describe('FormSection', () => {
     expect(save).toHaveBeenCalledOnce();
   });
 
+  // Chrome fires focusout (with no relatedTarget) on a focused element as it leaves the page; jsdom
+  // does not. A mouse click also focuses the button on mousedown, before the click. Both together are
+  // what a person's click does in the browser.
+  it('turns each value into its input on a mouse click, field after field and back again', async () => {
+    const removeChild = Node.prototype.removeChild;
+    Node.prototype.removeChild = function <T extends Node>(this: Node, child: T): T {
+      const active = document.activeElement;
+      if (active && active !== document.body && child.contains(active)) active.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+      return removeChild.call(this, child) as T;
+    };
+    try {
+      const { store } = backend();
+      await store.open(id(1));
+      const host = render(() => FormSection({ title: 'Details', fields: [store.field('title'), store.field('stage'), store.field('remark')] }));
+      const click = (name: string) => {
+        const button = host.querySelector<HTMLButtonElement>(`[data-field="${name}"] button.fval`)!;
+        button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        button.focus();
+        button.click();
+      };
+      const editing = (name: string) => Boolean(host.querySelector(`[data-field="${name}"] .fval-edit`));
+      for (const name of ['stage', 'title', 'remark', 'title', 'stage', 'remark']) {
+        click(name);
+        await flush();
+        expect(editing(name), `${name} opens for editing`).toBe(true);
+      }
+    } finally {
+      Node.prototype.removeChild = removeChild;
+    }
+  });
+
   it('opens and closes from its heading when collapsible', () => {
     const saved = cell<Record<string, boolean>>({});
     const fields = [localField({ name: 'name', type: 'text', label: 'Name' }, 'Al Sahra')];
