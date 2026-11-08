@@ -53,6 +53,7 @@ evlet makemigration people --instance acme --name dependents --trust
 evlet effects check acme
 evlet journal verify acme
 evlet ledger list --instance acme
+evlet jobs list --instance acme
 evlet routes acme
 evlet proxy acme --caddy --check
 evlet link-user acme buyer customer 42
@@ -157,6 +158,11 @@ exits with 1 when there is any; see the [journal guide](journal.md).
 
 `ledger list` prints each [ledger model](ledger.md) with its table, row count and its
 `append_only`, `journal`, `timestamps` and `period` settings, read from one snapshot without writing.
+
+`jobs list` prints the newest 100 background jobs with their state, attempts and the progress
+they last committed, such as `40 of 100 (40%) Up to customer 40`. It runs while the instance
+serves. Payloads, checkpoints and exception messages are not shown; see
+[jobs-realtime.md](jobs-realtime.md#progress-and-long-jobs).
 
 `playground` works outside a project, uses temporary demo data, and removes that
 data on exit. It runs the existing framework examples with their generated screens.

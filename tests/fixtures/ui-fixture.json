@@ -11580,6 +11580,10 @@
         {
           "name": "award_points",
           "label": "Award 10 points"
+        },
+        {
+          "name": "rebuild_points",
+          "label": "Rebuild all points balances"
         }
       ],
       "attachments": false,

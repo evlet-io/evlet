@@ -122,6 +122,8 @@
 .ctl-click:hover td{background:var(--bg-subtle)}
 .ctl-user{display:inline-flex;align-items:center;gap:10px}
 .ctl-sub{display:block;color:var(--fg-3);font-size:12px;margin-top:2px}
+.ctl-jprogress{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:4px}
+.ctl-jmessage{overflow-wrap:anywhere}
 .ctl-tfoot{display:flex;justify-content:space-between;padding:10px 12px;border-top:1px solid var(--divider);font-size:12px;color:var(--fg-3)}
 .ctl-group td{background:var(--bg-subtle);font-size:11.5px;font-weight:600;color:var(--fg-3);text-transform:uppercase;letter-spacing:.05em;padding:8px 12px}
 .ctl-ovrow td:first-child{box-shadow:inset 3px 0 0 var(--t-amber)}

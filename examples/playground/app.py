@@ -109,6 +109,30 @@ def refresh_progress(tx, job, payload):
     tx.update(Project, project.id, progress=progress)
 
 
+# Customers each step of Rebuild points balances handles. Small, so the Playground shows several steps.
+REBUILD_BATCH = 20
+
+
+def rebuild_points(tx, job, payload):
+    """Rebuild points balances: a resumable job over the points ledger. Each step runs in its own transaction,
+    recomputes the balances of the next REBUILD_BATCH customers from their movements and returns the last
+    customer done. That checkpoint commits with the step, so a stopped worker resumes after it."""
+    customers = tx.list(Customer, filters={'id__gt': job.checkpoint} if job.checkpoint else None, order_by='id', limit=REBUILD_BATCH)
+    for customer in customers:
+        tx.lock(('points', customer.id))
+        points, page = 0, {'customer': customer.id}
+        while moves := tx.list(PointMove, filters=page, order_by='id', limit=100):
+            points, page = points + sum(move.points for move in moves), {'customer': customer.id, 'id__gt': moves[-1].id}
+        [balance] = tx.list(PointBalance, filters={'customer': customer.id}) or [None]
+        if balance is None and points:
+            tx.create(PointBalance, customer=customer.id, points=points)
+        elif balance is not None and balance.points != points:
+            tx.update(PointBalance, balance.id, points=points)
+    done = tx.count(Customer, filters={'id__lte': customers[-1].id}) if customers else tx.count(Customer)
+    job.progress(done, tx.count(Customer), f'Up to customer {customers[-1].id}' if customers else 'All customers')
+    return str(customers[-1].id) if len(customers) == REBUILD_BATCH else None
+
+
 @api(method='GET', permission=(Project, 'read'), tool=True)
 def project_overview(context, project: RecordId):
     """One project at a glance: its status, progress, budget and how many of its tasks are done."""
@@ -125,16 +149,21 @@ SERVICES = (Endpoint('playground.project_overview', project_overview, 'GET', (Pr
 def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=None):
     events = EventStore(database)
     policy = Policy(registry, rules=PORTAL_RULES)
-    jobs = JobQueue(database, (Task('project_progress', refresh_progress),), tenant=tenant, events=events, policy=policy)
+    jobs = JobQueue(database, (Task('project_progress', refresh_progress), Task('rebuild_points', rebuild_points, resumable=True)),
+                    tenant=tenant, events=events, policy=policy)
     def queue_progress(tx, user, project):
         return jobs.enqueue(tx, 'project_progress', {'project_id': project.id}, user=user, target=(Project, project.id))
+    def queue_rebuild(tx, user, customer):
+        # Rebuilds every customer's balance; Controls > Jobs shows its progress.
+        return jobs.enqueue(tx, 'rebuild_points', {}, user=user)
     app = Application(database, name="Evlet Playground", playground=True, ui=playground_ui(), auth=auth, policy=policy, routes=routes,
                       storage=storage, jobs=jobs, events=events, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
                       actions=(Action(Project, 'start', 'Start project', start_project),
                                Action(Project, 'complete', 'Complete project', complete_project),
                                Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress),
                                Action(Invoice, 'post', 'Post to ledger', post_invoice),
-                               Action(Customer, 'award_points', 'Award 10 points', award_points)),
+                               Action(Customer, 'award_points', 'Award 10 points', award_points),
+                               Action(Customer, 'rebuild_points', 'Rebuild all points balances', queue_rebuild, roles=('admin',))),
                       attachments=(Project,), slips=SLIPS, reports=(*REPORTS, *PRINTED_REPORTS), apis=SERVICES, ai=ai, prints=PRINTS)
     # Settings > Projects: people who can read projects see it; editors and admins change it.
     app.business.settings.register('projects', ProjectSettings, ProjectPreferences, (Project,))

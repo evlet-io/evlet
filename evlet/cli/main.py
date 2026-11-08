@@ -133,6 +133,11 @@ def parser():
     ledger_list = ledger_commands.add_parser('list', help='Print each ledger model with its table, row count and options')
     ledger_list.add_argument('--instance', help='Required when the project has several instances')
     ledger_list.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
+    jobs = commands.add_parser('jobs', help='Review background jobs')
+    jobs_commands = jobs.add_subparsers(dest='jobs_command', required=True)
+    jobs_list = jobs_commands.add_parser('list', help='Print the newest jobs with their state, attempts and progress')
+    jobs_list.add_argument('--instance', help='Required when the project has several instances')
+    jobs_list.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     for name, port in (('playground', 8000), ('docs', 8001)):
         command = commands.add_parser(name, help='Launch bundled ' + name + ' without a project')
         command.add_argument('--port', type=int, default=port)
@@ -383,6 +388,10 @@ def main(argv=None):
             from .ledger import list_instance
             from ..ledger import table
             print(table(list_instance(root, args.instance or choose_instance(root, 'ledger list'))))
+        elif args.command == 'jobs':
+            from .jobs import list_instance
+            from ..jobs import table
+            print(table(list_instance(root, args.instance or choose_instance(root, 'jobs list'))))
         elif args.command in ('serve', 'dev'):
             from .serve import serve
             name = args.instance or choose_instance(root, 'dev')

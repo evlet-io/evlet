@@ -1,11 +1,12 @@
 // Controls Apps, Routing, Jobs, Overrides and Audit log in jsdom, against a stub of the /api/_controls routes.
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mount } from '../dom';
 import { Controls, controlsRouter } from '../controls/app';
 import { ControlsClient } from '../controls/client';
 import { server, type Sent } from './server';
 import { byText, click, lastToast, requests, stopAll, text, typeInto, until } from './screens-helpers';
 import { choose } from './ui-helpers';
+import { progressText } from '../controls/system';
 
 const settings = { 'security.password_min': { file: 15, value: 15 }, 'security.session_hours': { file: 12, value: 12 }, 'security.lockout': { file: 5, value: 4 },
   'security.two_step_roles': { file: ['admin'], value: ['admin'] }, 'security.controls_ips': { file: [], value: [] } };
@@ -25,12 +26,18 @@ const overrides = { version: 2, problems: [], items: [
   { kind: 'setting', key: 'schedule.nightly.active', file: true, value: false, changed_by: 'owner', changed_at: 1790000000 },
   { kind: 'setting', key: 'security.password_min', file: 15, value: null, changed_by: null, changed_at: null },
 ] };
-const jobs = (failed = true) => ({ available: true,
+const none = { done: null, total: null, message: null };
+const jobs = (failed = true, rebuild?: { state: string; done: number }) => ({ available: true,
   schedules: [{ name: 'nightly', task: 'cleanup', every: 86400, expression: null, timezone: null, next_run: 1790000000, active: false, paused: true, app: 'notes' },
     { name: 'weekly', task: 'export', every: 604800, expression: null, timezone: null, next_run: 1790000000, active: true, paused: false, app: 'notes' }],
-  jobs: [{ id: 9, task: 'send_mail', actor: 1, model: null, record_id: null, state: 'running', attempts: 1, run_at: 1790000100, error: null },
-    { id: 7, task: 'cleanup', actor: null, model: null, record_id: null, state: failed ? 'failed' : 'queued', attempts: failed ? 3 : 0, run_at: 1790000000, error: failed ? 'NotFoundError' : null },
-    { id: 6, task: 'cleanup', actor: null, model: null, record_id: null, state: 'succeeded', attempts: 1, run_at: 1789990000, error: null }] });
+  // With a rebuild, run #9 is that rebuild with its progress instead of send_mail.
+  jobs: [rebuild ? { id: 9, task: 'rebuild', actor: 1, model: null, record_id: null, state: rebuild.state, attempts: 1, run_at: 1790000100, error: null,
+      done: rebuild.done, total: 100, message: `Up to customer ${rebuild.done}` }
+    : { id: 9, task: 'send_mail', actor: 1, model: null, record_id: null, state: 'running', attempts: 1, run_at: 1790000100, error: null, ...none },
+    { id: 7, task: 'cleanup', actor: null, model: null, record_id: null, state: failed ? 'failed' : 'queued', attempts: failed ? 3 : 0, run_at: 1790000000, error: failed ? 'NotFoundError' : null, ...none },
+    { id: 6, task: 'cleanup', actor: null, model: null, record_id: null, state: 'succeeded', attempts: 1, run_at: 1789990000, error: null, done: 12, total: null, message: '' }] });
+// The rebuild run the Jobs page sees on each read: running at 40, then done at 100.
+const rebuilds: Array<{ state: string; done: number }> = [];
 const audit = (before?: string) => ({ areas: ['Jobs', 'Security'], next: before ? null : 9,
   items: before ? [{ id: 8, at: 1789000000, actor: 'owner', area: 'Security', target: 'security.lockout', detail: 'Changed' }]
     : [{ id: 10, at: 1790000000, actor: 'owner', area: 'Jobs', target: 'nightly', detail: 'Paused' }] });
@@ -58,7 +65,7 @@ function open(path: string) {
       { host: 'localhost', path: '/notes', serves: 'notes.desk', realm: 'desk', source: 'app notes', locked: false }],
       planned: ['/report', '/print'], hosts: [{ host: 'erp.acme.com', primary: true, sub: false, realm: 'desk' }, { host: 'portal.acme.com', primary: false, sub: true, realm: 'portal' }],
       primary: 'erp.acme.com', proxy: { caddy: 'portal.acme.com {\n\trespond @primary_only 404\n}', nginx: 'server_name erp.acme.com portal.acme.com;' }, proxy_error: null })],
-    ['GET', /\/api\/_controls\/jobs$/, () => reply(jobs())],
+    ['GET', /\/api\/_controls\/jobs$/, () => reply(jobs(true, rebuilds.length > 1 ? rebuilds.shift() : rebuilds[0]))],
     ['POST', /\/api\/_controls\/jobs\/schedules\/nightly$/, () => reply({ ...jobs(), schedules: [{ ...jobs().schedules[0], active: true, paused: false }] })],
     ['POST', /\/api\/_controls\/jobs\/schedules\/nightly\/run$/, () => reply({ ...jobs(), job: 8 })],
     ['POST', /\/api\/_controls\/jobs\/7\/retry$/, () => reply(jobs(false))],
@@ -259,6 +266,40 @@ describe('Controls system pages', () => {
       expect(host.querySelectorAll('[role="tablist"]')).toHaveLength(1);
       expect(host.querySelector('.ctl-jobs > .ctl-jlist + #ctl-job-runs')).toBeTruthy();
     });
+  });
+
+  it('shows the progress runs report and refreshes while one is running', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      rebuilds.push({ state: 'running', done: 40 }, { state: 'succeeded', done: 100 });
+      const { host, sent } = open('/controls/jobs');
+      await until(() => expect(byText(host, 'tr', /#9/)).toBeTruthy());
+      const row = () => byText(host, 'tr', /#9/)!;
+      expect(text(row().querySelector('.ctl-jprogress'))).toBe('40 of 100 (40%) Up to customer 40');
+      expect(row().querySelector('[role="progressbar"]')!.getAttribute('aria-valuenow')).toBe('40');
+      // A total that is unknown shows the count without a bar; a run that reported nothing shows nothing.
+      expect(text(byText(host, 'tr', /#6/)!.querySelector('.ctl-jprogress'))).toBe('12');
+      expect(byText(host, 'tr', /#6/)!.querySelector('[role="progressbar"]')).toBeNull();
+      expect(byText(host, 'tr', /#7/)!.querySelector('.ctl-jprogress')).toBeNull();
+      const reads = () => requests(sent, 'GET', /_controls\/jobs$/).length;
+      expect(reads()).toBe(1);
+      vi.advanceTimersByTime(3000);
+      await until(() => expect(text(row().querySelector('.ctl-jprogress'))).toBe('100 of 100 (100%) Up to customer 100'));
+      expect(text(row())).toContain('Done');
+      // Nothing is running any more, so the page stops reading.
+      vi.advanceTimersByTime(9000);
+      expect(reads()).toBe(2);
+    } finally {
+      rebuilds.splice(0);
+      vi.useRealTimers();
+    }
+  });
+
+  it('words progress like the CLI', () => {
+    expect(progressText({ done: null, total: null })).toBe('');
+    expect(progressText({ done: 3, total: null })).toBe('3');
+    expect(progressText({ done: 1, total: 3 })).toBe('1 of 3 (33%)');
+    expect(progressText({ done: 0, total: 0 })).toBe('0 of 0 (100%)');
   });
 
   it('lists overrides with the file value, resets through the change bar and exports code', async () => {

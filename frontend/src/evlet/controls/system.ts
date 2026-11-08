@@ -2,12 +2,12 @@
 // from the server shell. Schedule pauses, Run now and Retry save at once; Reset goes through the change bar.
 
 import { html, when, type Child } from '../dom';
-import { cell, derive } from '../reactive';
-import { Button, Icon, StatusPill, Switch } from '../ui/base';
+import { cell, derive, onCleanup } from '../reactive';
+import { Button, Icon, ProgressBar, StatusPill, Switch } from '../ui/base';
 import { exactTime, RelativeTime, relativeTime } from '../ui/time';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
-import type { AppInfo, AuditRow, CodeFile, HostCheck, Jobs, OverrideItem, Routing } from './client';
+import type { AppInfo, AuditRow, CodeFile, HostCheck, JobRow, Jobs, OverrideItem, Routing } from './client';
 import { describe, idOf } from './drafts';
 import { message, Select } from './people';
 import { UnsavedSection } from './unsaved';
@@ -144,6 +144,24 @@ const ALL = 'all';
 // Inside a tab, so not focusable on its own: the exact time is the title.
 const hint = (seconds: number) => { const at = new Date(seconds * 1000); return html`<time datetime=${at.toISOString()} title=${exactTime(at)}>${relativeTime(at)}</time>`; };
 
+/** How far a job is, as the CLI says it: "40 of 100 (40%)", or "40" when the total is unknown. Empty before it reports. */
+export function progressText(job: Pick<JobRow, 'done' | 'total'>): string {
+  if (job.done == null) return '';
+  if (job.total == null) return String(job.done);
+  return `${job.done} of ${job.total} (${job.total ? Math.floor(100 * job.done / job.total) : 100}%)`;
+}
+
+/** Under a run's status: a bar when the total is known, the count and the job's own short message. */
+export function JobProgress(job: JobRow): Child {
+  if (job.done == null) return null;
+  const share = job.total ? 100 * job.done / job.total : 100;
+  return html`<span class="ctl-sub ctl-jprogress">${job.total != null ? ProgressBar({ value: share, label: `Progress of run #${job.id}`, showValue: false }) : null}
+    <span class="num">${progressText(job)}</span> ${job.message ? html`<span class="ctl-jmessage">${job.message}</span>` : null}</span>`;
+}
+
+/** Seconds between refreshes while a run is running, so its progress moves. */
+const LIVE = 3;
+
 /** The jobs the left list shows: every task a schedule runs or a recent run used, by name. */
 export function jobNames(value: Jobs): string[] {
   return [...new Set([...value.schedules.map(item => item.task), ...value.jobs.map(job => job.task)])].sort();
@@ -160,6 +178,11 @@ export function JobsPage(ctx: ControlsContext): HTMLElement {
     try { jobs.set(await run()); toast(done); ctx.state.set(await ctx.api.state()); } catch (failure) { toast(message(failure), { icon: 'info' }); }
   };
   void ctx.api.jobs().then(value => jobs.set(value), failure => toast(message(failure), { icon: 'info' }));
+  // Refresh quietly while any run is running; a failed refresh waits for the next one.
+  const live = setInterval(() => {
+    if (jobs.peek()?.jobs.some(job => job.state === 'running')) void ctx.api.jobs().then(value => jobs.set(value), () => undefined);
+  }, LIVE * 1000);
+  onCleanup(() => clearInterval(live));
   const names = derive(() => { const value = jobs.get(); return value ? jobNames(value) : []; });
   // An unknown ?job= falls back to All once the jobs are loaded.
   const selected = derive(() => { const wanted = ctx.router.route.get()?.query.job; return wanted && names.get().includes(wanted) ? wanted : ALL; });
@@ -204,7 +227,7 @@ export function JobsPage(ctx: ControlsContext): HTMLElement {
       <div class="table-wrap"><table class="dt ctl-table ctl-runs"><thead><tr><th>Run</th>${all ? html`<th>Job</th>` : null}<th>Record</th><th>Status</th><th>Due</th><th class="r">Attempts</th><th></th></tr></thead><tbody>
       ${shown.length ? shown.map(job => html`<tr data-run=${String(job.id)}><td class="mono muted">#${job.id}</td>${all ? html`<td class="mono">${job.task}</td>` : null}
         <td>${job.model ? `${job.model} #${job.record_id}` : html`<span class="muted">—</span>`}</td>
-        <td>${StatusPill({ label: stateOf(job.state)[0], tint: stateOf(job.state)[1] })}${job.error ? html`<span class="ctl-sub ctl-err">${job.error}</span>` : null}</td>
+        <td>${StatusPill({ label: stateOf(job.state)[0], tint: stateOf(job.state)[1] })}${JobProgress(job)}${job.error ? html`<span class="ctl-sub ctl-err">${job.error}</span>` : null}</td>
         <td class="muted num">${ago(job.run_at)}</td><td class="r num">${job.attempts}</td>
         <td class="r">${job.state === 'failed' ? Button({ label: 'Retry', icon: 'rotate-ccw', size: 'small', onClick: () => void act(() => ctx.api.retryJob(job.id), `Job #${job.id} queued again`) }) : null}</td></tr>`)
         : html`<tr><td colspan=${String(columns)}><div class="ctl-empty">No runs yet.</div></td></tr>`}</tbody></table></div></section>`;

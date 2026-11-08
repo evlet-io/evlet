@@ -94,7 +94,8 @@ it accesses. `user=None` creates a trusted system job. Trusted Python code remai
 outside HTTP permission enforcement.
 
 Handlers must be short and bounded. They hold the tenant database's SQLite write
-lock for their whole execution. Do not use this queue for long network calls,
+lock for their whole execution. Split long work into a resumable task
+([below](#progress-and-long-jobs)), whose steps each hold it briefly. Do not use this queue for long network calls,
 large exports, or distributed execution. Separate worker processes are safe to
 claim jobs, but do not make writes to one SQLite database parallel. A default
 claim lease is 300 seconds; no heartbeat, cancellation, priority, or dead-letter
@@ -106,6 +107,69 @@ External effects are at least once, not exactly once. Use
 is stable across retries and includes a random database namespace. SQL rollback
 cannot undo an email, HTTP request, or other external effect. Restoring a backup
 also restores pending jobs and schedules, so review those before restarting workers.
+
+## Progress and long jobs
+
+A handler reports how far it is with `context.progress(done, total=None, message='')`. `done`
+is a nonnegative integer, `total` an integer no smaller than `done` or `None` when it is not
+known, and `message` at most 200 characters. Progress is written with the handler's own
+writes, so it is only seen once that transaction commits. In an `external=True` task, which
+holds no transaction, each call is saved at once in a short transaction of its own.
+
+A plain task commits once, at the end, so its progress only shows when it is done. A long
+rebuild or recalculation should be a resumable task instead. It runs in steps, each in its
+own transaction:
+
+```python
+from evlet import Task
+
+BATCH = 200
+
+def rebuild_balances(tx, context, payload):
+    # Account and Balance belong to this application; context.checkpoint is None on the first step.
+    accounts = tx.list(Account, filters={'id__gt': context.checkpoint} if context.checkpoint else None,
+                       order_by='id', limit=BATCH)
+    for account in accounts:
+        tx.lock(('balance', account.id))
+        ...  # Recompute this account's balance from its ledger rows.
+    done = tx.count(Account, filters={'id__lte': accounts[-1].id}) if accounts else tx.count(Account)
+    context.progress(done, tx.count(Account), f'Up to account {accounts[-1].id}' if accounts else '')
+    return str(accounts[-1].id) if len(accounts) == BATCH else None
+
+jobs = JobQueue(database, [Task('rebuild_balances', rebuild_balances, resumable=True)], tenant='acme')
+```
+
+The handler is called again and again until it returns `None`. Any other return value is the
+checkpoint: JSON of at most 16 KiB, committed with that step's writes and progress, and given
+to the next step as `context.checkpoint`. Each step is short, so it holds the database write
+lock only briefly and other requests run between steps. Every step reloads the job, checks the
+lease and rechecks the account and the target record, like the first one. Each committed step
+also extends the claim's lease to at least 300 seconds from that step.
+
+A job that stops resumes from its last committed checkpoint:
+
+- **The worker is stopped**, for example with Control-C or because the tenant was disabled.
+  Between two steps the worker sees it, puts the job back in the queue without counting an
+  attempt, and the next worker carries on from the checkpoint.
+- **A step fails.** Only that step rolls back, its progress included. The job is retried by the
+  normal rules, and the retry starts from the last committed checkpoint. A manual retry of a
+  failed job does too.
+- **The process dies.** The step in progress rolls back. Once the lease runs out, another worker
+  reclaims the job (counting an attempt) and resumes from the checkpoint.
+
+A step must therefore be safe to run again from the same checkpoint: it should recompute
+what it writes, as a rebuild does, rather than add to it. When the job succeeds the checkpoint
+is cleared, and the final progress stays. A resumable task cannot be `external`.
+
+`GET /api/_jobs/<id>` returns `progress` as `{"done", "total", "message"}`, or `null` before the
+job reports any. The checkpoint is never returned. Controls > Jobs shows progress under each
+run's status, with a bar when the total is known, and reads the list again every three seconds
+while a run is running. `evlet jobs list --instance NAME` prints the newest jobs with their state,
+attempts and progress ([cli.md](cli.md)).
+
+The Playground's **Rebuild all points balances** action on a customer queues `rebuild_points`,
+which recomputes every customer's balance from the points ledger 20 customers per step
+([ledger.md](ledger.md)).
 
 ## Schedules and operator commands
 

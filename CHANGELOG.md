@@ -49,6 +49,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Transaction locks.** `tx.lock(*keys, timeout=None)` holds named locks on business keys until the
   transaction ends, PostgreSQL advisory locks taken in a fixed order, a key check on SQLite. A wait
   past `timeout` raises the new `LockTimeout`. Nothing changes for existing apps.
+- **Progress for long jobs.** A job handler reports `context.progress(done, total, message)`.
+  `Task(..., resumable=True)` runs a long rebuild or recalculation in steps, each in its own
+  transaction; a step returns a checkpoint, and a job that stops (worker stopped, failed step or
+  crashed process) resumes from its last committed checkpoint. Controls > Jobs shows progress,
+  `GET /api/_jobs/<id>` returns it, and the new `evlet jobs list --instance NAME` prints it. The
+  table `evlet_job_progress` is created when the queue starts; no migration is needed
+  ([docs/jobs-realtime.md](docs/jobs-realtime.md#progress-and-long-jobs)).
 - **The list board is opt-in.** A model's list offers the Board view only when `Meta.board`
   names its State field, such as `board = "stage"`, and the board groups by that field. Without
   it the list is a table with the saved views per state, and an old `?view=board` link opens the
