@@ -106,6 +106,9 @@ export interface ModelSchema {
   summary?: boolean;
   /** Meta.side_blocks: the record page's side blocks in order ('key_fields', 'related', 'files', 'info'). Absent means all. */
   side_blocks?: string[];
+  /** Meta.focus: the field a new record's form puts the cursor in. Absent, or a field this role cannot edit: the
+   * first editable field. Display only. */
+  focus?: string;
   /** What a record opened in a list's side panel leaves out, by kind: panel=False flags, Meta.panel or the Controls
    * toggles. order is the order Meta.panel names tabs and blocks in. Absent means the panel shows everything. */
   panel?: PanelSchema;

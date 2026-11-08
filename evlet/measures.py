@@ -17,7 +17,7 @@ from urllib.parse import parse_qs
 
 from .auth import AccessError
 from .identity import path_id
-from .fields import Boolean, Date, DateTime, Decimal, Integer, Link, LongText, Reference, Tags
+from .fields import COLORS, Boolean, Date, DateTime, Decimal, Integer, Link, LongText, Reference, Tags
 from .models import Model, ValidationError, identifier
 from .query import SqlQuery
 
@@ -38,6 +38,8 @@ ACCEPTS = {'count_distinct': {'link', 'boolean', 'number', 'date', 'value'}, 'su
            'min': {'number', 'date'}, 'max': {'number', 'date'}}
 FLIPPED = {'eq': 'eq', 'ne': 'ne', 'lt': 'gt', 'lte': 'gte', 'gt': 'lt', 'gte': 'lte'}
 SYMBOLS = {'lt': '<', 'lte': '<=', 'gt': '>', 'gte': '>='}
+# A declared measure's trend= (field, grain, points): the default grain and points, and the points allowed.
+TREND_GRAIN, TREND_POINTS, MIN_POINTS, MAX_POINTS = 'month', 6, 2, 24
 
 
 def kind(field):
@@ -57,11 +59,12 @@ def kind(field):
 
 class Measure:
     """An aggregate over records: a function, a field, an optional where= and, for a
-    per-record measure, the related model and its Link back to the declaring model."""
+    per-record measure, the related model and its Link back to the declaring model. A declared model-level
+    measure may name a trend= (a Date field, or (field, grain, points)) and a color= for the browser."""
     function = None
-    __slots__ = ('field', 'where', 'model', 'link')
+    __slots__ = ('field', 'where', 'model', 'link', 'trend', 'color')
 
-    def __init__(self, field, *, where=None, model=None, link=None):
+    def __init__(self, field, *, where=None, model=None, link=None, trend=None, color=None):
         name = type(self).__name__
         if field is not None and (not isinstance(field, str) or not FIELD.fullmatch(field)):
             raise ValueError(f'{name}() takes one field name')
@@ -72,10 +75,12 @@ class Measure:
         if model is not None and not isinstance(model, str) and not (isinstance(model, type) and issubclass(model, Model)):
             raise ValueError(f'{name}() model= takes a model class or registered model name')
         self.field, self.where, self.model, self.link = field, where, model, link
+        # Checked with the rest of the measure when the Registry is built (compile_measure).
+        self.trend, self.color = trend, color
 
     def __repr__(self):
         parts = [repr(self.field)] if self.field is not None else []
-        parts += [f'{key}={getattr(self, key)!r}' for key in ('where', 'model', 'link') if getattr(self, key) is not None]
+        parts += [f'{key}={getattr(self, key)!r}' for key in ('where', 'model', 'link', 'trend', 'color') if getattr(self, key) is not None]
         return f'{type(self).__name__}({", ".join(parts)})'
 
 
@@ -84,10 +89,10 @@ class Count(Measure):
     function = 'count'
     __slots__ = ()
 
-    def __init__(self, model=None, /, *, link=None, where=None):
+    def __init__(self, model=None, /, *, link=None, where=None, trend=None, color=None):
         if model is not None and link is None:
             raise ValueError('Count() counts records; pass a related model with link=, or use CountDistinct(field)')
-        super().__init__(None, where=where, model=model, link=link)
+        super().__init__(None, where=where, model=model, link=link, trend=trend, color=color)
 
 
 class CountDistinct(Measure):
@@ -162,6 +167,8 @@ class Compiled:
     reads: frozenset      # target fields the where expression reads
     sql: tuple            # aggregate columns over the alias "record"
     values: tuple         # parameters, in column order
+    trend: tuple | None = None   # (Date field, grain, points) of a model-level measure
+    color: str | None = None     # one of fields.COLORS
 
 
 @dataclass(frozen=True)
@@ -200,6 +207,9 @@ def compile_measure(registry, owner, name, measure):
         if not isinstance(field, Link) or field.target is not owner:
             raise ValueError(f'{target.__name__}.{measure.link} must be a Link to {owner.__name__}')
         link = measure.link
+    trend = None if measure.trend is None else compile_trend(owner, measure)
+    if measure.color is not None and measure.color not in COLORS:
+        raise ValueError('color= is one of ' + ', '.join(COLORS))
     if measure.field is not None:
         field = target.__fields__.get(measure.field)
         if field is None:
@@ -219,7 +229,32 @@ def compile_measure(registry, owner, name, measure):
             sql = (f'sum(({value}) / {SPLIT})', f'sum(({value}) % {SPLIT})')
         else:
             sql = ({'count_distinct': 'count(DISTINCT {})', 'min': 'min({})', 'max': 'max({})'}[measure.function].format(value),)
-    return Compiled(name, measure.function, owner, target, measure.field, link, ir, reads, sql, tuple(values) * len(sql))
+    return Compiled(name, measure.function, owner, target, measure.field, link, ir, reads, sql, tuple(values) * len(sql),
+                    trend, measure.color)
+
+
+def compile_trend(owner, measure):
+    """(field, grain, points) of a trend=: a Date field of the model, a grain the aggregate route groups by
+    and 2 to 24 points. A string is that field by month with 6 points."""
+    if measure.link is not None:
+        raise ValueError('trend= is for model-level measures; a per-record measure (model= and link=) has no trend')
+    spec = (measure.trend, TREND_GRAIN, TREND_POINTS) if isinstance(measure.trend, str) else measure.trend
+    if not isinstance(spec, tuple) or len(spec) != 3:
+        raise ValueError("trend= takes a Date field name or a (field, grain, points) tuple such as ('starts_on', 'month', 6)")
+    name, grain, points = spec
+    field = owner.__fields__.get(name) if isinstance(name, str) else None
+    if field is None:
+        raise ValueError(f'trend: {owner.__name__} has no stored field {name!r}')
+    if isinstance(field, DateTime):
+        raise ValueError(f'trend: {name} is a datetime field; use a Date field (a date and time cannot be grouped by '
+                         'day, month or year, because the day depends on a timezone)')
+    if not isinstance(field, Date):
+        raise ValueError(f'trend: {name} is a {field.kind} field; use a Date field')
+    if grain not in PARTS:
+        raise ValueError(f'trend: the grain is one of {", ".join(PARTS)}, not {grain!r}')
+    if type(points) is not int or not MIN_POINTS <= points <= MAX_POINTS:
+        raise ValueError(f'trend: points is a whole number from {MIN_POINTS} to {MAX_POINTS}, not {points!r}')
+    return name, grain, points
 
 
 def compile_where(registry, model, where):
@@ -734,11 +769,19 @@ def scoped_measures(business, tx, user, model, record_id=None, filters=None, sea
 
 
 def schema(business, user, model):
-    """Schema entries for declared measures this role may read."""
-    return [{'name': item.name, 'function': item.function, 'field': item.field, 'where': item.where,
-             'per_record': item.link is not None,
-             'model': business.registry.name_for(item.target) if item.link is not None else None, 'link': item.link}
-            for item in available(business, user, model, False) + available(business, user, model, True)]
+    """Schema entries for declared measures this role may read. trend and color appear only when declared,
+    and a trend only when the role may group by its field."""
+    entries = []
+    for item in available(business, user, model, False) + available(business, user, model, True):
+        entry = {'name': item.name, 'function': item.function, 'field': item.field, 'where': item.where,
+                 'per_record': item.link is not None,
+                 'model': business.registry.name_for(item.target) if item.link is not None else None, 'link': item.link}
+        if item.trend is not None and visible(business.policy, user, model, item.trend[0], business.policy.fields(user, model)):
+            entry['trend'] = dict(zip(('field', 'grain', 'points'), item.trend))
+        if item.color is not None:
+            entry['color'] = item.color
+        entries.append(entry)
+    return entries
 
 
 # HTTP: GET /api/{model}/aggregate, GET /api/{model}/measures, GET /api/{model}/{id}/measures.

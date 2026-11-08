@@ -16,7 +16,14 @@ export interface MoveSchema { from: string[] | string; to: string; label: string
 /** show: how the record page draws the State, a header badge (the default), the stage bar, or neither. */
 export interface StateMeta { field: string; states: string[]; default?: string; moves: MoveSchema[]; locked?: string[]; final?: string[]; voidable?: string[]; show?: StateShow }
 export type StateShow = 'badge' | 'bar' | 'none';
-export interface MeasureSchema { name: string; function: string; field: string | null; per_record: boolean; model: string | null; link: string | null; where?: unknown }
+/** A declared measure's trend (docs/measures.md#trends): read the series from GET /api/{model}/aggregate with
+ * measures=<name>, group_by=<field>:<grain> and the list filters plus <field>__gte the start of the first of the
+ * last `points` periods. Periods without records are not returned. */
+export interface MeasureTrend { field: string; grain: 'day' | 'month' | 'year'; points: number }
+export interface MeasureSchema {
+  name: string; function: string; field: string | null; per_record: boolean; model: string | null; link: string | null; where?: unknown;
+  trend?: MeasureTrend; color?: 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'teal' | 'slate';
+}
 export interface RelationSchema { name: string; label: string; model: string; link: string; limit: number; order?: string[] }
 export interface EffectSchema { target: string; on: string | null; balanced: string[] | null; reverse: unknown }
 export interface ActionMeta {

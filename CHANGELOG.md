@@ -33,6 +33,20 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   tools, MCP and the connector reach. Before, this needed a legacy `Action` and `tx.maintenance()`.
   The Playground's Recognise action on an employee writes its Recognition ledger this way
   ([docs/states-actions.md](docs/states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+- **Trends and colours on declared measures.** A model-level measure in `Meta.measures` takes
+  `trend="starts_on"` (that Date field by month, 6 points) or `trend=("starts_on", "month", 12)`,
+  and any declared measure takes `color=` with one of the Select badge colours. Both are checked
+  when the `Registry` is built, with a `ValueError` naming the model and measure, and appear in the
+  measure's `/api/schema` entry only when set (`"trend": {"field", "grain", "points"}`, `"color"`).
+  A role that cannot read the trend field gets the measure without `trend`. The browser reads the
+  series from the existing `GET /api/{model}/aggregate` route with `group_by=<field>:<grain>`, under
+  the same filters and permissions ([docs/measures.md](docs/measures.md#trends-and-colours)).
+- **Where the cursor starts.** `Meta.focus = "customer"` on a model, and `focus = "name"` on a
+  `Slip`, names the field a new form puts the cursor in. It must be a visible, writable, stored
+  field (not calculated, hidden, read only, a table or a Sequence), checked when the registry is
+  built or the application starts. `/api/schema` and the slip surface carry it as `focus` only
+  when set, and a role that cannot read the field does not get it. It is display only; without it
+  the browser uses the first editable field ([docs/ui.md](docs/ui.md#where-the-cursor-starts)).
 - **`evlet setup` in one go.** `evlet setup myproject --app notes,crm --instance acme --dev` creates
   the project, apps and instance, installs the apps in dependency order and starts `evlet dev` on
   loopback. `--get URL,URL` fetches apps from Git with the `app --get` checks and trust question;

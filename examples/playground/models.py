@@ -45,6 +45,8 @@ class Invoice(Model):
         period = 'posting_date'
         # The header shows the payment status as a badge; it is calculated, so nobody edits it.
         status = 'payment_status'
+        # A new invoice's form starts with the cursor in Customer, the field people fill in first.
+        focus = 'customer'
 
     customer = Link(Customer, required=True)
     # Only projects of the invoice's customer. Changing the customer clears a project of another one,
@@ -126,6 +128,9 @@ class Project(Model):
         # The list's tabs: All, Planned, Active and Done, with counts. It opens on Active.
         list_tabs = 'status'
         list_tab = 'active'
+        # Totals over the listed projects. trend= lets the browser chart the budget by start month (the last
+        # 6 months), read from GET /api/project/aggregate with the list's filters; color= picks its colour.
+        measures = {'budget': Sum('budget', trend='starts_on', color='teal'), 'projects': Count()}
 
     # A declared title is the record title itself.
     title = Text(required=True, max_length=120, label='Project')

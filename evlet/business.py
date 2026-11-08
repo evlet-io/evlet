@@ -421,6 +421,9 @@ class Business:
                 del entry['list_tabs']
             if entry['title_field'] not in readable:
                 entry['title_field'] = 'id'
+            # Meta.focus is display only; like key_fields it is left out for a role that cannot read the field.
+            if 'focus' in entry and entry['focus'] not in readable:
+                del entry['focus']
             # The field naming fills: the record page shows it as the document number, and until it has one,
             # when it will ("Assigned on save", "Assigned on confirm").
             naming = self.registry.naming.get(model)
