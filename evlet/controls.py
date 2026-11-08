@@ -968,6 +968,8 @@ class Controls:
 
     def change_role(self, actor, role, body):
         flags = (('opens_controls', 'Opens Controls'), ('customize_workspaces', 'Customize workspaces'))
+        refusals = {'opens_controls': ('Admin always opens Controls, so the instance cannot be locked out.', 'Portal roles can never open Controls.'),
+                    'customize_workspaces': ('Admin always customizes workspaces.', 'Portal roles can never customize workspaces.')}
         checked_body(body, {'opens_controls', 'customize_workspaces', 'description'},
                      'Use opens_controls, customize_workspaces or description', nonempty=True)
         for flag, _ in flags:
@@ -985,9 +987,9 @@ class Controls:
             for flag, label in flags:
                 if flag in body and body[flag] != (bool(row[flag]) or role == 'admin'):
                     if role == 'admin':
-                        raise ValidationError({flag: f'Admin always has {label}, so the instance cannot be locked out.'})
+                        raise ValidationError({flag: refusals[flag][0]})
                     if row['realm'] != 'desk':
-                        raise ValidationError({flag: f'Portal roles can never have {label}.'})
+                        raise ValidationError({flag: refusals[flag][1]})
                     tx.connection.execute(f'UPDATE evlet_roles SET {flag}=? WHERE id=?', (int(body[flag]), role))
                     details.append(f'{label}: ' + ('no → yes' if body[flag] else 'yes → no'))
             if 'description' in body and body['description'] != row['description']:
