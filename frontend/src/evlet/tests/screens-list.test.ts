@@ -127,6 +127,7 @@ describe('board and saved views (recorded State fixtures)', () => {
     ['GET', /\/api\/invoice\?/, invoice.invoices],
     ['GET', /\/api\/invoice\/measures/, (sent: Sent) => copy(new URL(sent.url, 'http://x').searchParams.get('filters') ? invoice.invoice_measures_issued : invoice.invoice_measures)],
     ['GET', /\/api\/invoice\/aggregate/, invoice.invoice_aggregate_by_status],
+    ['GET', /\/api\/invoice\/list_tabs/, invoice.invoice_list_tabs],
     ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ] as any[];
   const draftId = invoice.invoice_draft.body.id, issuedNumber = invoice.invoice_revise_before.body.number;
@@ -135,7 +136,9 @@ describe('board and saved views (recorded State fixtures)', () => {
     const { host, sent } = start(routes(), '/app/invoice');
     await until(() => expect([...host.querySelectorAll('.ev-list [role="tab"]')].map(text)).toEqual(['All invoices3', 'Draft1', 'Issued1', 'Paid0', 'Void1']));
     await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => text(item.querySelector('span')) + '=' + text(item.querySelector('b')))).toEqual(['Outstanding=AED 2,680.00', 'Count=3']));
-    expect(query(requests(sent, 'GET', /aggregate/)[0])).toMatchObject({ measures: 'n:count,outstanding', group_by: 'status' });
+    // The counts come from the list tabs route; the board's aggregate is not needed for the list.
+    expect(requests(sent, 'GET', /list_tabs/)).not.toHaveLength(0);
+    expect(requests(sent, 'GET', /aggregate/)).toHaveLength(0);
     click(byText(host, '.ev-list [role="tab"]', /^Issued/));
     await until(() => expect(JSON.parse(listCalls(sent, 'invoice').pop()!.filters)).toEqual({ status: 'issued' }));
     expect(JSON.parse(query(requests(sent, 'GET', /invoice\/measures/).pop()!).filters)).toEqual({ status: 'issued' });
@@ -193,5 +196,101 @@ describe('board and saved views (recorded State fixtures)', () => {
     press(draft.querySelector('.card')!, 'ArrowRight', { altKey: true });
     await until(() => expect([...document.querySelectorAll('.toast')].map(text).join(' ')).toContain('Issue is not available: the condition for this move is not met'));
     await until(() => expect(draft.querySelectorAll('.card').length).toBe(1));
+  });
+});
+
+describe('list tabs by a chosen field, opening on the model default (Meta.list_tabs, Meta.list_tab)', () => {
+  const customerId = invoice.invoice_customer.body.id;
+  const withTabs = (tabs: Record<string, string>) => {
+    const schema = copy(invoice.schema);
+    schema.body.models.find((model: { name: string }) => model.name === 'invoice').list_tabs = tabs;
+    return schema;
+  };
+  const routes = (schema: unknown, extra: any[] = []) => [
+    ['GET', /\/api\/auth\/session$/, invoice.session],
+    ['GET', /\/api\/schema$/, schema],
+    ...extra,
+    ['GET', /\/api\/invoice\?/, (sent: Sent) => query(sent).q ? { status: 200, etag: null, body: { items: [], total: 0, limit: 50, offset: 0 } } : copy(invoice.invoices)],
+    ['GET', /\/api\/invoice\/measures/, invoice.invoice_measures],
+    ['GET', /\/api\/invoice\/aggregate/, invoice.invoice_aggregate_by_status],
+    ['GET', /\/api\/invoice\/list_tabs/, invoice.invoice_list_tabs],
+    ['GET', new RegExp(`/api/customer/${customerId}$`), invoice.invoice_customer],
+  ] as any[];
+  const tabNames = (host: HTMLElement) => [...host.querySelectorAll('.ev-list [role="tab"]')].map(text);
+  const selected = (host: HTMLElement) => text(host.querySelector('.ev-list [role="tab"][aria-selected="true"]'));
+  const filtersOf = (call: Record<string, string>) => call.filters === undefined ? undefined : JSON.parse(call.filters);
+
+  it('opens on the default tab with nothing in the address, and puts All there when chosen', async () => {
+    const { host, sent } = start(routes(withTabs({ field: 'status', kind: 'state', default: 'issued' })), '/app/invoice');
+    await until(() => expect(selected(host)).toBe('Issued1'));
+    expect(listCalls(sent, 'invoice').map(filtersOf)).toEqual([{ status: 'issued' }]);
+    expect(location.search).toBe('');
+    click(byText(host, '.ev-list [role="tab"]', /^All invoices/));
+    await until(() => expect(location.search).toBe('?tab=all'));
+    expect(filtersOf(listCalls(sent, 'invoice').pop()!)).toBeUndefined();
+    // Back on the default tab, the address drops it again.
+    click(byText(host, '.ev-list [role="tab"]', /^Issued/));
+    await until(() => expect(location.search).toBe(''));
+  });
+
+  it('keeps the tab from the address over the default, and Clear filters goes back to the default', async () => {
+    const { host, sent } = start(routes(withTabs({ field: 'status', kind: 'state', default: 'issued' })), '/app/invoice?tab=all&q=zzz');
+    await until(() => expect(byText(host, 'button', 'Clear filters')).toBeTruthy());
+    expect(selected(host)).toMatch(/^All invoices/);
+    expect(listCalls(sent, 'invoice')[0]).toMatchObject({ q: 'zzz' });
+    expect(filtersOf(listCalls(sent, 'invoice')[0])).toBeUndefined();
+    click(byText(host, 'button', 'Clear filters'));
+    await until(() => expect(filtersOf(listCalls(sent, 'invoice').pop()!)).toEqual({ status: 'issued' }));
+    await until(() => expect(location.search).toBe(''));
+    expect(selected(host)).toMatch(/^Issued/);
+  });
+
+  it('offers All when the list is empty only because of its tab', async () => {
+    const empty = { status: 200, etag: null, body: { items: [], total: 0, limit: 50, offset: 0 } };
+    const { host, sent } = start(routes(withTabs({ field: 'status', kind: 'state', default: 'paid' }),
+      [['GET', /\/api\/invoice\?.*filters=/, empty]]), '/app/invoice');
+    await until(() => expect(byText(host, 'button', 'Show all invoices')).toBeTruthy());
+    expect(text(host.querySelector('.dt-empty h3, .dt-empty .empty-t, .dt-empty'))).toContain('No invoices in this tab');
+    click(byText(host, 'button', 'Show all invoices'));
+    await until(() => expect(location.search).toBe('?tab=all'));
+    expect(filtersOf(listCalls(sent, 'invoice').pop()!)).toBeUndefined();
+  });
+
+  it('shows no tabs without list_tabs, even for a model with a State', async () => {
+    const schema = copy(invoice.schema);
+    delete schema.body.models.find((model: { name: string }) => model.name === 'invoice').list_tabs;
+    const { host, sent } = start(routes(schema), '/app/invoice?tab=issued');
+    await until(() => expect(rowTitles(host).length + host.querySelectorAll('tbody tr[data-key]').length).toBeGreaterThan(0));
+    expect(tabNames(host)).toEqual([]);
+    expect(filtersOf(listCalls(sent, 'invoice')[0])).toBeUndefined();
+    expect(requests(sent, 'GET', /list_tabs/)).toHaveLength(0);
+  });
+
+  it('makes tabs of a Link field’s most used values, labelled by title, and finds the default by its title', async () => {
+    const tabs = { status: 200, etag: null, body: { field: 'customer', total: 3, items: [{ value: customerId, count: 3 }], more: false } };
+    const found = { status: 200, etag: null, body: { items: [invoice.invoice_customer.body], total: 1, limit: 1, offset: 0 } };
+    const { host, sent } = start(routes(withTabs({ field: 'customer', kind: 'link', default: 'Al Sahra Trading' }), [
+      ['GET', /\/api\/invoice\/list_tabs/, tabs],
+      ['GET', /\/api\/customer\?/, found],
+    ]), '/app/invoice');
+    await until(() => expect(tabNames(host)).toEqual(['All invoices3', 'Al Sahra Trading3']));
+    // The default is looked up by the title first, so the list loads once, on that customer.
+    expect(JSON.parse(query(requests(sent, 'GET', /\/api\/customer\?/)[0]).filters)).toEqual({ title: 'Al Sahra Trading' });
+    expect(listCalls(sent, 'invoice').map(filtersOf)).toEqual([{ customer: customerId }]);
+    expect(selected(host)).toBe('Al Sahra Trading3');
+    expect(location.search).toBe('');
+    click(byText(host, '.ev-list [role="tab"]', /^All invoices/));
+    await until(() => expect(location.search).toBe('?tab=all'));
+  });
+
+  it('opens on All when a Link default names no record this person can read', async () => {
+    const empty = { status: 200, etag: null, body: { items: [], total: 0, limit: 1, offset: 0 } };
+    const { host, sent } = start(routes(withTabs({ field: 'customer', kind: 'link', default: 'Nobody' }), [
+      ['GET', /\/api\/invoice\/list_tabs/, { status: 200, etag: null, body: { field: 'customer', total: 3, items: [{ value: customerId, count: 3 }], more: false } }],
+      ['GET', /\/api\/customer\?/, empty],
+    ]), '/app/invoice');
+    await until(() => expect(selected(host)).toMatch(/^All invoices/));
+    expect(listCalls(sent, 'invoice').map(filtersOf)).toEqual([undefined]);
+    expect(location.search).toBe('');
   });
 });

@@ -27,7 +27,7 @@ OPEN_IN = ('page', 'panel')
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
-                          'status', 'board', 'ledger', 'append_only', 'timestamps', 'indexes'))
+                          'status', 'board', 'list_tabs', 'list_tab', 'ledger', 'append_only', 'timestamps', 'indexes'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -120,6 +120,7 @@ def view_for(model):
         raise ValueError(f'{model.__name__}.Meta.default_tab: name one tab, such as "details"')
     if default_tab is not None and tabs and default_tab not in tabs:
         raise ValueError(f'{model.__name__}.Meta.default_tab: {default_tab} is not in Meta.tabs')
+    list_tabs = list_tabs_for(model, meta)
     # A list offers a board only when Meta.board names the field its columns follow: the model's State.
     board = getattr(meta, 'board', None)
     if board is not None and (type(board) is not str or board != getattr(model, '__state__', None)):
@@ -159,7 +160,37 @@ def view_for(model):
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in,
             'tabs': list(tabs), 'default_tab': default_tab,
-            'autosave': autosave, **({'board': board} if board else {})}
+            'autosave': autosave, **({'list_tabs': list_tabs} if list_tabs else {}),
+            **({'board': board} if board else {})}
+
+
+# The field kinds whose values can be list tabs (Meta.list_tabs).
+LIST_TAB_KINDS = ('state', 'select', 'link')
+
+
+def list_tabs_for(model, meta, fields=None):
+    """The list page's tabs: {field, kind, default}, or None for no tabs.
+
+    Meta.list_tabs names a State, Select or Link field; unset means the State field, if any, and None
+    means no tabs. Meta.list_tab is the tab the list opens on: "all" (the default) or one of the field's
+    values. For a Link it is the linked record's title or name, looked up when the page loads.
+    `fields` defaults to the app's fields; Controls passes the instance's."""
+    where = f'{model.__name__}.Meta'
+    name = getattr(meta, 'list_tabs', model.__state__)
+    default = getattr(meta, 'list_tab', 'all')
+    if type(default) is not str or not default.strip():
+        raise ValueError(f'{where}.list_tab: name the tab the list opens on, such as "all" or "active"')
+    if name is None:
+        if default != 'all':
+            raise ValueError(f'{where}.list_tab needs Meta.list_tabs: this list has no tabs')
+        return None
+    field = (model.__app_fields__ if fields is None else fields).get(name) if type(name) is str else None
+    kind = None if field is None else 'state' if name == model.__state__ else field.kind
+    if kind not in LIST_TAB_KINDS:
+        raise ValueError(f'{where}.list_tabs: name a State, Select or Link field of {model.__name__}, not {name!r}')
+    if kind != 'link' and default != 'all' and default not in field.choices:
+        raise ValueError(f'{where}.list_tab: {default!r} is not a value of {name}. Use "all" or one of {", ".join(field.choices)}')
+    return {'field': name, 'kind': kind, 'default': default}
 
 
 def check_tabs(tables, tabs, default_tab, where):

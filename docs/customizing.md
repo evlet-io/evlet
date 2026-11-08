@@ -34,6 +34,8 @@ Evlet uses these fields for the database, validation, API and generated forms.
 saved only after they change it, and resets when the default columns change.
 `open_in = 'panel'` opens a record from the list in a side panel beside it
 instead of on its own page; see "Side panel" in [ui-framework.md](ui-framework.md).
+`list_tabs = 'status'` makes the list's tabs from that State, Select or Link field and
+`list_tab = 'active'` opens the list on that tab; see [List tabs](ui.md#list-tabs).
 See [the model engine](model-engine.md) for fields, validators and query rules.
 
 ## Migrations

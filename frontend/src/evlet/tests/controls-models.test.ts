@@ -132,6 +132,28 @@ describe('Models', () => {
   });
 });
 
+describe('list view tabs', () => {
+  it('sets the field the list tabs come from and the tab it opens on', async () => {
+    const { host, sent } = open('/controls/models?model=Lead&tab=list');
+    await until(() => expect(host.querySelector('#ctl-l-tabs')).toBeTruthy());
+    expect(text(host.querySelector('#ctl-l-tabs'))).toBe('No tabs');
+    expect(host.querySelector('#ctl-l-home')).toBeNull();
+    click(host.querySelector('#ctl-l-tabs'));
+    // Only Select (State included) and Link fields can be tabs.
+    expect([...document.querySelectorAll('[role="option"]')].map(text)).toEqual(['No tabs', 'Source']);
+    click(byText(document.body, '[role="option"]', 'Source'));
+    await until(() => expect(host.querySelector('#ctl-l-home')).toBeTruthy());
+    click(host.querySelector('#ctl-l-home'));
+    expect([...document.querySelectorAll('[role="option"]')].map(text)).toEqual(['All', 'web', 'walk_in']);
+    click(byText(document.body, '[role="option"]', 'web'));
+    await until(() => expect(text(host.querySelector('#ctl-l-home'))).toBe('web'));
+    click(byText(bar()!, 'button', 'Save changes'));
+    await until(() => expect(bar()).toBeNull());
+    const posted = sent.filter(entry => entry.method === 'POST')[0].body.changes[0];
+    expect(posted).toEqual({ kind: 'list', key: 'Lead', value: { columns: ['title', 'source'], page_size: 50, sort: '-id', list_tabs: 'source', list_tab: 'web' } });
+  });
+});
+
 describe('collapsible sections in the layout editor', () => {
   it('sets Can collapse and Starts per section, and turning collapse off drops both', async () => {
     const { host, sent } = open('/controls/models?model=Lead&tab=layout');

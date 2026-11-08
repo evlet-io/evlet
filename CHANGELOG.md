@@ -6,16 +6,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
-### Changed
-
-- **The list board is opt-in.** A model's list offers the Board view only when `Meta.board`
-  names its State field, such as `board = "stage"`, and the board groups by that field. Without
-  it the list is a table with the saved views per state, and an old `?view=board` link opens the
-  table. Apps that relied on the automatic board for every model with a State must now set
-  `Meta.board`. `Meta.board` on any other field fails registration naming the model.
-
 ### Added
 
+- **List tabs by a chosen field, with a default tab.** `Meta.list_tabs` names the State, Select
+  or Link field whose values are the list's tabs, and `Meta.list_tab` the tab the list opens on
+  (`"all"` by default). Without them a model's State drives the tabs as before; `list_tabs = None`
+  turns them off. Counts come from the new `GET /api/{model}/list_tabs`, which follows the list's
+  filters, search and row scope; a Link shows its 8 most used values. `/api/schema` adds
+  `list_tabs` for roles that can read the field (additive). Choosing a tab, All included, keeps it
+  in the address. The Controls list view sets both per instance
+  ([docs/ui.md](docs/ui.md#list-tabs)).
 - **Ledger models.** `Meta.ledger = True` stores a model lean: an integer id the database assigns in
   insert order and the declared columns only, with no public surface (`Meta.api` is `None`). Options:
   `append_only` (database triggers refuse UPDATE and DELETE), `journal`, `timestamps` (`created_at`,
@@ -26,6 +26,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Transaction locks.** `tx.lock(*keys, timeout=None)` holds named locks on business keys until the
   transaction ends, PostgreSQL advisory locks taken in a fixed order, a key check on SQLite. A wait
   past `timeout` raises the new `LockTimeout`. Nothing changes for existing apps.
+
+### Changed
+
+- **The list board is opt-in.** A model's list offers the Board view only when `Meta.board`
+  names its State field, such as `board = "stage"`, and the board groups by that field. Without
+  it the list is a table with the saved views per state, and an old `?view=board` link opens the
+  table. Apps that relied on the automatic board for every model with a State must now set
+  `Meta.board`. `Meta.board` on any other field fails registration naming the model.
 
 ## 0.3.0 (05-11-2026)
 
@@ -77,6 +85,7 @@ production ready. The calendar engine, notifications and approval workflows are 
   conditions, and filtering on a field the role cannot read is a 403.
 
 ### Added
+
 
 - **`Meta.status` and `Select(colors=...)`.** `Meta.status = "<field>"` names a visible Select or
   State shown as the record's status badge and as a badge in lists, for a status the system sets
@@ -294,6 +303,7 @@ production ready. The calendar engine, notifications and approval workflows are 
   ([docs/sequences.md](docs/sequences.md#naming-series)).
 
 ### Changed
+
 
 - **Changed default: a State shows as a header badge, not a stage bar.** `State(..., show=...)`
   takes `"badge"` (the new default: a coloured status badge in the record header, with the moves

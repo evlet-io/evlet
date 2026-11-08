@@ -718,8 +718,9 @@ fill it, `?customer=4`), `/app/:model/:id` (a record; `?tab=` keeps the tab) and
 it in `?open=` (the id, or `new`) and the record's tab in `?rtab=`. `/reports` and `/reports/:report` are reports
 ([reports.md](reports.md)); `/controls` loads Controls as its own chunk (`frontend/src/evlet/controls/`,
 see [controls.md](controls.md)); any other address opens Docs. The earlier
-development paths `/ui/...` and `/m/:model` are gone. A list keeps its search, sort, page, view, saved view and filters in the query, so
-a link opens the same list. A record with unsaved changes asks before the page changes or the
+development paths `/ui/...` and `/m/:model` are gone. A list keeps its search, sort, page, view, tab and filters in the query, so
+a link opens the same list. Without `?tab=` it opens on the model's default tab (`Meta.list_tab`); choosing
+another, All included, puts it in the query. A record with unsaved changes asks before the page changes or the
 tab closes. Signing in keeps the address the user opened.
 
 ### Side panel
@@ -765,13 +766,14 @@ a title opens the full page in a new browser tab.
 | `Meta.search_fields` | The list search box and record search in the palette |
 | `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other |
 | `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
+| `Meta.list_tabs`, `Meta.list_tab` | The list's tabs: All and one per value of a State, Select or Link field (the State without `list_tabs`, none with `list_tabs = None`), with counts from `GET /api/{model}/list_tabs`, and the tab the list opens on (`"all"` by default). A Link shows its 8 most used values, labelled by title ([ui.md](ui.md#list-tabs)) |
 | `Meta.board` | Names the model's State field, such as `"stage"`, to offer a List and Board switch on its list; the board has one column per state. Without it the list has no board, and `?view=board` opens the table. Any other field fails registration |
 | `Meta.autosave` | `True` (default): leaving a record with unsaved edits keeps them for later instead of asking to discard them; `False` keeps the leave prompt ([ui.md](ui.md#unsaved-changes)) |
 | `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |
 | `Slip` with `source` or `menu` ([slips.md](slips.md)) | A header button on the source model's records, or an entry in New; `?slip=name` on a record opens it. A slip that becomes a record for review opens New filled in, with a note |
-| `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board when `Meta.board` names the State, a header status badge (`show="badge"`, the default) or the stage bar (`show="bar"`) or neither (`show="none"`), move buttons; the badge and the bar offer only the moves this person may take now (`allowed` in `_moves`), the rest are plain text; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
+| `State` with moves (Phase 4) | List tabs per state unless `Meta.list_tabs` names another field (counts from `GET /api/{model}/list_tabs`), a board when `Meta.board` names the State, a header status badge (`show="badge"`, the default) or the stage bar (`show="bar"`) or neither (`show="none"`), move buttons; the badge and the bar offer only the moves this person may take now (`allowed` in `_moves`), the rest are plain text; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column; tabs by another field narrow the cards and keep every column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
 | Locked states, `editable_when_locked` | Lock banner; only the declared fields stay editable; lines lock |
 | Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |
 | Unpost and repost | Offered from `_unpost` and `_repost` in the locked banner, the More menu and the unposted banner; Unpost asks for a reason, Repost takes an optional one |

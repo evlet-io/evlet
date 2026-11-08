@@ -1475,6 +1475,11 @@
       ],
       "default_tab": "details",
       "autosave": true,
+      "list_tabs": {
+        "field": "status",
+        "kind": "select",
+        "default": "active"
+      },
       "fields": [
         {
           "name": "title",
