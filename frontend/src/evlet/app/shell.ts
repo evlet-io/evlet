@@ -163,7 +163,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const wsTip = () => `Workspace: ${wsLabel()}`;
   const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="menu" aria-expanded="false" aria-label=${wsTip}
     on:click=${(event: MouseEvent) => workspaceMenu(event.currentTarget as HTMLElement)}
-    ref=${(el: HTMLElement) => tooltip(el, wsTip)}><span class="as-text"><b>${wsLabel}</b></span>${Icon('chevron-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
+    ref=${(el: HTMLElement) => tooltip(el, wsTip)}><span class="as-text"><b>${wsLabel}</b></span>${Icon('chevrons-up-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
   // The brand at the top bar's left, as on the sign-in page: the evlet.io lockup (its white-wordmark file in
   // dark themes); the collapsed sidebar and phones show the mark alone.
   const brand = html`<div class="brand">${Lockup()}${Logo('Evlet')}</div>`;

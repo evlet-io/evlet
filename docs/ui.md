@@ -493,7 +493,9 @@ The sidebar has three levels: workspace, section, shortcut. It starts directly w
 ([Top bar](#top-bar-search-and-explorer)).
 
 - **Workspace switcher.** A compact button in the top bar, after the Evlet brand and a pipe: the
-  current workspace's name, muted until hover, and a small chevron. Its tooltip and accessible name
+  current workspace's name in the normal text colour and the up-down chevrons (`chevrons-up-down`), in
+  a flat box with a 1 px border and 4 px corners, as tall as the search box. Hover gives it a light grey
+  background; while its menu is open the border is stronger too. Its tooltip and accessible name
   are "Workspace: Sales". A click opens a menu below the button, aligned to its left edge (moved left
   to stay on screen), as wide as the other menus, flat, with 4 px corners. It lists one row per
   workspace, with the workspace's icon and name; the current one is in the accent colour with a check.

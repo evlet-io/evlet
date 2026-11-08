@@ -150,7 +150,8 @@ describe('app shell', () => {
     const appName = text(appSwitch.querySelector('.as-text b'));
     expect(appName).not.toBe('');
     expect(appSwitch.querySelector('.as-text small')).toBeNull();
-    expect(appSwitch.querySelector('.as-chev')).not.toBeNull();
+    // The switch icon: the up-down chevrons, as on the account card, not a dropdown chevron.
+    expect(appSwitch.querySelector('.as-chev')!.innerHTML).toBe(host.querySelector('.me-chev')!.innerHTML);
     expect(appSwitch.getAttribute('aria-label')).toBe(`Workspace: ${appName}`);
     // The old app bar and repeated app title are gone.
     expect(host.querySelector('.appbar, .side-app, .sidebar .ws')).toBeNull();
@@ -186,9 +187,14 @@ describe('app shell', () => {
     expect(styles).not.toMatch(/ev-logo[^{]*\{[^}]*filter/);
     // The pipe: one pixel wide, 16 px tall, in the border colour.
     expect(rule(styles, '.top-pipe')).toMatch(/width:1px;height:16px;background:var\(--border-strong\)/);
-    // The switcher is muted until hover, flat, with the solid focus outline.
-    expect(rule(styles, '.app-switch')).toContain('color:var(--fg-3)');
-    expect(rule(styles, '.app-switch')).not.toContain('border:1px');
+    // The switcher: a flat bordered button as tall as the search box, in the normal text colour, with the
+    // solid focus outline; a light background on hover, and a stronger border while its menu is open.
+    expect(rule(styles, '.app-switch')).toMatch(/height:32px;.*border:1px solid var\(--border\);border-radius:var\(--r\)/);
+    expect(rule(styles, '.app-switch')).toContain('color:var(--fg)');
+    expect(rule(styles, '.app-switch')).not.toContain('box-shadow');
+    expect(rule(styles, '.top-search')).toContain('height:32px');
+    expect(rule(styles, '.app-switch:hover')).toContain('background:var(--bg-muted)');
+    expect(rule(styles, '.app-switch[aria-expanded="true"]')).toContain('border-color:var(--border-strong)');
     expect(rule(styles, '.app-switch:focus-visible')).toContain('outline:2px solid var(--accent)');
     // The Workspace menu: as wide as the other menus, flat (the light shadow), and no tile styles left.
     expect(rule(styles, '.ws-pop')).toContain('min-width:200px');

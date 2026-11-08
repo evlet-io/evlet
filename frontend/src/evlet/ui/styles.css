@@ -578,12 +578,13 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .brand .ev-lockup{height:26px}
 .brand .ev-logo{display:none;width:26px;height:26px}
 .top-pipe{width:1px;height:16px;background:var(--border-strong);flex:none}
-.app-switch{display:flex;align-items:center;gap:4px;min-width:0;height:28px;margin-left:-6px;padding:0 6px;border-radius:var(--r);color:var(--fg-3);text-align:left}
-.app-switch:hover,.app-switch[aria-expanded="true"]{background:var(--bg-muted);color:var(--fg)}
+.app-switch{display:flex;align-items:center;gap:6px;min-width:0;height:32px;padding:0 6px 0 9px;border:1px solid var(--border);border-radius:var(--r);background:none;color:var(--fg);text-align:left}
+.app-switch:hover{background:var(--bg-muted)}
+.app-switch[aria-expanded="true"]{background:var(--bg-muted);border-color:var(--border-strong)}
 .app-switch:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .as-text{min-width:0;display:flex;align-items:baseline;gap:6px;white-space:nowrap;overflow:hidden}
 .as-text b{font-weight:500;font-size:13.5px;overflow:hidden;text-overflow:ellipsis}
-.as-chev{flex:none;opacity:.8}
+.as-chev{flex:none;color:var(--fg-3)}
 .app.collapsed .top-left{width:auto}
 .app.collapsed .brand .ev-lockup{display:none}
 .app.collapsed .brand .ev-logo{display:block}
@@ -1049,7 +1050,7 @@ th:hover>.rz::after{background:var(--border-strong)}
   .top-left,.app.collapsed .top-left{width:auto;flex:0 1 auto;gap:8px;padding-right:0}
   .brand .ev-lockup{display:none}
   .brand .ev-logo{display:block}
-  .app-switch{max-width:34vw;margin-left:-4px;padding:0 4px}
+  .app-switch{max-width:34vw;padding:0 4px 0 7px}
   .page,.rec-main{padding:18px max(16px,env(safe-area-inset-left,0px)) 64px max(16px,env(safe-area-inset-right,0px))}
   .rec-side{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
   .board-wrap{margin:0 -16px;padding:0 16px 8px}
