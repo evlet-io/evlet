@@ -215,7 +215,43 @@ function plainMeasure(measure: MeasureSchema, value: unknown): string {
   return String(value);
 }
 
-/** The accents a list's measure cards take in turn: no measure declares its own colour. */
+/** The period before a trend bucket ("2026-06" -> "2026-05", "2026" -> "2025", "2026-03-01" -> "2026-02-28"). */
+function previousBucket(bucket: string, grain: MeasureTrend['grain']): string {
+  if (grain === 'year') return String(Number(bucket) - 1);
+  if (grain === 'month') {
+    const [year, month] = bucket.split('-').map(Number);
+    return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
+  }
+  const date = new Date(`${bucket}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * A measure's trend line from an aggregate grouped by its trend field and grain: the last `points` periods up to
+ * the latest one with records, in date order. Periods without records count 0 for a count or a sum, and are
+ * left as gaps (NaN) for a lowest, highest or average value. Records without a date are left out. Null when no
+ * period has records.
+ */
+export function trendValues(items: Array<Record<string, unknown>>, key: string, measure: Pick<MeasureSchema, 'name' | 'function'>, trend: MeasureTrend): number[] | null {
+  const byBucket = new Map<string, number>();
+  for (const item of items) {
+    const bucket = item[key];
+    if (bucket === null || bucket === undefined || bucket === '') continue;
+    byBucket.set(String(bucket), Number(item[measure.name] ?? 0));
+  }
+  if (!byBucket.size) return null;
+  const zero = ['count', 'count_distinct', 'sum'].includes(measure.function) ? 0 : Number.NaN;
+  let bucket = [...byBucket.keys()].sort().pop()!;
+  const values: number[] = [];
+  for (let index = 0; index < trend.points; index++) {
+    values.unshift(byBucket.get(bucket) ?? zero);
+    bucket = previousBucket(bucket, trend.grain);
+  }
+  return values;
+}
+
+/** The accents a list's measure cards take in turn when a measure declares no color=. */
 export const MEASURE_TONES: Tint[] = ['blue', 'teal', 'violet', 'amber'];
 
 /** A measure card's icon by its function: a count, a sum of money or of numbers, a lowest or highest value. */

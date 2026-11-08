@@ -29,7 +29,7 @@ import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
-import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
+import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, trendValues, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
 import { RecordPage, type PanelHost } from './record-page';
 import { recordId } from '../ids';
 
@@ -181,6 +181,31 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     reload.get();
     void api.measures(name, current, text).then(values => measures.set(values), () => measures.set(null));
   });
+  // Trend lines on the measure cards (a measure's trend=): one aggregate per measure, grouped by its trend field and
+  // grain, with the same filters and search as the strip. Asked a moment after the filters settle; a failure hides the line.
+  const trended = declared.slice(0, 4).filter(measure => measure.trend);
+  const trends = cell<Record<string, number[]>>({}, { name: `${name}.trends` });
+  let trendTicket = 0, trendTimer: ReturnType<typeof setTimeout> | undefined;
+  if (trended.length) effect(() => {
+    if (finding.get()) return;
+    const current = serverFilters.get(), text = query.get();
+    reload.get();
+    const mine = ++trendTicket;
+    clearTimeout(trendTimer);
+    trendTimer = setTimeout(() => {
+      for (const measure of trended) {
+        const trend = measure.trend!;
+        void api.aggregate(name, [measure.name], [`${trend.field}:${trend.grain}`], current, text).then(result => {
+          if (mine !== trendTicket) return;
+          const values = trendValues(result.items, result.group_by?.[0] ?? `${trend.field}__${trend.grain}`, measure, trend);
+          const next = { ...trends.peek() };
+          if (values) next[measure.name] = values; else delete next[measure.name];
+          trends.set(next);
+        }, () => { if (mine !== trendTicket) return; const next = { ...trends.peek() }; delete next[measure.name]; trends.set(next); });
+      }
+    }, 250);
+  });
+  onCleanup(() => clearTimeout(trendTimer));
   // Board column totals by state, from one aggregate (Phase 9): a count and the board's declared
   // sum measure, with the measure's own where. The aggregate route works without declared
   // measures and follows the search box too.
@@ -291,10 +316,11 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const toolbar = Toolbar({ label: `${model.plural} tools`, left: [search, FilterChips(filters, ctx.links)],
     right: [html`<span class="summary" aria-live="polite">${() => loading.get() ? 'Loading…' : total.get() === null ? '' : `${total.get()} ${total.get() === 1 ? model.label.toLowerCase() : model.plural.toLowerCase()}`}</span>`] });
 
-  // Each measure is a card with an icon for its function; the accents take turns (no measure declares one).
+  // Each measure is a card with an icon for its function, in its color= or else the next accent, with its trend line.
   const strip = declared.length ? when(() => measures.get() !== null, () => SummaryStrip(declared.slice(0, 4).map((measure, index) => ({
     label: measureLabel(measure), value: () => measureView(ctx.schema, model, measure, measures.get()?.[measure.name]),
-    note: measure.where ? 'Filtered by a rule' : undefined, icon: measureIcon(model, measure), tone: MEASURE_TONES[index],
+    note: measure.where ? 'Filtered by a rule' : undefined, icon: measureIcon(model, measure), tone: measure.color ?? MEASURE_TONES[index],
+    ...(measure.trend ? { trend: () => trends.get()[measure.name] ?? null, trendLabel: `last ${measure.trend.points} ${measure.trend.grain}s` } : {}),
   }) as StatProps))) : null;
 
   // ---------- table ----------
