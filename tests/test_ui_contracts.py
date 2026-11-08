@@ -39,13 +39,6 @@ def test_ui_framework_fixtures_match_http_contracts():
         assert without_journal_times(json.loads((fixtures / name).read_text())) == without_journal_times(actual), name
 
 
-def test_metadata_imports_remain_compatible():
-    from evlet import metadata
-    from evlet.ui import metadata as current
-    for name in ('field_schema', 'label_for', 'ui_schema', 'view_for'):
-        assert getattr(metadata, name) is getattr(current, name)
-
-
 def test_default_plural_labels_follow_simple_english_rules():
     from evlet import Model, Text
     from evlet.ui.metadata import plural_for, view_for

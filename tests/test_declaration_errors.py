@@ -3,7 +3,7 @@
 import pytest
 
 from evlet import Child, Integer, Model, Registry, Rule, Table, Text
-from evlet.metadata import view_for
+from evlet.ui.metadata import view_for
 
 EVERYTHING = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 
