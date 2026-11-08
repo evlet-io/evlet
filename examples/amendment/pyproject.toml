@@ -16,5 +16,3 @@ title = "Document reference"
 package-dir = {"amendment" = "."}
 include-package-data = true
 
-[tool.setuptools.package-data]
-amendment = ["views/**/*.ts"]

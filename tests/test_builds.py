@@ -212,10 +212,7 @@ def test_reference_app_full_public_flow(project):
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest
-    assert len(manifest['apis']) == len(manifest['schedules']) == len(manifest['native']['panels']) == 1
-    schema = c('GET', '/api/schema')[1]
-    native_url = schema['native_panels'][0]['url']
-    assert c('GET', native_url)[0] == 200
+    assert len(manifest['apis']) == len(manifest['schedules']) == 1
     with app.database.transaction() as tx:
         assert tx.connection.execute("SELECT count(*) FROM evlet_schedules WHERE name<>'evlet_unsaved_purge'").fetchone()[0] == 1
         assert tx.connection.execute('SELECT count(*) FROM evlet_jobs').fetchone()[0] == 0
@@ -304,19 +301,6 @@ def test_concurrent_build_reuses_published_generation(project, monkeypatch, tmp_
         return real_rename(source, target)
     monkeypatch.setattr(builds.os, 'rename', racing_rename)
     assert prepare(project, packages)[1]['fingerprint'] == first['fingerprint']
-
-
-def test_native_modules_with_clashing_outputs_are_rejected(tmp_path):
-    from evlet.native import build_assets
-    from evlet.packages import Package
-    views = tmp_path / 'clash/views'
-    views.mkdir(parents=True)
-    (tmp_path / 'clash/pyproject.toml').write_text('[project]\nname = "clash"\n')
-    (views / 'panel.ts').write_text('export default {}')
-    (views / 'Panel.js').write_text('export default {}')
-    package = Package(tmp_path / 'clash', 'clash', '1.0', 'Clash', (), layout='flat')
-    with pytest.raises(ValueError, match='overwrite each other'):
-        build_assets((package,), tmp_path / 'stage', set())
 
 
 def test_delegated_commands_keep_the_working_directory_off_sys_path(tmp_path, monkeypatch):

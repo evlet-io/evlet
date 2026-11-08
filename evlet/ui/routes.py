@@ -17,13 +17,6 @@ def dispatch(application, scope):
     host = dict(scope.get('headers', [])).get(b'host', b'')
     if path == '/_/tls-allowed':
         return _tls_allowed(application, scope)
-    if path.startswith('/assets/apps/') and method == 'GET' and application.business and application.routes.scopes(host) is None:
-        application.business.auth.guard(scope)
-        user, _ = application.business.auth.session(scope)
-        from ..native import serve
-        response = serve(application.business, path, user)
-        if response is None: raise HTTPError(404, 'Native asset is unavailable')
-        return response
     if path in ('/api/ui', '/api/ui/resolve'):
         application._method(method, ['GET'])
         user = None

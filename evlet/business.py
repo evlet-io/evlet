@@ -352,12 +352,6 @@ class Business:
             result['printing'] = {'available': available()}
         if getattr(self, 'slips', None) and self.slips.slips:
             result['slips'] = self.slips.schema(user)
-        if getattr(self, 'build_manifest', None) and self.build_manifest.get('native', {}).get('panels'):
-            result['native_panels'] = []
-            from .native import can_access
-            for panel in self.build_manifest['native']['panels']:
-                if can_access(self, panel['target'], user):
-                    result['native_panels'].append({**panel, 'url': '/assets/apps/' + self.build_manifest['fingerprint'] + '/' + panel['app'] + '/' + panel['file']})
         if self.events or self.jobs:
             result['capabilities'] = {'events': self.events is not None, 'jobs': self.jobs is not None}
         if self.tenant:
