@@ -242,8 +242,9 @@ export type StatTone = Tint | 'neutral';
 
 export interface StatProps {
   label: Prop<string>;
-  value: Prop<string>;
-  /** A caption under the value, such as "Filtered by a rule". */
+  /** Text, or a node shown as is (such as a currency symbol image and the amount). */
+  value: Prop<string | Node>;
+  /** A caption beside the label, such as "Filtered by a rule". */
   note?: Prop<string>;
   /** Shown muted when the value is empty. */
   empty?: string;
@@ -263,10 +264,23 @@ export function StatCard(props: StatProps): HTMLElement {
   const value = props.empty === undefined ? props.value
     : () => { const current = read(props.value); return current === '' || current === null || current === undefined ? html`<span class="muted ev-unset">${props.empty}</span>` : current; };
   const dot = tone ? html`<i class="stat-dot" aria-hidden="true"></i>` : null;
+  // The value as text, for the card's accessible name and the tooltip of a value cut short.
+  const valueText = () => spokenText(read(props.value));
   const trend = props.trend === undefined ? null : html`<div class="stat-tr">${() => Sparkline({
     values: read(props.trend) ?? [], width: 64, height: 24, label: `${read(props.label)} trend${props.trendLabel ? `, ${props.trendLabel}` : ''}` })}</div>`;
-  return html`<div class=${`sum-t stat-card${tone ? ` tone-${tone}` : ''}${props.icon ? ' has-ic' : ''}`}><span>${dot}${props.label}</span><b class="num" title=${() => String(read(props.value) ?? '')}>${value}</b>${props.note === undefined ? null : html`<em title=${props.note}>${props.note}</em>`}${
+  return html`<div class=${`sum-t stat-card${tone ? ` tone-${tone}` : ''}${props.icon ? ' has-ic' : ''}`} role="group"
+    aria-label=${() => [read(props.label), valueText() || props.empty || '', props.note === undefined ? '' : read(props.note)].filter(Boolean).join(', ')}><span>${dot}${props.label}</span><b class="num" title=${valueText}>${value}</b>${props.note === undefined ? null : html`<em title=${props.note}>${props.note}</em>`}${
     props.icon ? html`<i class="stat-ic" aria-hidden="true">${Icon(props.icon, { size: 'sm' })}</i>` : null}${trend}</div>` as HTMLElement;
+}
+
+/** The text a value reads as: a string as is, a node's text with each image's alt text in its place. */
+export function spokenText(value: string | Node | null | undefined): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (value.nodeType === Node.TEXT_NODE) return value.textContent ?? '';
+  if (value instanceof HTMLImageElement) return value.alt ? ` ${value.alt} ` : '';
+  if (value instanceof Element && value.getAttribute('aria-hidden') === 'true') return '';
+  return [...value.childNodes].map(spokenText).join('').replace(/\s+/g, ' ').trim();
 }
 
 /** The earlier name of StatCard. */

@@ -618,6 +618,8 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .stat-card>span{grid-area:l;font-size:12px;line-height:16px;font-weight:500;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* The value shrinks with a narrow card (four across beside a side column, two on a phone) before it is cut short. */
 .stat-card>b{grid-area:v;font-size:clamp(14px,9cqi,18px);font-weight:600;line-height:24px;letter-spacing:-.01em;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* A node value (a symbol image and the amount) sits on the text line and scales with it. */
+.stat-card>b img,.stat-card>b svg{height:.8em;width:auto;vertical-align:-.04em;display:inline}
 .stat-card>em{grid-area:n;font-style:normal;font-size:11.5px;line-height:16px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:6px}
 .stat-card>em::before{content:"\00b7";margin-right:6px}
 .stat-ic{grid-area:ic;width:24px;height:24px;margin-right:10px;border-radius:var(--r);display:grid;place-items:center;background:var(--stat-bg);color:var(--stat-c);font-style:normal}

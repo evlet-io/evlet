@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cell } from '../reactive';
-import { Avatar, Button, Checkbox, Chip, EmptyState, Icon, IconButton, ProgressBar, SegmentedControl, Sparkline, StatCard, StateBanner, StatusPill, SummaryStrip, Switch, trendSummary } from '../ui/base';
+import { Avatar, Button, Checkbox, Chip, EmptyState, Icon, IconButton, ProgressBar, SegmentedControl, Sparkline, StatCard, StateBanner, StatusPill, SummaryStrip, Switch, spokenText, trendSummary } from '../ui/base';
 import { Menu, MenuButton, openDrawer, openModal, openPopover, toast } from '../ui/layers';
 import { tipText, tooltip } from '../ui/tooltip';
 import { cleanup, key, render, watch } from './ui-helpers';
@@ -282,6 +282,26 @@ describe('StatCard, Sparkline and SummaryStrip', () => {
     expect(flat.querySelector('path.l')!.getAttribute('d')).toBe('M2 10 L25 10 L48 10');
     expect(flat.getAttribute('aria-label')).toBe('Trend: 3 points, from 4 to 4, low 4, high 4');
     expect(trendSummary([1250.5, -3, 10])).toBe('3 points, from 1,250.5 to 10, low -3, high 1,250.5');
+  });
+
+  it('takes a string or a node as the value, and names the card from its text or image alt', () => {
+    const text = StatCard({ label: 'Budget', value: 'AED 508,000.00', note: 'Filtered by a rule' });
+    expect(text.querySelector('b')!.textContent).toBe('AED 508,000.00');
+    expect(text.getAttribute('role')).toBe('group');
+    expect(text.getAttribute('aria-label')).toBe('Budget, AED 508,000.00, Filtered by a rule');
+
+    const amount = document.createElement('span');
+    const symbol = document.createElement('img');
+    symbol.src = 'data:image/png;base64,'; symbol.alt = 'AED';
+    amount.append(symbol, '508,000.00');
+    const card = StatCard({ label: 'Budget', value: () => amount });
+    const value = card.querySelector('b')!;
+    expect(value.firstElementChild).toBe(amount);
+    expect(value.querySelector('img[alt="AED"]')).not.toBeNull();
+    expect(card.getAttribute('aria-label')).toContain('AED');
+    expect(card.getAttribute('aria-label')).toBe('Budget, AED 508,000.00');
+    expect(value.getAttribute('title')).toBe('AED 508,000.00');
+    expect(spokenText(amount)).toBe('AED 508,000.00');
   });
 
   it('puts up to four cards in the summary strip', () => {

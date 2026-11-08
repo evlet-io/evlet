@@ -507,7 +507,7 @@ import { Sparkline, StatCard, SummaryStrip } from './evlet/ui';
 
 StatCard({
   label: 'Budget',                   // small and muted
-  value: () => formatMoney(total.get()), // large; a string, accessor or cell
+  value: () => formatMoney(total.get()), // a string or a node, plain or as an accessor or cell
   note: 'Filtered by a rule',         // optional caption beside the label, after a dot
   empty: 'None',                      // optional muted text for an empty value
   icon: 'wallet',                     // optional, on a 24 px tinted chip at the left
@@ -526,6 +526,11 @@ Sparkline({ values: [3, 5, 4, 9], tone: 'blue', label: 'Deals' }); // an SVG ele
   with an ellipsis when the card is narrow (its full text stays in the page for screen readers and
   in a tooltip), never only a tooltip. The value shrinks a little in a
   narrow card before it is cut short.
+- **Value.** A string, or a node shown as is, such as a currency symbol image followed by the
+  amount; an image in the value scales with the text. The card is a named group whose name joins
+  the label, the value's text (an image counts as its alt text) and the caption, so
+  `<img alt="AED">508,000.00` reads as "Budget, AED 508,000.00". `spokenText(value)` builds that
+  text.
 - **Tones.** `neutral`, `blue`, `green`, `amber`, `rose`, `violet`, `teal` and `slate`, the
   names Select colours use. A tone sets `--stat-c` (the accent) and `--stat-bg` (the chip) on the
   card; a stylesheet can set those two on `.stat-card` for its own accent. An unknown tone becomes
