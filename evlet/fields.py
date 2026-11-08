@@ -474,7 +474,8 @@ class DateTime(Field):
     kind = "datetime"
 
     def validate(self, value):
-        if isinstance(value, str):
+        # Python 3.15 accepts an hour of 24 (end of day) and 3.12 does not; refuse it everywhere.
+        if isinstance(value, str) and not re.search(r"[T ]24", value):
             try:
                 value = datetime.fromisoformat(value)
             except ValueError:
@@ -697,7 +698,8 @@ class Time(Field):
     kind = "time"
 
     def validate(self, value):
-        if isinstance(value, str) and re.fullmatch(r"[0-9]{2}:[0-9]{2}(:[0-9]{2})?", value):
+        if isinstance(value, str) and re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-9]{2}(:[0-9]{2})?", value):
+            # The hour is limited here because Python 3.15 accepts 24:00 and 3.12 does not.
             try:
                 value = TimeValue.fromisoformat(value)
             except ValueError:

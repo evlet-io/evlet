@@ -322,6 +322,18 @@ class Contact(Model):
     local = Currency(currency='code')
 
 
+def test_time_and_datetime_refuse_hour_24_on_every_python():
+    from evlet import DateTime
+    assert Time().validate('00:00') == time(0, 0) and Time().validate('23:59:59') == time(23, 59, 59)
+    for bad in ('24:00', '24:00:00', '9:30', '12:60', '12:00:60', '12:00:00.5', '1200'):
+        with pytest.raises(ValueError):
+            Time().validate(bad)
+    assert DateTime().validate('2026-01-01T23:59:59Z').hour == 23
+    for bad in ('2026-01-01T24:00:00Z', '2026-01-01 24:00+04:00', '2026-01-01T9:00:00Z', '2026-01-01T10:00:00'):
+        with pytest.raises(ValueError):
+            DateTime().validate(bad)
+
+
 def test_new_types_validate_and_serialize():
     assert Phone().validate(' +971 (50) 123-4567 ') == '+971501234567'
     assert Phone().validate('050 123 4567') == '050 123 4567'
