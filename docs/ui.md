@@ -507,7 +507,10 @@ The sidebar has three levels: workspace, section, shortcut. It starts directly w
   a related record) keeps the current workspace and its sidebar; nothing is marked there, since no
   shortcut matches. The breadcrumb shows where the page belongs: its first crumb names the page's own
   workspace (the first declared one holding a shortcut to it), such as "Billing › Invoices › INV-…",
-  as a link to the page. Clicking it shows that workspace, the page staying open. The switcher and
+  as a link to the page. Clicking it shows that workspace, the page staying open. When the page's own
+  first crumb has the workspace's name (a report's "Reports" in the Reports workspace, a record's
+  "Projects" list in the Projects workspace), the two are one crumb: "Reports › Projects › Projects by
+  stage". That crumb keeps the page crumb's link and opens it, then shows the workspace. The switcher and
   that crumb are the only things that change the workspace. The workspace is kept per browser tab in
   sessionStorage (`evlet.<username>.nav.workspace`), so a reload keeps it and a new tab does not. A tab
   without one (a new tab, a pasted link, a bookmark) opens on the page's own workspace; a page no
@@ -519,7 +522,7 @@ The sidebar has three levels: workspace, section, shortcut. It starts directly w
   Blocked storage only means nothing is remembered.
 - **Shortcuts** sit under their section on a thin guide line, each starting with its kind's icon
   ([Navigation icons](#navigation-icons)), small and muted, in place of a dot. The one the page
-  belongs to (a list and its records, or a report) is filled across the whole row with the primary
+  opens exactly (a list with its view, tab and filters, or a report) is filled across the whole row with the primary
   button's blue, with white text at weight 600 and a white icon. Hover on the other rows is a light grey.
 - **The section that holds that shortcut** gets a grey barely darker than the sidebar over its title and
   shortcuts, and a bolder title with an accent icon. It keeps both when closed, so the person still sees
@@ -546,13 +549,14 @@ Workspaces added in Controls (`source` custom) show like the others. The remembe
 the chosen workspace use the workspace and group keys.
 
 **The active shortcut** follows the address, by exact match. On a list, the path and the view, tab and
-filters must be exactly the shortcut's, none more and none fewer; search, sort, page, the record panel
-and the order of the parts don't count. So `/app/task?f=[["done","no",null]]` marks "Open tasks" and
+filters must be exactly the shortcut's, none more and none fewer; search, sort, page and the order
+of the parts don't count. So `/app/task?f=[["done","no",null]]` marks "Open tasks" and
 `/app/task` marks "Tasks", while another filter or tab marks neither. A tab the address names on
 arrival stays in it, the default one too, until another tab is chosen, so a shortcut to the default
 tab stays marked after its click. The list reached without `?tab=` (search, a link) shows its default
-tab and marks no shortcut, nor its section. A record under a list marks the plainest shortcut of that
-list. On a tie, the shortcut of the workspace on screen wins, so a list two workspaces share
+tab and marks no shortcut, nor its section. A record page (a record, a new record, a record's view)
+marks none either, nor its section, and so does a record open in the list's side panel (`?open=`,
+a new one included); closing the panel marks the list's shortcut again. On a tie, the shortcut of the workspace on screen wins, so a list two workspaces share
 keeps the sidebar as it is. A URL shortcut is marked only on its own address, every query part
 included: "All reports" at `/?explorer=reports` is not marked on another Explorer view or on the root.
 

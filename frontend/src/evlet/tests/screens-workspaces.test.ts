@@ -37,9 +37,10 @@ describe('workspaceNav without declared workspaces', () => {
       ['stock', 'Stock', [['Records', ['/app/product']], ['Reports', ['/reports/StockLevels']]]],
       ['crm', 'Crm', [['Records', ['/app/contact']]]],
     ]);
-    // Child tables are never shortcuts; a record page belongs to its list's shortcut.
+    // Child tables are never shortcuts; a record page marks none.
     expect(JSON.stringify(nav)).not.toContain('order_lines');
-    expect(activeShortcut(nav, '/app/product/0000000000001?tab=main')?.item.label).toBe('Products');
+    expect(activeShortcut(nav, '/app/product')?.item.label).toBe('Products');
+    expect(activeShortcut(nav, '/app/product/0000000000001?tab=main')).toBeNull();
     expect(activeShortcut(nav, '/reports/StockLevels')?.workspace.key).toBe('stock');
     expect(activeShortcut(nav, '/docs')).toBeNull();
     // An installed app's report name carries its app, whatever its model.

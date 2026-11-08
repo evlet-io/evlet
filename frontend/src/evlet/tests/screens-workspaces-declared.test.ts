@@ -94,16 +94,21 @@ describe('workspaceNav from declared workspaces', () => {
     const nav = workspaceNav(declared().body as AppSchema, links);
     const label = (path: string) => activeShortcut(nav, path)?.item.label ?? null;
     expect(label('/app/invoice')).toBe('Invoices');
-    // Search, sort, page and the record panel don't count; the order of the parts doesn't either.
+    // Search, sort and page don't count; the order of the parts doesn't either.
     expect(label('/app/invoice?sort=-number&view=board&q=a&page=2')).toBe('Board');
-    expect(label('/app/invoice?tab=issued&open=000000000001a')).toBe('Issued');
+    expect(label('/app/invoice?q=a&tab=issued')).toBe('Issued');
+    // A record open in the side panel marks none, a new one too.
+    expect(label('/app/invoice?tab=issued&open=000000000001a')).toBeNull();
+    expect(label('/app/invoice?open=new')).toBeNull();
     // A tab or filter no shortcut names marks none, not the plain list.
     expect(label('/app/invoice?tab=paid')).toBeNull();
     expect(label('/app/invoice?tab=issued&view=board')).toBeNull();
     expect(label(`/app/customer?f=${encodeURIComponent('[["vip", "yes", null]]')}`)).toBe('VIP customers');
     expect(label(`/app/customer?f=${encodeURIComponent('[["vip","no",null]]')}`)).toBeNull();
-    // A record belongs to the plain list's shortcut.
-    expect(label('/app/invoice/000000000001a?rtab=details')).toBe('Invoices');
+    // A record, a new record and a record's view mark none.
+    expect(label('/app/invoice/000000000001a?rtab=details')).toBeNull();
+    expect(label('/app/invoice/new')).toBeNull();
+    expect(label('/app/invoice/000000000001a/view')).toBeNull();
     expect(label('/docs')).toBe('Docs');
     expect(label('/settings')).toBeNull();
   });
@@ -120,8 +125,8 @@ describe('workspaceNav from declared workspaces', () => {
     expect(label('/app/invoice?tab=issued')).toBe('Issued');
     // Reached without ?tab= (search, a link), the list opens on its default tab and no shortcut is marked.
     expect(label('/app/invoice')).toBeNull();
-    // A record still belongs to the plain list's shortcut.
-    expect(label('/app/invoice/000000000001a')).toBe('Invoices');
+    // Nor does a record.
+    expect(label('/app/invoice/000000000001a')).toBeNull();
     // The fallback's shortcuts say All too.
     delete schema.workspaces;
     expect(workspaceNav(schema as AppSchema, links).workspaces.flatMap(workspace => workspace.sections.flatMap(section => section.items))
@@ -250,6 +255,26 @@ describe('the sidebar with declared workspaces', () => {
       click([...document.querySelectorAll<HTMLButtonElement>('.ws-pop .ws-tile, .ws-item')].find(item => text(item) === 'My desk')!);
       await until(() => expect(text(host.querySelector('.app-switch .as-text b'))).toBe('My desk'));
     } finally { Object.defineProperty(window, 'sessionStorage', real); }
+  });
+
+  it('marks no shortcut on a new record page, and shows a page crumb that repeats the workspace\'s name once', async () => {
+    const schema = declared();
+    schema.body.workspaces[0].label = 'Invoices';
+    const { host } = start(routes(schema), '/app/invoice/new');
+    await until(() => expect(host.querySelector('.crumbs .cur')).not.toBeNull());
+    expect(host.querySelectorAll('.sidebar [aria-current="page"], .sidebar .nav-sc.active, .sidebar .nav-sec.on').length).toBe(0);
+    // The page's "Invoices" crumb repeats the workspace crumb: they are one, opening the list and showing the workspace.
+    const links = [...host.querySelectorAll<HTMLAnchorElement>('.crumbs a')];
+    expect(links.map(link => [text(link), link.getAttribute('href'), link.classList.contains('ws-crumb')])).toEqual([['Invoices', '/app/invoice', true]]);
+    click(host.querySelector('.app-switch'));
+    click([...document.querySelectorAll<HTMLButtonElement>('.ws-pop .ws-item')].find(item => text(item) === 'My desk')!);
+    await until(() => expect(text(host.querySelector('.app-switch .as-text b'))).toBe('My desk'));
+    history.back();
+    await until(() => expect(location.pathname).toBe('/app/invoice/new'));
+    await until(() => expect(text(host.querySelector('.app-switch .as-text b'))).toBe('My desk'));
+    click(host.querySelector('.crumbs a.ws-crumb'));
+    await until(() => expect(location.pathname).toBe('/app/invoice'));
+    await until(() => expect(text(host.querySelector('.app-switch .as-text b'))).toBe('Invoices'));
   });
 
   it('presents a menu slip from its shortcut', async () => {

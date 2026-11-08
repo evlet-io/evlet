@@ -187,13 +187,22 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   // The first crumb names the workspace the page belongs to (the first declared one holding it); clicking it shows
   // that workspace in the sidebar, the page staying open.
   const pageWorkspace = derive(() => { const now = route.get(); return now ? homeWorkspace(nav.get(), now.url) : null; });
-  // Its address is the page's own: opened in a new tab, the page shows in its workspace there too.
-  const workspaceCrumb = (workspace: Workspace) => [html`<a class="hide-sm ws-crumb" href=${() => route.get()?.url ?? '#'}
-    on:click=${(event: MouseEvent) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return; event.preventDefault(); chosen.set(workspace.key); }}>${workspace.label}</a>`,
+  // Its address is the page's own: opened in a new tab, the page shows in its workspace there too. When the page's
+  // next crumb has the workspace's name (a report's "Reports", a record's list), the two are one crumb: it opens
+  // that crumb's page and shows the workspace once the page is open.
+  const workspaceCrumb = (workspace: Workspace, to?: string) => [html`<a class="hide-sm ws-crumb" href=${() => to ?? route.get()?.url ?? '#'}
+    on:click=${(event: MouseEvent) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+      event.preventDefault();
+      if (to) void router.navigate(to).then(opened => { if (opened) chosen.set(workspace.key); });
+      else chosen.set(workspace.key);
+    }}>${workspace.label}</a>`,
     Icon('chevron-right', { size: 'xs', className: 'hide-sm' })];
   const crumbs = () => {
-    const list = ctx.crumbs.get(), workspace = pageWorkspace.get();
-    return [workspace && list.length ? workspaceCrumb(workspace) : null, ...list.map((crumb, index, all) => index === all.length - 1
+    const workspace = pageWorkspace.get(), all = ctx.crumbs.get();
+    const merged = workspace && all.length > 1 && all[0].label === workspace.label ? all[0] : null;
+    const list = merged ? all.slice(1) : all;
+    return [workspace && list.length ? workspaceCrumb(workspace, merged?.href) : null, ...list.map((crumb, index, all) => index === all.length - 1
       ? html`<span class="cur" aria-current="page">${crumb.label}</span>`
       : [html`<a class="hide-sm" href=${crumb.href ?? '#'}>${crumb.label}</a>`, Icon('chevron-right', { size: 'xs', className: 'hide-sm' })])];
   };

@@ -152,12 +152,12 @@ function sameQuery(a: URLSearchParams, b: URLSearchParams): boolean {
 }
 
 /**
- * The shortcut an address belongs to, if any. Its path must equal the shortcut's, or be a page under it (a
- * record of the list). On the page itself the view, tab and filters must be exactly the shortcut's, none more
- * and none fewer (search, sort, page and the record panel don't count): "Tasks" at /m/task and "Open tasks" at
- * /m/task?f=[...] each mark only their own address, and another filter, or the list's default tab reached
- * without ?tab=, marks neither. Under it (a record), the plainest shortcut wins. Slips never match. On a tie, a
- * shortcut of `prefer` (the workspace shown) wins, so a page two workspaces share keeps the sidebar as it is.
+ * The shortcut an address belongs to, if any: the one it opens exactly. Its path must equal the shortcut's, and
+ * the view, tab and filters must be exactly the shortcut's, none more and none fewer (search, sort and page don't
+ * count): "Tasks" at /m/task and "Open tasks" at /m/task?f=[...] each mark only their own address, and another
+ * filter, or the list's default tab reached without ?tab=, marks neither. A record marks none: a page under a
+ * list (a record, a new record) or a record open in the list's side panel (?open=). Slips never match. On a tie, a shortcut of `prefer` (the workspace
+ * shown) wins, so a page two workspaces share keeps the sidebar as it is.
  * A link (a URL item) matches only its own address, every query part included: "All reports" at /?explorer=reports
  * is not marked on /?explorer=data or on any other page of the root path.
  */
@@ -167,18 +167,9 @@ export function activeShortcut(nav: WorkspaceNav, path: string, prefer?: string)
   for (const workspace of nav.workspaces) for (const section of workspace.sections) for (const item of section.items) {
     if (item.slip || item.external || !item.href) continue;
     const target = pathOf(item.href), own = queryOf(item.href);
-    // ?tab=all on a plain shortcut is not a choice: under the list, it is still the plainest.
-    const named = MATCHED.filter(key => own.has(key) && !(key === 'tab' && own.get(key) === 'all'));
-    let mine: number;
-    if (item.kind === 'link') {
-      if (bare !== target || !sameQuery(own, query)) continue;
-      mine = target.length * 100 + [...own.keys()].length;
-    } else if (bare === target) {
-      if (!MATCHED.every(key => same(key, own.get(key), query.get(key)))) continue;
-      mine = target.length * 100 + named.length;
-    } else if (bare.startsWith(target + '/')) mine = target.length * 100 - named.length - 50;
-    else continue;
-    if (workspace.key === prefer) mine += 0.5;
+    if (bare !== target) continue;
+    if (item.kind === 'link' ? !sameQuery(own, query) : query.has('open') || !MATCHED.every(key => same(key, own.get(key), query.get(key)))) continue;
+    const mine = workspace.key === prefer ? 1 : 0;
     if (mine > score) { best = { workspace, section, item }; score = mine; }
   }
   return best;
