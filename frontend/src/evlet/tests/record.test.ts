@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createClient } from '../api';
 import { effect, scope } from '../reactive';
 import { buildChanges } from '../model/changes';
+import { fingerprint } from '../model/finite';
 import { RecordStore, sameValue } from '../model/record';
 import type { AppSchema } from '../model/schema';
 import { copy, id, responses, server, type Sent } from './server';
@@ -83,6 +84,45 @@ describe('opening a record', () => {
     expect(store.state).toBeNull();
     expect(total.editable.peek()).toBe(false);
     expect(store.field('title').editable.peek()).toBe(true);
+  });
+
+  // Tags, MultiSelect and Reference values are lists and objects. The calculation plan lists them as
+  // inputs, and they must reach the form as loaded, not as empty (which made every saved record with
+  // one look edited, and a save would clear it).
+  it('keeps list and object values the calculation session reads, so the record opens unchanged', async () => {
+    const changed = copy(schema);
+    const order = changed.models.find(model => model.name === 'order')!;
+    const remark = order.fields.find(field => field.name === 'remark')!;
+    const extra = { tags: 'tags', kinds: 'multiselect', about: 'reference' } as const;
+    for (const [name, type] of Object.entries(extra)) {
+      order.fields.push({ ...remark, name, label: name, type, locked_when: null, max_length: null } as any);
+      (order.calculation as any).plan.tables.$root.fields[name] = { computed: false, default: null, kind: type, maximum: null, minimum: null, required: false, scale: null, stored: true, type };
+    }
+    const plan = (order.calculation as any).plan;
+    plan.model_schema_hash = fingerprint(plan);
+    const values = { tags: ['vip', 'gulf'], kinds: ['build'], about: { model: 'customer', id: id(1) } };
+    const detail = copy(responses.detail);
+    Object.assign(detail.body, values);
+    const stub = server([
+      ['GET', /\/api\/order\/0000000000001$/, detail],
+      ['GET', /\/api\/order\/0000000000001\/lines\/lines\?limit=100&offset=100$/, 'lines_page'],
+      ['GET', /\/api\/customer\/0000000000001$/, { ...responses.customer, status: 200 }],
+      ['GET', /\/api\/product\/0000000000001$/, { ...responses.product, status: 200 }],
+    ]);
+    const store = new RecordStore({ api: createClient({ fetch: stub.fetch }), schema: changed, model: 'order', today: () => '2026-11-01' });
+    stores.push(store);
+    await store.open(id(1));
+    await store.idle();
+    for (const [name, value] of Object.entries(values)) expect(store.field(name).value.peek(), name).toEqual(value);
+    expect(store.dirty.peek()).toBe(false);
+    expect(buildChanges(store.root)).toEqual({});
+    // An edit to one of them stays, and only it is sent.
+    store.field('tags').set(['vip']);
+    expect(store.field('tags').value.peek()).toEqual(['vip']);
+    expect(buildChanges(store.root)).toEqual({ tags: ['vip'] });
+    // The same list again, as a new array, is no change.
+    store.field('tags').set(['vip', 'gulf']);
+    expect(store.dirty.peek()).toBe(false);
   });
 });
 
