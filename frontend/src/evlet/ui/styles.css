@@ -41,6 +41,8 @@
   /* The two themes' grounds, cards and lines in every theme, for the theme pictures in Settings. */
   --swatch-light:#f4f5f8; --swatch-light-card:#ffffff; --swatch-light-line:#d8dce3; --swatch-dark:#14171c; --swatch-dark-card:#1a1e25; --swatch-dark-line:#323844;
   --shadow-edge:rgba(16,24,40,.18);
+  /* The sidebar's active shortcut (text 5.5:1 on its tint), the tint over its section, and hover inside that section. */
+  --nav-on-bg:#d9e2fc; --nav-on-fg:#2449d0; --nav-sec-on-bg:#e8ecf9; --nav-sec-on-hover:#dfe3ee;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
@@ -56,6 +58,7 @@
   --accent-solid:#4167e6; --accent-solid-hover:#3a60de; --on-tint:#0f1115; --knob:#ffffff;
   --inverse-bg:#e8eaf0; --inverse-fg:#0f1115; --inverse-ok:#0e7340; --inverse-hover:rgba(127,127,127,.25);
   --shadow-edge:rgba(0,0,0,.5);
+  --nav-on-bg:#263766; --nav-on-fg:#a9bdfb; --nav-sec-on-bg:#1a2030; --nav-sec-on-hover:#222836;
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0f1115; --bg-subtle:#13161b; --bg-muted:#1a1e25; --side-bg:#14171c; --surface:#16191f; --overlay:rgba(0,0,0,.55);
@@ -70,6 +73,7 @@
   --accent-solid:#4167e6; --accent-solid-hover:#3a60de; --on-tint:#0f1115; --knob:#ffffff;
   --inverse-bg:#e8eaf0; --inverse-fg:#0f1115; --inverse-ok:#0e7340; --inverse-hover:rgba(127,127,127,.25);
   --shadow-edge:rgba(0,0,0,.5);
+  --nav-on-bg:#263766; --nav-on-fg:#a9bdfb; --nav-sec-on-bg:#1a2030; --nav-sec-on-hover:#222836;
   color-scheme:dark}
 
 *{box-sizing:border-box}
@@ -598,9 +602,14 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .nav-sc{position:relative;height:30px;gap:8px;padding-left:8px}
 .nav-sc .nav-ic{display:none}
 .nav-dot{width:4px;height:4px;border-radius:50%;background:var(--fg-4);flex:none}
-.nav-item.nav-sc.active{background:var(--accent-soft);color:var(--accent);box-shadow:none}
-.nav-item.nav-sc.active::before{content:"";position:absolute;left:-7px;top:6px;bottom:6px;width:2px;border-radius:1px;background:var(--accent)}
-.nav-sc.active .nav-dot{background:var(--accent)}
+/* The section holding the page: a light tint over its title and shortcuts, a bolder title, open or closed.
+   Its shortcut is the strongest mark inside: a full-row accent tint, accent text at 600 and an accent dot. */
+.nav-sec.on{background:var(--nav-sec-on-bg);border-radius:var(--r)}
+.nav-sec.on .nav-sec-h{color:var(--fg);font-weight:650}
+.nav-sec.on .nav-sec-ic{color:var(--nav-on-fg)}
+.nav-sec.on .nav-sec-h:hover,.nav-sec.on .nav-item:not(.active):hover{background:var(--nav-sec-on-hover)}
+.nav-item.nav-sc.active{background:var(--nav-on-bg);color:var(--nav-on-fg);font-weight:600;box-shadow:none}
+.nav-sc.active .nav-dot{background:var(--nav-on-fg)}
 /* Collapsed: section titles give way to a thin rule, and every shortcut shows its icon. */
 .app.collapsed .nav-sec-h{display:none}
 .app.collapsed .nav-sec+.nav-sec{border-top:1px solid var(--border);padding-top:4px;margin-top:4px}
@@ -608,7 +617,8 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .app.collapsed .nav-sc{padding:0}
 .app.collapsed .nav-sc .nav-dot{display:none}
 .app.collapsed .nav-sc .nav-ic{display:block}
-.app.collapsed .nav-item.nav-sc.active::before{left:0}
+.app.collapsed .nav-sec.on{background:none}
+.app.collapsed .nav-sc.active .nav-ic{color:var(--nav-on-fg)}
 .app.collapsed .brand{justify-content:center;padding:0}
 .app.collapsed .brand .ev-lockup,.app.collapsed .as-text,.app.collapsed .as-chev{display:none}
 .app.collapsed .brand .ev-logo{display:block}

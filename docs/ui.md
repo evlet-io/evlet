@@ -465,10 +465,12 @@ The sidebar has three levels: workspace, section, shortcut.
   (`evlet.<username>.nav.closed`), and the chosen workspace in `evlet.<username>.nav.workspace`.
   Blocked storage only means nothing is remembered.
 - **Shortcuts** sit under their section on a thin guide line, each with a small dot. The one the page
-  belongs to (a list and its records, or a report) has the accent background and an accent bar on the
-  left.
-- The collapsed sidebar shows each shortcut's icon with its name in a tooltip; section titles give way
-  to a thin rule. On phones the sidebar is the drawer, and the Workspace card opens below the box
+  belongs to (a list and its records, or a report) is highlighted across the whole row: an accent tint,
+  accent text at weight 600 and an accent dot. Hover on the other rows is a lighter neutral.
+- **The section that holds that shortcut** gets a light tint over its title and shortcuts, and a bolder
+  title with an accent icon. It keeps both when closed, so the person still sees where they are.
+- The collapsed sidebar shows each shortcut's icon with its name in a tooltip, and the active one on
+  the same full-tile accent tint; section titles give way to a thin rule. On phones the sidebar is the drawer, and the Workspace card opens below the box
   when there is no room beside it.
 
 **Where the sidebar comes from.** `workspaceNav()` in `app/workspaces.ts` maps the schema's

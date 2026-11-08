@@ -95,7 +95,9 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   };
   const section = (workspace: Workspace, entry: NavSection) => {
     const id = `ev-nav-${sectionId(workspace, entry).replace(/[^a-z0-9_-]/gi, '-')}`;
-    return html`<div class="nav-sec" class:open=${() => isOpen(workspace, entry)}>
+    // The section holding the page's shortcut is tinted and its title bolder, open or closed.
+    const holdsPage = () => here.get()?.section.key === entry.key && here.get()?.workspace.key === workspace.key && current.get()?.key === workspace.key;
+    return html`<div class="nav-sec" class:open=${() => isOpen(workspace, entry)} class:on=${holdsPage}>
       <button type="button" class="nav-sec-h" aria-expanded=${() => String(isOpen(workspace, entry))} aria-controls=${id} on:click=${() => toggleSection(workspace, entry)}>
         ${Icon(entry.icon, { size: 'sm', className: 'nav-sec-ic' })}<span class="lbl">${entry.label}</span>
         ${entry.count === undefined ? null : html`<span class="count">${String(entry.count)}</span>`}${Icon('chevron-right', { size: 'xs', className: 'nav-sec-chev' })}</button>

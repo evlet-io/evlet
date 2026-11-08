@@ -118,6 +118,26 @@ describe('the workspace sidebar', () => {
     expect(text(host.querySelector('.nav-sc.active'))).toBe('Customer rates');
   });
 
+  it('marks the section that holds the open shortcut, closed or open and in the collapsed sidebar', async () => {
+    const { host } = start(routes(), '/app/quote');
+    await until(() => expect(host.querySelector('.nav-sc.active')).not.toBeNull());
+    const marked = () => [...host.querySelectorAll('.nav-sec.on')].map(group => text(group.querySelector('.nav-sec-h .lbl')));
+    expect(marked()).toEqual(['Records']);
+    // Closing the section keeps its mark, so the person still sees where they are.
+    const records = byText(host, '.nav-sec', /^Records/)!;
+    click(records.querySelector('.nav-sec-h'));
+    expect(records.classList.contains('open')).toBe(false);
+    expect(marked()).toEqual(['Records']);
+    // The collapsed sidebar keeps the mark and the active shortcut.
+    click(host.querySelector('.side-edge'));
+    await until(() => expect(host.querySelector('.app.collapsed')).not.toBeNull());
+    expect(marked()).toEqual(['Records']);
+    expect(text(host.querySelector('.nav-sc.active'))).toBe('Quotes');
+    // Another page moves the mark to its section.
+    click(host.querySelector('a[href="/app/order"]'));
+    await until(() => expect(marked()).toEqual(['Documents']));
+  });
+
   it('collapses a section and remembers it for the person', async () => {
     const { storage, store } = memory();
     const first = start(routes(), '/app/customer', { storage: store });
