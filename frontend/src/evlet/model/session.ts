@@ -153,8 +153,9 @@ export class Session {
         apply(doc.result(engineRow, name), keepSaved);
         doc.observe(handle, name, result => this.publish.push(() => apply(result, false)));
       } else {
-        // Initial values and applies_when write source fields too. A pending default reads as empty.
-        const read = () => { const value = doc.rows.get(handle)?.values[name]; return value && typeof value === 'object' ? null : value ?? null; };
+        // Initial values and applies_when write source fields too. A pending default reads as empty;
+        // lists and objects (Tags, MultiSelect, Reference) are values and pass through as they are.
+        const read = () => { const value = doc.rows.get(handle)?.values[name]; return pendingValue(value) ? null : value ?? null; };
         field.value.set(read());
         doc.observe(handle, name, () => this.publish.push(() => field.value.set(read())));
       }
@@ -222,6 +223,9 @@ export class Session {
     this.work.add(task);
   }
 }
+
+// The engine's marker for a default it can't work out yet ({$state: 'pending'}).
+const pendingValue = (value: unknown) => Boolean(value) && typeof value === 'object' && !Array.isArray(value) && (value as { $state?: unknown }).$state === 'pending';
 
 // Match the session's rows to the store's rows: same tables, same order.
 function bindHandles(engineRow: any, row: Row) {

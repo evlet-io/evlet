@@ -31,11 +31,13 @@ const NUMERIC = new Set(['decimal', 'currency', 'integer', 'percent', 'duration'
 const sameRules = (a: Rules, b: Rules) => a.applies === b.applies && a.required === b.required && a.locked === b.locked;
 const sameOutcome = (a: Outcome, b: Outcome) => a.state === b.state && (a as any).code === (b as any).code;
 
-/** Whether two field values mean the same: '' and null are both empty, '1.50' equals '1.5' for numbers. */
+/** Whether two field values mean the same: '' and null are both empty, '1.50' equals '1.5' for numbers, lists by content. */
 export function sameValue(meta: FieldSchema | undefined, a: unknown, b: unknown): boolean {
   const empty = (value: unknown) => value === null || value === undefined || value === '';
   if (empty(a) || empty(b)) return empty(a) && empty(b);
   if (a === b) return true;
+  // Lists and objects (Tags, MultiSelect, Reference) are the same when their content is.
+  if (typeof a === 'object' && typeof b === 'object') return JSON.stringify(a) === JSON.stringify(b);
   if (meta && NUMERIC.has(meta.type)) {
     try { return compare(parse(a), parse(b)) === 0; } catch { return false; }
   }
