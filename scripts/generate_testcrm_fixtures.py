@@ -119,8 +119,8 @@ class Scenario:
         if model == 'deal':
             self.get(f'/api/{model}/{record_id}/measures')
         for relation in schema.get('relations', []):
-            self.get(f"/api/{model}/{record_id}/related/{relation['name']}?limit=1",
-                     f"/api/{model}/{record_id}/related/{relation['name']}?limit={relation['limit']}&offset=0")
+            # One page of five serves the Related block's count and the Related tab (related-data.ts).
+            self.get(f"/api/{model}/{record_id}/related/{relation['name']}?limit=5&offset=0")
         if schema.get('attachments'):
             self.get(f'/api/{model}/{record_id}/attachments')
         if schema.get('journal'):
@@ -233,7 +233,7 @@ def record(app, out):
     assert planned['status'] == 201, planned
     assert sara.call('POST', f'{url}/journal', {'kind': 'follow_up_done', 'follow_up': planned['body']['id'], 'text': 'Plan sent'})['status'] == 201
     sara.record_page('deal', deal)
-    sara.get(f'/api/deal/{deal}/related/task.deal?limit=10&offset=0')
+    sara.get(f'/api/deal/{deal}/related/task.deal?limit=5&offset=0')
     sara.get(f"/api/organization/{detail['organization']}")
     # A note from the Activity tab; the history is read again.
     sara.phases[-1][key('POST', f'{url}/journal')] = sara.call('POST', f'{url}/journal', {'kind': 'note', 'text': 'Kick-off agreed for next week'})

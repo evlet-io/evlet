@@ -345,7 +345,17 @@ Change routes in the instance's `routes.py`.
 
 ## Jobs
 
-Schedules from the apps, and the last 50 jobs. Pausing a schedule saves at once as the setting
+The page has two panes. On the left is a list of the jobs: every task a schedule runs or a
+recent run used, with All on top. Each shows how many of the recent runs are its own and the
+state and time of its latest run. The right pane shows the selected job's schedules and its runs,
+newest first; All shows every schedule and every run, with the job as a column. A run shows its
+state (Queued, Running, Done or Failed), when it was due (the exact time on hover), its attempts
+and, when it failed, the error. The selection is kept in the address as `?job=<name>`, so a
+reload or a link opens the same job. The list is a set of tabs: the arrow keys, Home and End
+move through it. On a phone it becomes a row of chips above the runs.
+
+The server sends the schedules from the apps and the last 50 jobs across all jobs, so the
+runs of one job are picked from those, and the page says so once 50 are listed. Pausing a schedule saves at once as the setting
 override `schedule.<name>.active = false` and is applied with `set_schedule_active`; resuming
 resets it. A pause for a schedule no app declares any more is listed under Needs attention.
 Run now enqueues one job like the schedule would; a paused schedule must be resumed first.

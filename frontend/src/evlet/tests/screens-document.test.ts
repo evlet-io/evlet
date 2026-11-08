@@ -69,7 +69,8 @@ describe('transaction document (recorded fixtures)', () => {
     click(byText(host, '.doc-tabs [role="tab"]', 'Related'));
     // A payment has no text field, so its title is its id.
     await until(() => expect(text(host.querySelector('.ev-related .ev-row-link'))).toBe(String(invoice.invoice_payment.body.id)));
-    expect(location.search).toBe('?tab=related');
+    // The rows were loaded with the count, so they show before the address catches up.
+    await until(() => expect(location.search).toBe('?tab=related'));
   });
 
   it('explains a blocked move instead of running it', async () => {
@@ -234,10 +235,11 @@ describe('transaction document (recorded fixtures)', () => {
     expect(byText(host, '.inv-banner button', 'Void')).toBeNull();
   });
 
-  it('offers no upload on a locked record, whose files the server refuses to change', async () => {
+  it('offers no upload and no remove on a locked record, whose files the server refuses to change', async () => {
     const { host } = start(routes(invoice.invoice_issued_detail), `/app/invoice/${draft}`);
     await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf'));
     expect(host.querySelector('.ev-upload')).toBeNull();
+    expect(host.querySelector('.ev-file-remove')).toBeNull();
     expect(invoice.invoice_attachment_locked.status).toBe(409);
   });
 
