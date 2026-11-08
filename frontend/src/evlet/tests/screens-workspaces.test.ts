@@ -50,18 +50,22 @@ describe('workspaceNav without declared workspaces', () => {
 });
 
 describe('the Workspace switcher', () => {
-  it('opens a card beside the button, moves between tiles with the arrow keys, closes on Esc and opens a workspace', async () => {
+  it('opens a card below the top bar button, moves between tiles with the arrow keys, closes on Esc and opens a workspace', async () => {
     const { host } = start(routes(), '/app/customer');
     await until(() => expect(host.querySelector('.app-switch .as-text b')).not.toBeNull());
     const button = host.querySelector<HTMLElement>('.app-switch')!;
+    // In the top bar, after the brand and the pipe; not in the sidebar.
+    expect(button.parentElement!.matches('.topbar > .top-left')).toBe(true);
+    expect(button.previousElementSibling!.classList.contains('top-pipe')).toBe(true);
+    expect(host.querySelector('.sidebar .app-switch')).toBeNull();
     expect(text(button.querySelector('.as-text b'))).toBe('Sales');
     expect(button.getAttribute('aria-label')).toBe('Workspace: Sales. Switch workspace');
-    button.getBoundingClientRect = () => ({ left: 8, right: 248, top: 60, bottom: 104, width: 240, height: 44, x: 8, y: 60, toJSON: () => ({}) });
+    button.getBoundingClientRect = () => ({ left: 120, right: 220, top: 12, bottom: 40, width: 100, height: 28, x: 120, y: 12, toJSON: () => ({}) });
     click(button);
     const card = document.querySelector<HTMLElement>('.pop.ws-pop')!;
-    // Beside the button, its top edge level with the button's, not below it.
-    expect(card.classList.contains('pop-side')).toBe(true);
-    expect([card.style.left, card.style.top]).toEqual(['256px', '60px']);
+    // Below the button, its left edge level with the button's.
+    expect(card.classList.contains('pop-side')).toBe(false);
+    expect([card.style.left, card.style.top]).toEqual(['120px', '46px']);
     expect(button.getAttribute('aria-expanded')).toBe('true');
     expect(text(card.querySelector('.ws-head'))).toBe('Workspace');
     const tiles = [...card.querySelectorAll<HTMLButtonElement>('.ws-tile')];
@@ -88,15 +92,20 @@ describe('the Workspace switcher', () => {
     expect(sections(host)).toEqual([['Records', ['Products']], ['Reports', ['Stock levels']]]);
   });
 
-  it('falls back to opening below the button when there is no room beside it', async () => {
+  it('keeps the card on screen when the button is near the right edge, as on a narrow window', async () => {
     const { host } = start(routes(), '/app/customer');
     await until(() => expect(host.querySelector('.app-switch .as-text b')).not.toBeNull());
     const button = host.querySelector<HTMLElement>('.app-switch')!;
-    button.getBoundingClientRect = () => ({ left: 8, right: window.innerWidth - 4, top: 60, bottom: 104, width: 240, height: 44, x: 8, y: 60, toJSON: () => ({}) });
+    const card = () => document.querySelector<HTMLElement>('.pop.ws-pop')!;
+    button.getBoundingClientRect = () => ({ left: window.innerWidth - 40, right: window.innerWidth - 4, top: 12, bottom: 40, width: 36, height: 28, x: window.innerWidth - 40, y: 12, toJSON: () => ({}) });
     click(button);
-    const card = document.querySelector<HTMLElement>('.pop.ws-pop')!;
-    expect(card.classList.contains('pop-side')).toBe(false);
-    expect(card.style.top).toBe('110px');
+    expect(card().classList.contains('pop-side')).toBe(false);
+    expect(card().style.top).toBe('46px');
+    expect(parseFloat(card().style.left)).toBeLessThanOrEqual(window.innerWidth - 12 - card().offsetWidth);
+    // A second click on the button closes it, as before.
+    click(button);
+    expect(document.querySelector('.ws-pop')).toBeNull();
+    expect(button.getAttribute('aria-expanded')).toBe('false');
   });
 });
 

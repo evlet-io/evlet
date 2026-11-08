@@ -13,10 +13,10 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 
 - Sign-in and first-run setup (the first administrator account).
 - Docs, with its topics, from the sidebar and the search palette.
-- The shell: sidebar with the Workspace switcher and the workspace's sections and shortcuts
-  ([below](#sidebar-and-workspaces)); a top bar with a history button for recent records (before the
-  breadcrumb), one box for the search palette and the Explorer ([below](#top-bar-search-and-explorer)),
-  notifications and shortcuts. New records start from the New button
+- The shell: a top bar across the window with the Evlet brand and the Workspace switcher at its left,
+  then a history button for recent records (before the breadcrumb), one box for the search palette and the Explorer ([below](#top-bar-search-and-explorer)),
+  notifications and shortcuts; under it the sidebar with the workspace's sections and shortcuts
+  ([below](#sidebar-and-workspaces)). New records start from the New button
   on a model's list page or from the search palette.
 - Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
@@ -487,13 +487,20 @@ nothing to open yet.
 
 ## Sidebar and workspaces
 
-The sidebar has three levels: workspace, section, shortcut.
+The sidebar has three levels: workspace, section, shortcut. It starts directly with its navigation
+(Docs, Eva, then the sections); the brand and the Workspace switcher are in the top bar
+([Top bar](#top-bar-search-and-explorer)).
 
-- **Workspace switcher.** The box at the top of the sidebar shows the current workspace. A click opens
-  a small card to its right, with every workspace as a tile in a row (it wraps when there are many).
-  Arrow keys, Home and End move between tiles, Enter opens one, and Esc closes the card and gives focus
-  back to the box. Opening a workspace shows its sections and opens its first shortcut. Opening a page
-  of another workspace (a link, Back, the search palette) switches the sidebar to it.
+- **Workspace switcher.** A compact button in the top bar, after the Evlet brand and a pipe: the
+  current workspace's name, muted until hover, and a small chevron. When the site has a name of its
+  own (the tenant's label, else the application's name, such as "Lab" or "Playground"), it follows the
+  workspace name in lighter grey, unless the workspace already has that name; it is left out under
+  1100 px, collapsed and on phones, and the tooltip and the button's name always carry it
+  ("Workspace: Sales · Lab"). A click opens a small card below the button, aligned to its left edge
+  (moved left to stay on screen), with every workspace as a tile in a row (it wraps when there are
+  many). Arrow keys, Home and End move between tiles, Enter opens one, and Esc closes the card and gives
+  focus back to the button. Opening a workspace shows its sections and opens its first shortcut.
+  Opening a page of another workspace (a link, Back, the search palette) switches the sidebar to it.
 - **Sections** are collapsible titles with an icon, an optional count and a chevron. Each one is open
   until the person closes it. The closed ones are kept per person in browser storage
   (`evlet.<username>.nav.closed`), and the chosen workspace in `evlet.<username>.nav.workspace`.
@@ -506,8 +513,9 @@ The sidebar has three levels: workspace, section, shortcut.
   shortcuts, and a bolder title with an accent icon. It keeps both when closed, so the person still sees
   where they are.
 - The collapsed sidebar shows each shortcut's kind icon with its name in a tooltip, and the active one white
-  on the same solid blue tile; section titles give way to a thin rule. On phones the sidebar is the drawer, and the Workspace card opens below the box
-  when there is no room beside it.
+  on the same solid blue tile; section titles give way to a thin rule. The round button on the sidebar's
+  edge, just above the account card, collapses and expands it (and `[`). On phones the sidebar is the
+  drawer, opened from the top bar's menu button.
 
 **Where the sidebar comes from.** `workspaceNav()` in `app/workspaces.ts` maps the schema's
 `workspaces` ([Workspaces](#workspaces)): each group is a section (with its icon, `layers` without
@@ -587,14 +595,29 @@ is missing, the closest one stands in (a slip uses `sticky-note`, a dashboard `a
 | Help (shortcuts) | `circle-help` |
 | Settings, Controls | `settings`, `sliders-horizontal` |
 | Account | `user` |
-| Workspace switcher | `layers` (when the workspace declares none) |
+| Workspace (its tile in the switcher card) | `layers` (when the workspace declares none) |
 | Customize | `pencil` |
 | Explorer views: Reports, Data, Dashboards, Ledger reports | `chart-column`, `table-2`, `activity`, `receipt` |
 
 ### Top bar: Search and Explorer
 
-From left to right the top bar holds the drawer button (phones only), the **history** button, the
-breadcrumb, then one box for **search and the Explorer**, notifications and the shortcuts button.
+The top bar runs across the whole window, over the sidebar and the main column, with a light divider
+under it. From left to right it holds the drawer button (phones only), the **Evlet brand**, a pipe, the
+**Workspace switcher**, the **history** button, the breadcrumb, then one box for **search and the
+Explorer**, notifications and the shortcuts button.
+
+- **Brand.** The Evlet mark (white on a 22 px blue square, 4 px radius) and the word "Evlet" in bold.
+  The brand is shown once, here; the sidebar has none. It always says Evlet: the site's own name is
+  the switcher's secondary text ([Sidebar and workspaces](#sidebar-and-workspaces)).
+- **Pipe.** A 1 px line, 16 px tall, in the strong border colour, with space on both sides.
+- **Switcher.** The compact Workspace button ([Sidebar and workspaces](#sidebar-and-workspaces)).
+- **Width.** With the sidebar expanded, the brand, pipe and switcher take the sidebar's width (a long
+  workspace name is cut with an ellipsis), so the history button and the breadcrumb start over the
+  main column. With the sidebar collapsed they take only the room they need: the mark alone, the pipe
+  and the switcher, then the history button.
+- **Phones** (under 760 px): the menu button, the mark alone, the pipe and the switcher with its name
+  cut to about a third of the width, then history, the current page's name, the search and Explorer
+  icons and notifications. The page never scrolls sideways.
 
 - **History** (`history` icon, tooltip "Recent records") sits at the left end, directly before the
   breadcrumb. A click or Arrow Down opens this session's recent records, as before. On phones it

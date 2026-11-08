@@ -5,6 +5,16 @@ import { closeDialogs } from '../ui/layers';
 
 afterEach(stopAll);
 
+// Vitest hands CSS imports over empty, so the stylesheet is read from disk (Vitest runs from frontend/).
+const node = (globalThis as any).process;
+const css = (path: string): string => node.getBuiltinModule('node:fs').readFileSync(`${node.cwd()}/src/evlet/${path}`, 'utf8');
+/** The declarations of the first rule whose selector is exactly `selector`. */
+const rule = (sheet: string, selector: string): string => {
+  const found = new RegExp(`(?:^|[}\\s])${selector.replace(/[.*+?^${}()|[\]\\>]/g, '\\$&')}\\{([^}]*)\\}`, 'm').exec(sheet);
+  if (!found) throw new Error(`No ${selector} rule`);
+  return found[1];
+};
+
 const submit = (host: HTMLElement) => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
 describe('sign in, setup and Docs', () => {
@@ -116,18 +126,34 @@ describe('app shell', () => {
     expect(host.querySelector('.topbar .btn.primary')).toBeNull();
   });
 
-  it('shows the Evlet brand, the Workspace switcher, and collapses from the edge button', async () => {
+  it('shows the Evlet brand, a pipe and the Workspace switcher at the left of the top bar, and collapses from the edge button', async () => {
     const { host } = start([...adminRoutes()]);
     await until(() => expect(host.querySelector('.app')).not.toBeNull());
     const app = host.querySelector('.app')!;
-    // The evlet.io artwork: the horizontal logo for each theme, and the mark the collapsed sidebar shows.
-    const brand = [...host.querySelectorAll<HTMLImageElement>('.sidebar .brand img')].map(img => [img.className, img.getAttribute('src'), img.alt]);
-    expect(brand).toEqual([['ev-lockup-light', '/assets/evlet-logo-primary.svg', 'Evlet'],
-      ['ev-lockup-dark', '/assets/evlet-logo-white.svg', 'Evlet'], ['ev-logo', '/assets/evlet-icon-blue.svg', 'Evlet']]);
-    const appSwitch = host.querySelector<HTMLElement>('.sidebar .app-switch')!;
+    // Left to right: the phone's menu button, then the brand, a pipe and the switcher, then the history button.
+    const left = host.querySelector<HTMLElement>('.topbar > .top-left')!;
+    expect(left.previousElementSibling!.classList.contains('mobile-only')).toBe(true);
+    expect(left.nextElementSibling!.classList.contains('rec-btn')).toBe(true);
+    expect([...left.children].map(child => child.className)).toEqual(['top-brand', 'top-pipe', 'app-switch']);
+    // The evlet.io mark, white on a blue square, and the word in bold; the mark names it for screen readers.
+    const mark = left.querySelector<HTMLImageElement>('.top-brand .tb-mark img')!;
+    expect([mark.className, mark.getAttribute('src'), mark.alt]).toEqual(['ev-logo', '/assets/evlet-icon-blue.svg', 'Evlet']);
+    expect(left.querySelector('.top-brand b.tb-name')!.textContent).toBe('Evlet');
+    expect(left.querySelector('.top-brand b.tb-name')!.getAttribute('aria-hidden')).toBe('true');
+    expect(left.querySelector('.top-pipe')!.getAttribute('aria-hidden')).toBe('true');
+    // The brand shows once: nothing of it is left in the sidebar, which starts with its navigation.
+    const sidebar = host.querySelector('.sidebar')!;
+    expect(sidebar.querySelector('.brand, .ev-lockup, .ev-logo, img, .app-switch')).toBeNull();
+    expect(host.querySelectorAll('.ev-logo')).toHaveLength(1);
+    expect(sidebar.querySelector('.side-body')!.firstElementChild!.classList.contains('nav')).toBe(true);
+    // The switcher: the workspace name and a small chevron. The recorded application is plain Evlet with no
+    // tenant, so no site follows the name.
+    const appSwitch = left.querySelector<HTMLElement>('.app-switch')!;
     const appName = text(appSwitch.querySelector('.as-text b'));
     expect(appName).not.toBe('');
-    expect(appSwitch.querySelector('.as-text small')!.textContent).not.toBe('');
+    expect(appSwitch.querySelector('.as-text small')).toBeNull();
+    expect(appSwitch.querySelector('.as-chev')).not.toBeNull();
+    expect(appSwitch.getAttribute('aria-label')).toBe(`Workspace: ${appName}. Switch workspace`);
     // The old app bar and repeated app title are gone.
     expect(host.querySelector('.appbar, .side-app, .sidebar .ws')).toBeNull();
     click(appSwitch);
@@ -137,15 +163,60 @@ describe('app shell', () => {
     expect([...pop.querySelectorAll('.ws-tile')].map(text)).toEqual([appName]);
     expect(pop.querySelector('.ws-tile.on')!.getAttribute('aria-current')).toBe('true');
     closeDialogs();
-    // The edge button collapses and expands; the top bar's toggle is only for the phone drawer.
+    // The edge button collapses and expands; the top bar's toggle is only for the phone drawer. Collapsed,
+    // the brand and the switcher stay in the top bar.
     const edge = host.querySelector<HTMLButtonElement>('.side-edge')!;
     expect(edge.getAttribute('aria-expanded')).toBe('true');
     click(edge);
     expect(app.classList.contains('collapsed')).toBe(true);
     expect(edge.getAttribute('aria-label')).toBe('Expand sidebar');
+    expect(host.querySelector('.topbar > .top-left .tb-mark')).not.toBeNull();
+    expect(host.querySelector('.topbar > .top-left .app-switch')).toBe(appSwitch);
     click(edge);
     expect(app.classList.contains('collapsed')).toBe(false);
     expect(host.querySelector('.topbar > .mobile-only .icon-btn, .topbar > .mobile-only button')).not.toBeNull();
+  });
+
+  it('shows the site after the workspace name: the tenant label, else a branded application name', async () => {
+    const tenant = { ...recorded.session, body: { ...recorded.session.body, tenant: { label: 'Dxbitz Demo LLC', name: 'dxbitz' } } };
+    const first = start([['GET', /\/api\/auth\/session$/, tenant], ...adminRoutes()]);
+    await until(() => expect(first.host.querySelector('.app-switch .as-text b')).not.toBeNull());
+    const button = first.host.querySelector<HTMLElement>('.app-switch')!;
+    const name = text(button.querySelector('.as-text b'));
+    expect(text(button.querySelector('.as-text small'))).toBe('Dxbitz Demo LLC');
+    expect(button.getAttribute('aria-label')).toBe(`Workspace: ${name} · Dxbitz Demo LLC. Switch workspace`);
+    // The brand stays Evlet; the site is never shown in its place.
+    expect(text(first.host.querySelector('.tb-name'))).toBe('Evlet');
+    stopAll();
+    // A branded application without a tenant: its name is the site, unless the workspace already says it.
+    const branded = { ...recorded.session, body: { ...recorded.session.body, application: { ...recorded.session.body.application, name: 'Lab' } } };
+    const second = start([['GET', /\/api\/auth\/session$/, branded], ...adminRoutes()]);
+    await until(() => expect(second.host.querySelector('.app-switch .as-text b')).not.toBeNull());
+    const label = text(second.host.querySelector('.app-switch .as-text b'));
+    expect(text(second.host.querySelector('.app-switch .as-text small'))).toBe(label === 'Lab' ? '' : 'Lab');
+  });
+
+  it('styles the top bar left: brand, pipe and a compact switcher, collapsed and on phones', () => {
+    const styles = css('ui/styles.css');
+    // As wide as the expanded sidebar, so the breadcrumb starts over the main column; only as wide as it needs collapsed.
+    expect(rule(styles, '.top-left')).toContain('width:calc(var(--sidebar-w) - 16px)');
+    expect(rule(styles, '.app.collapsed .top-left')).toContain('width:auto');
+    expect(rule(styles, '.tb-mark')).toContain('border-radius:var(--r)');
+    expect(rule(styles, '.tb-mark')).toContain('width:22px');
+    expect(rule(styles, '.tb-name')).toContain('font-weight:700');
+    // The pipe: one pixel wide, 16 px tall, in the border colour.
+    expect(rule(styles, '.top-pipe')).toMatch(/width:1px;height:16px;background:var\(--border-strong\)/);
+    // The switcher is muted until hover, flat, with the solid focus outline.
+    expect(rule(styles, '.app-switch')).toContain('color:var(--fg-3)');
+    expect(rule(styles, '.app-switch')).not.toContain('border:1px');
+    expect(rule(styles, '.app-switch:focus-visible')).toContain('outline:2px solid var(--accent)');
+    // Collapsed: the mark alone, the switcher compact.
+    expect(rule(styles, '.app.collapsed .tb-name,.app.collapsed .as-text small')).toContain('display:none');
+    // Phones: the mark alone and a truncated switcher, in one column that never scrolls sideways.
+    const phone = styles.slice(styles.indexOf('@media (max-width:760px){\n  .app,.app.collapsed'));
+    expect(phone).toContain('.app,.app.collapsed{grid-template-columns:minmax(0,1fr)}');
+    expect(phone).toContain('.tb-name,.as-text small{display:none}');
+    expect(phone).toMatch(/\.app-switch\{max-width:34vw/);
   });
 
   it('toggles the sidebar with [ and signs out from the account menu', async () => {

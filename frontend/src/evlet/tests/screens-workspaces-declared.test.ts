@@ -292,8 +292,9 @@ describe('the top bar', () => {
     const history = host.querySelector<HTMLElement>('.topbar .rec-btn')!;
     expect(history.parentElement!.classList.contains('topbar')).toBe(true);
     expect(history.nextElementSibling!.classList.contains('crumbs')).toBe(true);
-    // After the phone's menu button, which is the first thing in the bar.
-    expect(history.previousElementSibling!.classList.contains('mobile-only')).toBe(true);
+    // After the brand and the Workspace switcher, which follow the phone's menu button, the first thing in the bar.
+    expect(history.previousElementSibling!.classList.contains('top-left')).toBe(true);
+    expect(history.previousElementSibling!.previousElementSibling!.classList.contains('mobile-only')).toBe(true);
     expect(history.querySelector('svg')!.innerHTML).toBe(Icon(SHELL_ICONS.history).innerHTML);
     expect(history.getAttribute('aria-label')).toBe('Recent records');
     history.dispatchEvent(new MouseEvent('mouseenter'));

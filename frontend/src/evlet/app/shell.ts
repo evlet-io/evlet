@@ -1,15 +1,16 @@
-// The app shell (docs/ui-design/README.md section 4): sidebar with the Evlet brand, the Workspace
-// switcher, the workspace's collapsible sections of shortcuts (app/workspaces.ts), the account area, and
-// an edge button that collapses it; the top bar with recent records and breadcrumbs on the left, then
+// The app shell (docs/ui-design/README.md section 4): one top bar across the window with the Evlet brand,
+// a pipe and the Workspace switcher at its left (as wide as the sidebar), then recent records, breadcrumbs,
 // one box with search and the Explorer (docs/ui.md#top-bar-search-and-explorer), notifications and
-// shortcuts; one scrolling view. Under 760 px the sidebar is a drawer opened from the top bar.
+// shortcuts; under it the sidebar with the workspace's collapsible sections of shortcuts (app/workspaces.ts),
+// the account area and an edge button that collapses it, beside one scrolling view. Under 760 px the
+// sidebar is a drawer opened from the top bar.
 
 import { html, listen, when, type Child } from '../dom';
 import { cell, derive, effect } from '../reactive';
 import { Icon, IconButton, IconTile, Key } from '../ui/base';
 import { tooltip } from '../ui/tooltip';
 import { mountToasts, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
-import { Lockup, Logo } from './login';
+import { Logo } from './login';
 import { resolveTheme, systemScheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { canChangePassword, displayName, openPasswordDialog, PersonMark } from './settings';
@@ -37,7 +38,9 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const application = ctx.session.application ?? {};
   const appName = application.playground ? 'Playground' : application.name || 'Evlet';
   const tenant = (ctx.session.tenant as { label?: string; name?: string } | undefined);
-  const site = tenant?.label ?? tenant?.name ?? 'Workspace';
+  // The site beside the workspace name: the tenant's label, else the application's own name ("Lab",
+  // "Playground"); nothing for an unbranded single site.
+  const site = tenant?.label ?? tenant?.name ?? (appName === 'Evlet' ? '' : appName);
   // The theme button flips what the page shows now; from "system" it becomes an explicit choice.
   const device = systemScheme();
   const dark = () => resolveTheme(ctx.me.get()?.prefs.theme ?? 'system', device.get()) === 'dark';
@@ -130,7 +133,8 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     <div style="min-width:0"><div class="n">${() => displayName(settings.get(), ctx.user.username)}</div><div class="e">${() => settings.get()?.profile.title || ctx.user.role}</div></div>
     ${Icon('chevrons-up-down', { size: 'xs', className: 'me-chev' })}</button>` as HTMLElement;
 
-  // The Workspace switcher: the current workspace; it opens a card beside it with every workspace as a tile.
+  // The Workspace switcher, in the top bar after the brand: the current workspace; it opens a card below it,
+  // left-aligned, with every workspace as a tile.
   const pickWorkspace = (workspace: Workspace) => {
     // The workspace is chosen once its first page is open: until then the old page would pick its own workspace back.
     const first = workspace.sections.flatMap(entry => entry.items).find(item => item.href && !item.slip && !item.external);
@@ -156,17 +160,20 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     const customize = () => access.get() ? html`<button type="button" class="ws-edit" on:click=${() => { close(); openWorkspaceEditor(ctx, current.peek()?.key ?? null); }}>
       ${Icon(SHELL_ICONS.customize, { size: 'xs' })}<span>Customize</span></button>` : null;
     return html`<div class="ws-head"><span>Workspace</span>${customize}</div>${row}`;
-  }, { label: 'Workspace', role: 'dialog', className: 'ws-pop', align: 'side' });
+  }, { label: 'Workspace', role: 'dialog', className: 'ws-pop', align: 'left' });
   const wsLabel = () => current.get()?.label ?? appName;
-  const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="dialog" aria-expanded="false" aria-label=${() => `Workspace: ${wsLabel()}. Switch workspace`}
+  // The site shows after the workspace name, unless it says the same thing.
+  const wsSite = () => site && site !== wsLabel() ? site : '';
+  const wsTip = () => wsSite() ? `Workspace: ${wsLabel()} · ${wsSite()}` : `Workspace: ${wsLabel()}`;
+  const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="dialog" aria-expanded="false" aria-label=${() => `${wsTip()}. Switch workspace`}
     on:click=${(event: MouseEvent) => workspaceMenu(event.currentTarget as HTMLElement)}
-    ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? `Workspace: ${wsLabel()}` : null, 'right')}>${() => IconTile(current.get()?.icon ?? SHELL_ICONS.workspace, { tint: current.get()?.tint ?? 'blue', size: 28 })}
-    <span class="as-text"><b>${wsLabel}</b><small>${site}</small></span>${Icon('chevrons-up-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
+    ref=${(el: HTMLElement) => tooltip(el, wsTip)}><span class="as-text"><b>${wsLabel}</b>${() => wsSite() ? html`<small>${wsSite()}</small>` : null}</span>${Icon('chevron-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
+  // The brand at the top bar's left: the Evlet mark (white on a blue square) and the word; the collapsed
+  // sidebar and phones show the mark alone.
+  const brand = html`<span class="top-brand"><span class="tb-mark">${Logo('Evlet')}</span><b class="tb-name" aria-hidden="true">Evlet</b></span>`;
 
   const sidebar = html`<aside class="sidebar" id="ev-sidebar" aria-label="Main navigation">
-    <div class="brand">${Lockup()}${Logo('Evlet')}</div>
     <div class="side-body">
-      ${appSwitch}
       <nav class="nav">
         ${docsOn(ctx.session) ? navItem({ href: router.href('docs', {}), icon: SHELL_ICONS.docs, tint: 'slate', label: 'Docs', active: () => ['docs', 'topic'].includes(route.get()?.name ?? '') }) : null}
         ${() => ctx.eva.get() ? navItem({ href: router.href('eva', {}), icon: SHELL_ICONS.eva, tint: 'violet', label: 'Eva', active: () => ['eva', 'evaChat', 'evaTasks'].includes(route.get()?.name ?? ''),
@@ -194,6 +201,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const searchBox = html`<div class="top-search" role="group" aria-label="Search and Explorer">${searchPart}<span class="ts-div" aria-hidden="true"></span>${explorerPart}</div>`;
   const topbar = html`<header class="topbar">
     <span class="mobile-only">${IconButton({ icon: SHELL_ICONS.menu, tip: 'Menu', onClick: () => ctx.toggleSidebar() })}</span>
+    <div class="top-left">${brand}<span class="top-pipe" aria-hidden="true"></span>${appSwitch}</div>
     ${RecentsButton(ctx, models)}
     <nav class="crumbs" aria-label="Breadcrumbs">${crumbs}</nav>
     <div class="top-actions">
@@ -209,7 +217,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
 
   const shell = html`<div class="app" class:collapsed=${collapsed} class:mobile-open=${mobileOpen} class:compact=${() => (ctx.me.get()?.prefs.density ?? prefs.density.get()) === 'compact'}
     class:large=${() => ctx.me.get()?.prefs.text === 'large'}>
-    ${sidebar}${edge}<div class="main">${topbar}<main class="view" id="ev-view" tabindex="-1">${view}</main></div>
+    ${topbar}${sidebar}${edge}<div class="main"><main class="view" id="ev-view" tabindex="-1">${view}</main></div>
     <div class="scrim ev-side-scrim" class:show=${mobileOpen} on:click=${() => mobileOpen.set(false)}></div></div>` as HTMLElement;
   listen(document, 'keydown', event => keys(ctx, event as KeyboardEvent));
   mountToasts();

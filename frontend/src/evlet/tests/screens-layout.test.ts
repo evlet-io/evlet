@@ -30,9 +30,9 @@ describe('the shell scrolls only its view', () => {
     const { host } = start(orderRoutes(), '/app/order/0000000000001');
     await until(() => expect(text(host.querySelector('.doc-head .eyebrow'))).toBe('Order'));
     const app = host.querySelector('.app')!, view = host.querySelector('#ev-view')!;
-    // The sidebar and the main column are the shell's two cells; the top bar and the view share the main column.
-    expect([...app.children].filter(child => child.matches('.sidebar, .main')).map(child => child.className)).toEqual(['sidebar', 'main']);
-    expect([...host.querySelector('.app > .main')!.children].map(child => child.tagName.toLowerCase() + '.' + child.className)).toEqual(['header.topbar', 'main.view']);
+    // The top bar runs across the window; under it the sidebar and the main column, which holds only the view.
+    expect([...app.children].filter(child => child.matches('.topbar, .sidebar, .main')).map(child => child.className)).toEqual(['topbar', 'sidebar', 'main']);
+    expect([...host.querySelector('.app > .main')!.children].map(child => child.tagName.toLowerCase() + '.' + child.className)).toEqual(['main.view']);
     // The whole record, its side column and its save bar included, lives in the view.
     expect(view.contains(host.querySelector('.ev-record'))).toBe(true);
     expect(view.contains(host.querySelector('.doc-side'))).toBe(true);
@@ -43,9 +43,12 @@ describe('the shell scrolls only its view', () => {
     const styles = css('ui/styles.css'), screens = css('app/screens.css');
     expect(rule(styles, 'html,body')).toContain('height:100%');
     expect(rule(styles, 'body')).toContain('overflow:hidden');
-    // One row as tall as the window, clipped, so content, focus or scrollIntoView cannot grow or scroll the shell.
+    // The top bar's row, then one row for the rest of the window, clipped, so content, focus or scrollIntoView
+    // cannot grow or scroll the shell. The top bar spans both columns; the Library, without one, keeps one row.
     const app = rule(styles, '.app');
-    expect(app).toContain('grid-template-rows:minmax(0,1fr)');
+    expect(app).toContain('grid-template-rows:var(--topbar-h) minmax(0,1fr)');
+    expect(rule(styles, '.topbar')).toContain('grid-column:1/-1');
+    expect(rule(styles, '.lib-app')).toContain('grid-template-rows:minmax(0,1fr)');
     expect(app).toContain('height:100%');
     expect(app).toContain('overflow:clip');
     expect(rule(styles, '.main')).toContain('min-height:0');

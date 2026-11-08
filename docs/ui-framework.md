@@ -787,7 +787,7 @@ not part of the build.
 | Module | What it does |
 |---|---|
 | `app.ts` | Session, sign in and first-run setup, the shell and the route table |
-| `shell.ts` | Sidebar (the Workspace switcher, the workspace's sections and shortcuts, Library in development, the account and the theme button), top bar (history, breadcrumb, the search and Explorer box), keyboard |
+| `shell.ts` | Top bar across the window (the Evlet brand, a pipe, the Workspace switcher, history, breadcrumb, the search and Explorer box), sidebar under it (the workspace's sections and shortcuts, Library in development, the account and the theme button), keyboard |
 | `nav-icons.ts` | The navigation icons ([ui.md](ui.md#navigation-icons)): one icon per shortcut kind, per shell element and per Explorer view |
 | `workspaces.ts` | `workspaceNav(schema, links, fallback)`: the sidebar's workspaces, sections and shortcuts from the schema's `workspaces` (the per-app fallback for an older server), `listQuery`, `activeShortcut(nav, path, prefer)`, `replaceWorkspaces` after a save, and the app each model and report belongs to |
 | `workspace-editor.ts` | The workspace editor ([ui.md](ui.md#customizing-workspaces)) over the Controls workspace routes, and `customizeAccess` for the switcher's Customize button |
