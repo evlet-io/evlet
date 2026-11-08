@@ -109,9 +109,10 @@ describe('the workspace sidebar', () => {
     expect(text(active)).toBe('Quotes');
     expect(active.getAttribute('aria-current')).toBe('page');
     expect(host.querySelectorAll('.sidebar [aria-current="page"]').length).toBe(1);
-    // Every shortcut has a dot bullet, and its icon for the collapsed sidebar.
-    expect(active.querySelector('.nav-dot')).not.toBeNull();
-    expect(active.querySelector('.nav-ic')).not.toBeNull();
+    // Every shortcut starts with its kind's icon in place of a dot, in the open sidebar and the collapsed one.
+    expect(active.querySelector('.nav-dot')).toBeNull();
+    expect(active.querySelector('svg.nav-ic')).not.toBeNull();
+    expect(active.getAttribute('data-kind')).toBe('list');
     // Opening a shortcut of another workspace shows that workspace.
     click(host.querySelector('a[href="/reports/CustomerRates"]'));
     await until(() => expect(location.pathname).toBe('/reports/CustomerRates'));
@@ -171,17 +172,20 @@ describe('the workspace sidebar', () => {
 });
 
 describe('the Explorer', () => {
-  it('opens from the sidebar and lists every report with search and an app filter', async () => {
+  it('opens from the top bar and lists every report with search and an app filter', async () => {
     const { host } = start(routes(), '/app/customer');
-    await until(() => expect(host.querySelector('.side-bottom')).not.toBeNull());
-    const button = byText<HTMLAnchorElement>(host, '.side-bottom a', 'Explorer')!;
-    expect(button.getAttribute('href')).toBe('/?explorer=reports');
+    await until(() => expect(host.querySelector('.top-search')).not.toBeNull());
+    // The sidebar has no Explorer button any more.
+    expect(byText(host, '.sidebar .nav-item', 'Explorer')).toBeNull();
+    const button = host.querySelector<HTMLButtonElement>('.top-search .ts-explorer')!;
+    expect(button.getAttribute('aria-pressed')).toBe('false');
     click(button);
     await until(() => expect(text(host.querySelector('.ev-explorer .ph h1'))).toBe('Explorer'));
     expect(location.search).toBe('?explorer=reports');
-    expect(button.classList.contains('active')).toBe(true);
-    // Docs share the root path, but only the Explorer is marked.
-    expect(host.querySelectorAll('.sidebar .nav-item.active').length).toBe(1);
+    expect(button.classList.contains('on')).toBe(true);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    // Nothing in the sidebar is marked on the Explorer.
+    expect(host.querySelectorAll('.sidebar .nav-item.active').length).toBe(0);
     const cards = () => [...host.querySelectorAll<HTMLAnchorElement>('.ex-card')].map(card => [text(card.querySelector('b')), text(card.querySelector('.ex-app')), card.getAttribute('href')]);
     expect(cards()).toEqual([['Customer rates', 'Sales', '/reports/CustomerRates'], ['Rates by terms', 'Sales', '/reports/RatesByTerms'], ['Stock levels', 'Stock', '/reports/StockLevels']]);
     expect(text(byText(host, '.ex-card', /^Stock levels/)!.querySelector('.ex-desc'))).toBe('Units on hand by warehouse.');
@@ -231,14 +235,58 @@ describe('the Explorer', () => {
     expect(byText(host, '.ev-explorer .seg button', 'Data')!.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('is listed in the search palette', async () => {
+  const openPalette = async () => {
+    press(document.body, 'k', { ctrlKey: true });
+    await until(() => expect(document.querySelector('.palette input')).not.toBeNull());
+    return document.querySelector<HTMLInputElement>('.palette input')!;
+  };
+
+  it('is listed in the search palette, with each of its views', async () => {
     const { host } = start(routes(), '/app/customer');
     await until(() => expect(host.querySelector('.sidebar')).not.toBeNull());
-    press(document.body, 'k', { ctrlKey: true });
-    const input = await (async () => { await until(() => expect(document.querySelector('.palette input')).not.toBeNull()); return document.querySelector<HTMLInputElement>('.palette input')!; })();
-    typeInto(input, 'explorer');
-    await until(() => expect(byText(document.body, '.pal-it', /^Explorer/)).not.toBeNull());
-    click(byText(document.body, '.pal-it', /^Explorer/));
-    await until(() => expect(location.search).toBe('?explorer=reports'));
+    typeInto(await openPalette(), 'explorer');
+    const pages = () => [...document.querySelectorAll('.pal-sec[aria-label="Pages and actions"] .pal-it .lbl')].map(text);
+    // No ledger report here, so no Ledger reports view.
+    await until(() => expect(pages()).toEqual(['Explorer', 'Explorer: Reports', 'Explorer: Data', 'Explorer: Dashboards']));
+    click(byText(document.body, '.pal-it', /^Explorer: Data/));
+    await until(() => expect(location.search).toBe('?explorer=data'));
+    await until(() => expect(host.querySelector('.ex-card')).not.toBeNull());
+  });
+
+  it('opens from the palette with what was typed in its search box', async () => {
+    const { host } = start(routes(), '/app/customer');
+    await until(() => expect(host.querySelector('.sidebar')).not.toBeNull());
+    typeInto(await openPalette(), 'stock');
+    const explorerRows = () => [...document.querySelectorAll('.pal-sec[aria-label="Explorer"] .pal-it .lbl')].map(text);
+    await until(() => expect(explorerRows()).toEqual(['Search all reports for “stock”', 'Search all data for “stock”']));
+    click(byText(document.body, '.pal-it', /^Search all reports/));
+    await until(() => expect(location.search).toBe('?explorer=reports&q=stock'));
+    await until(() => expect(host.querySelector<HTMLInputElement>('.ev-explorer input[type="search"]')?.value).toBe('stock'));
+    expect([...host.querySelectorAll('.ex-card b')].map(text)).toEqual(['Stock levels']);
+    // From the Explorer itself, the next search fills the same box.
+    typeInto(await openPalette(), 'quote');
+    await until(() => expect(byText(document.body, '.pal-it', /^Search all data/)).not.toBeNull());
+    click(byText(document.body, '.pal-it', /^Search all data/));
+    await until(() => expect(location.search).toBe('?explorer=data&q=quote'));
+    await until(() => expect([...host.querySelectorAll('.ex-card b')].map(text)).toEqual(['Quotes']));
+    expect(host.querySelector<HTMLInputElement>('.ev-explorer input[type="search"]')!.value).toBe('quote');
+  });
+
+  it('keeps the last view for the Explorer part of the box, and opens with G then E', async () => {
+    const { host } = start(routes(), '/?explorer=data');
+    await until(() => expect(host.querySelector('.ex-card')).not.toBeNull());
+    click(host.querySelector('a[href="/app/quote"]'));
+    await until(() => expect(location.pathname).toBe('/app/quote'));
+    const button = host.querySelector<HTMLButtonElement>('.top-search .ts-explorer')!;
+    expect(button.classList.contains('on')).toBe(false);
+    click(button);
+    await until(() => expect(location.search).toBe('?explorer=data'));
+    click(byText(host, '.ev-explorer .seg button', 'Dashboards'));
+    await until(() => expect(location.search).toBe('?explorer=dashboards'));
+    click(host.querySelector('a[href="/app/quote"]'));
+    await until(() => expect(location.pathname).toBe('/app/quote'));
+    press(document.body, 'g');
+    press(document.body, 'e');
+    await until(() => expect(location.search).toBe('?explorer=dashboards'));
   });
 });

@@ -242,7 +242,7 @@ describe('choosing a theme', () => {
   it('switches from the command palette', async () => {
     const { host, sent } = start(routes('light'), '/docs');
     await until(() => expect(host.querySelector('.side-foot .theme-btn')).not.toBeNull());
-    host.querySelector<HTMLButtonElement>('.top-search')!.click();
+    host.querySelector<HTMLButtonElement>('.top-search .ts-search')!.click();
     const input = document.querySelector<HTMLInputElement>('.modal input')!;
     input.value = 'dark theme';
     input.dispatchEvent(new Event('input', { bubbles: true }));

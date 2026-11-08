@@ -15,6 +15,7 @@ import type { AppSchema, WorkspaceGroup, WorkspaceItem, WorkspaceSchema } from '
 import type { AppContext } from './context';
 import { rootModels } from './meta';
 import { replaceWorkspaces } from './workspaces';
+import { KIND_ICONS, SHELL_ICONS, kindOf, type ShortcutKind } from './nav-icons';
 
 /** A shortcut as the override sends it: the arguments of evlet.Shortcut. */
 export interface ShortcutSpec { model?: string; view?: 'list' | 'board'; filters?: unknown; label?: string; report?: string; slip?: string; url?: string }
@@ -53,7 +54,8 @@ export function customizeAccess(ctx: AppContext): Cell<boolean> {
 
 // ---------- the editor's model ----------
 
-export interface EdItem { id: string; key?: string; shortcut?: ShortcutSpec; label: string; base: string | null; hidden: boolean }
+export interface EdItem { id: string; key?: string; shortcut?: ShortcutSpec; label: string; base: string | null; hidden: boolean;
+  /** What a declared item opens; an added shortcut's kind comes from its spec. */ kind?: ShortcutKind }
 export interface EdGroup { id: string; key: string; label: string; base: string | null; icon?: string; hidden: boolean; items: EdItem[] }
 export interface EdWorkspace { key: string; custom: boolean; label: string; base: string | null; icon?: string; groups: EdGroup[] }
 
@@ -80,13 +82,13 @@ export function editable(entry: ListingItem, schema?: AppSchema): EdWorkspace {
   const custom = Boolean(override.custom) || entry.source === 'custom';
   const byKey = new Map<string, WorkspaceItem>(declared.flatMap(group => group.items.map(item => [item.key, item] as const)));
   const placed = new Set((override.groups ?? []).flatMap(group => (group.items ?? []).flatMap(item => item.key ? [item.key] : [])));
-  const declaredItem = (item: WorkspaceItem): EdItem => ({ id: nextId(), key: item.key, label: item.label, base: item.label, hidden: false });
+  const declaredItem = (item: WorkspaceItem): EdItem => ({ id: nextId(), key: item.key, label: item.label, base: item.label, hidden: false, kind: kindOf(item) });
   const groups: EdGroup[] = (override.groups ?? []).map(group => {
     const base = declared.find(entry => entry.key === group.key);
     const items: EdItem[] = (group.items ?? []).map(spec => {
       if (spec.shortcut) return { id: nextId(), shortcut: spec.shortcut, label: spec.label ?? shortcutLabel(spec.shortcut, schema), base: shortcutLabel(spec.shortcut, schema), hidden: Boolean(spec.hidden) };
       const known = byKey.get(spec.key!);
-      return { id: nextId(), key: spec.key, label: spec.label ?? known?.label ?? spec.key!, base: known?.label ?? null, hidden: Boolean(spec.hidden) };
+      return { id: nextId(), key: spec.key, label: spec.label ?? known?.label ?? spec.key!, base: known?.label ?? null, hidden: Boolean(spec.hidden), kind: known ? kindOf(known) : undefined };
     });
     if (base) items.push(...base.items.filter(item => !placed.has(item.key)).map(declaredItem));
     return { id: nextId(), key: group.key, label: group.label ?? base?.label ?? group.key, base: base?.label ?? null, icon: group.icon, hidden: Boolean(group.hidden), items };
@@ -277,7 +279,7 @@ export function WorkspaceEditor(ctx: AppContext, start: Listing, key: string | n
   };
 
   const itemRow = (group: EdGroup, item: EdItem, gIndex: number, iIndex: number) => html`<div class="wse-item" class:hid=${item.hidden} data-drag-item="ws-item" data-drag-id=${item.id}>
-    <div class="wse-line">${grip('ws-item', item.label)}${Icon(item.shortcut ? 'plus' : 'circle', { size: 'xs', className: 'wse-kind' })}
+    <div class="wse-line">${grip('ws-item', item.label)}${Icon(KIND_ICONS[item.shortcut ? kindOf(item.shortcut) : item.kind ?? 'list'], { size: 'xs', className: 'wse-kind' })}
       ${nameInput(item.label, `Name of ${item.base ?? item.label}`, text => { item.label = text; }, item.base ?? undefined)}
       ${item.shortcut ? html`<button type="button" class="col-eye" aria-label=${`Remove ${item.label}`} on:click=${() => { group.items = group.items.filter(entry => entry !== item); touch(); redraw(); }}>${Icon('trash-2', { size: 'sm' })}</button>`
         : eye(item.label, item.hidden, () => { item.hidden = !item.hidden; touch(); redraw(); })}</div>
@@ -320,7 +322,7 @@ export function WorkspaceEditor(ctx: AppContext, start: Listing, key: string | n
       ${entry?.changed_by ? html`<p class="muted wse-meta">${`Changed by ${entry.changed_by}`}</p>` : null}
       <div class="wse-groups" data-drop-zone="ws-group" data-zone="groups">${current.groups.map(groupRow)}</div>
       <div class="wse-more">${Button({ label: 'Add group', icon: 'plus', variant: 'ghost', size: 'small', onClick: addGroup })}
-        ${Button({ label: 'New workspace', icon: 'layers', variant: 'ghost', size: 'small', onClick: () => void addWorkspace() })}</div>
+        ${Button({ label: 'New workspace', icon: SHELL_ICONS.workspace, variant: 'ghost', size: 'small', onClick: () => void addWorkspace() })}</div>
       <p class="muted col-hint">Drag a grip to move a group or an item, or focus it and press Space, then the arrow keys. Hiding never removes access: each page still checks it.</p>
     </div>` as HTMLElement;
     rootEl = root;
@@ -336,7 +338,7 @@ export function WorkspaceEditor(ctx: AppContext, start: Listing, key: string | n
     void ask('Discard your changes?', UNSAVED, 'Discard changes').then(yes => { if (yes) { dirty = false; closeEditor(); } });
     return false;
   };
-  const closeEditor: () => void = openModal({ title: 'Customize workspaces', icon: 'pencil', tint: 'slate', className: 'wse-modal', onSubmit: save,
+  const closeEditor: () => void = openModal({ title: 'Customize workspaces', icon: SHELL_ICONS.customize, tint: 'slate', className: 'wse-modal', onSubmit: save,
     confirmClose: leave,
     body: () => body,
     footer: close => html`${() => { tick.get(); return view && entry ? Button({ label: view.custom ? 'Remove workspace' : 'Reset to declared', icon: 'rotate-ccw', variant: 'ghost', onClick: () => void reset(), disabled: busy }) : null; }}

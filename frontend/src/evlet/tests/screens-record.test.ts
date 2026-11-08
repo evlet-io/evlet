@@ -57,11 +57,12 @@ describe('generated record view', () => {
     expect(text(field(host, 'total')!.querySelector('label'))).toContain('ƒ calculated');
     expect(text(host.querySelector('.fs-link'))).toContain('120 rows');
     // The action from the schema is a header button; the record is remembered under the history button
-    // left of search, not in the sidebar.
+    // at the left end of the top bar, just before the breadcrumb, not in the sidebar.
     expect(byText(host, '.doc-head button', 'Close')).not.toBeNull();
     expect(byText(host, '.nav-group', /^Recent/)).toBeNull();
-    const history = host.querySelector<HTMLElement>('.top-actions .rec-btn')!;
-    expect(history.nextElementSibling!.classList.contains('top-search')).toBe(true);
+    const history = host.querySelector<HTMLElement>('.topbar > .rec-btn')!;
+    expect(history.nextElementSibling!.classList.contains('crumbs')).toBe(true);
+    expect(host.querySelector('.top-actions .rec-btn')).toBeNull();
     click(history);
     const recent = document.querySelector('.rec-pop .rec-item');
     expect(text(recent)).toContain('Big order');

@@ -23,8 +23,10 @@ import { CHART_ROWS, plotChart } from '../ui/chart';
 import { ColumnsMenu, DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import type { ReportPage as Page } from './client';
 import type { AppContext } from './context';
+import { KIND_ICONS } from './nav-icons';
 
-export const REPORT_ICON = 'chart-column';
+/** The report icon of the navigation map (app/nav-icons.ts). */
+export const REPORT_ICON = KIND_ICONS.report;
 const PAGE = 50;
 const NUMBERS = ['integer', 'decimal', 'currency'];
 const CODE = /^[A-Z]{3}$/;

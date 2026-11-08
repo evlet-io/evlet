@@ -601,26 +601,23 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .nav-sec-items{display:none;margin:0 0 4px 15px;padding-left:6px;border-left:1px solid var(--border)}
 .nav-sec.open .nav-sec-items{display:block}
 .nav-sc{position:relative;height:30px;gap:8px;padding-left:8px}
-.nav-sc .nav-ic{display:none}
-.nav-dot{width:4px;height:4px;border-radius:50%;background:var(--fg-4);flex:none}
+.nav-sc .nav-ic{color:var(--fg-3)}
 /* The section holding the page: a barely darker grey over its title and shortcuts, a bolder title, open or closed.
-   Its shortcut is the strongest mark inside: a solid blue row with white text at 600, a white dot and icon. */
+   Its shortcut is the strongest mark inside: a solid blue row with white text at 600 and a white icon. */
 .nav-sec.on{background:var(--nav-sec-on-bg);border-radius:var(--r)}
 .nav-sec.on .nav-sec-h{color:var(--fg);font-weight:650}
 .nav-sec.on .nav-sec-ic{color:var(--accent)}
 .nav-sec.on .nav-sec-h:hover,.nav-sec.on .nav-item:not(.active):hover{background:var(--nav-sec-on-hover)}
 .nav-item.nav-sc.active{background:var(--nav-on-bg);color:var(--nav-on-fg);font-weight:600;box-shadow:none}
-.nav-sc.active .nav-dot{background:var(--nav-on-fg)}
+.nav-sc.active .nav-ic{color:var(--nav-on-fg)}
 .nav-sc.active .count{color:inherit}
-/* Collapsed: section titles give way to a thin rule, and every shortcut shows its icon. */
+/* Collapsed: section titles give way to a thin rule, and every shortcut shows its kind's icon, a little larger. */
 .app.collapsed .nav-sec-h{display:none}
 .app.collapsed .nav-sec+.nav-sec{border-top:1px solid var(--border);padding-top:4px;margin-top:4px}
 .app.collapsed .nav-sec .nav-sec-items{display:block;margin:0;padding:0;border:0}
 .app.collapsed .nav-sc{padding:0}
-.app.collapsed .nav-sc .nav-dot{display:none}
-.app.collapsed .nav-sc .nav-ic{display:block}
+.app.collapsed .nav-sc .nav-ic{width:16px;height:16px}
 .app.collapsed .nav-sec.on{background:none}
-.app.collapsed .nav-sc.active .nav-ic{color:var(--nav-on-fg)}
 .app.collapsed .brand{justify-content:center;padding:0}
 .app.collapsed .brand .ev-lockup,.app.collapsed .as-text,.app.collapsed .as-chev{display:none}
 .app.collapsed .brand .ev-logo{display:block}
@@ -633,9 +630,26 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .app.collapsed .side-edge{left:48px}
 .side-bottom{padding:6px 8px;border-top:1px solid var(--border)}
 .app.collapsed .side-bottom{padding:6px 8px}
-.top-search{display:flex;align-items:center;gap:8px;height:32px;width:240px;padding:0 5px 0 10px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg-subtle);color:var(--fg-3);font-size:13px;margin-right:6px;transition:border-color .12s,background .12s}
-.top-search span{flex:1;text-align:left}
-.top-search:hover{border-color:var(--border-strong);background:var(--surface);color:var(--fg-2)}
+/* Search and the Explorer: one box, two buttons. Search on the left, the Explorer attached at its right end
+   behind a hairline; the Explorer part is flat accent while the Explorer is open. Narrow: the Explorer shows its
+   icon only. Phone: two icon buttons side by side. */
+.top-search{display:flex;align-items:stretch;height:32px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg-subtle);color:var(--fg-3);font-size:13px;margin-right:6px;transition:border-color .12s}
+.top-search:hover{border-color:var(--border-strong)}
+.top-search>button{display:flex;align-items:center;gap:8px;color:inherit;transition:background .12s,color .12s}
+.top-search>button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.ts-search{width:236px;padding:0 5px 0 10px;border-radius:calc(var(--r) - 1px) 0 0 calc(var(--r) - 1px)}
+.ts-search .ts-text{flex:1;text-align:left}
+.ts-explorer{padding:0 10px;border-radius:0 calc(var(--r) - 1px) calc(var(--r) - 1px) 0}
+.top-search>button:hover{background:var(--surface);color:var(--fg-2)}
+.ts-explorer.on,.ts-explorer.on:hover{background:var(--accent-soft);color:var(--accent);font-weight:550}
+.ts-div{width:1px;background:var(--border);flex:none}
+@media (max-width:1100px){.ts-search{width:200px}.ts-explorer .ts-text{display:none}.ts-explorer{padding:0 8px}}
+@media (max-width:760px){
+  .top-search{border:0;background:none;margin-right:0;gap:4px}
+  .top-search>button{width:30px;height:30px;padding:0;justify-content:center;border-radius:var(--r-sm);align-self:center}
+  .top-search>button:hover{background:var(--bg-muted);color:var(--fg)}
+  .ts-search .ts-text,.ts-search kbd,.ts-div{display:none}
+}
 
 /* ---------- doc view ---------- */
 .doc{display:grid;grid-template-columns:minmax(0,1fr) 340px;min-height:100%}

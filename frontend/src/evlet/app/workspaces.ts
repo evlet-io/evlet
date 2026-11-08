@@ -10,11 +10,14 @@
 import { cell, type Cell } from '../reactive';
 import type { AppSchema, ModelSchema, ReportSchema, WorkspaceItem, WorkspaceSchema } from '../model/schema';
 import { tintFor, type Tint } from '../ui/core';
-import { fieldOf, groupOf, identity, type ScreenModel } from './meta';
+import { fieldOf, groupOf, type ScreenModel } from './meta';
+import { KIND_ICONS, SHELL_ICONS, kindOf, type ShortcutKind } from './nav-icons';
 import type { AppContext } from './context';
 
 export interface NavShortcut {
-  key: string; label: string; href: string; icon?: string; tint?: Tint;
+  key: string; label: string; href: string;
+  /** What it opens; its icon is the kind's (app/nav-icons.ts), never the item's. */
+  kind: ShortcutKind; icon: string;
   /** The model whose plain list this is: its record count can show beside it. */
   model?: string;
   /** A menu slip: the shortcut presents it over the page instead of opening an address. */
@@ -33,8 +36,7 @@ export interface WorkspaceNav { workspaces: Workspace[] }
 /** How a shortcut's address is made: the shell passes the router's. */
 export interface NavLinks { list(model: string, query?: Record<string, string>): string; report(name: string): string }
 
-const REPORT_ICON = 'chart-column';
-const SECTION_ICONS: Record<string, string> = { Documents: 'file-text', Records: 'table-2', Reports: REPORT_ICON };
+const SECTION_ICONS: Record<string, string> = { Documents: 'file-text', Records: 'table-2', Reports: KIND_ICONS.report };
 
 /** "sales_crm" -> "Sales crm". */
 export const appLabel = (key: string) => key.replace(/_/g, ' ').replace(/^./, char => char.toUpperCase());
@@ -65,29 +67,26 @@ export function appsOf(schema: AppSchema, fallback: string): Array<{ key: string
 export function workspaceNav(schema: AppSchema, links: NavLinks, fallback = 'Workspace'): WorkspaceNav {
   if (!Array.isArray(schema.workspaces)) return fallbackNav(schema, links, fallback);
   return { workspaces: schema.workspaces.map((workspace): Workspace => ({
-    key: workspace.key, label: workspace.label, icon: workspace.icon || 'layers', tint: tintFor(workspace.key), source: workspace.source,
+    key: workspace.key, label: workspace.label, icon: workspace.icon || SHELL_ICONS.workspace, tint: tintFor(workspace.key), source: workspace.source,
     sections: workspace.groups.map(group => ({ key: group.key, label: group.label, icon: group.icon || 'layers',
       items: group.items.map(item => shortcutOf(schema, item, links)) })).filter(section => section.items.length),
   })).filter(workspace => workspace.sections.length) };
 }
 
-/** One declared item as a sidebar shortcut. */
+/** One declared item as a sidebar shortcut, with its kind's icon. */
 export function shortcutOf(schema: AppSchema, item: WorkspaceItem, links: NavLinks): NavShortcut {
+  const kind = kindOf(item), base = { key: item.key, label: item.label, kind, icon: KIND_ICONS[kind] };
   switch (item.kind) {
     case 'model': {
       const model = schema.models.find(entry => entry.name === item.model) as unknown as ScreenModel | undefined;
-      const { icon, tint } = model ? identity(model) : { icon: 'list', tint: undefined };
       const query = listQuery(model, item.view, item.filters);
       const home = model?.list_tabs?.default;
-      return { key: item.key, label: item.label, href: links.list(item.model, query), icon: item.view === 'board' ? 'square-kanban' : icon, tint,
+      return { ...base, href: links.list(item.model, query),
         model: Object.keys(query).length ? undefined : item.model, ...(home && home !== 'all' ? { defaults: { tab: home } } : {}) };
     }
-    case 'report': return { key: item.key, label: item.label, href: links.report(item.report), icon: REPORT_ICON, tint: 'rose' };
-    case 'slip': return { key: item.key, label: item.label, href: '', slip: item.slip, icon: 'file-text', tint: 'blue' };
-    default: {
-      const external = /^https?:/i.test(item.url);
-      return { key: item.key, label: item.label, href: item.url, icon: external ? 'arrow-up-right' : 'link', tint: 'slate', external };
-    }
+    case 'report': return { ...base, href: links.report(item.report) };
+    case 'slip': return { ...base, href: '', slip: item.slip };
+    default: return { ...base, href: item.url, external: /^https?:/i.test(item.url) };
   }
 }
 
@@ -122,14 +121,13 @@ function fallbackNav(schema: AppSchema, links: NavLinks, fallback: string): Work
     const sections: NavSection[] = ['Documents', 'Records'].map(group => ({
       key: group.toLowerCase(), label: group, icon: SECTION_ICONS[group],
       items: mine.filter(model => groupOf(model) === group).map(model => {
-        const { icon, tint } = identity(model);
-        return { key: `model:${model.name}`, label: model.plural, href: links.list(model.name), icon, tint, model: model.name };
+        return { key: `model:${model.name}`, label: model.plural, href: links.list(model.name), kind: 'list' as const, icon: KIND_ICONS.list, model: model.name };
       }),
     })).filter(section => section.items.length);
     const own = reports.filter(report => reportApp(schema, report) === key);
-    if (own.length) sections.push({ key: 'reports', label: 'Reports', icon: REPORT_ICON,
-      items: own.map(report => ({ key: `report:${report.name}`, label: report.label, href: links.report(report.name), icon: REPORT_ICON, tint: 'rose' as Tint })) });
-    return { key: key || 'app', label, icon: 'layers', tint: tintFor(key || label), sections };
+    if (own.length) sections.push({ key: 'reports', label: 'Reports', icon: KIND_ICONS.report,
+      items: own.map(report => ({ key: `report:${report.name}`, label: report.label, href: links.report(report.name), kind: 'report' as const, icon: KIND_ICONS.report })) });
+    return { key: key || 'app', label, icon: SHELL_ICONS.workspace, tint: tintFor(key || label), sections };
   });
   return { workspaces: workspaces.filter(workspace => workspace.sections.length) };
 }
@@ -145,12 +143,20 @@ function same(key: string, a: string | null, b: string | null): boolean {
   try { return JSON.stringify(JSON.parse(a)) === JSON.stringify(JSON.parse(b)); } catch { return false; }
 }
 
+/** Two queries with the same parts and values, in any order. */
+function sameQuery(a: URLSearchParams, b: URLSearchParams): boolean {
+  const keys = new Set([...a.keys(), ...b.keys()]);
+  return [...keys].every(key => same(key, a.get(key), b.get(key)));
+}
+
 /**
  * The shortcut an address belongs to, if any. Its path must equal the shortcut's, or be a page under it (a
  * record of the list). On the page itself, every view, tab and filter the shortcut names must be in the address,
  * and the shortcut naming the most of them wins: on /m/task?f=[...] the "Open tasks" shortcut beats "Tasks",
  * which still matches any other filter. Under it (a record), the plainest shortcut wins. Slips never match. On a
  * tie, a shortcut of `prefer` (the workspace shown) wins, so a page two workspaces share keeps the sidebar as it is.
+ * A link (a URL item) matches only its own address, every query part included: "All reports" at /?explorer=reports
+ * is not marked on /?explorer=data or on any other page of the root path.
  */
 export function activeShortcut(nav: WorkspaceNav, path: string, prefer?: string): { workspace: Workspace; section: NavSection; item: NavShortcut } | null {
   let best: { workspace: Workspace; section: NavSection; item: NavShortcut } | null = null, score = -Infinity;
@@ -160,7 +166,10 @@ export function activeShortcut(nav: WorkspaceNav, path: string, prefer?: string)
     const target = pathOf(item.href), own = queryOf(item.href);
     const named = MATCHED.filter(key => own.has(key));
     let mine: number;
-    if (bare === target) {
+    if (item.kind === 'link') {
+      if (bare !== target || !sameQuery(own, query)) continue;
+      mine = target.length * 100 + [...own.keys()].length;
+    } else if (bare === target) {
       if (!named.every(key => same(key, own.get(key), query.get(key) ?? item.defaults?.[key] ?? null))) continue;
       mine = target.length * 100 + named.length;
     } else if (bare.startsWith(target + '/')) mine = target.length * 100 - named.length - 50;

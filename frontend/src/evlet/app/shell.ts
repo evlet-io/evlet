@@ -1,8 +1,8 @@
 // The app shell (docs/ui-design/README.md section 4): sidebar with the Evlet brand, the Workspace
-// switcher, the workspace's collapsible sections of shortcuts (app/workspaces.ts), the Explorer button
-// above the account area, and an edge button that collapses it; the top bar with breadcrumbs, recent
-// records, search, notifications and shortcuts; one scrolling view. Under 760 px the sidebar is a drawer
-// opened from the top bar.
+// switcher, the workspace's collapsible sections of shortcuts (app/workspaces.ts), the account area, and
+// an edge button that collapses it; the top bar with recent records and breadcrumbs on the left, then
+// one box with search and the Explorer (docs/ui.md#top-bar-search-and-explorer), notifications and
+// shortcuts; one scrolling view. Under 760 px the sidebar is a drawer opened from the top bar.
 
 import { html, listen, when, type Child } from '../dom';
 import { cell, derive, effect } from '../reactive';
@@ -20,7 +20,8 @@ import { rootModels } from './meta';
 import { activeShortcut, modelCounts, workspaceNav, workspacesVersion, type NavSection, type NavShortcut, type Workspace } from './workspaces';
 import { presentSlip } from './slips';
 import { customizeAccess, openWorkspaceEditor } from './workspace-editor';
-import { explorerHref, isExplorer } from './explorer';
+import { isExplorer, openExplorer } from './explorer';
+import { SHELL_ICONS } from './nav-icons';
 
 const PHONE = '(max-width: 760px)';
 const isPhone = () => { try { return Boolean(window.matchMedia?.(PHONE)?.matches); } catch { return false; } };
@@ -85,11 +86,12 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   };
   const shortcut = (item: NavShortcut) => {
     const active = () => here.get()?.item.key === item.key && here.get()?.workspace.key === current.get()?.key;
-    const inside = [html`<span class="nav-dot" aria-hidden="true"></span>`, Icon(item.icon ?? 'circle', { tint: item.tint, className: 'nav-ic' }), html`<span class="lbl">${item.label}</span>`, countOf(item)];
+    // The kind's icon (app/nav-icons.ts), small and muted, in place of a dot; white on the active row.
+    const inside = [Icon(item.icon, { size: 'sm', className: 'nav-ic' }), html`<span class="lbl">${item.label}</span>`, countOf(item)];
     // A menu slip opens over the page; an http(s) address opens in a new tab.
-    const link = (item.slip ? html`<button type="button" class="nav-item nav-sc" on:click=${() => void presentSlip(item.slip!)}>${inside}</button>`
-      : item.external ? html`<a class="nav-item nav-sc" href=${item.href} target="_blank" rel="noopener external">${inside}</a>`
-      : html`<a class="nav-item nav-sc" class:active=${active} aria-current=${() => active() ? 'page' : null} href=${item.href}>${inside}</a>`) as HTMLElement;
+    const link = (item.slip ? html`<button type="button" class="nav-item nav-sc" data-kind=${item.kind} on:click=${() => void presentSlip(item.slip!)}>${inside}</button>`
+      : item.external ? html`<a class="nav-item nav-sc" data-kind=${item.kind} href=${item.href} target="_blank" rel="noopener external">${inside}</a>`
+      : html`<a class="nav-item nav-sc" data-kind=${item.kind} class:active=${active} aria-current=${() => active() ? 'page' : null} href=${item.href}>${inside}</a>`) as HTMLElement;
     tooltip(link, () => collapsed.get() ? item.label : null, 'right');
     return link;
   };
@@ -110,11 +112,11 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     const me = settings.peek();
     const page = (label: string, icon: string, target: string): MenuItem => ({ label, icon, onSelect: () => void goSettings(router, target) });
     const items: MenuItem[] = me ? [
-      page('Your profile', 'user', 'profile'), ...(me.portal ? [] : [page('Appearance', 'sun', 'appearance')]), page('Sign-in & security', 'lock', 'security'),
+      page('Your profile', SHELL_ICONS.account, 'profile'), ...(me.portal ? [] : [page('Appearance', 'sun', 'appearance')]), page('Sign-in & security', 'lock', 'security'),
       ...(canChangePassword(me) ? [{ label: 'Change password', icon: 'lock', onSelect: () => openPasswordDialog(ctx.api, settings) }] : []),
       ...(me.portal ? [] : [{ label: dark() ? 'Light theme' : 'Dark theme', icon: dark() ? 'sun' : 'moon', onSelect: flipTheme }]),
-      'separator', page('All settings', 'settings', me.last_page || 'profile'),
-      ...(me.controls ? ['separator' as const, { label: 'Controls', icon: 'sliders-horizontal', hint: '↗', onSelect: () => { window.open('/controls', '_blank', 'noopener'); } }] : []),
+      'separator', page('All settings', SHELL_ICONS.settings, me.last_page || 'profile'),
+      ...(me.controls ? ['separator' as const, { label: 'Controls', icon: SHELL_ICONS.controls, hint: '↗', onSelect: () => { window.open('/controls', '_blank', 'noopener'); } }] : []),
       'separator',
     ] : [];
     return html`<div class="me-head">${PersonMark(fullName, () => Boolean(settings.get()?.profile.photo), ctx.photo, 'lg')}<span class="me-who"><strong>${fullName}</strong>
@@ -150,29 +152,27 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     queueMicrotask(() => (tiles.find(tile => tile.classList.contains('on')) ?? tiles[0])?.focus());
     // Admins and roles with "Customize workspaces" edit the site's workspaces from here.
     const customize = () => access.get() ? html`<button type="button" class="ws-edit" on:click=${() => { close(); openWorkspaceEditor(ctx, current.peek()?.key ?? null); }}>
-      ${Icon('pencil', { size: 'xs' })}<span>Customize</span></button>` : null;
+      ${Icon(SHELL_ICONS.customize, { size: 'xs' })}<span>Customize</span></button>` : null;
     return html`<div class="ws-head"><span>Workspace</span>${customize}</div>${row}`;
   }, { label: 'Workspace', role: 'dialog', className: 'ws-pop', align: 'side' });
   const wsLabel = () => current.get()?.label ?? appName;
   const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="dialog" aria-expanded="false" aria-label=${() => `Workspace: ${wsLabel()}. Switch workspace`}
     on:click=${(event: MouseEvent) => workspaceMenu(event.currentTarget as HTMLElement)}
-    ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? `Workspace: ${wsLabel()}` : null, 'right')}>${() => IconTile(current.get()?.icon ?? 'layers', { tint: current.get()?.tint ?? 'blue', size: 28 })}
+    ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? `Workspace: ${wsLabel()}` : null, 'right')}>${() => IconTile(current.get()?.icon ?? SHELL_ICONS.workspace, { tint: current.get()?.tint ?? 'blue', size: 28 })}
     <span class="as-text"><b>${wsLabel}</b><small>${site}</small></span>${Icon('chevrons-up-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
-
-  const explorer = navItem({ href: explorerHref(router), icon: 'layout-grid', tint: 'slate', label: 'Explorer', active: () => isExplorer(route.get()) });
 
   const sidebar = html`<aside class="sidebar" id="ev-sidebar" aria-label="Main navigation">
     <div class="brand">${Lockup()}${Logo('Evlet')}</div>
     <div class="side-body">
       ${appSwitch}
       <nav class="nav">
-        ${docsOn(ctx.session) ? navItem({ href: router.href('docs', {}), icon: 'file-text', tint: 'slate', label: 'Docs', active: () => ['docs', 'topic'].includes(route.get()?.name ?? '') }) : null}
-        ${() => ctx.eva.get() ? navItem({ href: router.href('eva', {}), icon: 'sparkles', tint: 'violet', label: 'Eva', active: () => ['eva', 'evaChat', 'evaTasks'].includes(route.get()?.name ?? ''),
+        ${docsOn(ctx.session) ? navItem({ href: router.href('docs', {}), icon: SHELL_ICONS.docs, tint: 'slate', label: 'Docs', active: () => ['docs', 'topic'].includes(route.get()?.name ?? '') }) : null}
+        ${() => ctx.eva.get() ? navItem({ href: router.href('eva', {}), icon: SHELL_ICONS.eva, tint: 'violet', label: 'Eva', active: () => ['eva', 'evaChat', 'evaTasks'].includes(route.get()?.name ?? ''),
           count: () => ctx.eva.get()?.pending_approvals ? html`<span class="badge" title="Waiting for your approval">${ctx.eva.get()!.pending_approvals}</span>` : null }) : null}
         ${() => { const workspace = current.get(); return workspace ? html`<div class="nav-secs">${workspace.sections.map(entry => section(workspace, entry))}</div>` : null; }}
       </nav>
-      <div class="side-bottom">${explorer}${ctx.dev ? html`<a class="nav-item" href=${ctx.libraryHref} rel="external" ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? 'Library' : null, 'right')}>
-        ${Icon('layers', { tint: 'violet' })}<span class="lbl">Library</span></a>` : null}</div>
+      ${ctx.dev ? html`<div class="side-bottom"><a class="nav-item" href=${ctx.libraryHref} rel="external" ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? 'Library' : null, 'right')}>
+        ${Icon('layers', { tint: 'violet' })}<span class="lbl">Library</span></a></div>` : null}
       <div class="side-foot">${me}${when(() => Boolean(ctx.me.get() && !ctx.me.get()!.portal), () => html`<button type="button" class="icon-btn theme-btn"
         aria-label=${() => dark() ? 'Switch to light theme' : 'Switch to dark theme'} on:click=${flipTheme}
         ref=${(el: HTMLElement) => tooltip(el, () => dark() ? 'Light theme' : 'Dark theme')}>${() => Icon(dark() ? 'sun' : 'moon')}</button>`)}</div>
@@ -181,15 +181,23 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const crumbs = () => ctx.crumbs.get().map((crumb, index, all) => index === all.length - 1
     ? html`<span class="cur" aria-current="page">${crumb.label}</span>`
     : [html`<a class="hide-sm" href=${crumb.href ?? '#'}>${crumb.label}</a>`, Icon('chevron-right', { size: 'xs', className: 'hide-sm' })]);
+  // Search and the Explorer: two buttons in one box (docs/ui.md#top-bar-search-and-explorer). The search part
+  // opens the palette; the Explorer part opens the Explorer on its last view and is pressed while it is open.
+  const onExplorer = () => isExplorer(route.get());
+  const searchPart = html`<button type="button" class="ts-search" aria-label="Search" aria-keyshortcuts="Meta+K Control+K" on:click=${() => ctx.openPalette()}
+    ref=${(el: HTMLElement) => tooltip(el, 'Search  ⌘K')}>${Icon(SHELL_ICONS.search, { size: 'sm' })}<span class="ts-text">Search</span>${Key('⌘K')}</button>` as HTMLElement;
+  const explorerPart = html`<button type="button" class="ts-explorer" class:on=${onExplorer} aria-label="Explorer" aria-pressed=${() => String(onExplorer())}
+    on:click=${() => openExplorer(ctx)} ref=${(el: HTMLElement) => tooltip(el, 'Explorer  G E')}>
+    ${Icon(SHELL_ICONS.explorer, { size: 'sm' })}<span class="ts-text">Explorer</span></button>` as HTMLElement;
+  const searchBox = html`<div class="top-search" role="group" aria-label="Search and Explorer">${searchPart}<span class="ts-div" aria-hidden="true"></span>${explorerPart}</div>`;
   const topbar = html`<header class="topbar">
-    <span class="mobile-only">${IconButton({ icon: 'panel-left', tip: 'Menu', onClick: () => ctx.toggleSidebar() })}</span>
+    <span class="mobile-only">${IconButton({ icon: SHELL_ICONS.menu, tip: 'Menu', onClick: () => ctx.toggleSidebar() })}</span>
+    ${RecentsButton(ctx, models)}
     <nav class="crumbs" aria-label="Breadcrumbs">${crumbs}</nav>
     <div class="top-actions">
-      ${RecentsButton(ctx, models)}
-      <button type="button" class="top-search desktop-only" on:click=${() => ctx.openPalette()}>${Icon('search', { size: 'sm' })}<span>Search</span>${Key('⌘K')}</button>
-      <span class="mobile-only">${IconButton({ icon: 'search', tip: 'Search', onClick: () => ctx.openPalette() })}</span>
+      ${searchBox}
       ${when(() => Boolean(ctx.me.get() && !ctx.me.get()!.portal), () => InboxButton(ctx))}
-      <span class="desktop-only">${IconButton({ icon: 'circle-help', tip: 'Shortcuts  ?', onClick: () => openShortcuts(docsOn(ctx.session)) })}</span>
+      <span class="desktop-only">${IconButton({ icon: SHELL_ICONS.help, tip: 'Shortcuts  ?', onClick: () => openShortcuts(docsOn(ctx.session)) })}</span>
     </div></header>` as HTMLElement;
 
   // Collapse and expand from a small button on the sidebar's edge, just above the account card.
@@ -219,6 +227,7 @@ function keys(ctx: AppContext, event: KeyboardEvent) {
   if (pendingG && Date.now() - pendingG < 900) {
     pendingG = 0;
     if ((key === 'd' || key === 'h') && docsOn(ctx.session)) { event.preventDefault(); void ctx.router.go('docs', {}); }
+    else if (key === 'e') { event.preventDefault(); void openExplorer(ctx); }
     return;
   }
   if (key === 'g') { pendingG = Date.now(); return; }
@@ -229,7 +238,7 @@ function keys(ctx: AppContext, event: KeyboardEvent) {
 }
 
 const SHORTCUTS: Array<[string, string]> = [
-  ['⌘K or Ctrl K', 'Search and commands'], ['C', 'Create in the current list'], ['/', 'Focus the page search'], ['G then D', 'Go to Docs'],
+  ['⌘K or Ctrl K', 'Search and commands'], ['C', 'Create in the current list'], ['/', 'Focus the page search'], ['G then D', 'Go to Docs'], ['G then E', 'Open the Explorer'],
   ['[', 'Toggle the sidebar'], ['?', 'Shortcuts'], ['⌘ Enter', 'Save a form or dialog'], ['Esc', 'Close the top layer, then clear the selection'],
 ];
 

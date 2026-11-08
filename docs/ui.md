@@ -13,9 +13,10 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 
 - Sign-in and first-run setup (the first administrator account).
 - Docs, with its topics, from the sidebar and the search palette.
-- The shell: sidebar with the Workspace switcher, the workspace's sections and shortcuts, and
-  Explorer ([below](#sidebar-and-workspaces)); a top bar with a history button for recent records (left of
-  search), the search palette, notifications and shortcuts. New records start from the New button
+- The shell: sidebar with the Workspace switcher and the workspace's sections and shortcuts
+  ([below](#sidebar-and-workspaces)); a top bar with a history button for recent records (before the
+  breadcrumb), one box for the search palette and the Explorer ([below](#top-bar-search-and-explorer)),
+  notifications and shortcuts. New records start from the New button
   on a model's list page or from the search palette.
 - Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
@@ -464,13 +465,14 @@ The sidebar has three levels: workspace, section, shortcut.
   until the person closes it. The closed ones are kept per person in browser storage
   (`evlet.<username>.nav.closed`), and the chosen workspace in `evlet.<username>.nav.workspace`.
   Blocked storage only means nothing is remembered.
-- **Shortcuts** sit under their section on a thin guide line, each with a small dot. The one the page
+- **Shortcuts** sit under their section on a thin guide line, each starting with its kind's icon
+  ([Navigation icons](#navigation-icons)), small and muted, in place of a dot. The one the page
   belongs to (a list and its records, or a report) is filled across the whole row with the primary
-  button's blue, with white text at weight 600 and a white dot. Hover on the other rows is a light grey.
+  button's blue, with white text at weight 600 and a white icon. Hover on the other rows is a light grey.
 - **The section that holds that shortcut** gets a grey barely darker than the sidebar over its title and
   shortcuts, and a bolder title with an accent icon. It keeps both when closed, so the person still sees
   where they are.
-- The collapsed sidebar shows each shortcut's icon with its name in a tooltip, and the active one white
+- The collapsed sidebar shows each shortcut's kind icon with its name in a tooltip, and the active one white
   on the same solid blue tile; section titles give way to a thin rule. On phones the sidebar is the drawer, and the Workspace card opens below the box
   when there is no room beside it.
 
@@ -489,7 +491,8 @@ a list), and every view, tab and filter the shortcut names must be in the addres
 names the most wins. So `/app/task?f=[["done","no",null]]` marks "Open tasks" rather than "Tasks", and
 another filter marks "Tasks". The list's home tab counts as named even though the list leaves it out
 of the address. On a tie, the shortcut of the workspace on screen wins, so a list two workspaces share
-keeps the sidebar as it is.
+keeps the sidebar as it is. A URL shortcut is marked only on its own address, every query part
+included: "All reports" at `/?explorer=reports` is not marked on another Explorer view or on the root.
 
 An older server without `workspaces` gets the fallback: one workspace per installed app (the first
 part of each model's `resource`, such as `showcase` in `showcase.Project`; models without one form a
@@ -497,7 +500,7 @@ workspace named after the application), with **Documents** (models with a State 
 **Records** (the others) and **Reports** (the app's reports) sections. Both feed one shape:
 
 ```ts
-{ workspaces: [{ key, label, icon, source?, sections: [{ key, label, icon, count?, items: [{ key, label, href, icon?, model?, slip?, external? }] }] }] }
+{ workspaces: [{ key, label, icon, source?, sections: [{ key, label, icon, count?, items: [{ key, label, href, kind, icon, model?, slip?, external? }] }] }] }
 ```
 
 ### Customizing workspaces
@@ -511,7 +514,7 @@ opens a dialog on the current workspace (a picker switches to another):
   items or move them to another group.
 - The eye hides or shows a group or an item; a hidden one stays in the list, struck through.
 - Each name is an input: renaming a workspace, group or item sends only names that differ from the
-  declared ones.
+  declared ones. Each item shows its kind's icon; there is no icon to choose per item.
 - **Add shortcut** in a group adds a list (with List or Board and optional filters as JSON), a
   report, a slip or an address, with an optional label (needed for an address). **Add group** adds a
   group, and **New workspace** starts a custom workspace whose key comes from its name.
@@ -524,9 +527,66 @@ opens a dialog on the current workspace (a picker switches to another):
 Hiding is never a permission: every page still checks access, and the schema filters items for
 each role after the override. Changes need a recent two-step code where Controls asks for one.
 
+### Navigation icons
+
+A shortcut's icon comes from what it opens, never from the item, so every list looks alike and an
+app has nothing to set. `app/nav-icons.ts` is the one map; the sidebar, the collapsed sidebar, the
+workspace editor, the Explorer cards and the search palette all read it. Group and workspace icons
+stay as declared. Every name is in the browser's icon set (`ui/icon-data.ts`); where the ideal icon
+is missing, the closest one stands in (a slip uses `sticky-note`, a dashboard `activity`).
+
+| Kind | Icon | Used for |
+| --- | --- | --- |
+| List | `list` | A model's list, filtered or not |
+| Board | `square-kanban` | A model's board (`view='board'`) |
+| Report | `chart-column` | A report, and Explorer report cards |
+| Dashboard | `activity` | Dashboards, when there are any |
+| Slip | `sticky-note` | A slip opened over the page |
+| Link | `link` | An app path or an http(s) address |
+
+| Shell element | Icon |
+| --- | --- |
+| Docs | `file-text` |
+| Explorer | `layout-grid` |
+| Search | `search` |
+| History (recent records) | `history` |
+| Notifications | `bell` |
+| Help (shortcuts) | `circle-help` |
+| Settings, Controls | `settings`, `sliders-horizontal` |
+| Account | `user` |
+| Workspace switcher | `layers` (when the workspace declares none) |
+| Customize | `pencil` |
+| Explorer views: Reports, Data, Dashboards, Ledger reports | `chart-column`, `table-2`, `activity`, `receipt` |
+
+### Top bar: Search and Explorer
+
+From left to right the top bar holds the drawer button (phones only), the **history** button, the
+breadcrumb, then one box for **search and the Explorer**, notifications and the shortcuts button.
+
+- **History** (`history` icon, tooltip "Recent records") sits at the left end, directly before the
+  breadcrumb. A click or Arrow Down opens this session's recent records, as before. On phones it
+  stays visible, after the drawer button and before the breadcrumb; the breadcrumb shrinks first.
+- **One box, two buttons.** The search field is on the left; the Explorer is attached at its right
+  end, inside the same border, behind a hairline, with the app grid icon and the label "Explorer".
+  The box is a `role="group"` named "Search and Explorer". Each part is its own button with its own
+  name, focus ring and tooltip ("Search ⌘K", "Explorer G E"); Tab reaches search first, then the
+  Explorer.
+- **Search** opens the search palette, as do ⌘K and Ctrl K.
+- **Explorer** opens the Explorer (`/?explorer=<view>`) on the view this person used last on this
+  device (`evlet.<username>.explorer.view`; Reports the first time), as does G then E. While the
+  Explorer is open its part is pressed: a flat accent fill and `aria-pressed="true"`.
+- **The palette reaches the Explorer too.** Typing "explorer" lists **Explorer** and **Explorer:
+  Reports / Data / Dashboards** (and **Ledger reports** when there are any) under Pages. Any typed
+  text also offers, last, **Search all reports for "…"** and **Search all data for "…"**, which open
+  that view with its search box filled (`?q=`). They stay offered when nothing else matches.
+- **Narrow screens** (under 1100 px) drop the "Explorer" label and keep its icon. **Phones** (under
+  760 px) show a search icon button and an Explorer icon button side by side.
+- **One mark at a time.** The sidebar has no Explorer button, and a URL shortcut is marked only on its
+  own address, so the Explorer page never shows two active items.
+
 ### Explorer
 
-**Explorer**, just above the account area, opens a page with three views (four with ledger reports):
+**Explorer**, the right part of the top bar's search box, opens a page with three views (four with ledger reports):
 
 - **Reports**: a card for every report the person may run, from every app, with its name, app and
   description (when the server sends one).
@@ -541,7 +601,8 @@ each role after the override. Changes need a recent two-step code where Controls
 Reports, Ledger reports and Data have a search box (name, description and app) and an app filter. A card opens the
 report or the list. The address is `/?explorer=<view>`: the root path is the one desk path the server
 always serves, so the Explorer needs no server route, and a link or a refresh opens the same view.
-The search palette lists it under Pages.
+The search palette lists it and each of its views under Pages, and opens it with a search filled
+in. Report cards use the report icon and Data cards the list icon ([Navigation icons](#navigation-icons)).
 
 ### Between the app and Controls
 
