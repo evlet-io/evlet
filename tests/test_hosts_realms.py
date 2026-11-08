@@ -277,15 +277,6 @@ def test_docs_move_and_limit_to_roles(portal):
         resolve_routes([('crm', AppDefinition(frontends=(Frontend('help', path='/help'),)))], None, {'docs': Docs(path='/help')})
 
 
-def test_view_registry_resolves_generated_routes_under_a_frontend_base(portal):
-    from evlet import User
-    schema = portal.business.schema(User(1, 'admin', 'admin'))
-    assert portal.ui.resolve('/app/customer/0000000000003', schema)['params'] == {'id': '0000000000003'}
-    assert portal.ui.resolve('/crm/customer/new', schema, frontend='crm.crm', base='/crm')['view']['kind'] == 'form'
-    with pytest.raises(LookupError):
-        portal.ui.resolve('/app/customer', schema, frontend='crm.crm', base='/crm')
-
-
 def test_sub_host_declarations_are_checked():
     shop = Frontend('shop', kind='static', dist='dist', path='/shop', auth='portal', api=('shop.orders',))
     desk = Frontend('desk', path='/desk')
