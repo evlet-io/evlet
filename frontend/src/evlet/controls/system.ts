@@ -1,7 +1,7 @@
 // Apps, Routing, Jobs, Overrides and the Audit log. Apps and Routing are read only: migrations run
 // from the server shell. Schedule pauses, Run now and Retry save at once; Reset goes through the change bar.
 
-import { html, when, type Child } from '../dom';
+import { html, type Child } from '../dom';
 import { cell, derive, onCleanup } from '../reactive';
 import { Button, Icon, ProgressBar, StatusPill, Switch } from '../ui/base';
 import { exactTime, RelativeTime, relativeTime } from '../ui/time';

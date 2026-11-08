@@ -13,7 +13,7 @@ import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '..
 import { linkScope } from '../model/links';
 import type { FieldSchema, SchemaIndex } from '../model/schema';
 import { Chip, Icon, IconButton, RecordMark, StatusPill, Switch } from './base';
-import { read, tintFor, TINTS, uid, type Prop, type Tint } from './core';
+import { tintFor, TINTS, uid, type Prop, type Tint } from './core';
 import { formula, labeller, phrase, source } from './explain';
 import { checkTag, currencyOf, durationText, humanize, InputError, kindOf } from './kinds';
 import { copyText, openPopover } from './layers';

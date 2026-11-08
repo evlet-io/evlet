@@ -1706,11 +1706,6 @@ def delete_rows(business, tx, model, record_ids):
         tx.connection.execute(f'DELETE FROM {table} WHERE id IN ({", ".join("?" for _ in part)})', part)
 
 
-def delete_tree(business, tx, model, record_id):
-    """Document-pipeline deletion; callers have checked permissions for the whole subtree."""
-    delete_rows(business, tx, model, [record_id])
-
-
 def typed_arguments(function, values, *, skip=0):
     from typing import get_type_hints
     signature = inspect.signature(function)

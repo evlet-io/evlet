@@ -150,8 +150,6 @@ const TOPICS: Topic[] = [
   </article>` },
 ];
 
-export const docTopics = TOPICS.map(topic => ({ id: topic.id, title: topic.title }));
-
 export function DocsPage(ctx: AppContext, topicId = 'overview'): HTMLElement {
   const topic = TOPICS.find(item => item.id === topicId) ?? TOPICS[0];
   ctx.crumbs.set(topic.id === 'overview' ? [{ label: 'Docs' }] : [{ label: 'Docs', href: ctx.router.href('docs', {}) }, { label: topic.title }]);

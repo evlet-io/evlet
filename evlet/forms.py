@@ -1,14 +1,13 @@
 """Transient Python forms for source-bound operations and bounded reports."""
 
 from dataclasses import dataclass
-from types import SimpleNamespace
 import hashlib
 import json
 
 from .auth import AccessError
 from .identity import jsonable, path_id
 from .models import Model, ValidationError
-from .documents import Draft, Context, Snapshot, settle
+from .documents import Draft, Snapshot, settle
 from .permissions import trusted
 from .ui.metadata import field_schema, source_schema
 from .reactivity import plans, serialized

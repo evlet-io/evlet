@@ -729,7 +729,7 @@ class Business:
         return visible
 
     def model_dispatch(self, scope, body, user, model, parts):
-        path, method = scope['path'], scope['method']
+        method = scope['method']
         if len(parts) >= 5 and parts[4] in ('confirm', 'cancel', 'reopen', 'history', 'revisions', 'snapshot', 'diff'):
             from .lifecycle import route
             return route(self, scope, body, user, model, parts)
@@ -768,7 +768,6 @@ class Business:
         # Attachments and line pages have their own routes on every model.
         own_route = len(parts) >= 5 and parts[4] in ('attachments', 'lines', 'related', 'prints')
         if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH') and not legacy_action and not own_route:
-            from .documents import Context
             record_id = None
             if len(parts) >= 4:
                 if path_id(parts[3]) is None:
@@ -1220,7 +1219,6 @@ class Business:
 
     def lines(self, scope, user, model, record_id, path):
         """GET /api/{model}/{id}/lines/{name}[/{row id}/{name}...]: one page of a readable owned collection."""
-        from .documents import owned_rows
         try:
             raw = scope.get('query_string', b'')
             query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=2) if len(raw) <= 256 else None

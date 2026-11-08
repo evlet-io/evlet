@@ -49,7 +49,7 @@ def module_names(package):
 def discover(package, modules=None):
     from .instances import AppDefinition
     from .migrations import Migration
-    from .forms import Report, Dialog
+    from .forms import Report
     models, migrations, seen, reports, endpoints, tasks, schedules = [], [], set(), [], [], [], []
     for name in modules if modules is not None else module_names(package):
         module = import_module(name)

@@ -449,7 +449,7 @@ class Customization:
             raise ValueError(str(exc).replace(f'{model.__name__}.Meta.', 'The list view ')) from None
 
     def check_naming(self, model, _, value, saved=False):
-        from .sequences import NamingRules, SERIES_ID, check_order
+        from .sequences import SERIES_ID, check_order
         if not isinstance(value, list) or not 1 <= len(value) <= 20:
             raise ValueError('Keep between 1 and 20 series.')
         series = []

@@ -6,7 +6,7 @@ from functools import lru_cache
 from decimal import Decimal, localcontext, ROUND_HALF_EVEN
 
 from .declarations import Ref
-from .fields import Decimal as DecimalField, Integer, MISSING
+from .fields import Decimal as DecimalField, Integer
 from .calc import is_finite
 
 
