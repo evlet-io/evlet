@@ -2,7 +2,8 @@
 
 The browser interface is built on Evlet's own UI framework, described in
 [ui-framework.md](ui-framework.md). Its code lives in `frontend/src/evlet/`. It has no
-runtime dependencies. A session opens Docs after sign-in. Every model the role can read
+runtime dependencies. Sign-in lands on the person's start page or the first list the role
+can open, and Docs stay reachable from the sidebar and the search palette. Every model the role can read
 gets a list and a record view, built from `/api/schema`, record details and the list
 routes, so a model-only application needs no frontend code.
 
@@ -11,7 +12,7 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 ## What this interface renders
 
 - Sign-in and first-run setup (the first administrator account).
-- Docs after sign-in, with its topics.
+- Docs, with its topics, from the sidebar and the search palette.
 - The shell: sidebar with the models; a top bar with a history button for recent records (left of
   search), the search palette and the New menu.
 - Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
@@ -288,11 +289,17 @@ instance route table in [routing.md](routing.md)). Any other path outside `/api/
 `/assets/` returns the app with status 404, so the browser shows its own page.
 `/docs` is on in development and off once an instance sets a domain, unless its
 `routes.py` turns it on. The session's `application.docs` tells the browser; with
-Docs off it starts on the first list the role can open and hides the Docs links.
+Docs off it hides the Docs links.
+
+The start page is the same with Docs on or off. After sign-in, at `/`, at the model base
+(`/app`) and at any address that matches no route, the browser opens the start page saved in
+Settings, else the first list the role can open. It opens Docs only when that is the saved
+start page, or when the app has no list at all. With no list and Docs off it says there is
+nothing to open yet.
 
 | Path | Screen |
 | --- | --- |
-| `/`, `/login` | Sign-in, or Docs when signed in |
+| `/`, `/login` | Sign-in, or the start page when signed in |
 | `/docs`, `/docs/<topic>` | Docs |
 | `/app/<model>` | List (and board, when `Meta.board` names the State). Search, sort, page, view and filters are in the query |
 | `/app/<model>/new` | New record. Query values fill writable fields: `?customer=4` |

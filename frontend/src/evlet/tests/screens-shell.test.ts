@@ -8,12 +8,13 @@ afterEach(stopAll);
 const submit = (host: HTMLElement) => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
 describe('sign in, setup and Docs', () => {
-  it('signs in from the login screen, then opens Docs with the models of this workspace', async () => {
+  it('signs in from the login screen, lands on the first list, and opens Docs from the sidebar', async () => {
     let signedIn = false;
     const { host, sent } = start([
       ['GET', /\/api\/auth\/session$/, () => signedIn ? recorded.session : recorded.session_anonymous],
       ['POST', /\/api\/auth\/login$/, sent => sent.body.password === 'right password' ? (signedIn = true, recorded.login) : recorded.login_failed],
       ['GET', /\/api\/schema$/, screen.schema],
+      ['GET', /\/api\/customer\?/, screen.customers_page1],
     ], '/');
     await until(() => expect(host.querySelector('h1')?.textContent).toBe('Welcome back'));
     typeInto(host.querySelector<HTMLInputElement>('#ev-username')!, 'admin');
@@ -24,7 +25,12 @@ describe('sign in, setup and Docs', () => {
 
     typeInto(host.querySelector<HTMLInputElement>('#ev-password')!, 'right password');
     submit(host);
+    // Docs are on in development, yet sign-in lands on the first list; Docs stay one click away.
+    await until(() => expect(location.pathname).toBe('/app/customer'));
+    await until(() => expect(text(host.querySelector('.nav-item.active'))).toBe('Customers'));
+    click(byText(host, '.nav-item', 'Docs'));
     await until(() => expect(location.pathname).toBe('/docs'));
+    expect(text(host.querySelector('.nav-item.active'))).toBe('Docs');
     await until(() => expect(text(host.querySelector('.ph h1'))).toBe('Build with Evlet'));
     const login = requests(sent, 'POST', /\/api\/auth\/login$/).pop()!;
     expect(login.body).toEqual({ username: 'admin', password: 'right password' });
@@ -41,6 +47,7 @@ describe('sign in, setup and Docs', () => {
       ['POST', /\/api\/auth\/setup$/, () => { ready = true; return screen.setup; }],
       ['POST', /\/api\/auth\/login$/, recorded.login],
       ['GET', /\/api\/schema$/, screen.schema],
+      ['GET', /\/api\/customer\?/, screen.customers_page1],
     ], '/login');
     await until(() => expect(text(host.querySelector('h1'))).toBe('Set up Evlet'));
     expect(text(host.querySelector('.ev-login-card > p'))).toBe('Create the first administrator account.');
@@ -50,7 +57,7 @@ describe('sign in, setup and Docs', () => {
     typeInto(host.querySelector<HTMLInputElement>('#ev-username')!, 'owner');
     typeInto(password, 'a sufficiently long password');
     submit(host);
-    await until(() => expect(location.pathname).toBe('/docs'));
+    await until(() => expect(location.pathname).toBe('/app/customer'));
     const order = sent.filter(item => item.method === 'POST').map(item => new URL(item.url, 'http://x').pathname);
     expect(order).toEqual(['/api/auth/setup', '/api/auth/login']);
     expect(requests(sent, 'POST', /setup$/)[0].body).toEqual({ username: 'owner', password: 'a sufficiently long password' });
@@ -80,15 +87,16 @@ describe('addresses the Python server serves', () => {
 
   it.each([['/reports/sales', 'This page is not available']])(
     '%s, a report the role cannot run, is not available', async (path, title) => {
-      const { host } = start(adminRoutes(), path);
+      const { host } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, screen.customers_page1]], path);
       await until(() => expect(text(host.querySelector('.page .empty h3'))).toBe(title));
-      click(byText(host, '.page button', 'Open Docs'));
-      await until(() => expect(location.pathname).toBe('/docs'));
+      expect(byText(host, '.page button', 'Open Docs')).toBeFalsy();
+      click(byText(host, '.page button', 'Open Customers'));
+      await until(() => expect(location.pathname).toBe('/app/customer'));
     });
 
-  it('an address that matches no route, such as a Python page, opens Docs', async () => {
-    start(adminRoutes(), '/demo/projects');
-    await until(() => expect(location.pathname).toBe('/docs'));
+  it.each(['/demo/projects', '/', '/app'])('%s, the root or an address that matches no route, opens the first list', async path => {
+    start([...adminRoutes(), ['GET', /\/api\/customer\?/, screen.customers_page1]], path);
+    await until(() => expect(location.pathname).toBe('/app/customer'));
   });
 });
 
@@ -206,8 +214,39 @@ describe('Docs turned off by the instance', () => {
   it('keeps Docs when an older server sends no docs field', async () => {
     const session = copy(recorded.session);
     delete (session.body as any).application.docs;
-    const { host } = start([['GET', /\/api\/auth\/session$/, session], ['GET', /\/api\/schema$/, screen.schema]], '/');
-    await until(() => expect(location.pathname).toBe('/docs'));
+    const { host } = start([['GET', /\/api\/auth\/session$/, session], ['GET', /\/api\/schema$/, screen.schema], ['GET', /\/api\/customer\?/, screen.customers_page1]], '/');
+    await until(() => expect(location.pathname).toBe('/app/customer'));
     await until(() => expect(byText(host, '.nav-item', 'Docs')).toBeTruthy());
+  });
+});
+
+describe('the start page after sign-in', () => {
+  const me = (start: string) => { const value = copy(screen.settings_me); (value.body as any).prefs.start = start; return value; };
+  const lists: Route[] = [['GET', /\/api\/(customer|order)\?/, screen.customers_page1]];
+  // A new app with no models yet: an empty schema.
+  const empty = () => { const value = copy(screen.schema); (value.body as any).models = []; return value; };
+  const off = () => { const session = copy(recorded.session); (session.body as any).application.docs = null; return session; };
+
+  it('opens the start page saved in Settings: a list, or Docs', async () => {
+    start([...adminRoutes(), ...lists, ['GET', /\/api\/_settings\/me$/, me('order')]], '/');
+    await until(() => expect(location.pathname).toBe('/app/order'));
+    stopAll();
+    start([...adminRoutes(), ...lists, ['GET', /\/api\/_settings\/me$/, me('docs')]], '/login');
+    await until(() => expect(location.pathname).toBe('/docs'));
+  });
+
+  it('ignores a saved start page the role cannot open and opens the first list', async () => {
+    start([...adminRoutes(), ...lists, ['GET', /\/api\/_settings\/me$/, me('ledger')]], '/');
+    await until(() => expect(location.pathname).toBe('/app/customer'));
+  });
+
+  it('opens Docs only when the app has no list, and says so when Docs are off too', async () => {
+    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, empty()]], '/');
+    await until(() => expect(location.pathname).toBe('/docs'));
+    await until(() => expect(text(host.querySelector('.ph h1'))).toBe('Build with Evlet'));
+    stopAll();
+    const second = start([['GET', /\/api\/auth\/session$/, off()], ['GET', /\/api\/schema$/, empty()]], '/');
+    await until(() => expect(text(second.host.querySelector('.empty h3'))).toBe('Nothing to open yet'));
+    expect(location.pathname).toBe('/');
   });
 });

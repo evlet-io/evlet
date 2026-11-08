@@ -106,7 +106,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     <div class="side-body">
       ${appSwitch}
       <nav class="nav">
-        ${docsOn(ctx.session) ? navItem({ href: router.href('docs', {}), icon: 'file-text', tint: 'slate', label: 'Docs', active: () => ['docs', 'topic', 'home'].includes(route.get()?.name ?? '') }) : null}
+        ${docsOn(ctx.session) ? navItem({ href: router.href('docs', {}), icon: 'file-text', tint: 'slate', label: 'Docs', active: () => ['docs', 'topic'].includes(route.get()?.name ?? '') }) : null}
         ${() => ctx.eva.get() ? navItem({ href: router.href('eva', {}), icon: 'sparkles', tint: 'violet', label: 'Eva', active: () => ['eva', 'evaChat', 'evaTasks'].includes(route.get()?.name ?? ''),
           count: () => ctx.eva.get()?.pending_approvals ? html`<span class="badge" title="Waiting for your approval">${ctx.eva.get()!.pending_approvals}</span>` : null }) : null}
         ${groups.map(([name, list]) => html`<div class="nav-group"><div class="nav-label">${name}</div>${list.map(modelItem)}</div>`)}
