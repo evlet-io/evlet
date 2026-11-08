@@ -17,7 +17,9 @@ import { InboxButton } from './inbox';
 import { RecentsButton } from './recents';
 import { rememberAppPage } from './last-page';
 import { rootModels } from './meta';
-import { activeShortcut, modelCounts, workspaceNav, type NavSection, type NavShortcut, type Workspace } from './workspaces';
+import { activeShortcut, modelCounts, workspaceNav, workspacesVersion, type NavSection, type NavShortcut, type Workspace } from './workspaces';
+import { presentSlip } from './slips';
+import { customizeAccess, openWorkspaceEditor } from './workspace-editor';
 import { explorerHref, isExplorer } from './explorer';
 
 const PHONE = '(max-width: 760px)';
@@ -59,18 +61,19 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     for (const model of models) void ctx.api.list(model.name, { limit: 1 }).then(page => counts.set({ ...counts.peek(), [model.name]: page.total }), () => {});
   });
   const countOf = (item: NavShortcut) => () => {
-    const name = item.key.startsWith('model:') ? item.key.slice(6) : '';
-    const value = name && ctx.me.get()?.prefs.counts ? counts.get()[name] : undefined;
+    const value = item.model && ctx.me.get()?.prefs.counts ? counts.get()[item.model] : undefined;
     return value === undefined ? null : html`<span class="count">${value > 999 ? `${(value / 1000).toFixed(1)}k` : String(value)}</span>`;
   };
 
   // Workspaces: the switcher picks one, and the sidebar shows its sections and shortcuts.
-  const nav = workspaceNav(ctx.schema.schema, { list: model => router.href('list', { model }), report: report => router.href('report', { report }) }, appName);
-  const here = derive(() => { const now = route.get(); return now ? activeShortcut(nav, now.url) : null; });
-  const chosen = prefs.cell<string>('nav.workspace', nav.workspaces[0]?.key ?? '');
+  // Saving a workspace override hands the shell the schema's new list (workspacesVersion), and the sidebar follows.
+  const version = workspacesVersion(ctx);
+  const nav = derive(() => { version.get(); return workspaceNav(ctx.schema.schema, { list: (model, query) => router.href('list', { model }, query ?? {}), report: report => router.href('report', { report }) }, appName); });
+  const chosen = prefs.cell<string>('nav.workspace', nav.peek().workspaces[0]?.key ?? '');
+  const here = derive(() => { const now = route.get(); return now ? activeShortcut(nav.get(), now.url, chosen.get()) : null; });
   // Opening a shortcut of another workspace (a link, Back, the palette) shows that workspace.
   effect(() => { const found = here.get(); if (found && found.workspace.key !== chosen.peek()) chosen.set(found.workspace.key); });
-  const current = derive(() => nav.workspaces.find(workspace => workspace.key === chosen.get()) ?? nav.workspaces[0] ?? null);
+  const current = derive(() => nav.get().workspaces.find(workspace => workspace.key === chosen.get()) ?? nav.get().workspaces[0] ?? null);
   // Open or closed sections, per person on this device; a section is open until closed.
   const closed = prefs.cell<Record<string, boolean>>('nav.closed', {});
   const sectionId = (workspace: Workspace, section: NavSection) => `${workspace.key}.${section.key}`;
@@ -81,9 +84,12 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     closed.set(next);
   };
   const shortcut = (item: NavShortcut) => {
-    const active = () => here.get()?.item === item;
-    const link = html`<a class="nav-item nav-sc" class:active=${active} aria-current=${() => active() ? 'page' : null} href=${item.href}>
-      <span class="nav-dot" aria-hidden="true"></span>${Icon(item.icon ?? 'circle', { tint: item.tint, className: 'nav-ic' })}<span class="lbl">${item.label}</span>${countOf(item)}</a>` as HTMLElement;
+    const active = () => here.get()?.item.key === item.key && here.get()?.workspace.key === current.get()?.key;
+    const inside = [html`<span class="nav-dot" aria-hidden="true"></span>`, Icon(item.icon ?? 'circle', { tint: item.tint, className: 'nav-ic' }), html`<span class="lbl">${item.label}</span>`, countOf(item)];
+    // A menu slip opens over the page; an http(s) address opens in a new tab.
+    const link = (item.slip ? html`<button type="button" class="nav-item nav-sc" on:click=${() => void presentSlip(item.slip!)}>${inside}</button>`
+      : item.external ? html`<a class="nav-item nav-sc" href=${item.href} target="_blank" rel="noopener external">${inside}</a>`
+      : html`<a class="nav-item nav-sc" class:active=${active} aria-current=${() => active() ? 'page' : null} href=${item.href}>${inside}</a>`) as HTMLElement;
     tooltip(link, () => collapsed.get() ? item.label : null, 'right');
     return link;
   };
@@ -120,12 +126,14 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
 
   // The Workspace switcher: the current workspace; it opens a card beside it with every workspace as a tile.
   const pickWorkspace = (workspace: Workspace) => {
-    chosen.set(workspace.key);
-    const first = workspace.sections[0]?.items[0];
-    if (first) void router.navigate(first.href);
+    // The workspace is chosen once its first page is open: until then the old page would pick its own workspace back.
+    const first = workspace.sections.flatMap(entry => entry.items).find(item => item.href && !item.slip && !item.external);
+    if (first) void router.navigate(first.href).then(opened => { if (opened) chosen.set(workspace.key); });
+    else chosen.set(workspace.key);
   };
   const workspaceMenu = (anchor: HTMLElement) => openPopover(anchor, close => {
-    const tiles = nav.workspaces.map(workspace => html`<button type="button" class="ws-tile" class:on=${() => current.get() === workspace}
+    const access = customizeAccess(ctx);
+    const tiles = nav.peek().workspaces.map(workspace => html`<button type="button" class="ws-tile" class:on=${() => current.get() === workspace}
       aria-current=${() => current.get() === workspace ? 'true' : null} on:click=${() => { close(); pickWorkspace(workspace); }}>
       ${IconTile(workspace.icon, { tint: workspace.tint, size: 32 })}<span>${workspace.label}</span></button>` as HTMLButtonElement);
     const row = html`<div class="ws-row" role="group" aria-label="Workspaces">${tiles}</div>` as HTMLElement;
@@ -138,7 +146,10 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
       tiles[next].focus();
     });
     queueMicrotask(() => (tiles.find(tile => tile.classList.contains('on')) ?? tiles[0])?.focus());
-    return html`<div class="ws-head">Workspace</div>${row}`;
+    // Admins and roles with "Customize workspaces" edit the site's workspaces from here.
+    const customize = () => access.get() ? html`<button type="button" class="ws-edit" on:click=${() => { close(); openWorkspaceEditor(ctx, current.peek()?.key ?? null); }}>
+      ${Icon('pencil', { size: 'xs' })}<span>Customize</span></button>` : null;
+    return html`<div class="ws-head"><span>Workspace</span>${customize}</div>${row}`;
   }, { label: 'Workspace', role: 'dialog', className: 'ws-pop', align: 'side' });
   const wsLabel = () => current.get()?.label ?? appName;
   const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="dialog" aria-expanded="false" aria-label=${() => `Workspace: ${wsLabel()}. Switch workspace`}

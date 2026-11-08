@@ -136,7 +136,11 @@ export function decode(fields: Map<string, FilterField>, text: string | undefine
   const linkValue = (value: unknown): unknown => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? legacyRecordId(String(value))
     : Array.isArray(value) ? value.map(linkValue) : value;
   const add = (field: string, op: string, value: unknown) => {
-    if (fields.get(field)?.meta.type === 'link') value = linkValue(value);
+    const type = fields.get(field)?.meta.type;
+    if (type === 'link') value = linkValue(value);
+    // The server's list form, as a workspace shortcut sends it: a Boolean equality is "is yes" or "is no", a Select one "in".
+    if (op === 'eq' && type === 'boolean' && typeof value === 'boolean') { op = value ? 'yes' : 'no'; value = null; }
+    else if (op === 'eq' && type === 'select' && value !== null) { op = 'in'; value = [value]; }
     const row = { id: ++id, field, op, value };
     if (complete(fields, row)) state.rows.push(row);
   };

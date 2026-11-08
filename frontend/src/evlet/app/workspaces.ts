@@ -1,25 +1,34 @@
 // Workspaces: what the sidebar shows, three levels deep (workspace > section > shortcut), and the
 // apps the Explorer groups reports and models by.
 //
-// workspaceNav(schema, links) is the one place the sidebar's structure comes from. Until apps declare
-// workspaces in /api/schema it builds the fallback: one workspace per installed app (the app part of
-// each model's resource id, such as "showcase.Project"), with the sidebar's earlier groups as sections
-// (Documents, Records) and a Reports section when the app has reports. A declared workspace list
-// can replace fallbackNav() here without changing the shell, which only reads the returned shape.
+// workspaceNav(schema, links) is the one place the sidebar's structure comes from. It maps the
+// workspaces /api/schema declares (docs/ui.md, Workspaces): a model item opens its list (with its
+// board view and filters in the list address), a report its page, a slip opens over the page, and a URL
+// item its address. An older server without `workspaces` gets the fallback: one workspace per installed
+// app, with Documents, Records and Reports sections. The shell only reads the returned shape.
 
 import { cell, type Cell } from '../reactive';
-import type { AppSchema, ModelSchema, ReportSchema } from '../model/schema';
+import type { AppSchema, ModelSchema, ReportSchema, WorkspaceItem, WorkspaceSchema } from '../model/schema';
 import { tintFor, type Tint } from '../ui/core';
-import { groupOf, identity, type ScreenModel } from './meta';
+import { fieldOf, groupOf, identity, type ScreenModel } from './meta';
 import type { AppContext } from './context';
 
-export interface NavShortcut { key: string; label: string; href: string; icon?: string; tint?: Tint }
+export interface NavShortcut {
+  key: string; label: string; href: string; icon?: string; tint?: Tint;
+  /** The model whose plain list this is: its record count can show beside it. */
+  model?: string;
+  /** A menu slip: the shortcut presents it over the page instead of opening an address. */
+  slip?: string;
+  /** An http(s) address: it opens in a new tab. */
+  external?: boolean;
+}
 export interface NavSection { key: string; label: string; icon: string; count?: number; items: NavShortcut[] }
-export interface Workspace { key: string; label: string; icon: string; tint?: Tint; sections: NavSection[] }
+export interface Workspace { key: string; label: string; icon: string; tint?: Tint; sections: NavSection[];
+  /** custom: added on this site in the workspace editor; absent for the fallback. */ source?: WorkspaceSchema['source'] }
 export interface WorkspaceNav { workspaces: Workspace[] }
 
 /** How a shortcut's address is made: the shell passes the router's. */
-export interface NavLinks { list(model: string): string; report(name: string): string }
+export interface NavLinks { list(model: string, query?: Record<string, string>): string; report(name: string): string }
 
 const REPORT_ICON = 'chart-column';
 const SECTION_ICONS: Record<string, string> = { Documents: 'file-text', Records: 'table-2', Reports: REPORT_ICON };
@@ -48,10 +57,57 @@ export function appsOf(schema: AppSchema, fallback: string): Array<{ key: string
   return keys.map(key => ({ key, label: key ? appLabel(key) : fallback }));
 }
 
-/** The sidebar's structure. fallback names the app of models without a resource id (the application's name). */
+/** The sidebar's structure: the declared workspaces, or for a server without them the fallback.
+ * fallback names the app of models without a resource id (the application's name). */
 export function workspaceNav(schema: AppSchema, links: NavLinks, fallback = 'Workspace'): WorkspaceNav {
-  // Declared workspaces (once /api/schema carries them) map to the same shape here.
-  return fallbackNav(schema, links, fallback);
+  if (!Array.isArray(schema.workspaces)) return fallbackNav(schema, links, fallback);
+  return { workspaces: schema.workspaces.map((workspace): Workspace => ({
+    key: workspace.key, label: workspace.label, icon: workspace.icon || 'layers', tint: tintFor(workspace.key), source: workspace.source,
+    sections: workspace.groups.map(group => ({ key: group.key, label: group.label, icon: group.icon || 'layers',
+      items: group.items.map(item => shortcutOf(schema, item, links)) })).filter(section => section.items.length),
+  })).filter(workspace => workspace.sections.length) };
+}
+
+/** One declared item as a sidebar shortcut. */
+export function shortcutOf(schema: AppSchema, item: WorkspaceItem, links: NavLinks): NavShortcut {
+  switch (item.kind) {
+    case 'model': {
+      const model = schema.models.find(entry => entry.name === item.model) as unknown as ScreenModel | undefined;
+      const { icon, tint } = model ? identity(model) : { icon: 'list', tint: undefined };
+      const query = listQuery(model, item.view, item.filters);
+      return { key: item.key, label: item.label, href: links.list(item.model, query), icon: item.view === 'board' ? 'square-kanban' : icon, tint,
+        model: Object.keys(query).length ? undefined : item.model };
+    }
+    case 'report': return { key: item.key, label: item.label, href: links.report(item.report), icon: REPORT_ICON, tint: 'rose' };
+    case 'slip': return { key: item.key, label: item.label, href: '', slip: item.slip, icon: 'file-text', tint: 'blue' };
+    default: {
+      const external = /^https?:/i.test(item.url);
+      return { key: item.key, label: item.label, href: item.url, icon: external ? 'arrow-up-right' : 'link', tint: 'slate', external };
+    }
+  }
+}
+
+/**
+ * The list address of a model shortcut: view=board, and its filters as the list keeps them. An equality on the
+ * field of the list tabs (Meta.list_tabs) opens that tab; the rest go in ?f= in the form the list's filter rows
+ * write back (a Boolean equality is "is yes" or "is no", a Select equality is "in"), so the address the list
+ * settles on still matches the shortcut.
+ */
+export function listQuery(model: ScreenModel | undefined, view: 'list' | 'board', filters: unknown[] | null): Record<string, string> {
+  const query: Record<string, string> = {};
+  if (view === 'board') query.view = 'board';
+  const rest: unknown[] = [];
+  for (const entry of filters ?? []) {
+    if (!Array.isArray(entry) || entry.length !== 3) { rest.push(entry); continue; }
+    const [name, op, value] = entry as [string, string, unknown];
+    const meta = model ? fieldOf(model, name) : undefined;
+    if (op === 'eq' && model?.list_tabs?.field === name && !query.tab && (typeof value === 'string' || typeof value === 'number')) query.tab = String(value);
+    else if (op === 'eq' && meta?.type === 'boolean' && typeof value === 'boolean') rest.push([name, value ? 'yes' : 'no', null]);
+    else if (op === 'eq' && meta?.type === 'select' && value !== null) rest.push([name, 'in', [value]]);
+    else rest.push(entry);
+  }
+  if (rest.length) query.f = JSON.stringify(rest);
+  return query;
 }
 
 function fallbackNav(schema: AppSchema, links: NavLinks, fallback: string): WorkspaceNav {
@@ -63,7 +119,7 @@ function fallbackNav(schema: AppSchema, links: NavLinks, fallback: string): Work
       key: group.toLowerCase(), label: group, icon: SECTION_ICONS[group],
       items: mine.filter(model => groupOf(model) === group).map(model => {
         const { icon, tint } = identity(model);
-        return { key: `model:${model.name}`, label: model.plural, href: links.list(model.name), icon, tint };
+        return { key: `model:${model.name}`, label: model.plural, href: links.list(model.name), icon, tint, model: model.name };
       }),
     })).filter(section => section.items.length);
     const own = reports.filter(report => reportApp(schema, report) === key);
@@ -74,15 +130,55 @@ function fallbackNav(schema: AppSchema, links: NavLinks, fallback: string): Work
   return { workspaces: workspaces.filter(workspace => workspace.sections.length) };
 }
 
-/** The shortcut a path opens, if any: the longest shortcut path that equals the path or contains it. */
-export function activeShortcut(nav: WorkspaceNav, path: string): { workspace: Workspace; section: NavSection; item: NavShortcut } | null {
-  let best: { workspace: Workspace; section: NavSection; item: NavShortcut } | null = null, length = -1;
-  const bare = path.split('?')[0].replace(/\/$/, '') || '/';
+/** The address parts that pick out a shortcut among others of the same page: the view, the list tab and the filters. */
+const MATCHED = ['view', 'tab', 'f'];
+const pathOf = (href: string) => href.split(/[?#]/)[0].replace(/\/$/, '') || '/';
+const queryOf = (href: string) => new URLSearchParams(href.includes('?') ? href.slice(href.indexOf('?') + 1).split('#')[0] : '');
+/** A query value compared by meaning: ?f= as parsed JSON, so spacing and escaping don't matter. */
+function same(key: string, a: string | null, b: string | null): boolean {
+  if (a === b) return true;
+  if (key !== 'f' || a === null || b === null) return false;
+  try { return JSON.stringify(JSON.parse(a)) === JSON.stringify(JSON.parse(b)); } catch { return false; }
+}
+
+/**
+ * The shortcut an address belongs to, if any. Its path must equal the shortcut's, or be a page under it (a
+ * record of the list). On the page itself, every view, tab and filter the shortcut names must be in the address,
+ * and the shortcut naming the most of them wins: on /m/task?f=[...] the "Open tasks" shortcut beats "Tasks",
+ * which still matches any other filter. Under it (a record), the plainest shortcut wins. Slips never match. On a
+ * tie, a shortcut of `prefer` (the workspace shown) wins, so a page two workspaces share keeps the sidebar as it is.
+ */
+export function activeShortcut(nav: WorkspaceNav, path: string, prefer?: string): { workspace: Workspace; section: NavSection; item: NavShortcut } | null {
+  let best: { workspace: Workspace; section: NavSection; item: NavShortcut } | null = null, score = -Infinity;
+  const bare = pathOf(path), query = queryOf(path);
   for (const workspace of nav.workspaces) for (const section of workspace.sections) for (const item of section.items) {
-    const target = item.href.split('?')[0].replace(/\/$/, '') || '/';
-    if ((bare === target || bare.startsWith(target + '/')) && target.length > length) { best = { workspace, section, item }; length = target.length; }
+    if (item.slip || item.external || !item.href) continue;
+    const target = pathOf(item.href), own = queryOf(item.href);
+    const named = MATCHED.filter(key => own.has(key));
+    let mine: number;
+    if (bare === target) {
+      if (!named.every(key => same(key, own.get(key), query.get(key)))) continue;
+      mine = target.length * 100 + named.length;
+    } else if (bare.startsWith(target + '/')) mine = target.length * 100 - named.length - 50;
+    else continue;
+    if (workspace.key === prefer) mine += 0.5;
+    if (mine > score) { best = { workspace, section, item }; score = mine; }
   }
   return best;
+}
+
+// The workspaces in /api/schema change when someone saves a workspace override: the editor reads the
+// schema again and hands the new list here, and the shell rebuilds the sidebar from it.
+const versions = new WeakMap<AppContext, Cell<number>>();
+export function workspacesVersion(ctx: AppContext): Cell<number> {
+  let found = versions.get(ctx);
+  if (!found) versions.set(ctx, found = cell(0, { name: 'nav.workspaces version' }));
+  return found;
+}
+export function replaceWorkspaces(ctx: AppContext, workspaces: WorkspaceSchema[] | undefined) {
+  ctx.schema.schema.workspaces = workspaces;
+  const version = workspacesVersion(ctx);
+  version.set(version.peek() + 1);
 }
 
 // Record counts beside models, fetched by the shell when the person turned them on in Settings.

@@ -5,9 +5,11 @@ import { activeShortcut, workspaceNav } from '../app/workspaces';
 
 afterEach(stopAll);
 
-// The recorded schema, with each model given to an installed app through its resource id, and reports.
+// The recorded schema, with each model given to an installed app through its resource id, and reports. Without
+// `workspaces`, as an older server sends it, so the sidebar builds the fallback.
 function appsSchema() {
   const schema = copy(screen.schema);
+  delete schema.body.workspaces;
   const apps: Record<string, string> = { customer: 'sales.Customer', order: 'sales.Order', quote: 'sales.Quote', product: 'stock.Product', contact: 'crm.Contact' };
   for (const model of schema.body.models) if (apps[model.name]) model.resource = apps[model.name];
   schema.body.models.find((model: any) => model.name === 'product').description = 'Things we sell, with their stock.';
@@ -27,7 +29,7 @@ function memory() {
 }
 const sections = (host: HTMLElement) => [...host.querySelectorAll('.nav-sec')].map(group => [text(group.querySelector('.nav-sec-h .lbl')), [...group.querySelectorAll('.nav-sc .lbl')].map(text)]);
 
-describe('workspaceNav', () => {
+describe('workspaceNav without declared workspaces', () => {
   it('makes one workspace per app, with Documents, Records and Reports sections, and finds the active shortcut', () => {
     const nav = workspaceNav(appsSchema().body, { list: model => `/app/${model}`, report: name => `/reports/${name}` }, 'Evlet');
     expect(nav.workspaces.map(workspace => [workspace.key, workspace.label, workspace.sections.map(section => [section.label, section.items.map(item => item.href)])])).toEqual([

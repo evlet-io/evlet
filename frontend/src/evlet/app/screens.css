@@ -329,3 +329,32 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ex-card-h .count{font-size:12px;color:var(--fg-3)}
 .ex-desc{font-size:12.5px;color:var(--fg-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ex-app{font-size:11.5px;color:var(--fg-3)}
+
+/* The workspace editor (app/workspace-editor.ts): flat rows of groups and their items, each with a grip, a name and an eye. */
+.modal.wse-modal { width: min(620px, 100%); }
+.wse { display: grid; gap: 10px; }
+.wse-top { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wse-field { display: grid; gap: 4px; font-size: 12px; color: var(--fg-3); }
+.wse-groups { display: grid; gap: 8px; }
+.wse-group { border: 1px solid var(--border); border-radius: var(--r); padding: 6px; background: var(--surface); }
+.wse-group.hid > .wse-gh .wse-name, .wse-item.hid .wse-name { color: var(--fg-3); text-decoration: line-through; }
+.wse-line { display: flex; align-items: center; gap: 6px; }
+.wse-gh .wse-name { font-weight: 550; }
+.wse-name.input { height: 28px; border-color: transparent; background: transparent; padding: 0 6px; }
+.wse-name.input:hover { border-color: var(--border); }
+.wse-name.input:focus { border-color: var(--accent); background: var(--surface); }
+.wse-items { display: grid; gap: 1px; margin: 4px 0 0 18px; padding-left: 8px; border-left: 1px solid var(--border); min-height: 24px; }
+.wse-kind { color: var(--fg-3); flex: none; }
+.wse-empty { font-size: 12px; margin: 4px 6px; }
+.wse-items:has(> .wse-item) > .wse-empty { display: none; }
+.wse-add { display: inline-flex; align-items: center; gap: 4px; margin: 4px 0 0 30px; height: 24px; padding: 0 6px; border-radius: 6px; font-size: 12px; color: var(--fg-3); }
+.wse-add:hover { color: var(--accent); background: var(--bg-muted); }
+.wse-new { display: grid; gap: 6px; margin: 6px 0 2px 30px; padding: 8px; border-radius: var(--r); background: var(--bg-muted); }
+.wse-new-row { display: flex; gap: 6px; align-items: center; }
+.wse-new-row > .input { height: 30px; min-width: 0; }
+.wse-new-row > select.input { flex: 0 0 auto; width: auto; max-width: 50%; }
+.wse-err { margin: 2px 0 2px 34px; font-size: 12px; color: var(--t-rose); }
+.wse > .wse-err { margin-left: 0; }
+.wse-meta { margin: 0; font-size: 12px; }
+.wse-more { display: flex; gap: 6px; flex-wrap: wrap; }
+@media (max-width: 560px) { .wse-top { grid-template-columns: 1fr; } }
