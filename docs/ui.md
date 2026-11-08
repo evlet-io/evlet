@@ -33,7 +33,27 @@ save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout` (sections, or tabs and blocks, see Record layouts below), `key_fields`, `relations`, `measures`, `open_in`, `list_tabs`,
-`list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks` and `panel`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+`list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks`, `panel` and `focus`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+
+### Where the cursor starts
+
+`Meta.focus` names the field a new record's form puts the cursor in:
+
+```python
+class Invoice(Model):
+    class Meta:
+        focus = 'customer'
+```
+
+It must be a visible field that people fill in: stored, not hidden, not read only, not calculated
+(`compute=`, `query=` or `fetch=`), not a `Table` and not a `Sequence`. Anything else fails when the
+registry is built with a `ValueError` that names the model and the field, such as
+`Invoice.Meta.focus: total is calculated; name a field people fill in`.
+
+`/api/schema` carries it as `"focus": "customer"` on the model entry, only when it is set. Like
+`key_fields`, it is left out for a role that cannot read the field. It is display only and never a
+permission. Without it, or when this role cannot edit the field, the browser puts the cursor in the
+first editable field. Slips take the same option as `focus = "field"` ([slips.md](slips.md)).
 
 ### Each fact once on the record page
 

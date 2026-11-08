@@ -27,7 +27,8 @@ OPEN_IN = ('page', 'panel')
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
-                          'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'ledger', 'append_only', 'timestamps', 'indexes'))
+                          'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'ledger', 'append_only', 'timestamps', 'indexes',
+                          'focus'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -222,6 +223,28 @@ def layout_blocks(model, layout, visible):
     return entries, tabs
 
 
+def check_focus(where, definition, name):
+    """Check a focus option (Model Meta.focus, Slip.focus): the field a new form puts the cursor in. It must be a
+    visible, writable, stored field of `definition`: not calculated, read only, hidden, a Table or a Sequence.
+    Raises ValueError starting with `where`. Display only: permissions never read it."""
+    from ..sequences import Sequence
+    if type(name) is not str or not name:
+        raise ValueError(f'{where}: name one field, such as "customer", not {name!r}')
+    if name in getattr(definition, '__tables__', {}):
+        raise ValueError(f'{where}: {name} is a table; name a field')
+    field = getattr(definition, '__app_fields__', definition.__declared_fields__).get(name)
+    if field is None or standard(field):
+        raise ValueError(f'{where}: {definition.__name__} has no field {name!r}')
+    problem = ('is numbered by a Sequence' if isinstance(field, Sequence) else
+               'is hidden' if field.hidden else
+               'is calculated' if field.compute is not None or field.query is not None or field.fetch is not None else
+               'is read only' if field.read_only else
+               'is not stored' if not field.stored else None)
+    if problem:
+        raise ValueError(f'{where}: {name} {problem}; name a field people fill in')
+    return name
+
+
 def view_for(model):
     meta = getattr(model, 'Meta', None)
     allowed = META_OPTIONS
@@ -286,6 +309,10 @@ def view_for(model):
     autosave = keeps_unsaved(model)
     # Search also finds records by their title and name.
     search = tuple(dict.fromkeys((*search, *(key for key in ('title', 'name') if key in standard_text))))
+    # The field a new record's form puts the cursor in; the browser falls back to the first editable field.
+    focus = getattr(meta, 'focus', None)
+    if focus is not None:
+        check_focus(f'{model.__name__}.Meta.focus', model, focus)
     layout = getattr(meta, 'layout', (('Details', tuple(visible)),))
     used = []
     groups = []
@@ -336,6 +363,7 @@ def view_for(model):
             # Additive keys: only a model that declares them carries them.
             **({'summary': summary} if summary is not None else {}),
             **({'side_blocks': list(side_blocks)} if side_blocks is not None else {}),
+            **({'focus': focus} if focus is not None else {}),
             **({'panel': panel} if panel is not None else {})}
 
 

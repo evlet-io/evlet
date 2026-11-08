@@ -240,6 +240,64 @@ context.measures(Invoice)                        # the same, with permissions
 A record with no related rows gives `0` counts, zero sums and `None` minimums and
 maximums. A missing record is `NotFoundError` (`database`) or 404 (`context`).
 
+### Trends and colours
+
+A model-level measure can also say how the browser should chart it over time, and in which
+colour:
+
+```python
+from evlet import Count, Currency, Date, Model, Sum
+
+
+class Project(Model):
+    budget = Currency(default="0")
+    starts_on = Date()
+
+    class Meta:
+        measures = {
+            "budget": Sum("budget", trend="starts_on", color="teal"),
+            "projects": Count(trend=("starts_on", "year", 5)),
+        }
+```
+
+* `trend="starts_on"` is that field by month, with 6 points.
+* `trend=("starts_on", "month", 12)` sets the field, the grain and the number of points.
+* The field is a `Date` field of the model. A `DateTime` field is refused, because the aggregate
+  route cannot group a date and time by day, month or year (the day depends on a timezone).
+* The grain is `day`, `month` or `year`, the parts the aggregate route groups a date by.
+* Points is a whole number from 2 to 24.
+* `trend=` is for model-level measures only. A per-record measure (`model=` and `link=`) with a
+  trend is refused.
+* `color=` is one of the Select badge colours: `blue`, `green`, `amber`, `rose`, `violet`,
+  `teal` or `slate`. It works on model-level and per-record measures.
+
+They are checked with the rest of the measure when the `Registry` is built. A mistake is a
+`ValueError` naming the model and measure, for example
+`Project.Meta.measures['budget']: trend: points is a whole number from 2 to 24, not 30`.
+
+Neither changes the measure's value. They only appear in the schema (see Schema below).
+
+#### Reading a trend
+
+There is no separate route for a trend. The browser reads it from
+`GET /api/{model}/aggregate`, with the measure's name, the trend field grouped by its grain, and
+the list's filters plus a start date for the first point:
+
+```
+GET /api/project/aggregate?measures=budget&group_by=starts_on:month&filters={"starts_on__gte":"2026-06-01"}
+```
+
+```json
+{"group_by": ["starts_on__month"], "measures": ["budget"],
+ "items": [{"starts_on__month": "2026-06", "budget": "12000.00"},
+           {"starts_on__month": "2026-08", "budget": "4500.00"}]}
+```
+
+The declared measure keeps its `where=`, and the caller's row scope and field permissions apply
+as for any aggregate. Only periods with records are returned, so a chart fills the missing ones
+(here July) with zero, or `null` for a minimum or maximum. Records without a date form a `null`
+group; leave it out of the chart or filter it away with the start date, as above.
+
 ## HTTP
 
 All three routes are `GET` only and need a signed-in user who can read the model.
@@ -340,6 +398,18 @@ caller may read:
 
 `where` is the finite-v1 expression IR, or `null`. Per-record entries name the related
 model (`model`) and its Link field (`link`).
+
+A measure declared with `trend=` or `color=` adds them, and only then:
+
+```json
+{"name": "budget", "function": "sum", "field": "budget", "where": null, "per_record": false, "model": null, "link": null,
+ "trend": {"field": "starts_on", "grain": "month", "points": 6}, "color": "teal"}
+```
+
+`trend` always has all three keys, so `trend="starts_on"` shows `"grain": "month", "points": 6`.
+A role that may read the measure but not its trend field gets the measure and its colour without
+`trend`, since it could not group by that field anyway. A measure the role cannot read is left
+out whole, as before.
 
 ## Limits and notes
 
