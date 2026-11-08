@@ -10,6 +10,7 @@ import { html, match, type Child } from '../dom';
 import { ApiError, type Session } from '../api';
 import { cell, derive, onCleanup } from '../reactive';
 import { SchemaIndex, type AppSchema } from '../model/schema';
+import { setCurrencyDisplays } from '../model/format';
 import { Button, EmptyState } from '../ui/base';
 import { apiLinks, setLinkSource } from '../ui/fields';
 import { closeDialogs, closePopover, DialogFooter, openModal } from '../ui/layers';
@@ -59,6 +60,8 @@ export function App(options: AppOptions): Node {
     const [schemaData, settings, eva] = await Promise.all([api.schema<AppSchema>(), loadMe(api), evaStatus(api).catch(() => null)]);
     const schema = new SchemaIndex(schemaData);
     if (!alive) return;
+    // How this site shows each currency code (Controls, Currencies), before anything formats money.
+    setCurrencyDisplays(schemaData.currency_display);
     context.peek()?.prefs.dispose();
     const prefs = options.storage === undefined ? new Prefs(current.user!.username) : new Prefs(current.user!.username, options.storage);
     const unsaved = options.storage === undefined ? new LocalUnsaved(instanceKey(current), current.user!.username)

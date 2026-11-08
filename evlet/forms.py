@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import hashlib
 import json
+import re
 
 from .auth import AccessError
 from .identity import jsonable, path_id
@@ -491,7 +492,10 @@ class Forms:
         columns = [column for column in report.columns if column.name not in hidden]
         out = io.StringIO()
         writer = csv.writer(out, lineterminator='\r\n')
-        writer.writerow([column.label or column.name.replace('_', ' ').capitalize() for column in columns])
+        # Money stays a plain number; a currency column names its ISO code in the header, never a symbol or image.
+        writer.writerow([(column.label or column.name.replace('_', ' ').capitalize())
+                         + (f' ({column.unit})' if column.type == 'currency' and column.unit and re.fullmatch('[A-Z]{3}', column.unit) else '')
+                         for column in columns])
         for row in rows:
             writer.writerow([csv_cell(row.get(column.name), column.type) for column in columns])
         if (total or 0) > len(rows):

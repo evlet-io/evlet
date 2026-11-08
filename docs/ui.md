@@ -347,7 +347,9 @@ the draft. Clients without If-Match keep their behavior. Revision comparison hap
 inside the same transaction as the mutation and includes permitted child rows.
 Currency and decimal values stay exact strings. A Currency field shows its code from
 `currency=` on the field: a fixed code, a field of the record, a field of a linked record or an
-app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)).
+app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)). How each
+code looks (a text or image symbol, before or after the amount) is the site's choice in Controls,
+Currencies ([controls.md](controls.md#currencies)).
 Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-framework.md](ui-framework.md#pickers)).
 A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-framework.md#rich-text)):
 at rest the record shows the formatted text (read only when the record is locked), and list cells

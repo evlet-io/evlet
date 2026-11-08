@@ -7,7 +7,9 @@
 
 import type { RecordData } from '../api';
 import type { FieldSchema, ModelSchema, SchemaIndex } from '../model/schema';
-import { kindOf } from '../ui/kinds';
+import { currencyOf, kindOf } from '../ui/kinds';
+import { moneyChild } from '../ui/money';
+import type { Child } from '../dom';
 import { tintFor, type Tint } from '../ui/core';
 
 export interface MoveSchema { from: string[] | string; to: string; label: string; roles?: string[]; guarded?: boolean; when?: unknown; asks?: string[] }
@@ -161,6 +163,15 @@ export function summaryFields(model: ScreenModel, shown: ReadonlySet<string> = n
 
 export const formatOf = (meta: FieldSchema, value: unknown) => value === null || value === undefined || value === '' ? '' : kindOf(meta.type).format(value, meta);
 
+/**
+ * A value to show on screen: money with the site's currency symbol (an image when the site set one), anything
+ * else as formatOf's text. `code` is the currency when it comes from the record; the field's fixed code otherwise.
+ */
+export function displayOf(meta: FieldSchema, value: unknown, code?: string): Child {
+  if (meta.type === 'currency') return moneyChild(value, code ?? currencyOf(meta), typeof meta.scale === 'number' ? meta.scale : 2);
+  return formatOf(meta, value);
+}
+
 /** The title of a record from list or detail data. */
 export function titleOf(model: ScreenModel, data: Record<string, unknown>): string {
   const value = data[model.title_field];
@@ -173,13 +184,13 @@ export function titleOf(model: ScreenModel, data: Record<string, unknown>): stri
   return field && field.type !== 'text' && field.type !== 'sequence' ? formatOf(field, value) : String(value);
 }
 
-/** A measure's value as text, by the measured field's type. */
-export function measureText(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): string {
+/** A measure's value, by the measured field's type: money shows the site's currency symbol. */
+export function measureText(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): Child {
   if (value === null || value === undefined) return 'None';
   if (measure.function === 'count' || measure.function === 'count_distinct') return Number(value).toLocaleString('en-US');
   const target = measure.model ? (index.schema.models.find(item => item.name === measure.model) as unknown as ScreenModel | undefined) : model;
   const field = target && measure.field ? fieldOf(target, measure.field) : undefined;
-  return field ? formatOf(field, value) : String(value);
+  return field ? displayOf(field, value) : String(value);
 }
 
 export const measureLabel = (measure: MeasureSchema) => measure.name.replace(/_/g, ' ').replace(/^./, char => char.toUpperCase());

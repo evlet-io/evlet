@@ -1306,3 +1306,10 @@ th:hover>.rz::after{background:var(--border-strong)}
 .rel-all{display:block;margin:4px 8px 0;padding:4px 0;font-size:12px;font-weight:550;color:var(--accent);background:none;border:0;cursor:pointer;border-radius:6px}
 .rel-all:hover{text-decoration:underline}
 .rel-all:focus-visible{outline:none;box-shadow:0 0 0 2px var(--accent-ring)}
+
+/* Money with an image currency symbol (ui/money.ts): text height, on the number's baseline. "tint" paints the
+   image's shape in the text colour, so a one-colour symbol reads in light and dark themes. */
+.money{white-space:nowrap}
+.money-img{display:inline;height:.8em;width:auto;vertical-align:baseline;user-select:all}
+.money-img.tint{object-position:-9999px 0;background:currentColor;-webkit-mask:var(--money-mask) center/contain no-repeat;mask:var(--money-mask) center/contain no-repeat}
+.in-box>.money-img{height:1em}

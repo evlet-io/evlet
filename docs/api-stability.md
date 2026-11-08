@@ -86,6 +86,10 @@ production ready, but the rules below hold from 0.3 on.
   and `Select(..., colors=...)` maps choices to badge colours. The values and the default are
   public ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).
 
+- **Currency display.** `set_currency_display(application, value, *, actor='cli')`, the setting
+  `display.currencies` with its entry form (`symbol`, `image`, `position`, `space`, `tint`) and its
+  limits, and `currency_display` in `/api/schema` ([controls.md](controls.md#currencies)).
+
 For each of these, the contract covers the name and the arguments it takes: their names,
 order, whether they are keyword-only, and their defaults. Model `Meta` options and the
 behaviour each guide documents are public too. `tests/test_public_api.py` pins the names and

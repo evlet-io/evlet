@@ -179,6 +179,9 @@ AED. The setting's value reaches everyone who can read the model, so use a setti
 currency, not one that holds anything private. Before an instance is initialized the setting's
 declared default is used.
 
+The code is shown as `AED 25,200.00` unless the site changed how that code looks: a text or image
+symbol, before or after the amount ([controls.md](controls.md#currencies)).
+
 `Percent` and `Duration` work as numbers in finite expressions; `Phone` works as text.
 `Time`, `Tags` and references cannot be used in calculations.
 

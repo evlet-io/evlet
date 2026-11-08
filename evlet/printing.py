@@ -657,8 +657,9 @@ def report_context(context, report, filters):
 class Formats:
     """The helpers templates use: money, date, number, ar. Each isolates text direction."""
 
-    def __init__(self, design, markup):
-        self.design, self.markup = design, markup
+    def __init__(self, design, markup, currencies=None):
+        # currencies: the site's currency display (evlet.currencies), {code: {symbol, image, position, space}}.
+        self.design, self.markup, self.currencies = design, markup, currencies or {}
 
     def ltr(self, text):
         return self.markup('<bdi dir="ltr">') + text + self.markup('</bdi>')
@@ -668,7 +669,11 @@ class Formats:
             return ''
         amount = Decimal(str(value))
         code = currency or self.design.currency
-        return self.ltr(f'{code} {amount:,.2f}' if code else f'{amount:,.2f}')
+        if not code:
+            return self.ltr(f'{amount:,.2f}')
+        from .currencies import money_html
+        # The symbol is the site's (text, or an image embedded as a data: URI); the number format stays as it is.
+        return self.ltr(self.markup(money_html(self.currencies, code, f'{amount:,.2f}')))
 
     def number(self, value, places=None):
         if value is None or value == '':
@@ -767,7 +772,8 @@ class Compiler:
         self.design, self.context, self.business = design, context, business
         self.markup = Markup
         self.env = environment()
-        self.formats = Formats(design, Markup)
+        controls = getattr(business, 'controls', None)
+        self.formats = Formats(design, Markup, controls.settings.get('display.currencies') if controls is not None else None)
         self.variables = {**{key: value for key, value in context.items() if key in ('doc', 'report')},
                           'money': self.formats.money, 'date': self.formats.date, 'number': self.formats.number, 'ar': self.formats.ar,
                           'title': design.title}
@@ -1028,6 +1034,7 @@ h1 {{ font-size: 1.6em; margin: 0 0 1mm; }}
 .evlet-pagebreak {{ break-before: page; margin: 0; }}
 .evlet-spacer {{ margin: 0; }}
 .evlet-image img {{ max-width: 100%; }}
+.evlet-currency {{ height: 0.8em; width: auto; vertical-align: baseline; }}
 .evlet-fields {{ width: 100%; border-collapse: collapse; break-inside: avoid; }}
 .evlet-fields td {{ vertical-align: top; padding: 0.6mm 3mm 0.6mm 0; }}
 .evlet-label {{ display: block; font-size: 0.8em; color: #666; }}

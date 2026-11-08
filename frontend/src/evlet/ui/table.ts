@@ -301,7 +301,7 @@ export interface DataTableProps<T> {
   onMove?: (row: T) => void;
   prefs?: Cell<TablePrefs>;
   /** Footer values by column key; the first column shows totalsLabel. */
-  totals?: Record<string, Prop<string>>;
+  totals?: Record<string, Prop<Child>>;
   totalsLabel?: Prop<string>;
   empty?: () => Child;
   /** A class for a row, such as a group heading or subtotal the caller puts among the rows. */

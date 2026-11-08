@@ -2,7 +2,7 @@
 
 `/controls` is the locked admin page of an instance. It is the framework frontend
 `evlet.controls`, not a generated model. This release has Overview, Users, Roles,
-Permissions, Security, Connectors, Email, MCP & AI, API keys, Apps, Models, Naming, Routing, Jobs, Overrides and the Audit log.
+Permissions, Security, Connectors, Email, MCP & AI, API keys, Apps, Models, Naming, Periods, Print designs, Currencies, Routing, Jobs, Overrides and the Audit log.
 
 The Overview lists what needs attention: an app waiting to be migrated or a server that still
 runs the old version, overrides that no longer apply (and what fails closed meanwhile), skipped
@@ -323,6 +323,64 @@ the writing transaction. Each change writes an audit row in area `Periods` ("Loc
 31-03-2026" or "Opened") with the earlier and the new date. Overrides in Controls never change
 locks, and trusted code that writes a closed period with `unlocked_periods(reason)` writes an
 audit row too.
+
+## Currencies
+
+How each currency code is shown on this site. A `Currency` field's code says which currency an amount
+is in ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)); this page says how
+that code looks beside the amount:
+
+- **Symbol**: text of 1 to 8 characters, such as `$`, `€`, `د.إ` or `AED`, or a small image.
+- **Position**: before or after the amount.
+- **Spacing**: a space between the symbol and the amount, or none.
+- **Match the text colour** (images only): the image's shape is painted in the text colour, so a
+  one-colour symbol reads in light and dark themes. Turn it off for a symbol with its own colours.
+
+A code that is not listed shows as it always has: the code, a space, then the amount
+(`AED 1,234.50`). Number formatting does not change here: separators and decimals follow each
+person's region, and amounts are never converted.
+
+It lives in Controls, not Settings: Settings is each person's own account, while this changes what
+everyone on the site sees, like the other site-wide settings here. It is the setting
+`display.currencies` (`{"AED": {"symbol", "image", "position", "space", "tint"}}`, only the changed
+codes, at most 30), saved through the change bar with the others. Every save writes an audit row
+(area `Display`, "Changed AED") whose before and after name each image by type, size and a short
+hash, never its bytes. **Reset to default** removes one code; **Reset all to default** removes the
+setting. Only admins change it: other roles that open Controls see the page read only, and the
+server answers their save with 403. The preview uses the unsaved draft.
+
+**Images** are PNG or WebP, at most 32 KB and 128 x 128 pixels. The type is read from the bytes,
+never from the file name or the declared type: a file that only starts like a PNG is refused (every
+chunk and checksum is checked), and SVG is never accepted because it can carry script. The image is
+kept in the setting as a `data:` URI, like the images of a stored print design, so it needs no file
+storage and reaches every process with the setting.
+
+Where the display applies:
+
+| Place | What shows |
+|---|---|
+| Forms | The symbol at rest, and in the input's side box on its side (the box moves to the end for a suffix) |
+| Lists, boards, record summary and child table totals, measures, reports | The symbol before or after the amount |
+| Print designs and PDFs | `money()` and every Currency value; an image is embedded in the PDF |
+| Filter chips, history, titles and other text-only places | A text symbol, or the ISO code for an image |
+| Report CSV | The plain number, never a symbol or an image; a currency column names its code in the header, `Total (AED)` |
+
+On screen an image sits at text height on the number's baseline, with the ISO code as its `alt` text
+for screen readers and copying. A right-to-left symbol such as `د.إ` is isolated so it stays on its
+side of the digits. `/api/schema` sends the changed codes as `currency_display`, so the browser
+formats without another request; people see a change on their next page load.
+
+Trusted code can set it the same way, checked and audited:
+
+```python
+from evlet import set_currency_display
+
+set_currency_display(app, {"AED": {"image": Path("dirham.png"), "position": "prefix", "tint": True}}, actor="setup")
+```
+
+An image may be a `data:` URI, bytes or a `Path`. `None` resets every code. The Playground uses it
+to show AED with a placeholder coin image. Evlet does not ship the UAE dirham symbol: download the
+official file from the Central Bank of the UAE and upload it here.
 
 ## Apps
 
@@ -793,7 +851,7 @@ newest first, 50 rows at a time.
 | Route | Purpose |
 |---|---|
 | `GET /api/_controls/state` | Instance, apps, models, roles, routes, settings, attention list, recent audit rows |
-| `GET/POST /api/_controls/overrides` | File value, override, who and when; save changes |
+| `GET/POST /api/_controls/overrides` | File value, override, who and when; save changes. `display.currencies` needs an admin |
 | `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end", "revoke_keys": false}`. Each user row counts active `keys` |
 | `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules, fresh two-step code and audit rows; refused access is a 403 there |
 | `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls" and descriptions |
