@@ -23,6 +23,7 @@ import { customizeAccess, openWorkspaceEditor } from './workspace-editor';
 import { isExplorer, openExplorer } from './explorer';
 import { SHELL_ICONS } from './nav-icons';
 import { openShortcutSheet } from './shortcuts';
+import { formatKeys, withShortcut } from '../ui/shortcuts';
 
 const PHONE = '(max-width: 760px)';
 const isPhone = () => { try { return Boolean(window.matchMedia?.(PHONE)?.matches); } catch { return false; } };
@@ -186,7 +187,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   // opens the palette; the Explorer part opens the Explorer on its last view and is pressed while it is open.
   const onExplorer = () => isExplorer(route.get());
   const searchPart = html`<button type="button" class="ts-search" aria-label="Search" aria-keyshortcuts="Meta+K Control+K" on:click=${() => ctx.openPalette()}
-    ref=${(el: HTMLElement) => tooltip(el, 'Search  ⌘K')}>${Icon(SHELL_ICONS.search, { size: 'sm' })}<span class="ts-text">Search</span>${Key('⌘K')}</button>` as HTMLElement;
+    ref=${(el: HTMLElement) => tooltip(el, withShortcut('Search', 'Mod+K'))}>${Icon(SHELL_ICONS.search, { size: 'sm' })}<span class="ts-text">Search</span>${Key(formatKeys('Mod+K'))}</button>` as HTMLElement;
   const explorerPart = html`<button type="button" class="ts-explorer" class:on=${onExplorer} aria-label="Explorer" aria-pressed=${() => String(onExplorer())}
     on:click=${() => openExplorer(ctx)} ref=${(el: HTMLElement) => tooltip(el, 'Explorer  G E')}>
     ${Icon(SHELL_ICONS.explorer, { size: 'sm' })}<span class="ts-text">Explorer</span></button>` as HTMLElement;

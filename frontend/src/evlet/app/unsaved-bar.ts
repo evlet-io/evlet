@@ -23,7 +23,8 @@ type Bar =
 
 const missedNote = (missed: number) => missed ? ` ${missed === 1 ? 'One change no longer fits' : `${missed} changes no longer fit`} this record and ${missed === 1 ? 'was' : 'were'} left out.` : '';
 
-export interface UnsavedBarOptions { isNew: boolean; /** A new record's draft was restored or set aside: the bar is gone. */ onSettled?: () => void }
+export interface UnsavedBarOptions { isNew: boolean; /** A new record's draft was restored or set aside: the bar is gone. */ onSettled?: () => void
+  /** A new record offers its unfinished draft (true unless it starts as a copy of another record). */ draft?: boolean }
 
 /** The restore bar for a record that is ready to edit. Empty when nothing was kept. */
 export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordStore, options: UnsavedBarOptions): Node {
@@ -31,6 +32,7 @@ export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordSto
   const id = store.id;
   if (keepsUnsaved(ctx, model)) void (async () => {
     if (options.isNew) {
+      if (options.draft === false) return;
       const kept = ctx.unsaved.get(model.name, unsavedInfo(ctx).limits);
       if (kept) bar.set({ kind: 'local', changes: kept.changes, saved_at: kept.saved_at });
       return;

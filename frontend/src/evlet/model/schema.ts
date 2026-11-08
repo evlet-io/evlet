@@ -37,6 +37,10 @@ export interface FieldSchema {
   default?: unknown;
   default_kind?: string;
   stored?: boolean;
+  /** No two records may hold the same value: Duplicate leaves it empty. */
+  unique?: boolean;
+  /** false: never copied by Duplicate (when the server provides it; absent means copy). */
+  copy?: boolean;
   compute?: Expression;
   initial?: Expression;
   applies_when?: Expression;
@@ -49,7 +53,9 @@ export interface FieldSchema {
 /** row_changes false: the parent's save takes only full row lists without _key (a ChildTable on a plain model). */
 export interface ChildSchema { name: string; model: string; label: string; link: string; min_rows?: number; max_rows?: number; row_changes?: boolean
   /** Whether list filters may match the parent on these rows. */
-  filterable?: boolean }
+  filterable?: boolean
+  /** false: Duplicate leaves this table empty (when the server provides it; absent means copy). */
+  copy?: boolean }
 export interface ActionSchema { name: string; label: string; arguments?: Array<{ name: string; type: string; required: boolean; default?: unknown }>; dialog?: boolean }
 
 /** Phase 4 state metadata (field, states, moves with labels and roles, locked, final). Optional until the backend sends it. */
@@ -79,6 +85,8 @@ export interface ListTabsSchema { field: string; kind: 'state' | 'select' | 'lin
 
 export interface ModelSchema {
   name: string;
+  /** false: the model offers no Duplicate (when the server provides it; absent means allowed). */
+  duplicate?: boolean;
   label: string;
   plural: string;
   /** The model's docstring, '' when it has none. */

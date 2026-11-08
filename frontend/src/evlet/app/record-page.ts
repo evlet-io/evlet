@@ -40,6 +40,7 @@ import { openEvaPanel } from '../eva/chat';
 import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden } from './unsaved';
 import { UnsavedBar } from './unsaved-bar';
 import { SCREEN_KEYS, useShortcuts } from './shortcuts';
+import { dropDuplicate, duplicateAllowed, duplicateOf, holdDuplicate, takeDuplicate, type DuplicateCopy } from './duplicate';
 import { ariaKeys, commitTyped, formatKeys, withShortcut } from '../ui/shortcuts';
 
 const RESERVED = new Set(['tab', 'slip']);
@@ -101,17 +102,19 @@ export interface PanelHost {
   /** Whether a navigation keeps this record open: only the list's search, filters or the record tab change. */
   stays(to: Route<any> | null): boolean;
   close(): void;
-  /** Open another record of the model in the panel, or the one just created. */
-  show(id: string): void;
+  /** Open another record of the model in the panel, the one just created, or 'new'. Resolves false when the navigation was refused. */
+  show(id: string): void | Promise<boolean>;
   /** The record was deleted. */
   removed(): void;
 }
 
-// A record expanded from a side panel to its page keeps its store, so unsaved edits come along.
-let handoff: { model: string; id: string; store: RecordStore } | null = null;
+// A record expanded from a side panel to its page keeps its store, so unsaved edits come along (and a
+// duplicate keeps saying what it copies).
+type Handoff = { model: string; id: string; store: RecordStore; duplicate?: DuplicateCopy | null };
+let handoff: Handoff | null = null;
 const handedOff = new WeakSet<RecordStore>();
-function takeHandoff(model: string, id: string): RecordStore | null {
-  const found = handoff && handoff.model === model && handoff.id === id ? handoff.store : null;
+function takeHandoff(model: string, id: string): Handoff | null {
+  const found = handoff && handoff.model === model && handoff.id === id ? handoff : null;
   handoff = null;
   return found;
 }
@@ -131,7 +134,8 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
   }
   const id = isNew ? null : recordId(legacy ?? idText);
   if (!isNew && !id) return missing(ctx, model, panel);
-  const handed = panel ? null : takeHandoff(name, idText);
+  const taken = panel ? null : takeHandoff(name, idText);
+  const handed = taken?.store ?? null;
   // A panel's store lives outside the panel's scope so Expand can hand it to the record page.
   const make = () => new RecordStore({ api, schema: ctx.schema, model: name, user: ctx.user });
   const store = handed ?? (panel ? runWithOwner(null, make) : make());
@@ -145,13 +149,18 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
   const query = panel ? Object.fromEntries(Object.entries(route).filter(([key]) => !LIST_KEYS.includes(key))) : route;
   // Values a slip handed over for review (outcome becomes, review): shown as a new record, not saved.
   const prefill = isNew ? takePrefill(name) : null;
+  // A copy of a saved record (More > Duplicate), held in memory for this new record.
+  const duplicate = isNew ? taken?.duplicate ?? (handed ? null : takeDuplicate(name)) : null;
 
   const load = async () => {
     if (handed) { status.set('ready'); return; }
     status.set('loading');
     try {
-      if (isNew) await store.create({ ...initialValues(model, query), ...(prefill?.values ?? {}) });
-      else await store.open(id!);
+      if (isNew) {
+        await store.create({ ...initialValues(model, query), ...(prefill?.values ?? {}), ...(duplicate?.values ?? {}) });
+        // Copied values count as the person's own: the form is dirty from the start, and leaving keeps or asks.
+        if (duplicate) for (const field of Object.keys(duplicate.values)) if (store.root.fields.has(field)) store.root.field(field).touched = true;
+      } else await store.open(id!);
       status.set('ready');
       // A link such as /app/customer/4?slip=start_project presents that slip from the record.
       if (!isNew && query.slip && (model.slips ?? []).some(slip => slip.name === query.slip)) void presentSlip(query.slip, { source: { model: name, id: id! } });
@@ -168,7 +177,7 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
     loading: () => html`<div class="page"><p class="muted" role="status">Loading…</p></div>`,
     missing: () => missing(ctx, model, panel),
     error: () => html`<div class="page">${EmptyState({ icon: 'info', tint: 'rose', title: 'This record could not be opened', text: () => failure.get(), action: Button({ label: 'Try again', onClick: () => void load() }) })}</div>`,
-    ready: () => RecordView(ctx, model, store, { isNew, extras, detail, query, prefill: prefill?.from ?? null, panel, focusedAtOpen }),
+    ready: () => RecordView(ctx, model, store, { isNew, extras, detail, query, prefill: prefill?.from ?? null, duplicate, panel, focusedAtOpen }),
   })}</div>` as HTMLElement;
   return page;
 }
@@ -181,6 +190,7 @@ function missing(ctx: AppContext, model: ScreenModel, panel?: PanelHost): HTMLEl
 }
 
 interface ViewOptions { isNew: boolean; extras: Readable<DetailExtras>; detail: Readable<RecordData | null>; query: Record<string, string>; /** The slip that filled this new record. */ prefill?: string | null;
+  /** The saved record this new one copies (Duplicate). */ duplicate?: DuplicateCopy | null;
   /** Shown in a list's side panel: the narrow layout. */ panel?: PanelHost; /** A new record: what held the focus when it was asked for. */ focusedAtOpen?: Element | null }
 
 function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, options: ViewOptions): HTMLElement {
@@ -188,7 +198,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const { isNew, extras, panel } = options;
   const name = model.name, look = identity(model);
   const canUpdate = model.api !== 'read' && model.permissions?.update !== false;
-  const canWrite = isNew ? model.api !== 'read' && model.permissions?.create !== false : canUpdate;
+  // The role may create records of this model: what the list's New button reads.
+  const canCreate = model.api !== 'read' && model.permissions?.create !== false;
+  const canWrite = isNew ? canCreate : canUpdate;
   const state = model.state && fieldOf(model, model.state.field) ? model.state : null;
   const locked = derive(() => Boolean(extras.get()._locked));
   const views = new Map<string, FieldLike>();
@@ -241,7 +253,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   };
   // Expand: the record page takes this store, unsaved edits included, so it does not ask.
   const expand = (tab: string | null) => {
-    handoff = { model: name, id: isNew ? 'new' : String(store.id), store };
+    handoff = { model: name, id: isNew ? 'new' : String(store.id), store, duplicate: options.duplicate };
     handedOff.add(store);
     leaving = true;
     const going = isNew ? router.go('create', { model: name }) : router.go('record', { model: name, id: String(store.id) }, tab ? { tab } : {});
@@ -400,12 +412,21 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       } catch (error) { close(); toast(error instanceof ApiError ? error.message : 'Not deleted.', { icon: 'info' }); }
     } } }) });
 
+  // Duplicate: a new, unsaved record of this model with this one's values (app/duplicate.ts), where the
+  // source was: on its page or in the side panel. Nothing is saved until Create.
+  const canDuplicate = () => !isNew && canCreate && duplicateAllowed(model);
+  const duplicateNow = () => {
+    holdDuplicate(name, duplicateOf(model, store.root, titleText.peek()));
+    const going = panel ? panel.show('new') : router.go('create', { model: name });
+    void Promise.resolve(going).then(done => { if (done === false) dropDuplicate(name); });
+  };
   // A record that ever posted is kept (its entries name it), so the server refuses its delete.
   const canDelete = () => !isNew && model.api !== 'read' && Boolean(model.permissions?.delete) && !locked.peek() && extras.peek()._deletable !== false;
   const moreItems = (): MenuItem[] => {
     const items: MenuItem[] = [{ label: 'Copy link', icon: 'link', onSelect: () => void copyText(location.href, 'the link') }];
     if (!isNew) items.push({ label: 'Copy record ID', icon: 'copy', onSelect: () => void copyText(String(store.id), 'the record ID') },
       { label: 'Reload', icon: 'rotate-ccw', onSelect: () => void store.reload().catch(() => {}) });
+    if (canDuplicate()) items.push({ label: 'Duplicate', icon: 'copy', hint: formatKeys(SCREEN_KEYS.duplicate), onSelect: duplicateNow });
     if (foldable) items.push({ label: 'Reset layout', icon: 'layout-grid', disabled: !folds.changed, onSelect: () => folds.reset() });
     const now = extras.peek();
     if (now._revise) items.push({ label: `Revise ${model.label.toLowerCase()}`, icon: 'copy', disabled: !now._revise.allowed, onSelect: () => correct('revise') });
@@ -795,7 +816,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // ---------- save bar ----------
 
   const saveBarView = () => isNew
-    ? html`<div class="ev-savebar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => { forget(); panel ? panel.close() : void router.go('list', { model: name }); } })}
+    ? html`<div class="ev-savebar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => void discardNew() })}
         <span class="grow muted">${Icon('info', { size: 'sm' })} Values are checked again when you create it.</span>
         ${withSaveKeys(Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check', disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save(),
           tip: withShortcut(`Create ${model.label.toLowerCase()}`, SCREEN_KEYS.save) }))}</div>`
@@ -820,7 +841,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return { fields, open: !fold.collapsible || untrack(() => folds.open(section.label, folds.start(fold.collapsed, index, fields)).get()) };
   })), before));
   const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
-    main: [panelBar, header, UnsavedBar(ctx, model, store, { isNew, onSettled: () => focusFirst() }), options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
+    main: [panelBar, header, UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
+    options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null,
+    options.duplicate ? StateBanner({ tone: 'info', icon: 'copy', title: `Copied from ${options.duplicate.from}.`, text: ['Nothing is saved until you select Create.',
+      options.duplicate.unique.length ? html` <span class="ev-dup-unique">Unique fields were left empty: ${options.duplicate.unique.join(', ')}.</span>` : null] }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
   // The person's "Enter moves to the next field" setting (Settings, Appearance).
   enterMovesToNextField(frame, () => Boolean(ctx.me.get()?.prefs.enter_next));
   if (isNew) focusFirst(options.focusedAtOpen);
@@ -830,8 +854,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // Keyboard shortcuts (docs/ui.md#keyboard-shortcuts). In a side panel they act while the focus is inside it;
   // New then comes from the list, which opens the new record in the panel.
   const noun = model.label.toLowerCase();
-  const canCreate = model.api !== 'read' && model.permissions?.create !== false;
-  // A new record's Discard: it asks first when something was typed, then leaves like Cancel.
+  // A new record's Cancel (and Mod+Shift+D): it asks first when something was typed, then leaves and forgets the
+  // kept draft, without keeping it again on the way out.
   const discardNew = async () => {
     if (changedNew() && !(await confirmDiscard())) return;
     leaving = true;
@@ -843,6 +867,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     save: canWrite ? { label: isNew ? `Create the ${noun}` : 'Save changes', run: () => { commitTyped(); if (isNew || store.dirty.peek()) void save(); } } : null,
     remove: isNew ? { label: `Discard the new ${noun}`, run: () => void discardNew() } : canDelete() ? { label: `Delete this ${noun}`, run: remove } : null,
     create: !panel && canCreate && !isNew ? { label: `New ${noun}`, run: () => void router.go('create', { model: name }) } : null,
+    duplicate: canDuplicate() ? { label: `Duplicate this ${noun}`, run: duplicateNow } : null,
   }) });
   return frame;
 }

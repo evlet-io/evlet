@@ -602,7 +602,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     setTab: next => void router.navigate(listHref(id, next), { replace: true }),
     stays: to => Boolean(to && to.name === 'list' && to.params.model === name && (to.query.open ?? null) === id),
     close: closePanel,
-    show: next => { refresh(); void router.navigate(listHref(String(next)), { replace: true }); },
+    show: next => { refresh(); return router.navigate(listHref(String(next)), { replace: true }); },
     removed: () => { refresh(); void router.navigate(listHref(null), { replace: true }); },
   });
   // A saved, moved or changed record shows its new values in its row.

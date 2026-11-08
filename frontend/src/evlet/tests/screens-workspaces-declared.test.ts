@@ -315,7 +315,8 @@ describe('the top bar', () => {
     expect(group.querySelector('.ts-div')).not.toBeNull();
     expect(buttons[1].querySelector('svg')!.innerHTML).toBe(Icon(SHELL_ICONS.explorer).innerHTML);
     buttons[0].dispatchEvent(new MouseEvent('mouseenter'));
-    await until(() => expect(text(document.querySelector('.tip'))).toBe('Search ⌘K'));
+    // jsdom is not a Mac: the key reads Ctrl+K (duplicate.test.ts covers both).
+    await until(() => expect(text(document.querySelector('.tip'))).toBe('Search Ctrl+K'));
     buttons[1].dispatchEvent(new MouseEvent('mouseenter'));
     await until(() => expect(text(document.querySelector('.tip'))).toBe('Explorer G E'));
     click(buttons[0]);

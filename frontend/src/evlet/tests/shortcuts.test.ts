@@ -236,7 +236,7 @@ describe('list shortcuts', () => {
     const { host } = start(orderRoutes(), '/app/order/0000000000001');
     await until(() => expect(host.querySelector('.doc-head h1')).not.toBeNull());
     press(document.body, '?', { shiftKey: true });
-    expect(sheetRows(dialog()!.querySelector('.ev-keys-g'))).toEqual(['Ctrl+S Save changes', 'Ctrl+Shift+D Delete this order', 'Alt+N New order']);
+    expect(sheetRows(dialog()!.querySelector('.ev-keys-g'))).toEqual(['Ctrl+S Save changes', 'Ctrl+Shift+D Delete this order', 'Alt+N New order', 'Alt+Shift+D Duplicate this order']);
     expect(sheetRows(dialog())).toContain('Ctrl K Search and commands');
     expect(text(dialog())).not.toContain('⌘');
   });

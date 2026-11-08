@@ -68,7 +68,40 @@ leaves out the title, name and State, because the header shows them and edits th
 a new record's form keeps them. The side column's Key fields block shows only while another tab
 is open (Activity, Related or a table), as a way back to the fields. Its Related block lists only
 relations that have records; the Related tab lists every one. Record info has Created and Last
-modified; More > Copy record ID copies the id.
+modified; More > Copy record ID copies the id, and More > Duplicate starts a copy
+([below](#duplicate)).
+
+### Duplicate
+
+The More menu of a saved record has **Duplicate** (Alt+Shift+D, ⌥⇧D on a Mac), on its page and in a
+side panel. It shows only when the role may create records of the model, as the list's New button
+does: not on a read-only model (`Meta.api = 'read'`) or for a role without create. Ledger models
+have no record page. When the server provides it, `"duplicate": false` on a model's schema entry
+turns Duplicate off for that model (no menu item, and Alt+Shift+D does nothing); without the key
+Duplicate is allowed.
+
+Duplicate opens a new, unsaved record of the same model where the source was: on the page, or in
+the side panel. Its form is filled in from the saved record, held in memory (never in the address),
+with a banner "Copied from ... Nothing is saved until you select Create." Nothing is saved, and no
+number is used, until Create, which sends a create (POST) like any new record.
+
+- **Copied:** the visible, stored fields the role may write, and the rows of every table at every
+  depth, without their ids, so they are created new on save. Values of a locked or posted record
+  are copied too: duplicating a Done project gives a new Draft project with its fields.
+- **Left out:** the id, the name or number the server assigns (the naming field, Sequence fields),
+  the State (the copy starts in the default state), calculated and read-only fields (they
+  recalculate), fields the role cannot write, files and the Journal. Fields marked `unique` are
+  left empty, and the banner names them: "Unique fields were left empty: Code." When the server
+  provides it, `"copy": false` on a field or on a Table entry leaves it out too; without the key it
+  is copied. A field left out starts as on any new record (empty, or its default), and a table left
+  out starts with no rows.
+- **Saved values.** Duplicate copies the record as saved; edits not yet saved stay with it, and
+  leaving it asks or keeps them as usual.
+- **Cursor and title.** Nothing is added to the title. The cursor starts where it does on any new
+  form: `Meta.focus`, or the first editable field.
+- **Unsaved.** The copy has values, so it counts as unsaved from the start: leaving it keeps it as
+  an unfinished new record or asks, as described in [Unsaved changes](#unsaved-changes). It does
+  not offer to restore an earlier unfinished draft.
 
 Only the main area scrolls, on every page: the sidebar and the top bar stay in place. On a record
 page the side column stays in place too while the main column scrolls, and scrolls on its own when
@@ -569,8 +602,8 @@ breadcrumb, then one box for **search and the Explorer**, notifications and the 
 - **One box, two buttons.** The search field is on the left; the Explorer is attached at its right
   end, inside the same border, behind a hairline, with the app grid icon and the label "Explorer".
   The box is a `role="group"` named "Search and Explorer". Each part is its own button with its own
-  name, focus ring and tooltip ("Search ⌘K", "Explorer G E"); Tab reaches search first, then the
-  Explorer.
+  name, focus ring and tooltip ("Search ⌘K" on a Mac, "Search Ctrl+K" elsewhere, "Explorer G E");
+  Tab reaches search first, then the Explorer. The key in the search box is written the same way.
 - **Search** opens the search palette, as do ⌘K and Ctrl K.
 - **Explorer** opens the Explorer (`/?explorer=<view>`) on the view this person used last on this
   device (`evlet.<username>.explorer.view`; Reports the first time), as does G then E. While the
@@ -776,6 +809,7 @@ does (⌘S and ⇧⌘D on a Mac, Ctrl+S and Ctrl+Shift+D elsewhere).
 | Mod+Shift+D | New record | Discard it and go back to the list, asking first when something was typed |
 | Mod+Shift+D | Dialog | Cancel, as Esc does |
 | Alt+N (⌥N) | List and record page | A new record of the model, on its page or in the side panel as the list's New does |
+| Alt+Shift+D (⌥⇧D) | Saved record | [Duplicate](#duplicate): a new, unsaved copy of the record, where the record is. Only where the More menu has Duplicate; nothing on a new record |
 | C | List | A new record (kept from before) |
 | / | List | Focus the list's search |
 | Enter | List row | Open the focused row |
@@ -784,14 +818,14 @@ does (⌘S and ⇧⌘D on a Mac, Ctrl+S and Ctrl+Shift+D elsewhere).
 
 - **New is Alt+N, not Ctrl+N.** Browsers keep Ctrl+N and ⌘N for a new window, so a page can't use them.
   Alt+N is read from the physical key, because Option+N on a Mac types an accent.
-- **No Duplicate yet.** Records have no duplicate or copy action today, so Alt+Shift+D (⌥⇧D), the key
-  kept for it, does nothing. A model action can be added later and bound to it.
+- **Duplicate is Alt+Shift+D.** Like Alt+N it is read from the physical key, because Option+Shift+D
+  on a Mac types a character.
 - **Plain keys stay out of the way.** C, / and ? never fire while typing in a field. Mod+S does.
 - **One screen at a time.** A shortcut acts on the screen that holds the focus. With a record open in a
   side panel, the keys act on that record while the focus is inside the panel, and on the list
   otherwise (Alt+N from the panel opens the new record in the panel). Nothing on the screen fires while
   a dialog is open: the dialog answers Mod+S and Mod+Shift+D itself.
-- **A held key acts once.** Key repeat never saves, deletes or opens a second record.
+- **A held key acts once.** Key repeat never saves, deletes, duplicates or opens a second record.
 - **Dialogs.** A dialog without a field (a confirm, the unsaved-changes prompt) focuses its main
   action, so Enter answers it. A dialog that asks for input (an action's inputs, a move's values, a
   slip) focuses its first field, and Mod+S submits it. Focus stays in the dialog and goes back to
